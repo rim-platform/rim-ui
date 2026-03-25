@@ -1,0 +1,33 @@
+query Messages($serverId: ID!, $conversationId: ID!, $dir: PageDir!, $limit: Int!, $includeDeleted: Boolean!) {
+  messages(
+    serverId: $serverId
+    conversationId: $conversationId
+    dir: $dir
+    limit: $limit
+    includeDeleted: $includeDeleted
+  ) {
+    items {
+      id
+      serverId
+      conversationId
+      threadId
+      rootThreadId
+      authorId
+      text
+      hasAttachments
+      parentMessageId
+      isDeleted
+      sentAt
+      reactions {
+        emoji
+        count
+        reactedByMe
+        userIds
+      }
+    }
+    pageInfo {
+      hasNext
+      hasPrev
+    }
+  }
+}

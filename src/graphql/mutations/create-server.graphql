@@ -1,0 +1,6 @@
+mutation CreateServer($input: CreateServerInput!) {
+  createServer(input: $input) {
+    id
+    name
+  }
+}

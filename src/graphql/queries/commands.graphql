@@ -1,0 +1,16 @@
+query Commands($surface: CommandSurface, $commandContext: CommandContextInput) {
+  commands(surface: $surface, commandContext: $commandContext) {
+    id
+    title
+    description
+    category
+    sourceKind
+    executionTarget
+    requiredContext
+    requiredCapabilities
+    visibleInPalette
+    visibleInContextMenus
+    keybindCapable
+    dangerous
+  }
+}

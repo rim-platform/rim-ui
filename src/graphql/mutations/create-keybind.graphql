@@ -1,0 +1,10 @@
+mutation CreateKeybind($input: CreateKeybindInput!) {
+  createKeybind(input: $input) {
+    id
+    keystroke
+    commandId
+    context
+    scope
+    isEnabled
+  }
+}

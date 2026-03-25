@@ -1,0 +1,12 @@
+query ResolvedKeybinds($workspaceId: ID) {
+  resolvedKeybinds(workspaceId: $workspaceId) {
+    id
+    keystroke
+    commandId
+    context
+    source
+    scope
+    isEnabled
+    presetArgs
+  }
+}

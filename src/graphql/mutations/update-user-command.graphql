@@ -1,0 +1,10 @@
+mutation UpdateUserCommand($input: UpdateUserCommandInput!) {
+  updateUserCommand(input: $input) {
+    id
+    title
+    description
+    category
+    sourceKind
+    keybindCapable
+  }
+}

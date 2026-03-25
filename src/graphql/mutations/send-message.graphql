@@ -1,0 +1,15 @@
+mutation SendMessage($input: SendMessageInput!) {
+  sendMessage(input: $input) {
+    id
+    serverId
+    conversationId
+    threadId
+    rootThreadId
+    authorId
+    text
+    hasAttachments
+    parentMessageId
+    isDeleted
+    sentAt
+  }
+}

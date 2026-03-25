@@ -1,0 +1,44 @@
+{
+  "name": "rim-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "codegen": "graphql-codegen --config codegen.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@nozbe/microfuzz": "^1.0.0",
+    "@tanstack/react-query": "^5.90.21",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "clsx": "^2.1.1",
+    "graphql": "^16.13.1",
+    "graphql-request": "^7.4.0",
+    "graphql-ws": "^6.0.7",
+    "lucide-react": "^0.577.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.13.1",
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^6.2.1",
+    "@graphql-codegen/typescript": "^5.0.9",
+    "@graphql-codegen/typescript-graphql-request": "^7.0.0",
+    "@graphql-codegen/typescript-operations": "^5.0.9",
+    "@tailwindcss/vite": "^4.2.1",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "tailwindcss": "^4.2.1",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

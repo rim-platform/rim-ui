@@ -1,0 +1,15 @@
+query Channels($serverId: ID!, $dir: PageDir!, $limit: Int!) {
+  channels(serverId: $serverId, dir: $dir, limit: $limit) {
+    items {
+      id
+      serverId
+      conversationType
+      title
+      memberIds
+    }
+    pageInfo {
+      hasNext
+      hasPrev
+    }
+  }
+}

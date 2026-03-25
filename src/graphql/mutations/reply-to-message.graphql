@@ -1,0 +1,21 @@
+mutation ReplyToMessage($input: ReplyToMessageInput!) {
+  replyToMessage(input: $input) {
+    id
+    serverId
+    conversationId
+    threadId
+    rootThreadId
+    authorId
+    text
+    hasAttachments
+    parentMessageId
+    isDeleted
+    sentAt
+    reactions {
+      emoji
+      count
+      reactedByMe
+      userIds
+    }
+  }
+}
