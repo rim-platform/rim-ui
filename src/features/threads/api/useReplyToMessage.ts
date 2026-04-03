@@ -3,29 +3,16 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { logger } from "../../../core/logger";
+import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 
 const REPLY_TO_MESSAGE_MUTATION = gql`
   mutation ReplyToMessage($input: ReplyToMessageInput!) {
     replyToMessage(input: $input) {
-      id
-      serverId
-      conversationId
-      threadId
-      rootThreadId
-      authorId
-      text
-      hasAttachments
-      parentMessageId
-      isDeleted
-      sentAt
-      reactions {
-        emoji
-        count
-        reactedByMe
-        userIds
-      }
+      ...MessageWithReactions
     }
   }
+  ${MESSAGE_WITH_REACTIONS}
 `;
 
 interface ReplyToMessageResponse {
@@ -70,17 +57,31 @@ export function useReplyToMessageMutation() {
           text: vars.text,
         },
       }),
-    onSuccess: (_data, vars) => {
+    onError: (error, vars) => {
+      logger.error("[RIM:Thread] Reply mutation failed:", error, "vars:", vars);
+    },
+    onSuccess: async (data, vars) => {
+      logger.debug("[RIM:Thread] Reply success:", data.replyToMessage.id, "threadId:", data.replyToMessage.threadId);
+      const threadId = data.replyToMessage.threadId ?? undefined;
+
       // Invalidate conversation messages (root message gets updated with rootThreadId)
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
-      // Invalidate thread-related queries so new replies appear
-      qc.invalidateQueries({
+
+      // Refetch threadByRoot so ThreadPanel picks up the newly created thread.
+      // We await this because useThreadMessages depends on threadId from this query —
+      // if we only invalidate, the threadMessages query may not exist yet (it's disabled
+      // when threadId is undefined) and the invalidation below would be a no-op.
+      await qc.refetchQueries({
         queryKey: queryKeys.threadByRoot(vars.serverId, vars.conversationId, vars.rootMessageId),
       });
-      // Invalidate all thread messages for this conversation (threadId may be new)
-      qc.invalidateQueries({
-        queryKey: ["threadMessages", vars.serverId, vars.conversationId],
-      });
+
+      // Now threadId is available in the component, useThreadMessages is enabled.
+      // Invalidate thread messages so the new reply appears.
+      if (threadId) {
+        qc.invalidateQueries({
+          queryKey: queryKeys.threadMessages(vars.serverId, vars.conversationId, threadId),
+        });
+      }
     },
   });
 }

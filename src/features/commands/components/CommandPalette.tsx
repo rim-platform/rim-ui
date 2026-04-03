@@ -5,6 +5,7 @@ import { Z } from "../../../shared/ui/zIndex";
 import { useCommandStore } from "../state/useCommandStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { useResolvedKeybinds } from "../api/useKeybinds";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { dispatchCommand } from "../runtime/commandDispatcher";
@@ -33,6 +34,7 @@ export function CommandPalette() {
 
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: commands } = useCommands("Palette");
+  const pluginCommands = usePluginCommands();
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const executeCommandMutation = useExecuteCommandMutation();
 
@@ -40,11 +42,11 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Pre-filter to palette-visible commands
+  // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
-    if (!commands) return [];
-    return commands.filter((cmd) => cmd.visibleInPalette);
-  }, [commands]);
+    const base = commands?.filter((cmd) => cmd.visibleInPalette) ?? [];
+    return [...base, ...pluginCommands.filter((cmd) => cmd.visibleInPalette)];
+  }, [commands, pluginCommands]);
 
   const getCommandText = useCallback(
     (cmd: CommandDefinition) => [cmd.title, cmd.description, cmd.category],
@@ -165,7 +167,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 flex items-start justify-center pt-[15vh]"
+      className="fixed inset-0 flex items-start justify-center pt-[12vh]"
       style={{ zIndex: Z.OVERLAY_CONTENT }}
       onClick={closeCommandPalette}
     >
@@ -174,7 +176,7 @@ export function CommandPalette() {
 
       {/* Palette */}
       <div
-        className="relative w-full max-w-lg rounded-lg border border-rim-line bg-rim-panel shadow-2xl"
+        className="relative w-full max-w-lg rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -225,7 +227,7 @@ export function CommandPalette() {
                           <Highlight text={cmd.title} ranges={result.matches?.[0] ?? null} />
                         </span>
                         {cmd.dangerous && (
-                          <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                          <span className="rounded bg-rim-danger/20 px-1.5 py-0.5 text-[10px] font-medium text-rim-danger">
                             dangerous
                           </span>
                         )}

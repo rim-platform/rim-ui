@@ -2,19 +2,25 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 
 import { useConversationMessages } from "../api/useMessages";
+import { useEditMessageMutation } from "../api/useEditMessage";
 import { useToggleReactionMutation } from "../api/useToggleReaction";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import { MessageItem } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { Composer } from "./Composer";
+import { toast } from "../../../shared/toast";
 
 export function MessageTimeline() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
   const openThread = useShellStore((s) => s.openThreadForMessage);
-  const { resolve } = useMemberLookup(workspaceId ?? undefined);
+  const editingMessageId = useShellStore((s) => s.editingMessageId);
+  const setEditingMessageId = useShellStore((s) => s.setEditingMessageId);
+  const highlightedMessageId = useShellStore((s) => s.highlightedMessageId);
+  const setHighlightedMessageId = useShellStore((s) => s.setHighlightedMessageId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
   const {
     data,
     isPending,
@@ -27,22 +33,14 @@ export function MessageTimeline() {
     conversationId ?? undefined,
   );
   const toggleReaction = useToggleReactionMutation();
+  const editMessage = useEditMessageMutation();
 
-  // Flatten all pages into a single list, reversed for newest-at-bottom display.
-  // Backend returns items newest-first (DESC); pages array has newest page first.
-  // We reverse both: pages order and items within each page, so result is oldest->newest.
+  // Flatten all pages into a single list for display (oldest->newest).
+  // Backend returns items in display order (oldest-first within each page).
+  // Pages are in load order (newest first), so reverse pages for display.
   const items = useMemo(() => {
     if (!data?.pages) return [];
-    const allItems = [];
-    // Iterate pages in reverse (oldest page first)
-    for (let i = data.pages.length - 1; i >= 0; i--) {
-      const page = data.pages[i];
-      // Items within each page are newest-first, so reverse them
-      for (let j = page.items.length - 1; j >= 0; j--) {
-        allItems.push(page.items[j]);
-      }
-    }
-    return allItems;
+    return [...data.pages].reverse().flatMap(p => p.items);
   }, [data?.pages]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -57,15 +55,18 @@ export function MessageTimeline() {
     y: number;
     messageId: string;
     messageText: string;
+    isOwnMessage: boolean;
+    hasThread: boolean;
   } | null>(null);
 
   // C3: Selected message index for keyboard navigation
   const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
 
-  // Reset selected message when conversation changes
+  // Reset selected message and editing state when conversation changes
   useEffect(() => {
     setSelectedMessageIndex(-1);
-  }, [conversationId]);
+    setEditingMessageId(null);
+  }, [conversationId, setEditingMessageId]);
 
   // Track whether user is scrolled to bottom
   const handleScroll = useCallback(() => {
@@ -108,6 +109,24 @@ export function MessageTimeline() {
     }
   }, [data?.pages?.length, isFetchingNextPage]);
 
+  // Scroll to highlighted message (from search) and clear after a brief highlight
+  useEffect(() => {
+    if (!highlightedMessageId || !scrollContainerRef.current) return;
+    const el = scrollContainerRef.current.querySelector(
+      `[data-message-id="${highlightedMessageId}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("bg-rim-accent/10");
+      const timer = setTimeout(() => {
+        el.classList.remove("bg-rim-accent/10");
+        setHighlightedMessageId(null);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+    setHighlightedMessageId(null);
+  }, [highlightedMessageId, setHighlightedMessageId, items]);
+
   // IntersectionObserver on top sentinel to trigger loading older messages
   useEffect(() => {
     const sentinel = topSentinelRef.current;
@@ -130,12 +149,34 @@ export function MessageTimeline() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   function handleContextMenu(event: React.MouseEvent, messageId: string, messageText: string) {
+    const msg = items.find((m) => m.id === messageId);
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
       messageId,
       messageText,
+      isOwnMessage: msg?.author?.id === currentUserId,
+      hasThread: !!(msg?.threadId || msg?.rootThreadId),
     });
+  }
+
+  async function handleSaveEdit(messageId: string, newText: string) {
+    if (!workspaceId || !conversationId) return;
+    try {
+      await editMessage.mutateAsync({
+        serverId: workspaceId,
+        conversationId,
+        messageId,
+        text: newText,
+      });
+      setEditingMessageId(null);
+    } catch {
+      // Keep edit mode open — user can retry or cancel
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditingMessageId(null);
   }
 
   function handleToggleReaction(messageId: string, emoji: string) {
@@ -171,16 +212,16 @@ export function MessageTimeline() {
         e.preventDefault();
         openThread(msg.id);
       } else if (e.key === "e" || e.key === "E") {
-        // Edit own message (placeholder - would need edit mutation)
-        const member = resolve(msg.authorId);
-        if (member.isCurrentUser) {
+        if (editingMessageId) return;
+        if (msg.author?.id === currentUserId) {
           e.preventDefault();
-          // Edit functionality would go here
+          setEditingMessageId(msg.id);
         }
       } else if (e.key === "c" || e.key === "C") {
         e.preventDefault();
         if (msg.text) {
           navigator.clipboard.writeText(msg.text);
+          toast.success("Copied to clipboard");
         }
       }
     }
@@ -204,7 +245,7 @@ export function MessageTimeline() {
 
   if (isError) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-red-300">
+      <div className="flex flex-1 items-center justify-center text-sm text-rim-danger">
         Failed to load messages.
       </div>
     );
@@ -231,27 +272,31 @@ export function MessageTimeline() {
           <p className="py-8 text-center text-sm text-rim-text-muted">No messages yet. Start the conversation below.</p>
         ) : (
           items.map((msg, index) => {
-            const member = resolve(msg.authorId);
+            const name = msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
             return (
               <MessageItem
                 key={msg.id}
                 message={msg}
-                authorName={member.displayName}
-                authorInitial={member.displayName.charAt(0).toUpperCase()}
-                isCurrentUser={member.isCurrentUser}
+                authorName={name}
+                authorInitial={name.charAt(0).toUpperCase()}
+                authorAvatarUrl={msg.author?.avatarUrl}
+                isCurrentUser={msg.author?.id === currentUserId}
                 reactions={msg.reactions}
                 isSelected={index === selectedMessageIndex}
+                isEditing={msg.id === editingMessageId}
+                editError={msg.id === editingMessageId && editMessage.isError}
                 onOpenThread={openThread}
                 onToggleReaction={handleToggleReaction}
                 onContextMenu={handleContextMenu}
-                resolveMember={resolve}
+                onSaveEdit={handleSaveEdit}
+                onCancelEdit={handleCancelEdit}
               />
             );
           })
         )}
         <div ref={bottomRef} />
       </div>
-      <Composer workspaceId={workspaceId!} conversationId={conversationId} />
+      {workspaceId && <Composer workspaceId={workspaceId} conversationId={conversationId} />}
       {contextMenu && workspaceId && (
         <MessageContextMenu
           x={contextMenu.x}
@@ -260,6 +305,8 @@ export function MessageTimeline() {
           messageText={contextMenu.messageText}
           conversationId={conversationId}
           workspaceId={workspaceId}
+          isOwnMessage={contextMenu.isOwnMessage}
+          hasThread={contextMenu.hasThread}
           onClose={() => setContextMenu(null)}
         />
       )}

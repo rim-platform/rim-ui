@@ -3,12 +3,19 @@ import { Hash, MessageCircle, Plus, Users } from "lucide-react";
 
 import { useChannels } from "../api/useChannels";
 import { useInboxConversations } from "../api/useInboxConversations";
+import { useMarkAsRead } from "../api/useMarkAsRead";
+import { useUnreadStore } from "../state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
+import { Avatar } from "../../../shared/ui/Avatar";
 import { cn } from "../../../shared/ui/cn";
+import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
+import { useKeybindLabel } from "../../commands/hooks/useKeybindLabel";
+import { useHoverContextStore } from "../../../shell/state/useHoverContextStore";
+import { usePresenceStore } from "../../presence/state/usePresenceStore";
 type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
 
 const typeIcon: Record<ConversationTypeEnum, typeof Hash> = {
@@ -27,6 +34,21 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   const select = useShellStore((s) => s.setSelectedConversationId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const unreadCounts = useUnreadStore((s) => s.counts);
+  const { mutate: markAsRead } = useMarkAsRead();
+
+  // Auto mark-as-read when selecting a conversation
+  useEffect(() => {
+    if (!selectedId || !workspaceId) return;
+    const count = useUnreadStore.getState().counts[selectedId];
+    if (count) {
+      markAsRead({
+        conversationId: selectedId,
+        workspaceId,
+        readAt: new Date().toISOString(),
+      });
+    }
+  }, [selectedId, workspaceId, markAsRead]);
 
   const {
     data: channelsData,
@@ -122,44 +144,11 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   }
 
   if (channelsError || inboxError) {
-    return <p className="px-2 py-4 text-sm text-red-300">Failed to load conversations.</p>;
+    return <p className="px-2 py-4 text-sm text-rim-danger">Failed to load conversations.</p>;
   }
 
   if (channels.length === 0 && messages.length === 0) {
     return <p className="px-2 py-4 text-sm text-rim-text-muted">No conversations yet.</p>;
-  }
-
-  function renderItem(conv: { id: string; serverId: string; conversationType: string; title: string; memberIds: string[] }, globalIndex: number) {
-    const Icon = typeIcon[conv.conversationType as ConversationTypeEnum] ?? Hash;
-    const active = conv.id === selectedId;
-    const focused = globalIndex === focusedIndex;
-
-    // For DMs, show the other user's name instead of "Untitled"
-    let displayTitle = conv.title;
-    if (!displayTitle && conv.conversationType === "DIRECT" && conv.memberIds.length > 0) {
-      const otherMemberId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
-      displayTitle = memberLookup.resolve(otherMemberId).displayName;
-    }
-
-    return (
-      <li key={conv.id} role="option" aria-selected={active}>
-        <button
-          type="button"
-          onClick={() => select(conv.id)}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition focus-visible:outline-none",
-            active
-              ? "bg-rim-accent/10 text-rim-accent"
-              : "text-rim-text-muted hover:bg-white/5 hover:text-white",
-            isKeyboardNavigating && focused && "ring-1 ring-rim-accent ring-offset-1 ring-offset-rim-panel",
-          )}
-        >
-          <Icon className="h-4 w-4 shrink-0" />
-          <span className="truncate">{displayTitle ?? "Untitled"}</span>
-          <span className="ml-auto text-xs text-rim-text-faint">{conv.memberIds.length}</span>
-        </button>
-      </li>
-    );
   }
 
   // Compute the global index offset for messages section
@@ -186,13 +175,26 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
               onClick={() => onNewChannel()}
               title="New channel"
               aria-label="New channel"
-              className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-white"
+              className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
             >
               <Plus className="h-3 w-3" />
             </button>
           </div>
           <ul className="space-y-0.5">
-            {channels.map((conv, i) => renderItem(conv, i))}
+            {channels.map((conv, i) => (
+              <ConversationItem
+                key={conv.id}
+                conv={conv}
+                globalIndex={i}
+                selectedId={selectedId}
+                focusedIndex={focusedIndex}
+                isKeyboardNavigating={isKeyboardNavigating}
+                currentUserId={currentUserId}
+                memberLookup={memberLookup}
+                select={select}
+                unreadCount={unreadCounts[conv.id] ?? 0}
+              />
+            ))}
           </ul>
         </div>
       )}
@@ -203,10 +205,126 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
             Messages
           </h3>
           <ul className="space-y-0.5">
-            {messages.map((conv, i) => renderItem(conv, channelCount + i))}
+            {messages.map((conv, i) => (
+              <ConversationItem
+                key={conv.id}
+                conv={conv}
+                globalIndex={channelCount + i}
+                selectedId={selectedId}
+                focusedIndex={focusedIndex}
+                isKeyboardNavigating={isKeyboardNavigating}
+                currentUserId={currentUserId}
+                memberLookup={memberLookup}
+                select={select}
+                unreadCount={unreadCounts[conv.id] ?? 0}
+              />
+            ))}
           </ul>
         </div>
       )}
     </div>
+  );
+}
+
+function ConversationItem({
+  conv,
+  globalIndex,
+  selectedId,
+  focusedIndex,
+  isKeyboardNavigating,
+  currentUserId,
+  memberLookup,
+  select,
+  unreadCount,
+}: {
+  conv: { id: string; serverId: string; conversationType: string; title: string; memberIds: string[] };
+  globalIndex: number;
+  selectedId: string | null;
+  focusedIndex: number;
+  isKeyboardNavigating: boolean;
+  currentUserId: string | undefined;
+  memberLookup: ReturnType<typeof useMemberLookup>;
+  select: (id: string) => void;
+  unreadCount: number;
+}) {
+  const Icon = typeIcon[conv.conversationType as ConversationTypeEnum] ?? Hash;
+  const active = conv.id === selectedId;
+  const focused = globalIndex === focusedIndex;
+
+  // For DMs, show the other user's name instead of "Untitled"
+  let displayTitle = conv.title;
+  let otherMemberId: string | undefined;
+  let otherMemberAvatarUrl: string | null | undefined;
+  if (conv.conversationType === "DIRECT" && conv.memberIds.length > 0) {
+    otherMemberId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
+    const otherMember = memberLookup.resolve(otherMemberId);
+    otherMemberAvatarUrl = otherMember.avatarUrl;
+    if (!displayTitle) {
+      displayTitle = otherMember.displayName;
+    }
+  }
+
+  const presenceStatus = usePresenceStore((s) =>
+    otherMemberId ? s.presenceMap[otherMemberId] : undefined,
+  );
+
+  const hoverKind = conv.conversationType === "DIRECT" ? "dm" as const : "channel" as const;
+
+  // Look up quick-access keybind for this specific channel
+  const keystroke = useKeybindLabel("workspace.navigate_to_channel", { conversationId: conv.id });
+
+  const button = (
+    <button
+      type="button"
+      onClick={() => select(conv.id)}
+      onMouseEnter={() =>
+        useHoverContextStore.getState().setTarget({
+          kind: hoverKind,
+          conversationId: conv.id,
+          serverId: conv.serverId,
+          label: displayTitle ?? "Untitled",
+        })
+      }
+      onMouseLeave={() => useHoverContextStore.getState().clear()}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition focus-visible:outline-none",
+        active
+          ? "bg-rim-accent/10 text-rim-accent"
+          : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+        isKeyboardNavigating && focused && "ring-1 ring-rim-accent ring-offset-1 ring-offset-rim-panel",
+      )}
+    >
+      {conv.conversationType === "DIRECT" ? (
+        <Avatar
+          url={otherMemberAvatarUrl}
+          name={displayTitle ?? "?"}
+          userId={otherMemberId ?? ""}
+          size="xs"
+          presenceStatus={presenceStatus === "ONLINE" || presenceStatus === "AWAY" || presenceStatus === "OFFLINE" ? presenceStatus : null}
+        />
+      ) : (
+        <Icon className="h-4 w-4 shrink-0" />
+      )}
+      <span className={cn("truncate", unreadCount > 0 && !active && "font-semibold text-rim-text")}>{displayTitle ?? "Untitled"}</span>
+      {unreadCount > 0 && !active ? (
+        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rim-accent px-1.5 text-[10px] font-bold text-rim-void">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      ) : (
+        <span className="ml-auto text-xs text-rim-text-faint">{conv.memberIds.length}</span>
+      )}
+    </button>
+  );
+
+  return (
+    <li role="option" aria-selected={active}>
+      {keystroke ? (
+        <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{displayTitle ?? "Untitled"} ({keystroke})</span>}>
+          {button}
+        </HoverTooltip>
+      ) : (
+        button
+      )}
+    </li>
   );
 }

@@ -1,0 +1,17 @@
+export { usePluginList } from "./api/usePluginList";
+export { usePluginEnable, usePluginDisable, usePluginInstall, usePluginUninstall } from "./api/usePluginActions";
+export { useApproveCapabilities, useRevokeCapabilities } from "./api/usePluginCapabilities";
+export { usePluginExecuteCommand } from "./api/usePluginExecuteCommand";
+export { usePluginCommands, usePluginContextMenuCommands, parsePluginCommandId } from "./api/usePluginCommands";
+export { usePluginSuggestedKeybinds } from "./api/usePluginKeybinds";
+export { onPluginEvent, usePluginEvents } from "./runtime/pluginEventBus";
+export { createPluginBridge } from "./runtime/pluginBridge";
+export { createThemeChangeMessage, onThemeChange } from "./runtime/pluginThemeBridge";
+export { usePluginFocusManager } from "./runtime/pluginFocusManager";
+export { PluginSettingsPage } from "./components/PluginSettingsPage";
+export { PluginCapabilityPrompt } from "./components/PluginCapabilityPrompt";
+export { PluginToolPanel } from "./components/PluginToolPanel";
+export { PluginErrorBoundary } from "./components/PluginErrorBoundary";
+export { PluginPanel } from "./components/PluginPanel";
+export { PluginSlotContainer } from "./components/PluginSlotContainer";
+export type { PluginInfo, PluginManifest, PluginCapability, TrustLevel, PluginHealth, PluginEvent, PluginCommandResult, PluginCommandDef, PluginPanelDef, PluginPanelSlot, PluginContextType } from "./types";

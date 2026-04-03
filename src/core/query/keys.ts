@@ -14,4 +14,7 @@ export const queryKeys = {
   channels: (workspaceId?: string) => ["channels", workspaceId] as const,
   commands: (surface?: string) => ["commands", surface] as const,
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
+  searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
+    ["searchMessages", workspaceId, conversationId, query] as const,
+  plugins: () => ["plugins"] as const,
 };

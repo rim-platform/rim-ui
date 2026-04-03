@@ -1,3 +1,5 @@
+export { Avatar } from "./Avatar";
+export type { AvatarProps } from "./Avatar";
 export { Dialog } from "./Dialog";
 export { Button } from "./Button";
 export { DropdownMenu } from "./DropdownMenu";
@@ -5,5 +7,6 @@ export type { DropdownMenuItem, DropdownMenuProps } from "./DropdownMenu";
 export { EmojiPicker } from "./EmojiPicker";
 export type { EmojiPickerProps } from "./EmojiPicker";
 export { HoverTooltip } from "./HoverTooltip";
+export { WindowControls } from "./WindowControls";
 export { cn } from "./cn";
 export { Z } from "./zIndex";

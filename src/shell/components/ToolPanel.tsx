@@ -1,10 +1,11 @@
 import { Plus } from "lucide-react";
+import { useState } from "react";
 
 import { ConversationList } from "../../features/conversations/components/ConversationList";
 import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
 import { NewMessagePicker } from "../../features/conversations/components/NewMessagePicker";
+import { PluginToolPanel } from "../../features/plugins/components/PluginToolPanel";
 import { useShellStore } from "../state/useShellStore";
-import { useState } from "react";
 
 export function ToolPanel() {
   const activePanel = useShellStore((s) => s.activePanel);
@@ -16,12 +17,8 @@ export function ToolPanel() {
   return (
     <div className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel">
       <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
-        <h2 className="text-sm font-medium text-white">
-          {activePanel === "inbox"
-            ? "Conversations"
-            : activePanel === "search"
-              ? "Search"
-              : "Plugins"}
+        <h2 className="text-sm font-medium text-rim-text">
+          {activePanel === "inbox" ? "Conversations" : "Plugins"}
         </h2>
         {activePanel === "inbox" && (
           <button
@@ -29,7 +26,7 @@ export function ToolPanel() {
             onClick={() => setShowNewMessage(true)}
             title="New message"
             aria-label="New message"
-            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-white"
+            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -39,12 +36,7 @@ export function ToolPanel() {
         {activePanel === "inbox" && (
           <ConversationList onNewChannel={() => setShowNewChannel(true)} />
         )}
-        {activePanel === "search" && (
-          <p className="px-2 py-4 text-sm text-rim-text-muted">Search coming soon.</p>
-        )}
-        {activePanel === "plugins" && (
-          <p className="px-2 py-4 text-sm text-rim-text-muted">Plugin panels coming soon.</p>
-        )}
+        {activePanel === "plugins" && <PluginToolPanel />}
       </div>
       <NewMessagePicker
         open={showNewMessage}

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { graphqlClient } from "../graphql/client";
 import { queryKeys } from "../query/keys";
-import { MESSAGES_QUERY } from "../../features/messages/api/useMessages";
+import { MESSAGES_QUERY } from "../graphql/queries";
 
 interface MessagesResponse {
   messages: {

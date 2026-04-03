@@ -6,6 +6,12 @@ mutation SendMessage($input: SendMessageInput!) {
     threadId
     rootThreadId
     authorId
+    author {
+      id
+      username
+      displayName
+      avatarUrl
+    }
     text
     hasAttachments
     parentMessageId

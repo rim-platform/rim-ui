@@ -1,14 +1,16 @@
-import { useEffect, useCallback, type ReactNode } from "react";
+import { useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
-import { useCommandStore } from "../state/useCommandStore";
 import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
 import { dispatchCommand } from "./commandDispatcher";
-import type { ResolvedKeybind } from "../types";
+import { useCommandStore } from "../state/useCommandStore";
+import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
+import { useAgentStore } from "../../agent/state/useAgentStore";
+import type { ResolvedKeybind, CommandDefinition } from "../types";
 
 interface KeybindProviderProps {
   children: ReactNode;
@@ -31,8 +33,48 @@ const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
   },
   {
     id: "__fallback_settings",
-    keystroke: "Ctrl+,",
+    keystroke: "Ctrl+Alt+S",
     commandId: "workspace.open_settings",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_search",
+    keystroke: "Ctrl+F",
+    commandId: "workspace.search_in_channel",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_search_workspace",
+    keystroke: "Ctrl+Shift+F",
+    commandId: "workspace.open_search",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_marketplace",
+    keystroke: "Ctrl+Shift+X",
+    commandId: "workspace.open_marketplace",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_agent",
+    keystroke: "Ctrl+Shift+A",
+    commandId: "workspace.open_agent",
     context: "Global",
     source: "Default",
     scope: "User",
@@ -41,15 +83,32 @@ const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
   },
 ];
 
+/**
+ * Merge backend keybinds with fallbacks. Fallback keybinds are included
+ * unless the backend already provides a binding for the same commandId.
+ * This ensures local-only commands (search overlay, marketplace, etc.)
+ * always have their keybinds available.
+ */
+function mergeWithFallbacks(backendKeybinds: ResolvedKeybind[] | undefined): ResolvedKeybind[] {
+  if (!backendKeybinds || backendKeybinds.length === 0) return FALLBACK_KEYBINDS;
+
+  const backendCommandIds = new Set(backendKeybinds.map((kb) => kb.commandId));
+  const missingFallbacks = FALLBACK_KEYBINDS.filter(
+    (fb) => !backendCommandIds.has(fb.commandId),
+  );
+  return [...backendKeybinds, ...missingFallbacks];
+}
+
 export function KeybindProvider({ children }: KeybindProviderProps) {
   const { capabilities } = useRuntime();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const focusedSurface = useShellStore((s) => s.focusedSurface);
-  const toggleCommandPalette = useCommandStore((s) => s.toggleCommandPalette);
 
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const { data: commands } = useCommands("Palette");
   const executeCommandMutation = useExecuteCommandMutation();
+  const executeMutationRef = useRef(executeCommandMutation);
+  executeMutationRef.current = executeCommandMutation;
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -64,8 +123,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
       const context = surfaceToContext(focusedSurface);
 
-      // Use backend keybinds if available, otherwise use fallbacks
-      const resolvedKeybinds = keybinds && keybinds.length > 0 ? keybinds : FALLBACK_KEYBINDS;
+      // Merge backend keybinds with fallbacks — fallbacks fill in any
+      // commands the backend doesn't know about (e.g. local-only search)
+      const resolvedKeybinds = mergeWithFallbacks(keybinds);
 
       // Try context-specific match first, then global
       let match = matchKeybind(keystroke, context, resolvedKeybinds);
@@ -77,35 +137,56 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
       if (!match) return;
 
+      // If an overlay is open, let it handle Escape instead of dispatching close_panel
+      if (match.commandId === "workspace.close_panel") {
+        const overlayOpen =
+          useCommandStore.getState().isCommandPaletteOpen ||
+          useSearchOverlayStore.getState().isOpen ||
+          useAgentStore.getState().isOpen;
+        if (overlayOpen) {
+          return;
+        }
+      }
+
+      logger.debug(`[RIM:Keybind] Matched: ${keystroke} → ${match.commandId}`);
+
       event.preventDefault();
       event.stopPropagation();
 
-      // Desktop-local commands can be handled directly without backend
-      if (match.commandId === "workspace.open_command_palette") {
-        toggleCommandPalette();
-        return;
-      }
+      // Find command definition from backend or build a local-only stub
+      const command: CommandDefinition | undefined =
+        commands?.find((cmd) => cmd.id === match!.commandId) ??
+        // Fallback stub for local-only commands when backend data is unavailable
+        (match.commandId.startsWith("workspace.") || match.commandId.startsWith("chat.")
+          ? {
+              id: match.commandId,
+              title: match.commandId,
+              description: "",
+              category: "Desktop",
+              sourceKind: "BuiltIn",
+              executionTarget: "DesktopLocal",
+              requiredContext: [],
+              requiredCapabilities: [],
+              visibleInPalette: false,
+              visibleInContextMenus: false,
+              keybindCapable: true,
+              dangerous: false,
+            }
+          : undefined);
 
-      if (match.commandId === "workspace.open_settings") {
-        useShellStore.getState().setMainSurface({ kind: "settings" });
-        return;
-      }
-
-      // For other commands, find the definition and dispatch
-      const command = commands?.find((cmd) => cmd.id === match!.commandId);
       if (!command) {
         logger.warn(`[RIM] Keybind matched but command not found: ${match.commandId}`);
         return;
       }
 
-      dispatchCommand(command, (input) => executeCommandMutation.mutateAsync(input), {
+      dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
         args: match.presetArgs as Record<string, unknown> | undefined,
         commandContext: {
           workspaceId: workspaceId ?? undefined,
         },
       });
     },
-    [keybinds, commands, focusedSurface, workspaceId, executeCommandMutation, toggleCommandPalette]
+    [keybinds, commands, focusedSurface, workspaceId]
   );
 
   useEffect(() => {

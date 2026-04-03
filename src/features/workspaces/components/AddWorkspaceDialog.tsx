@@ -78,7 +78,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={goBack}
-            className="flex items-center gap-1 rounded p-1 text-xs text-rim-text-muted transition hover:text-white"
+            className="flex items-center gap-1 rounded p-1 text-xs text-rim-text-muted transition hover:text-rim-text"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
@@ -94,7 +94,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
             onClick={() => setStep("create")}
             className="w-full rounded-lg border border-rim-line bg-rim-void p-4 text-left transition hover:border-rim-accent/40 hover:bg-rim-void/80"
           >
-            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-white">
+            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-rim-text">
               <Building2 className="h-4 w-4 text-rim-text-muted" />
               Create New
             </div>
@@ -106,7 +106,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
             onClick={() => setStep("join")}
             className="w-full rounded-lg border border-rim-line bg-rim-void p-4 text-left transition hover:border-rim-accent/40 hover:bg-rim-void/80"
           >
-            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-white">
+            <div className="mb-1 flex items-center gap-2 text-sm font-medium text-rim-text">
               <Link className="h-4 w-4 text-rim-text-muted" />
               Join Existing
             </div>
@@ -128,12 +128,12 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setName(e.currentTarget.value)}
               placeholder="My Workspace"
               autoFocus
-              className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+              className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
             />
           </label>
 
           {create.error && (
-            <p className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+            <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
               {formatError(create.error)}
             </p>
           )}
@@ -163,12 +163,12 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setInviteCode(e.currentTarget.value)}
               placeholder="rim_inv_..."
               autoFocus
-              className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+              className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
             />
           </label>
 
           {join.error && (
-            <p className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+            <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
               {formatError(join.error)}
             </p>
           )}

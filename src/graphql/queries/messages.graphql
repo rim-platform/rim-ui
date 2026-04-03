@@ -13,6 +13,12 @@ query Messages($serverId: ID!, $conversationId: ID!, $dir: PageDir!, $limit: Int
       threadId
       rootThreadId
       authorId
+      author {
+        id
+        username
+        displayName
+        avatarUrl
+      }
       text
       hasAttachments
       parentMessageId

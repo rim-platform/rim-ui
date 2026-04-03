@@ -165,7 +165,7 @@ export function UserCommandSettings() {
                     </button>
                     <button
                       onClick={() => removeStep(index)}
-                      className="p-0.5 text-rim-text-muted hover:text-red-400"
+                      className="p-0.5 text-rim-text-muted hover:text-rim-danger"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -202,7 +202,7 @@ export function UserCommandSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-red-400">
+            <p className="text-[11px] text-rim-danger">
               {(createMutation.error as Error).message}
             </p>
           )}
@@ -229,7 +229,7 @@ export function UserCommandSettings() {
             </div>
             <button
               onClick={() => handleDelete(cmd.id)}
-              className="shrink-0 text-rim-text-muted hover:text-red-400"
+              className="shrink-0 text-rim-text-muted hover:text-rim-danger"
               title="Delete"
             >
               <Trash2 className="h-3.5 w-3.5" />

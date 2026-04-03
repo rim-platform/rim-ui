@@ -16,7 +16,7 @@ export function AuthGate() {
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
         <header className="text-center">
-          <h1 className="text-2xl font-semibold text-white">RIM</h1>
+          <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
           <p className="mt-1 text-sm text-rim-text-muted">Sign in to your workspace</p>
         </header>
 
@@ -43,7 +43,7 @@ function ModeTab({ active, label, onClick }: { active: boolean; label: string; o
       onClick={onClick}
       className={cn(
         "rounded-lg px-3 py-1.5 text-sm font-medium transition",
-        active ? "bg-rim-accent/15 text-rim-accent" : "text-rim-text-muted hover:text-white",
+        active ? "bg-rim-accent/15 text-rim-accent" : "text-rim-text-muted hover:text-rim-text",
       )}
     >
       {label}
@@ -53,7 +53,7 @@ function ModeTab({ active, label, onClick }: { active: boolean; label: string; o
 
 function HealthIndicator() {
   const { isSuccess, isError } = useHealthCheck();
-  const color = isSuccess ? "bg-emerald-400" : isError ? "bg-red-400" : "bg-amber-400";
+  const color = isSuccess ? "bg-rim-success" : isError ? "bg-rim-danger" : "bg-rim-warm";
   const label = isSuccess ? "Backend reachable" : isError ? "Backend unreachable" : "Connecting...";
 
   return (
@@ -90,7 +90,7 @@ function LoginForm() {
       <MutationError error={login.error} />
       <button
         type="submit"
-        disabled={login.isPending}
+        disabled={login.isPending || !username.trim() || !password.trim()}
         className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
       >
         {login.isPending ? "Signing in..." : "Log in"}
@@ -130,7 +130,7 @@ function BootstrapForm() {
       <MutationError error={bootstrap.error} />
       <button
         type="submit"
-        disabled={bootstrap.isPending}
+        disabled={bootstrap.isPending || !secret.trim() || !username.trim() || !password.trim() || !serverName.trim()}
         className="w-full rounded-lg bg-rim-warm px-4 py-2.5 text-sm font-medium text-rim-void transition hover:brightness-110 disabled:opacity-50"
       >
         {bootstrap.isPending ? "Bootstrapping..." : "Bootstrap instance"}
@@ -160,7 +160,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+        className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
       />
     </label>
   );
@@ -171,7 +171,7 @@ function MutationError({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : "Unknown error";
 
   return (
-    <p className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+    <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
       {msg}
     </p>
   );

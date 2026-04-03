@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
   query ThreadByRootMessage($serverId: ID!, $conversationId: ID!, $rootMessageId: ID!) {
@@ -30,23 +31,7 @@ const THREAD_MESSAGES_QUERY = gql`
       includeDeleted: $includeDeleted
     ) {
       items {
-        id
-        serverId
-        conversationId
-        threadId
-        rootThreadId
-        authorId
-        text
-        hasAttachments
-        parentMessageId
-        isDeleted
-        sentAt
-        reactions {
-          emoji
-          count
-          reactedByMe
-          userIds
-        }
+        ...MessageWithReactions
       }
       pageInfo {
         hasNext
@@ -54,6 +39,7 @@ const THREAD_MESSAGES_QUERY = gql`
       }
     }
   }
+  ${MESSAGE_WITH_REACTIONS}
 `;
 
 interface ThreadDetail {
@@ -74,6 +60,13 @@ interface ThreadMessageReaction {
   userIds: string[];
 }
 
+interface ThreadMessageAuthor {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
 interface ThreadMessageItem {
   id: string;
   serverId: string;
@@ -81,6 +74,7 @@ interface ThreadMessageItem {
   threadId: string | null;
   rootThreadId: string | null;
   authorId: string;
+  author: ThreadMessageAuthor | null;
   text: string;
   hasAttachments: boolean;
   parentMessageId: string | null;

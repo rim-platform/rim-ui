@@ -1,7 +1,52 @@
+import { invoke } from "@tauri-apps/api/core";
+
 import type { CommandDefinition, CommandResult } from "../types";
 import { logger } from "../../../core/logger";
 import { useCommandStore } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useAgentStore } from "../../agent/state/useAgentStore";
+import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
+import { graphqlClient } from "../../../core/graphql/client";
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
+
+interface ConversationItem {
+  id: string;
+  serverId: string;
+  conversationType: string;
+  title: string;
+  memberIds: string[];
+}
+
+interface ConversationPage {
+  items: ConversationItem[];
+  pageInfo: { hasNext: boolean; hasPrev: boolean };
+}
+
+/**
+ * Read the ordered list of conversations from the TanStack Query cache.
+ * Channels first, then inbox (DMs/groups) — same order as ConversationList.
+ */
+function getCachedConversationIds(): string[] {
+  const workspaceId = useWorkspaceStore.getState().workspaceId;
+  const channels = queryClient.getQueryData<ConversationPage>(queryKeys.channels(workspaceId ?? undefined));
+  const inbox = queryClient.getQueryData<ConversationPage>(queryKeys.conversations(workspaceId ?? undefined));
+  return [...(channels?.items ?? []), ...(inbox?.items ?? [])].map((c) => c.id);
+}
+
+/**
+ * Read unread conversation IDs from the unread store.
+ * Returns only conversations that have a non-zero unread count,
+ * in the same order as the conversation list.
+ */
+function getCachedUnreadConversationIds(): string[] {
+  const counts = useUnreadStore.getState().counts;
+  return getCachedConversationIds().filter((id) => (counts[id] ?? 0) > 0);
+}
 
 type ExecuteBackendCommand = (input: {
   commandId: string;
@@ -11,24 +56,123 @@ type ExecuteBackendCommand = (input: {
 }) => Promise<{ executeCommand: CommandResult }>;
 
 // Registry of desktop-local command handlers
-const localHandlers: Record<string, () => void> = {
+const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = {
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
   "workspace.open_settings": () => {
     useShellStore.getState().setMainSurface({ kind: "settings" });
   },
+  "workspace.open_search": () => {
+    useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+  },
+  "workspace.search_in_channel": () => {
+    const convId = useShellStore.getState().selectedConversationId;
+    if (convId) {
+      useSearchOverlayStore.getState().openWithScope({ kind: "conversation", conversationId: convId });
+    } else {
+      useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+    }
+  },
+  "workspace.open_marketplace": () => {
+    useShellStore.getState().setMainSurface({ kind: "marketplace" });
+  },
+  "workspace.toggle_sidebar": () => {
+    useShellStore.getState().toggleSidebar();
+  },
+  "workspace.focus_composer": () => {
+    document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
+  },
+  "workspace.focus_message_list": () => {
+    document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
+  },
+  "workspace.navigate_to_channel": (args) => {
+    if (args?.conversationId) {
+      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
+    } else {
+      // No specific channel — open command palette so the user can pick one
+      useCommandStore.getState().openCommandPalette();
+    }
+  },
+  "workspace.navigate_to_dm": (args) => {
+    if (args?.conversationId) {
+      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
+    }
+  },
+  "workspace.switch_workspace": (args) => {
+    if (args?.workspaceId) {
+      useWorkspaceStore.getState().setWorkspaceId(args.workspaceId as string);
+    }
+  },
+  "workspace.previous_channel": () => {
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const prev = idx > 0 ? ids[idx - 1] : ids[ids.length - 1];
+    useShellStore.getState().setSelectedConversationId(prev);
+  },
+  "workspace.next_channel": () => {
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
+    useShellStore.getState().setSelectedConversationId(next);
+  },
+  "workspace.next_unread_channel": () => {
+    const unread = getCachedUnreadConversationIds();
+    if (unread.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const allIds = getCachedConversationIds();
+    const currentIdx = current ? allIds.indexOf(current) : -1;
+    // Find the first unread channel after the current position
+    const after = unread.find((id) => allIds.indexOf(id) > currentIdx);
+    useShellStore.getState().setSelectedConversationId(after ?? unread[0]);
+  },
+  "workspace.open_agent": () => {
+    useAgentStore.getState().open();
+  },
+  "workspace.close_panel": () => {
+    const shell = useShellStore.getState();
+    if (shell.isThreadOpen) {
+      shell.closeThread();
+    } else if (shell.mainSurface.kind !== "conversation") {
+      shell.setMainSurface({ kind: "conversation" });
+    }
+  },
+  "workspace.reopen_last_thread": () => {
+    const lastThread = useShellStore.getState().lastClosedThreadId;
+    if (lastThread) useShellStore.getState().openThreadForMessage(lastThread);
+  },
   "workspace.cycle_recent_activity": () => {
-    // TODO: implement recent activity cycling in shell store
-    logger.debug("[RIM] cycle_recent_activity: not yet implemented");
+    // Cycle to the next conversation in the list (wrapping), same as next_channel.
+    // A dedicated recent-activity stack can be added later when the backend tracks it.
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
+    useShellStore.getState().setSelectedConversationId(next);
+  },
+  "chat.scroll_to_bottom": () => {
+    document.querySelector("[data-message-list]")?.scrollTo({ top: 999999, behavior: "smooth" });
+  },
+  "chat.scroll_to_top": () => {
+    document.querySelector("[data-message-list]")?.scrollTo({ top: 0, behavior: "smooth" });
   },
   "chat.copy_message_text": () => {
-    // Handled at context menu level — this is a no-op fallback
     logger.debug("[RIM] copy_message_text: handled at context menu level");
   },
   "chat.open_thread": () => {
-    // Handled at context menu level — this is a no-op fallback
     logger.debug("[RIM] open_thread: handled at context menu level");
+  },
+  "chat.mark_all_as_read": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    if (workspaceId) {
+      useUnreadStore.getState().markAllRead();
+      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } });
+    }
   },
 };
 
@@ -42,9 +186,15 @@ export async function dispatchCommand(
   }
 ): Promise<CommandResult | null> {
   if (command.executionTarget === "DesktopLocal") {
+    // Check if this is a plugin command
+    const pluginCmd = parsePluginCommandId(command.id);
+    if (pluginCmd) {
+      return dispatchPluginCommand(pluginCmd.pluginId, pluginCmd.command, context?.args);
+    }
+
     const handler = localHandlers[command.id];
     if (handler) {
-      handler();
+      handler(context?.args);
       return { status: "Success", message: "Executed locally", payload: null, followUpCommands: [] };
     }
     logger.warn(`[RIM] No local handler for command: ${command.id}`);
@@ -60,4 +210,32 @@ export async function dispatchCommand(
   });
 
   return result.executeCommand;
+}
+
+async function dispatchPluginCommand(
+  pluginId: string,
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<CommandResult> {
+  try {
+    const result = await invoke<{ status: string; payload: unknown }>(
+      "plugin_execute_command",
+      { ...{ pluginId, command, args: args ?? {} } },
+    );
+    return {
+      status: result.status === "ok" ? "Success" : "Error",
+      message: result.status === "ok" ? "Plugin command executed" : "Plugin command failed",
+      payload: result.payload,
+      followUpCommands: [],
+    };
+  } catch {
+    // Wire protocol not yet available — surface as error so callers don't assume success
+    logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`);
+    return {
+      status: "Error",
+      message: `Plugin command ${pluginId}.${command} failed: wire protocol not available`,
+      payload: null,
+      followUpCommands: [],
+    };
+  }
 }

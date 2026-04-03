@@ -1,0 +1,91 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PluginStatus {
+    Installed,
+    Enabled,
+    Disabled,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginRecord {
+    pub plugin_id: String,
+    pub status: PluginStatus,
+    pub approved_capabilities: Vec<String>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PluginStateStore {
+    pub plugins: HashMap<String, PluginRecord>,
+}
+
+impl PluginStateStore {
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, json)
+    }
+
+    pub fn get(&self, plugin_id: &str) -> Option<&PluginRecord> {
+        self.plugins.get(plugin_id)
+    }
+
+    pub fn upsert(&mut self, record: PluginRecord) {
+        self.plugins.insert(record.plugin_id.clone(), record);
+    }
+
+    pub fn remove(&mut self, plugin_id: &str) -> Option<PluginRecord> {
+        self.plugins.remove(plugin_id)
+    }
+}
+
+pub fn state_file_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("plugin_state.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn roundtrip() {
+        let mut store = PluginStateStore::default();
+        store.upsert(PluginRecord {
+            plugin_id: "dev.example.test".into(),
+            status: PluginStatus::Enabled,
+            approved_capabilities: vec!["local.process".into()],
+            last_error: None,
+        });
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        store.save(&path).unwrap();
+
+        let loaded = PluginStateStore::load(&path);
+        assert_eq!(loaded.plugins.len(), 1);
+        let rec = loaded.get("dev.example.test").unwrap();
+        assert_eq!(rec.status, PluginStatus::Enabled);
+        assert_eq!(rec.approved_capabilities, vec!["local.process"]);
+    }
+
+    #[test]
+    fn load_missing_file_returns_default() {
+        let store = PluginStateStore::load(Path::new("/tmp/nonexistent_plugin_state.json"));
+        assert!(store.plugins.is_empty());
+    }
+}

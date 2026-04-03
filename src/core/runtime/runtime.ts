@@ -1,5 +1,7 @@
 export type AppPlatform = "desktop" | "web" | "mobile";
 
+export type OsType = "macos" | "windows" | "linux" | "unknown";
+
 export type RuntimeCapabilities = {
   multiPaneShell: boolean;
   dockedThreadPane: boolean;
@@ -9,12 +11,21 @@ export type RuntimeCapabilities = {
   localProcess: boolean;
   filesystemAccess: boolean;
   nativeNotifications: boolean;
+  customTitleBar: boolean;
 };
 
 export function detectPlatform(): AppPlatform {
   if ("__TAURI_INTERNALS__" in window) return "desktop";
   if (/Mobi|Android/i.test(navigator.userAgent)) return "mobile";
   return "web";
+}
+
+export function detectOs(): OsType {
+  const ua = navigator.userAgent;
+  if (ua.includes("Macintosh") || ua.includes("Mac OS")) return "macos";
+  if (ua.includes("Windows")) return "windows";
+  if (ua.includes("Linux")) return "linux";
+  return "unknown";
 }
 
 export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabilities {
@@ -28,19 +39,21 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       localProcess: true,
       filesystemAccess: true,
       nativeNotifications: true,
+      customTitleBar: true,
     };
   }
 
   if (platform === "web") {
     return {
       multiPaneShell: true,
-      dockedThreadPane: false,
+      dockedThreadPane: true,
       pluginHost: false,
       deviceLocalKeybinds: true,
       globalShortcuts: false,
       localProcess: false,
       filesystemAccess: false,
       nativeNotifications: false,
+      customTitleBar: false,
     };
   }
 
@@ -53,5 +66,6 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
     localProcess: false,
     filesystemAccess: false,
     nativeNotifications: false,
+    customTitleBar: false,
   };
 }

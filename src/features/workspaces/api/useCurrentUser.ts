@@ -12,6 +12,7 @@ const ME_QUERY = gql`
       displayName
       avatarUrl
       statusText
+      bio
     }
   }
 `;
@@ -22,6 +23,7 @@ interface User {
   displayName: string;
   avatarUrl: string | null;
   statusText: string | null;
+  bio: string | null;
 }
 
 interface MeResponse {

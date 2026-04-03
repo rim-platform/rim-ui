@@ -36,12 +36,12 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
             onChange={(e) => setName(e.currentTarget.value)}
             placeholder="My Workspace"
             autoFocus
-            className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+            className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
           />
         </label>
 
         {create.error && (
-          <p className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+          <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
             {create.error instanceof Error ? create.error.message : "Failed to create workspace"}
           </p>
         )}

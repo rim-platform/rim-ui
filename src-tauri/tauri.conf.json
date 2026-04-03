@@ -14,11 +14,12 @@
       {
         "title": "rim-ui",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "decorations": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.anthropic.com https://api.openai.com ws://localhost:* wss://localhost:* http://localhost:*; worker-src 'self' blob:"
     }
   },
   "bundle": {

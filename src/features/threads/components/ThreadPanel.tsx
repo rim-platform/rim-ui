@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Send, X } from "lucide-react";
 
 import {
@@ -9,10 +9,11 @@ import { useReplyToMessageMutation } from "../api/useReplyToMessage";
 import { useConversationMessages } from "../../messages/api/useMessages";
 import { useToggleReactionMutation } from "../../messages/api/useToggleReaction";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import { replaceShortcodes } from "../../messages/utils/emojiShortcodes";
 import { MessageItem } from "../../messages/components/MessageItem";
+import { logger } from "../../../core/logger";
 
 export function ThreadPanel() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -20,22 +21,34 @@ export function ThreadPanel() {
   const rootMessageId = useShellStore((s) => s.selectedRootMessageId);
   const closeThread = useShellStore((s) => s.closeThread);
   const openThread = useShellStore((s) => s.openThreadForMessage);
+  const highlightedMessageId = useShellStore((s) => s.highlightedMessageId);
+  const setHighlightedMessageId = useShellStore((s) => s.setHighlightedMessageId);
 
-  const { data: thread } = useThreadByRootMessage(
+  const threadByRoot = useThreadByRootMessage(
     workspaceId ?? undefined,
     conversationId ?? undefined,
     rootMessageId ?? undefined,
   );
+  const thread = threadByRoot.data;
 
   const threadId = thread?.id;
 
-  const { data: threadMessages } = useThreadMessages(
+  const threadMsgs = useThreadMessages(
     workspaceId ?? undefined,
     conversationId ?? undefined,
     threadId ?? undefined,
   );
+  const threadMessages = threadMsgs.data;
 
-  const { resolve } = useMemberLookup(workspaceId ?? undefined);
+  // Debug: trace the entire data chain
+  logger.debug("[ThreadPanel] rootMessageId:", rootMessageId);
+  logger.debug("[ThreadPanel] threadByRoot:", thread, "status:", threadByRoot.status, "error:", threadByRoot.error);
+  logger.debug("[ThreadPanel] threadId:", threadId);
+  logger.debug("[ThreadPanel] threadMessages enabled:", Boolean(workspaceId && conversationId && threadId));
+  logger.debug("[ThreadPanel] threadMessages data:", threadMessages, "status:", threadMsgs.status, "error:", threadMsgs.error);
+  logger.debug("[ThreadPanel] threadMessages items:", threadMessages?.items?.length);
+
+  const currentUserId = useAuthStore((s) => s.session?.userId);
   const toggleReaction = useToggleReactionMutation();
 
   // Get the root message from the conversation messages cache
@@ -44,25 +57,86 @@ export function ThreadPanel() {
     conversationId ?? undefined,
   );
 
+  // Try to find root message in conversation cache; fall back to thread metadata
   const rootMessage = useMemo(() => {
-    if (!conversationData?.pages || !rootMessageId) return null;
-    for (const page of conversationData.pages) {
-      const found = page.items.find((m) => m.id === rootMessageId);
-      if (found) return found;
-    }
-    return null;
-  }, [conversationData?.pages, rootMessageId]);
+    if (!rootMessageId) return null;
 
-  const items = threadMessages?.items ?? [];
+    // First: try conversation messages cache
+    if (conversationData?.pages) {
+      for (const page of conversationData.pages) {
+        const found = page.items.find((m) => m.id === rootMessageId);
+        if (found) return found;
+      }
+    }
+
+    // Fallback: synthesize from thread metadata (when root message scrolled out of cache)
+    if (thread) {
+      return {
+        id: rootMessageId,
+        serverId: thread.serverId,
+        conversationId: thread.conversationId,
+        threadId: null,
+        rootThreadId: thread.id,
+        authorId: thread.rootAuthorId,
+        author: null,
+        text: thread.rootText ?? "",
+        hasAttachments: false,
+        parentMessageId: null,
+        isDeleted: false,
+        sentAt: thread.createdAt,
+        reactions: [],
+        attachments: [],
+      };
+    }
+
+    return null;
+  }, [conversationData?.pages, rootMessageId, thread]);
+
+  // Backend returns thread messages in display order (oldest-first); no reverse needed.
+  const items = useMemo(() => {
+    return threadMessages?.items ?? [];
+  }, [threadMessages?.items]);
   const replyCount = items.length;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
 
-  // Auto-scroll to bottom when new replies arrive
+  // Track whether user is scrolled to bottom
+  const handleScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const threshold = 50;
+    isAtBottomRef.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
+
+  // Auto-scroll to bottom when new replies arrive, only if already at bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [items.length]);
+
+  // Scroll to highlighted message (from search) and clear after a brief highlight.
+  // Uses a 300ms delay to wait for thread messages to render (async query).
+  useEffect(() => {
+    if (!highlightedMessageId || !scrollRef.current) return;
+
+    const timer = setTimeout(() => {
+      const el = scrollRef.current?.querySelector(
+        `[data-message-id="${highlightedMessageId}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("bg-rim-accent/10");
+        setTimeout(() => el.classList.remove("bg-rim-accent/10"), 1500);
+      }
+      setHighlightedMessageId(null);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [highlightedMessageId, setHighlightedMessageId, items]);
 
   function handleToggleReaction(messageId: string, emoji: string) {
     if (!workspaceId || !conversationId) return;
@@ -91,11 +165,11 @@ export function ThreadPanel() {
     <div className="flex h-full flex-col rounded-xl border border-rim-line bg-rim-panel">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
-        <h3 className="text-sm font-medium text-white">{headerText}</h3>
+        <h3 className="text-sm font-medium text-rim-text">{headerText}</h3>
         <button
           type="button"
           onClick={closeThread}
-          className="rounded p-1 text-rim-text-muted transition hover:text-white"
+          className="rounded p-1 text-rim-text-muted transition hover:text-rim-text"
           aria-label="Close thread"
         >
           <X className="h-4 w-4" />
@@ -103,25 +177,29 @@ export function ThreadPanel() {
       </div>
 
       {/* Root message */}
-      {rootMessage && (
-        <div className="border-b border-rim-line px-4 py-3">
-          <MessageItem
-            message={rootMessage}
-            authorName={resolve(rootMessage.authorId).displayName}
-            authorInitial={resolve(rootMessage.authorId).displayName.charAt(0).toUpperCase()}
-            isCurrentUser={resolve(rootMessage.authorId).isCurrentUser}
-            reactions={rootMessage.reactions}
-            onOpenThread={openThread}
-            onToggleReaction={handleToggleReaction}
-            onContextMenu={handleContextMenu}
-            resolveMember={resolve}
-          />
-        </div>
-      )}
+      {rootMessage && (() => {
+        const name = rootMessage.author?.displayName || rootMessage.author?.username || rootMessage.authorId.slice(0, 8);
+        return (
+          <div className="border-b border-rim-line px-4 py-3">
+            <MessageItem
+              message={rootMessage}
+              authorName={name}
+              authorInitial={name.charAt(0).toUpperCase()}
+              authorAvatarUrl={rootMessage.author?.avatarUrl}
+              isCurrentUser={rootMessage.author?.id === currentUserId}
+              reactions={rootMessage.reactions}
+              onOpenThread={openThread}
+              onToggleReaction={handleToggleReaction}
+              onContextMenu={handleContextMenu}
+            />
+          </div>
+        );
+      })()}
 
       {/* Thread replies — scrollable area */}
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="flex-1 space-y-0.5 overflow-y-auto px-4 py-3"
       >
         {items.length === 0 ? (
@@ -130,19 +208,19 @@ export function ThreadPanel() {
           </p>
         ) : (
           items.map((msg) => {
-            const member = resolve(msg.authorId);
+            const name = msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
             return (
               <MessageItem
                 key={msg.id}
                 message={msg}
-                authorName={member.displayName}
-                authorInitial={member.displayName.charAt(0).toUpperCase()}
-                isCurrentUser={member.isCurrentUser}
+                authorName={name}
+                authorInitial={name.charAt(0).toUpperCase()}
+                authorAvatarUrl={msg.author?.avatarUrl}
+                isCurrentUser={msg.author?.id === currentUserId}
                 reactions={msg.reactions}
                 onOpenThread={openThread}
                 onToggleReaction={handleToggleReaction}
                 onContextMenu={handleContextMenu}
-                resolveMember={resolve}
               />
             );
           })
@@ -151,11 +229,13 @@ export function ThreadPanel() {
       </div>
 
       {/* Composer — always visible */}
-      <ThreadComposer
-        workspaceId={workspaceId!}
-        conversationId={conversationId!}
-        rootMessageId={rootMessageId}
-      />
+      {workspaceId && conversationId && (
+        <ThreadComposer
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          rootMessageId={rootMessageId}
+        />
+      )}
     </div>
   );
 }
@@ -228,7 +308,7 @@ function ThreadComposer({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder="Reply in thread..."
-        className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-white outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+        className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
         style={{ height: "auto" }}
       />
       <button

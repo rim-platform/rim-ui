@@ -7,6 +7,7 @@ type MemberInfo = {
   displayName: string;
   role?: string;
   isCurrentUser: boolean;
+  avatarUrl?: string | null;
 };
 
 export function useMemberLookup(serverId?: string) {
@@ -18,8 +19,9 @@ export function useMemberLookup(serverId?: string) {
 
     if (me) {
       map.set(me.id, {
-        displayName: me.displayName ?? me.username,
+        displayName: me.displayName || me.username,
         isCurrentUser: true,
+        avatarUrl: me.avatarUrl,
       });
     }
 
@@ -30,10 +32,14 @@ export function useMemberLookup(serverId?: string) {
             displayName: member.username ?? member.userId.slice(0, 8),
             role: member.memberRole,
             isCurrentUser: false,
+            avatarUrl: member.avatarUrl,
           });
         } else {
           const existing = map.get(member.userId)!;
           existing.role = member.memberRole;
+          if (member.avatarUrl) {
+            existing.avatarUrl = member.avatarUrl;
+          }
         }
       }
     }

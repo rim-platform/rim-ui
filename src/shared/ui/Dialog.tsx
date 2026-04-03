@@ -94,14 +94,14 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
         >
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
-            <h3 id={titleId} className="text-sm font-medium text-white">
+            <h3 id={titleId} className="text-sm font-medium text-rim-text">
               {title}
             </h3>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded p-1 text-rim-text-muted transition hover:text-white"
+              className="rounded p-1 text-rim-text-muted transition hover:text-rim-text"
             >
               <X className="h-4 w-4" />
             </button>

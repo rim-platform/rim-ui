@@ -3,16 +3,13 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 
 const ChannelsDocument = gql`
   query Channels($serverId: ID!, $dir: PageDir!, $limit: Int!) {
     channels(serverId: $serverId, dir: $dir, limit: $limit) {
       items {
-        id
-        serverId
-        conversationType
-        title
-        memberIds
+        ...ConversationFields
       }
       pageInfo {
         hasNext
@@ -20,6 +17,7 @@ const ChannelsDocument = gql`
       }
     }
   }
+  ${CONVERSATION_FIELDS}
 `;
 
 export function useChannels(workspaceId?: string) {

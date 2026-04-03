@@ -3,17 +3,15 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 
 const CREATE_CONVERSATION_MUTATION = gql`
   mutation CreateConversation($input: CreateConversationInput!) {
     createConversation(input: $input) {
-      id
-      title
-      conversationType
-      memberIds
-      serverId
+      ...ConversationFields
     }
   }
+  ${CONVERSATION_FIELDS}
 `;
 
 interface CreateConversationInput {

@@ -4,32 +4,40 @@ import { X } from "lucide-react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { UserCommandSettings } from "../../commands/components/UserCommandSettings";
+import { PluginSettingsPage } from "../../plugins/components/PluginSettingsPage";
+import { AgentSettingsPanel } from "../../agent/settings/AgentSettingsPanel";
+import { NotificationSettings } from "../../notifications/components/NotificationSettings";
+import { ProfileSettings } from "./ProfileSettings";
 import { cn } from "../../../shared/ui/cn";
 
-type SettingsTab = "keybinds" | "commands" | "account" | "about";
+type SettingsTab = "profile" | "keybinds" | "commands" | "plugins" | "agent" | "notifications" | "account" | "about";
 
 const tabs: { key: SettingsTab; label: string }[] = [
+  { key: "profile", label: "Profile" },
   { key: "keybinds", label: "Keybinds" },
   { key: "commands", label: "Commands" },
+  { key: "plugins", label: "Plugins" },
+  { key: "agent", label: "AI Agent" },
+  { key: "notifications", label: "Notifications" },
   { key: "account", label: "Account" },
   { key: "about", label: "About" },
 ];
 
 export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("keybinds");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-rim-line px-8 py-4">
-        <h1 className="text-lg font-semibold text-white">Settings</h1>
+      <div className="flex h-10 items-center justify-between border-b border-rim-line px-8">
+        <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
         <button
           type="button"
           onClick={() => setMainSurface({ kind: "conversation" })}
           title="Close settings"
           aria-label="Close settings"
-          className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-white"
+          className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
         >
           <X className="h-5 w-5" />
         </button>
@@ -57,8 +65,12 @@ export function SettingsPage() {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-8 py-6">
+          {activeTab === "profile" && <ProfileSettings />}
           {activeTab === "keybinds" && <KeybindSettings />}
           {activeTab === "commands" && <UserCommandSettings />}
+          {activeTab === "plugins" && <PluginSettingsPage />}
+          {activeTab === "agent" && <AgentSettingsPanel />}
+          {activeTab === "notifications" && <NotificationSettings />}
           {activeTab === "account" && (
             <p className="text-sm text-rim-text-muted">Account settings coming soon.</p>
           )}

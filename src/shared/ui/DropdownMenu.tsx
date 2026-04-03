@@ -125,11 +125,11 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
               "flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors",
               item.danger
                 ? focusedIndex === index
-                  ? "bg-red-400/10 text-red-400"
-                  : "text-red-400 hover:bg-red-400/10"
+                  ? "bg-rim-danger/10 text-rim-danger"
+                  : "text-rim-danger hover:bg-rim-danger/10"
                 : focusedIndex === index
                   ? "bg-rim-accent/10 text-rim-text"
-                  : "text-rim-text hover:bg-white/[0.05]",
+                  : "text-rim-text hover:bg-white/5",
             )}
             onMouseEnter={() => setFocusedIndex(index)}
             onClick={() => item.onSelect()}

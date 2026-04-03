@@ -14,6 +14,12 @@ query ThreadMessages($serverId: ID!, $conversationId: ID!, $threadId: ID!, $dir:
       threadId
       rootThreadId
       authorId
+      author {
+        id
+        username
+        displayName
+        avatarUrl
+      }
       text
       hasAttachments
       parentMessageId

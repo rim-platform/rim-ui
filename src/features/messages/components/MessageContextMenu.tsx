@@ -1,25 +1,16 @@
-import { useCallback, useMemo } from "react";
-import { Terminal, Plug, User, Zap } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 
+import { Dialog } from "../../../shared/ui/Dialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { toast } from "../../../shared/toast";
+import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import type { CommandDefinition, CommandSourceKind } from "../../commands/types";
-
-function sourceIcon(source: CommandSourceKind) {
-  switch (source) {
-    case "BuiltIn":
-      return <Terminal className="h-3.5 w-3.5 text-rim-text-muted" />;
-    case "Plugin":
-      return <Plug className="h-3.5 w-3.5 text-rim-accent" />;
-    case "User":
-      return <User className="h-3.5 w-3.5 text-rim-text-muted" />;
-    case "Integration":
-      return <Zap className="h-3.5 w-3.5 text-rim-text-muted" />;
-  }
-}
+import { queryKeys } from "../../../core/query/keys";
+import type { MessagesPage } from "../api/useMessages";
 
 interface MessageContextMenuProps {
   x: number;
@@ -28,6 +19,8 @@ interface MessageContextMenuProps {
   messageText: string;
   conversationId: string;
   workspaceId: string;
+  isOwnMessage: boolean;
+  hasThread: boolean;
   onClose: () => void;
 }
 
@@ -38,67 +31,155 @@ export function MessageContextMenu({
   messageText,
   conversationId,
   workspaceId,
+  isOwnMessage,
+  hasThread,
   onClose,
 }: MessageContextMenuProps) {
-  const { data: commands } = useCommands("ContextMenu");
   const executeCommandMutation = useExecuteCommandMutation();
+  const pluginContextMenuCommands = usePluginContextMenuCommands("message");
+  const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState(false);
 
-  const contextMenuCommands = useMemo(
-    () => (commands ?? []).filter((cmd) => cmd.visibleInContextMenus),
-    [commands],
-  );
+  const handleDelete = useCallback(async () => {
+    setPendingDelete(false);
 
-  const handleCommandClick = useCallback(
-    async (command: CommandDefinition) => {
-      // Handle local commands with context directly
-      if (command.executionTarget === "DesktopLocal") {
-        if (command.id === "chat.copy_message_text") {
-          await navigator.clipboard.writeText(messageText);
+    // Optimistic update: mark message as deleted in cache immediately
+    const messagesKey = queryKeys.messages(workspaceId, conversationId);
+    const previousData = qc.getQueryData<InfiniteData<MessagesPage>>(messagesKey);
+    qc.setQueryData<InfiniteData<MessagesPage>>(messagesKey, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          items: page.items.map((m) =>
+            m.id === messageId ? { ...m, isDeleted: true, text: "" } : m,
+          ),
+        })),
+      };
+    });
+
+    onClose();
+    try {
+      await executeCommandMutation.mutateAsync({
+        commandId: "chat.delete_message",
+        commandContext: {
+          workspaceId,
+          conversationId,
+          selectedMessageId: messageId,
+        },
+        confirmedDangerous: true,
+      });
+    } catch {
+      // Revert optimistic update on failure
+      if (previousData) {
+        qc.setQueryData(messagesKey, previousData);
+      }
+      toast.error("Failed to delete message", {
+        description: "The message has been restored.",
+      });
+    }
+  }, [messageId, conversationId, workspaceId, executeCommandMutation, onClose, qc]);
+
+  const items: DropdownMenuItem[] = useMemo(() => {
+    const result: DropdownMenuItem[] = [
+      {
+        id: "copy-text",
+        label: "Copy Text",
+        onSelect: () => {
+          navigator.clipboard.writeText(messageText);
+          toast.success("Copied to clipboard");
           onClose();
-          return;
-        }
-        if (command.id === "chat.open_thread") {
+        },
+      },
+    ];
+
+    if (!hasThread) {
+      result.push({
+        id: "open-thread",
+        label: "Open Thread",
+        onSelect: () => {
           useShellStore.getState().openThreadForMessage(messageId);
           onClose();
-          return;
-        }
-      }
-
-      // Dispatch via generic dispatcher (backend or other local commands)
-      onClose();
-      await dispatchCommand(
-        command,
-        (input) => executeCommandMutation.mutateAsync(input),
-        {
-          commandContext: {
-            workspaceId,
-            conversationId,
-            selectedMessageId: messageId,
-          },
-          confirmedDangerous: command.dangerous ? true : undefined,
         },
-      );
-    },
-    [messageId, messageText, conversationId, workspaceId, executeCommandMutation, onClose],
-  );
+      });
+    }
 
-  const items: DropdownMenuItem[] = useMemo(
-    () =>
-      contextMenuCommands.map((cmd) => ({
+    if (isOwnMessage) {
+      result.push({
+        id: "edit-message",
+        label: "Edit Message",
+        onSelect: () => {
+          useShellStore.getState().setEditingMessageId(messageId);
+          onClose();
+        },
+      });
+
+      result.push({
+        id: "delete-message",
+        label: "Delete Message",
+        danger: true,
+        onSelect: () => setPendingDelete(true),
+      });
+    }
+
+    // Plugin context menu actions
+    for (const cmd of pluginContextMenuCommands) {
+      result.push({
         id: cmd.id,
         label: cmd.title,
-        icon: sourceIcon(cmd.sourceKind),
-        danger: cmd.dangerous,
-        onSelect: () => handleCommandClick(cmd),
-      })),
-    [contextMenuCommands, handleCommandClick],
-  );
+        onSelect: () => {
+          onClose();
+          dispatchCommand(cmd, (input) => executeCommandMutation.mutateAsync(input), {
+            commandContext: { workspaceId, conversationId, selectedMessageId: messageId },
+          });
+        },
+      });
+    }
+
+    return result;
+  }, [messageId, messageText, isOwnMessage, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, workspaceId, conversationId]);
 
   return (
-    <DropdownMenu
-      items={items}
-      position={{ x, y }}
-      onClose={onClose}
-    />
+    <>
+      {!pendingDelete && (
+        <DropdownMenu
+          items={items}
+          position={{ x, y }}
+          onClose={onClose}
+        />
+      )}
+      <Dialog
+        open={pendingDelete}
+        onClose={() => {
+          setPendingDelete(false);
+          onClose();
+        }}
+        title="Delete Message"
+      >
+        <p className="text-sm text-rim-text-muted">
+          Are you sure you want to delete this message? This cannot be undone.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded px-3 py-1.5 text-sm text-rim-text-muted transition hover:text-rim-text"
+            onClick={() => {
+              setPendingDelete(false);
+              onClose();
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded bg-rim-danger px-3 py-1.5 text-sm text-rim-text transition hover:bg-red-500"
+            onClick={handleDelete}
+          >
+            Delete
+          </button>
+        </div>
+      </Dialog>
+    </>
   );
 }

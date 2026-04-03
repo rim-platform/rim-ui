@@ -1,0 +1,28 @@
+import type { AiToolDefinition } from "../providers/types";
+import type { AiToolHandler, RegisteredTool } from "./types";
+
+const tools = new Map<string, RegisteredTool>();
+
+export function registerTool(
+  definition: AiToolDefinition,
+  handler: AiToolHandler,
+  options?: { sideEffect?: boolean },
+): void {
+  tools.set(definition.name, { definition, handler, sideEffect: options?.sideEffect });
+}
+
+export function unregisterTool(name: string): void {
+  tools.delete(name);
+}
+
+export function getTool(name: string): RegisteredTool | undefined {
+  return tools.get(name);
+}
+
+export function getAllToolDefinitions(): AiToolDefinition[] {
+  return Array.from(tools.values()).map((t) => t.definition);
+}
+
+export function getAllTools(): RegisteredTool[] {
+  return Array.from(tools.values());
+}

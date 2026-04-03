@@ -10,6 +10,8 @@ import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { detectOs } from "../../../core/runtime/runtime";
 
 interface NewMessagePickerProps {
   open: boolean;
@@ -175,7 +177,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
 
   return (
     <div
-      className="fixed inset-0 flex items-start justify-center pt-[15vh]"
+      className="fixed inset-0 flex items-start justify-center pt-[12vh]"
       style={{ zIndex: Z.OVERLAY_CONTENT }}
       onClick={onClose}
     >
@@ -184,7 +186,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
 
       {/* Panel */}
       <div
-        className="relative w-full max-w-lg rounded-lg border border-rim-line bg-rim-panel shadow-2xl"
+        className="relative w-full max-w-lg rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -249,8 +251,9 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
                     : "text-rim-text-muted hover:bg-rim-void/50",
                 )}
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-medium uppercase text-white">
+                <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-medium uppercase text-rim-text">
                   {member.displayName.charAt(0)}
+                  <PresenceDot userId={member.userId} />
                 </span>
                 <span className="flex-1 truncate">
                   <Highlight text={member.displayName} ranges={result.matches?.[0] ?? null} />
@@ -270,7 +273,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         {/* Error */}
         {createMutation.error && (
           <div className="border-t border-rim-line px-4 py-2">
-            <p className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+            <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
               {createMutation.error instanceof Error
                 ? createMutation.error.message
                 : "Failed to create conversation"}
@@ -279,18 +282,41 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         )}
 
         {/* Footer */}
-        <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
-          <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
-          <span><kbd className="font-mono">Enter</kbd> select</span>
-          {selectedUserIds.length > 0 && (
-            <span>
-              <kbd className="font-mono">&#8984;&#8629;</kbd>{" "}
-              {selectedUserIds.length === 1 ? "open DM" : "create group"}
-            </span>
-          )}
-          <span className="ml-auto"><kbd className="font-mono">Esc</kbd> close</span>
-        </div>
+        <NewMessagePickerFooter selectedCount={selectedUserIds.length} />
       </div>
+    </div>
+  );
+}
+
+function PresenceDot({ userId }: { userId: string }) {
+  const status = usePresenceStore((s) => s.presenceMap[userId]);
+  return (
+    <span
+      className={cn(
+        "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-rim-panel",
+        status === "ONLINE" && "bg-rim-success",
+        status === "AWAY" && "bg-rim-warm",
+        (!status || status === "OFFLINE") && "bg-rim-text-faint",
+      )}
+    />
+  );
+}
+
+function NewMessagePickerFooter({ selectedCount }: { selectedCount: number }) {
+  const isMac = detectOs() === "macos";
+  const confirmHint = isMac ? "\u2318\u21A9" : "Ctrl+\u21A9";
+
+  return (
+    <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
+      <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
+      <span><kbd className="font-mono">Enter</kbd> select</span>
+      {selectedCount > 0 && (
+        <span>
+          <kbd className="font-mono">{confirmHint}</kbd>{" "}
+          {selectedCount === 1 ? "open DM" : "create group"}
+        </span>
+      )}
+      <span className="ml-auto"><kbd className="font-mono">Esc</kbd> close</span>
     </div>
   );
 }

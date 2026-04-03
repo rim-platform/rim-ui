@@ -40,14 +40,14 @@ const ExecuteCommandDocument = gql`
   }
 `;
 
-export function useCommands(surface?: CommandSurface) {
+export function useCommands(surface?: CommandSurface, commandContext?: CommandContextInput) {
   return useQuery({
     queryKey: queryKeys.commands(surface),
     staleTime: 60_000,
     queryFn: async () => {
       const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
         CommandsDocument,
-        { surface: surface ?? "Palette" }
+        { surface: surface ?? "Palette", commandContext }
       );
       return res.commands;
     },

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plug, Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
@@ -8,6 +8,8 @@ import {
   useDeleteKeybindMutation,
 } from "../api/useKeybindSettings";
 import { useCommands } from "../api/useCommands";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { cn } from "../../../shared/ui/cn";
 import type { KeybindContext, ResolvedKeybind } from "../types";
@@ -29,6 +31,8 @@ export function KeybindSettings() {
     workspaceId ?? undefined
   );
   const { data: commands } = useCommands("Palette");
+  const pluginCommands = usePluginCommands();
+  const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
   const updateMutation = useUpdateKeybindMutation();
   const deleteMutation = useDeleteKeybindMutation();
@@ -38,9 +42,14 @@ export function KeybindSettings() {
   const [newCommandId, setNewCommandId] = useState("");
   const [newContext, setNewContext] = useState<KeybindContext>("Global");
 
-  const keybindableCommands = commands?.filter((cmd) => cmd.keybindCapable) ?? [];
+  // Merge built-in + plugin keybindable commands
+  const keybindableCommands = useMemo(() => {
+    const builtIn = commands?.filter((cmd) => cmd.keybindCapable) ?? [];
+    const plugin = pluginCommands.filter((cmd) => cmd.keybindCapable);
+    return [...builtIn, ...plugin];
+  }, [commands, pluginCommands]);
 
-  // L4: Build a lookup from command ID to title
+  // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
     const map = new Map<string, string>();
     if (commands) {
@@ -48,8 +57,18 @@ export function KeybindSettings() {
         map.set(cmd.id, cmd.title);
       }
     }
+    for (const cmd of pluginCommands) {
+      map.set(cmd.id, cmd.title);
+    }
     return map;
-  }, [commands]);
+  }, [commands, pluginCommands]);
+
+  // Filter plugin suggestions to only those not already bound
+  const unboundSuggestions = useMemo(() => {
+    if (!keybinds) return pluginSuggestions;
+    const boundCommands = new Set(keybinds.map((kb) => kb.commandId));
+    return pluginSuggestions.filter((s) => !boundCommands.has(s.commandId));
+  }, [pluginSuggestions, keybinds]);
 
   function handleCreate() {
     if (!newKeystroke || !newCommandId) return;
@@ -185,7 +204,7 @@ export function KeybindSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-red-400">
+            <p className="text-[11px] text-rim-danger">
               {(createMutation.error as Error).message}
             </p>
           )}
@@ -210,6 +229,9 @@ export function KeybindSettings() {
             <kbd className="shrink-0 rounded border border-rim-line bg-rim-void px-1.5 py-0.5 font-mono text-[11px]">
               {kb.keystroke}
             </kbd>
+            {kb.commandId.startsWith("plugin.") && (
+              <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
+            )}
             <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
             <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
               {kb.context}
@@ -229,7 +251,7 @@ export function KeybindSettings() {
             {kb.source !== "Default" && (
               <button
                 onClick={() => handleDelete(kb.id)}
-                className="shrink-0 text-rim-text-muted hover:text-red-400"
+                className="shrink-0 text-rim-text-muted hover:text-rim-danger"
                 title="Delete"
                 aria-label="Delete keybind"
               >
@@ -239,6 +261,51 @@ export function KeybindSettings() {
           </div>
         ))}
       </div>
+
+      {/* Plugin suggested keybinds */}
+      {unboundSuggestions.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-rim-text-muted">
+            <Plug className="h-3 w-3" />
+            Plugin Suggestions
+          </h3>
+          <div className="space-y-1">
+            {unboundSuggestions.map((suggestion) => (
+              <div
+                key={suggestion.commandId}
+                className="flex items-center gap-2 rounded-md bg-rim-void/50 px-2 py-1.5 text-xs"
+              >
+                <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
+                <kbd className="shrink-0 rounded border border-rim-line bg-rim-void px-1.5 py-0.5 font-mono text-[11px] text-rim-text-muted">
+                  {suggestion.keystroke}
+                </kbd>
+                <span className="flex-1 truncate text-rim-text">
+                  {suggestion.commandTitle}
+                </span>
+                <span className="shrink-0 text-[10px] text-rim-text-muted">
+                  {suggestion.pluginName}
+                </span>
+                <button
+                  onClick={() => {
+                    createMutation.mutate({
+                      scope: "User",
+                      keystroke: suggestion.keystroke,
+                      commandId: suggestion.commandId,
+                      context: suggestion.context,
+                    });
+                  }}
+                  disabled={createMutation.isPending}
+                  className="shrink-0 rounded bg-rim-accent/10 px-2 py-0.5 text-[10px] font-medium text-rim-accent transition hover:bg-rim-accent/20 disabled:opacity-50"
+                  title="Assign this keybind"
+                  aria-label={`Assign ${suggestion.keystroke} to ${suggestion.commandTitle}`}
+                >
+                  Assign
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,9 @@
 export { useInboxConversations } from "./api/useInboxConversations";
 export { useChannels } from "./api/useChannels";
+export { useUnreadCounts } from "./api/useUnreadCounts";
+export { useMarkAsRead } from "./api/useMarkAsRead";
 export { useCreateConversationMutation } from "./api/useCreateConversation";
+export { useUnreadStore } from "./state/useUnreadStore";
 export { ConversationList } from "./components/ConversationList";
 export { NewChannelDialog } from "./components/NewChannelDialog";
 export { NewMessagePicker } from "./components/NewMessagePicker";
