@@ -67,6 +67,15 @@ interface ThreadMessageAuthor {
   avatarUrl: string | null;
 }
 
+interface ThreadMessageLinkPreview {
+  id: string;
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  siteName?: string | null;
+}
+
 interface ThreadMessageItem {
   id: string;
   serverId: string;
@@ -81,6 +90,7 @@ interface ThreadMessageItem {
   isDeleted: boolean;
   sentAt: string;
   reactions: ThreadMessageReaction[];
+  linkPreviews: ThreadMessageLinkPreview[];
 }
 
 interface ThreadByRootMessageResponse {

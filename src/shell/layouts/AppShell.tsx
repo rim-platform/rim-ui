@@ -13,10 +13,12 @@ import { SearchOverlay } from "../../features/messages/components/SearchOverlay"
 import { ToastContainer } from "../../shared/toast";
 import { AgentOverlay } from "../../features/agent/components/AgentOverlay";
 import { useUnreadCounts } from "../../features/conversations/api/useUnreadCounts";
+import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
 import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePresence";
 import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
+import { useStatusExpiration } from "../../features/settings/hooks/useStatusExpiration";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../state/useShellStore";
@@ -24,8 +26,10 @@ import { WorkspaceRail } from "../components/WorkspaceRail";
 import { SideRail } from "../components/SideRail";
 import { ToolPanel } from "../components/ToolPanel";
 import { ConversationHeader } from "../components/ConversationHeader";
+import { PinnedMessagesPanel } from "../../features/messages/components/PinnedMessagesPanel";
 import { SettingsPage } from "../../features/settings/components/SettingsPage";
 import { TitleBar } from "../components/TitleBar";
+import { ConnectionBanner } from "../../features/system/components/ConnectionBanner";
 
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
@@ -69,6 +73,7 @@ export function AppShell() {
   return (
     <div className="flex h-screen flex-col bg-rim-void text-rim-text">
       {capabilities.customTitleBar && <TitleBar />}
+      <ConnectionBanner />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>
@@ -80,9 +85,11 @@ function WorkspaceShell() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   useWorkspaceEvents(workspaceId);
   useUnreadCounts(workspaceId ?? undefined);
+  useMutedConversations(workspaceId ?? undefined);
   useWorkspacePresence(workspaceId);
   useHeartbeat(workspaceId);
   usePluginEvents();
+  useStatusExpiration();
 
   const { capabilities } = useRuntime();
   const mainSurface = useShellStore((s) => s.mainSurface);
@@ -90,6 +97,9 @@ function WorkspaceShell() {
   const selectedRootMessageId = useShellStore((s) => s.selectedRootMessageId);
   const activePluginPanel = useShellStore((s) => s.activePluginPanel);
   const closePluginPanel = useShellStore((s) => s.closePluginPanel);
+  const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
+  const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
+  const selectedConversationId = useShellStore((s) => s.selectedConversationId);
   const { data: plugins } = usePluginList();
 
   useEffect(() => {
@@ -176,6 +186,16 @@ function WorkspaceShell() {
             {!mainAreaPlugin && showThread && (
               <div className="w-80 shrink-0 border-l border-rim-line">
                 <ThreadPanel />
+              </div>
+            )}
+
+            {!mainAreaPlugin && pinnedPanelOpen && workspaceId && selectedConversationId && (
+              <div className="w-80 shrink-0">
+                <PinnedMessagesPanel
+                  workspaceId={workspaceId}
+                  conversationId={selectedConversationId}
+                  onClose={() => setPinnedPanelOpen(false)}
+                />
               </div>
             )}
           </>

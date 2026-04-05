@@ -10,7 +10,7 @@ import { cn } from "../../../shared/ui/cn";
 import type { PluginHealth } from "../types";
 
 const healthIndicator: Record<PluginHealth, { color: string; label: string }> = {
-  running: { color: "bg-green-400", label: "Running" },
+  running: { color: "bg-rim-success", label: "Running" },
   stopped: { color: "bg-rim-text-muted", label: "Stopped" },
   crashed: { color: "bg-rim-danger", label: "Crashed" },
   timeout: { color: "bg-rim-warm", label: "Timed out" },

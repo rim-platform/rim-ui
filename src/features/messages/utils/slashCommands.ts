@@ -1,4 +1,7 @@
 import { useAgentStore } from "../../agent/state/useAgentStore";
+import { graphqlClient } from "../../../core/graphql/client";
+import { gql } from "graphql-request";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 export interface SlashCommand {
   command: string;
@@ -8,6 +11,15 @@ export interface SlashCommand {
   handler?: (args: string) => void;
 }
 
+const ExecuteMacroByName = gql`
+  mutation ExecuteMacro($macroId: ID!, $commandContext: CommandContextInput) {
+    executeMacro(macroId: $macroId, commandContext: $commandContext) {
+      status
+      message
+    }
+  }
+`;
+
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     command: "/agent",
@@ -15,6 +27,22 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: "Ask the AI agent a question about your workspace",
     placeholder: "What would you like to know?",
     handler: (args: string) => useAgentStore.getState().open(args),
+  },
+  {
+    command: "/macro",
+    label: "Run Macro",
+    description: "Execute a saved macro by name",
+    placeholder: "Macro name",
+    handler: (args: string) => {
+      const macroName = args.trim();
+      if (!macroName) return;
+      // TODO: Resolve macro name to ID via backend query. For now, use name as ID.
+      const workspaceId = useWorkspaceStore.getState().workspaceId;
+      graphqlClient.request(ExecuteMacroByName, {
+        macroId: macroName,
+        commandContext: { workspaceId },
+      });
+    },
   },
 ];
 

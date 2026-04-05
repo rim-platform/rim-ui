@@ -25,6 +25,9 @@ type ShellState = {
   highlightedMessageId: string | null;
   sidebarCollapsed: boolean;
   lastClosedThreadId: string | null;
+  showNewChannelDialog: boolean;
+  showNewMessagePicker: boolean;
+  pinnedPanelOpen: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
   setMainSurface: (surface: MainSurface) => void;
@@ -38,6 +41,9 @@ type ShellState = {
   setFocusedSurface: (surface: string | null) => void;
   setEditingMessageId: (id: string | null) => void;
   setHighlightedMessageId: (id: string | null) => void;
+  setShowNewChannelDialog: (show: boolean) => void;
+  setShowNewMessagePicker: (show: boolean) => void;
+  setPinnedPanelOpen: (open: boolean) => void;
   reset: () => void;
 };
 
@@ -53,6 +59,9 @@ export const useShellStore = create<ShellState>((set) => ({
   highlightedMessageId: null,
   sidebarCollapsed: false,
   lastClosedThreadId: null,
+  showNewChannelDialog: false,
+  showNewMessagePicker: false,
+  pinnedPanelOpen: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setMainSurface: (surface) => set({ mainSurface: surface }),
@@ -86,6 +95,10 @@ export const useShellStore = create<ShellState>((set) => ({
 
   setHighlightedMessageId: (id) => set({ highlightedMessageId: id }),
 
+  setShowNewChannelDialog: (show) => set({ showNewChannelDialog: show }),
+  setShowNewMessagePicker: (show) => set({ showNewMessagePicker: show }),
+  setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
+
   reset: () =>
     set({
       activePanel: "inbox",
@@ -99,5 +112,8 @@ export const useShellStore = create<ShellState>((set) => ({
       highlightedMessageId: null,
       sidebarCollapsed: false,
       lastClosedThreadId: null,
+      showNewChannelDialog: false,
+      showNewMessagePicker: false,
+      pinnedPanelOpen: false,
     }),
 }));

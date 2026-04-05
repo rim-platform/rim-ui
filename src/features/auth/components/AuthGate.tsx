@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useBootstrapMutation, useLoginMutation } from "../api/useAuthMutations";
 import { useAuthStore } from "../state/useAuthStore";
@@ -95,6 +96,12 @@ function LoginForm() {
       >
         {login.isPending ? "Signing in..." : "Log in"}
       </button>
+      <Link
+        to="/forgot-password"
+        className="block text-center text-sm text-rim-text-muted transition hover:text-rim-text"
+      >
+        Forgot password?
+      </Link>
     </form>
   );
 }

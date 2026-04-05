@@ -1,5 +1,4 @@
 import { Plus } from "lucide-react";
-import { useState } from "react";
 
 import { ConversationList } from "../../features/conversations/components/ConversationList";
 import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
@@ -11,8 +10,10 @@ export function ToolPanel() {
   const activePanel = useShellStore((s) => s.activePanel);
   const setActivePanel = useShellStore((s) => s.setActivePanel);
   const setSelectedConversationId = useShellStore((s) => s.setSelectedConversationId);
-  const [showNewMessage, setShowNewMessage] = useState(false);
-  const [showNewChannel, setShowNewChannel] = useState(false);
+  const showNewMessage = useShellStore((s) => s.showNewMessagePicker);
+  const setShowNewMessage = useShellStore((s) => s.setShowNewMessagePicker);
+  const showNewChannel = useShellStore((s) => s.showNewChannelDialog);
+  const setShowNewChannel = useShellStore((s) => s.setShowNewChannelDialog);
 
   return (
     <div className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel">

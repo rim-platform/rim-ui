@@ -7,9 +7,12 @@ import { useToggleReactionMutation } from "../api/useToggleReaction";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { MessageItem } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { Composer } from "./Composer";
+import { TypingIndicator } from "./TypingIndicator";
 import { toast } from "../../../shared/toast";
 
 export function MessageTimeline() {
@@ -21,6 +24,17 @@ export function MessageTimeline() {
   const highlightedMessageId = useShellStore((s) => s.highlightedMessageId);
   const setHighlightedMessageId = useShellStore((s) => s.setHighlightedMessageId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
+  const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const presenceMap = usePresenceStore((s) => s.presenceMap);
+
+  // Build userId → displayName map for mention rendering
+  const memberDisplayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [userId, info] of memberLookup.map) {
+      map.set(userId, info.displayName);
+    }
+    return map;
+  }, [memberLookup.map]);
   const {
     data,
     isPending,
@@ -56,6 +70,7 @@ export function MessageTimeline() {
     messageId: string;
     messageText: string;
     isOwnMessage: boolean;
+    isPinned: boolean;
     hasThread: boolean;
   } | null>(null);
 
@@ -156,6 +171,7 @@ export function MessageTimeline() {
       messageId,
       messageText,
       isOwnMessage: msg?.author?.id === currentUserId,
+      isPinned: msg?.isPinned === true,
       hasThread: !!(msg?.threadId || msg?.rootThreadId),
     });
   }
@@ -272,14 +288,22 @@ export function MessageTimeline() {
           <p className="py-8 text-center text-sm text-rim-text-muted">No messages yet. Start the conversation below.</p>
         ) : (
           items.map((msg, index) => {
-            const name = msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+            const member = memberLookup.resolve(msg.authorId);
+            const name = member.displayName || msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+            const presence = presenceMap[msg.authorId];
             return (
               <MessageItem
                 key={msg.id}
                 message={msg}
                 authorName={name}
                 authorInitial={name.charAt(0).toUpperCase()}
-                authorAvatarUrl={msg.author?.avatarUrl}
+                authorAvatarUrl={member.avatarUrl ?? msg.author?.avatarUrl}
+                authorUsername={member.username ?? msg.author?.username}
+                authorStatusText={member.statusText}
+                authorRole={member.role}
+                authorJoinedAt={member.joinedAt}
+                authorBio={member.bio}
+                authorPresenceStatus={presence === "ONLINE" || presence === "AWAY" || presence === "OFFLINE" ? presence : null}
                 isCurrentUser={msg.author?.id === currentUserId}
                 reactions={msg.reactions}
                 isSelected={index === selectedMessageIndex}
@@ -290,12 +314,16 @@ export function MessageTimeline() {
                 onContextMenu={handleContextMenu}
                 onSaveEdit={handleSaveEdit}
                 onCancelEdit={handleCancelEdit}
+                resolveMember={memberLookup.resolve}
+                memberDisplayMap={memberDisplayMap}
+                linkPreviews={msg.linkPreviews}
               />
             );
           })
         )}
         <div ref={bottomRef} />
       </div>
+      <TypingIndicator conversationId={conversationId} />
       {workspaceId && <Composer workspaceId={workspaceId} conversationId={conversationId} />}
       {contextMenu && workspaceId && (
         <MessageContextMenu
@@ -306,6 +334,7 @@ export function MessageTimeline() {
           conversationId={conversationId}
           workspaceId={workspaceId}
           isOwnMessage={contextMenu.isOwnMessage}
+          isPinned={contextMenu.isPinned}
           hasThread={contextMenu.hasThread}
           onClose={() => setContextMenu(null)}
         />

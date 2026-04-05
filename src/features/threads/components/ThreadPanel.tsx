@@ -86,6 +86,7 @@ export function ThreadPanel() {
         sentAt: thread.createdAt,
         reactions: [],
         attachments: [],
+        linkPreviews: [],
       };
     }
 
@@ -191,6 +192,7 @@ export function ThreadPanel() {
               onOpenThread={openThread}
               onToggleReaction={handleToggleReaction}
               onContextMenu={handleContextMenu}
+              linkPreviews={rootMessage.linkPreviews}
             />
           </div>
         );
@@ -221,6 +223,7 @@ export function ThreadPanel() {
                 onOpenThread={openThread}
                 onToggleReaction={handleToggleReaction}
                 onContextMenu={handleContextMenu}
+                linkPreviews={msg.linkPreviews}
               />
             );
           })

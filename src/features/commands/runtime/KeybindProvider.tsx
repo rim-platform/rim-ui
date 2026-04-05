@@ -81,6 +81,66 @@ const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
     isEnabled: true,
     presetArgs: null,
   },
+  {
+    id: "__fallback_create_channel",
+    keystroke: "Ctrl+Shift+C",
+    commandId: "chat.create_channel",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_create_group",
+    keystroke: "Ctrl+Shift+G",
+    commandId: "chat.create_group",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_mark_all_read",
+    keystroke: "Ctrl+Shift+M",
+    commandId: "chat.mark_all_as_read",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_navigate_channel",
+    keystroke: "Ctrl+Shift+K",
+    commandId: "workspace.navigate_to_channel",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_prev_channel",
+    keystroke: "Alt+ArrowUp",
+    commandId: "workspace.previous_channel",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_next_channel",
+    keystroke: "Alt+ArrowDown",
+    commandId: "workspace.next_channel",
+    context: "Global",
+    source: "Default",
+    scope: "User",
+    isEnabled: true,
+    presetArgs: null,
+  },
 ];
 
 /**
@@ -130,19 +190,22 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       // Try context-specific match first, then global
       let match = matchKeybind(keystroke, context, resolvedKeybinds);
       if (!match && isTextInput) {
-        // In text inputs, only match Global keybinds with Ctrl/Cmd modifier
-        if (!event.ctrlKey && !event.metaKey) return;
+        // In text inputs, only match Global keybinds with Ctrl/Cmd or Alt modifier
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
         match = matchKeybind(keystroke, "Global", resolvedKeybinds);
       }
 
       if (!match) return;
 
-      // If an overlay is open, let it handle Escape instead of dispatching close_panel
+      // If an overlay/dialog is open, let it handle Escape instead of dispatching close_panel
       if (match.commandId === "workspace.close_panel") {
+        const shell = useShellStore.getState();
         const overlayOpen =
           useCommandStore.getState().isCommandPaletteOpen ||
           useSearchOverlayStore.getState().isOpen ||
-          useAgentStore.getState().isOpen;
+          useAgentStore.getState().isOpen ||
+          shell.showNewChannelDialog ||
+          shell.showNewMessagePicker;
         if (overlayOpen) {
           return;
         }

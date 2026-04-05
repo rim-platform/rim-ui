@@ -89,4 +89,36 @@ export type WorkspaceEvent =
       workspace_id: string;
       conversation_id: string;
       user_id: string;
+    }
+  | {
+      type: "TypingStarted";
+      workspace_id: string;
+      conversation_id: string;
+      user_id: string;
+      username: string;
+    }
+  | {
+      type: "MessagePinned";
+      workspace_id: string;
+      conversation_id: string;
+      message_id: string;
+    }
+  | {
+      type: "MessageUnpinned";
+      workspace_id: string;
+      conversation_id: string;
+      message_id: string;
+    }
+  | {
+      type: "UserMentioned";
+      workspace_id: string;
+      conversation_id: string;
+      message_id: string;
+      mentioned_by: string;
+    }
+  | {
+      type: "LinkPreviewReady";
+      workspace_id: string;
+      conversation_id: string;
+      message_id: string;
     };

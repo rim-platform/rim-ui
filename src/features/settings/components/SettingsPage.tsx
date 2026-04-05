@@ -2,21 +2,27 @@ import { useState } from "react";
 import { X } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { UserCommandSettings } from "../../commands/components/UserCommandSettings";
 import { PluginSettingsPage } from "../../plugins/components/PluginSettingsPage";
 import { AgentSettingsPanel } from "../../agent/settings/AgentSettingsPanel";
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
+import { MacroSettings } from "../../macros/components/MacroSettings";
 import { ProfileSettings } from "./ProfileSettings";
+import { AccountSettings } from "./AccountSettings";
+import { EmojiManagement } from "../../emoji/components/EmojiManagement";
 import { cn } from "../../../shared/ui/cn";
 
-type SettingsTab = "profile" | "keybinds" | "commands" | "plugins" | "agent" | "notifications" | "account" | "about";
+type SettingsTab = "profile" | "keybinds" | "commands" | "macros" | "plugins" | "emoji" | "agent" | "notifications" | "account" | "about";
 
 const tabs: { key: SettingsTab; label: string }[] = [
   { key: "profile", label: "Profile" },
   { key: "keybinds", label: "Keybinds" },
   { key: "commands", label: "Commands" },
+  { key: "macros", label: "Macros" },
   { key: "plugins", label: "Plugins" },
+  { key: "emoji", label: "Emoji" },
   { key: "agent", label: "AI Agent" },
   { key: "notifications", label: "Notifications" },
   { key: "account", label: "Account" },
@@ -25,6 +31,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
 
 export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
   return (
@@ -68,11 +75,15 @@ export function SettingsPage() {
           {activeTab === "profile" && <ProfileSettings />}
           {activeTab === "keybinds" && <KeybindSettings />}
           {activeTab === "commands" && <UserCommandSettings />}
+          {activeTab === "macros" && <MacroSettings />}
           {activeTab === "plugins" && <PluginSettingsPage />}
+          {activeTab === "emoji" && (
+            <EmojiManagement serverId={workspaceId} isAdmin />
+          )}
           {activeTab === "agent" && <AgentSettingsPanel />}
           {activeTab === "notifications" && <NotificationSettings />}
           {activeTab === "account" && (
-            <p className="text-sm text-rim-text-muted">Account settings coming soon.</p>
+            <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
           )}
           {activeTab === "about" && (
             <p className="text-sm text-rim-text-muted">About RIM coming soon.</p>

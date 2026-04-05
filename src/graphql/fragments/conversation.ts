@@ -7,5 +7,6 @@ export const CONVERSATION_FIELDS = gql`
     title
     conversationType
     memberIds
+    topic
   }
 `;

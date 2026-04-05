@@ -20,6 +20,25 @@ export interface MessageAuthor {
   avatarUrl: string | null;
 }
 
+export interface ForwardedFrom {
+  originalMessageId: string;
+  originalConversationId: string;
+  originalAuthor: {
+    id: string;
+    username: string;
+    displayName: string | null;
+  } | null;
+}
+
+export interface MessageLinkPreview {
+  id: string;
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  siteName?: string | null;
+}
+
 export interface MessageItem {
   id: string;
   serverId: string;
@@ -31,10 +50,15 @@ export interface MessageItem {
   text: string;
   hasAttachments: boolean;
   parentMessageId?: string | null;
+  isPinned: boolean;
+  mentionedUserIds: string[];
+  forwardedFromMessageId: string | null;
+  forwardedFrom: ForwardedFrom | null;
   isDeleted: boolean;
   sentAt: string;
   reactions: MessageReaction[];
   attachments: MessageAttachment[];
+  linkPreviews: MessageLinkPreview[];
 }
 
 export interface MessageCursor {

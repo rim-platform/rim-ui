@@ -1,0 +1,35 @@
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+interface DraftState {
+  drafts: Record<string, string>;
+  getDraft: (conversationId: string) => string;
+  setDraft: (conversationId: string, text: string) => void;
+  clearDraft: (conversationId: string) => void;
+}
+
+export const useDraftStore = create<DraftState>()(
+  persist(
+    (set, get) => ({
+      drafts: {},
+      getDraft: (conversationId) => get().drafts[conversationId] ?? "",
+      setDraft: (conversationId, text) =>
+        set((state) => {
+          if (!text) {
+            const next = { ...state.drafts };
+            delete next[conversationId];
+            return { drafts: next };
+          }
+          return { drafts: { ...state.drafts, [conversationId]: text } };
+        }),
+      clearDraft: (conversationId) =>
+        set((state) => {
+          if (!state.drafts[conversationId]) return state;
+          const next = { ...state.drafts };
+          delete next[conversationId];
+          return { drafts: next };
+        }),
+    }),
+    { name: "rim-drafts" },
+  ),
+);

@@ -10,7 +10,9 @@ import { useShellStore } from "../../shell/state/useShellStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { usePresenceStore } from "../../features/presence/state/usePresenceStore";
+import { useTypingStore } from "../../features/messages/state/useTypingStore";
 import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
+import { useMutedStore } from "../../features/conversations/state/useMutedStore";
 import { showMessageNotification } from "../../features/notifications/runtime/desktopNotification";
 import { queryClient } from "../query/queryClient";
 
@@ -88,10 +90,15 @@ function eventMessageToCache(msg: MessageEventData): MessageItem {
     text: msg.text ?? "",
     hasAttachments: msg.has_attachments ?? false,
     parentMessageId: msg.parent_message_id ?? null,
+    isPinned: false,
+    mentionedUserIds: [],
+    forwardedFromMessageId: null,
+    forwardedFrom: null,
     isDeleted: msg.is_deleted,
     sentAt: msg.sent_at,
     reactions: [],
     attachments: [],
+    linkPreviews: [],
   };
 }
 
@@ -148,9 +155,10 @@ function handleEvent(
       if (!isActiveConversation && !isOwnMessage) {
         useUnreadStore.getState().increment(event.conversation_id);
 
-        // Desktop notification
+        // Desktop notification (skip for muted conversations)
+        const isMuted = useMutedStore.getState().isMuted(event.conversation_id);
         const notifSettings = useNotificationSettingsStore.getState();
-        if (notifSettings.enabled) {
+        if (notifSettings.enabled && !isMuted) {
           const channelName = resolveConversationName(workspaceId, event.conversation_id);
           const authorName = resolveMemberName(workspaceId, event.message.author_id);
           showMessageNotification({
@@ -306,6 +314,67 @@ function handleEvent(
     case "MemberRemovedFromConversation":
       qc.invalidateQueries({ queryKey: queryKeys.conversations(workspaceId) });
       qc.invalidateQueries({ queryKey: queryKeys.channels(workspaceId) });
+      break;
+
+    case "TypingStarted": {
+      const currentUserId = useAuthStore.getState().session?.userId;
+      if (event.user_id !== currentUserId) {
+        // Resolve username from member cache (backend event doesn't include it)
+        const username = resolveMemberName(workspaceId, event.user_id);
+        useTypingStore.getState().addTyping(event.conversation_id, event.user_id, username);
+      }
+      break;
+    }
+
+    case "UserMentioned": {
+      const channelName = resolveConversationName(workspaceId, event.conversation_id);
+      toast.info(`You were mentioned in #${channelName}`);
+      break;
+    }
+
+    case "LinkPreviewReady":
+      // Backend finished fetching link preview metadata — refresh the message
+      qc.invalidateQueries({
+        queryKey: queryKeys.messages(workspaceId, event.conversation_id),
+      });
+      break;
+
+    case "MessagePinned":
+      qc.setQueryData<InfiniteData<MessagesPage>>(
+        queryKeys.messages(workspaceId, event.conversation_id),
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((m) =>
+                m.id === event.message_id ? { ...m, isPinned: true } : m,
+              ),
+            })),
+          };
+        },
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(workspaceId, event.conversation_id) });
+      break;
+
+    case "MessageUnpinned":
+      qc.setQueryData<InfiniteData<MessagesPage>>(
+        queryKeys.messages(workspaceId, event.conversation_id),
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((m) =>
+                m.id === event.message_id ? { ...m, isPinned: false } : m,
+              ),
+            })),
+          };
+        },
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(workspaceId, event.conversation_id) });
       break;
   }
 }

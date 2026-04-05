@@ -26,12 +26,21 @@ function getWsEndpoint(): string {
 type ConnectionListener = () => void;
 
 const connectionListeners = new Set<ConnectionListener>();
+const disconnectionListeners = new Set<ConnectionListener>();
 
 /** Register a callback invoked every time the WebSocket (re)connects. */
 export function onWsConnected(listener: ConnectionListener): () => void {
   connectionListeners.add(listener);
   return () => {
     connectionListeners.delete(listener);
+  };
+}
+
+/** Register a callback invoked every time the WebSocket disconnects. */
+export function onWsDisconnected(listener: ConnectionListener): () => void {
+  disconnectionListeners.add(listener);
+  return () => {
+    disconnectionListeners.delete(listener);
   };
 }
 
@@ -47,6 +56,9 @@ export const wsClient = createClient({
   on: {
     connected: () => {
       connectionListeners.forEach((fn) => fn());
+    },
+    closed: () => {
+      disconnectionListeners.forEach((fn) => fn());
     },
   },
 });

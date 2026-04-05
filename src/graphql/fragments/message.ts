@@ -27,10 +27,21 @@ export const MESSAGE_FIELDS = gql`
     text
     hasAttachments
     parentMessageId
+    isPinned
     isDeleted
+    mentionedUserIds
+    forwardedFromMessageId
     sentAt
     attachments {
       ...AttachmentFields
+    }
+    linkPreviews {
+      id
+      url
+      title
+      description
+      imageUrl
+      siteName
     }
   }
   ${ATTACHMENT_FIELDS}

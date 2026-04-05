@@ -1,16 +1,22 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Send, SmilePlus, Paperclip, X, Loader2, FileIcon } from "lucide-react";
 
 import { EmojiPicker } from "../../../shared/ui/EmojiPicker";
 import { Z } from "../../../shared/ui/zIndex";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
 import { useCreateAttachmentMutation, useFinalizeAttachmentMutation, uploadFileRest } from "../api/useAttachments";
+import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes, getShortcodeSuggestions } from "../utils/emojiShortcodes";
 import { getSlashCommandSuggestions, isSlashCommand } from "../utils/slashCommands";
 import type { SlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast/useToastStore";
+import { useDraftStore } from "../state/useDraftStore";
+import { useTypingIndicator } from "../hooks/useTypingIndicator";
+import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { Avatar } from "../../../shared/ui/Avatar";
 
 interface PendingFile {
   file: File;
@@ -24,16 +30,56 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [slashSuggestions, setSlashSuggestions] = useState<SlashCommand[]>([]);
   const [selectedSlashSuggestion, setSelectedSlashSuggestion] = useState(0);
+  const [mentionSuggestions, setMentionSuggestions] = useState<Array<{ userId: string; username: string; displayName: string | null; avatarUrl: string | null }>>([]);
+  const [selectedMention, setSelectedMention] = useState(0);
+  // Maps @username → userId for converting mentions on submit
+  const mentionMapRef = useRef<Map<string, string>>(new Map());
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const pendingFilesRef = useRef(pendingFiles);
+  pendingFilesRef.current = pendingFiles;
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
   const send = useSendMessageMutation();
   const createAttachment = useCreateAttachmentMutation();
   const finalizeAttachment = useFinalizeAttachmentMutation();
+  const draftStore = useDraftStore;
+  const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
+  const { data: serverMembers } = useServerMembers(workspaceId);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Load draft on mount and when conversationId changes
+  useEffect(() => {
+    const draft = draftStore.getState().getDraft(conversationId);
+    setText(draft);
+    mentionMapRef.current = new Map();
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      if (draft) {
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    }
+    return () => {
+      // Flush any pending debounced save when switching away
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      draftStore.getState().setDraft(conversationId, textareaRef.current?.value ?? "");
+    };
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced draft save
+  const saveDraftDebounced = useMemo(
+    () => (text: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        draftStore.getState().setDraft(conversationId, text);
+      }, 500);
+    },
+    [conversationId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,6 +94,8 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
         if (args) {
           matchedCommand.handler(args);
           setText("");
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          draftStore.getState().clearDraft(conversationId);
           if (textareaRef.current) {
             textareaRef.current.style.height = "auto";
           }
@@ -56,7 +104,11 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
       }
     }
 
-    const processed = trimmed ? replaceShortcodes(trimmed) : "";
+    let processed = trimmed ? replaceShortcodes(trimmed) : "";
+    // Replace @username with <@userId> using the mention map
+    for (const [username, userId] of mentionMapRef.current) {
+      processed = processed.split(`@${username}`).join(`<@${userId}>`);
+    }
     const filesToUpload = pendingFiles.map((pf) => pf.file);
 
     // Revoke blob URLs before clearing
@@ -68,6 +120,10 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     setText("");
     setPendingFiles([]);
     setSuggestions([]);
+    setMentionSuggestions([]);
+    mentionMapRef.current = new Map();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    draftStore.getState().clearDraft(conversationId);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -87,7 +143,7 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
       const sendResult = await send.mutateAsync({
         workspaceId,
         conversationId,
-        text: processed || " ",
+        text: processed,
       });
       const messageId = sendResult.sendMessage.id;
 
@@ -109,6 +165,8 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
           serverId: workspaceId,
         });
       }
+      // Refresh messages to update attachment status from PENDING → READY
+      qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
     } catch {
       toast.error("Failed to upload attachment");
     } finally {
@@ -136,11 +194,10 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
   // Revoke all blob URLs on unmount
   useEffect(() => {
     return () => {
-      pendingFiles.forEach((pf) => {
+      pendingFilesRef.current.forEach((pf) => {
         if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleDragOver(e: React.DragEvent) {
@@ -169,10 +226,45 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     return null;
   }, []);
 
+  // Extract partial @mention query from cursor position
+  const getPartialMention = useCallback((value: string, cursorPos: number): string | null => {
+    const before = value.slice(0, cursorPos);
+    // Match @ at start or after whitespace, followed by optional query chars
+    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+    if (match) return match[1];
+    return null;
+  }, []);
+
+  // Filter members based on mention query
+  const updateMentionSuggestions = useCallback((query: string) => {
+    if (!serverMembers) {
+      setMentionSuggestions([]);
+      return;
+    }
+    const lower = query.toLowerCase();
+    const filtered = serverMembers
+      .filter((m) => {
+        const name = (m.displayName ?? m.username ?? "").toLowerCase();
+        const uname = (m.username ?? "").toLowerCase();
+        return name.includes(lower) || uname.includes(lower);
+      })
+      .slice(0, 8)
+      .map((m) => ({
+        userId: m.userId,
+        username: m.username,
+        displayName: m.displayName,
+        avatarUrl: m.avatarUrl,
+      }));
+    setMentionSuggestions(filtered);
+    setSelectedMention(0);
+  }, [serverMembers]);
+
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.currentTarget.value;
     const cursorPos = e.currentTarget.selectionStart ?? value.length;
     setText(value);
+    saveDraftDebounced(value);
+    handleKeystroke();
 
     // Auto-resize
     const el = e.currentTarget;
@@ -193,14 +285,23 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     } else {
       setSlashSuggestions([]);
 
-      // Emoji shortcode detection
-      const partial = getPartialShortcode(value, cursorPos);
-      if (partial && partial.length >= 2) {
-        const results = getShortcodeSuggestions(partial);
-        setSuggestions(results);
-        setSelectedSuggestion(0);
-      } else {
+      // @mention detection (takes priority over emoji)
+      const mentionPartial = getPartialMention(value, cursorPos);
+      if (mentionPartial !== null) {
+        updateMentionSuggestions(mentionPartial);
         setSuggestions([]);
+      } else {
+        setMentionSuggestions([]);
+
+        // Emoji shortcode detection
+        const partial = getPartialShortcode(value, cursorPos);
+        if (partial && partial.length >= 2) {
+          const results = getShortcodeSuggestions(partial);
+          setSuggestions(results);
+          setSelectedSuggestion(0);
+        } else {
+          setSuggestions([]);
+        }
       }
     }
   }
@@ -224,7 +325,53 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     textareaRef.current?.focus();
   }
 
+  function applyMention(member: { userId: string; username: string; displayName: string | null }) {
+    const cursorPos = textareaRef.current?.selectionStart ?? text.length;
+    const before = text.slice(0, cursorPos);
+    const after = text.slice(cursorPos);
+    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+    if (match) {
+      const atStart = before.length - match[0].length + (match[0].startsWith(" ") || match[0].startsWith("\n") ? 1 : 0);
+      const newBefore = before.slice(0, atStart) + `@${member.username} `;
+      const newText = newBefore + after;
+      setText(newText);
+      // Store username → userId mapping for submit-time replacement
+      mentionMapRef.current.set(member.username, member.userId);
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = newBefore.length;
+          textareaRef.current.selectionEnd = newBefore.length;
+        }
+      });
+    }
+    setMentionSuggestions([]);
+    textareaRef.current?.focus();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedMention((prev) => Math.min(prev + 1, mentionSuggestions.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedMention((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        applyMention(mentionSuggestions[selectedMention]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionSuggestions([]);
+        return;
+      }
+    }
+
     if (slashSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -272,7 +419,7 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     }
 
     // Enter without Shift sends the message
-    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0) {
+    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0 && mentionSuggestions.length === 0) {
       e.preventDefault();
       void handleSubmit(e);
     }
@@ -440,6 +587,30 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
             >
               <span className="text-base">{s.emoji}</span>
               <span className="text-rim-text-muted">{s.code}</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+
+      {mentionSuggestions.length > 0 && createPortal(
+        <div
+          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
+          style={suggestionsStyle}
+        >
+          {mentionSuggestions.map((m, i) => (
+            <button
+              key={m.userId}
+              type="button"
+              onClick={() => applyMention(m)}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
+                i === selectedMention ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-white/5",
+              )}
+            >
+              <Avatar url={m.avatarUrl} name={m.displayName ?? m.username} userId={m.userId} size="sm" />
+              <span className="font-medium">{m.displayName ?? m.username}</span>
+              <span className="text-rim-text-faint">@{m.username}</span>
             </button>
           ))}
         </div>,

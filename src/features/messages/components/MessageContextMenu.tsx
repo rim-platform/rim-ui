@@ -7,10 +7,12 @@ import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { toast } from "../../../shared/toast";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
+import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../api/useMessages";
+import { ForwardDialog } from "./ForwardDialog";
 
 interface MessageContextMenuProps {
   x: number;
@@ -20,6 +22,7 @@ interface MessageContextMenuProps {
   conversationId: string;
   workspaceId: string;
   isOwnMessage: boolean;
+  isPinned: boolean;
   hasThread: boolean;
   onClose: () => void;
 }
@@ -32,13 +35,17 @@ export function MessageContextMenu({
   conversationId,
   workspaceId,
   isOwnMessage,
+  isPinned,
   hasThread,
   onClose,
 }: MessageContextMenuProps) {
   const executeCommandMutation = useExecuteCommandMutation();
   const pluginContextMenuCommands = usePluginContextMenuCommands("message");
+  const pinMessage = usePinMessageMutation();
+  const unpinMessage = useUnpinMessageMutation();
   const qc = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
 
   const handleDelete = useCallback(async () => {
     setPendingDelete(false);
@@ -94,6 +101,12 @@ export function MessageContextMenu({
       },
     ];
 
+    result.push({
+      id: "forward-message",
+      label: "Forward",
+      onSelect: () => setForwardOpen(true),
+    });
+
     if (!hasThread) {
       result.push({
         id: "open-thread",
@@ -123,6 +136,20 @@ export function MessageContextMenu({
       });
     }
 
+    result.push({
+      id: "pin-message",
+      label: isPinned ? "Unpin Message" : "Pin Message",
+      onSelect: () => {
+        const vars = { serverId: workspaceId, conversationId, messageId };
+        if (isPinned) {
+          unpinMessage.mutate(vars);
+        } else {
+          pinMessage.mutate(vars);
+        }
+        onClose();
+      },
+    });
+
     // Plugin context menu actions
     for (const cmd of pluginContextMenuCommands) {
       result.push({
@@ -138,7 +165,7 @@ export function MessageContextMenu({
     }
 
     return result;
-  }, [messageId, messageText, isOwnMessage, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, workspaceId, conversationId]);
+  }, [messageId, messageText, isOwnMessage, isPinned, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, pinMessage, unpinMessage, workspaceId, conversationId]);
 
   return (
     <>
@@ -173,13 +200,21 @@ export function MessageContextMenu({
           </button>
           <button
             type="button"
-            className="rounded bg-rim-danger px-3 py-1.5 text-sm text-rim-text transition hover:bg-red-500"
+            className="rounded bg-rim-danger px-3 py-1.5 text-sm text-rim-text transition hover:bg-rim-danger"
             onClick={handleDelete}
           >
             Delete
           </button>
         </div>
       </Dialog>
+      <ForwardDialog
+        open={forwardOpen}
+        onClose={() => { setForwardOpen(false); onClose(); }}
+        messageId={messageId}
+        messageText={messageText}
+        workspaceId={workspaceId}
+        sourceConversationId={conversationId}
+      />
     </>
   );
 }

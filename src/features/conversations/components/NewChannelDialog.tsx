@@ -20,7 +20,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
       {
         serverId: workspaceId,
         title: title.trim(),
-        conversationType: "CHANNEL",
+        isChannel: true,
       },
       {
         onSuccess: (data) => {

@@ -17,7 +17,7 @@ const CREATE_CONVERSATION_MUTATION = gql`
 interface CreateConversationInput {
   serverId: string;
   title?: string;
-  conversationType?: string;
+  isChannel?: boolean;
   otherUserId?: string;
   memberIds?: string[];
 }

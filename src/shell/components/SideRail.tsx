@@ -13,6 +13,7 @@ import { cn } from "../../shared/ui/cn";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
+import { StatusDropdown } from "../../features/settings/components/StatusDropdown";
 
 const railItems = [
   { key: "inbox" as const, label: "Inbox", icon: Inbox },
@@ -120,6 +121,7 @@ export function SideRail() {
 
 function UserMenu({ avatarInitial, username }: { avatarInitial: string; username?: string }) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [statusPosition, setStatusPosition] = useState<{ x: number; y: number } | null>(null);
   const clearSession = useAuthStore((s) => s.clearSession);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const logout = useLogoutMutation();
@@ -158,6 +160,12 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
     setMainSurface({ kind: "settings" });
   }
 
+  function handleOpenStatus() {
+    if (!menuPosition) return;
+    setStatusPosition({ x: menuPosition.x, y: menuPosition.y });
+    setMenuPosition(null);
+  }
+
   return (
     <div className="relative">
       <button
@@ -176,6 +184,12 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
           onClose={() => setMenuPosition(null)}
           items={[
             {
+              id: "status",
+              label: "Set status...",
+              icon: <span className="text-sm">{"\u{1F4AC}"}</span>,
+              onSelect: handleOpenStatus,
+            },
+            {
               id: "settings",
               label: "Settings",
               icon: <Settings className="h-4 w-4" />,
@@ -189,6 +203,13 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
               onSelect: handleSignOut,
             },
           ]}
+        />
+      )}
+
+      {statusPosition && (
+        <StatusDropdown
+          position={statusPosition}
+          onClose={() => setStatusPosition(null)}
         />
       )}
     </div>

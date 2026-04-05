@@ -12,6 +12,9 @@ const SERVER_MEMBERS_QUERY = gql`
       memberRole
       joinedAt
       avatarUrl
+      statusText
+      bio
+      displayName
     }
   }
 `;
@@ -22,6 +25,9 @@ interface ServerMember {
   memberRole: string;
   joinedAt: string;
   avatarUrl: string | null;
+  statusText: string | null;
+  bio: string | null;
+  displayName: string | null;
 }
 
 export function useServerMembers(serverId?: string) {

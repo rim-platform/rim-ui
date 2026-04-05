@@ -16,5 +16,9 @@ export const queryKeys = {
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
+  pinnedMessages: (workspaceId?: string, conversationId?: string) =>
+    ["pinnedMessages", workspaceId, conversationId] as const,
+  customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
   plugins: () => ["plugins"] as const,
+  macros: (serverId?: string) => ["macros", serverId] as const,
 };

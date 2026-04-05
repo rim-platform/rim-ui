@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { Hash, MessageCircle, Plus, Users } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { Hash, MessageCircle, Plus, Users, BellOff } from "lucide-react";
 
 import { useChannels } from "../api/useChannels";
 import { useInboxConversations } from "../api/useInboxConversations";
@@ -16,6 +16,8 @@ import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../commands/hooks/useKeybindLabel";
 import { useHoverContextStore } from "../../../shell/state/useHoverContextStore";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { useDraftStore } from "../../messages/state/useDraftStore";
+import { useMutedStore } from "../state/useMutedStore";
 type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
 
 const typeIcon: Record<ConversationTypeEnum, typeof Hash> = {
@@ -35,20 +37,24 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const unreadCounts = useUnreadStore((s) => s.counts);
+  const mutedIds = useMutedStore((s) => s.mutedIds);
   const { mutate: markAsRead } = useMarkAsRead();
 
   // Auto mark-as-read when selecting a conversation
+  // Use ref to avoid re-render loop (markAsRead changes identity on every render)
+  const markAsReadRef = useRef(markAsRead);
+  markAsReadRef.current = markAsRead;
   useEffect(() => {
     if (!selectedId || !workspaceId) return;
     const count = useUnreadStore.getState().counts[selectedId];
     if (count) {
-      markAsRead({
+      markAsReadRef.current({
         conversationId: selectedId,
         workspaceId,
         readAt: new Date().toISOString(),
       });
     }
-  }, [selectedId, workspaceId, markAsRead]);
+  }, [selectedId, workspaceId]);
 
   const {
     data: channelsData,
@@ -193,6 +199,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
                 memberLookup={memberLookup}
                 select={select}
                 unreadCount={unreadCounts[conv.id] ?? 0}
+                isMuted={mutedIds.has(conv.id)}
               />
             ))}
           </ul>
@@ -217,6 +224,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
                 memberLookup={memberLookup}
                 select={select}
                 unreadCount={unreadCounts[conv.id] ?? 0}
+                isMuted={mutedIds.has(conv.id)}
               />
             ))}
           </ul>
@@ -236,6 +244,7 @@ function ConversationItem({
   memberLookup,
   select,
   unreadCount,
+  isMuted,
 }: {
   conv: { id: string; serverId: string; conversationType: string; title: string; memberIds: string[] };
   globalIndex: number;
@@ -246,6 +255,7 @@ function ConversationItem({
   memberLookup: ReturnType<typeof useMemberLookup>;
   select: (id: string) => void;
   unreadCount: number;
+  isMuted: boolean;
 }) {
   const Icon = typeIcon[conv.conversationType as ConversationTypeEnum] ?? Hash;
   const active = conv.id === selectedId;
@@ -255,10 +265,12 @@ function ConversationItem({
   let displayTitle = conv.title;
   let otherMemberId: string | undefined;
   let otherMemberAvatarUrl: string | null | undefined;
+  let otherMemberStatusText: string | null | undefined;
   if (conv.conversationType === "DIRECT" && conv.memberIds.length > 0) {
     otherMemberId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
     const otherMember = memberLookup.resolve(otherMemberId);
     otherMemberAvatarUrl = otherMember.avatarUrl;
+    otherMemberStatusText = otherMember.statusText;
     if (!displayTitle) {
       displayTitle = otherMember.displayName;
     }
@@ -267,6 +279,8 @@ function ConversationItem({
   const presenceStatus = usePresenceStore((s) =>
     otherMemberId ? s.presenceMap[otherMemberId] : undefined,
   );
+
+  const hasDraft = useDraftStore((s) => !!s.drafts[conv.id]);
 
   const hoverKind = conv.conversationType === "DIRECT" ? "dm" as const : "channel" as const;
 
@@ -305,7 +319,20 @@ function ConversationItem({
       ) : (
         <Icon className="h-4 w-4 shrink-0" />
       )}
-      <span className={cn("truncate", unreadCount > 0 && !active && "font-semibold text-rim-text")}>{displayTitle ?? "Untitled"}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1">
+          <span className={cn("block truncate", unreadCount > 0 && !active && "font-semibold text-rim-text", isMuted && "text-rim-text-faint")}>{displayTitle ?? "Untitled"}</span>
+          {isMuted && (
+            <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />
+          )}
+          {hasDraft && !active && (
+            <span className="shrink-0 text-[10px] italic text-rim-warm">Draft</span>
+          )}
+        </span>
+        {conv.conversationType === "DIRECT" && otherMemberStatusText && (
+          <span className="block truncate text-[10px] text-rim-text-faint">{otherMemberStatusText}</span>
+        )}
+      </span>
       {unreadCount > 0 && !active ? (
         <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rim-accent px-1.5 text-[10px] font-bold text-rim-void">
           {unreadCount > 99 ? "99+" : unreadCount}

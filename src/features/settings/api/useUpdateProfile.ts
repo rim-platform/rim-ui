@@ -51,6 +51,7 @@ export function useUpdateProfileMutation() {
       graphqlClient.request<{ updateMyProfile: ProfileUser }>(UPDATE_MY_PROFILE_MUTATION, vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.me });
+      qc.invalidateQueries({ queryKey: ["serverMembers"] });
     },
   });
 }

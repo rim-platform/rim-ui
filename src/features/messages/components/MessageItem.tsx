@@ -1,12 +1,18 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { MessageSquare, SmilePlus, Download, FileIcon } from "lucide-react";
+import { MessageSquare, Pin, SmilePlus, Download, FileIcon, Loader2 } from "lucide-react";
 
 import { Avatar } from "../../../shared/ui/Avatar";
 import { EmojiPicker } from "../../../shared/ui/EmojiPicker";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
+import { UserHoverCard } from "../../../shared/ui/UserHoverCard";
+import { UserHoverCardPortal } from "../../../shared/ui/UserHoverCardPortal";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { cn } from "../../../shared/ui/cn";
+import { formatTime } from "../../../shared/utils/formatTime";
 import type { MessageAttachment } from "../../../core/types/messages";
+import type { PresenceStatus } from "../../../shared/ui/Avatar";
+import { LinkPreviewCard } from "./LinkPreviewCard";
+import type { LinkPreview } from "./LinkPreviewCard";
 
 interface Reaction {
   emoji: string;
@@ -22,17 +28,34 @@ interface MessageItemMessage {
   sentAt: string;
   threadId?: string | null;
   rootThreadId?: string | null;
+  isPinned?: boolean;
   isDeleted?: boolean;
+  forwardedFromMessageId?: string | null;
   attachments?: MessageAttachment[];
 }
 
-type MemberResolver = (userId: string) => { displayName: string; isCurrentUser: boolean };
+type MemberResolver = (userId: string) => {
+  displayName: string;
+  username?: string;
+  isCurrentUser: boolean;
+  avatarUrl?: string | null;
+  statusText?: string | null;
+  role?: string;
+  joinedAt?: string;
+  bio?: string | null;
+};
 
 interface MessageItemProps {
   message: MessageItemMessage;
   authorName: string;
   authorInitial: string;
   authorAvatarUrl?: string | null;
+  authorUsername?: string;
+  authorStatusText?: string | null;
+  authorRole?: string;
+  authorJoinedAt?: string;
+  authorBio?: string | null;
+  authorPresenceStatus?: PresenceStatus | null;
   isCurrentUser: boolean;
   reactions?: Reaction[];
   isSelected?: boolean;
@@ -44,12 +67,22 @@ interface MessageItemProps {
   onSaveEdit?: (messageId: string, newText: string) => void;
   onCancelEdit?: () => void;
   resolveMember?: MemberResolver;
+  /** userId → displayName map for mention rendering */
+  memberDisplayMap?: Map<string, string>;
+  /** Link preview metadata for URLs found in this message */
+  linkPreviews?: LinkPreview[];
 }
 
 export function MessageItem({
   message,
   authorName,
   authorAvatarUrl,
+  authorUsername,
+  authorStatusText,
+  authorRole,
+  authorJoinedAt,
+  authorBio,
+  authorPresenceStatus,
   isCurrentUser,
   reactions,
   isSelected,
@@ -61,11 +94,47 @@ export function MessageItem({
   onSaveEdit,
   onCancelEdit,
   resolveMember,
+  memberDisplayMap,
+  linkPreviews,
 }: MessageItemProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editText, setEditText] = useState(message.text ?? "");
+  const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleMentionClick = useCallback((userId: string, rect: DOMRect) => {
+    clearTimeout(mentionTimerRef.current);
+    setMentionCard({ userId, rect });
+  }, []);
+
+  const handleMentionHover = useCallback((userId: string, rect: DOMRect) => {
+    clearTimeout(mentionTimerRef.current);
+    mentionTimerRef.current = setTimeout(() => {
+      setMentionCard({ userId, rect });
+    }, 400);
+  }, []);
+
+  const handleMentionLeave = useCallback(() => {
+    clearTimeout(mentionTimerRef.current);
+    mentionTimerRef.current = setTimeout(() => {
+      setMentionCard(null);
+    }, 150);
+  }, []);
+
+  const handleMentionCardEnter = useCallback(() => {
+    clearTimeout(mentionTimerRef.current);
+  }, []);
+
+  const handleMentionCardLeave = useCallback(() => {
+    clearTimeout(mentionTimerRef.current);
+    mentionTimerRef.current = setTimeout(() => {
+      setMentionCard(null);
+    }, 150);
+  }, []);
+
+  useEffect(() => () => clearTimeout(mentionTimerRef.current), []);
 
   // Reset edit text and focus textarea when entering edit mode
   useEffect(() => {
@@ -123,20 +192,57 @@ export function MessageItem({
         }
       }}
     >
-      <Avatar
-        url={authorAvatarUrl}
-        name={authorName}
+      <UserHoverCard
         userId={message.authorId}
-        size="md"
-      />
+        username={authorUsername ?? authorName}
+        displayName={authorName}
+        avatarUrl={authorAvatarUrl}
+        statusText={authorStatusText}
+        role={authorRole}
+        joinedAt={authorJoinedAt}
+        bio={authorBio}
+        presenceStatus={authorPresenceStatus}
+        isCurrentUser={isCurrentUser}
+      >
+        <span className="cursor-pointer">
+          <Avatar
+            url={authorAvatarUrl}
+            name={authorName}
+            userId={message.authorId}
+            size="md"
+          />
+        </span>
+      </UserHoverCard>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className={cn("text-sm font-medium", isCurrentUser ? "text-rim-accent" : "text-rim-text")}>
-            {authorName}
-          </span>
+          <UserHoverCard
+            userId={message.authorId}
+            username={authorUsername ?? authorName}
+            displayName={authorName}
+            avatarUrl={authorAvatarUrl}
+            statusText={authorStatusText}
+            role={authorRole}
+            joinedAt={authorJoinedAt}
+            bio={authorBio}
+            presenceStatus={authorPresenceStatus}
+            isCurrentUser={isCurrentUser}
+          >
+            <span className={cn("text-sm font-medium cursor-pointer hover:underline", isCurrentUser ? "text-rim-accent" : "text-rim-text")}>
+              {authorName}
+            </span>
+          </UserHoverCard>
           <span className="text-xs text-rim-text-faint">
             {formatTime(message.sentAt)}
           </span>
+          {message.isPinned && (
+            <Pin className="h-3 w-3 text-rim-accent" />
+          )}
+          {message.forwardedFromMessageId && (
+            <span className="text-xs text-rim-text-faint">{"\u21AA"} Forwarded</span>
+          )}
+          {authorStatusText && (
+            <span className="text-xs text-rim-text-faint truncate max-w-[160px]">{authorStatusText}</span>
+          )}
           {!isDeleted && message.rootThreadId && (
             <button
               type="button"
@@ -191,15 +297,50 @@ export function MessageItem({
                   <p className="mt-1 text-xs text-rim-danger">Failed to save. Try again.</p>
                 )}
               </div>
-            ) : (
+            ) : message.text ? (
               <MarkdownRenderer
-                content={message.text ?? ""}
+                content={message.text}
                 className="mt-0.5 text-sm text-rim-text prose-rim"
+                memberMap={memberDisplayMap}
+                onMentionClick={handleMentionClick}
+                onMentionHover={handleMentionHover}
+                onMentionLeave={handleMentionLeave}
               />
-            )}
+            ) : !message.attachments?.length ? (
+              <p className="mt-0.5 text-sm text-rim-text-faint italic">[empty message]</p>
+            ) : null}
+
+            {mentionCard && (() => {
+              const member = resolveMember?.(mentionCard.userId);
+              const memberDisplayName = member?.displayName ?? mentionCard.userId.slice(0, 8);
+              return (
+                <UserHoverCardPortal
+                  userId={mentionCard.userId}
+                  username={member?.username ?? memberDisplayName}
+                  displayName={memberDisplayName}
+                  avatarUrl={member?.avatarUrl}
+                  statusText={member?.statusText}
+                  role={member?.role}
+                  joinedAt={member?.joinedAt}
+                  bio={member?.bio}
+                  isCurrentUser={member?.isCurrentUser}
+                  anchorRect={mentionCard.rect}
+                  onMouseEnter={handleMentionCardEnter}
+                  onMouseLeave={handleMentionCardLeave}
+                />
+              );
+            })()}
 
             {message.attachments && message.attachments.length > 0 && (
-              <AttachmentList attachments={message.attachments} />
+              <AttachmentList attachments={message.attachments} hasText={!!message.text} />
+            )}
+
+            {linkPreviews && linkPreviews.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {linkPreviews.map((preview) => (
+                  <LinkPreviewCard key={preview.id} preview={preview} />
+                ))}
+              </div>
             )}
 
             <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -334,47 +475,68 @@ function ReactionPill({
   );
 }
 
-function AttachmentList({ attachments }: { attachments: MessageAttachment[] }) {
+function AttachmentList({ attachments, hasText }: { attachments: MessageAttachment[]; hasText: boolean }) {
   const baseUrl = (import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api").replace(/\/api$/, "");
 
   return (
-    <div className="mt-2 flex flex-col gap-2">
-      {attachments
-        .filter((a) => a.status === "READY")
-        .map((att) => {
-          const downloadUrl = `${baseUrl}/api/files/${att.id}`;
+    <div className={cn("flex flex-col gap-2", hasText ? "mt-2" : "mt-0.5")}>
+      {attachments.map((att) => {
+          const isUploading = att.status === "PENDING_UPLOAD" || att.status === "UPLOADED";
+          const canDownload = !isUploading && att.status === "READY";
+          const downloadUrl = `${baseUrl}/api/attachments/${att.id}/download`;
           const isImage = att.contentType.startsWith("image/");
 
           if (isImage) {
             return (
               <a
                 key={att.id}
-                href={downloadUrl}
+                href={canDownload ? downloadUrl : undefined}
                 target="_blank"
                 rel="noopener noreferrer"
+                className={cn(!canDownload && "pointer-events-none")}
               >
                 <img
-                  src={downloadUrl}
+                  src={canDownload ? downloadUrl : undefined}
                   alt={att.filename}
-                  className="max-h-64 max-w-md rounded-lg object-contain"
+                  className={cn(
+                    "max-h-64 max-w-md rounded-lg object-contain",
+                    isUploading && "opacity-60",
+                  )}
                 />
+                {isUploading && (
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-rim-text-faint">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Uploading...</span>
+                  </div>
+                )}
               </a>
             );
           }
 
           return (
-            <a
-              key={att.id}
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text transition hover:bg-white/5"
-            >
-              <FileIcon className="h-4 w-4 shrink-0 text-rim-text-muted" />
-              <span className="truncate">{att.filename}</span>
-              <span className="shrink-0 text-xs text-rim-text-faint">{formatFileSize(att.sizeBytes)}</span>
-              <Download className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
-            </a>
+            <div key={att.id}>
+              <a
+                href={canDownload ? downloadUrl : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text transition hover:bg-white/5",
+                  isUploading && "opacity-60 pointer-events-none",
+                )}
+              >
+                <FileIcon className="h-4 w-4 shrink-0 text-rim-text-muted" />
+                <span className="truncate">{att.filename}</span>
+                <span className="shrink-0 text-xs text-rim-text-faint">{formatFileSize(att.sizeBytes)}</span>
+                {isUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 text-rim-text-muted animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
+                )}
+              </a>
+              {isUploading && (
+                <span className="mt-0.5 block text-xs text-rim-text-faint">Uploading...</span>
+              )}
+            </div>
           );
         })}
     </div>
@@ -387,13 +549,3 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  if (isToday) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " +
-    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}

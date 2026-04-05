@@ -155,6 +155,16 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
     const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
     useShellStore.getState().setSelectedConversationId(next);
   },
+  "chat.create_channel": () => {
+    // Ensure we're on the conversation surface, then open the channel dialog
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    useShellStore.getState().setShowNewChannelDialog(true);
+  },
+  "chat.create_group": () => {
+    // Ensure we're on the conversation surface, then open the new message picker
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    useShellStore.getState().setShowNewMessagePicker(true);
+  },
   "chat.scroll_to_bottom": () => {
     document.querySelector("[data-message-list]")?.scrollTo({ top: 999999, behavior: "smooth" });
   },

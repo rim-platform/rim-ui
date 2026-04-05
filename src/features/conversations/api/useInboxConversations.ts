@@ -26,6 +26,7 @@ interface ConversationItem {
   conversationType: string;
   title: string;
   memberIds: string[];
+  topic: string | null;
 }
 
 interface InboxConversationsResponse {

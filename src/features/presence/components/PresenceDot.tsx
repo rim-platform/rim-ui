@@ -2,8 +2,8 @@ import { usePresenceStore, type PresenceStatus } from "../state/usePresenceStore
 import { cn } from "../../../shared/ui/cn";
 
 const statusColor: Record<PresenceStatus, string> = {
-  ONLINE: "bg-emerald-400",
-  AWAY: "bg-amber-400",
+  ONLINE: "bg-rim-success",
+  AWAY: "bg-rim-warm",
   OFFLINE: "bg-rim-text-faint/40",
 };
 

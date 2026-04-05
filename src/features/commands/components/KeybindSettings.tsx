@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plug, Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { ChevronRight, Plug, Plus, Search, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
@@ -24,6 +24,59 @@ const CONTEXTS: KeybindContext[] = [
   "CommandPalette",
 ];
 
+type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "other";
+
+interface Category {
+  key: CategoryKey;
+  label: string;
+  match: (commandId: string) => boolean;
+}
+
+const CATEGORIES: Category[] = [
+  {
+    key: "navigation",
+    label: "Navigation",
+    match: (id) =>
+      id.startsWith("workspace.open_") ||
+      id.startsWith("workspace.navigate_") ||
+      id.startsWith("workspace.switch_") ||
+      id.startsWith("workspace.previous_") ||
+      id.startsWith("workspace.next_") ||
+      id.startsWith("workspace.cycle_"),
+  },
+  {
+    key: "chat",
+    label: "Chat",
+    match: (id) => id.startsWith("chat."),
+  },
+  {
+    key: "panels",
+    label: "Panels",
+    match: (id) =>
+      id.startsWith("workspace.toggle_") ||
+      id.startsWith("workspace.close_") ||
+      id.startsWith("workspace.focus_") ||
+      id.startsWith("workspace.reopen_"),
+  },
+  {
+    key: "agent",
+    label: "Agent",
+    match: (id) => id === "workspace.open_agent",
+  },
+  {
+    key: "other",
+    label: "Other",
+    match: () => true, // fallback
+  },
+];
+
+function categorizeKeybind(commandId: string): CategoryKey {
+  for (const cat of CATEGORIES) {
+    if (cat.key !== "other" && cat.match(commandId)) return cat.key;
+  }
+  return "other";
+}
+
 export function KeybindSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
@@ -41,6 +94,9 @@ export function KeybindSettings() {
   const [newKeystroke, setNewKeystroke] = useState("");
   const [newCommandId, setNewCommandId] = useState("");
   const [newContext, setNewContext] = useState<KeybindContext>("Global");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [collapsedSections, setCollapsedSections] = useState<Set<CategoryKey>>(new Set());
+  const [capturingKeybindId, setCapturingKeybindId] = useState<string | null>(null);
 
   // Merge built-in + plugin keybindable commands
   const keybindableCommands = useMemo(() => {
@@ -69,6 +125,46 @@ export function KeybindSettings() {
     const boundCommands = new Set(keybinds.map((kb) => kb.commandId));
     return pluginSuggestions.filter((s) => !boundCommands.has(s.commandId));
   }, [pluginSuggestions, keybinds]);
+
+  // Filter keybinds by search query
+  const filteredKeybinds = useMemo(() => {
+    if (!keybinds) return [];
+    if (!searchQuery.trim()) return keybinds;
+    const q = searchQuery.toLowerCase();
+    return keybinds.filter((kb) => {
+      const title = commandTitleMap.get(kb.commandId) ?? kb.commandId;
+      return (
+        title.toLowerCase().includes(q) ||
+        kb.keystroke.toLowerCase().includes(q) ||
+        kb.commandId.toLowerCase().includes(q)
+      );
+    });
+  }, [keybinds, searchQuery, commandTitleMap]);
+
+  // Group keybinds by category
+  const categorizedKeybinds = useMemo(() => {
+    const groups = new Map<CategoryKey, ResolvedKeybind[]>();
+    for (const cat of CATEGORIES) {
+      groups.set(cat.key, []);
+    }
+    for (const kb of filteredKeybinds) {
+      const cat = categorizeKeybind(kb.commandId);
+      groups.get(cat)!.push(kb);
+    }
+    return groups;
+  }, [filteredKeybinds]);
+
+  function toggleSection(key: CategoryKey) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   function handleCreate() {
     if (!newKeystroke || !newCommandId) return;
@@ -118,6 +214,37 @@ export function KeybindSettings() {
     setNewKeystroke(parts.join("+"));
   }
 
+  function handleInlineKeystrokeCapture(kb: ResolvedKeybind, event: React.KeyboardEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === "Escape") {
+      setCapturingKeybindId(null);
+      return;
+    }
+
+    if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
+
+    const parts: string[] = [];
+    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
+    if (event.shiftKey) parts.push("Shift");
+    if (event.altKey) parts.push("Alt");
+    let key = event.key;
+    if (key === " ") key = "Space";
+    if (key.length === 1) key = key.toUpperCase();
+    parts.push(key);
+    const keystroke = parts.join("+");
+
+    setCapturingKeybindId(null);
+    updateMutation.mutate({
+      keybindId: kb.id,
+      keystroke,
+      commandId: kb.commandId,
+      context: kb.context,
+      isEnabled: kb.isEnabled,
+    });
+  }
+
   if (isLoading) {
     return (
       <div className="p-4 text-sm text-rim-text-muted">Loading keybinds...</div>
@@ -126,6 +253,18 @@ export function KeybindSettings() {
 
   return (
     <div className="p-3">
+      {/* Search */}
+      <div className="relative mb-3">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-rim-text-muted" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search keybinds..."
+          className="w-full rounded-lg border border-rim-line bg-rim-void pl-8 pr-3 py-1.5 text-xs text-rim-text outline-none transition placeholder:text-rim-text-muted focus:border-rim-accent/40"
+        />
+      </div>
+
       {/* Add button */}
       <button
         className="mb-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted hover:text-rim-text transition-colors"
@@ -211,59 +350,111 @@ export function KeybindSettings() {
         </div>
       )}
 
-      {/* Keybind list */}
-      <div className="space-y-1">
-        {(!keybinds || keybinds.length === 0) && (
-          <p className="text-xs text-rim-text-muted py-4 text-center">
-            No keybinds configured.
-          </p>
-        )}
-        {keybinds?.map((kb) => (
-          <div
-            key={kb.id}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
-              kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
-            )}
-          >
-            <kbd className="shrink-0 rounded border border-rim-line bg-rim-void px-1.5 py-0.5 font-mono text-[11px]">
-              {kb.keystroke}
-            </kbd>
-            {kb.commandId.startsWith("plugin.") && (
-              <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
-            )}
-            <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
-            <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
-              {kb.context}
-            </span>
+      {/* Categorized keybind sections */}
+      {CATEGORIES.map((cat) => {
+        const items = categorizedKeybinds.get(cat.key) ?? [];
+        if (items.length === 0) return null;
+        const isCollapsed = collapsedSections.has(cat.key);
+
+        return (
+          <div key={cat.key} className="border-b border-rim-line pb-2 mb-2">
             <button
-              onClick={() => handleToggle(kb)}
-              className="shrink-0 text-rim-text-muted hover:text-rim-text"
-              title={kb.isEnabled ? "Disable" : "Enable"}
-              aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
+              type="button"
+              onClick={() => toggleSection(cat.key)}
+              className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium uppercase tracking-wider text-rim-text-muted hover:text-rim-text transition-colors"
             >
-              {kb.isEnabled ? (
-                <ToggleRight className="h-4 w-4 text-rim-accent" />
-              ) : (
-                <ToggleLeft className="h-4 w-4" />
-              )}
+              <ChevronRight
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 transition-transform",
+                  !isCollapsed && "rotate-90",
+                )}
+              />
+              <span>{cat.label}</span>
+              <span className="text-rim-text-faint">({items.length})</span>
             </button>
-            {kb.source !== "Default" && (
-              <button
-                onClick={() => handleDelete(kb.id)}
-                className="shrink-0 text-rim-text-muted hover:text-rim-danger"
-                title="Delete"
-                aria-label="Delete keybind"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+
+            {!isCollapsed && (
+              <div className="space-y-1 mt-1">
+                {items.map((kb) => (
+                  <div
+                    key={kb.id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
+                      kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
+                    )}
+                  >
+                    <kbd
+                      ref={(el) => {
+                        if (capturingKeybindId === kb.id && el) el.focus();
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setCapturingKeybindId(kb.id)}
+                      onKeyDown={(e) => {
+                        if (capturingKeybindId === kb.id) {
+                          handleInlineKeystrokeCapture(kb, e);
+                        } else if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setCapturingKeybindId(kb.id);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
+                      }}
+                      className={cn(
+                        "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
+                        capturingKeybindId === kb.id
+                          ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
+                          : "border-rim-line bg-rim-void hover:border-rim-accent/40",
+                      )}
+                    >
+                      {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
+                    </kbd>
+                    {kb.commandId.startsWith("plugin.") && (
+                      <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
+                    )}
+                    <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
+                    <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
+                      {kb.context}
+                    </span>
+                    <button
+                      onClick={() => handleToggle(kb)}
+                      className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                      title={kb.isEnabled ? "Disable" : "Enable"}
+                      aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
+                    >
+                      {kb.isEnabled ? (
+                        <ToggleRight className="h-4 w-4 text-rim-accent" />
+                      ) : (
+                        <ToggleLeft className="h-4 w-4" />
+                      )}
+                    </button>
+                    {kb.source !== "Default" && (
+                      <button
+                        onClick={() => handleDelete(kb.id)}
+                        className="shrink-0 text-rim-text-muted hover:text-rim-danger"
+                        title="Delete"
+                        aria-label="Delete keybind"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        ))}
-      </div>
+        );
+      })}
+
+      {filteredKeybinds.length === 0 && (
+        <p className="text-xs text-rim-text-muted py-4 text-center">
+          {searchQuery ? "No keybinds match your search." : "No keybinds configured."}
+        </p>
+      )}
 
       {/* Plugin suggested keybinds */}
-      {unboundSuggestions.length > 0 && (
+      {!searchQuery && unboundSuggestions.length > 0 && (
         <div className="mt-4">
           <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-rim-text-muted">
             <Plug className="h-3 w-3" />

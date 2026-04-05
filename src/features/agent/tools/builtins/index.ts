@@ -9,6 +9,12 @@ import {
   registerSwitchWorkspaceTool,
   registerOpenSettingsTool,
 } from "./navigateActions";
+import {
+  registerSendMessageTool,
+  registerPinMessageTool,
+  registerCreateChannelTool,
+  registerAddReactionTool,
+} from "./writeActions";
 
 export function registerBuiltinTools(): void {
   // Read tools
@@ -23,4 +29,10 @@ export function registerBuiltinTools(): void {
   registerOpenThreadTool();
   registerSwitchWorkspaceTool();
   registerOpenSettingsTool();
+
+  // Write tools (sideEffect: true — engine shows action notification)
+  registerSendMessageTool();
+  registerPinMessageTool();
+  registerCreateChannelTool();
+  registerAddReactionTool();
 }
