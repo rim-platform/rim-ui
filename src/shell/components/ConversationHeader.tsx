@@ -63,7 +63,8 @@ export function ConversationHeader() {
     dmOtherUserId ? s.presenceMap[dmOtherUserId] : undefined,
   ) as PresenceStatus | undefined;
 
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const inviteOpen = useShellStore((s) => s.showInviteDialog);
+  const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
 
   const topic = conversation?.topic ?? null;
   const [isEditingTopic, setIsEditingTopic] = useState(false);
@@ -163,8 +164,13 @@ export function ConversationHeader() {
 }
 
 function InviteButton({ onClick }: { onClick: () => void }) {
+  const keybind = useKeybindLabel("admin.invite_member");
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Invite member</span>}>
+    <HoverTooltip content={
+      <span className="text-xs text-rim-text whitespace-nowrap">
+        Invite member{keybind && <kbd className="ml-1.5 rounded border border-rim-line bg-rim-void px-1 py-0.5 text-[10px] font-mono text-rim-text-muted">{keybind}</kbd>}
+      </span>
+    }>
       <button
         type="button"
         onClick={onClick}

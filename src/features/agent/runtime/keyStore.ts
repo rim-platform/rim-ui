@@ -1,22 +1,34 @@
 /**
  * Secure key storage for AI agent API keys.
  * Uses Tauri Stronghold plugin (encrypted at rest) on desktop, falls back to localStorage on web.
+ *
+ * The Stronghold master password is derived from the OS keychain (macOS Keychain,
+ * Windows Credential Manager, Linux Secret Service) — unique per installation.
  */
 
 import type { Client, Stronghold } from "@tauri-apps/plugin-stronghold";
 
 const STRONGHOLD_FILE = "rim-secrets.hold";
-const STRONGHOLD_PASSWORD = "rim-agent-keys-v1";
 const KEY_PREFIX = "api-key-";
 
+/** In-memory fallback store for web mode — keys persist only for the session. */
+const memoryKeyStore = new Map<string, string>();
+
 let cachedStronghold: Stronghold | null = null;
+
+/** Retrieve the per-installation Stronghold password from the OS keychain via Tauri command. */
+async function getStrongholdPassword(): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("get_stronghold_password");
+}
 
 async function getStronghold(): Promise<Stronghold> {
   if (cachedStronghold) return cachedStronghold;
   const { Stronghold } = await import("@tauri-apps/plugin-stronghold");
   const { appDataDir } = await import("@tauri-apps/api/path");
   const dir = await appDataDir();
-  cachedStronghold = await Stronghold.load(`${dir}/${STRONGHOLD_FILE}`, STRONGHOLD_PASSWORD);
+  const password = await getStrongholdPassword();
+  cachedStronghold = await Stronghold.load(`${dir}/${STRONGHOLD_FILE}`, password);
   return cachedStronghold;
 }
 
@@ -36,12 +48,8 @@ export async function saveApiKey(providerId: string, apiKey: string): Promise<vo
     await store.insert(KEY_PREFIX + providerId, Array.from(new TextEncoder().encode(apiKey)));
     await cachedStronghold?.save();
   } catch {
-    console.warn("[keyStore] Stronghold unavailable, falling back to localStorage. API key storage is less secure.");
-    try {
-      localStorage.setItem(KEY_PREFIX + providerId, apiKey);
-    } catch {
-      // ignore
-    }
+    console.warn("[keyStore] Stronghold unavailable, falling back to in-memory store. Keys will not persist across sessions.");
+    memoryKeyStore.set(KEY_PREFIX + providerId, apiKey);
   }
 }
 
@@ -53,12 +61,8 @@ export async function loadApiKey(providerId: string): Promise<string | null> {
     if (!bytes || bytes.length === 0) return null;
     return new TextDecoder().decode(new Uint8Array(bytes));
   } catch {
-    console.warn("[keyStore] Stronghold unavailable, falling back to localStorage.");
-    try {
-      return localStorage.getItem(KEY_PREFIX + providerId);
-    } catch {
-      return null;
-    }
+    console.warn("[keyStore] Stronghold unavailable, falling back to in-memory store.");
+    return memoryKeyStore.get(KEY_PREFIX + providerId) ?? null;
   }
 }
 
@@ -69,11 +73,7 @@ export async function deleteApiKey(providerId: string): Promise<void> {
     await store.remove(KEY_PREFIX + providerId);
     await cachedStronghold?.save();
   } catch {
-    console.warn("[keyStore] Stronghold unavailable, falling back to localStorage.");
-    try {
-      localStorage.removeItem(KEY_PREFIX + providerId);
-    } catch {
-      // ignore
-    }
+    console.warn("[keyStore] Stronghold unavailable, falling back to in-memory store.");
+    memoryKeyStore.delete(KEY_PREFIX + providerId);
   }
 }

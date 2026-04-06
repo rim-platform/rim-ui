@@ -65,7 +65,7 @@ export function usePluginSuggestedKeybinds(): PluginSuggestedKeybind[] {
           commandId: `plugin.${rk.plugin_id}.${rk.command_id}`,
           commandTitle: cmd?.title ?? rk.command_id,
           keystroke: rk.keystroke,
-          context: (rk.context as KeybindContext) || "Global",
+          context: (rk.context as KeybindContext) || "GLOBAL",
         });
       }
     }
@@ -82,7 +82,7 @@ export function usePluginSuggestedKeybinds(): PluginSuggestedKeybind[] {
               commandId: `plugin.${plugin.manifest.id}.${cmd.id}`,
               commandTitle: cmd.title,
               keystroke: cmd.suggested_keybind,
-              context: "Global",
+              context: "GLOBAL",
             });
           }
         }

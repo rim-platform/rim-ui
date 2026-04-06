@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { CommandDefinition, CommandResult } from "../types";
 import { logger } from "../../../core/logger";
+import { toast } from "../../../shared/toast";
 import { useCommandStore } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
@@ -13,6 +14,7 @@ import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
+import { reloadCommands } from "../api/useCommands";
 
 interface ConversationItem {
   id: string;
@@ -181,8 +183,17 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
     const workspaceId = useWorkspaceStore.getState().workspaceId;
     if (workspaceId) {
       useUnreadStore.getState().markAllRead();
-      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } });
+      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } })
+        .catch(() => {
+          toast.error("Failed to mark all as read");
+        });
     }
+  },
+  "workspace.reload_commands": () => {
+    reloadCommands();
+  },
+  "admin.invite_member": () => {
+    useShellStore.getState().setShowInviteDialog(true);
   },
 };
 
@@ -195,20 +206,24 @@ export async function dispatchCommand(
     confirmedDangerous?: boolean;
   }
 ): Promise<CommandResult | null> {
-  if (command.executionTarget === "DesktopLocal") {
-    // Check if this is a plugin command
-    const pluginCmd = parsePluginCommandId(command.id);
-    if (pluginCmd) {
-      return dispatchPluginCommand(pluginCmd.pluginId, pluginCmd.command, context?.args);
-    }
+  // Local handlers always take precedence — even if the backend marks a
+  // command as "Backend", the frontend may have a local handler that opens
+  // a dialog or performs a client-side action instead.
+  const localHandler = localHandlers[command.id];
+  if (localHandler) {
+    localHandler(context?.args);
+    return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
+  }
 
-    const handler = localHandlers[command.id];
-    if (handler) {
-      handler(context?.args);
-      return { status: "Success", message: "Executed locally", payload: null, followUpCommands: [] };
-    }
+  // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
+  const pluginCmd = parsePluginCommandId(command.id);
+  if (pluginCmd) {
+    return dispatchPluginCommand(pluginCmd.pluginId, pluginCmd.command, context?.args);
+  }
+
+  if (command.executionTarget === "DESKTOP_LOCAL") {
     logger.warn(`[RIM] No local handler for command: ${command.id}`);
-    return { status: "Error", message: `No local handler for ${command.id}`, payload: null, followUpCommands: [] };
+    return { status: "ERROR", message: `No local handler for ${command.id}`, payload: null, followUpCommands: [] };
   }
 
   // Backend command
@@ -233,7 +248,7 @@ async function dispatchPluginCommand(
       { ...{ pluginId, command, args: args ?? {} } },
     );
     return {
-      status: result.status === "ok" ? "Success" : "Error",
+      status: result.status === "ok" ? "SUCCESS" : "ERROR",
       message: result.status === "ok" ? "Plugin command executed" : "Plugin command failed",
       payload: result.payload,
       followUpCommands: [],
@@ -242,7 +257,7 @@ async function dispatchPluginCommand(
     // Wire protocol not yet available — surface as error so callers don't assume success
     logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`);
     return {
-      status: "Error",
+      status: "ERROR",
       message: `Plugin command ${pluginId}.${command} failed: wire protocol not available`,
       payload: null,
       followUpCommands: [],

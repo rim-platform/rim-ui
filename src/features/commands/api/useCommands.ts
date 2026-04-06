@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import type {
   CommandSurface,
   CommandContextInput,
@@ -43,11 +44,13 @@ const ExecuteCommandDocument = gql`
 export function useCommands(surface?: CommandSurface, commandContext?: CommandContextInput) {
   return useQuery({
     queryKey: queryKeys.commands(surface),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
         CommandsDocument,
-        { surface: surface ?? "Palette", commandContext }
+        { surface: surface ?? "PALETTE", commandContext }
       );
       return res.commands;
     },
@@ -55,8 +58,6 @@ export function useCommands(surface?: CommandSurface, commandContext?: CommandCo
 }
 
 export function useExecuteCommandMutation() {
-  const qc = useQueryClient();
-
   return useMutation({
     mutationFn: (input: {
       commandId: string;
@@ -75,8 +76,16 @@ export function useExecuteCommandMutation() {
           },
         }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["commands"] });
-    },
   });
+}
+
+/**
+ * Invalidate the commands cache, forcing a fresh fetch on next access.
+ * Call this after events that change the command registry:
+ * - User command create/update/delete
+ * - Plugin install/uninstall/enable/disable
+ * - Explicit "Reload commands" action
+ */
+export function reloadCommands() {
+  queryClient.invalidateQueries({ queryKey: ["commands"] });
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Plug, Plus, Search, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { ChevronRight, Pencil, Plug, Plus, Search, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
@@ -15,13 +15,13 @@ import { cn } from "../../../shared/ui/cn";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 const CONTEXTS: KeybindContext[] = [
-  "Global",
-  "Composer",
-  "MessageList",
-  "ThreadView",
-  "ConversationView",
-  "Panel",
-  "CommandPalette",
+  "GLOBAL",
+  "COMPOSER",
+  "MESSAGE_LIST",
+  "THREAD_VIEW",
+  "CONVERSATION_VIEW",
+  "PANEL",
+  "COMMAND_PALETTE",
 ];
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "other";
@@ -83,7 +83,7 @@ export function KeybindSettings() {
   const { data: keybinds, isLoading } = useResolvedKeybinds(
     workspaceId ?? undefined
   );
-  const { data: commands } = useCommands("Palette");
+  const { data: commands } = useCommands();
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
@@ -93,10 +93,14 @@ export function KeybindSettings() {
   const [showCreate, setShowCreate] = useState(false);
   const [newKeystroke, setNewKeystroke] = useState("");
   const [newCommandId, setNewCommandId] = useState("");
-  const [newContext, setNewContext] = useState<KeybindContext>("Global");
+  const [newContext, setNewContext] = useState<KeybindContext>("GLOBAL");
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedSections, setCollapsedSections] = useState<Set<CategoryKey>>(new Set());
   const [capturingKeybindId, setCapturingKeybindId] = useState<string | null>(null);
+  const [editingKeybindId, setEditingKeybindId] = useState<string | null>(null);
+  const [editCommandId, setEditCommandId] = useState("");
+  const [editContext, setEditContext] = useState<KeybindContext>("GLOBAL");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   // Merge built-in + plugin keybindable commands
   const keybindableCommands = useMemo(() => {
@@ -170,7 +174,7 @@ export function KeybindSettings() {
     if (!newKeystroke || !newCommandId) return;
     createMutation.mutate(
       {
-        scope: "User",
+        scope: "USER",
         keystroke: newKeystroke,
         commandId: newCommandId,
         context: newContext,
@@ -180,7 +184,7 @@ export function KeybindSettings() {
           setShowCreate(false);
           setNewKeystroke("");
           setNewCommandId("");
-          setNewContext("Global");
+          setNewContext("GLOBAL");
         },
       }
     );
@@ -197,7 +201,14 @@ export function KeybindSettings() {
   }
 
   function handleDelete(keybindId: string) {
-    deleteMutation.mutate({ keybindId });
+    setPendingDeleteId(keybindId);
+  }
+
+  function confirmDelete() {
+    if (pendingDeleteId) {
+      deleteMutation.mutate({ keybindId: pendingDeleteId });
+      setPendingDeleteId(null);
+    }
   }
 
   function handleKeystrokeCapture(event: React.KeyboardEvent) {
@@ -243,6 +254,34 @@ export function KeybindSettings() {
       context: kb.context,
       isEnabled: kb.isEnabled,
     });
+  }
+
+  function startEditing(kb: ResolvedKeybind) {
+    setEditingKeybindId(kb.id);
+    setEditCommandId(kb.commandId);
+    setEditContext(kb.context);
+  }
+
+  function cancelEditing() {
+    setEditingKeybindId(null);
+    setEditCommandId("");
+    setEditContext("GLOBAL");
+  }
+
+  function handleSaveEdit(kb: ResolvedKeybind) {
+    if (!editCommandId) return;
+    updateMutation.mutate(
+      {
+        keybindId: kb.id,
+        keystroke: kb.keystroke,
+        commandId: editCommandId,
+        context: editContext,
+        isEnabled: kb.isEnabled,
+      },
+      {
+        onSuccess: () => cancelEditing(),
+      },
+    );
   }
 
   if (isLoading) {
@@ -375,72 +414,173 @@ export function KeybindSettings() {
 
             {!isCollapsed && (
               <div className="space-y-1 mt-1">
-                {items.map((kb) => (
-                  <div
-                    key={kb.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
-                      kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
-                    )}
-                  >
-                    <kbd
-                      ref={(el) => {
-                        if (capturingKeybindId === kb.id && el) el.focus();
-                      }}
-                      tabIndex={0}
-                      role="button"
-                      onClick={() => setCapturingKeybindId(kb.id)}
-                      onKeyDown={(e) => {
-                        if (capturingKeybindId === kb.id) {
-                          handleInlineKeystrokeCapture(kb, e);
-                        } else if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setCapturingKeybindId(kb.id);
-                        }
-                      }}
-                      onBlur={() => {
-                        if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
-                      }}
-                      className={cn(
-                        "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
-                        capturingKeybindId === kb.id
-                          ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
-                          : "border-rim-line bg-rim-void hover:border-rim-accent/40",
-                      )}
-                    >
-                      {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
-                    </kbd>
-                    {kb.commandId.startsWith("plugin.") && (
-                      <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
-                    )}
-                    <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
-                    <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
-                      {kb.context}
-                    </span>
-                    <button
-                      onClick={() => handleToggle(kb)}
-                      className="shrink-0 text-rim-text-muted hover:text-rim-text"
-                      title={kb.isEnabled ? "Disable" : "Enable"}
-                      aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
-                    >
-                      {kb.isEnabled ? (
-                        <ToggleRight className="h-4 w-4 text-rim-accent" />
-                      ) : (
-                        <ToggleLeft className="h-4 w-4" />
-                      )}
-                    </button>
-                    {kb.source !== "Default" && (
-                      <button
-                        onClick={() => handleDelete(kb.id)}
-                        className="shrink-0 text-rim-text-muted hover:text-rim-danger"
-                        title="Delete"
-                        aria-label="Delete keybind"
+                {items.map((kb) => {
+                  const isEditing = editingKeybindId === kb.id;
+
+                  if (isEditing) {
+                    return (
+                      <div
+                        key={kb.id}
+                        className="rounded-md border border-rim-accent/30 bg-rim-void px-2 py-2 space-y-2"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <div className="flex items-center gap-2">
+                          <kbd
+                            ref={(el) => {
+                              if (capturingKeybindId === kb.id && el) el.focus();
+                            }}
+                            tabIndex={0}
+                            role="button"
+                            onClick={() => setCapturingKeybindId(kb.id)}
+                            onKeyDown={(e) => {
+                              if (capturingKeybindId === kb.id) {
+                                handleInlineKeystrokeCapture(kb, e);
+                              } else if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setCapturingKeybindId(kb.id);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
+                            }}
+                            className={cn(
+                              "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
+                              capturingKeybindId === kb.id
+                                ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
+                                : "border-rim-line bg-rim-void hover:border-rim-accent/40",
+                            )}
+                          >
+                            {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
+                          </kbd>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-rim-text-muted mb-1">
+                            Command
+                          </label>
+                          <select
+                            value={editCommandId}
+                            onChange={(e) => setEditCommandId(e.target.value)}
+                            className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
+                          >
+                            <option value="">Select command...</option>
+                            {keybindableCommands.map((cmd) => (
+                              <option key={cmd.id} value={cmd.id}>
+                                {cmd.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-rim-text-muted mb-1">
+                            Context
+                          </label>
+                          <select
+                            value={editContext}
+                            onChange={(e) => setEditContext(e.target.value as KeybindContext)}
+                            className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
+                          >
+                            {CONTEXTS.map((ctx) => (
+                              <option key={ctx} value={ctx}>
+                                {ctx}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => handleSaveEdit(kb)}
+                            disabled={!editCommandId || updateMutation.isPending}
+                            className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+                          >
+                            {updateMutation.isPending ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="rounded px-2 py-1 text-xs text-rim-text-muted hover:text-rim-text"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={kb.id}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
+                        kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
+                      )}
+                    >
+                      <kbd
+                        ref={(el) => {
+                          if (capturingKeybindId === kb.id && el) el.focus();
+                        }}
+                        tabIndex={0}
+                        role="button"
+                        onClick={() => setCapturingKeybindId(kb.id)}
+                        onKeyDown={(e) => {
+                          if (capturingKeybindId === kb.id) {
+                            handleInlineKeystrokeCapture(kb, e);
+                          } else if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setCapturingKeybindId(kb.id);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
+                        }}
+                        className={cn(
+                          "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
+                          capturingKeybindId === kb.id
+                            ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
+                            : "border-rim-line bg-rim-void hover:border-rim-accent/40",
+                        )}
+                      >
+                        {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
+                      </kbd>
+                      {kb.commandId.startsWith("plugin.") && (
+                        <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
+                      )}
+                      <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
+                      <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
+                        {kb.context}
+                      </span>
+                      {kb.source !== "DEFAULT" && (
+                        <button
+                          onClick={() => startEditing(kb)}
+                          className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                          title="Edit"
+                          aria-label="Edit keybind"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleToggle(kb)}
+                        className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                        title={kb.isEnabled ? "Disable" : "Enable"}
+                        aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
+                      >
+                        {kb.isEnabled ? (
+                          <ToggleRight className="h-4 w-4 text-rim-accent" />
+                        ) : (
+                          <ToggleLeft className="h-4 w-4" />
+                        )}
                       </button>
-                    )}
-                  </div>
-                ))}
+                      {kb.source !== "DEFAULT" && (
+                        <button
+                          onClick={() => handleDelete(kb.id)}
+                          className="shrink-0 text-rim-text-muted hover:text-rim-danger"
+                          title="Delete"
+                          aria-label="Delete keybind"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -479,7 +619,7 @@ export function KeybindSettings() {
                 <button
                   onClick={() => {
                     createMutation.mutate({
-                      scope: "User",
+                      scope: "USER",
                       keystroke: suggestion.keystroke,
                       commandId: suggestion.commandId,
                       context: suggestion.context,
@@ -494,6 +634,32 @@ export function KeybindSettings() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* Delete confirmation dialog */}
+      {pendingDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setPendingDeleteId(null)} />
+          <div className="relative rounded-xl border border-rim-line bg-rim-panel p-5 shadow-2xl max-w-sm w-full mx-4">
+            <h3 className="text-sm font-medium text-rim-text mb-2">Delete keybind?</h3>
+            <p className="text-xs text-rim-text-muted mb-4">
+              This keybind will be removed. You can always create a new one later.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPendingDeleteId(null)}
+                className="rounded-md px-3 py-1.5 text-xs text-rim-text-muted hover:text-rim-text transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="rounded-md bg-rim-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger/90 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

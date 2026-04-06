@@ -1,22 +1,18 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
-import { Send, SmilePlus, Paperclip, X, Loader2, FileIcon } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
-import { EmojiPicker } from "../../../shared/ui/EmojiPicker";
-import { Z } from "../../../shared/ui/zIndex";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
 import { useCreateAttachmentMutation, useFinalizeAttachmentMutation, uploadFileRest } from "../api/useAttachments";
 import { queryKeys } from "../../../core/query/keys";
-import { replaceShortcodes, getShortcodeSuggestions } from "../utils/emojiShortcodes";
-import { getSlashCommandSuggestions, isSlashCommand } from "../utils/slashCommands";
-import type { SlashCommand } from "../utils/slashCommands";
+import { replaceShortcodes } from "../utils/emojiShortcodes";
+import { isSlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast/useToastStore";
 import { useDraftStore } from "../state/useDraftStore";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
-import { Avatar } from "../../../shared/ui/Avatar";
+import { ComposerInput } from "./ComposerInput";
+import { FilePreviewBar } from "./FilePreviewBar";
 
 interface PendingFile {
   file: File;
@@ -25,28 +21,21 @@ interface PendingFile {
 
 export function Composer({ workspaceId, conversationId }: { workspaceId: string; conversationId: string }) {
   const [text, setText] = useState("");
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ code: string; emoji: string }>>([]);
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [slashSuggestions, setSlashSuggestions] = useState<SlashCommand[]>([]);
-  const [selectedSlashSuggestion, setSelectedSlashSuggestion] = useState(0);
-  const [mentionSuggestions, setMentionSuggestions] = useState<Array<{ userId: string; username: string; displayName: string | null; avatarUrl: string | null }>>([]);
-  const [selectedMention, setSelectedMention] = useState(0);
-  // Maps @username → userId for converting mentions on submit
-  const mentionMapRef = useRef<Map<string, string>>(new Map());
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef(pendingFiles);
   pendingFilesRef.current = pendingFiles;
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const emojiButtonRef = useRef<HTMLButtonElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Maps @username -> userId for converting mentions on submit
+  const mentionMapRef = useRef<Map<string, string>>(new Map());
   const qc = useQueryClient();
   const send = useSendMessageMutation();
   const createAttachment = useCreateAttachmentMutation();
   const finalizeAttachment = useFinalizeAttachmentMutation();
+  // `draftStore` is a module-level Zustand store reference — it is stable across
+  // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
@@ -68,21 +57,22 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().setDraft(conversationId, textareaRef.current?.value ?? "");
     };
-  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // draftStore is a stable module-level reference and does not need to be a dependency.
+  }, [conversationId]);
 
   // Debounced draft save
   const saveDraftDebounced = useMemo(
-    () => (text: string) => {
+    () => (draftText: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        draftStore.getState().setDraft(conversationId, text);
+        draftStore.getState().setDraft(conversationId, draftText);
       }, 500);
     },
-    [conversationId], // eslint-disable-line react-hooks/exhaustive-deps
+    // draftStore is a stable module-level reference and does not need to be a dependency.
+    [conversationId],
   );
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
 
@@ -119,8 +109,6 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     // Clear UI immediately
     setText("");
     setPendingFiles([]);
-    setSuggestions([]);
-    setMentionSuggestions([]);
     mentionMapRef.current = new Map();
     if (debounceRef.current) clearTimeout(debounceRef.current);
     draftStore.getState().clearDraft(conversationId);
@@ -165,7 +153,7 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
           serverId: workspaceId,
         });
       }
-      // Refresh messages to update attachment status from PENDING → READY
+      // Refresh messages to update attachment status from PENDING -> READY
       qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
     } catch {
       toast.error("Failed to upload attachment");
@@ -218,244 +206,9 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     }
   }
 
-  // Extract the current partial shortcode being typed (word touching cursor)
-  const getPartialShortcode = useCallback((value: string, cursorPos: number): string | null => {
-    const before = value.slice(0, cursorPos);
-    const match = before.match(/:([a-zA-Z0-9_]*)$/);
-    if (match) return match[0];
-    return null;
-  }, []);
-
-  // Extract partial @mention query from cursor position
-  const getPartialMention = useCallback((value: string, cursorPos: number): string | null => {
-    const before = value.slice(0, cursorPos);
-    // Match @ at start or after whitespace, followed by optional query chars
-    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
-    if (match) return match[1];
-    return null;
-  }, []);
-
-  // Filter members based on mention query
-  const updateMentionSuggestions = useCallback((query: string) => {
-    if (!serverMembers) {
-      setMentionSuggestions([]);
-      return;
-    }
-    const lower = query.toLowerCase();
-    const filtered = serverMembers
-      .filter((m) => {
-        const name = (m.displayName ?? m.username ?? "").toLowerCase();
-        const uname = (m.username ?? "").toLowerCase();
-        return name.includes(lower) || uname.includes(lower);
-      })
-      .slice(0, 8)
-      .map((m) => ({
-        userId: m.userId,
-        username: m.username,
-        displayName: m.displayName,
-        avatarUrl: m.avatarUrl,
-      }));
-    setMentionSuggestions(filtered);
-    setSelectedMention(0);
-  }, [serverMembers]);
-
-  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const value = e.currentTarget.value;
-    const cursorPos = e.currentTarget.selectionStart ?? value.length;
-    setText(value);
-    saveDraftDebounced(value);
-    handleKeystroke();
-
-    // Auto-resize
-    const el = e.currentTarget;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-
-    // Slash command detection (takes priority over emoji)
-    if (value.startsWith("/")) {
-      const slashPartial = value.split(" ")[0];
-      if (!value.includes(" ")) {
-        const results = getSlashCommandSuggestions(slashPartial);
-        setSlashSuggestions(results);
-        setSelectedSlashSuggestion(0);
-      } else {
-        setSlashSuggestions([]);
-      }
-      setSuggestions([]);
-    } else {
-      setSlashSuggestions([]);
-
-      // @mention detection (takes priority over emoji)
-      const mentionPartial = getPartialMention(value, cursorPos);
-      if (mentionPartial !== null) {
-        updateMentionSuggestions(mentionPartial);
-        setSuggestions([]);
-      } else {
-        setMentionSuggestions([]);
-
-        // Emoji shortcode detection
-        const partial = getPartialShortcode(value, cursorPos);
-        if (partial && partial.length >= 2) {
-          const results = getShortcodeSuggestions(partial);
-          setSuggestions(results);
-          setSelectedSuggestion(0);
-        } else {
-          setSuggestions([]);
-        }
-      }
-    }
-  }
-
-  function applySuggestion(suggestion: { code: string; emoji: string }) {
-    const cursorPos = textareaRef.current?.selectionStart ?? text.length;
-    const before = text.slice(0, cursorPos);
-    const after = text.slice(cursorPos);
-    const match = before.match(/:([a-zA-Z0-9_]*)$/);
-    if (match) {
-      const newBefore = before.slice(0, before.length - match[0].length) + suggestion.emoji;
-      setText(newBefore + after);
-    }
-    setSuggestions([]);
-    textareaRef.current?.focus();
-  }
-
-  function applySlashSuggestion(command: SlashCommand) {
-    setText(command.command + " ");
-    setSlashSuggestions([]);
-    textareaRef.current?.focus();
-  }
-
-  function applyMention(member: { userId: string; username: string; displayName: string | null }) {
-    const cursorPos = textareaRef.current?.selectionStart ?? text.length;
-    const before = text.slice(0, cursorPos);
-    const after = text.slice(cursorPos);
-    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
-    if (match) {
-      const atStart = before.length - match[0].length + (match[0].startsWith(" ") || match[0].startsWith("\n") ? 1 : 0);
-      const newBefore = before.slice(0, atStart) + `@${member.username} `;
-      const newText = newBefore + after;
-      setText(newText);
-      // Store username → userId mapping for submit-time replacement
-      mentionMapRef.current.set(member.username, member.userId);
-      requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = newBefore.length;
-          textareaRef.current.selectionEnd = newBefore.length;
-        }
-      });
-    }
-    setMentionSuggestions([]);
-    textareaRef.current?.focus();
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (mentionSuggestions.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedMention((prev) => Math.min(prev + 1, mentionSuggestions.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedMention((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        applyMention(mentionSuggestions[selectedMention]);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setMentionSuggestions([]);
-        return;
-      }
-    }
-
-    if (slashSuggestions.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedSlashSuggestion((prev) => Math.min(prev + 1, slashSuggestions.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedSlashSuggestion((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        applySlashSuggestion(slashSuggestions[selectedSlashSuggestion]);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashSuggestions([]);
-        return;
-      }
-    }
-
-    if (suggestions.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedSuggestion((prev) => Math.min(prev + 1, suggestions.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedSuggestion((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        applySuggestion(suggestions[selectedSuggestion]);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSuggestions([]);
-        return;
-      }
-    }
-
-    // Enter without Shift sends the message
-    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0 && mentionSuggestions.length === 0) {
-      e.preventDefault();
-      void handleSubmit(e);
-    }
-  }
-
-  function insertEmoji(emoji: string) {
-    setText((prev) => prev + emoji);
-    setEmojiPickerOpen(false);
-    textareaRef.current?.focus();
-  }
-
-  const getEmojiPickerPosition = useCallback(() => {
-    if (!emojiButtonRef.current) return { x: 0, y: 0 };
-    const rect = emojiButtonRef.current.getBoundingClientRect();
-    return {
-      x: Math.min(rect.left, window.innerWidth - 220),
-      y: rect.top,
-    };
-  }, []);
-
-  // Compute suggestions position
-  const suggestionsStyle: React.CSSProperties = (() => {
-    if (!textareaRef.current) return { position: "absolute", top: 0, left: 0 };
-    const rect = textareaRef.current.getBoundingClientRect();
-    return {
-      position: "fixed",
-      bottom: window.innerHeight - rect.top + 4,
-      left: rect.left,
-      minWidth: 220,
-      zIndex: Z.POPOVER,
-    };
-  })();
-
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); void handleSubmit(e); }}
+      onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -464,166 +217,33 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
         isDragOver && "bg-rim-accent/5 ring-2 ring-inset ring-rim-accent/30",
       )}
     >
-      {/* Pending files preview */}
-      {pendingFiles.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {pendingFiles.map((pf, i) => (
-            <div
-              key={`${pf.file.name}-${i}`}
-              className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text"
-            >
-              {pf.previewUrl ? (
-                <img
-                  src={pf.previewUrl}
-                  alt={pf.file.name}
-                  className="h-8 w-8 rounded object-cover"
-                />
-              ) : (
-                <FileIcon className="h-4 w-4 text-rim-text-muted" />
-              )}
-              <span className="max-w-[120px] truncate">{pf.file.name}</span>
-              <button
-                type="button"
-                onClick={() => removeFile(i)}
-                className="rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
-                aria-label={`Remove ${pf.file.name}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <FilePreviewBar pendingFiles={pendingFiles} onRemove={removeFile} />
 
-      <div className="flex items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
-          title="Attach file"
-          aria-label="Attach file"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
-        <textarea
-          ref={textareaRef}
-          data-composer-input
-          rows={1}
-          value={text}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Write a message..."
-          className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
-          style={{ height: "auto" }}
-        />
-        <button
-          ref={emojiButtonRef}
-          type="button"
-          onClick={() => setEmojiPickerOpen((prev) => !prev)}
-          className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
-          title="Insert emoji"
-          aria-label="Insert emoji"
-        >
-          <SmilePlus className="h-4 w-4" />
-        </button>
-        <button
-          type="submit"
-          disabled={send.isPending || isUploading || (!text.trim() && pendingFiles.length === 0)}
-          className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
-          aria-label="Send message"
-        >
-          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
-      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) addFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
-      {slashSuggestions.length > 0 && createPortal(
-        <div
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-        >
-          {slashSuggestions.map((cmd, i) => (
-            <button
-              key={cmd.command}
-              type="button"
-              onClick={() => applySlashSuggestion(cmd)}
-              className={cn(
-                "flex w-full flex-col gap-0.5 px-3 py-1.5",
-                i === selectedSlashSuggestion ? "bg-rim-accent/20" : "hover:bg-white/5",
-              )}
-            >
-              <span className="text-sm font-medium text-rim-text">{cmd.command}</span>
-              <span className="text-xs text-rim-text-muted">{cmd.description}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-
-      {suggestions.length > 0 && createPortal(
-        <div
-          ref={suggestionsRef}
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-        >
-          {suggestions.map((s, i) => (
-            <button
-              key={s.code}
-              type="button"
-              onClick={() => applySuggestion(s)}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedSuggestion ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-white/5",
-              )}
-            >
-              <span className="text-base">{s.emoji}</span>
-              <span className="text-rim-text-muted">{s.code}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-
-      {mentionSuggestions.length > 0 && createPortal(
-        <div
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-        >
-          {mentionSuggestions.map((m, i) => (
-            <button
-              key={m.userId}
-              type="button"
-              onClick={() => applyMention(m)}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedMention ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-white/5",
-              )}
-            >
-              <Avatar url={m.avatarUrl} name={m.displayName ?? m.username} userId={m.userId} size="sm" />
-              <span className="font-medium">{m.displayName ?? m.username}</span>
-              <span className="text-rim-text-faint">@{m.username}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-
-      {emojiPickerOpen && (
-        <EmojiPicker
-          position={getEmojiPickerPosition()}
-          onSelect={insertEmoji}
-          onClose={() => setEmojiPickerOpen(false)}
-        />
-      )}
+      <ComposerInput
+        text={text}
+        onTextChange={setText}
+        onSubmit={() => void handleSubmit()}
+        onKeystroke={handleKeystroke}
+        saveDraftDebounced={saveDraftDebounced}
+        isSubmitting={send.isPending}
+        isUploading={isUploading}
+        canSubmit={!!(text.trim() || pendingFiles.length > 0)}
+        textareaRef={textareaRef}
+        mentionMapRef={mentionMapRef}
+        serverMembers={serverMembers}
+        onFilePickerOpen={() => fileInputRef.current?.click()}
+      />
     </form>
   );
 }

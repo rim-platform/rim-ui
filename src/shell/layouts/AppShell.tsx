@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -130,7 +130,7 @@ function WorkspaceShell() {
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 
   // Resolve the active plugin panel to plugin info + panel def
-  const resolvedPluginPanel = (() => {
+  const resolvedPluginPanel = useMemo(() => {
     if (!activePluginPanel || !plugins) return null;
     const plugin = plugins.find(
       (p) => p.manifest.id === activePluginPanel.pluginId && p.enabled,
@@ -141,7 +141,7 @@ function WorkspaceShell() {
     );
     if (!panel) return null;
     return { plugin, panel };
-  })();
+  }, [activePluginPanel, plugins]);
 
   const toolPanelPlugin = resolvedPluginPanel?.panel.slot === "tool_panel" ? resolvedPluginPanel : null;
   const mainAreaPlugin = resolvedPluginPanel?.panel.slot === "main_area" ? resolvedPluginPanel : null;

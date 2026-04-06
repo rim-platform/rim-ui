@@ -1,5 +1,5 @@
-import { useRef, useState, useCallback, useEffect } from "react";
-import { MessageSquare, Pin, SmilePlus, Download, FileIcon, Loader2 } from "lucide-react";
+import { useRef, useState, useCallback, useEffect, memo } from "react";
+import { MessageSquare, Pin, SmilePlus, Download, FileIcon, Loader2, AlertCircle, Trash2 } from "lucide-react";
 
 import { Avatar } from "../../../shared/ui/Avatar";
 import { EmojiPicker } from "../../../shared/ui/EmojiPicker";
@@ -7,10 +7,13 @@ import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { UserHoverCard } from "../../../shared/ui/UserHoverCard";
 import { UserHoverCardPortal } from "../../../shared/ui/UserHoverCardPortal";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
+import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
 import type { MessageAttachment } from "../../../core/types/messages";
 import type { PresenceStatus } from "../../../shared/ui/Avatar";
+import { useDeleteAttachmentMutation } from "../api/useAttachments";
+import { toast } from "../../../shared/toast/useToastStore";
 import { LinkPreviewCard } from "./LinkPreviewCard";
 import type { LinkPreview } from "./LinkPreviewCard";
 
@@ -23,6 +26,7 @@ interface Reaction {
 
 interface MessageItemMessage {
   id: string;
+  serverId?: string;
   text?: string | null;
   authorId: string;
   sentAt: string;
@@ -73,7 +77,7 @@ interface MessageItemProps {
   linkPreviews?: LinkPreview[];
 }
 
-export function MessageItem({
+export const MessageItem = memo(function MessageItem({
   message,
   authorName,
   authorAvatarUrl,
@@ -97,6 +101,13 @@ export function MessageItem({
   memberDisplayMap,
   linkPreviews,
 }: MessageItemProps) {
+  // Subscribe to this author's presence directly — avoids parent re-rendering all messages on any presence change
+  const storePresence = usePresenceStore((s) => s.presenceMap[message.authorId]);
+  const resolvedPresence: PresenceStatus | null =
+    storePresence === "ONLINE" || storePresence === "AWAY" || storePresence === "OFFLINE"
+      ? storePresence
+      : authorPresenceStatus ?? null;
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editText, setEditText] = useState(message.text ?? "");
   const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
@@ -201,7 +212,7 @@ export function MessageItem({
         role={authorRole}
         joinedAt={authorJoinedAt}
         bio={authorBio}
-        presenceStatus={authorPresenceStatus}
+        presenceStatus={resolvedPresence}
         isCurrentUser={isCurrentUser}
       >
         <span className="cursor-pointer">
@@ -224,7 +235,7 @@ export function MessageItem({
             role={authorRole}
             joinedAt={authorJoinedAt}
             bio={authorBio}
-            presenceStatus={authorPresenceStatus}
+            presenceStatus={resolvedPresence}
             isCurrentUser={isCurrentUser}
           >
             <span className={cn("text-sm font-medium cursor-pointer hover:underline", isCurrentUser ? "text-rim-accent" : "text-rim-text")}>
@@ -332,7 +343,7 @@ export function MessageItem({
             })()}
 
             {message.attachments && message.attachments.length > 0 && (
-              <AttachmentList attachments={message.attachments} hasText={!!message.text} />
+              <AttachmentList attachments={message.attachments} hasText={!!message.text} serverId={message.serverId} />
             )}
 
             {linkPreviews && linkPreviews.length > 0 && (
@@ -392,7 +403,49 @@ export function MessageItem({
       )}
     </div>
   );
-}
+}, (prev, next) => {
+  // Return true if props are equal (skip re-render)
+  if (prev.message.id !== next.message.id) return false;
+  if (prev.message.text !== next.message.text) return false;
+  if (prev.message.isDeleted !== next.message.isDeleted) return false;
+  if (prev.message.isPinned !== next.message.isPinned) return false;
+  if (prev.message.sentAt !== next.message.sentAt) return false;
+  if (prev.isEditing !== next.isEditing) return false;
+  if (prev.editError !== next.editError) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.authorPresenceStatus !== next.authorPresenceStatus) return false;
+  if (prev.authorName !== next.authorName) return false;
+  if (prev.authorAvatarUrl !== next.authorAvatarUrl) return false;
+  if (prev.authorStatusText !== next.authorStatusText) return false;
+  if (prev.isCurrentUser !== next.isCurrentUser) return false;
+  // Reactions: compare by length and content
+  const prevReactions = prev.reactions;
+  const nextReactions = next.reactions;
+  if (prevReactions !== nextReactions) {
+    if (!prevReactions || !nextReactions) return false;
+    if (prevReactions.length !== nextReactions.length) return false;
+    for (let i = 0; i < prevReactions.length; i++) {
+      const pr = prevReactions[i];
+      const nr = nextReactions[i];
+      if (pr.emoji !== nr.emoji || pr.count !== nr.count || pr.reactedByMe !== nr.reactedByMe) return false;
+    }
+  }
+  // Attachments
+  if (prev.message.attachments !== next.message.attachments) {
+    if (!prev.message.attachments || !next.message.attachments) return false;
+    if (prev.message.attachments.length !== next.message.attachments.length) return false;
+    for (let i = 0; i < prev.message.attachments.length; i++) {
+      if (prev.message.attachments[i].status !== next.message.attachments[i].status) return false;
+    }
+  }
+  // Link previews
+  if (prev.linkPreviews !== next.linkPreviews) {
+    if (!prev.linkPreviews || !next.linkPreviews) return false;
+    if (prev.linkPreviews.length !== next.linkPreviews.length) return false;
+  }
+  if (prev.memberDisplayMap !== next.memberDisplayMap) return false;
+  return true;
+});
 
 function ReactionPill({
   reaction,
@@ -475,66 +528,178 @@ function ReactionPill({
   );
 }
 
-function AttachmentList({ attachments, hasText }: { attachments: MessageAttachment[]; hasText: boolean }) {
+const UPLOAD_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+
+function AttachmentList({ attachments, hasText, serverId }: { attachments: MessageAttachment[]; hasText: boolean; serverId?: string }) {
   const baseUrl = (import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api").replace(/\/api$/, "");
+  const deleteAttachment = useDeleteAttachmentMutation();
+
+  // Track when we first observed each attachment as uploading for client-side timeout
+  const uploadTimestamps = useRef<Map<string, number>>(new Map());
+  const [timedOutIds, setTimedOutIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const now = Date.now();
+    const uploading: string[] = [];
+
+    for (const att of attachments) {
+      const isUploading = att.status === "PENDING_UPLOAD" || att.status === "UPLOADED";
+      if (isUploading) {
+        if (!uploadTimestamps.current.has(att.id)) {
+          uploadTimestamps.current.set(att.id, now);
+        }
+        uploading.push(att.id);
+      } else {
+        uploadTimestamps.current.delete(att.id);
+      }
+    }
+
+    if (uploading.length === 0) return;
+
+    // Calculate earliest timeout
+    let earliest = Infinity;
+    for (const id of uploading) {
+      const started = uploadTimestamps.current.get(id) ?? now;
+      const remaining = UPLOAD_TIMEOUT_MS - (now - started);
+      if (remaining <= 0) {
+        // Already timed out
+        setTimedOutIds((prev) => {
+          if (prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.add(id);
+          return next;
+        });
+      } else {
+        earliest = Math.min(earliest, remaining);
+      }
+    }
+
+    if (earliest === Infinity) return;
+
+    const timer = setTimeout(() => {
+      const checkTime = Date.now();
+      setTimedOutIds((prev) => {
+        const next = new Set(prev);
+        for (const id of uploading) {
+          const started = uploadTimestamps.current.get(id);
+          if (started && checkTime - started >= UPLOAD_TIMEOUT_MS) {
+            next.add(id);
+          }
+        }
+        return next.size !== prev.size ? next : prev;
+      });
+    }, earliest);
+
+    return () => clearTimeout(timer);
+  }, [attachments]);
+
+  function handleDelete(attachmentId: string) {
+    if (!serverId) return;
+    deleteAttachment.mutate(
+      { attachmentId, serverId },
+      {
+        onError: () => toast.error("Failed to remove attachment"),
+      },
+    );
+  }
 
   return (
     <div className={cn("flex flex-col gap-2", hasText ? "mt-2" : "mt-0.5")}>
       {attachments.map((att) => {
-          const isUploading = att.status === "PENDING_UPLOAD" || att.status === "UPLOADED";
-          const canDownload = !isUploading && att.status === "READY";
+          const isUploading = (att.status === "PENDING_UPLOAD" || att.status === "UPLOADED") && !timedOutIds.has(att.id);
+          const isFailed = att.status === "FAILED" || timedOutIds.has(att.id);
+          const canDownload = att.status === "READY";
           const downloadUrl = `${baseUrl}/api/attachments/${att.id}/download`;
           const isImage = att.contentType.startsWith("image/");
 
           if (isImage) {
             return (
-              <a
-                key={att.id}
-                href={canDownload ? downloadUrl : undefined}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(!canDownload && "pointer-events-none")}
-              >
-                <img
-                  src={canDownload ? downloadUrl : undefined}
-                  alt={att.filename}
-                  className={cn(
-                    "max-h-64 max-w-md rounded-lg object-contain",
-                    isUploading && "opacity-60",
-                  )}
-                />
+              <div key={att.id} className="relative inline-block">
+                <a
+                  href={canDownload ? downloadUrl : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(!canDownload && "pointer-events-none")}
+                >
+                  <img
+                    src={canDownload ? downloadUrl : undefined}
+                    alt={att.filename}
+                    className={cn(
+                      "max-h-64 max-w-md rounded-lg object-contain",
+                      (isUploading || isFailed) && "opacity-60",
+                    )}
+                  />
+                </a>
                 {isUploading && (
                   <div className="mt-1 flex items-center gap-1.5 text-xs text-rim-text-faint">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Uploading...</span>
                   </div>
                 )}
-              </a>
+                {isFailed && (
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-rim-danger">
+                    <AlertCircle className="h-3 w-3" />
+                    <span>Upload failed</span>
+                    {serverId && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(att.id)}
+                        className="ml-1 rounded p-0.5 text-rim-danger transition hover:bg-rim-danger/10"
+                        title="Remove attachment"
+                        aria-label="Remove failed attachment"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             );
           }
 
           return (
             <div key={att.id}>
-              <a
-                href={canDownload ? downloadUrl : undefined}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text transition hover:bg-white/5",
-                  isUploading && "opacity-60 pointer-events-none",
+              <div className="flex items-center gap-1">
+                <a
+                  href={canDownload ? downloadUrl : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
+                    isFailed
+                      ? "border-rim-danger/30 bg-rim-panel text-rim-text opacity-60 pointer-events-none"
+                      : "border-rim-line bg-rim-panel text-rim-text hover:bg-white/5",
+                    isUploading && "opacity-60 pointer-events-none",
+                  )}
+                >
+                  <FileIcon className="h-4 w-4 shrink-0 text-rim-text-muted" />
+                  <span className="truncate">{att.filename}</span>
+                  <span className="shrink-0 text-xs text-rim-text-faint">{formatFileSize(att.sizeBytes)}</span>
+                  {isUploading ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 text-rim-text-muted animate-spin" />
+                  ) : isFailed ? (
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rim-danger" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
+                  )}
+                </a>
+                {isFailed && serverId && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(att.id)}
+                    className="rounded p-1.5 text-rim-danger transition hover:bg-rim-danger/10"
+                    title="Remove attachment"
+                    aria-label="Remove failed attachment"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 )}
-              >
-                <FileIcon className="h-4 w-4 shrink-0 text-rim-text-muted" />
-                <span className="truncate">{att.filename}</span>
-                <span className="shrink-0 text-xs text-rim-text-faint">{formatFileSize(att.sizeBytes)}</span>
-                {isUploading ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 text-rim-text-muted animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
-                )}
-              </a>
+              </div>
               {isUploading && (
                 <span className="mt-0.5 block text-xs text-rim-text-faint">Uploading...</span>
+              )}
+              {isFailed && (
+                <span className="mt-0.5 block text-xs text-rim-danger">Upload failed</span>
               )}
             </div>
           );

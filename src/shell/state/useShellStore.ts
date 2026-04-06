@@ -27,6 +27,7 @@ type ShellState = {
   lastClosedThreadId: string | null;
   showNewChannelDialog: boolean;
   showNewMessagePicker: boolean;
+  showInviteDialog: boolean;
   pinnedPanelOpen: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
@@ -43,6 +44,7 @@ type ShellState = {
   setHighlightedMessageId: (id: string | null) => void;
   setShowNewChannelDialog: (show: boolean) => void;
   setShowNewMessagePicker: (show: boolean) => void;
+  setShowInviteDialog: (show: boolean) => void;
   setPinnedPanelOpen: (open: boolean) => void;
   reset: () => void;
 };
@@ -61,6 +63,7 @@ export const useShellStore = create<ShellState>((set) => ({
   lastClosedThreadId: null,
   showNewChannelDialog: false,
   showNewMessagePicker: false,
+  showInviteDialog: false,
   pinnedPanelOpen: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -97,6 +100,7 @@ export const useShellStore = create<ShellState>((set) => ({
 
   setShowNewChannelDialog: (show) => set({ showNewChannelDialog: show }),
   setShowNewMessagePicker: (show) => set({ showNewMessagePicker: show }),
+  setShowInviteDialog: (show) => set({ showInviteDialog: show }),
   setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
 
   reset: () =>
@@ -114,6 +118,7 @@ export const useShellStore = create<ShellState>((set) => ({
       lastClosedThreadId: null,
       showNewChannelDialog: false,
       showNewMessagePicker: false,
+      showInviteDialog: false,
       pinnedPanelOpen: false,
     }),
 }));

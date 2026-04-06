@@ -2,26 +2,26 @@
 // When codegen runs, the generated SDK will provide the canonical types.
 // These local types allow development without a running backend.
 
-export type CommandSurface = "Palette" | "ContextMenu" | "KeybindPicker";
+export type CommandSurface = "PALETTE" | "CONTEXT_MENU" | "KEYBIND_PICKER";
 
-export type CommandSourceKind = "BuiltIn" | "Plugin" | "Integration" | "User";
+export type CommandSourceKind = "BUILT_IN" | "PLUGIN" | "INTEGRATION" | "USER";
 
-export type CommandExecutionTarget = "Backend" | "DesktopLocal";
+export type CommandExecutionTarget = "BACKEND" | "DESKTOP_LOCAL";
 
 export type KeybindContext =
-  | "Global"
-  | "Composer"
-  | "MessageList"
-  | "ThreadView"
-  | "ConversationView"
-  | "Panel"
-  | "CommandPalette";
+  | "GLOBAL"
+  | "COMPOSER"
+  | "MESSAGE_LIST"
+  | "THREAD_VIEW"
+  | "CONVERSATION_VIEW"
+  | "PANEL"
+  | "COMMAND_PALETTE";
 
-export type KeybindScope = "User" | "Workspace";
+export type KeybindScope = "USER" | "WORKSPACE";
 
-export type KeybindSource = "Default" | "User" | "Workspace";
+export type KeybindSource = "DEFAULT" | "USER" | "WORKSPACE";
 
-export type CommandResultStatus = "Success" | "Error";
+export type CommandResultStatus = "SUCCESS" | "ERROR";
 
 export interface CommandDefinition {
   id: string;

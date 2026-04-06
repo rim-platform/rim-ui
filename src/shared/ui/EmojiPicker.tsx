@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "./cn";
 import { Z } from "./zIndex";
-import type { CustomEmoji } from "../../features/emoji/api/useCustomEmojis";
+/** Minimal custom emoji shape needed by the picker (avoids importing from features/emoji). */
+export interface CustomEmoji {
+  id: string;
+  name: string;
+  imageUrl: string;
+}
 
 const EMOJI_OPTIONS = ["\u{1F44D}", "\u{1F44E}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F389}", "\u{1F680}", "\u{1F440}", "\u2705"];
 const COLS = 5;

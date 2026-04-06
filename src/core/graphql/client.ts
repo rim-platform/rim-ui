@@ -5,7 +5,7 @@ import { getGraphqlEndpoint } from "./config";
 const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
-function getCookie(name: string): string | undefined {
+export function getCookie(name: string): string | undefined {
   const row = document.cookie
     .split("; ")
     .find((r) => r.startsWith(`${name}=`));

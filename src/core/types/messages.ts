@@ -5,12 +5,14 @@ export interface MessageReaction {
   userIds: string[];
 }
 
+export type AttachmentStatus = "PENDING_UPLOAD" | "UPLOADED" | "READY" | "FAILED";
+
 export interface MessageAttachment {
   id: string;
   filename: string;
   contentType: string;
   sizeBytes: number;
-  status: string;
+  status: AttachmentStatus;
 }
 
 export interface MessageAuthor {

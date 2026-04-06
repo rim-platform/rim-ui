@@ -6,9 +6,14 @@ const tools = new Map<string, RegisteredTool>();
 export function registerTool(
   definition: AiToolDefinition,
   handler: AiToolHandler,
-  options?: { sideEffect?: boolean },
+  options?: { sideEffect?: boolean; requiresConfirmation?: boolean },
 ): void {
-  tools.set(definition.name, { definition, handler, sideEffect: options?.sideEffect });
+  tools.set(definition.name, {
+    definition,
+    handler,
+    sideEffect: options?.sideEffect,
+    requiresConfirmation: options?.requiresConfirmation,
+  });
 }
 
 export function unregisterTool(name: string): void {

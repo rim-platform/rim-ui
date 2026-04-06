@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
-import { graphqlClient } from "../../../core/graphql/client";
+import { graphqlClient, getCookie } from "../../../core/graphql/client";
 import { ATTACHMENT_FIELDS } from "../../../graphql/fragments/message";
 
 const CREATE_ATTACHMENT_MUTATION = gql`
@@ -73,15 +73,31 @@ export function useFinalizeAttachmentMutation() {
   });
 }
 
+const DELETE_ATTACHMENT_MUTATION = gql`
+  mutation DeleteAttachment($input: DeleteAttachmentInput!) {
+    deleteAttachment(input: $input)
+  }
+`;
+
+interface DeleteAttachmentVars {
+  attachmentId: string;
+  serverId: string;
+}
+
+export function useDeleteAttachmentMutation() {
+  return useMutation({
+    mutationFn: (vars: DeleteAttachmentVars) =>
+      graphqlClient.request<{ deleteAttachment: boolean }>(DELETE_ATTACHMENT_MUTATION, {
+        input: {
+          attachmentId: vars.attachmentId,
+          serverId: vars.serverId,
+        },
+      }),
+  });
+}
+
 const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
-
-function getCsrfToken(): string | undefined {
-  const row = document.cookie
-    .split("; ")
-    .find((r) => r.startsWith(`${CSRF_COOKIE}=`));
-  return row ? decodeURIComponent(row.split("=")[1]) : undefined;
-}
 
 /**
  * Upload a file to the REST endpoint using the upload token from createAttachment.
@@ -95,7 +111,7 @@ export async function uploadFileRest(file: File, uploadToken: string): Promise<v
   formData.append("upload_token", uploadToken);
 
   const headers: Record<string, string> = {};
-  const csrf = getCsrfToken();
+  const csrf = getCookie(CSRF_COOKIE);
   if (csrf) headers[CSRF_HEADER] = csrf;
 
   const res = await fetch(uploadUrl, {

@@ -2,7 +2,7 @@ import { useMemo, useCallback } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
-import { preprocessMentions, postprocessMentions } from "../../features/messages/utils/mentionRenderer";
+import { preprocessMentions, postprocessMentions } from "../utils/mentionRenderer";
 
 const renderer = new marked.Renderer();
 renderer.link = ({ href, text }) => {

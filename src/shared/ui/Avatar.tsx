@@ -1,5 +1,8 @@
 import { cn } from "./cn";
 
+// TODO: Replace hardcoded Tailwind color classes with rim-* design tokens
+// (e.g. bg-rim-avatar-1 through bg-rim-avatar-16) once avatar color CSS
+// custom properties are defined in src/styles/globals.css.
 const AVATAR_COLORS = [
   "bg-red-600", "bg-orange-600", "bg-amber-600", "bg-yellow-600",
   "bg-lime-600", "bg-green-600", "bg-emerald-600", "bg-teal-600",

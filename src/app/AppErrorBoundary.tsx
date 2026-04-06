@@ -28,8 +28,24 @@ export class AppErrorBoundary extends Component<Props, State> {
               {this.state.error.message}
             </pre>
             <p className="text-xs text-rim-text-faint">
-              Refresh the app after this error is fixed. The detailed stack is also logged to the browser console.
+              The detailed stack is also logged to the browser console.
             </p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => this.setState({ error: null })}
+                className="rounded-lg bg-rim-accent px-4 py-1.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong"
+              >
+                Try Again
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg border border-rim-line px-4 py-1.5 text-sm font-medium text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+              >
+                Reload App
+              </button>
+            </div>
           </div>
         </div>
       );

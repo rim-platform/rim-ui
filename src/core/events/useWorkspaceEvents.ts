@@ -7,6 +7,12 @@ import { queryKeys } from "../query/keys";
 import type { WorkspaceEvent, MessageEventData } from "./types";
 import type { MessageItem, MessagesPage } from "../types/messages";
 import { useShellStore } from "../../shell/state/useShellStore";
+
+// TODO(arch): These imports create a dependency direction violation — core/ should not
+// import from features/. Refactor to an event bus pattern (see eventBus.ts) where this
+// file emits generic events and each feature module registers its own handler.
+// Deferred because the refactor touches the real-time event pipeline and multiple
+// feature modules, making it high-risk for a mechanical change.
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { usePresenceStore } from "../../features/presence/state/usePresenceStore";
@@ -14,7 +20,6 @@ import { useTypingStore } from "../../features/messages/state/useTypingStore";
 import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
 import { useMutedStore } from "../../features/conversations/state/useMutedStore";
 import { showMessageNotification } from "../../features/notifications/runtime/desktopNotification";
-import { queryClient } from "../query/queryClient";
 
 const WORKSPACE_EVENTS_QUERY = `
   subscription WorkspaceEvents($workspaceId: ID!) {
@@ -159,8 +164,8 @@ function handleEvent(
         const isMuted = useMutedStore.getState().isMuted(event.conversation_id);
         const notifSettings = useNotificationSettingsStore.getState();
         if (notifSettings.enabled && !isMuted) {
-          const channelName = resolveConversationName(workspaceId, event.conversation_id);
-          const authorName = resolveMemberName(workspaceId, event.message.author_id);
+          const channelName = resolveConversationName(qc, workspaceId, event.conversation_id);
+          const authorName = resolveMemberName(qc, workspaceId, event.message.author_id);
           showMessageNotification({
             channelName,
             authorName,
@@ -320,14 +325,14 @@ function handleEvent(
       const currentUserId = useAuthStore.getState().session?.userId;
       if (event.user_id !== currentUserId) {
         // Resolve username from member cache (backend event doesn't include it)
-        const username = resolveMemberName(workspaceId, event.user_id);
+        const username = resolveMemberName(qc, workspaceId, event.user_id);
         useTypingStore.getState().addTyping(event.conversation_id, event.user_id, username);
       }
       break;
     }
 
     case "UserMentioned": {
-      const channelName = resolveConversationName(workspaceId, event.conversation_id);
+      const channelName = resolveConversationName(qc, workspaceId, event.conversation_id);
       toast.info(`You were mentioned in #${channelName}`);
       break;
     }
@@ -388,16 +393,16 @@ interface ServerMemberCache {
   username: string;
 }
 
-function resolveConversationName(workspaceId: string, conversationId: string): string {
-  const channels = queryClient.getQueryData<ConversationCachePage>(queryKeys.channels(workspaceId));
-  const inbox = queryClient.getQueryData<ConversationCachePage>(queryKeys.conversations(workspaceId));
+function resolveConversationName(qc: ReturnType<typeof useQueryClient>, workspaceId: string, conversationId: string): string {
+  const channels = qc.getQueryData<ConversationCachePage>(queryKeys.channels(workspaceId));
+  const inbox = qc.getQueryData<ConversationCachePage>(queryKeys.conversations(workspaceId));
   const all = [...(channels?.items ?? []), ...(inbox?.items ?? [])];
   const conv = all.find((c) => c.id === conversationId);
   return conv?.title || "New message";
 }
 
-function resolveMemberName(workspaceId: string, userId: string): string {
-  const members = queryClient.getQueryData<ServerMemberCache[]>(queryKeys.serverMembers(workspaceId));
+function resolveMemberName(qc: ReturnType<typeof useQueryClient>, workspaceId: string, userId: string): string {
+  const members = qc.getQueryData<ServerMemberCache[]>(queryKeys.serverMembers(workspaceId));
   const member = members?.find((m) => m.userId === userId);
   return member?.username ?? userId.slice(0, 8);
 }

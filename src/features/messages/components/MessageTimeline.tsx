@@ -8,7 +8,6 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { MessageItem } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { Composer } from "./Composer";
@@ -25,7 +24,6 @@ export function MessageTimeline() {
   const setHighlightedMessageId = useShellStore((s) => s.setHighlightedMessageId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
-  const presenceMap = usePresenceStore((s) => s.presenceMap);
 
   // Build userId → displayName map for mention rendering
   const memberDisplayMap = useMemo(() => {
@@ -127,6 +125,10 @@ export function MessageTimeline() {
   // Scroll to highlighted message (from search) and clear after a brief highlight
   useEffect(() => {
     if (!highlightedMessageId || !scrollContainerRef.current) return;
+    if (!/^[\w-]+$/.test(highlightedMessageId)) {
+      setHighlightedMessageId(null);
+      return;
+    }
     const el = scrollContainerRef.current.querySelector(
       `[data-message-id="${highlightedMessageId}"]`,
     );
@@ -290,7 +292,6 @@ export function MessageTimeline() {
           items.map((msg, index) => {
             const member = memberLookup.resolve(msg.authorId);
             const name = member.displayName || msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
-            const presence = presenceMap[msg.authorId];
             return (
               <MessageItem
                 key={msg.id}
@@ -303,7 +304,6 @@ export function MessageTimeline() {
                 authorRole={member.role}
                 authorJoinedAt={member.joinedAt}
                 authorBio={member.bio}
-                authorPresenceStatus={presence === "ONLINE" || presence === "AWAY" || presence === "OFFLINE" ? presence : null}
                 isCurrentUser={msg.author?.id === currentUserId}
                 reactions={msg.reactions}
                 isSelected={index === selectedMessageIndex}

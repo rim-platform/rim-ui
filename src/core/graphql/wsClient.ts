@@ -45,7 +45,9 @@ export function onWsDisconnected(listener: ConnectionListener): () => void {
 }
 
 export const wsClient = createClient({
-  url: getWsEndpoint(),
+  // Use a function so the URL is resolved on each connection attempt,
+  // allowing it to react to environment or origin changes at reconnect time.
+  url: () => getWsEndpoint(),
   // Reconnect automatically
   retryAttempts: Infinity,
   retryWait: async (retries) => {

@@ -3,9 +3,6 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 
-// TODO: Backend GraphQL schema not yet implemented — these queries/mutations
-// are prepared based on the agreed contract and will work once the backend lands.
-
 export interface MacroStep {
   commandId: string;
   args: Record<string, unknown>;
@@ -83,8 +80,8 @@ const DeleteMacroDocument = gql`
 `;
 
 const ExecuteMacroDocument = gql`
-  mutation ExecuteMacro($macroId: ID!, $commandContext: CommandContextInput) {
-    executeMacro(macroId: $macroId, commandContext: $commandContext) {
+  mutation ExecuteMacro($input: ExecuteMacroInput!) {
+    executeMacro(input: $input) {
       status
       message
     }
@@ -144,7 +141,7 @@ export function useExecuteMacroMutation() {
     mutationFn: (input: ExecuteMacroInput) =>
       graphqlClient.request<{ executeMacro: { status: string; message: string } }>(
         ExecuteMacroDocument,
-        { macroId: input.macroId, commandContext: input.commandContext },
+        { input },
       ),
   });
 }

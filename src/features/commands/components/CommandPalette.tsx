@@ -14,13 +14,13 @@ import type { CommandDefinition, CommandSourceKind } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
   switch (source) {
-    case "BuiltIn":
+    case "BUILT_IN":
       return <Terminal className="h-3.5 w-3.5 text-rim-text-muted" />;
-    case "Plugin":
+    case "PLUGIN":
       return <Plug className="h-3.5 w-3.5 text-rim-accent" />;
-    case "User":
+    case "USER":
       return <User className="h-3.5 w-3.5 text-rim-text-muted" />;
-    case "Integration":
+    case "INTEGRATION":
       return <Zap className="h-3.5 w-3.5 text-rim-text-muted" />;
   }
 }
@@ -33,7 +33,7 @@ export function CommandPalette() {
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
 
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const { data: commands } = useCommands("Palette");
+  const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const executeCommandMutation = useExecuteCommandMutation();
@@ -195,7 +195,12 @@ export function CommandPalette() {
 
         {/* Command list */}
         <div ref={listRef} className="max-h-80 overflow-y-auto p-1">
-          {sortedResults.length === 0 ? (
+          {isLoadingCommands ? (
+            <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
+              <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-rim-text-muted border-t-transparent mr-2 align-middle" />
+              Loading commands...
+            </div>
+          ) : sortedResults.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
               No commands found.
             </div>

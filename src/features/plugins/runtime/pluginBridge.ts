@@ -86,8 +86,8 @@ export function createPluginBridge(config: BridgeConfig) {
             title: "",
             description: "",
             category: "",
-            sourceKind: "Plugin",
-            executionTarget: "DesktopLocal",
+            sourceKind: "PLUGIN",
+            executionTarget: "DESKTOP_LOCAL",
             requiredContext: [],
             requiredCapabilities: [],
             visibleInPalette: false,
@@ -95,7 +95,7 @@ export function createPluginBridge(config: BridgeConfig) {
             keybindCapable: false,
             dangerous: false,
           },
-          async () => ({ executeCommand: { status: "Success", message: "", payload: null, followUpCommands: [] } }),
+          async () => ({ executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] } }),
           { args: msg.args },
         );
         break;
@@ -120,6 +120,8 @@ export function createPluginBridge(config: BridgeConfig) {
   window.addEventListener("message", handleMessage);
 
   function sendToPlugin(message: HostToPluginMessage) {
+    // Sandboxed iframes have origin "null", so we must use "*" for postMessage.
+    // Inbound messages are validated by origin check in the message event handler.
     iframe.contentWindow?.postMessage(message, "*");
   }
 

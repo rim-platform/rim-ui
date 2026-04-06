@@ -81,7 +81,9 @@ export function useSendMessageMutation() {
         input: { serverId: vars.workspaceId, conversationId: vars.conversationId, text: vars.text },
       }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.messages(vars.workspaceId, vars.conversationId) });
+      // Note: messages query is NOT invalidated here because the WebSocket
+      // "NewMessage" event already appends the message to the cache.
+      // Invalidating would cause a double-update and scroll jump.
       qc.invalidateQueries({ queryKey: queryKeys.conversations(vars.workspaceId) });
     },
   });

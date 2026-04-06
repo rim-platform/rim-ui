@@ -1,18 +1,28 @@
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useState, lazy, Suspense } from "react";
+import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { UserCommandSettings } from "../../commands/components/UserCommandSettings";
-import { PluginSettingsPage } from "../../plugins/components/PluginSettingsPage";
-import { AgentSettingsPanel } from "../../agent/settings/AgentSettingsPanel";
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
-import { EmojiManagement } from "../../emoji/components/EmojiManagement";
 import { cn } from "../../../shared/ui/cn";
+
+// Lazy-load heavier / rarely-used settings panels
+const PluginSettingsPage = lazy(() => import("../../plugins/components/PluginSettingsPage").then(m => ({ default: m.PluginSettingsPage })));
+const AgentSettingsPanel = lazy(() => import("../../agent/settings/AgentSettingsPanel").then(m => ({ default: m.AgentSettingsPanel })));
+const EmojiManagement = lazy(() => import("../../emoji/components/EmojiManagement").then(m => ({ default: m.EmojiManagement })));
+
+function SettingsLoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-5 w-5 animate-spin text-rim-accent" />
+    </div>
+  );
+}
 
 type SettingsTab = "profile" | "keybinds" | "commands" | "macros" | "plugins" | "emoji" | "agent" | "notifications" | "account" | "about";
 
@@ -72,22 +82,24 @@ export function SettingsPage() {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-8 py-6">
-          {activeTab === "profile" && <ProfileSettings />}
-          {activeTab === "keybinds" && <KeybindSettings />}
-          {activeTab === "commands" && <UserCommandSettings />}
-          {activeTab === "macros" && <MacroSettings />}
-          {activeTab === "plugins" && <PluginSettingsPage />}
-          {activeTab === "emoji" && (
-            <EmojiManagement serverId={workspaceId} isAdmin />
-          )}
-          {activeTab === "agent" && <AgentSettingsPanel />}
-          {activeTab === "notifications" && <NotificationSettings />}
-          {activeTab === "account" && (
-            <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
-          )}
-          {activeTab === "about" && (
-            <p className="text-sm text-rim-text-muted">About RIM coming soon.</p>
-          )}
+          <Suspense fallback={<SettingsLoadingSpinner />}>
+            {activeTab === "profile" && <ProfileSettings />}
+            {activeTab === "keybinds" && <KeybindSettings />}
+            {activeTab === "commands" && <UserCommandSettings />}
+            {activeTab === "macros" && <MacroSettings />}
+            {activeTab === "plugins" && <PluginSettingsPage />}
+            {activeTab === "emoji" && (
+              <EmojiManagement serverId={workspaceId} isAdmin />
+            )}
+            {activeTab === "agent" && <AgentSettingsPanel />}
+            {activeTab === "notifications" && <NotificationSettings />}
+            {activeTab === "account" && (
+              <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
+            )}
+            {activeTab === "about" && (
+              <p className="text-sm text-rim-text-muted">About RIM coming soon.</p>
+            )}
+          </Suspense>
         </div>
       </div>
     </div>

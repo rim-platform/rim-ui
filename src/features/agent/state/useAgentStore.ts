@@ -230,7 +230,9 @@ export const useAgentStore = create<AgentState>()(
     {
       name: "rim-agent-store",
       partialize: (state) => ({
-        conversations: state.conversations,
+        // Only persist the most recent 5 conversations to avoid unbounded
+        // localStorage growth (up to 20 conversations x 100 messages each).
+        conversations: state.conversations.slice(0, 5),
         activeConversationId: state.activeConversationId,
         settings: state.settings,
       }),

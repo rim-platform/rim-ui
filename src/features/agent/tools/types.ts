@@ -14,4 +14,5 @@ export interface RegisteredTool {
   definition: AiToolDefinition;
   handler: AiToolHandler;
   sideEffect?: boolean;
+  requiresConfirmation?: boolean;
 }

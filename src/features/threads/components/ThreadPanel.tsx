@@ -40,13 +40,15 @@ export function ThreadPanel() {
   );
   const threadMessages = threadMsgs.data;
 
-  // Debug: trace the entire data chain
-  logger.debug("[ThreadPanel] rootMessageId:", rootMessageId);
-  logger.debug("[ThreadPanel] threadByRoot:", thread, "status:", threadByRoot.status, "error:", threadByRoot.error);
-  logger.debug("[ThreadPanel] threadId:", threadId);
-  logger.debug("[ThreadPanel] threadMessages enabled:", Boolean(workspaceId && conversationId && threadId));
-  logger.debug("[ThreadPanel] threadMessages data:", threadMessages, "status:", threadMsgs.status, "error:", threadMsgs.error);
-  logger.debug("[ThreadPanel] threadMessages items:", threadMessages?.items?.length);
+  // Debug: trace the entire data chain (only when values change)
+  useEffect(() => {
+    logger.debug("[ThreadPanel] rootMessageId:", rootMessageId);
+    logger.debug("[ThreadPanel] threadByRoot:", thread, "status:", threadByRoot.status, "error:", threadByRoot.error);
+    logger.debug("[ThreadPanel] threadId:", threadId);
+    logger.debug("[ThreadPanel] threadMessages enabled:", Boolean(workspaceId && conversationId && threadId));
+    logger.debug("[ThreadPanel] threadMessages data:", threadMessages, "status:", threadMsgs.status, "error:", threadMsgs.error);
+    logger.debug("[ThreadPanel] threadMessages items:", threadMessages?.items?.length);
+  }, [rootMessageId, thread, threadByRoot.status, threadByRoot.error, threadId, workspaceId, conversationId, threadMessages, threadMsgs.status, threadMsgs.error]);
 
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const toggleReaction = useToggleReactionMutation();
@@ -123,6 +125,10 @@ export function ThreadPanel() {
   // Uses a 300ms delay to wait for thread messages to render (async query).
   useEffect(() => {
     if (!highlightedMessageId || !scrollRef.current) return;
+    if (!/^[\w-]+$/.test(highlightedMessageId)) {
+      setHighlightedMessageId(null);
+      return;
+    }
 
     const timer = setTimeout(() => {
       const el = scrollRef.current?.querySelector(

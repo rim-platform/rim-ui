@@ -49,7 +49,6 @@ interface PluginPanelProps {
 export function PluginPanel({ pluginId, panelId, approvedCapabilities, onClose }: PluginPanelProps) {
   const { capabilities } = useRuntime();
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [loadState, setLoadState] = useState<LoadState>("idle");
 
   const { focusIframe, onWrapperKeyDown } = usePluginFocusManager(iframeRef, onClose);
 
@@ -76,8 +75,6 @@ export function PluginPanel({ pluginId, panelId, approvedCapabilities, onClose }
       pluginId={pluginId}
       approvedCapabilities={approvedCapabilities}
       iframeRef={iframeRef}
-      loadState={loadState}
-      setLoadState={setLoadState}
       focusIframe={focusIframe}
       onWrapperKeyDown={onWrapperKeyDown}
       onClose={onClose}
@@ -90,8 +87,6 @@ interface PluginPanelInnerProps {
   pluginId: string;
   approvedCapabilities: PluginCapability[];
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  loadState: LoadState;
-  setLoadState: (state: LoadState) => void;
   focusIframe: () => void;
   onWrapperKeyDown: (e: React.KeyboardEvent) => void;
   onClose: () => void;
@@ -102,12 +97,11 @@ function PluginPanelInner({
   pluginId,
   approvedCapabilities,
   iframeRef,
-  loadState,
-  setLoadState,
   focusIframe,
   onWrapperKeyDown,
   onClose,
 }: PluginPanelInnerProps) {
+  const [loadState, setLoadState] = useState<LoadState>("idle");
   // Timer-based loading states
   useEffect(() => {
     setLoadState("idle");

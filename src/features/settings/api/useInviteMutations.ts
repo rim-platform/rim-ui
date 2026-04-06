@@ -4,45 +4,49 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 
 const CREATE_INVITE_MUTATION = gql`
-  mutation CreateInvite($serverId: ID!) {
-    createInvite(serverId: $serverId) {
-      token
+  mutation CreateInvite($input: CreateInviteInput!) {
+    createInvite(input: $input) {
+      inviteToken
+      inviteId
     }
   }
 `;
 
 const JOIN_SERVER_BY_INVITE_MUTATION = gql`
-  mutation JoinServerByInvite($inviteToken: String!) {
-    joinServerByInvite(inviteToken: $inviteToken) {
+  mutation JoinServerByInvite($input: JoinServerByInviteInput!) {
+    joinServerByInvite(input: $input) {
       serverId
-      userId
     }
   }
 `;
 
 interface CreateInviteResponse {
   createInvite: {
-    token: string;
+    inviteToken: string;
+    inviteId: string;
   };
 }
 
 interface JoinServerByInviteResponse {
   joinServerByInvite: {
     serverId: string;
-    userId: string;
   };
 }
 
 export function useCreateInviteMutation() {
   return useMutation({
     mutationFn: (serverId: string) =>
-      graphqlClient.request<CreateInviteResponse>(CREATE_INVITE_MUTATION, { serverId }),
+      graphqlClient.request<CreateInviteResponse>(CREATE_INVITE_MUTATION, {
+        input: { serverId, maxUses: 10 },
+      }),
   });
 }
 
 export function useJoinServerByInviteMutation() {
   return useMutation({
     mutationFn: (inviteToken: string) =>
-      graphqlClient.request<JoinServerByInviteResponse>(JOIN_SERVER_BY_INVITE_MUTATION, { inviteToken }),
+      graphqlClient.request<JoinServerByInviteResponse>(JOIN_SERVER_BY_INVITE_MUTATION, {
+        input: { inviteToken },
+      }),
   });
 }

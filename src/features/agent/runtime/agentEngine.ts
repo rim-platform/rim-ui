@@ -215,6 +215,21 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
         }
 
         try {
+          // Require user confirmation for write actions before executing
+          if (tool.requiresConfirmation) {
+            const description = `Agent wants to execute: ${tc.name}\n\nInput: ${JSON.stringify(tc.input, null, 2)}`;
+            const approved = window.confirm(description);
+            if (!approved) {
+              toolResultContent.push({
+                type: "tool_result",
+                tool_use_id: tc.id,
+                content: "Error: User denied this action.",
+                is_error: true,
+              });
+              continue;
+            }
+          }
+
           store.setToolActivity(`Running ${tc.name}...`);
           const result = await tool.handler(tc.input);
 

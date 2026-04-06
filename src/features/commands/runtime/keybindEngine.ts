@@ -37,14 +37,12 @@ export function matchKeybind(
 ): ResolvedKeybind | null {
   if (!keystroke) return null;
 
-  const contextUpper = context.toUpperCase();
-
   return (
     keybinds.find(
       (kb) =>
         kb.isEnabled &&
         kb.keystroke === keystroke &&
-        (kb.context.toUpperCase() === contextUpper || kb.context.toUpperCase() === "GLOBAL")
+        (kb.context === context || kb.context === "GLOBAL")
     ) ?? null
   );
 }
@@ -57,18 +55,18 @@ export function surfaceToContext(
 ): KeybindContext {
   switch (focusedSurface) {
     case "composer":
-      return "Composer";
+      return "COMPOSER";
     case "messageList":
-      return "MessageList";
+      return "MESSAGE_LIST";
     case "threadView":
-      return "ThreadView";
+      return "THREAD_VIEW";
     case "conversationView":
-      return "ConversationView";
+      return "CONVERSATION_VIEW";
     case "panel":
-      return "Panel";
+      return "PANEL";
     case "commandPalette":
-      return "CommandPalette";
+      return "COMMAND_PALETTE";
     default:
-      return "Global";
+      return "GLOBAL";
   }
 }

@@ -86,10 +86,10 @@ export function QuickAccessAssigner() {
 
       try {
         await createKeybind.mutateAsync({
-          scope: "User",
+          scope: "USER",
           keystroke,
           commandId,
-          context: "Global",
+          context: "GLOBAL",
           presetArgs,
         });
         toast.success(`Shortcut ${keystroke} assigned to ${target.label}`);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, memo } from "react";
 import { Hash, MessageCircle, Plus, Users, BellOff } from "lucide-react";
 
 import { useChannels } from "../api/useChannels";
@@ -234,7 +234,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   );
 }
 
-function ConversationItem({
+const ConversationItem = memo(function ConversationItem({
   conv,
   globalIndex,
   selectedId,
@@ -354,4 +354,4 @@ function ConversationItem({
       )}
     </li>
   );
-}
+});

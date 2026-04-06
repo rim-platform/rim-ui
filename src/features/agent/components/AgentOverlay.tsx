@@ -22,11 +22,24 @@ function ensureToolsRegistered() {
   }
 }
 
-// Track which provider has been registered to avoid re-registration on every submit
+// Track which provider has been registered to avoid re-registration on every submit.
+// Also track a simple hash of the API key so we re-register when the key changes.
 let registeredProviderId: string | null = null;
+let registeredKeyHash: string | null = null;
+
+/** Simple hash to detect API key changes without storing the key in plaintext. */
+function simpleKeyHash(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0; // Convert to 32-bit integer
+  }
+  return String(hash);
+}
 
 async function ensureProviderRegistered(providerId: string, apiKey: string): Promise<void> {
-  if (registeredProviderId === providerId) return;
+  const keyHash = simpleKeyHash(apiKey);
+  if (registeredProviderId === providerId && registeredKeyHash === keyHash) return;
 
   if (providerId === "anthropic") {
     const { createAnthropicProvider } = await import("../providers/anthropic");
@@ -37,6 +50,7 @@ async function ensureProviderRegistered(providerId: string, apiKey: string): Pro
   }
 
   registeredProviderId = providerId;
+  registeredKeyHash = keyHash;
 }
 
 const DISCLAIMER_FLAG = "agent-disclaimer-accepted";

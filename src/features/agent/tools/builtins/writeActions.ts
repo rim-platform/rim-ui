@@ -67,7 +67,7 @@ export function registerSendMessageTool(): void {
         sentAt: result.sendMessage.sentAt,
       });
     },
-    { sideEffect: true },
+    { sideEffect: true, requiresConfirmation: true },
   );
 }
 
@@ -98,7 +98,7 @@ export function registerPinMessageTool(): void {
       });
       return JSON.stringify({ success: true, pinned: input.message_id });
     },
-    { sideEffect: true },
+    { sideEffect: true, requiresConfirmation: true },
   );
 }
 
@@ -136,7 +136,7 @@ export function registerCreateChannelTool(): void {
         name: result.createConversation.title,
       });
     },
-    { sideEffect: true },
+    { sideEffect: true, requiresConfirmation: true },
   );
 }
 
@@ -173,6 +173,6 @@ export function registerAddReactionTool(): void {
         emoji: input.emoji,
       });
     },
-    { sideEffect: true },
+    { sideEffect: true, requiresConfirmation: true },
   );
 }

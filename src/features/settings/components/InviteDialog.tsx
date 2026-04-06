@@ -21,7 +21,7 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
     if (!workspaceId) return;
     createInvite.mutate(workspaceId, {
       onSuccess: (data) => {
-        const link = `${window.location.origin}/join/${data.createInvite.token}`;
+        const link = `${window.location.origin}/join/${data.createInvite.inviteToken}`;
         setInviteLink(link);
         setCopied(false);
       },
