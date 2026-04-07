@@ -10,11 +10,14 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import { useLensStore } from "../../lenses/state/useLensStore";
+import { useIncidentStore } from "../../incidents/state/useIncidentStore";
 import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
+import { gql } from "graphql-request";
 
 interface ConversationItem {
   id: string;
@@ -56,6 +59,28 @@ type ExecuteBackendCommand = (input: {
   commandContext?: Record<string, unknown>;
   confirmedDangerous?: boolean;
 }) => Promise<{ executeCommand: CommandResult }>;
+
+const RESOLVE_INCIDENT_GQL = gql`
+  mutation ResolveIncident($incidentId: ID!) {
+    resolveIncident(incidentId: $incidentId) {
+      id
+      status
+      resolvedAt
+    }
+  }
+`;
+
+function resolveIncidentFromCommand(incidentId: string, workspaceId: string, conversationId: string) {
+  graphqlClient
+    .request(RESOLVE_INCIDENT_GQL, { incidentId })
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.activeIncident(workspaceId, conversationId) });
+      toast.success("Incident resolved");
+    })
+    .catch(() => {
+      toast.error("Failed to resolve incident");
+    });
+}
 
 // Registry of desktop-local command handlers
 const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = {
@@ -194,6 +219,40 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
   },
   "admin.invite_member": () => {
     useShellStore.getState().setShowInviteDialog(true);
+  },
+  "workspace.toggle_lens_picker": () => {
+    const store = useLensStore.getState();
+    store.setLensPickerOpen(!store.lensPickerOpen);
+  },
+  "incident.start": () => {
+    useIncidentStore.getState().setShowStartDialog(true);
+  },
+  "incident.advance_phase": () => {
+    // Handled via the banner UI — this is a fallback entry point
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+    }
+    // The banner dropdown handles the actual phase advance
+  },
+  "incident.resolve": () => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    resolveIncidentFromCommand(incident.id, workspaceId, conversationId);
+  },
+  "incident.generate_postmortem": () => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    useIncidentStore.getState().setShowPostmortem(true);
   },
 };
 

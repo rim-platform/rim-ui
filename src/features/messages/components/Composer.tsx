@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
 import { useCreateAttachmentMutation, useFinalizeAttachmentMutation, uploadFileRest } from "../api/useAttachments";
+import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
@@ -37,6 +38,7 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
   // `draftStore` is a module-level Zustand store reference — it is stable across
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
+  const executeCommand = useExecuteCommandMutation();
   const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -75,6 +77,28 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
   async function handleSubmit() {
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
+
+    // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
+    if (trimmed.startsWith("/") && trimmed.includes("|")) {
+      const pipeExpression = trimmed.slice(1).trim(); // strip leading `/`
+      const segmentCount = pipeExpression.split("|").filter((s) => s.trim()).length;
+      setText("");
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      draftStore.getState().clearDraft(conversationId);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+      try {
+        await executeCommand.mutateAsync({
+          commandId: pipeExpression,
+          commandContext: { workspaceId },
+        });
+        toast.success(`Piped ${segmentCount} commands successfully`);
+      } catch {
+        toast.error("Failed to execute piped commands");
+      }
+      return;
+    }
 
     // Detect slash commands
     if (trimmed) {

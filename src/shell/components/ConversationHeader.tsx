@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Hash, MessageCircle, Pin, Search, Users, BellOff, Bell, UserPlus } from "lucide-react";
+import { Hash, MessageCircle, Pin, Search, Users, BellOff, Bell, UserPlus, AlertTriangle } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
+import { LensPicker } from "../../features/lenses/components/LensPicker";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
 import { useInboxConversations } from "../../features/conversations/api/useInboxConversations";
@@ -14,9 +15,13 @@ import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
 import { usePresenceStore, type PresenceStatus } from "../../features/presence/state/usePresenceStore";
+import { IncidentSeverityGql, IncidentPhaseNameGql } from "../../core/graphql/generated/schema-types";
 import { useMutedStore } from "../../features/conversations/state/useMutedStore";
 import { useMuteConversationMutation, useUnmuteConversationMutation } from "../../features/conversations/api/useMuteConversation";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
+import { IncidentBanner } from "../../features/incidents/components/IncidentBanner";
+import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
+import { useActiveIncident } from "../../features/incidents/api/useIncident";
 
 type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
 
@@ -66,6 +71,27 @@ export function ConversationHeader() {
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
 
+  // Incident mode
+  const { data: activeIncidentData } = useActiveIncident(workspaceId, conversationId);
+  const setActiveIncident = useIncidentStore((s) => s.setActiveIncident);
+  const activeIncident = useIncidentStore((s) => s.activeIncident);
+  const setShowStartDialog = useIncidentStore((s) => s.setShowStartDialog);
+
+  useEffect(() => {
+    if (activeIncidentData) {
+      setActiveIncident({
+        id: activeIncidentData.id,
+        title: activeIncidentData.title,
+        status: activeIncidentData.status,
+        severity: activeIncidentData.severity ?? IncidentSeverityGql.SEV_4,
+        currentPhase: IncidentPhaseNameGql.DETECTION,
+        startedAt: activeIncidentData.startedAt,
+      });
+    } else {
+      setActiveIncident(null);
+    }
+  }, [activeIncidentData, setActiveIncident]);
+
   const topic = conversation?.topic ?? null;
   const [isEditingTopic, setIsEditingTopic] = useState(false);
   const [topicDraft, setTopicDraft] = useState("");
@@ -97,6 +123,7 @@ export function ConversationHeader() {
   }, [workspaceId, conversationId, topicDraft, topic, updateTopic]);
 
   return (
+    <div>
     <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
       <div className="flex min-w-0 items-center gap-3">
         {dmOtherUserId ? (
@@ -146,8 +173,23 @@ export function ConversationHeader() {
       </div>
       {conversationId && (
         <div className="flex items-center gap-1">
+          {!activeIncident && (
+            <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Start incident</span>}>
+              <button
+                type="button"
+                onClick={() => setShowStartDialog(true)}
+                aria-label="Start incident"
+                className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+              >
+                <AlertTriangle className="h-4 w-4" />
+              </button>
+            </HoverTooltip>
+          )}
           <InviteButton onClick={() => setInviteOpen(true)} />
           <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
+          {conversation?.conversationType === "CHANNEL" && workspaceId && (
+            <LensPicker serverId={workspaceId} conversationId={conversationId} />
+          )}
           {conversation?.conversationType === "CHANNEL" && (
             <PinnedMessagesButton />
           )}
@@ -159,6 +201,10 @@ export function ConversationHeader() {
         </div>
       )}
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
+    </div>
+    {activeIncident && workspaceId && conversationId && (
+      <IncidentBanner serverId={workspaceId} conversationId={conversationId} />
+    )}
     </div>
   );
 }

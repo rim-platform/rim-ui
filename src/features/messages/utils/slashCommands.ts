@@ -12,7 +12,7 @@ export interface SlashCommand {
 }
 
 const ExecuteMacroByName = gql`
-  mutation ExecuteMacro($macroId: ID!, $commandContext: CommandContextInput) {
+  mutation ExecuteMacroSlash($macroId: ID!, $commandContext: CommandContextInput) {
     executeMacro(macroId: $macroId, commandContext: $commandContext) {
       status
       message

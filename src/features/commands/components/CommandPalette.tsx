@@ -42,6 +42,9 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // Pipe chain state: segments locked in before the current search query
+  const [pipeSegments, setPipeSegments] = useState<string[]>([]);
+
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
     const base = commands?.filter((cmd) => cmd.visibleInPalette) ?? [];
@@ -59,6 +62,8 @@ export function CommandPalette() {
   );
 
   // Fuzzy-filter commands by search query via microfuzz
+  // When pipe segments exist, searchQuery already contains only the active segment
+  // (text after the last `|`) because handleSearchChange resets it on pipe.
   const fuzzyResults = useFuzzySearchList({
     list: visibleCommands,
     queryText: searchQuery,
@@ -102,10 +107,11 @@ export function CommandPalette() {
     setSelectedIndex(0);
   }, [searchQuery]);
 
-  // Focus input when palette opens
+  // Focus input when palette opens; reset pipe chain on close
   useEffect(() => {
     if (isOpen) {
       setFocusedSurface("commandPalette");
+      setPipeSegments([]);
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       setFocusedSurface(null);
@@ -121,8 +127,47 @@ export function CommandPalette() {
     }
   }, [selectedIndex]);
 
+  // Handle typing `|` to lock in a pipe segment
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      if (value.endsWith("|")) {
+        const segment = value.slice(0, -1).trim();
+        if (segment) {
+          setPipeSegments((prev) => [...prev, segment]);
+          setSearchQuery("");
+          return;
+        }
+      }
+      setSearchQuery(value);
+    },
+    [setSearchQuery],
+  );
+
+  // Execute a pipe chain as a single command string
+  const executePipeChain = useCallback(
+    async (segments: string[], finalSegment?: string) => {
+      const allSegments = finalSegment
+        ? [...segments, finalSegment]
+        : segments;
+      if (allSegments.length === 0) return;
+      const pipeExpression = allSegments.join(" | ");
+      closeCommandPalette();
+      setPipeSegments([]);
+      await executeCommandMutation.mutateAsync({
+        commandId: pipeExpression,
+        commandContext: { workspaceId: workspaceId ?? undefined },
+      });
+    },
+    [closeCommandPalette, executeCommandMutation, workspaceId],
+  );
+
   const executeSelected = useCallback(
     async (command: CommandDefinition) => {
+      // If we have pipe segments, add this command to the chain and execute the whole pipe
+      if (pipeSegments.length > 0) {
+        await executePipeChain(pipeSegments, command.id);
+        return;
+      }
       closeCommandPalette();
       await dispatchCommand(
         command,
@@ -134,7 +179,7 @@ export function CommandPalette() {
         }
       );
     },
-    [closeCommandPalette, executeCommandMutation, workspaceId]
+    [closeCommandPalette, executeCommandMutation, workspaceId, pipeSegments, executePipeChain]
   );
 
   const handleKeyDown = useCallback(
@@ -152,15 +197,35 @@ export function CommandPalette() {
           event.preventDefault();
           if (sortedResults[selectedIndex]) {
             executeSelected(sortedResults[selectedIndex].item);
+          } else if (pipeSegments.length > 0 && !searchQuery.trim()) {
+            // Enter with pipe segments but no active query: execute the chain as-is
+            void executePipeChain(pipeSegments);
+          }
+          break;
+        case "Backspace":
+          // Remove last pipe segment when search input is empty
+          if (searchQuery === "" && pipeSegments.length > 0) {
+            event.preventDefault();
+            setPipeSegments((prev) => {
+              const restored = prev[prev.length - 1];
+              setSearchQuery(restored);
+              return prev.slice(0, -1);
+            });
           }
           break;
         case "Escape":
           event.preventDefault();
-          closeCommandPalette();
+          if (pipeSegments.length > 0) {
+            // First Escape clears the pipe chain
+            setPipeSegments([]);
+            setSearchQuery("");
+          } else {
+            closeCommandPalette();
+          }
           break;
       }
     },
-    [sortedResults, selectedIndex, executeSelected, closeCommandPalette]
+    [sortedResults, selectedIndex, executeSelected, closeCommandPalette, pipeSegments, searchQuery, setSearchQuery, executePipeChain]
   );
 
   if (!isOpen) return null;
@@ -180,6 +245,23 @@ export function CommandPalette() {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
+        {/* Pipe chain display */}
+        {pipeSegments.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-rim-line px-4 py-2">
+            {pipeSegments.map((segment, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                <span className="bg-rim-accent/10 text-rim-accent text-xs rounded px-2 py-0.5 font-mono">
+                  {segment}
+                </span>
+                <span className="text-rim-text-faint text-xs" aria-hidden="true">
+                  {"\u2192"}
+                </span>
+              </span>
+            ))}
+            <span className="text-rim-text-muted text-xs">...</span>
+          </div>
+        )}
+
         {/* Search input */}
         <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
           <Search className="h-4 w-4 text-rim-text-muted" />
@@ -187,8 +269,8 @@ export function CommandPalette() {
             ref={inputRef}
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Type a command..."
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder={pipeSegments.length > 0 ? "Next command in pipe..." : "Type a command..."}
             className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
           />
         </div>
@@ -262,6 +344,7 @@ export function CommandPalette() {
         <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
           <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
           <span><kbd className="font-mono">Enter</kbd> execute</span>
+          <span><kbd className="font-mono">|</kbd> pipe</span>
           <span><kbd className="font-mono">Esc</kbd> close</span>
         </div>
       </div>

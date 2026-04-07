@@ -9,6 +9,11 @@ import { getSlashCommandSuggestions } from "../utils/slashCommands";
 import type { SlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { Avatar } from "../../../shared/ui/Avatar";
+import { useCommands } from "../../commands/api/useCommands";
+import { useResolvedKeybinds } from "../../commands/api/useKeybinds";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import type { CommandDefinition } from "../../commands/types";
 
 interface MentionSuggestion {
   userId: string;
@@ -16,6 +21,18 @@ interface MentionSuggestion {
   displayName: string | null;
   avatarUrl: string | null;
 }
+
+interface CommandSuggestion {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  keybind: string | null;
+  /** Original command definition for execution */
+  command: CommandDefinition;
+}
+
+const MAX_COMMAND_SUGGESTIONS = 8;
 
 interface ComposerInputProps {
   text: string;
@@ -48,6 +65,25 @@ export function ComposerInput({
 }: ComposerInputProps) {
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const commandListRef = useRef<HTMLDivElement>(null);
+
+  // Fetch all commands and keybinds for inline command preview
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const { data: allCommands } = useCommands("PALETTE");
+  const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
+
+  // Build command-id -> keystroke lookup
+  const keybindMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (keybinds) {
+      for (const kb of keybinds) {
+        if (kb.isEnabled && !map.has(kb.commandId)) {
+          map.set(kb.commandId, kb.keystroke);
+        }
+      }
+    }
+    return map;
+  }, [keybinds]);
 
   // Autocomplete state
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -55,6 +91,8 @@ export function ComposerInput({
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [slashSuggestions, setSlashSuggestions] = useState<SlashCommand[]>([]);
   const [selectedSlashSuggestion, setSelectedSlashSuggestion] = useState(0);
+  const [commandSuggestions, setCommandSuggestions] = useState<CommandSuggestion[]>([]);
+  const [selectedCommandSuggestion, setSelectedCommandSuggestion] = useState(0);
   const [mentionSuggestions, setMentionSuggestions] = useState<MentionSuggestion[]>([]);
   const [selectedMention, setSelectedMention] = useState(0);
 
@@ -114,15 +152,43 @@ export function ComposerInput({
     if (value.startsWith("/")) {
       const slashPartial = value.split(" ")[0];
       if (!value.includes(" ")) {
-        const results = getSlashCommandSuggestions(slashPartial);
-        setSlashSuggestions(results);
+        // Built-in slash commands (/agent, /macro)
+        const builtInResults = getSlashCommandSuggestions(slashPartial);
+        setSlashSuggestions(builtInResults);
         setSelectedSlashSuggestion(0);
+
+        // All registered commands from the command registry
+        const query = slashPartial.slice(1).toLowerCase(); // strip leading /
+        if (allCommands) {
+          const filtered = allCommands
+            .filter((cmd) => {
+              const titleMatch = cmd.title.toLowerCase().includes(query);
+              const idMatch = cmd.id.toLowerCase().includes(query);
+              const categoryMatch = cmd.category.toLowerCase().includes(query);
+              return titleMatch || idMatch || categoryMatch;
+            })
+            .slice(0, MAX_COMMAND_SUGGESTIONS)
+            .map((cmd): CommandSuggestion => ({
+              id: cmd.id,
+              title: cmd.title,
+              description: cmd.description,
+              category: cmd.category,
+              keybind: keybindMap.get(cmd.id) ?? null,
+              command: cmd,
+            }));
+          setCommandSuggestions(filtered);
+          setSelectedCommandSuggestion(0);
+        } else {
+          setCommandSuggestions([]);
+        }
       } else {
         setSlashSuggestions([]);
+        setCommandSuggestions([]);
       }
       setSuggestions([]);
     } else {
       setSlashSuggestions([]);
+      setCommandSuggestions([]);
 
       // @mention detection (takes priority over emoji)
       const mentionPartial = getPartialMention(value, cursorPos);
@@ -161,6 +227,21 @@ export function ComposerInput({
   function applySlashSuggestion(command: SlashCommand) {
     onTextChange(command.command + " ");
     setSlashSuggestions([]);
+    setCommandSuggestions([]);
+    textareaRef.current?.focus();
+  }
+
+  function applyCommandSuggestion(suggestion: CommandSuggestion) {
+    // For commands that need arguments (chat-style), insert as slash text
+    // For workspace commands, just clear and let the caller handle execution
+    const needsArgs = suggestion.command.requiredContext.length > 0;
+    if (needsArgs) {
+      onTextChange("/" + suggestion.id + " ");
+    } else {
+      onTextChange("");
+    }
+    setSlashSuggestions([]);
+    setCommandSuggestions([]);
     textareaRef.current?.focus();
   }
 
@@ -211,25 +292,54 @@ export function ComposerInput({
       }
     }
 
-    if (slashSuggestions.length > 0) {
+    // Unified slash/command suggestion navigation
+    const totalSlashItems = slashSuggestions.length + commandSuggestions.length;
+    if (totalSlashItems > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedSlashSuggestion((prev) => Math.min(prev + 1, slashSuggestions.length - 1));
+        // Navigate across both lists as one combined list
+        const currentTotal = selectedSlashSuggestion < slashSuggestions.length
+          ? selectedSlashSuggestion
+          : slashSuggestions.length + selectedCommandSuggestion;
+        const next = Math.min(currentTotal + 1, totalSlashItems - 1);
+        if (next < slashSuggestions.length) {
+          setSelectedSlashSuggestion(next);
+          setSelectedCommandSuggestion(0);
+        } else {
+          setSelectedSlashSuggestion(slashSuggestions.length); // deselect built-in
+          setSelectedCommandSuggestion(next - slashSuggestions.length);
+        }
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedSlashSuggestion((prev) => Math.max(prev - 1, 0));
+        const currentTotal = selectedSlashSuggestion < slashSuggestions.length
+          ? selectedSlashSuggestion
+          : slashSuggestions.length + selectedCommandSuggestion;
+        const prev = Math.max(currentTotal - 1, 0);
+        if (prev < slashSuggestions.length) {
+          setSelectedSlashSuggestion(prev);
+          setSelectedCommandSuggestion(0);
+        } else {
+          setSelectedSlashSuggestion(slashSuggestions.length);
+          setSelectedCommandSuggestion(prev - slashSuggestions.length);
+        }
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        applySlashSuggestion(slashSuggestions[selectedSlashSuggestion]);
+        // Determine which list the selection is in
+        if (selectedSlashSuggestion < slashSuggestions.length) {
+          applySlashSuggestion(slashSuggestions[selectedSlashSuggestion]);
+        } else if (commandSuggestions.length > 0) {
+          applyCommandSuggestion(commandSuggestions[selectedCommandSuggestion]);
+        }
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
         setSlashSuggestions([]);
+        setCommandSuggestions([]);
         return;
       }
     }
@@ -257,8 +367,18 @@ export function ComposerInput({
       }
     }
 
+    // Escape with no active suggestions: enter navigation mode
+    if (e.key === "Escape") {
+      e.preventDefault();
+      const { setNavigationMode } = useShellStore.getState();
+      setNavigationMode(true);
+      const msgList = document.querySelector<HTMLDivElement>("[data-message-list]");
+      if (msgList) msgList.focus();
+      return;
+    }
+
     // Enter without Shift sends the message
-    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0 && mentionSuggestions.length === 0) {
+    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0 && commandSuggestions.length === 0 && mentionSuggestions.length === 0) {
       e.preventDefault();
       onSubmit();
     }
@@ -280,7 +400,7 @@ export function ComposerInput({
   }, []);
 
   // Compute suggestions position — only measure DOM when suggestions are visible
-  const hasSuggestions = suggestions.length > 0 || slashSuggestions.length > 0 || mentionSuggestions.length > 0;
+  const hasSuggestions = suggestions.length > 0 || slashSuggestions.length > 0 || commandSuggestions.length > 0 || mentionSuggestions.length > 0;
   const suggestionsStyle = useMemo<React.CSSProperties>(() => {
     if (!hasSuggestions || !textareaRef.current) return { position: "absolute", top: 0, left: 0 };
     const rect = textareaRef.current.getBoundingClientRect();
@@ -337,23 +457,59 @@ export function ComposerInput({
         </button>
       </div>
 
-      {slashSuggestions.length > 0 && createPortal(
+      {(slashSuggestions.length > 0 || commandSuggestions.length > 0) && createPortal(
         <div
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
+          className="max-h-[320px] overflow-y-auto rounded-lg border border-rim-line bg-rim-panel shadow-lg"
           style={suggestionsStyle}
+          ref={commandListRef}
         >
-          {slashSuggestions.map((cmd, i) => (
+          {/* Built-in slash commands (/agent, /macro) */}
+          {slashSuggestions.length > 0 && (
+            <>
+              {slashSuggestions.map((cmd, i) => (
+                <button
+                  key={cmd.command}
+                  type="button"
+                  onClick={() => applySlashSuggestion(cmd)}
+                  className={cn(
+                    "flex w-full flex-col gap-0.5 px-3 py-1.5",
+                    i === selectedSlashSuggestion ? "bg-rim-accent/10" : "hover:bg-white/5",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-rim-text">{cmd.command}</span>
+                    <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">chat</span>
+                  </div>
+                  <span className="truncate text-xs text-rim-text-muted">{cmd.description}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {/* Separator between built-in and registry commands */}
+          {slashSuggestions.length > 0 && commandSuggestions.length > 0 && (
+            <div className="mx-3 border-t border-rim-line" />
+          )}
+          {/* All registered commands from the command registry */}
+          {commandSuggestions.map((cmd, i) => (
             <button
-              key={cmd.command}
+              key={cmd.id}
               type="button"
-              onClick={() => applySlashSuggestion(cmd)}
+              onClick={() => applyCommandSuggestion(cmd)}
               className={cn(
                 "flex w-full flex-col gap-0.5 px-3 py-1.5",
-                i === selectedSlashSuggestion ? "bg-rim-accent/20" : "hover:bg-white/5",
+                selectedSlashSuggestion >= slashSuggestions.length && i === selectedCommandSuggestion
+                  ? "bg-rim-accent/10"
+                  : "hover:bg-white/5",
               )}
             >
-              <span className="text-sm font-medium text-rim-text">{cmd.command}</span>
-              <span className="text-xs text-rim-text-muted">{cmd.description}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-rim-text">{cmd.title}</span>
+                <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">{cmd.category}</span>
+                {cmd.keybind && (
+                  <span className="ml-auto font-mono text-[10px] text-rim-text-faint">{cmd.keybind}</span>
+                )}
+              </div>
+              <span className="truncate text-xs text-rim-text-muted">{cmd.description}</span>
             </button>
           ))}
         </div>,

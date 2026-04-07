@@ -5,7 +5,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { useAuthStore } from "../state/useAuthStore";
 
 const ME_QUERY = gql`
-  query Me {
+  query MeSession {
     me {
       id
     }

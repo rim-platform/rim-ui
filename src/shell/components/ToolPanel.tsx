@@ -16,7 +16,12 @@ export function ToolPanel() {
   const setShowNewChannel = useShellStore((s) => s.setShowNewChannelDialog);
 
   return (
-    <div className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel">
+    <div
+      data-panel="toolPanel"
+      tabIndex={-1}
+      onFocus={() => useShellStore.getState().setFocusedSurface("toolPanel")}
+      className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel outline-none"
+    >
       <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
         <h2 className="text-sm font-medium text-rim-text">
           {activePanel === "inbox" ? "Conversations" : "Plugins"}

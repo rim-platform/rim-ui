@@ -5,7 +5,9 @@ export interface MessageReaction {
   userIds: string[];
 }
 
-export type AttachmentStatus = "PENDING_UPLOAD" | "UPLOADED" | "READY" | "FAILED";
+import { AttachmentStatusEnum } from "../graphql/generated/schema-types";
+
+export type AttachmentStatus = AttachmentStatusEnum;
 
 export interface MessageAttachment {
   id: string;
@@ -23,9 +25,9 @@ export interface MessageAuthor {
 }
 
 export interface ForwardedFrom {
-  originalMessageId: string;
-  originalConversationId: string;
-  originalAuthor: {
+  id: string;
+  conversationId: string;
+  author: {
     id: string;
     username: string;
     displayName: string | null;

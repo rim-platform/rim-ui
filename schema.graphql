@@ -1,0 +1,1009 @@
+input AcceptInviteInput {
+	inviteToken: String!
+	username: String!
+	password: String!
+}
+
+type AcceptInvitePayload {
+	userId: ID!
+	serverId: ID!
+}
+
+type Action {
+	id: String!
+	title: String!
+	description: String!
+	capabilityIds: [String!]!
+}
+
+input AdvanceIncidentPhaseInput {
+	incidentId: ID!
+	nextPhase: IncidentPhaseNameGql!
+	note: String
+}
+
+type Attachment {
+	id: ID!
+	status: AttachmentStatusEnum!
+	filename: String!
+	contentType: String!
+	sizeBytes: Int!
+}
+
+enum AttachmentStatusEnum {
+	PENDING_UPLOAD
+	UPLOADED
+	READY
+	FAILED
+}
+
+input BootstrapInput {
+	secret: String!
+	username: String!
+	password: String!
+	serverName: String!
+}
+
+type BootstrapPayload {
+	userId: ID!
+	serverId: ID!
+}
+
+type Capability {
+	id: String!
+	title: String!
+	description: String!
+}
+
+input ChannelCursorInput {
+	createdAt: DateTime!
+	conversationId: ID!
+}
+
+type ChannelCursorOutput {
+	createdAt: DateTime!
+	conversationId: ID!
+}
+
+type ChannelLens {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	createdBy: ID!
+	name: String!
+	filterSpec: FilterSpecGql!
+	isShared: Boolean!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+type ChannelPage {
+	items: [Conversation!]!
+	next: ChannelCursorOutput
+	prev: ChannelCursorOutput
+	pageInfo: PageInfo!
+}
+
+type Command {
+	id: String!
+	title: String!
+	description: String!
+	category: String!
+	sourceKind: CommandSourceKind!
+	executionTarget: CommandExecutionTarget!
+	requiredContext: [String!]!
+	requiredCapabilities: [String!]!
+	visibleInPalette: Boolean!
+	visibleInContextMenus: Boolean!
+	keybindCapable: Boolean!
+	dangerous: Boolean!
+}
+
+input CommandContextInput {
+	workspaceId: ID
+	conversationId: ID
+	threadId: ID
+	selectedText: String
+	selectedMessageId: ID
+	selectedMessageIds: [ID!]
+	focusedSurface: String
+	activePanel: String
+}
+
+enum CommandExecutionTarget {
+	BACKEND
+	DESKTOP_LOCAL
+}
+
+type CommandResult {
+	status: CommandResultStatus!
+	message: String!
+	payload: JSON
+	followUpCommands: [String!]!
+}
+
+enum CommandResultStatus {
+	SUCCESS
+	ERROR
+}
+
+enum CommandSourceKind {
+	BUILT_IN
+	PLUGIN
+	INTEGRATION
+	USER
+}
+
+enum CommandSurface {
+	PALETTE
+	CONTEXT_MENU
+	KEYBIND_PICKER
+}
+
+type Conversation {
+	id: ID!
+	serverId: ID!
+	conversationType: ConversationTypeEnum!
+	title: String
+	topic: String
+	memberIds: [ID!]!
+	isMuted: Boolean!
+}
+
+type ConversationPage {
+	items: [Conversation!]!
+	next: InboxCursorOutput
+	prev: InboxCursorOutput
+	pageInfo: PageInfo!
+}
+
+enum ConversationTypeEnum {
+	DIRECT
+	GROUP
+	CHANNEL
+}
+
+input CreateAttachmentInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID
+	filename: String!
+	contentType: String!
+	sizeBytes: Int!
+}
+
+input CreateChannelLensInput {
+	serverId: ID!
+	conversationId: ID!
+	name: String!
+	filterSpec: FilterSpecInput!
+	isShared: Boolean
+}
+
+input CreateConversationInput {
+	serverId: ID!
+	"""
+	For DM conversations.
+	"""
+	otherUserId: ID
+	"""
+	For Group conversations.
+	"""
+	memberIds: [ID!]
+	"""
+	For Channel conversations.
+	"""
+	isChannel: Boolean
+	title: String
+}
+
+input CreateCustomEmojiInput {
+	serverId: ID!
+	name: String!
+	imageBase64: String!
+}
+
+input CreateInviteInput {
+	serverId: ID!
+	expiresAt: DateTime
+	maxUses: Int
+}
+
+type CreateInvitePayload {
+	inviteToken: String!
+	inviteId: ID!
+}
+
+input CreateKeybindInput {
+	scope: KeybindScope!
+	workspaceId: ID
+	keystroke: String!
+	commandId: String!
+	context: KeybindContext!
+	presetArgs: JSON
+}
+
+input CreateMacroInput {
+	serverId: ID!
+	name: String!
+	description: String
+	steps: [MacroStepInput!]!
+}
+
+input CreateServerInput {
+	name: String!
+}
+
+input CreateUserCommandInput {
+	commandId: String!
+	title: String!
+	description: String!
+	steps: [UserCommandStepInput!]!
+}
+
+type CustomEmoji {
+	id: ID!
+	serverId: ID!
+	name: String!
+	imageUrl: String!
+	uploadedBy: ID!
+	createdAt: DateTime!
+}
+
+"""
+Implement the DateTime<Utc> scalar
+
+The input/output is a string in RFC3339 format.
+"""
+scalar DateTime
+
+type DefaultKeybind {
+	source: KeybindSource!
+	keystroke: String!
+	commandId: String!
+	context: KeybindContext!
+	presetArgs: JSON
+}
+
+input DeleteAttachmentInput {
+	serverId: ID!
+	attachmentId: ID!
+}
+
+input DeleteKeybindInput {
+	keybindId: ID!
+}
+
+input DeleteMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+}
+
+input DeleteUserCommandInput {
+	commandId: String!
+}
+
+input EditMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	text: String!
+}
+
+type Event {
+	id: String!
+	title: String!
+	description: String!
+}
+
+input ExecuteCommandInput {
+	commandId: String!
+	args: JSON
+	commandContext: CommandContextInput
+	confirmedDangerous: Boolean
+}
+
+input ExecuteMacroInput {
+	macroId: ID!
+	commandContext: CommandContextInput
+	confirmedDangerous: Boolean
+}
+
+input ExecutePipedCommandsInput {
+	pipeExpression: String!
+	commandContext: CommandContextInput
+	confirmedDangerous: Boolean
+}
+
+type FeatureUsage {
+	featureId: String!
+	firstUsedAt: DateTime!
+}
+
+type FilterConditionGql {
+	field: FilterField!
+	op: FilterOp!
+	value: JSON!
+}
+
+input FilterConditionInput {
+	field: FilterField!
+	op: FilterOp!
+	value: JSON!
+}
+
+enum FilterField {
+	HAS_LINKS
+	AUTHOR_ID
+	HAS_ATTACHMENTS
+	TEXT_CONTAINS
+	IS_PINNED
+}
+
+enum FilterLogic {
+	AND
+	OR
+}
+
+enum FilterOp {
+	EQ
+	IN
+	CONTAINS
+}
+
+type FilterSpecGql {
+	conditions: [FilterConditionGql!]!
+	logic: FilterLogic!
+}
+
+input FilterSpecInput {
+	conditions: [FilterConditionInput!]!
+	logic: FilterLogic!
+}
+
+input FinalizeAttachmentInput {
+	serverId: ID!
+	attachmentId: ID!
+}
+
+input ForwardMessageInput {
+	serverId: ID!
+	sourceConversationId: ID!
+	targetConversationId: ID!
+	messageId: ID!
+}
+
+input HeartbeatInput {
+	workspaceId: ID!
+	status: PresenceStatus!
+}
+
+input InboxCursorInput {
+	lastActivityAt: DateTime!
+	conversationId: ID!
+}
+
+type InboxCursorOutput {
+	lastActivityAt: DateTime!
+	conversationId: ID!
+}
+
+type IncidentGql {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	startedBy: ID!
+	status: IncidentStatusGql!
+	severity: IncidentSeverityGql
+	title: String!
+	originalTopic: String
+	startedAt: DateTime!
+	mitigatedAt: DateTime
+	resolvedAt: DateTime
+	postmortemDraft: String
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+type IncidentMessageTagGql {
+	messageId: ID!
+	incidentId: ID!
+	phase: IncidentPhaseNameGql!
+	tagType: MessageTagTypeGql
+}
+
+type IncidentPhaseGql {
+	id: ID!
+	incidentId: ID!
+	phase: IncidentPhaseNameGql!
+	startedAt: DateTime!
+	endedAt: DateTime
+	note: String
+}
+
+enum IncidentPhaseNameGql {
+	DETECTION
+	TRIAGE
+	MITIGATION
+	RESOLUTION
+	POSTMORTEM
+}
+
+enum IncidentSeverityGql {
+	SEV_1
+	SEV_2
+	SEV_3
+	SEV_4
+}
+
+enum IncidentStatusGql {
+	ACTIVE
+	MITIGATED
+	RESOLVED
+}
+
+type IncidentTimelineGql {
+	incident: IncidentGql!
+	phases: [IncidentPhaseGql!]!
+	taggedMessages: [IncidentMessageTagGql!]!
+}
+
+type Integration {
+	id: String!
+	kind: IntegrationKind!
+	title: String!
+	enabled: Boolean!
+	principalId: ID
+}
+
+enum IntegrationKind {
+	BUILT_IN
+	LOCAL_PLUGIN
+	BOT
+	WEBHOOK
+}
+
+type Invite {
+	id: ID!
+	serverId: ID!
+	createdByUserId: ID!
+	expiresAt: DateTime
+	maxUses: Int!
+	useCount: Int!
+	revokedAt: DateTime
+}
+
+"""
+A scalar that can represent any JSON value.
+"""
+scalar JSON
+
+input JoinServerByInviteInput {
+	inviteToken: String!
+}
+
+type JoinServerByInvitePayload {
+	serverId: ID!
+}
+
+type Keybind {
+	id: ID!
+	source: KeybindSource!
+	scope: KeybindScope!
+	workspaceId: ID
+	keystroke: String!
+	commandId: String!
+	context: KeybindContext!
+	presetArgs: JSON
+	isEnabled: Boolean!
+}
+
+enum KeybindContext {
+	GLOBAL
+	COMPOSER
+	MESSAGE_LIST
+	THREAD_VIEW
+	CONVERSATION_VIEW
+	PANEL
+	COMMAND_PALETTE
+}
+
+type KeybindLayers {
+	defaultKeybind: DefaultKeybind
+	userKeybind: Keybind
+	workspaceKeybind: Keybind
+	resolvedPersistedKeybind: Keybind
+}
+
+enum KeybindScope {
+	USER
+	WORKSPACE
+}
+
+enum KeybindSource {
+	DEFAULT
+	USER
+	WORKSPACE
+}
+
+type LinkPreview {
+	id: ID!
+	messageId: ID!
+	url: String!
+	title: String
+	description: String
+	imageUrl: String
+	siteName: String
+	fetchedAt: DateTime!
+}
+
+input LoginInput {
+	username: String!
+	password: String!
+}
+
+type LoginPayload {
+	userId: ID!
+}
+
+type MacroDef {
+	id: ID!
+	serverId: ID!
+	userId: ID!
+	name: String!
+	description: String
+	steps: [MacroStep!]!
+	createdAt: DateTime!
+}
+
+type MacroStep {
+	commandId: String!
+	args: JSON
+}
+
+input MacroStepInput {
+	commandId: String!
+	args: JSON
+}
+
+input MarkAllAsReadInput {
+	workspaceId: ID!
+}
+
+input MarkAsReadInput {
+	workspaceId: ID!
+	conversationId: ID!
+	readAt: DateTime!
+}
+
+type Message {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	threadId: ID
+	rootThreadId: ID
+	authorId: ID!
+	text: String
+	hasAttachments: Boolean!
+	attachments: [Attachment!]!
+	parentMessageId: ID
+	forwardedFromMessageId: ID
+	forwardedFrom: Message
+	isDeleted: Boolean!
+	sentAt: DateTime!
+	author: User
+	reactions: [ReactionGroup!]!
+	isPinned: Boolean!
+	mentionedUserIds: [ID!]!
+	linkPreviews: [LinkPreview!]!
+	mentions: [User!]!
+}
+
+input MessageCursorInput {
+	sentAt: DateTime!
+	messageId: ID!
+}
+
+type MessageCursorOutput {
+	sentAt: DateTime!
+	messageId: ID!
+}
+
+type MessagePage {
+	items: [Message!]!
+	next: MessageCursorOutput
+	prev: MessageCursorOutput
+	pageInfo: PageInfo!
+}
+
+type MessageReference {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	threadId: ID
+	permalinkPath: String!
+	anchor: String!
+}
+
+enum MessageTagTypeGql {
+	DECISION
+	ACTION_ITEM
+	ROOT_CAUSE
+	TIMELINE_EVENT
+}
+
+type Mutation {
+	bootstrap(input: BootstrapInput!): BootstrapPayload!
+	login(input: LoginInput!): LoginPayload!
+	logout: Boolean!
+	createInvite(input: CreateInviteInput!): CreateInvitePayload!
+	acceptInvite(input: AcceptInviteInput!): AcceptInvitePayload!
+	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
+	revokeInvite(inviteId: ID!): Boolean!
+	sendMessage(input: SendMessageInput!): Message!
+	replyToMessage(input: ReplyToMessageInput!): Message!
+	createConversation(input: CreateConversationInput!): Conversation!
+	updateConversationTopic(input: UpdateConversationTopicInput!): Conversation!
+	editMessage(input: EditMessageInput!): Message!
+	forwardMessage(input: ForwardMessageInput!): Message!
+	deleteMessage(input: DeleteMessageInput!): Boolean!
+	createAttachment(input: CreateAttachmentInput!): UploadTicket!
+	finalizeAttachment(input: FinalizeAttachmentInput!): Attachment!
+	deleteAttachment(input: DeleteAttachmentInput!): Boolean!
+	executeCommand(input: ExecuteCommandInput!): CommandResult!
+	executePipedCommands(input: ExecutePipedCommandsInput!): CommandResult!
+	createUserCommand(input: CreateUserCommandInput!): Command!
+	updateUserCommand(input: UpdateUserCommandInput!): Command!
+	deleteUserCommand(input: DeleteUserCommandInput!): Boolean!
+	createKeybind(input: CreateKeybindInput!): Keybind!
+	updateKeybind(input: UpdateKeybindInput!): Keybind!
+	toggleReaction(input: ToggleReactionInput!): [ReactionGroup!]!
+	markAsRead(input: MarkAsReadInput!): Boolean!
+	markAllAsRead(input: MarkAllAsReadInput!): Boolean!
+	createServer(input: CreateServerInput!): Server!
+	deleteKeybind(input: DeleteKeybindInput!): Boolean!
+	pinMessage(input: PinMessageInput!): Boolean!
+	unpinMessage(input: UnpinMessageInput!): Boolean!
+	startTyping(serverId: ID!, conversationId: ID!): Boolean!
+	heartbeat(input: HeartbeatInput!): Boolean!
+	muteConversation(input: MuteConversationInput!): Boolean!
+	unmuteConversation(input: UnmuteConversationInput!): Boolean!
+	requestPasswordReset(username: String!): Boolean!
+	resetPassword(token: String!, newPassword: String!): Boolean!
+	createCustomEmoji(input: CreateCustomEmojiInput!): CustomEmoji!
+	deleteCustomEmoji(emojiId: ID!): Boolean!
+	createMacro(input: CreateMacroInput!): MacroDef!
+	updateMacro(input: UpdateMacroInput!): MacroDef!
+	deleteMacro(macroId: ID!): Boolean!
+	executeMacro(input: ExecuteMacroInput!): CommandResult!
+	recordFeatureUsage(featureId: String!): SkillProfileGql!
+	overrideSkillTier(tier: SkillTier!): SkillProfileGql!
+	createChannelLens(input: CreateChannelLensInput!): ChannelLens!
+	updateChannelLens(input: UpdateChannelLensInput!): ChannelLens!
+	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
+	startIncident(input: StartIncidentInput!): IncidentGql!
+	updateIncidentStatus(input: UpdateIncidentStatusInput!): IncidentGql!
+	advanceIncidentPhase(input: AdvanceIncidentPhaseInput!): IncidentPhaseGql!
+	tagIncidentMessage(input: TagIncidentMessageInput!): IncidentMessageTagGql!
+	generatePostmortem(incidentId: ID!): IncidentGql!
+	resolveIncident(incidentId: ID!): IncidentGql!
+}
+
+input MuteConversationInput {
+	serverId: ID!
+	conversationId: ID!
+	mutedUntil: DateTime
+}
+
+type MutedConversation {
+	conversationId: ID!
+	mutedUntil: DateTime
+}
+
+enum PageDir {
+	BEFORE
+	AFTER
+}
+
+type PageInfo {
+	hasNext: Boolean!
+	hasPrev: Boolean!
+}
+
+input PinMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+}
+
+enum PresenceStatus {
+	ONLINE
+	AWAY
+	OFFLINE
+}
+
+type Query {
+	commands(surface: CommandSurface, commandContext: CommandContextInput): [Command!]!
+	command(commandId: String!): Command
+	actions: [Action!]!
+	events: [Event!]!
+	capabilities: [Capability!]!
+	integrations: [Integration!]!
+	settings: [Setting!]!
+	keybinds(scope: KeybindScope!, workspaceId: ID): [Keybind!]!
+	defaultKeybinds: [DefaultKeybind!]!
+	resolvedKeybinds(workspaceId: ID): [Keybind!]!
+	resolveKeybind(keystroke: String!, context: KeybindContext!, workspaceId: ID): Keybind
+	keybindLayers(keystroke: String!, context: KeybindContext!, workspaceId: ID): KeybindLayers!
+	conversation(serverId: ID!, conversationId: ID!): Conversation!
+	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
+	channels(serverId: ID!, dir: PageDir!, cursor: ChannelCursorInput, limit: Int!): ChannelPage!
+	messages(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: MessageCursorInput, limit: Int!, includeDeleted: Boolean!): MessagePage!
+	searchMessages(serverId: ID!, conversationId: ID, query: String!, limit: Int!, includeDeleted: Boolean!): [SearchResultMessage!]!
+	message(serverId: ID!, conversationId: ID!, messageId: ID!): Message!
+	messageReference(serverId: ID!, conversationId: ID!, messageId: ID!): MessageReference!
+	thread(serverId: ID!, conversationId: ID!, threadId: ID!): Thread!
+	threadByRootMessage(serverId: ID!, conversationId: ID!, rootMessageId: ID!): Thread
+	threads(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: ThreadCursorInput, limit: Int!): ThreadPage!
+	threadMessages(serverId: ID!, conversationId: ID!, threadId: ID!, dir: PageDir!, cursor: MessageCursorInput, limit: Int!, includeDeleted: Boolean!): MessagePage!
+	attachment(serverId: ID!, attachmentId: ID!): Attachment!
+	me: User!
+	myServers: [Server!]!
+	server(serverId: ID!): Server!
+	unreadCounts(workspaceId: ID!): [UnreadCount!]!
+	serverMembers(serverId: ID!): [ServerMember!]!
+	myMentions(serverId: ID!, limit: Int! = 50): [Message!]!
+	pinnedMessages(serverId: ID!, conversationId: ID!): [Message!]!
+	workspacePresence(workspaceId: ID!): [UserPresenceGql!]!
+	myInvites(serverId: ID!): [Invite!]!
+	mutedConversations(serverId: ID!): [MutedConversation!]!
+	customEmojis(serverId: ID!): [CustomEmoji!]!
+	myMacros(serverId: ID!): [MacroDef!]!
+	serverMacros(serverId: ID!): [MacroDef!]!
+	mySkillProfile: SkillProfileGql!
+	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
+	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
+	activeIncident(serverId: ID!, conversationId: ID!): IncidentGql
+	incidentTimeline(incidentId: ID!): IncidentTimelineGql!
+}
+
+type ReactionGroup {
+	emoji: String!
+	count: Int!
+	reactedByMe: Boolean!
+	userIds: [ID!]!
+}
+
+input ReplyToMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	rootMessageId: ID!
+	text: String!
+	parentMessageId: ID
+}
+
+type SearchResultMessage {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	conversationTitle: String
+	conversationType: ConversationTypeEnum!
+	threadId: ID
+	rootMessageId: ID
+	authorId: ID!
+	text: String
+	sentAt: DateTime!
+}
+
+input SendMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	text: String!
+	parentMessageId: ID
+}
+
+type Server {
+	id: ID!
+	name: String!
+}
+
+type ServerMember {
+	serverId: ID!
+	userId: ID!
+	username: String!
+	displayName: String
+	avatarUrl: String
+	statusText: String
+	bio: String
+	memberRole: String!
+	joinedAt: DateTime!
+}
+
+type Setting {
+	id: String!
+	scope: SettingScope!
+	title: String!
+	description: String!
+	valueType: String!
+	isSecret: Boolean!
+}
+
+enum SettingScope {
+	USER
+	WORKSPACE
+	INTEGRATION
+	DEVICE_LOCAL
+}
+
+type SkillProfileGql {
+	userId: ID!
+	featuresUsed: [FeatureUsage!]!
+	skillTier: SkillTier!
+}
+
+enum SkillTier {
+	BEGINNER
+	INTERMEDIATE
+	ADVANCED
+}
+
+input StartIncidentInput {
+	serverId: ID!
+	conversationId: ID!
+	title: String!
+	severity: IncidentSeverityGql
+}
+
+type Subscription {
+	"""
+	Subscribe to all real-time events for a workspace.
+	Returns events as JSON strings — the client parses the `type` field to determine the event kind.
+	"""
+	workspaceEvents(workspaceId: ID!): String!
+}
+
+input TagIncidentMessageInput {
+	incidentId: ID!
+	messageId: ID!
+	tagType: MessageTagTypeGql
+}
+
+type Thread {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	rootMessageId: ID
+	rootAuthorId: ID
+	rootText: String
+	createdAt: DateTime!
+	lastMessageAt: DateTime!
+}
+
+input ThreadCursorInput {
+	lastMessageAt: DateTime!
+	threadId: ID!
+}
+
+type ThreadCursorOutput {
+	lastMessageAt: DateTime!
+	threadId: ID!
+}
+
+type ThreadPage {
+	items: [Thread!]!
+	next: ThreadCursorOutput
+	prev: ThreadCursorOutput
+	pageInfo: PageInfo!
+}
+
+input ToggleReactionInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	emoji: String!
+}
+
+input UnmuteConversationInput {
+	serverId: ID!
+	conversationId: ID!
+}
+
+input UnpinMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+}
+
+type UnreadCount {
+	conversationId: ID!
+	count: Int!
+}
+
+input UpdateChannelLensInput {
+	serverId: ID!
+	lensId: ID!
+	name: String
+	filterSpec: FilterSpecInput
+	isShared: Boolean
+}
+
+input UpdateConversationTopicInput {
+	serverId: ID!
+	conversationId: ID!
+	topic: String
+}
+
+input UpdateIncidentStatusInput {
+	incidentId: ID!
+	status: IncidentStatusGql!
+}
+
+input UpdateKeybindInput {
+	keybindId: ID!
+	keystroke: String!
+	commandId: String!
+	context: KeybindContext!
+	presetArgs: JSON
+	isEnabled: Boolean!
+}
+
+input UpdateMacroInput {
+	macroId: ID!
+	name: String!
+	description: String
+	steps: [MacroStepInput!]!
+}
+
+input UpdateUserCommandInput {
+	commandId: String!
+	title: String!
+	description: String!
+	steps: [UserCommandStepInput!]!
+	isEnabled: Boolean!
+}
+
+type UploadTicket {
+	attachmentId: ID!
+	uploadToken: String!
+	maxSizeBytes: Int
+	expiresAt: DateTime
+}
+
+type User {
+	id: ID!
+	username: String!
+	displayName: String
+	avatarUrl: String
+	statusText: String
+	bio: String
+}
+
+input UserCommandStepInput {
+	commandId: String!
+	args: JSON
+}
+
+type UserPresenceGql {
+	userId: ID!
+	status: PresenceStatus!
+	lastSeenAt: DateTime!
+}
+
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
+directive @specifiedBy(url: String!) on SCALAR
+schema {
+	query: Query
+	mutation: Mutation
+	subscription: Subscription
+}

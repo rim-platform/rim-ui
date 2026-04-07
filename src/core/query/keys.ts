@@ -21,4 +21,12 @@ export const queryKeys = {
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
   plugins: () => ["plugins"] as const,
   macros: (serverId?: string) => ["macros", serverId] as const,
+  lenses: (workspaceId?: string, conversationId?: string) =>
+    ["lenses", workspaceId, conversationId] as const,
+  lensMessages: (workspaceId?: string, conversationId?: string, lensId?: string) =>
+    ["lensMessages", workspaceId, conversationId, lensId] as const,
+  activeIncident: (serverId?: string, conversationId?: string) =>
+    ["activeIncident", serverId, conversationId] as const,
+  incidentTimeline: (incidentId?: string) =>
+    ["incidentTimeline", incidentId] as const,
 };

@@ -2,6 +2,8 @@ import { create } from "zustand";
 
 export type ActivePanel = "inbox" | "plugins";
 
+export type DisplayDensity = "comfortable" | "compact" | "ultra-compact";
+
 export type MainSurface =
   | { kind: "conversation" }
   | { kind: "settings" }
@@ -29,6 +31,9 @@ type ShellState = {
   showNewMessagePicker: boolean;
   showInviteDialog: boolean;
   pinnedPanelOpen: boolean;
+  displayDensity: DisplayDensity;
+  zenMode: boolean;
+  navigationMode: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
   setMainSurface: (surface: MainSurface) => void;
@@ -46,6 +51,9 @@ type ShellState = {
   setShowNewMessagePicker: (show: boolean) => void;
   setShowInviteDialog: (show: boolean) => void;
   setPinnedPanelOpen: (open: boolean) => void;
+  cycleDisplayDensity: () => void;
+  toggleZenMode: () => void;
+  setNavigationMode: (enabled: boolean) => void;
   reset: () => void;
 };
 
@@ -65,6 +73,9 @@ export const useShellStore = create<ShellState>((set) => ({
   showNewMessagePicker: false,
   showInviteDialog: false,
   pinnedPanelOpen: false,
+  displayDensity: "comfortable",
+  zenMode: false,
+  navigationMode: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setMainSurface: (surface) => set({ mainSurface: surface }),
@@ -103,6 +114,19 @@ export const useShellStore = create<ShellState>((set) => ({
   setShowInviteDialog: (show) => set({ showInviteDialog: show }),
   setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
 
+  cycleDisplayDensity: () =>
+    set((state) => {
+      const order: DisplayDensity[] = ["comfortable", "compact", "ultra-compact"];
+      const idx = order.indexOf(state.displayDensity);
+      const next = order[(idx + 1) % order.length];
+      return { displayDensity: next };
+    }),
+
+  toggleZenMode: () =>
+    set((state) => ({ zenMode: !state.zenMode })),
+
+  setNavigationMode: (enabled) => set({ navigationMode: enabled }),
+
   reset: () =>
     set({
       activePanel: "inbox",
@@ -120,5 +144,8 @@ export const useShellStore = create<ShellState>((set) => ({
       showNewMessagePicker: false,
       showInviteDialog: false,
       pinnedPanelOpen: false,
+      displayDensity: "comfortable",
+      zenMode: false,
+      navigationMode: false,
     }),
 }));

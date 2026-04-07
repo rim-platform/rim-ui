@@ -290,7 +290,15 @@ const ConversationItem = memo(function ConversationItem({
   const button = (
     <button
       type="button"
-      onClick={() => select(conv.id)}
+      onClick={() => {
+        select(conv.id);
+        // If in navigation mode, refocus the message list so j/k keeps working
+        requestAnimationFrame(() => {
+          if (useShellStore.getState().navigationMode) {
+            document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
+          }
+        });
+      }}
       onMouseEnter={() =>
         useHoverContextStore.getState().setTarget({
           kind: hoverKind,

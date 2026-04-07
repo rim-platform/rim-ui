@@ -169,7 +169,12 @@ export function ThreadPanel() {
       : `Thread \u2014 ${replyCount} ${replyCount === 1 ? "reply" : "replies"}`;
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-rim-line bg-rim-panel">
+    <div
+      data-panel="threadPane"
+      tabIndex={-1}
+      onFocus={() => useShellStore.getState().setFocusedSurface("threadPane")}
+      className="flex h-full flex-col rounded-xl border border-rim-line bg-rim-panel outline-none"
+    >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
         <h3 className="text-sm font-medium text-rim-text">{headerText}</h3>

@@ -12,7 +12,8 @@ import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../api/useMessages";
-import { ForwardDialog } from "./ForwardDialog";
+import { useIncidentStore } from "../../incidents/state/useIncidentStore";
+import { TagMessageMenu } from "../../incidents/components/TagMessageMenu";
 
 interface MessageContextMenuProps {
   x: number;
@@ -25,6 +26,7 @@ interface MessageContextMenuProps {
   isPinned: boolean;
   hasThread: boolean;
   onClose: () => void;
+  onForward?: (messageId: string, messageText: string) => void;
 }
 
 export function MessageContextMenu({
@@ -38,6 +40,7 @@ export function MessageContextMenu({
   isPinned,
   hasThread,
   onClose,
+  onForward,
 }: MessageContextMenuProps) {
   const executeCommandMutation = useExecuteCommandMutation();
   const pluginContextMenuCommands = usePluginContextMenuCommands("message");
@@ -45,7 +48,8 @@ export function MessageContextMenu({
   const unpinMessage = useUnpinMessageMutation();
   const qc = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState(false);
-  const [forwardOpen, setForwardOpen] = useState(false);
+  const [tagMenuPos, setTagMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const activeIncident = useIncidentStore((s) => s.activeIncident);
 
   const handleDelete = useCallback(async () => {
     setPendingDelete(false);
@@ -104,7 +108,10 @@ export function MessageContextMenu({
     result.push({
       id: "forward-message",
       label: "Forward",
-      onSelect: () => setForwardOpen(true),
+      onSelect: () => {
+        onClose();
+        onForward?.(messageId, messageText);
+      },
     });
 
     if (!hasThread) {
@@ -150,6 +157,17 @@ export function MessageContextMenu({
       },
     });
 
+    // Incident tagging
+    if (activeIncident) {
+      result.push({
+        id: "tag-for-incident",
+        label: "Tag for Incident",
+        onSelect: () => {
+          setTagMenuPos({ x: x + 180, y });
+        },
+      });
+    }
+
     // Plugin context menu actions
     for (const cmd of pluginContextMenuCommands) {
       result.push({
@@ -165,7 +183,7 @@ export function MessageContextMenu({
     }
 
     return result;
-  }, [messageId, messageText, isOwnMessage, isPinned, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, pinMessage, unpinMessage, workspaceId, conversationId]);
+  }, [messageId, messageText, isOwnMessage, isPinned, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, pinMessage, unpinMessage, workspaceId, conversationId, activeIncident, x, y]);
 
   return (
     <>
@@ -174,6 +192,16 @@ export function MessageContextMenu({
           items={items}
           position={{ x, y }}
           onClose={onClose}
+        />
+      )}
+      {tagMenuPos && (
+        <TagMessageMenu
+          messageId={messageId}
+          position={tagMenuPos}
+          onClose={() => {
+            setTagMenuPos(null);
+            onClose();
+          }}
         />
       )}
       <Dialog
@@ -207,14 +235,6 @@ export function MessageContextMenu({
           </button>
         </div>
       </Dialog>
-      <ForwardDialog
-        open={forwardOpen}
-        onClose={() => { setForwardOpen(false); onClose(); }}
-        messageId={messageId}
-        messageText={messageText}
-        workspaceId={workspaceId}
-        sourceConversationId={conversationId}
-      />
     </>
   );
 }

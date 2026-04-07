@@ -16,7 +16,7 @@ All frontend commands from repo root. Rust commands from `src-tauri/`.
 npm install                  # Install dependencies
 npm run dev                  # Vite dev server (port 1420)
 npm run build                # TypeScript check + Vite build (primary frontend validation)
-npm run codegen              # Generate GraphQL types (needs backend at localhost:8080)
+npm run codegen              # Generate GraphQL types from schema.graphql (see below)
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
 
@@ -71,7 +71,50 @@ cargo test test_name -- --exact         # Single test
 
 Product contracts, messaging semantics, command/keybind/plugin models, and capability security are defined in `../rim-server/docs/`. Read the relevant doc before inventing client-side behavior.
 
-**CRITICAL:** Before adding new fields to GraphQL queries, verify they exist in the backend schema (`rim_api/src/types.rs`). Frontend requesting non-existent fields causes silent query failures.
+## GraphQL Type Generation (CRITICAL)
+
+**NEVER hand-write GraphQL enum values, input types, or schema types.** Use the generated
+types from `src/core/graphql/generated/schema-types.ts` instead. Hand-written types cause
+silent bugs when enum casing or field names differ from the backend (e.g., `SEV2` vs `SEV_2`).
+
+### Workflow
+
+1. If the backend schema changed, export a fresh SDL:
+   ```bash
+   curl -s http://localhost:8080/api/sdl > schema.graphql
+   ```
+2. Regenerate types:
+   ```bash
+   npm run codegen
+   ```
+3. Import generated types in your code:
+   ```typescript
+   import { IncidentSeverityGql, FilterField, SkillTier } from "../../../core/graphql/generated/schema-types";
+   ```
+
+### Rules
+
+- **Enums**: ALWAYS import from `schema-types.ts`. Backend uses SCREAMING_SNAKE convention
+  (e.g., `SEV_1`, `ACTION_ITEM`, `HAS_LINKS`). Never guess the casing.
+- **Input types**: Generated as `CreateChannelLensInput`, `StartIncidentInput`, etc.
+  Use them for mutation variable typing.
+- **Object types**: Generated as `IncidentGql`, `ChannelLens`, `SkillProfileGql`, etc.
+  Use for query result typing.
+- **GraphQL queries/mutations**: Still written as `gql` tagged templates in `api/*.ts` files.
+  Only the TypeScript types are generated, not the queries themselves.
+- **Fragments**: Still hand-written in `src/graphql/fragments/`. These define field selections.
+- **After adding backend types**: Always re-export SDL + run codegen before writing frontend code.
+
+### Files
+
+- `schema.graphql` — SDL schema file (source of truth, exported from backend)
+- `codegen.mjs` — codegen configuration
+- `src/core/graphql/generated/schema-types.ts` — generated types (DO NOT EDIT)
+- `src/core/graphql/generated/sdk.ts` — DEAD CODE, do not use (legacy, pending removal)
+
+**ALSO CRITICAL:** Before adding new fields to GraphQL queries, verify they exist in the
+backend schema. Check `schema.graphql` or `rim_api/src/types.rs`. Frontend requesting
+non-existent fields causes silent query failures.
 
 ## Also Read
 

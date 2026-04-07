@@ -30,6 +30,14 @@ import { PinnedMessagesPanel } from "../../features/messages/components/PinnedMe
 import { SettingsPage } from "../../features/settings/components/SettingsPage";
 import { TitleBar } from "../components/TitleBar";
 import { ConnectionBanner } from "../../features/system/components/ConnectionBanner";
+import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
+import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
+import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
+import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
+import { StatusBar } from "../components/StatusBar";
+import { FocusPulse } from "../navigation/FocusPulse";
+import { useSpatialNavigation } from "../navigation/useSpatialNavigation";
+// cn import removed — zen mode uses inline style display toggle
 
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
@@ -90,6 +98,7 @@ function WorkspaceShell() {
   useHeartbeat(workspaceId);
   usePluginEvents();
   useStatusExpiration();
+  useSpatialNavigation();
 
   const { capabilities } = useRuntime();
   const mainSurface = useShellStore((s) => s.mainSurface);
@@ -100,12 +109,22 @@ function WorkspaceShell() {
   const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
+  const zenMode = useShellStore((s) => s.zenMode);
+  const toggleZenMode = useShellStore((s) => s.toggleZenMode);
   const { data: plugins } = usePluginList();
+
+  // Incident mode
+  const showIncidentTimeline = useIncidentStore((s) => s.showTimeline);
+  const setShowIncidentTimeline = useIncidentStore((s) => s.setShowTimeline);
+  const showIncidentPostmortem = useIncidentStore((s) => s.showPostmortem);
+  const setShowIncidentPostmortem = useIncidentStore((s) => s.setShowPostmortem);
 
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
       // Skip if modifier keys (except Shift) are held
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Skip if in navigation mode — let message list handle single keys
+      if (useShellStore.getState().navigationMode) return;
       // Skip non-printable keys
       if (e.key.length !== 1) return;
       // Skip if already focused on an input/textarea/contenteditable
@@ -148,17 +167,18 @@ function WorkspaceShell() {
 
   return (
     <KeybindProvider>
-      <div className="flex min-h-0 flex-1 bg-rim-void text-rim-text">
-        <WorkspaceRail />
-        <SideRail />
+      <div className="flex min-h-0 flex-1 flex-col bg-rim-void text-rim-text">
+        <div className="flex min-h-0 flex-1">
+        <div style={{ display: zenMode ? "none" : "contents" }}><WorkspaceRail /></div>
+        <div style={{ display: zenMode ? "none" : "contents" }}><SideRail /></div>
 
         {mainSurface.kind === "conversation" && (
           <>
-            <ToolPanel />
+            <div style={{ display: zenMode ? "none" : "contents" }}><ToolPanel /></div>
 
             {/* Plugin tool_panel slot — renders next to ToolPanel */}
             {toolPanelPlugin && (
-              <div className="w-72 shrink-0 border-r border-rim-line bg-rim-panel">
+              <div className="w-72 shrink-0 border-r border-rim-line bg-rim-panel" style={{ display: zenMode ? "none" : undefined }}>
                 <PluginSlotContainer
                   plugin={toolPanelPlugin.plugin}
                   panel={toolPanelPlugin.panel}
@@ -177,24 +197,49 @@ function WorkspaceShell() {
                 />
               </main>
             ) : (
-              <main className="flex min-w-0 flex-1 flex-col">
-                <ConversationHeader />
+              <main className="relative flex min-w-0 flex-1 flex-col">
+                <div style={{ display: zenMode ? "none" : undefined }}><ConversationHeader /></div>
                 <MessageTimeline />
+                {zenMode && (
+                  <button
+                    type="button"
+                    onClick={toggleZenMode}
+                    className="absolute right-3 top-3 z-50 rounded px-2 py-1 text-xs bg-rim-panel text-rim-text-muted hover:text-rim-text border border-rim-line shadow-sm opacity-0 hover:opacity-100 transition-opacity duration-300"
+                  >
+                    Exit Zen
+                  </button>
+                )}
               </main>
             )}
 
             {!mainAreaPlugin && showThread && (
-              <div className="w-80 shrink-0 border-l border-rim-line">
+              <div className="w-80 shrink-0 border-l border-rim-line" style={{ display: zenMode ? "none" : undefined }}>
                 <ThreadPanel />
               </div>
             )}
 
             {!mainAreaPlugin && pinnedPanelOpen && workspaceId && selectedConversationId && (
-              <div className="w-80 shrink-0">
+              <div className="w-80 shrink-0" style={{ display: zenMode ? "none" : undefined }}>
                 <PinnedMessagesPanel
                   workspaceId={workspaceId}
                   conversationId={selectedConversationId}
                   onClose={() => setPinnedPanelOpen(false)}
+                />
+              </div>
+            )}
+
+            {!mainAreaPlugin && showIncidentTimeline && (
+              <div className="w-80 shrink-0">
+                <IncidentTimelinePanel onClose={() => setShowIncidentTimeline(false)} />
+              </div>
+            )}
+
+            {!mainAreaPlugin && showIncidentPostmortem && workspaceId && selectedConversationId && (
+              <div className="w-80 shrink-0">
+                <PostmortemPreview
+                  serverId={workspaceId}
+                  conversationId={selectedConversationId}
+                  onClose={() => setShowIncidentPostmortem(false)}
                 />
               </div>
             )}
@@ -225,7 +270,14 @@ function WorkspaceShell() {
         <SearchOverlay />
         <AgentOverlay />
         <QuickAccessAssigner />
+        {workspaceId && selectedConversationId && (
+          <StartIncidentDialog serverId={workspaceId} conversationId={selectedConversationId} />
+        )}
         <ToastContainer />
+        </div>
+
+        {!zenMode && <StatusBar />}
+        <FocusPulse />
       </div>
     </KeybindProvider>
   );

@@ -6,6 +6,7 @@ import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
 import { cn } from "../../shared/ui/cn";
 import { useHoverContextStore } from "../state/useHoverContextStore";
+import { useShellStore } from "../state/useShellStore";
 
 export function WorkspaceRail() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -14,7 +15,12 @@ export function WorkspaceRail() {
   const [showCreate, setShowCreate] = useState(false);
 
   return (
-    <aside className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2">
+    <aside
+      data-panel="workspaceRail"
+      tabIndex={-1}
+      onFocus={() => useShellStore.getState().setFocusedSurface("workspaceRail")}
+      className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2 outline-none"
+    >
       {servers?.map((server) => {
         const active = server.id === workspaceId;
         return (

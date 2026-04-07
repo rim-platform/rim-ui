@@ -31,6 +31,15 @@ export const MESSAGE_FIELDS = gql`
     isDeleted
     mentionedUserIds
     forwardedFromMessageId
+    forwardedFrom {
+      id
+      conversationId
+      author {
+        id
+        username
+        displayName
+      }
+    }
     sentAt
     attachments {
       ...AttachmentFields

@@ -112,6 +112,16 @@ const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
     presetArgs: null,
   },
   {
+    id: "__fallback_cycle_density",
+    keystroke: "Ctrl+D",
+    commandId: "workspace.cycle_display_density",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
     id: "__fallback_navigate_channel",
     keystroke: "Ctrl+Shift+K",
     commandId: "workspace.navigate_to_channel",
@@ -135,6 +145,46 @@ const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
     id: "__fallback_next_channel",
     keystroke: "Alt+ArrowDown",
     commandId: "workspace.next_channel",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_zen_mode",
+    keystroke: "Ctrl+Shift+Z",
+    commandId: "workspace.toggle_zen_mode",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_cycle_layout",
+    keystroke: "Ctrl+L",
+    commandId: "workspace.cycle_layout_preset",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_panel_left",
+    keystroke: "Ctrl+ArrowLeft",
+    commandId: "workspace.navigate_panel_left",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+  },
+  {
+    id: "__fallback_panel_right",
+    keystroke: "Ctrl+ArrowRight",
+    commandId: "workspace.navigate_panel_right",
     context: "GLOBAL",
     source: "DEFAULT",
     scope: "USER",
@@ -208,6 +258,15 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
           shell.showNewMessagePicker ||
           shell.showInviteDialog;
         if (overlayOpen) {
+          return;
+        }
+        // In text inputs: only let Escape fall through to the component when
+        // there is nothing to close (no thread, already on conversation surface).
+        // When a thread is open or we're on settings/plugin, close_panel should
+        // still fire even from a text input.
+        const hasPanelToClose =
+          shell.isThreadOpen || shell.mainSurface.kind !== "conversation";
+        if (isTextInput && !hasPanelToClose) {
           return;
         }
       }

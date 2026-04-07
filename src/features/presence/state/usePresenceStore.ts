@@ -1,6 +1,7 @@
 import { create } from "zustand";
+import { PresenceStatus } from "../../../core/graphql/generated/schema-types";
 
-export type PresenceStatus = "ONLINE" | "AWAY" | "OFFLINE";
+export { PresenceStatus };
 
 interface PresenceState {
   presenceMap: Record<string, PresenceStatus>; // userId -> status
