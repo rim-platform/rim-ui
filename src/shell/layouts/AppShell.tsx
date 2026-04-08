@@ -110,6 +110,7 @@ function WorkspaceShell() {
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
   const zenMode = useShellStore((s) => s.zenMode);
+  const sidebarCollapsed = useShellStore((s) => s.sidebarCollapsed);
   const toggleZenMode = useShellStore((s) => s.toggleZenMode);
   const { data: plugins } = usePluginList();
 
@@ -170,7 +171,7 @@ function WorkspaceShell() {
       <div className="flex min-h-0 flex-1 flex-col bg-rim-void text-rim-text">
         <div className="flex min-h-0 flex-1">
         <div style={{ display: zenMode ? "none" : "contents" }}><WorkspaceRail /></div>
-        <div style={{ display: zenMode ? "none" : "contents" }}><SideRail /></div>
+        <div style={{ display: (zenMode || sidebarCollapsed) ? "none" : "contents" }}><SideRail /></div>
 
         {mainSurface.kind === "conversation" && (
           <>

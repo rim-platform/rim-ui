@@ -21,13 +21,15 @@ export function useTypingIndicator(
   conversationId: string,
 ) {
   const lastSentRef = useRef(0);
+  // Use refs to always read the latest values without re-creating the callback
+  const workspaceIdRef = useRef(workspaceId);
+  workspaceIdRef.current = workspaceId;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   const startTyping = useMutation({
-    mutationFn: () =>
-      graphqlClient.request(START_TYPING, {
-        serverId: workspaceId,
-        conversationId,
-      }),
+    mutationFn: (vars: { serverId: string; conversationId: string }) =>
+      graphqlClient.request(START_TYPING, vars),
   });
 
   const handleKeystroke = useCallback(() => {
@@ -35,8 +37,13 @@ export function useTypingIndicator(
     if (now - lastSentRef.current < THROTTLE_MS) return;
     lastSentRef.current = now;
 
-    startTyping.mutate();
-  }, [startTyping]);
+    startTyping.mutate({
+      serverId: workspaceIdRef.current,
+      conversationId: conversationIdRef.current,
+    });
+    // startTyping.mutate is stable — only the variables change via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { handleKeystroke };
 }

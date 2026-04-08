@@ -138,12 +138,12 @@ export function HoverTooltip({
       {cloneElement(children, {
         ref: (el: HTMLElement | null) => {
           triggerRef.current = el;
-          // Forward ref if the child has one
-          const childRef = (children as { ref?: React.Ref<HTMLElement> }).ref;
+          // Forward ref if the child has one (React 19: ref is a regular prop)
+          const childRef = childProps.ref as React.Ref<HTMLElement> | undefined;
           if (typeof childRef === "function") {
             childRef(el);
           } else if (childRef && typeof childRef === "object") {
-            (childRef as React.MutableRefObject<HTMLElement | null>).current = el;
+            (childRef as React.RefObject<HTMLElement | null>).current = el;
           }
         },
         onMouseEnter: (e: React.MouseEvent) => {

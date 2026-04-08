@@ -116,6 +116,12 @@ silent bugs when enum casing or field names differ from the backend (e.g., `SEV2
 backend schema. Check `schema.graphql` or `rim_api/src/types.rs`. Frontend requesting
 non-existent fields causes silent query failures.
 
+## Code Review (MANDATORY)
+
+Every code change (fix, feature, refactor) MUST be reviewed by the Hawkeye agent (code-reviewer) before being reported as done. No exceptions.
+
+Review covers: React 19 patterns, TypeScript strict compliance, component separation of concerns, GraphQL query/schema alignment, import consistency, copy-paste detection. BLOCK findings must be fixed before shipping.
+
 ## Also Read
 
 - `AGENTS.md` in this repo has detailed product direction, naming guidance, security/trust UX expectations, and agent workflow rules.

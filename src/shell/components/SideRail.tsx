@@ -51,7 +51,12 @@ export function SideRail() {
   }
 
   return (
-    <aside className="flex w-14 shrink-0 flex-col items-center border-r border-rim-line bg-rim-panel py-4">
+    <aside
+      data-panel="sideRail"
+      tabIndex={-1}
+      onFocus={() => useShellStore.getState().setFocusedSurface("sideRail")}
+      className="flex w-14 shrink-0 flex-col items-center border-r border-rim-line bg-rim-panel py-4 outline-none"
+    >
       <nav className="flex flex-1 flex-col items-center gap-1">
         {railItems.map((item) => {
           const Icon = item.icon;

@@ -6,6 +6,7 @@ import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
 import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
 import { SkillTier } from "../../core/graphql/generated/schema-types";
+import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
 
 function connectionLabel(status: string): string {
   switch (status) {
@@ -23,30 +24,13 @@ function connectionLabel(status: string): string {
 function connectionDotColor(status: string): string {
   switch (status) {
     case "connected":
-      return "bg-[#34d399]";
+      return "bg-rim-success";
     case "connecting":
-      return "bg-[#f59e0b]";
+      return "bg-rim-warm";
     case "disconnected":
-      return "bg-[#ef4444]";
+      return "bg-rim-danger";
     default:
       return "bg-rim-text-faint";
-  }
-}
-
-function surfaceToContextLabel(surface: string | null): string {
-  if (!surface) return "GLOBAL";
-  switch (surface) {
-    case "composer":
-      return "COMPOSER";
-    case "message_list":
-    case "messageList":
-      return "MESSAGE_LIST";
-    case "thread":
-      return "THREAD";
-    case "search":
-      return "SEARCH";
-    default:
-      return "GLOBAL";
   }
 }
 
@@ -61,7 +45,7 @@ export function StatusBar() {
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
 
   const totalUnread = Object.values(counts).reduce((sum, n) => sum + n, 0);
-  const contextLabel = surfaceToContextLabel(focusedSurface);
+  const contextLabel = surfaceToContext(focusedSurface);
 
   const activePresetName = activePresetId
     ? ([...BUILT_IN_PRESETS, ...customPresets].find((p) => p.id === activePresetId)?.name ?? null)

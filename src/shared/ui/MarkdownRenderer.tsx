@@ -10,12 +10,18 @@ renderer.link = ({ href, text }) => {
 };
 marked.use({ renderer });
 
+/** Escape a string for safe use in HTML attribute values */
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Replace `:custom_name:` shortcodes with inline emoji images */
 function replaceCustomEmoji(html: string, emojiMap: Map<string, string>): string {
   return html.replace(/:([a-zA-Z0-9_-]+):/g, (match, name: string) => {
     const url = emojiMap.get(name);
     if (!url) return match;
-    return `<img src="${url}" alt=":${name}:" title=":${name}:" class="inline-block h-5 w-5 align-text-bottom object-contain" />`;
+    const safeUrl = escapeAttr(url);
+    return `<img src="${safeUrl}" alt=":${name}:" title=":${name}:" class="inline-block h-5 w-5 align-text-bottom object-contain" />`;
   });
 }
 

@@ -12,8 +12,8 @@ export interface SlashCommand {
 }
 
 const ExecuteMacroByName = gql`
-  mutation ExecuteMacroSlash($macroId: ID!, $commandContext: CommandContextInput) {
-    executeMacro(macroId: $macroId, commandContext: $commandContext) {
+  mutation ExecuteMacroSlash($input: ExecuteMacroInput!) {
+    executeMacro(input: $input) {
       status
       message
     }
@@ -39,8 +39,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       // TODO: Resolve macro name to ID via backend query. For now, use name as ID.
       const workspaceId = useWorkspaceStore.getState().workspaceId;
       graphqlClient.request(ExecuteMacroByName, {
-        macroId: macroName,
-        commandContext: { workspaceId },
+        input: {
+          macroId: macroName,
+          commandContext: { workspaceId },
+        },
+      }).catch((err) => {
+        console.error("[/macro] Failed to execute macro:", err);
       });
     },
   },

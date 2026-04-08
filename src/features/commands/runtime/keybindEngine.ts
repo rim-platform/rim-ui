@@ -56,12 +56,17 @@ export function surfaceToContext(
   switch (focusedSurface) {
     case "composer":
       return "COMPOSER";
+    case "mainSurface":
     case "messageList":
       return "MESSAGE_LIST";
+    case "threadPane":
     case "threadView":
       return "THREAD_VIEW";
     case "conversationView":
       return "CONVERSATION_VIEW";
+    case "sideRail":
+    case "toolPanel":
+    case "workspaceRail":
     case "panel":
       return "PANEL";
     case "commandPalette":

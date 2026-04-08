@@ -72,8 +72,8 @@ export function useSpatialNavigation(): void {
         return;
       }
 
-      // Don't interfere with navigation mode (j/k message navigation)
-      if (useShellStore.getState().navigationMode) return;
+      // Ctrl+Arrow navigates panels — this is orthogonal to j/k message
+      // navigation, so it should work regardless of navigation mode.
 
       const direction: Direction = e.key === "ArrowLeft" ? "left" : "right";
       navigatePanel(direction);

@@ -15,7 +15,7 @@ import { useShellStore } from "../../shell/state/useShellStore";
 // feature modules, making it high-risk for a mechanical change.
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
-import { usePresenceStore } from "../../features/presence/state/usePresenceStore";
+import { usePresenceStore, PresenceStatus } from "../../features/presence/state/usePresenceStore";
 import { useTypingStore } from "../../features/messages/state/useTypingStore";
 import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
 import { useMutedStore } from "../../features/conversations/state/useMutedStore";
@@ -310,8 +310,16 @@ function handleEvent(
 
     case "PresenceChanged": {
       // Backend sends PascalCase ("Online"), store uses SCREAMING_CASE ("ONLINE")
-      const normalized = event.status.toUpperCase() as import("../../features/presence/state/usePresenceStore").PresenceStatus;
-      usePresenceStore.getState().setPresence(event.user_id, normalized);
+      const upper = event.status.toUpperCase();
+      const validStatuses: Record<string, PresenceStatus> = {
+        ONLINE: PresenceStatus.ONLINE,
+        AWAY: PresenceStatus.AWAY,
+        OFFLINE: PresenceStatus.OFFLINE,
+      };
+      const validated = validStatuses[upper];
+      if (validated) {
+        usePresenceStore.getState().setPresence(event.user_id, validated);
+      }
       break;
     }
 

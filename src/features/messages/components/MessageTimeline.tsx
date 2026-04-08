@@ -145,7 +145,19 @@ export function MessageTimeline() {
     setSelectedMessageIndex(-1);
     setEditingMessageId(null);
     setDeleteConfirmMessageId(null);
+    if (deleteConfirmTimerRef.current) {
+      clearTimeout(deleteConfirmTimerRef.current);
+    }
   }, [conversationId, setEditingMessageId]);
+
+  // Clean up delete confirmation timer on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteConfirmTimerRef.current) {
+        clearTimeout(deleteConfirmTimerRef.current);
+      }
+    };
+  }, []);
 
   // Scroll selected message into view
   useEffect(() => {
@@ -356,6 +368,9 @@ export function MessageTimeline() {
       return;
     }
 
+    // All other keys require navigation mode to be active
+    if (!navMode) return;
+
     // i or Enter: exit navigation mode, focus composer (vim "insert mode")
     if (e.key === "i" || e.key === "Enter") {
       e.preventDefault();
@@ -363,9 +378,6 @@ export function MessageTimeline() {
       document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
       return;
     }
-
-    // All other keys require navigation mode to be active
-    if (!navMode) return;
     if (items.length === 0) return;
 
     // Navigation: j/k and ArrowDown/ArrowUp

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useId } from "react";
 import { X } from "lucide-react";
 import { cn } from "./cn";
 import { Z } from "./zIndex";
@@ -17,24 +17,31 @@ const FOCUSABLE_SELECTOR =
 export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<Element | null>(null);
-  const titleId = useRef(`dialog-title-${Math.random().toString(36).slice(2, 9)}`).current;
+  const titleId = useId();
 
-  // Save previous focus and focus first element when opening
+  // Save previous focus, focus first element when opening, prevent body scroll
   useEffect(() => {
     if (open) {
       previousFocusRef.current = document.activeElement;
+      document.body.style.overflow = "hidden";
       // Defer to next frame so the panel is rendered
       requestAnimationFrame(() => {
         const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
         first?.focus();
       });
-    } else if (previousFocusRef.current) {
-      const el = previousFocusRef.current as HTMLElement;
-      if (typeof el.focus === "function") {
-        el.focus();
+    } else {
+      document.body.style.overflow = "";
+      if (previousFocusRef.current) {
+        const el = previousFocusRef.current as HTMLElement;
+        if (typeof el.focus === "function") {
+          el.focus();
+        }
+        previousFocusRef.current = null;
       }
-      previousFocusRef.current = null;
     }
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [open]);
 
   // Close on Escape

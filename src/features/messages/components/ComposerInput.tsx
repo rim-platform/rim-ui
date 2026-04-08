@@ -433,6 +433,7 @@ export function ComposerInput({
           value={text}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
+          onFocus={() => useShellStore.getState().setFocusedSurface("composer")}
           placeholder="Write a message..."
           className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
           style={{ height: "auto" }}
