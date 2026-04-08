@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { queryKeys } from "../../../core/query/keys";
 import { useUnreadStore } from "../state/useUnreadStore";
 
 const UNREAD_COUNTS_QUERY = gql`
@@ -20,7 +21,7 @@ interface UnreadCountItem {
 
 export function useUnreadCounts(workspaceId?: string) {
   return useQuery({
-    queryKey: ["unreadCounts", workspaceId],
+    queryKey: queryKeys.unreadCounts(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
     refetchOnWindowFocus: true,

@@ -6,20 +6,15 @@ import { toast } from "../../shared/toast";
 import { queryKeys } from "../query/keys";
 import type { WorkspaceEvent, MessageEventData } from "./types";
 import type { MessageItem, MessagesPage } from "../types/messages";
-import { useShellStore } from "../../shell/state/useShellStore";
-
-// TODO(arch): These imports create a dependency direction violation — core/ should not
-// import from features/. Refactor to an event bus pattern (see eventBus.ts) where this
-// file emits generic events and each feature module registers its own handler.
-// Deferred because the refactor touches the real-time event pipeline and multiple
-// feature modules, making it high-risk for a mechanical change.
-import { useAuthStore } from "../../features/auth/state/useAuthStore";
-import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
-import { usePresenceStore, PresenceStatus } from "../../features/presence/state/usePresenceStore";
-import { useTypingStore } from "../../features/messages/state/useTypingStore";
-import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
-import { useMutedStore } from "../../features/conversations/state/useMutedStore";
-import { showMessageNotification } from "../../features/notifications/runtime/desktopNotification";
+import { eventBus } from "./eventBus";
+import { BUS_EVENTS } from "./busEvents";
+import type {
+  UnreadIncrementEvent,
+  UnreadMarkReadEvent,
+  PresenceChangedEvent,
+  TypingStartedEvent,
+  NewMessageNotificationEvent,
+} from "./busEvents";
 
 const WORKSPACE_EVENTS_QUERY = `
   subscription WorkspaceEvents($workspaceId: ID!) {
@@ -153,29 +148,18 @@ function handleEvent(
         );
       }
 
-      // Unread tracking + desktop notifications
-      const isActiveConversation = event.conversation_id === useShellStore.getState().selectedConversationId;
-      const currentUserId = useAuthStore.getState().session?.userId;
-      const isOwnMessage = event.message.author_id === currentUserId;
-      if (!isActiveConversation && !isOwnMessage) {
-        useUnreadStore.getState().increment(event.conversation_id);
+      // Unread tracking + desktop notifications via event bus
+      // Features decide filtering (own message, active conversation, muted, etc.)
+      eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
+        conversationId: event.conversation_id,
+        authorId: event.message.author_id,
+      });
 
-        // Desktop notification (skip for muted conversations)
-        const isMuted = useMutedStore.getState().isMuted(event.conversation_id);
-        const notifSettings = useNotificationSettingsStore.getState();
-        if (notifSettings.enabled && !isMuted) {
-          const channelName = resolveConversationName(qc, workspaceId, event.conversation_id);
-          const authorName = resolveMemberName(qc, workspaceId, event.message.author_id);
-          showMessageNotification({
-            channelName,
-            authorName,
-            messageText: event.message.text ?? "",
-            showPreview: notifSettings.showPreview,
-          }).catch(() => {
-            // Notification API may not be available (web mode)
-          });
-        }
-      }
+      eventBus.emit<NewMessageNotificationEvent>(BUS_EVENTS.NEW_MESSAGE_NOTIFICATION, {
+        conversationId: event.conversation_id,
+        authorId: event.message.author_id,
+        messageText: event.message.text ?? "",
+      });
       break;
     }
 
@@ -305,21 +289,16 @@ function handleEvent(
 
     case "ReadStateUpdated":
       // Multi-device sync — another client marked conversation as read
-      useUnreadStore.getState().markRead(event.conversation_id);
+      eventBus.emit<UnreadMarkReadEvent>(BUS_EVENTS.UNREAD_MARK_READ, {
+        conversationId: event.conversation_id,
+      });
       break;
 
     case "PresenceChanged": {
-      // Backend sends PascalCase ("Online"), store uses SCREAMING_CASE ("ONLINE")
-      const upper = event.status.toUpperCase();
-      const validStatuses: Record<string, PresenceStatus> = {
-        ONLINE: PresenceStatus.ONLINE,
-        AWAY: PresenceStatus.AWAY,
-        OFFLINE: PresenceStatus.OFFLINE,
-      };
-      const validated = validStatuses[upper];
-      if (validated) {
-        usePresenceStore.getState().setPresence(event.user_id, validated);
-      }
+      eventBus.emit<PresenceChangedEvent>(BUS_EVENTS.PRESENCE_CHANGED, {
+        userId: event.user_id,
+        status: event.status,
+      });
       break;
     }
 
@@ -330,12 +309,11 @@ function handleEvent(
       break;
 
     case "TypingStarted": {
-      const currentUserId = useAuthStore.getState().session?.userId;
-      if (event.user_id !== currentUserId) {
-        // Resolve username from member cache (backend event doesn't include it)
-        const username = resolveMemberName(qc, workspaceId, event.user_id);
-        useTypingStore.getState().addTyping(event.conversation_id, event.user_id, username);
-      }
+      eventBus.emit<TypingStartedEvent>(BUS_EVENTS.TYPING_STARTED, {
+        conversationId: event.conversation_id,
+        userId: event.user_id,
+        username: event.username,
+      });
       break;
     }
 
@@ -396,21 +374,10 @@ interface ConversationCachePage {
   items: { id: string; title: string; conversationType: string }[];
 }
 
-interface ServerMemberCache {
-  userId: string;
-  username: string;
-}
-
 function resolveConversationName(qc: ReturnType<typeof useQueryClient>, workspaceId: string, conversationId: string): string {
   const channels = qc.getQueryData<ConversationCachePage>(queryKeys.channels(workspaceId));
   const inbox = qc.getQueryData<ConversationCachePage>(queryKeys.conversations(workspaceId));
   const all = [...(channels?.items ?? []), ...(inbox?.items ?? [])];
   const conv = all.find((c) => c.id === conversationId);
   return conv?.title || "New message";
-}
-
-function resolveMemberName(qc: ReturnType<typeof useQueryClient>, workspaceId: string, userId: string): string {
-  const members = qc.getQueryData<ServerMemberCache[]>(queryKeys.serverMembers(workspaceId));
-  const member = members?.find((m) => m.userId === userId);
-  return member?.username ?? userId.slice(0, 8);
 }

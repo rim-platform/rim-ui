@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { queryKeys } from "../../../core/query/keys";
 import { useMutedStore } from "../state/useMutedStore";
 
 const MUTED_CONVERSATIONS_QUERY = gql`
@@ -20,7 +21,7 @@ interface MutedConversationItem {
 
 export function useMutedConversations(workspaceId?: string) {
   return useQuery({
-    queryKey: ["mutedConversations", workspaceId],
+    queryKey: queryKeys.mutedConversations(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
     refetchOnWindowFocus: true,

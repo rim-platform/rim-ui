@@ -1,25 +1,20 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Loader2 } from "lucide-react";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
-
 import { useConversationMessages } from "../api/useMessages";
-import type { MessagesPage } from "../api/useMessages";
 import { useEditMessageMutation } from "../api/useEditMessage";
 import { useToggleReactionMutation } from "../api/useToggleReaction";
-import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useDeleteMessage } from "../hooks/useDeleteMessage";
+import { useMessageNavigation } from "../hooks/useMessageNavigation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import { queryKeys } from "../../../core/query/keys";
 import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
-import { toast } from "../../../shared/toast";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { useApplyLens, useLenses } from "../../lenses/api/useLenses";
 import { LensBanner } from "../../lenses/components/LensBanner";
@@ -95,10 +90,7 @@ export function MessageTimeline() {
   );
   const toggleReaction = useToggleReactionMutation();
   const editMessage = useEditMessageMutation();
-  const pinMessage = usePinMessageMutation();
-  const unpinMessage = useUnpinMessageMutation();
-  const executeCommandMutation = useExecuteCommandMutation();
-  const qc = useQueryClient();
+  const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
 
   // Flatten all pages into a single list for display (oldest->newest).
   // Backend returns items in display order (oldest-first within each page).
@@ -132,45 +124,29 @@ export function MessageTimeline() {
     hasThread: boolean;
   } | null>(null);
 
-  // C3: Selected message index for keyboard navigation
-  const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
-  // Delete confirmation: press d once to arm, press d again within 2s to confirm
-  const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null);
-  const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   // Forward dialog state
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
 
-  // Reset selected message and editing state when conversation changes
-  useEffect(() => {
-    setSelectedMessageIndex(-1);
-    setEditingMessageId(null);
-    setDeleteConfirmMessageId(null);
-    if (deleteConfirmTimerRef.current) {
-      clearTimeout(deleteConfirmTimerRef.current);
-    }
-  }, [conversationId, setEditingMessageId]);
+  const handleDeleteMessage = useCallback(async (msg: { id: string }) => {
+    await deleteMessageFn(msg.id);
+  }, [deleteMessageFn]);
 
-  // Clean up delete confirmation timer on unmount
-  useEffect(() => {
-    return () => {
-      if (deleteConfirmTimerRef.current) {
-        clearTimeout(deleteConfirmTimerRef.current);
-      }
-    };
+  const handleForwardMessage = useCallback((msg: { id: string; text: string }) => {
+    setForwardMessage(msg);
   }, []);
 
-  // Scroll selected message into view
-  useEffect(() => {
-    if (selectedMessageIndex < 0 || !scrollContainerRef.current) return;
-    const msg = items[selectedMessageIndex];
-    if (!msg) return;
-    const el = scrollContainerRef.current.querySelector(
-      `[data-message-id="${msg.id}"]`,
-    );
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [selectedMessageIndex, items]);
+  // C3: Keyboard navigation for message list (vim-style modal)
+  const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } = useMessageNavigation({
+    items,
+    conversationId,
+    workspaceId,
+    currentUserId,
+    editingMessageId,
+    setEditingMessageId,
+    openThread,
+    onDeleteMessage: handleDeleteMessage,
+    onForwardMessage: handleForwardMessage,
+  });
 
   // Track whether user is scrolled to bottom
   const handleScroll = useCallback(() => {
@@ -298,41 +274,6 @@ export function MessageTimeline() {
     });
   }
 
-  // Handle delete with confirmation (press d twice within 2s)
-  const handleDeleteMessage = useCallback(async (msg: { id: string }) => {
-    if (!workspaceId || !conversationId) return;
-    const messagesKey = queryKeys.messages(workspaceId, conversationId);
-    const previousData = qc.getQueryData<InfiniteData<MessagesPage>>(messagesKey);
-    qc.setQueryData<InfiniteData<MessagesPage>>(messagesKey, (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        pages: old.pages.map((page) => ({
-          ...page,
-          items: page.items.map((m) =>
-            m.id === msg.id ? { ...m, isDeleted: true, text: "" } : m,
-          ),
-        })),
-      };
-    });
-    try {
-      await executeCommandMutation.mutateAsync({
-        commandId: "chat.delete_message",
-        commandContext: {
-          workspaceId,
-          conversationId,
-          selectedMessageId: msg.id,
-        },
-        confirmedDangerous: true,
-      });
-    } catch {
-      if (previousData) {
-        qc.setQueryData(messagesKey, previousData);
-      }
-      toast.error("Failed to delete message");
-    }
-  }, [workspaceId, conversationId, executeCommandMutation, qc]);
-
   const handleNavigateToForwardedSource = useCallback(
     (targetConversationId: string, targetMessageId: string) => {
       const shell = useShellStore.getState();
@@ -341,138 +282,6 @@ export function MessageTimeline() {
     },
     [],
   );
-
-  // C3: Keyboard navigation for message list (vim-style modal)
-  // Navigation mode is entered via Escape from composer (or workspace.focus_message_list command).
-  // Press i or Enter to exit navigation mode and return to composer.
-  function handleMessageListKeyDown(e: React.KeyboardEvent) {
-    // Skip when a text input is focused (e.g. message edit textarea)
-    const target = e.target as HTMLElement;
-    if (
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "INPUT" ||
-      target.isContentEditable
-    ) {
-      return;
-    }
-
-    const navMode = useShellStore.getState().navigationMode;
-
-    // Escape always works: exit navigation mode and return to composer
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setSelectedMessageIndex(-1);
-      setDeleteConfirmMessageId(null);
-      useShellStore.getState().setNavigationMode(false);
-      document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
-      return;
-    }
-
-    // All other keys require navigation mode to be active
-    if (!navMode) return;
-
-    // i or Enter: exit navigation mode, focus composer (vim "insert mode")
-    if (e.key === "i" || e.key === "Enter") {
-      e.preventDefault();
-      useShellStore.getState().setNavigationMode(false);
-      document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
-      return;
-    }
-    if (items.length === 0) return;
-
-    // Navigation: j/k and ArrowDown/ArrowUp
-    if (e.key === "ArrowDown" || e.key === "j") {
-      e.preventDefault();
-      setDeleteConfirmMessageId(null);
-      setSelectedMessageIndex((i) => Math.min(i + 1, items.length - 1));
-      return;
-    }
-    if (e.key === "ArrowUp" || e.key === "k") {
-      e.preventDefault();
-      setDeleteConfirmMessageId(null);
-      setSelectedMessageIndex((i) => (i <= 0 ? 0 : i - 1));
-      return;
-    }
-
-    // Actions on selected message
-    if (selectedMessageIndex < 0) return;
-    const msg = items[selectedMessageIndex];
-    if (!msg) return;
-    const isOwnMessage = msg.author?.id === currentUserId;
-
-    // If in delete-confirm mode, any key other than d cancels
-    if (deleteConfirmMessageId) {
-      if (e.key === "d") {
-        e.preventDefault();
-        if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
-        setDeleteConfirmMessageId(null);
-        void handleDeleteMessage(msg);
-      } else {
-        // Cancel delete confirmation
-        if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
-        setDeleteConfirmMessageId(null);
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case "r": {
-        e.preventDefault();
-        openThread(msg.id);
-        break;
-      }
-      case "e": {
-        if (editingMessageId) return;
-        if (isOwnMessage) {
-          e.preventDefault();
-          setEditingMessageId(msg.id);
-        }
-        break;
-      }
-      case "t": {
-        e.preventDefault();
-        openThread(msg.id);
-        break;
-      }
-      case "p": {
-        e.preventDefault();
-        if (!workspaceId || !conversationId) break;
-        const vars = { serverId: workspaceId, conversationId, messageId: msg.id };
-        if (msg.isPinned) {
-          unpinMessage.mutate(vars);
-          toast.success("Message unpinned");
-        } else {
-          pinMessage.mutate(vars);
-          toast.success("Message pinned");
-        }
-        break;
-      }
-      case "d": {
-        if (!isOwnMessage) break;
-        e.preventDefault();
-        // Arm delete confirmation
-        setDeleteConfirmMessageId(msg.id);
-        if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
-        deleteConfirmTimerRef.current = setTimeout(() => {
-          setDeleteConfirmMessageId(null);
-        }, 2000);
-        break;
-      }
-      case "c": {
-        e.preventDefault();
-        if (msg.text) {
-          navigator.clipboard.writeText(msg.text);
-          toast.success("Copied to clipboard");
-        }
-        break;
-      }
-      case "f": {
-        e.preventDefault();
-        setForwardMessage({ id: msg.id, text: msg.text ?? "" });
-        break;
-      }
-    }
-  }
 
   if (!conversationId) {
     return (

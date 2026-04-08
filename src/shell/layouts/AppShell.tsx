@@ -19,6 +19,10 @@ import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { useStatusExpiration } from "../../features/settings/hooks/useStatusExpiration";
+import { useUnreadEventHandler } from "../../features/conversations/state/useUnreadEventHandler";
+import { usePresenceEventHandler } from "../../features/presence/state/usePresenceEventHandler";
+import { useTypingEventHandler } from "../../features/messages/state/useTypingEventHandler";
+import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../state/useShellStore";
@@ -98,6 +102,10 @@ function WorkspaceShell() {
   useHeartbeat(workspaceId);
   usePluginEvents();
   useStatusExpiration();
+  useUnreadEventHandler();
+  usePresenceEventHandler();
+  useTypingEventHandler();
+  useNotificationEventHandler(workspaceId);
   useSpatialNavigation();
 
   const { capabilities } = useRuntime();

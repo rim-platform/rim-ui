@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from "react";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -10,8 +9,7 @@ import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommand
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { queryKeys } from "../../../core/query/keys";
-import type { MessagesPage } from "../api/useMessages";
+import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useIncidentStore } from "../../incidents/state/useIncidentStore";
 import { TagMessageMenu } from "../../incidents/components/TagMessageMenu";
 
@@ -46,51 +44,16 @@ export function MessageContextMenu({
   const pluginContextMenuCommands = usePluginContextMenuCommands("message");
   const pinMessage = usePinMessageMutation();
   const unpinMessage = useUnpinMessageMutation();
-  const qc = useQueryClient();
+  const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [tagMenuPos, setTagMenuPos] = useState<{ x: number; y: number } | null>(null);
   const activeIncident = useIncidentStore((s) => s.activeIncident);
 
   const handleDelete = useCallback(async () => {
     setPendingDelete(false);
-
-    // Optimistic update: mark message as deleted in cache immediately
-    const messagesKey = queryKeys.messages(workspaceId, conversationId);
-    const previousData = qc.getQueryData<InfiniteData<MessagesPage>>(messagesKey);
-    qc.setQueryData<InfiniteData<MessagesPage>>(messagesKey, (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        pages: old.pages.map((page) => ({
-          ...page,
-          items: page.items.map((m) =>
-            m.id === messageId ? { ...m, isDeleted: true, text: "" } : m,
-          ),
-        })),
-      };
-    });
-
     onClose();
-    try {
-      await executeCommandMutation.mutateAsync({
-        commandId: "chat.delete_message",
-        commandContext: {
-          workspaceId,
-          conversationId,
-          selectedMessageId: messageId,
-        },
-        confirmedDangerous: true,
-      });
-    } catch {
-      // Revert optimistic update on failure
-      if (previousData) {
-        qc.setQueryData(messagesKey, previousData);
-      }
-      toast.error("Failed to delete message", {
-        description: "The message has been restored.",
-      });
-    }
-  }, [messageId, conversationId, workspaceId, executeCommandMutation, onClose, qc]);
+    await deleteMessageFn(messageId);
+  }, [messageId, deleteMessageFn, onClose]);
 
   const items: DropdownMenuItem[] = useMemo(() => {
     const result: DropdownMenuItem[] = [

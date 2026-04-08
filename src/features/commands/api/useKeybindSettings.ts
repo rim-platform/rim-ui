@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { queryKeys } from "../../../core/query/keys";
 import type {
   KeybindScope,
   ResolvedKeybind,
@@ -59,7 +60,7 @@ const DeleteKeybindDocument = gql`
 
 export function useKeybindsByScope(scope: KeybindScope, workspaceId?: string) {
   return useQuery({
-    queryKey: ["keybinds", scope, workspaceId],
+    queryKey: queryKeys.keybinds(scope, workspaceId),
     queryFn: async () => {
       const res = await graphqlClient.request<{ keybinds: ResolvedKeybind[] }>(
         KeybindsDocument,
@@ -76,7 +77,7 @@ export function useCreateKeybindMutation() {
     mutationFn: (input: CreateKeybindInput) =>
       graphqlClient.request(CreateKeybindDocument, { input }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["keybinds"] });
+      qc.invalidateQueries({ queryKey: queryKeys.keybinds() });
       qc.invalidateQueries({ queryKey: ["resolvedKeybinds"] });
     },
   });
@@ -88,7 +89,7 @@ export function useUpdateKeybindMutation() {
     mutationFn: (input: UpdateKeybindInput) =>
       graphqlClient.request(UpdateKeybindDocument, { input }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["keybinds"] });
+      qc.invalidateQueries({ queryKey: queryKeys.keybinds() });
       qc.invalidateQueries({ queryKey: ["resolvedKeybinds"] });
     },
   });
@@ -100,7 +101,7 @@ export function useDeleteKeybindMutation() {
     mutationFn: (input: DeleteKeybindInput) =>
       graphqlClient.request(DeleteKeybindDocument, { input }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["keybinds"] });
+      qc.invalidateQueries({ queryKey: queryKeys.keybinds() });
       qc.invalidateQueries({ queryKey: ["resolvedKeybinds"] });
     },
   });

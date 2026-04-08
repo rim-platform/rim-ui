@@ -29,4 +29,10 @@ export const queryKeys = {
     ["activeIncident", serverId, conversationId] as const,
   incidentTimeline: (incidentId?: string) =>
     ["incidentTimeline", incidentId] as const,
+  keybinds: (scope?: string, workspaceId?: string) =>
+    ["keybinds", scope, workspaceId] as const,
+  unreadCounts: (workspaceId?: string) =>
+    ["unreadCounts", workspaceId] as const,
+  mutedConversations: (workspaceId?: string) =>
+    ["mutedConversations", workspaceId] as const,
 };

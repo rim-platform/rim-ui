@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -220,8 +220,8 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const executeMutationRef = useRef(executeCommandMutation);
   executeMutationRef.current = executeCommandMutation;
 
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
+  const handleKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  handleKeyDownRef.current = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const isTextInput =
         target.tagName === "INPUT" ||
@@ -305,16 +305,15 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
           workspaceId: workspaceId ?? undefined,
         },
       });
-    },
-    [keybinds, commands, focusedSurface, workspaceId]
-  );
+  };
 
   useEffect(() => {
     if (!capabilities.deviceLocalKeybinds) return;
 
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [handleKeyDown, capabilities.deviceLocalKeybinds]);
+    const stableHandler = (event: KeyboardEvent) => handleKeyDownRef.current(event);
+    window.addEventListener("keydown", stableHandler, true);
+    return () => window.removeEventListener("keydown", stableHandler, true);
+  }, [capabilities.deviceLocalKeybinds]);
 
   return <>{children}</>;
 }
