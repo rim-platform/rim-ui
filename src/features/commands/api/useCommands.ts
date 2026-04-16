@@ -37,6 +37,13 @@ const ExecuteCommandDocument = gql`
       message
       payload
       followUpCommands
+      pipelineStages {
+        stageIndex
+        commandId
+        status
+        message
+        payload
+      }
     }
   }
 `;
@@ -64,6 +71,7 @@ export function useExecuteCommandMutation() {
       args?: Record<string, unknown>;
       commandContext?: CommandContextInput;
       confirmedDangerous?: boolean;
+      isPipe?: boolean;
     }) =>
       graphqlClient.request<{ executeCommand: CommandResult }>(
         ExecuteCommandDocument,
@@ -73,6 +81,7 @@ export function useExecuteCommandMutation() {
             args: input.args,
             commandContext: input.commandContext,
             confirmedDangerous: input.confirmedDangerous,
+            isPipe: input.isPipe,
           },
         }
       ),

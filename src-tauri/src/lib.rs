@@ -1,4 +1,5 @@
 mod plugin_host;
+mod terminal;
 
 use tauri::Manager;
 
@@ -64,6 +65,9 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             let plugin_state = plugin_host::init(&app_data_dir);
             app.manage(plugin_state);
+
+            let terminal_state = terminal::init();
+            app.manage(terminal_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -82,6 +86,11 @@ pub fn run() {
             plugin_host::commands::plugin_update,
             plugin_host::commands::plugin_panel_state,
             plugin_host::commands::plugin_relay_ui_event,
+            terminal::commands::terminal_create,
+            terminal::commands::terminal_write,
+            terminal::commands::terminal_resize,
+            terminal::commands::terminal_close,
+            terminal::commands::terminal_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

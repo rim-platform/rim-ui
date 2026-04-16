@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { AlertTriangle, ChevronDown, Clock } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock, MessageSquare, X } from "lucide-react";
 
 import { cn } from "../../../shared/ui/cn";
 import { useIncidentStore } from "../state/useIncidentStore";
@@ -64,7 +64,10 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
   const setShowPostmortem = useIncidentStore((s) => s.setShowPostmortem);
   const [elapsed, setElapsed] = useState("");
   const [phaseMenuOpen, setPhaseMenuOpen] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<IncidentPhaseName | null>(null);
+  const [phaseNote, setPhaseNote] = useState("");
   const phaseMenuRef = useRef<HTMLDivElement>(null);
+  const noteInputRef = useRef<HTMLInputElement>(null);
 
   const advancePhase = useAdvancePhase();
   const updateStatus = useUpdateIncidentStatus();
@@ -92,20 +95,42 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
     return () => document.removeEventListener("mousedown", handleClick);
   }, [phaseMenuOpen]);
 
-  const handleAdvancePhase = useCallback(
+  const handlePhaseSelected = useCallback(
     (nextPhase: IncidentPhaseName) => {
-      if (!incident) return;
-      advancePhase.mutate({
-        incidentId: incident.id,
-        nextPhase,
-        note: "",
-        serverId,
-        conversationId,
-      });
       setPhaseMenuOpen(false);
+      setNoteTarget(nextPhase);
+      setPhaseNote("");
+      // Focus the note input after render
+      requestAnimationFrame(() => noteInputRef.current?.focus());
     },
-    [incident, advancePhase, serverId, conversationId],
+    [],
   );
+
+  const handleAdvancePhaseConfirm = useCallback(() => {
+    if (!incident || !noteTarget) return;
+    advancePhase.mutate({
+      incidentId: incident.id,
+      nextPhase: noteTarget,
+      note: phaseNote.trim(),
+      serverId,
+      conversationId,
+    });
+    setNoteTarget(null);
+    setPhaseNote("");
+  }, [incident, noteTarget, phaseNote, advancePhase, serverId, conversationId]);
+
+  const handleAdvancePhaseSkip = useCallback(() => {
+    if (!incident || !noteTarget) return;
+    advancePhase.mutate({
+      incidentId: incident.id,
+      nextPhase: noteTarget,
+      note: "",
+      serverId,
+      conversationId,
+    });
+    setNoteTarget(null);
+    setPhaseNote("");
+  }, [incident, noteTarget, advancePhase, serverId, conversationId]);
 
   const handleMitigate = useCallback(() => {
     if (!incident) return;
@@ -133,8 +158,9 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
   const nextPhases = PHASE_ORDER.slice(currentPhaseIdx + 1);
 
   return (
-    <div className={cn("flex h-10 items-center gap-3 px-4", styles.banner)}>
-      <AlertTriangle className="h-4 w-4 shrink-0 text-rim-danger" />
+    <div className={cn("flex flex-col px-4", styles.banner)}>
+      <div className="flex h-10 items-center gap-3">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-rim-danger" />
 
       <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none", styles.badge)}>
         {incident.severity}
@@ -189,7 +215,7 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
                   <button
                     key={phase}
                     type="button"
-                    onClick={() => handleAdvancePhase(phase)}
+                    onClick={() => handlePhaseSelected(phase)}
                     className="w-full px-3 py-1.5 text-left text-xs text-rim-text transition hover:bg-white/5"
                   >
                     {PHASE_LABELS[phase]}
@@ -201,7 +227,7 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
         )}
 
         {/* Mitigate button */}
-        {incident.status === "ACTIVE" && (
+        {incident.status === IncidentStatusGql.ACTIVE && (
           <button
             type="button"
             onClick={handleMitigate}
@@ -212,7 +238,7 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
         )}
 
         {/* Resolve button */}
-        {incident.status !== "RESOLVED" && (
+        {incident.status !== IncidentStatusGql.RESOLVED && (
           <button
             type="button"
             onClick={handleResolve}
@@ -222,6 +248,50 @@ export function IncidentBanner({ serverId, conversationId }: IncidentBannerProps
           </button>
         )}
       </div>
+      </div>
+
+      {/* Phase note input — shown when advancing to a new phase */}
+      {noteTarget && (
+        <div className="flex items-center gap-2 border-t border-white/10 py-2">
+          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
+          <span className="text-xs text-rim-text-muted">
+            Note for {PHASE_LABELS[noteTarget]}:
+          </span>
+          <input
+            ref={noteInputRef}
+            type="text"
+            value={phaseNote}
+            onChange={(e) => setPhaseNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleAdvancePhaseConfirm();
+              if (e.key === "Escape") { setNoteTarget(null); setPhaseNote(""); }
+            }}
+            placeholder="Optional phase note..."
+            className="w-48 rounded border border-rim-line bg-rim-void px-2 py-0.5 text-xs text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent"
+          />
+          <button
+            type="button"
+            onClick={handleAdvancePhaseConfirm}
+            className="rounded bg-rim-accent/20 px-2 py-0.5 text-xs text-rim-accent transition hover:bg-rim-accent/30"
+          >
+            Advance
+          </button>
+          <button
+            type="button"
+            onClick={handleAdvancePhaseSkip}
+            className="rounded px-2 py-0.5 text-xs text-rim-text-muted transition hover:bg-white/10"
+          >
+            Skip note
+          </button>
+          <button
+            type="button"
+            onClick={() => { setNoteTarget(null); setPhaseNote(""); }}
+            className="rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

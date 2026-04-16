@@ -10,7 +10,9 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { cn } from "../../../shared/ui/cn";
-import type { CommandDefinition, CommandSourceKind } from "../types";
+import { PipelineResultView } from "./PipelineResultView";
+import { toast } from "../../../shared/toast";
+import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
   switch (source) {
@@ -44,6 +46,9 @@ export function CommandPalette() {
 
   // Pipe chain state: segments locked in before the current search query
   const [pipeSegments, setPipeSegments] = useState<string[]>([]);
+  // Pipeline result state for post-execution display
+  const [pipelineResult, setPipelineResult] = useState<CommandResult | null>(null);
+  const [pipeExecuting, setPipeExecuting] = useState(false);
 
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
@@ -112,6 +117,8 @@ export function CommandPalette() {
     if (isOpen) {
       setFocusedSurface("commandPalette");
       setPipeSegments([]);
+      setPipelineResult(null);
+      setPipeExecuting(false);
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       setFocusedSurface(null);
@@ -151,12 +158,46 @@ export function CommandPalette() {
         : segments;
       if (allSegments.length === 0) return;
       const pipeExpression = allSegments.join(" | ");
-      closeCommandPalette();
       setPipeSegments([]);
-      await executeCommandMutation.mutateAsync({
-        commandId: pipeExpression,
-        commandContext: { workspaceId: workspaceId ?? undefined },
-      });
+      setPipeExecuting(true);
+      const stageCount = allSegments.length;
+      const toastId = toast.info(
+        `Executing pipe: stage 1/${stageCount}...`,
+        { id: "pipe-progress", persistent: true },
+      );
+      try {
+        const res = await executeCommandMutation.mutateAsync({
+          commandId: pipeExpression,
+          commandContext: { workspaceId: workspaceId ?? undefined },
+          isPipe: true,
+        });
+        const result = res.executeCommand;
+        toast.dismiss(toastId);
+        if (result.pipelineStages && result.pipelineStages.length > 0) {
+          setPipelineResult(result);
+          if (result.status === "ERROR") {
+            const failedStage = result.pipelineStages.find((s) => s.status === "ERROR");
+            toast.error(
+              `Pipe failed at stage ${(failedStage?.stageIndex ?? 0) + 1}: ${failedStage?.message ?? result.message}`,
+            );
+          } else {
+            toast.success("Pipe executed successfully");
+          }
+        } else {
+          closeCommandPalette();
+          if (result.status === "ERROR") {
+            toast.error(result.message);
+          } else {
+            toast.success(result.message || "Command executed");
+          }
+        }
+      } catch (err) {
+        toast.dismiss(toastId);
+        toast.error(err instanceof Error ? err.message : "Pipe execution failed");
+        closeCommandPalette();
+      } finally {
+        setPipeExecuting(false);
+      }
     },
     [closeCommandPalette, executeCommandMutation, workspaceId],
   );
@@ -339,6 +380,21 @@ export function CommandPalette() {
             })
           )}
         </div>
+
+        {/* Pipeline result display */}
+        {pipelineResult?.pipelineStages && pipelineResult.pipelineStages.length > 0 && (
+          <div className="border-t border-rim-line px-3 py-2 max-h-60 overflow-y-auto">
+            <PipelineResultView stages={pipelineResult.pipelineStages} />
+          </div>
+        )}
+
+        {/* Pipe execution progress */}
+        {pipeExecuting && (
+          <div className="border-t border-rim-line px-4 py-2 flex items-center gap-2 text-xs text-rim-text-muted">
+            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rim-accent border-t-transparent" />
+            Executing pipe...
+          </div>
+        )}
 
         {/* Footer */}
         <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">

@@ -1,4 +1,36 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("../../agent/state/useAgentStore", () => ({
+  useAgentStore: {
+    getState: vi.fn(() => ({ open: vi.fn() })),
+  },
+}));
+
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: { request: vi.fn() },
+}));
+
+vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
+  useWorkspaceStore: {
+    getState: vi.fn(() => ({ workspaceId: "ws-1" })),
+  },
+}));
+
+vi.mock("../../macros/api/useMacros", () => ({
+  fetchMacroByName: vi.fn(),
+}));
+
+vi.mock("../../../shared/toast", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+    dismissAll: vi.fn(),
+  },
+}));
+
 import { getSlashCommandSuggestions, isSlashCommand, SLASH_COMMANDS } from "./slashCommands";
 
 describe("getSlashCommandSuggestions", () => {

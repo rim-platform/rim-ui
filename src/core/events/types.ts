@@ -8,6 +8,7 @@ export interface MessageEventData {
   text: string | null;
   has_attachments: boolean;
   parent_message_id: string | null;
+  forwarded_from_message_id: string | null;
   is_deleted: boolean;
   sent_at: string;
   reactions: ReactionGroupData[];
@@ -16,6 +17,7 @@ export interface MessageEventData {
 export interface ReactionGroupData {
   emoji: string;
   count: number;
+  user_ids: string[];
 }
 
 export type WorkspaceEvent =
@@ -121,4 +123,35 @@ export type WorkspaceEvent =
       workspace_id: string;
       conversation_id: string;
       message_id: string;
+    }
+  | {
+      type: "WorkspaceStateChanged";
+      workspace_id: string;
+      key: string;
+      scope: "SERVER" | "USER";
+      value: unknown;
+      user_id: string | null;
+      version: number;
+    }
+  | {
+      type: "WorkspaceStateDeleted";
+      workspace_id: string;
+      key: string;
+      scope: "SERVER" | "USER";
+      user_id: string | null;
+    }
+  | {
+      type: "PipelineFired";
+      workspace_id: string;
+      pipeline_id: string;
+      pipeline_name: string;
+      trigger_event: string;
+      actions_executed: number;
+    }
+  | {
+      type: "PipelineSuspended";
+      workspace_id: string;
+      pipeline_id: string;
+      pipeline_name: string;
+      reason: string;
     };

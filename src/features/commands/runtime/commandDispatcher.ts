@@ -58,6 +58,7 @@ type ExecuteBackendCommand = (input: {
   args?: Record<string, unknown>;
   commandContext?: Record<string, unknown>;
   confirmedDangerous?: boolean;
+  isPipe?: boolean;
 }) => Promise<{ executeCommand: CommandResult }>;
 
 const RESOLVE_INCIDENT_GQL = gql`
@@ -254,6 +255,23 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
     }
     useIncidentStore.getState().setShowPostmortem(true);
   },
+  "workspace.toggle_zen_mode": () => {
+    const shell = useShellStore.getState();
+    shell.toggleZenMode();
+    const nowZen = useShellStore.getState().zenMode;
+    toast.info(nowZen ? "Zen Mode on" : "Zen Mode off", { duration: 1500 });
+  },
+  "workspace.cycle_display_density": () => {
+    const shell = useShellStore.getState();
+    shell.cycleDisplayDensity();
+    const density = useShellStore.getState().displayDensity;
+    const labels: Record<string, string> = {
+      comfortable: "Comfortable",
+      compact: "Compact",
+      "ultra-compact": "Ultra Compact",
+    };
+    toast.info(labels[density] ?? density, { duration: 1500 });
+  },
 };
 
 export async function dispatchCommand(
@@ -263,6 +281,7 @@ export async function dispatchCommand(
     args?: Record<string, unknown>;
     commandContext?: Record<string, unknown>;
     confirmedDangerous?: boolean;
+    isPipe?: boolean;
   }
 ): Promise<CommandResult | null> {
   // Local handlers always take precedence — even if the backend marks a
@@ -291,6 +310,7 @@ export async function dispatchCommand(
     args: context?.args,
     commandContext: context?.commandContext,
     confirmedDangerous: context?.confirmedDangerous,
+    isPipe: context?.isPipe,
   });
 
   return result.executeCommand;

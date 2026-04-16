@@ -35,4 +35,9 @@ export const queryKeys = {
     ["unreadCounts", workspaceId] as const,
   mutedConversations: (workspaceId?: string) =>
     ["mutedConversations", workspaceId] as const,
+  workspaceState: (serverId?: string, scope?: string, key?: string) =>
+    ["workspaceState", serverId, scope ?? "SERVER", key] as const,
+  workspaceStateList: (serverId?: string, scope?: string, prefix?: string) =>
+    ["workspaceStateList", serverId, scope ?? "SERVER", prefix] as const,
+  pipelines: (serverId?: string) => ["pipelines", serverId] as const,
 };

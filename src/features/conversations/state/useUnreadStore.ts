@@ -6,6 +6,11 @@ interface UnreadState {
   increment: (conversationId: string) => void;
   markRead: (conversationId: string) => void;
   markAllRead: () => void;
+  // Watermarks track the sentAt timestamp of the last seen message per conversation.
+  // When a watermark exists, the MessageTimeline renders a "New messages" divider.
+  watermarks: Record<string, string>;
+  setWatermark: (conversationId: string, sentAt: string) => void;
+  clearWatermark: (conversationId: string) => void;
 }
 
 export const useUnreadStore = create<UnreadState>((set) => ({
@@ -26,4 +31,15 @@ export const useUnreadStore = create<UnreadState>((set) => ({
       return { counts: next };
     }),
   markAllRead: () => set({ counts: {} }),
+  watermarks: {},
+  setWatermark: (conversationId, sentAt) =>
+    set((state) => ({
+      watermarks: { ...state.watermarks, [conversationId]: sentAt },
+    })),
+  clearWatermark: (conversationId) =>
+    set((state) => {
+      const next = { ...state.watermarks };
+      delete next[conversationId];
+      return { watermarks: next };
+    }),
 }));

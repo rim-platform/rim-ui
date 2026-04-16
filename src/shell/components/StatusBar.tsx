@@ -1,12 +1,36 @@
 import { cn } from "../../shared/ui/cn";
 import { useConnectionStore } from "../../features/system/state/useConnectionStore";
-import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useShellStore } from "../state/useShellStore";
 import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
 import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
 import { SkillTier } from "../../core/graphql/generated/schema-types";
 import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
+
+/** Map internal keybind context strings to user-friendly labels. */
+function humanizeContext(ctx: string | null): string | null {
+  switch (ctx) {
+    case "MESSAGE_LIST":
+      return "Messages";
+    case "COMPOSER":
+      return "Composer";
+    case "THREAD_VIEW":
+      return "Thread";
+    case "COMMAND_PALETTE":
+      return "Palette";
+    case "PANEL":
+      return "Panel";
+    case "CONVERSATION_VIEW":
+      return "Conversation";
+    case "TERMINAL":
+      return "Terminal";
+    case "GLOBAL":
+    case null:
+      return null;
+    default:
+      return null;
+  }
+}
 
 function connectionLabel(status: string): string {
   switch (status) {
@@ -36,16 +60,16 @@ function connectionDotColor(status: string): string {
 
 export function StatusBar() {
   const connectionStatus = useConnectionStore((s) => s.status);
-  const counts = useUnreadStore((s) => s.counts);
+  const mainSurface = useShellStore((s) => s.mainSurface);
   const focusedSurface = useShellStore((s) => s.focusedSurface);
-  const isThreadOpen = useShellStore((s) => s.isThreadOpen);
   const navigationMode = useShellStore((s) => s.navigationMode);
+  const displayDensity = useShellStore((s) => s.displayDensity);
 
   const activePresetId = useLayoutPresetStore((s) => s.activePresetId);
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
 
-  const totalUnread = Object.values(counts).reduce((sum, n) => sum + n, 0);
-  const contextLabel = surfaceToContext(focusedSurface);
+  const rawContext = surfaceToContext(focusedSurface);
+  const contextLabel = humanizeContext(rawContext);
 
   const activePresetName = activePresetId
     ? ([...BUILT_IN_PRESETS, ...customPresets].find((p) => p.id === activePresetId)?.name ?? null)
@@ -64,20 +88,16 @@ export function StatusBar() {
         <span>{connectionLabel(connectionStatus)}</span>
       </div>
 
-      {/* Center: unread + thread indicator */}
-      <div className="flex flex-1 items-center justify-center gap-3">
-        {totalUnread > 0 && (
-          <span className="rounded-full bg-rim-accent/20 px-1.5 py-px text-[10px] font-medium text-rim-accent">
-            {totalUnread} unread
+      {/* Center spacer */}
+      <div className="flex-1" />
+
+      {/* Right: density + mode + keybind context + layout preset */}
+      <div className="flex items-center gap-2">
+        {displayDensity !== "comfortable" && (
+          <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-faint">
+            {displayDensity === "compact" ? "Compact" : "Ultra Compact"}
           </span>
         )}
-        {isThreadOpen && (
-          <span className="text-rim-text-faint">Thread open</span>
-        )}
-      </div>
-
-      {/* Right: mode + keybind context + layout preset */}
-      <div className="flex items-center gap-2">
         <DisclosureGate minTier={SkillTier.INTERMEDIATE}>
           {activePresetName && (
             <span className="rounded bg-rim-warm/20 px-1.5 py-px font-medium text-rim-warm">
@@ -85,16 +105,20 @@ export function StatusBar() {
             </span>
           )}
         </DisclosureGate>
-        {navigationMode ? (
-          <span className="rounded bg-rim-accent/20 px-1.5 py-px font-medium text-rim-accent">
-            NAVIGATE
-          </span>
-        ) : (
-          <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-muted">
-            COMPOSE
-          </span>
+        {mainSurface.kind === "conversation" && rawContext !== "TERMINAL" && (
+          navigationMode ? (
+            <span className="rounded bg-rim-accent/20 px-1.5 py-px font-medium text-rim-accent">
+              NAVIGATE
+            </span>
+          ) : (
+            <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-muted">
+              COMPOSE
+            </span>
+          )
         )}
-        <span className="text-rim-text-faint">{contextLabel}</span>
+        {contextLabel && (
+          <span className="text-rim-text-faint">{contextLabel}</span>
+        )}
       </div>
     </div>
   );

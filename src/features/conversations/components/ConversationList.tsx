@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, useCallback, useRef, memo } from "react";
 import { Hash, MessageCircle, Plus, Users, BellOff } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useChannels } from "../api/useChannels";
 import { useInboxConversations } from "../api/useInboxConversations";
-import { useMarkAsRead } from "../api/useMarkAsRead";
 import { useUnreadStore } from "../state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -18,6 +18,8 @@ import { useHoverContextStore } from "../../../shell/state/useHoverContextStore"
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { useDraftStore } from "../../messages/state/useDraftStore";
 import { useMutedStore } from "../state/useMutedStore";
+import { queryKeys } from "../../../core/query/keys";
+import type { MessagesPage } from "../../messages/api/useMessages";
 type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
 
 const typeIcon: Record<ConversationTypeEnum, typeof Hash> = {
@@ -38,23 +40,37 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const unreadCounts = useUnreadStore((s) => s.counts);
   const mutedIds = useMutedStore((s) => s.mutedIds);
-  const { mutate: markAsRead } = useMarkAsRead();
+  const qc = useQueryClient();
 
-  // Auto mark-as-read when selecting a conversation
-  // Use ref to avoid re-render loop (markAsRead changes identity on every render)
-  const markAsReadRef = useRef(markAsRead);
-  markAsReadRef.current = markAsRead;
+  // Track the previous conversation so we can snapshot it before switching
+  const prevSelectedIdRef = useRef<string | null>(null);
+
+  // Snapshot watermark for the conversation being LEFT, then clear its sidebar unread count optimistically.
+  // markAsRead backend call is deferred — it fires only when the divider is dismissed.
   useEffect(() => {
-    if (!selectedId || !workspaceId) return;
-    const count = useUnreadStore.getState().counts[selectedId];
-    if (count) {
-      markAsReadRef.current({
-        conversationId: selectedId,
-        workspaceId,
-        readAt: new Date().toISOString(),
-      });
+    const prevId = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selectedId;
+
+    if (!prevId || !workspaceId || prevId === selectedId) return;
+
+    // Snapshot the sentAt of the last message in the conversation we're leaving
+    const cached = qc.getQueryData<{ pages: MessagesPage[] }>(
+      queryKeys.messages(workspaceId, prevId),
+    );
+    if (cached?.pages && cached.pages.length > 0) {
+      // pages are in load order (newest first after our reverse), but getQueryData
+      // returns them as stored — first page = newest page (reverse display order).
+      // The last item of pages[0] is the newest message in the conversation.
+      const newestPage = cached.pages[0];
+      const lastItem = newestPage?.items?.[newestPage.items.length - 1];
+      if (lastItem?.sentAt) {
+        useUnreadStore.getState().setWatermark(prevId, lastItem.sentAt);
+      }
     }
-  }, [selectedId, workspaceId]);
+
+    // Optimistically clear the sidebar unread badge for the conversation we left
+    useUnreadStore.getState().markRead(prevId);
+  }, [selectedId, workspaceId, qc]);
 
   const {
     data: channelsData,
@@ -136,12 +152,18 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
       const id = allItems[focusedIndex].id;
       setIsKeyboardNavigating(false);
       setFocusedIndex(-1);
-      // Blur the currently focused button so the browser's :focus-visible
-      // outline (from globals.css) doesn't linger on the old item.
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
       select(id);
+      // Entering a conversation always resets to COMPOSE mode and focuses
+      // the composer — mode is a property of the conversation view.
+      useShellStore.getState().setNavigationMode(false);
+      requestAnimationFrame(() => {
+        const composer = document.querySelector<HTMLTextAreaElement>("[data-composer-input]");
+        if (composer) {
+          composer.focus();
+        } else if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      });
     }
   }
 
@@ -292,10 +314,15 @@ const ConversationItem = memo(function ConversationItem({
       type="button"
       onClick={() => {
         select(conv.id);
-        // If in navigation mode, refocus the message list so j/k keeps working
+        // Entering a conversation always resets to COMPOSE mode and focuses
+        // the composer — mode is a property of the conversation view.
+        useShellStore.getState().setNavigationMode(false);
         requestAnimationFrame(() => {
-          if (useShellStore.getState().navigationMode) {
-            document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
+          const composer = document.querySelector<HTMLTextAreaElement>("[data-composer-input]");
+          if (composer) {
+            composer.focus();
+          } else if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
           }
         });
       }}

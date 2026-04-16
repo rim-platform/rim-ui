@@ -32,6 +32,33 @@ export interface NewMessageNotificationEvent {
   messageText: string;
 }
 
+export interface WorkspaceStateChangedEvent {
+  workspaceId: string;
+  key: string;
+  scope: "SERVER" | "USER";
+}
+
+export interface WorkspaceStateDeletedEvent {
+  workspaceId: string;
+  key: string;
+  scope: "SERVER" | "USER";
+}
+
+export interface PipelineFiredEvent {
+  workspaceId: string;
+  pipelineId: string;
+  pipelineName: string;
+  triggerEvent: string;
+  actionsExecuted: number;
+}
+
+export interface PipelineSuspendedEvent {
+  workspaceId: string;
+  pipelineId: string;
+  pipelineName: string;
+  reason: string;
+}
+
 /** Well-known bus event type names */
 export const BUS_EVENTS = {
   UNREAD_INCREMENT: "unread:increment",
@@ -39,4 +66,8 @@ export const BUS_EVENTS = {
   PRESENCE_CHANGED: "presence:changed",
   TYPING_STARTED: "typing:started",
   NEW_MESSAGE_NOTIFICATION: "notification:newMessage",
+  WORKSPACE_STATE_CHANGED: "workspaceState:changed",
+  WORKSPACE_STATE_DELETED: "workspaceState:deleted",
+  PIPELINE_FIRED: "pipeline:fired",
+  PIPELINE_SUSPENDED: "pipeline:suspended",
 } as const;

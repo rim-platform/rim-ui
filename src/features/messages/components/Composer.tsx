@@ -10,6 +10,7 @@ import { isSlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast/useToastStore";
 import { useDraftStore } from "../state/useDraftStore";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { ComposerInput } from "./ComposerInput";
@@ -129,6 +130,9 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
     pendingFiles.forEach((pf) => {
       if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
     });
+
+    // Sending a message counts as catching up — dismiss any "New messages" divider
+    useUnreadStore.getState().clearWatermark(conversationId);
 
     // Clear UI immediately
     setText("");

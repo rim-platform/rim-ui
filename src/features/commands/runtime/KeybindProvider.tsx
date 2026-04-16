@@ -260,13 +260,14 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         if (overlayOpen) {
           return;
         }
-        // In text inputs: only let Escape fall through to the component when
-        // there is nothing to close (no thread, already on conversation surface).
-        // When a thread is open or we're on settings/plugin, close_panel should
-        // still fire even from a text input.
+        // Check whether there is actually a panel to close (thread open or
+        // non-conversation surface like settings/plugin).  When nothing
+        // needs closing, let the event fall through completely so the
+        // ComposerInput's own Escape handler (or message list handler) can
+        // process it naturally.
         const hasPanelToClose =
           shell.isThreadOpen || shell.mainSurface.kind !== "conversation";
-        if (isTextInput && !hasPanelToClose) {
+        if (!hasPanelToClose) {
           return;
         }
       }

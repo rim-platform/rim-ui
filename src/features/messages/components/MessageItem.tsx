@@ -385,7 +385,10 @@ export const MessageItem = memo(function MessageItem({
   if (isUltraCompact) {
     return (
       <div
+        id={`message-${message.id}`}
         data-message-id={message.id}
+        role="option"
+        aria-selected={isSelected}
         className={cn(
           "group flex items-baseline gap-1.5 rounded px-2 py-0.5 transition-colors hover:bg-white/[0.03]",
           isSelected && "border-l-2 border-rim-accent bg-rim-accent/5",
@@ -432,7 +435,10 @@ export const MessageItem = memo(function MessageItem({
 
   return (
     <div
+      id={`message-${message.id}`}
       data-message-id={message.id}
+      role="option"
+      aria-selected={isSelected}
       className={cn(
         "group flex items-start gap-3 rounded-lg px-2 transition-colors hover:bg-white/[0.03]",
         isCompact ? "py-1" : "py-1.5",

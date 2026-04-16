@@ -9,10 +9,12 @@ import { getSlashCommandSuggestions } from "../utils/slashCommands";
 import type { SlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { Avatar } from "../../../shared/ui/Avatar";
-import { useCommands } from "../../commands/api/useCommands";
+import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { useResolvedKeybinds } from "../../commands/api/useKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { toast } from "../../../shared/toast";
 import type { CommandDefinition } from "../../commands/types";
 
 interface MentionSuggestion {
@@ -33,6 +35,11 @@ interface CommandSuggestion {
 }
 
 const MAX_COMMAND_SUGGESTIONS = 8;
+
+/** Discriminated union for the unified slash/command suggestion list */
+type SlashItem =
+  | { kind: "builtin"; value: SlashCommand }
+  | { kind: "command"; value: CommandSuggestion };
 
 interface ComposerInputProps {
   text: string;
@@ -71,6 +78,9 @@ export function ComposerInput({
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: allCommands } = useCommands("PALETTE");
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
+  const executeCommandMutation = useExecuteCommandMutation();
+  const executeMutationRef = useRef(executeCommandMutation);
+  executeMutationRef.current = executeCommandMutation;
 
   // Build command-id -> keystroke lookup
   const keybindMap = useMemo(() => {
@@ -89,10 +99,8 @@ export function ComposerInput({
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ code: string; emoji: string }>>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [slashSuggestions, setSlashSuggestions] = useState<SlashCommand[]>([]);
-  const [selectedSlashSuggestion, setSelectedSlashSuggestion] = useState(0);
-  const [commandSuggestions, setCommandSuggestions] = useState<CommandSuggestion[]>([]);
-  const [selectedCommandSuggestion, setSelectedCommandSuggestion] = useState(0);
+  const [slashItems, setSlashItems] = useState<SlashItem[]>([]);
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mentionSuggestions, setMentionSuggestions] = useState<MentionSuggestion[]>([]);
   const [selectedMention, setSelectedMention] = useState(0);
 
@@ -152,10 +160,13 @@ export function ComposerInput({
     if (value.startsWith("/")) {
       const slashPartial = value.split(" ")[0];
       if (!value.includes(" ")) {
+        // Build unified list: built-in slash commands first, then registry commands
+        const items: SlashItem[] = [];
+
         // Built-in slash commands (/agent, /macro)
-        const builtInResults = getSlashCommandSuggestions(slashPartial);
-        setSlashSuggestions(builtInResults);
-        setSelectedSlashSuggestion(0);
+        for (const cmd of getSlashCommandSuggestions(slashPartial)) {
+          items.push({ kind: "builtin", value: cmd });
+        }
 
         // All registered commands from the command registry
         const query = slashPartial.slice(1).toLowerCase(); // strip leading /
@@ -167,28 +178,30 @@ export function ComposerInput({
               const categoryMatch = cmd.category.toLowerCase().includes(query);
               return titleMatch || idMatch || categoryMatch;
             })
-            .slice(0, MAX_COMMAND_SUGGESTIONS)
-            .map((cmd): CommandSuggestion => ({
-              id: cmd.id,
-              title: cmd.title,
-              description: cmd.description,
-              category: cmd.category,
-              keybind: keybindMap.get(cmd.id) ?? null,
-              command: cmd,
-            }));
-          setCommandSuggestions(filtered);
-          setSelectedCommandSuggestion(0);
-        } else {
-          setCommandSuggestions([]);
+            .slice(0, MAX_COMMAND_SUGGESTIONS);
+          for (const cmd of filtered) {
+            items.push({
+              kind: "command",
+              value: {
+                id: cmd.id,
+                title: cmd.title,
+                description: cmd.description,
+                category: cmd.category,
+                keybind: keybindMap.get(cmd.id) ?? null,
+                command: cmd,
+              },
+            });
+          }
         }
+
+        setSlashItems(items);
+        setSelectedSlashIndex(0);
       } else {
-        setSlashSuggestions([]);
-        setCommandSuggestions([]);
+        setSlashItems([]);
       }
       setSuggestions([]);
     } else {
-      setSlashSuggestions([]);
-      setCommandSuggestions([]);
+      setSlashItems([]);
 
       // @mention detection (takes priority over emoji)
       const mentionPartial = getPartialMention(value, cursorPos);
@@ -226,22 +239,42 @@ export function ComposerInput({
 
   function applySlashSuggestion(command: SlashCommand) {
     onTextChange(command.command + " ");
-    setSlashSuggestions([]);
-    setCommandSuggestions([]);
+    setSlashItems([]);
     textareaRef.current?.focus();
   }
 
+  function applySlashItem(item: SlashItem) {
+    if (item.kind === "builtin") {
+      applySlashSuggestion(item.value);
+    } else {
+      applyCommandSuggestion(item.value);
+    }
+  }
+
   function applyCommandSuggestion(suggestion: CommandSuggestion) {
-    // For commands that need arguments (chat-style), insert as slash text
-    // For workspace commands, just clear and let the caller handle execution
     const needsArgs = suggestion.command.requiredContext.length > 0;
     if (needsArgs) {
+      // Insert as slash text so user can type arguments
       onTextChange("/" + suggestion.id + " ");
     } else {
+      // Execute the command immediately
       onTextChange("");
+      void (async () => {
+        try {
+          const result = await dispatchCommand(
+            suggestion.command,
+            (input) => executeMutationRef.current.mutateAsync(input),
+            { commandContext: workspaceId ? { workspaceId } : undefined },
+          );
+          if (result && result.status === "ERROR") {
+            toast.error(result.message || "Command failed");
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : "Command execution failed");
+        }
+      })();
     }
-    setSlashSuggestions([]);
-    setCommandSuggestions([]);
+    setSlashItems([]);
     textareaRef.current?.focus();
   }
 
@@ -292,54 +325,27 @@ export function ComposerInput({
       }
     }
 
-    // Unified slash/command suggestion navigation
-    const totalSlashItems = slashSuggestions.length + commandSuggestions.length;
-    if (totalSlashItems > 0) {
+    // Unified slash/command suggestion navigation (single flat index)
+    if (slashItems.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        // Navigate across both lists as one combined list
-        const currentTotal = selectedSlashSuggestion < slashSuggestions.length
-          ? selectedSlashSuggestion
-          : slashSuggestions.length + selectedCommandSuggestion;
-        const next = Math.min(currentTotal + 1, totalSlashItems - 1);
-        if (next < slashSuggestions.length) {
-          setSelectedSlashSuggestion(next);
-          setSelectedCommandSuggestion(0);
-        } else {
-          setSelectedSlashSuggestion(slashSuggestions.length); // deselect built-in
-          setSelectedCommandSuggestion(next - slashSuggestions.length);
-        }
+        setSelectedSlashIndex((i) => Math.min(i + 1, slashItems.length - 1));
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        const currentTotal = selectedSlashSuggestion < slashSuggestions.length
-          ? selectedSlashSuggestion
-          : slashSuggestions.length + selectedCommandSuggestion;
-        const prev = Math.max(currentTotal - 1, 0);
-        if (prev < slashSuggestions.length) {
-          setSelectedSlashSuggestion(prev);
-          setSelectedCommandSuggestion(0);
-        } else {
-          setSelectedSlashSuggestion(slashSuggestions.length);
-          setSelectedCommandSuggestion(prev - slashSuggestions.length);
-        }
+        setSelectedSlashIndex((i) => Math.max(i - 1, 0));
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
-        // Determine which list the selection is in
-        if (selectedSlashSuggestion < slashSuggestions.length) {
-          applySlashSuggestion(slashSuggestions[selectedSlashSuggestion]);
-        } else if (commandSuggestions.length > 0) {
-          applyCommandSuggestion(commandSuggestions[selectedCommandSuggestion]);
-        }
+        const item = slashItems[selectedSlashIndex];
+        if (item) applySlashItem(item);
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        setSlashSuggestions([]);
-        setCommandSuggestions([]);
+        setSlashItems([]);
         return;
       }
     }
@@ -378,7 +384,7 @@ export function ComposerInput({
     }
 
     // Enter without Shift sends the message
-    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashSuggestions.length === 0 && commandSuggestions.length === 0 && mentionSuggestions.length === 0) {
+    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashItems.length === 0 && mentionSuggestions.length === 0) {
       e.preventDefault();
       onSubmit();
     }
@@ -400,7 +406,7 @@ export function ComposerInput({
   }, []);
 
   // Compute suggestions position — only measure DOM when suggestions are visible
-  const hasSuggestions = suggestions.length > 0 || slashSuggestions.length > 0 || commandSuggestions.length > 0 || mentionSuggestions.length > 0;
+  const hasSuggestions = suggestions.length > 0 || slashItems.length > 0 || mentionSuggestions.length > 0;
   const suggestionsStyle = useMemo<React.CSSProperties>(() => {
     if (!hasSuggestions || !textareaRef.current) return { position: "absolute", top: 0, left: 0 };
     const rect = textareaRef.current.getBoundingClientRect();
@@ -433,7 +439,10 @@ export function ComposerInput({
           value={text}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => useShellStore.getState().setFocusedSurface("composer")}
+          onFocus={() => {
+            useShellStore.getState().setFocusedSurface("composer");
+            useShellStore.getState().setNavigationMode(false);
+          }}
           placeholder="Write a message..."
           className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
           style={{ height: "auto" }}
@@ -458,61 +467,61 @@ export function ComposerInput({
         </button>
       </div>
 
-      {(slashSuggestions.length > 0 || commandSuggestions.length > 0) && createPortal(
+      {slashItems.length > 0 && createPortal(
         <div
           className="max-h-[320px] overflow-y-auto rounded-lg border border-rim-line bg-rim-panel shadow-lg"
           style={suggestionsStyle}
           ref={commandListRef}
+          role="listbox"
         >
-          {/* Built-in slash commands (/agent, /macro) */}
-          {slashSuggestions.length > 0 && (
-            <>
-              {slashSuggestions.map((cmd, i) => (
+          {slashItems.map((item, i) => {
+            const isSelected = i === selectedSlashIndex;
+            // Insert separator before first command item if preceded by built-in items
+            const showSeparator = item.kind === "command" && i > 0 && slashItems[i - 1].kind === "builtin";
+
+            return item.kind === "builtin" ? (
+              <button
+                key={`builtin-${item.value.command}`}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => applySlashSuggestion(item.value)}
+                className={cn(
+                  "flex w-full flex-col gap-0.5 px-3 py-1.5",
+                  isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-rim-text">{item.value.command}</span>
+                  <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">chat</span>
+                </div>
+                <span className="truncate text-xs text-rim-text-muted">{item.value.description}</span>
+              </button>
+            ) : (
+              <div key={`cmd-${item.value.id}`}>
+                {showSeparator && <div className="mx-3 border-t border-rim-line" />}
                 <button
-                  key={cmd.command}
                   type="button"
-                  onClick={() => applySlashSuggestion(cmd)}
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => applyCommandSuggestion(item.value)}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-1.5",
-                    i === selectedSlashSuggestion ? "bg-rim-accent/10" : "hover:bg-white/5",
+                    isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-rim-text">{cmd.command}</span>
-                    <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">chat</span>
+                    <span className="text-sm font-semibold text-rim-text">{item.value.title}</span>
+                    <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">{item.value.category}</span>
+                    {item.value.keybind && (
+                      <span className="ml-auto font-mono text-[10px] text-rim-text-faint">{item.value.keybind}</span>
+                    )}
                   </div>
-                  <span className="truncate text-xs text-rim-text-muted">{cmd.description}</span>
+                  <span className="truncate text-xs text-rim-text-muted">{item.value.description}</span>
                 </button>
-              ))}
-            </>
-          )}
-          {/* Separator between built-in and registry commands */}
-          {slashSuggestions.length > 0 && commandSuggestions.length > 0 && (
-            <div className="mx-3 border-t border-rim-line" />
-          )}
-          {/* All registered commands from the command registry */}
-          {commandSuggestions.map((cmd, i) => (
-            <button
-              key={cmd.id}
-              type="button"
-              onClick={() => applyCommandSuggestion(cmd)}
-              className={cn(
-                "flex w-full flex-col gap-0.5 px-3 py-1.5",
-                selectedSlashSuggestion >= slashSuggestions.length && i === selectedCommandSuggestion
-                  ? "bg-rim-accent/10"
-                  : "hover:bg-white/5",
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-rim-text">{cmd.title}</span>
-                <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">{cmd.category}</span>
-                {cmd.keybind && (
-                  <span className="ml-auto font-mono text-[10px] text-rim-text-faint">{cmd.keybind}</span>
-                )}
               </div>
-              <span className="truncate text-xs text-rim-text-muted">{cmd.description}</span>
-            </button>
-          ))}
+            );
+          })}
         </div>,
         document.body,
       )}
@@ -530,7 +539,7 @@ export function ComposerInput({
               onClick={() => applySuggestion(s)}
               className={cn(
                 "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedSuggestion ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-white/5",
+                i === selectedSuggestion ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-rim-void/50",
               )}
             >
               <span className="text-base">{s.emoji}</span>
@@ -553,7 +562,7 @@ export function ComposerInput({
               onClick={() => applyMention(m)}
               className={cn(
                 "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedMention ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-white/5",
+                i === selectedMention ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-rim-void/50",
               )}
             >
               <Avatar url={m.avatarUrl} name={m.displayName ?? m.username} userId={m.userId} size="sm" />

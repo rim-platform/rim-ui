@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { toast } from "../../../shared/toast";
+import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 
 interface MessageNavItem {
   id: string;
@@ -18,8 +19,10 @@ interface UseMessageNavigationOptions {
   editingMessageId: string | null;
   setEditingMessageId: (id: string | null) => void;
   openThread: (messageId: string) => void;
-  onDeleteMessage: (msg: { id: string }) => void;
+  onDeleteMessage: (msg: { id: string }) => void | Promise<void>;
   onForwardMessage: (msg: { id: string; text: string }) => void;
+  /** Index of the first new message after the watermark, or -1 if no divider. */
+  firstNewIndex?: number;
 }
 
 export function useMessageNavigation({
@@ -32,6 +35,7 @@ export function useMessageNavigation({
   openThread,
   onDeleteMessage,
   onForwardMessage,
+  firstNewIndex = -1,
 }: UseMessageNavigationOptions) {
   const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
   const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null);
@@ -39,6 +43,13 @@ export function useMessageNavigation({
 
   const pinMessage = usePinMessageMutation();
   const unpinMessage = useUnpinMessageMutation();
+
+  // Stabilize mutation functions via refs so the handleMessageListKeyDown
+  // callback is not recreated every render (useMutation returns new objects).
+  const pinMessageRef = useRef(pinMessage.mutate);
+  pinMessageRef.current = pinMessage.mutate;
+  const unpinMessageRef = useRef(unpinMessage.mutate);
+  unpinMessageRef.current = unpinMessage.mutate;
 
   // Reset selected message and editing state when conversation changes
   useEffect(() => {
@@ -49,6 +60,18 @@ export function useMessageNavigation({
       clearTimeout(deleteConfirmTimerRef.current);
     }
   }, [conversationId, setEditingMessageId]);
+
+  // Auto-select newest message when entering navigation mode
+  useEffect(() => {
+    const unsub = useShellStore.subscribe((state, prev) => {
+      if (state.navigationMode && !prev.navigationMode) {
+        if (selectedMessageIndex === -1 && items.length > 0) {
+          setSelectedMessageIndex(items.length - 1);
+        }
+      }
+    });
+    return unsub;
+  }, [selectedMessageIndex, items.length]);
 
   // Clean up delete confirmation timer on unmount
   useEffect(() => {
@@ -105,6 +128,15 @@ export function useMessageNavigation({
     }
     if (items.length === 0) return;
 
+    // Shift+N: jump selection to first message after the "New messages" divider
+    if (e.key === "N" && e.shiftKey) {
+      if (firstNewIndex >= 0 && firstNewIndex < items.length) {
+        e.preventDefault();
+        setSelectedMessageIndex(firstNewIndex);
+      }
+      return;
+    }
+
     // Navigation: j/k and ArrowDown/ArrowUp
     if (e.key === "ArrowDown" || e.key === "j") {
       e.preventDefault();
@@ -131,7 +163,7 @@ export function useMessageNavigation({
         e.preventDefault();
         if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
         setDeleteConfirmMessageId(null);
-        onDeleteMessage(msg);
+        void onDeleteMessage(msg);
       } else {
         // Cancel delete confirmation
         if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
@@ -141,7 +173,12 @@ export function useMessageNavigation({
     }
 
     switch (e.key) {
-      case "r": {
+      // Both r (reply) and t (thread) open the thread panel. In RIM,
+      // threads ARE the reply mechanism — there is no separate inline
+      // reply context. Two keybinds for discoverability: "r" for users
+      // expecting reply semantics, "t" for those expecting thread.
+      case "r":
+      case "t": {
         e.preventDefault();
         openThread(msg.id);
         break;
@@ -154,20 +191,15 @@ export function useMessageNavigation({
         }
         break;
       }
-      case "t": {
-        e.preventDefault();
-        openThread(msg.id);
-        break;
-      }
       case "p": {
         e.preventDefault();
         if (!workspaceId || !conversationId) break;
         const vars = { serverId: workspaceId, conversationId, messageId: msg.id };
         if (msg.isPinned) {
-          unpinMessage.mutate(vars);
+          unpinMessageRef.current(vars);
           toast.success("Message unpinned");
         } else {
-          pinMessage.mutate(vars);
+          pinMessageRef.current(vars);
           toast.success("Message pinned");
         }
         break;
@@ -196,8 +228,17 @@ export function useMessageNavigation({
         onForwardMessage({ id: msg.id, text: msg.text ?? "" });
         break;
       }
+      case "/": {
+        e.preventDefault();
+        useSearchOverlayStore.getState().openWithScope(
+          conversationId
+            ? { kind: "conversation", conversationId }
+            : { kind: "all" },
+        );
+        break;
+      }
     }
-  }, [items, selectedMessageIndex, deleteConfirmMessageId, currentUserId, editingMessageId, setEditingMessageId, openThread, onDeleteMessage, onForwardMessage, workspaceId, conversationId, pinMessage, unpinMessage]);
+  }, [items, selectedMessageIndex, deleteConfirmMessageId, currentUserId, editingMessageId, setEditingMessageId, openThread, onDeleteMessage, onForwardMessage, workspaceId, conversationId, firstNewIndex]);
 
   return {
     selectedMessageIndex,

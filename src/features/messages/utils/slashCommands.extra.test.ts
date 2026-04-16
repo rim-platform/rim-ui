@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../agent/state/useAgentStore", () => ({
   useAgentStore: {
@@ -18,9 +18,39 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   },
 }));
 
+vi.mock("../../macros/api/useMacros", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../macros/api/useMacros")>();
+  return {
+    ...actual,
+    fetchMacroByName: vi.fn(),
+  };
+});
+
+vi.mock("../../../shared/toast", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+    dismissAll: vi.fn(),
+  },
+}));
+
+import { graphqlClient } from "../../../core/graphql/client";
+import { fetchMacroByName } from "../../macros/api/useMacros";
+import { toast } from "../../../shared/toast";
 import { getSlashCommandSuggestions, isSlashCommand, SLASH_COMMANDS } from "./slashCommands";
 
+const mockGraphqlRequest = vi.mocked(graphqlClient.request);
+const mockFetchMacroByName = vi.mocked(fetchMacroByName);
+const mockToast = vi.mocked(toast);
+
 describe("slashCommands (extra coverage)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("SLASH_COMMANDS array", () => {
     it("contains at least /agent and /macro", () => {
       const commands = SLASH_COMMANDS.map((c) => c.command);
@@ -95,6 +125,109 @@ describe("slashCommands (extra coverage)", () => {
     it("is case insensitive", () => {
       const result = isSlashCommand("/AGENT test");
       expect(result).not.toBeNull();
+    });
+  });
+
+  describe("/macro handler — name-to-ID resolution", () => {
+    const macroHandler = SLASH_COMMANDS.find((c) => c.command === "/macro")!.handler!;
+
+    it("does nothing for empty args", () => {
+      macroHandler("   ");
+      expect(mockFetchMacroByName).not.toHaveBeenCalled();
+    });
+
+    it("resolves macro name to ID before executing", async () => {
+      mockFetchMacroByName.mockResolvedValueOnce({
+        id: "macro-123",
+        name: "deploy-all",
+        description: "Deploys everything",
+        steps: [],
+      });
+      mockGraphqlRequest.mockResolvedValueOnce({
+        executeMacro: { status: "SUCCESS", message: "Done" },
+      });
+
+      macroHandler("deploy-all");
+
+      await vi.waitFor(() => {
+        expect(mockFetchMacroByName).toHaveBeenCalledWith("ws-1", "deploy-all");
+      });
+
+      await vi.waitFor(() => {
+        expect(mockGraphqlRequest).toHaveBeenCalledWith(
+          expect.anything(),
+          {
+            input: {
+              macroId: "macro-123",
+              commandContext: { workspaceId: "ws-1" },
+            },
+          },
+        );
+      });
+    });
+
+    it("shows error toast when macro not found", async () => {
+      mockFetchMacroByName.mockResolvedValueOnce(null);
+
+      macroHandler("nonexistent");
+
+      await vi.waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          'Macro not found: "nonexistent"',
+        );
+      });
+    });
+
+    it("shows error toast on network failure", async () => {
+      mockFetchMacroByName.mockRejectedValueOnce(new Error("Network error"));
+
+      macroHandler("deploy-all");
+
+      await vi.waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          "Failed to execute macro: Network error",
+        );
+      });
+    });
+
+    it("shows success toast after execution", async () => {
+      mockFetchMacroByName.mockResolvedValueOnce({
+        id: "macro-456",
+        name: "test-macro",
+        description: "",
+        steps: [],
+      });
+      mockGraphqlRequest.mockResolvedValueOnce({
+        executeMacro: { status: "SUCCESS", message: "OK" },
+      });
+
+      macroHandler("test-macro");
+
+      await vi.waitFor(() => {
+        expect(mockToast.success).toHaveBeenCalledWith(
+          'Macro "test-macro" executed',
+        );
+      });
+    });
+
+    it("shows error toast when macro execution returns ERROR status", async () => {
+      mockFetchMacroByName.mockResolvedValueOnce({
+        id: "macro-789",
+        name: "broken-macro",
+        description: "",
+        steps: [],
+      });
+      mockGraphqlRequest.mockResolvedValueOnce({
+        executeMacro: { status: "ERROR", message: "Step 2 failed" },
+      });
+
+      macroHandler("broken-macro");
+
+      await vi.waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          "Macro failed: Step 2 failed",
+        );
+      });
     });
   });
 });

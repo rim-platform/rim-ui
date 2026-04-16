@@ -1,7 +1,8 @@
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { graphqlClient } from "../../../core/graphql/client";
-import { gql } from "graphql-request";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { fetchMacroByName, ExecuteMacroDocument } from "../../macros/api/useMacros";
+import { toast } from "../../../shared/toast";
 
 export interface SlashCommand {
   command: string;
@@ -10,15 +11,6 @@ export interface SlashCommand {
   placeholder?: string;
   handler?: (args: string) => void;
 }
-
-const ExecuteMacroByName = gql`
-  mutation ExecuteMacroSlash($input: ExecuteMacroInput!) {
-    executeMacro(input: $input) {
-      status
-      message
-    }
-  }
-`;
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
@@ -36,16 +28,39 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     handler: (args: string) => {
       const macroName = args.trim();
       if (!macroName) return;
-      // TODO: Resolve macro name to ID via backend query. For now, use name as ID.
       const workspaceId = useWorkspaceStore.getState().workspaceId;
-      graphqlClient.request(ExecuteMacroByName, {
-        input: {
-          macroId: macroName,
-          commandContext: { workspaceId },
-        },
-      }).catch((err) => {
-        console.error("[/macro] Failed to execute macro:", err);
-      });
+      if (!workspaceId) {
+        toast.error("No workspace selected");
+        return;
+      }
+
+      void (async () => {
+        try {
+          const macro = await fetchMacroByName(workspaceId, macroName);
+          if (!macro) {
+            toast.error(`Macro not found: "${macroName}"`);
+            return;
+          }
+
+          const result = await graphqlClient.request<{
+            executeMacro: { status: string; message: string };
+          }>(ExecuteMacroDocument, {
+            input: {
+              macroId: macro.id,
+              commandContext: { workspaceId },
+            },
+          });
+
+          if (result.executeMacro.status === "ERROR") {
+            toast.error(`Macro failed: ${result.executeMacro.message}`);
+          } else {
+            toast.success(`Macro "${macroName}" executed`);
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          toast.error(`Failed to execute macro: ${message}`);
+        }
+      })();
     },
   },
 ];

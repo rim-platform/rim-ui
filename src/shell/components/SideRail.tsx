@@ -9,6 +9,7 @@ import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
+import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { cn } from "../../shared/ui/cn";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
@@ -29,6 +30,8 @@ export function SideRail() {
   const openPluginPanel = useShellStore((s) => s.openPluginPanel);
   const { data: user } = useCurrentUser();
   const { data: plugins } = usePluginList();
+  const unreadCounts = useUnreadStore((s) => s.counts);
+  const totalUnread = Object.values(unreadCounts).reduce((sum, n) => sum + n, 0);
 
   const avatarInitial = (user?.displayName ?? user?.username ?? "?").charAt(0).toUpperCase();
 
@@ -61,21 +64,27 @@ export function SideRail() {
         {railItems.map((item) => {
           const Icon = item.icon;
           const active = mainSurface.kind === "conversation" && activePanel === item.key;
+          const badge = item.key === "inbox" && totalUnread > 0 ? totalUnread : 0;
           return (
             <button
               key={item.key}
               type="button"
               onClick={() => handleRailItemClick(item.key)}
               title={item.label}
-              aria-label={item.label}
+              aria-label={badge ? `${item.label} (${badge} unread)` : item.label}
               className={cn(
-                "rounded-xl p-2.5 transition",
+                "relative rounded-xl p-2.5 transition",
                 active
                   ? "bg-rim-accent/15 text-rim-accent"
-                  : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+                  : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
               )}
             >
               <Icon className="h-5 w-5" />
+              {badge > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rim-danger px-1 text-[10px] font-bold leading-none text-white">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -101,7 +110,7 @@ export function SideRail() {
                     "rounded-xl p-2.5 transition",
                     isActive
                       ? "bg-rim-accent/15 text-rim-accent"
-                      : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+                      : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
                   )}
                 >
                   <Puzzle className="h-5 w-5" />
@@ -231,7 +240,7 @@ function SearchButton({ openSearch }: { openSearch: (scope: { kind: "all" }) => 
         type="button"
         onClick={() => openSearch({ kind: "all" })}
         aria-label="Search workspace"
-        className="rounded-xl p-2.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+        className="rounded-xl p-2.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
       >
         <Search className="h-5 w-5" />
       </button>
@@ -259,7 +268,7 @@ function SettingsButton({
           "rounded-xl p-2.5 transition",
           mainSurface.kind === "settings"
             ? "bg-rim-accent/15 text-rim-accent"
-            : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+            : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
         )}
       >
         <Settings className="h-5 w-5" />

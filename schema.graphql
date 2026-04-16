@@ -120,6 +120,7 @@ type CommandResult {
 	message: String!
 	payload: JSON
 	followUpCommands: [String!]!
+	pipelineStages: [PipeStageResult!]
 }
 
 enum CommandResultStatus {
@@ -230,6 +231,16 @@ input CreateMacroInput {
 	steps: [MacroStepInput!]!
 }
 
+input CreatePipelineInput {
+	serverId: ID!
+	name: String!
+	description: String
+	trigger: PipelineTriggerInput!
+	filter: PipelineFilterInput
+	actions: [PipelineActionInput!]!
+	cooldownSecs: Int
+}
+
 input CreateServerInput {
 	name: String!
 }
@@ -284,6 +295,12 @@ input DeleteUserCommandInput {
 	commandId: String!
 }
 
+input DeleteWorkspaceStateInput {
+	serverId: ID!
+	key: String!
+	scope: WorkspaceStateScopeGql!
+}
+
 input EditMessageInput {
 	serverId: ID!
 	conversationId: ID!
@@ -302,16 +319,11 @@ input ExecuteCommandInput {
 	args: JSON
 	commandContext: CommandContextInput
 	confirmedDangerous: Boolean
+	isPipe: Boolean
 }
 
 input ExecuteMacroInput {
 	macroId: ID!
-	commandContext: CommandContextInput
-	confirmedDangerous: Boolean
-}
-
-input ExecutePipedCommandsInput {
-	pipeExpression: String!
 	commandContext: CommandContextInput
 	confirmedDangerous: Boolean
 }
@@ -447,6 +459,13 @@ type IncidentTimelineGql {
 	incident: IncidentGql!
 	phases: [IncidentPhaseGql!]!
 	taggedMessages: [IncidentMessageTagGql!]!
+}
+
+input IncrementWorkspaceStateInput {
+	serverId: ID!
+	key: String!
+	scope: WorkspaceStateScopeGql!
+	delta: Int!
 }
 
 type Integration {
@@ -652,7 +671,6 @@ type Mutation {
 	finalizeAttachment(input: FinalizeAttachmentInput!): Attachment!
 	deleteAttachment(input: DeleteAttachmentInput!): Boolean!
 	executeCommand(input: ExecuteCommandInput!): CommandResult!
-	executePipedCommands(input: ExecutePipedCommandsInput!): CommandResult!
 	createUserCommand(input: CreateUserCommandInput!): Command!
 	updateUserCommand(input: UpdateUserCommandInput!): Command!
 	deleteUserCommand(input: DeleteUserCommandInput!): Boolean!
@@ -688,6 +706,13 @@ type Mutation {
 	tagIncidentMessage(input: TagIncidentMessageInput!): IncidentMessageTagGql!
 	generatePostmortem(incidentId: ID!): IncidentGql!
 	resolveIncident(incidentId: ID!): IncidentGql!
+	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
+	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
+	incrementWorkspaceState(input: IncrementWorkspaceStateInput!): WorkspaceStateEntryGql!
+	createPipeline(input: CreatePipelineInput!): PipelineGql!
+	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
+	deletePipeline(pipelineId: ID!): Boolean!
+	togglePipeline(pipelineId: ID!, enabled: Boolean!): PipelineGql!
 }
 
 input MuteConversationInput {
@@ -715,6 +740,83 @@ input PinMessageInput {
 	serverId: ID!
 	conversationId: ID!
 	messageId: ID!
+}
+
+type PipeStageResult {
+	stageIndex: Int!
+	commandId: String!
+	status: CommandResultStatus!
+	message: String!
+	payload: JSON
+}
+
+type PipelineActionGql {
+	actionType: String!
+	commandId: String
+	args: JSON
+}
+
+input PipelineActionInput {
+	commandId: String!
+	args: JSON
+}
+
+type PipelineFilterConditionGql {
+	conditionType: String!
+	pattern: String
+	userId: ID
+	conversationId: ID
+}
+
+input PipelineFilterConditionInput {
+	conditionType: String!
+	pattern: String
+	userId: ID
+	conversationId: ID
+}
+
+type PipelineFilterGql {
+	conditions: [PipelineFilterConditionGql!]!
+}
+
+input PipelineFilterInput {
+	conditions: [PipelineFilterConditionInput!]!
+}
+
+type PipelineGql {
+	id: ID!
+	serverId: ID!
+	name: String!
+	description: String
+	trigger: PipelineTriggerGql!
+	filter: PipelineFilterGql
+	actions: [PipelineActionGql!]!
+	enabled: Boolean!
+	cooldownSecs: Int
+	createdBy: ID!
+	schemaVersion: Int!
+	lastFiredAt: DateTime
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+type PipelineTriggerGql {
+	kind: PipelineTriggerKindGql!
+	conversationId: ID
+}
+
+input PipelineTriggerInput {
+	kind: PipelineTriggerKindGql!
+	conversationId: ID
+}
+
+enum PipelineTriggerKindGql {
+	NEW_MESSAGE
+	MESSAGE_UPDATED
+	MESSAGE_DELETED
+	REACTIONS_UPDATED
+	MEMBER_JOINED
+	WORKSPACE_STATE_CHANGED
 }
 
 enum PresenceStatus {
@@ -760,12 +862,16 @@ type Query {
 	mutedConversations(serverId: ID!): [MutedConversation!]!
 	customEmojis(serverId: ID!): [CustomEmoji!]!
 	myMacros(serverId: ID!): [MacroDef!]!
+	macroByName(serverId: ID!, name: String!): MacroDef
 	serverMacros(serverId: ID!): [MacroDef!]!
 	mySkillProfile: SkillProfileGql!
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
 	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
 	activeIncident(serverId: ID!, conversationId: ID!): IncidentGql
 	incidentTimeline(incidentId: ID!): IncidentTimelineGql!
+	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
+	workspaceStateList(serverId: ID!, prefix: String!, scope: WorkspaceStateScopeGql!, limit: Int): [WorkspaceStateEntryGql!]!
+	pipelines(serverId: ID!, enabled: Boolean): [PipelineGql!]!
 }
 
 type ReactionGroup {
@@ -794,6 +900,7 @@ type SearchResultMessage {
 	authorId: ID!
 	text: String
 	sentAt: DateTime!
+	author: User
 }
 
 input SendMessageInput {
@@ -818,6 +925,14 @@ type ServerMember {
 	bio: String
 	memberRole: String!
 	joinedAt: DateTime!
+}
+
+input SetWorkspaceStateInput {
+	serverId: ID!
+	key: String!
+	value: JSON!
+	scope: WorkspaceStateScopeGql!
+	ttlSeconds: Int
 }
 
 type Setting {
@@ -955,6 +1070,16 @@ input UpdateMacroInput {
 	steps: [MacroStepInput!]!
 }
 
+input UpdatePipelineInput {
+	pipelineId: ID!
+	name: String!
+	description: String
+	trigger: PipelineTriggerInput!
+	filter: PipelineFilterInput
+	actions: [PipelineActionInput!]!
+	cooldownSecs: Int
+}
+
 input UpdateUserCommandInput {
 	commandId: String!
 	title: String!
@@ -988,6 +1113,24 @@ type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
+}
+
+type WorkspaceStateEntryGql {
+	id: ID!
+	serverId: ID!
+	key: String!
+	value: JSON!
+	scope: WorkspaceStateScopeGql!
+	userId: ID
+	version: Int!
+	expiresAt: DateTime
+	createdAt: DateTime!
+	updatedAt: DateTime!
+}
+
+enum WorkspaceStateScopeGql {
+	SERVER
+	USER
 }
 
 """

@@ -14,6 +14,10 @@ import type {
   PresenceChangedEvent,
   TypingStartedEvent,
   NewMessageNotificationEvent,
+  WorkspaceStateChangedEvent,
+  WorkspaceStateDeletedEvent,
+  PipelineFiredEvent,
+  PipelineSuspendedEvent,
 } from "./busEvents";
 
 const WORKSPACE_EVENTS_QUERY = `
@@ -92,7 +96,7 @@ function eventMessageToCache(msg: MessageEventData): MessageItem {
     parentMessageId: msg.parent_message_id ?? null,
     isPinned: false,
     mentionedUserIds: [],
-    forwardedFromMessageId: null,
+    forwardedFromMessageId: msg.forwarded_from_message_id ?? null,
     forwardedFrom: null,
     isDeleted: msg.is_deleted,
     sentAt: msg.sent_at,
@@ -249,7 +253,7 @@ function handleEvent(
                     emoji: r.emoji,
                     count: r.count,
                     reactedByMe: existing?.reactedByMe ?? false,
-                    userIds: existing?.userIds ?? [],
+                    userIds: r.user_ids ?? existing?.userIds ?? [],
                   };
                 });
                 return { ...m, reactions: updatedReactions };
@@ -330,6 +334,36 @@ function handleEvent(
       });
       break;
 
+    case "WorkspaceStateChanged": {
+      qc.invalidateQueries({
+        queryKey: queryKeys.workspaceState(workspaceId, event.scope, event.key),
+      });
+      qc.invalidateQueries({
+        queryKey: ["workspaceStateList", workspaceId], // Broad prefix match — invalidates all scopes/prefixes
+      });
+      eventBus.emit<WorkspaceStateChangedEvent>(BUS_EVENTS.WORKSPACE_STATE_CHANGED, {
+        workspaceId,
+        key: event.key,
+        scope: event.scope,
+      });
+      break;
+    }
+
+    case "WorkspaceStateDeleted": {
+      qc.invalidateQueries({
+        queryKey: queryKeys.workspaceState(workspaceId, event.scope, event.key),
+      });
+      qc.invalidateQueries({
+        queryKey: ["workspaceStateList", workspaceId], // Broad prefix match — invalidates all scopes/prefixes
+      });
+      eventBus.emit<WorkspaceStateDeletedEvent>(BUS_EVENTS.WORKSPACE_STATE_DELETED, {
+        workspaceId,
+        key: event.key,
+        scope: event.scope,
+      });
+      break;
+    }
+
     case "MessagePinned":
       qc.setQueryData<InfiniteData<MessagesPage>>(
         queryKeys.messages(workspaceId, event.conversation_id),
@@ -367,6 +401,37 @@ function handleEvent(
       );
       qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(workspaceId, event.conversation_id) });
       break;
+
+    case "PipelineFired": {
+      // Refresh pipeline list so lastFiredAt updates in the UI
+      qc.invalidateQueries({ queryKey: queryKeys.pipelines(workspaceId) });
+      toast.success(`Pipeline "${event.pipeline_name}" fired`, {
+        description: `${event.actions_executed} action${event.actions_executed !== 1 ? "s" : ""} executed (trigger: ${event.trigger_event})`,
+      });
+      eventBus.emit<PipelineFiredEvent>(BUS_EVENTS.PIPELINE_FIRED, {
+        workspaceId,
+        pipelineId: event.pipeline_id,
+        pipelineName: event.pipeline_name,
+        triggerEvent: event.trigger_event,
+        actionsExecuted: event.actions_executed,
+      });
+      break;
+    }
+
+    case "PipelineSuspended": {
+      // Refresh pipeline list so enabled status updates
+      qc.invalidateQueries({ queryKey: queryKeys.pipelines(workspaceId) });
+      toast.error(`Pipeline "${event.pipeline_name}" suspended`, {
+        description: event.reason,
+      });
+      eventBus.emit<PipelineSuspendedEvent>(BUS_EVENTS.PIPELINE_SUSPENDED, {
+        workspaceId,
+        pipelineId: event.pipeline_id,
+        pipelineName: event.pipeline_name,
+        reason: event.reason,
+      });
+      break;
+    }
   }
 }
 

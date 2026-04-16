@@ -3,9 +3,6 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 
-// TODO: These mutations may not exist in the backend yet.
-// Strange is working on them. The UI is ready to use them once available.
-
 const REQUEST_PASSWORD_RESET_MUTATION = gql`
   mutation RequestPasswordReset($username: String!) {
     requestPasswordReset(username: $username)

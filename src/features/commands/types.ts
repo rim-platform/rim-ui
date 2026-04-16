@@ -15,7 +15,8 @@ export type KeybindContext =
   | "THREAD_VIEW"
   | "CONVERSATION_VIEW"
   | "PANEL"
-  | "COMMAND_PALETTE";
+  | "COMMAND_PALETTE"
+  | "TERMINAL";
 
 export type KeybindScope = "USER" | "WORKSPACE";
 
@@ -55,11 +56,20 @@ export interface DefaultKeybind {
   context: KeybindContext;
 }
 
+export interface PipeStageResult {
+  stageIndex: number;
+  commandId: string;
+  status: CommandResultStatus;
+  message: string;
+  payload: unknown;
+}
+
 export interface CommandResult {
   status: CommandResultStatus;
   message: string;
   payload: unknown;
   followUpCommands: string[];
+  pipelineStages?: PipeStageResult[] | null;
 }
 
 export interface ExecuteCommandInput {
@@ -67,6 +77,7 @@ export interface ExecuteCommandInput {
   args?: Record<string, unknown>;
   commandContext?: CommandContextInput;
   confirmedDangerous?: boolean;
+  isPipe?: boolean;
 }
 
 export interface CommandContextInput {

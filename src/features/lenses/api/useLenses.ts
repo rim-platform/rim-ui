@@ -47,23 +47,9 @@ const CHANNEL_LENSES_QUERY = gql`
 `;
 
 const APPLY_LENS_QUERY = gql`
-  query ApplyChannelLens($serverId: ID!, $conversationId: ID!, $lensId: ID!, $limit: Int) {
+  query ApplyChannelLens($serverId: ID!, $conversationId: ID!, $lensId: ID!, $limit: Int! = 50) {
     applyChannelLens(serverId: $serverId, conversationId: $conversationId, lensId: $lensId, limit: $limit) {
-      items {
-        ...MessageWithReactions
-      }
-      next {
-        sentAt
-        messageId
-      }
-      prev {
-        sentAt
-        messageId
-      }
-      pageInfo {
-        hasNext
-        hasPrev
-      }
+      ...MessageWithReactions
     }
   }
   ${MESSAGE_WITH_REACTIONS}
@@ -118,8 +104,8 @@ const UPDATE_LENS_MUTATION = gql`
 `;
 
 const DELETE_LENS_MUTATION = gql`
-  mutation DeleteChannelLens($lensId: ID!) {
-    deleteChannelLens(lensId: $lensId)
+  mutation DeleteChannelLens($serverId: ID!, $lensId: ID!) {
+    deleteChannelLens(serverId: $serverId, lensId: $lensId)
   }
 `;
 
@@ -130,12 +116,7 @@ interface ChannelLensesResponse {
 }
 
 interface ApplyLensResponse {
-  applyChannelLens: {
-    items: MessageItem[];
-    next: { sentAt: string; messageId: string } | null;
-    prev: { sentAt: string; messageId: string } | null;
-    pageInfo: { hasNext: boolean; hasPrev: boolean };
-  };
+  applyChannelLens: MessageItem[];
 }
 
 interface CreateLensResponse {
@@ -175,7 +156,7 @@ export function useApplyLens(serverId?: string, conversationId?: string, lensId?
         lensId: lensId!,
         limit: 50,
       });
-      return res.applyChannelLens;
+      return { items: res.applyChannelLens };
     },
   });
 }
@@ -220,6 +201,7 @@ export function useUpdateLensMutation() {
     }) =>
       graphqlClient.request<UpdateLensResponse>(UPDATE_LENS_MUTATION, {
         input: {
+          serverId: vars.serverId,
           lensId: vars.lensId,
           name: vars.name,
           filterSpec: vars.filterSpec,
@@ -238,7 +220,7 @@ export function useDeleteLensMutation() {
 
   return useMutation({
     mutationFn: (vars: { lensId: string; serverId: string; conversationId: string }) =>
-      graphqlClient.request(DELETE_LENS_MUTATION, { lensId: vars.lensId }),
+      graphqlClient.request(DELETE_LENS_MUTATION, { serverId: vars.serverId, lensId: vars.lensId }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.lenses(vars.serverId, vars.conversationId) });
     },

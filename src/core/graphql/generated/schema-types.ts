@@ -143,6 +143,7 @@ export type CommandResult = {
   followUpCommands: Array<Scalars['String']['output']>;
   message: Scalars['String']['output'];
   payload?: Maybe<Scalars['JSON']['output']>;
+  pipelineStages?: Maybe<Array<PipeStageResult>>;
   status: CommandResultStatus;
 };
 
@@ -248,6 +249,16 @@ export type CreateMacroInput = {
   steps: Array<MacroStepInput>;
 };
 
+export type CreatePipelineInput = {
+  actions: Array<PipelineActionInput>;
+  cooldownSecs?: InputMaybe<Scalars['Int']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  filter?: InputMaybe<PipelineFilterInput>;
+  name: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+  trigger: PipelineTriggerInput;
+};
+
 export type CreateServerInput = {
   name: Scalars['String']['input'];
 };
@@ -295,6 +306,12 @@ export type DeleteUserCommandInput = {
   commandId: Scalars['String']['input'];
 };
 
+export type DeleteWorkspaceStateInput = {
+  key: Scalars['String']['input'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['input'];
+};
+
 export type EditMessageInput = {
   conversationId: Scalars['ID']['input'];
   messageId: Scalars['ID']['input'];
@@ -313,18 +330,13 @@ export type ExecuteCommandInput = {
   commandContext?: InputMaybe<CommandContextInput>;
   commandId: Scalars['String']['input'];
   confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
+  isPipe?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type ExecuteMacroInput = {
   commandContext?: InputMaybe<CommandContextInput>;
   confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
   macroId: Scalars['ID']['input'];
-};
-
-export type ExecutePipedCommandsInput = {
-  commandContext?: InputMaybe<CommandContextInput>;
-  confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
-  pipeExpression: Scalars['String']['input'];
 };
 
 export type FeatureUsage = {
@@ -458,6 +470,13 @@ export type IncidentTimelineGql = {
   incident: IncidentGql;
   phases: Array<IncidentPhaseGql>;
   taggedMessages: Array<IncidentMessageTagGql>;
+};
+
+export type IncrementWorkspaceStateInput = {
+  delta: Scalars['Int']['input'];
+  key: Scalars['String']['input'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['input'];
 };
 
 export type Integration = {
@@ -650,6 +669,7 @@ export type Mutation = {
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
+  createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
   deleteAttachment: Scalars['Boolean']['output'];
@@ -658,15 +678,17 @@ export type Mutation = {
   deleteKeybind: Scalars['Boolean']['output'];
   deleteMacro: Scalars['Boolean']['output'];
   deleteMessage: Scalars['Boolean']['output'];
+  deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
+  deleteWorkspaceState: Scalars['Boolean']['output'];
   editMessage: Message;
   executeCommand: CommandResult;
   executeMacro: CommandResult;
-  executePipedCommands: CommandResult;
   finalizeAttachment: Attachment;
   forwardMessage: Message;
   generatePostmortem: IncidentGql;
   heartbeat: Scalars['Boolean']['output'];
+  incrementWorkspaceState: WorkspaceStateEntryGql;
   joinServerByInvite: JoinServerByInvitePayload;
   login: LoginPayload;
   logout: Scalars['Boolean']['output'];
@@ -682,9 +704,11 @@ export type Mutation = {
   resolveIncident: IncidentGql;
   revokeInvite: Scalars['Boolean']['output'];
   sendMessage: Message;
+  setWorkspaceState: WorkspaceStateEntryGql;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
   tagIncidentMessage: IncidentMessageTagGql;
+  togglePipeline: PipelineGql;
   toggleReaction: Array<ReactionGroup>;
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
@@ -693,6 +717,7 @@ export type Mutation = {
   updateIncidentStatus: IncidentGql;
   updateKeybind: Keybind;
   updateMacro: MacroDef;
+  updatePipeline: PipelineGql;
   updateUserCommand: Command;
 };
 
@@ -747,6 +772,11 @@ export type MutationCreateMacroArgs = {
 };
 
 
+export type MutationCreatePipelineArgs = {
+  input: CreatePipelineInput;
+};
+
+
 export type MutationCreateServerArgs = {
   input: CreateServerInput;
 };
@@ -788,8 +818,18 @@ export type MutationDeleteMessageArgs = {
 };
 
 
+export type MutationDeletePipelineArgs = {
+  pipelineId: Scalars['ID']['input'];
+};
+
+
 export type MutationDeleteUserCommandArgs = {
   input: DeleteUserCommandInput;
+};
+
+
+export type MutationDeleteWorkspaceStateArgs = {
+  input: DeleteWorkspaceStateInput;
 };
 
 
@@ -805,11 +845,6 @@ export type MutationExecuteCommandArgs = {
 
 export type MutationExecuteMacroArgs = {
   input: ExecuteMacroInput;
-};
-
-
-export type MutationExecutePipedCommandsArgs = {
-  input: ExecutePipedCommandsInput;
 };
 
 
@@ -830,6 +865,11 @@ export type MutationGeneratePostmortemArgs = {
 
 export type MutationHeartbeatArgs = {
   input: HeartbeatInput;
+};
+
+
+export type MutationIncrementWorkspaceStateArgs = {
+  input: IncrementWorkspaceStateInput;
 };
 
 
@@ -904,6 +944,11 @@ export type MutationSendMessageArgs = {
 };
 
 
+export type MutationSetWorkspaceStateArgs = {
+  input: SetWorkspaceStateInput;
+};
+
+
 export type MutationStartIncidentArgs = {
   input: StartIncidentInput;
 };
@@ -917,6 +962,12 @@ export type MutationStartTypingArgs = {
 
 export type MutationTagIncidentMessageArgs = {
   input: TagIncidentMessageInput;
+};
+
+
+export type MutationTogglePipelineArgs = {
+  enabled: Scalars['Boolean']['input'];
+  pipelineId: Scalars['ID']['input'];
 };
 
 
@@ -960,6 +1011,11 @@ export type MutationUpdateMacroArgs = {
 };
 
 
+export type MutationUpdatePipelineArgs = {
+  input: UpdatePipelineInput;
+};
+
+
 export type MutationUpdateUserCommandArgs = {
   input: UpdateUserCommandInput;
 };
@@ -991,6 +1047,83 @@ export type PinMessageInput = {
   serverId: Scalars['ID']['input'];
 };
 
+export type PipeStageResult = {
+  commandId: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+  payload?: Maybe<Scalars['JSON']['output']>;
+  stageIndex: Scalars['Int']['output'];
+  status: CommandResultStatus;
+};
+
+export type PipelineActionGql = {
+  actionType: Scalars['String']['output'];
+  args?: Maybe<Scalars['JSON']['output']>;
+  commandId?: Maybe<Scalars['String']['output']>;
+};
+
+export type PipelineActionInput = {
+  args?: InputMaybe<Scalars['JSON']['input']>;
+  commandId: Scalars['String']['input'];
+};
+
+export type PipelineFilterConditionGql = {
+  conditionType: Scalars['String']['output'];
+  conversationId?: Maybe<Scalars['ID']['output']>;
+  pattern?: Maybe<Scalars['String']['output']>;
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
+export type PipelineFilterConditionInput = {
+  conditionType: Scalars['String']['input'];
+  conversationId?: InputMaybe<Scalars['ID']['input']>;
+  pattern?: InputMaybe<Scalars['String']['input']>;
+  userId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+export type PipelineFilterGql = {
+  conditions: Array<PipelineFilterConditionGql>;
+};
+
+export type PipelineFilterInput = {
+  conditions: Array<PipelineFilterConditionInput>;
+};
+
+export type PipelineGql = {
+  actions: Array<PipelineActionGql>;
+  cooldownSecs?: Maybe<Scalars['Int']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  createdBy: Scalars['ID']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  enabled: Scalars['Boolean']['output'];
+  filter?: Maybe<PipelineFilterGql>;
+  id: Scalars['ID']['output'];
+  lastFiredAt?: Maybe<Scalars['DateTime']['output']>;
+  name: Scalars['String']['output'];
+  schemaVersion: Scalars['Int']['output'];
+  serverId: Scalars['ID']['output'];
+  trigger: PipelineTriggerGql;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export type PipelineTriggerGql = {
+  conversationId?: Maybe<Scalars['ID']['output']>;
+  kind: PipelineTriggerKindGql;
+};
+
+export type PipelineTriggerInput = {
+  conversationId?: InputMaybe<Scalars['ID']['input']>;
+  kind: PipelineTriggerKindGql;
+};
+
+export enum PipelineTriggerKindGql {
+  MEMBER_JOINED = 'MEMBER_JOINED',
+  MESSAGE_DELETED = 'MESSAGE_DELETED',
+  MESSAGE_UPDATED = 'MESSAGE_UPDATED',
+  NEW_MESSAGE = 'NEW_MESSAGE',
+  REACTIONS_UPDATED = 'REACTIONS_UPDATED',
+  WORKSPACE_STATE_CHANGED = 'WORKSPACE_STATE_CHANGED'
+}
+
 export enum PresenceStatus {
   AWAY = 'AWAY',
   OFFLINE = 'OFFLINE',
@@ -1016,6 +1149,7 @@ export type Query = {
   integrations: Array<Integration>;
   keybindLayers: KeybindLayers;
   keybinds: Array<Keybind>;
+  macroByName?: Maybe<MacroDef>;
   me: User;
   message: Message;
   messageReference: MessageReference;
@@ -1027,6 +1161,7 @@ export type Query = {
   myServers: Array<Server>;
   mySkillProfile: SkillProfileGql;
   pinnedMessages: Array<Message>;
+  pipelines: Array<PipelineGql>;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
   searchMessages: Array<SearchResultMessage>;
@@ -1040,6 +1175,8 @@ export type Query = {
   threads: ThreadPage;
   unreadCounts: Array<UnreadCount>;
   workspacePresence: Array<UserPresenceGql>;
+  workspaceState?: Maybe<WorkspaceStateEntryGql>;
+  workspaceStateList: Array<WorkspaceStateEntryGql>;
 };
 
 
@@ -1125,6 +1262,12 @@ export type QueryKeybindsArgs = {
 };
 
 
+export type QueryMacroByNameArgs = {
+  name: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type QueryMessageArgs = {
   conversationId: Scalars['ID']['input'];
   messageId: Scalars['ID']['input'];
@@ -1172,6 +1315,12 @@ export type QueryMyMentionsArgs = {
 
 export type QueryPinnedMessagesArgs = {
   conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryPipelinesArgs = {
+  enabled?: InputMaybe<Scalars['Boolean']['input']>;
   serverId: Scalars['ID']['input'];
 };
 
@@ -1255,6 +1404,21 @@ export type QueryWorkspacePresenceArgs = {
   workspaceId: Scalars['ID']['input'];
 };
 
+
+export type QueryWorkspaceStateArgs = {
+  key: Scalars['String']['input'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryWorkspaceStateListArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  prefix: Scalars['String']['input'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['input'];
+};
+
 export type ReactionGroup = {
   count: Scalars['Int']['output'];
   emoji: Scalars['String']['output'];
@@ -1271,6 +1435,7 @@ export type ReplyToMessageInput = {
 };
 
 export type SearchResultMessage = {
+  author?: Maybe<User>;
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
   conversationTitle?: Maybe<Scalars['String']['output']>;
@@ -1305,6 +1470,14 @@ export type ServerMember = {
   statusText?: Maybe<Scalars['String']['output']>;
   userId: Scalars['ID']['output'];
   username: Scalars['String']['output'];
+};
+
+export type SetWorkspaceStateInput = {
+  key: Scalars['String']['input'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['input'];
+  ttlSeconds?: InputMaybe<Scalars['Int']['input']>;
+  value: Scalars['JSON']['input'];
 };
 
 export type Setting = {
@@ -1447,6 +1620,16 @@ export type UpdateMacroInput = {
   steps: Array<MacroStepInput>;
 };
 
+export type UpdatePipelineInput = {
+  actions: Array<PipelineActionInput>;
+  cooldownSecs?: InputMaybe<Scalars['Int']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  filter?: InputMaybe<PipelineFilterInput>;
+  name: Scalars['String']['input'];
+  pipelineId: Scalars['ID']['input'];
+  trigger: PipelineTriggerInput;
+};
+
 export type UpdateUserCommandInput = {
   commandId: Scalars['String']['input'];
   description: Scalars['String']['input'];
@@ -1481,3 +1664,21 @@ export type UserPresenceGql = {
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
 };
+
+export type WorkspaceStateEntryGql = {
+  createdAt: Scalars['DateTime']['output'];
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+  scope: WorkspaceStateScopeGql;
+  serverId: Scalars['ID']['output'];
+  updatedAt: Scalars['DateTime']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
+  value: Scalars['JSON']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export enum WorkspaceStateScopeGql {
+  SERVER = 'SERVER',
+  USER = 'USER'
+}

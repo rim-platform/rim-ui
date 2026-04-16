@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo, lazy, Suspense } from "react";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -41,7 +41,14 @@ import { useIncidentStore } from "../../features/incidents/state/useIncidentStor
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
 import { useSpatialNavigation } from "../navigation/useSpatialNavigation";
-// cn import removed — zen mode uses inline style display toggle
+import { cn } from "../../shared/ui/cn";
+import { useZenModeTransition } from "../hooks/useZenModeTransition";
+import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
+import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
+import { useTerminalStore } from "../../features/terminal/state/useTerminalStore";
+
+// Lazy-load terminal pane — xterm.js is ~300KB, only loaded when first opened
+const TerminalPane = lazy(() => import("../../features/terminal/components/TerminalPane").then(m => ({ default: m.TerminalPane })));
 
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
@@ -122,38 +129,15 @@ function WorkspaceShell() {
   const toggleZenMode = useShellStore((s) => s.toggleZenMode);
   const { data: plugins } = usePluginList();
 
+  const { zenContentHidden, handleZenTransitionEnd } = useZenModeTransition(zenMode);
+  useAutoFocusComposer(mainSurface.kind);
+  useGlobalKeyHandlers();
+
   // Incident mode
   const showIncidentTimeline = useIncidentStore((s) => s.showTimeline);
   const setShowIncidentTimeline = useIncidentStore((s) => s.setShowTimeline);
   const showIncidentPostmortem = useIncidentStore((s) => s.showPostmortem);
   const setShowIncidentPostmortem = useIncidentStore((s) => s.setShowPostmortem);
-
-  useEffect(() => {
-    function handleGlobalKeyDown(e: KeyboardEvent) {
-      // Skip if modifier keys (except Shift) are held
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // Skip if in navigation mode — let message list handle single keys
-      if (useShellStore.getState().navigationMode) return;
-      // Skip non-printable keys
-      if (e.key.length !== 1) return;
-      // Skip if already focused on an input/textarea/contenteditable
-      const active = document.activeElement;
-      if (
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement ||
-        (active instanceof HTMLElement && active.isContentEditable)
-      ) return;
-
-      const composer = document.querySelector<HTMLTextAreaElement>("[data-composer-input]");
-      if (composer) {
-        composer.focus();
-        // Don't preventDefault — let the character land in the textarea naturally
-      }
-    }
-
-    document.addEventListener("keydown", handleGlobalKeyDown);
-    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, []);
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 
@@ -178,21 +162,23 @@ function WorkspaceShell() {
     <KeybindProvider>
       <div className="flex min-h-0 flex-1 flex-col bg-rim-void text-rim-text">
         <div className="flex min-h-0 flex-1">
-        <div style={{ display: zenMode ? "none" : "contents" }}><WorkspaceRail /></div>
-        <div style={{ display: (zenMode || sidebarCollapsed) ? "none" : "contents" }}><SideRail /></div>
+        <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid transition-opacity duration-300", zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>{!zenContentHidden && <WorkspaceRail />}</div>
+        <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid transition-opacity duration-300", (zenMode || sidebarCollapsed) ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>{!(zenContentHidden || sidebarCollapsed) && <SideRail />}</div>
 
         {mainSurface.kind === "conversation" && (
           <>
-            <div style={{ display: zenMode ? "none" : "contents" }}><ToolPanel /></div>
+            <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid transition-opacity duration-300", zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>{!zenContentHidden && <ToolPanel />}</div>
 
             {/* Plugin tool_panel slot — renders next to ToolPanel */}
             {toolPanelPlugin && (
-              <div className="w-72 shrink-0 border-r border-rim-line bg-rim-panel" style={{ display: zenMode ? "none" : undefined }}>
-                <PluginSlotContainer
-                  plugin={toolPanelPlugin.plugin}
-                  panel={toolPanelPlugin.panel}
-                  onClose={closePluginPanel}
-                />
+              <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid w-72 shrink-0 border-r border-rim-line bg-rim-panel transition-opacity duration-300", zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>
+                {!zenContentHidden && (
+                  <PluginSlotContainer
+                    plugin={toolPanelPlugin.plugin}
+                    panel={toolPanelPlugin.panel}
+                    onClose={closePluginPanel}
+                  />
+                )}
               </div>
             )}
 
@@ -207,7 +193,7 @@ function WorkspaceShell() {
               </main>
             ) : (
               <main className="relative flex min-w-0 flex-1 flex-col">
-                <div style={{ display: zenMode ? "none" : undefined }}><ConversationHeader /></div>
+                <div onTransitionEnd={handleZenTransitionEnd} className={cn("transition-opacity duration-300", zenMode ? "pointer-events-none h-0 overflow-hidden opacity-0" : "opacity-100")}>{!zenContentHidden && <ConversationHeader />}</div>
                 <MessageTimeline />
                 {zenMode && (
                   <button
@@ -222,18 +208,20 @@ function WorkspaceShell() {
             )}
 
             {!mainAreaPlugin && showThread && (
-              <div className="w-80 shrink-0 border-l border-rim-line" style={{ display: zenMode ? "none" : undefined }}>
-                <ThreadPanel />
+              <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300", zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>
+                {!zenContentHidden && <ThreadPanel />}
               </div>
             )}
 
             {!mainAreaPlugin && pinnedPanelOpen && workspaceId && selectedConversationId && (
-              <div className="w-80 shrink-0" style={{ display: zenMode ? "none" : undefined }}>
-                <PinnedMessagesPanel
-                  workspaceId={workspaceId}
-                  conversationId={selectedConversationId}
-                  onClose={() => setPinnedPanelOpen(false)}
-                />
+              <div onTransitionEnd={handleZenTransitionEnd} className={cn("grid w-80 shrink-0 transition-opacity duration-300", zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100")}>
+                {!zenContentHidden && (
+                  <PinnedMessagesPanel
+                    workspaceId={workspaceId}
+                    conversationId={selectedConversationId}
+                    onClose={() => setPinnedPanelOpen(false)}
+                  />
+                )}
               </div>
             )}
 
@@ -285,9 +273,30 @@ function WorkspaceShell() {
         <ToastContainer />
         </div>
 
-        {!zenMode && <StatusBar />}
+        {/* Terminal pane — below main content, above status bar, hidden in zen mode */}
+        <div onTransitionEnd={handleZenTransitionEnd} className={cn("transition-opacity duration-300", zenMode ? "pointer-events-none h-0 overflow-hidden opacity-0" : "opacity-100")}>
+          {!zenContentHidden && <TerminalPaneSlot />}
+        </div>
+
+        <div onTransitionEnd={handleZenTransitionEnd} className={cn("transition-opacity duration-300", zenMode ? "pointer-events-none h-0 overflow-hidden opacity-0" : "opacity-100")}>
+          {!zenContentHidden && <StatusBar />}
+        </div>
         <FocusPulse />
       </div>
     </KeybindProvider>
+  );
+}
+
+/** Renders the terminal pane only when the feature is enabled and open. */
+function TerminalPaneSlot() {
+  const enabled = useTerminalStore((s) => s.enabled);
+  const isOpen = useTerminalStore((s) => s.isOpen);
+
+  if (!enabled || !isOpen) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <TerminalPane />
+    </Suspense>
   );
 }
