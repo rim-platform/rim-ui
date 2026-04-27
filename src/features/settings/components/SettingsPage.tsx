@@ -15,8 +15,11 @@ import { useTerminalStore } from "../../terminal/state/useTerminalStore";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() => import("../../plugins/components/PluginSettingsPage").then(m => ({ default: m.PluginSettingsPage })));
+const PluginAiConsentPanel = lazy(() => import("../../plugins/components/PluginAiConsentPanel").then(m => ({ default: m.PluginAiConsentPanel })));
 const AgentSettingsPanel = lazy(() => import("../../agent/settings/AgentSettingsPanel").then(m => ({ default: m.AgentSettingsPanel })));
 const EmojiManagement = lazy(() => import("../../emoji/components/EmojiManagement").then(m => ({ default: m.EmojiManagement })));
+const WorkspaceStateSettings = lazy(() => import("../../workspace-state/components/WorkspaceStateSettings").then(m => ({ default: m.WorkspaceStateSettings })));
+const AiProviderKeySettings = lazy(() => import("../../agent/settings/AiProviderKeySettings").then(m => ({ default: m.AiProviderKeySettings })));
 
 function TerminalSettings() {
   const enabled = useTerminalStore((s) => s.enabled);
@@ -132,7 +135,7 @@ function TerminalSettings() {
       </div>
 
       <p className="text-xs text-rim-text-faint">
-        Font and size changes apply to new terminal sessions.
+        Font and size changes apply immediately to open terminals.
       </p>
     </div>
   );
@@ -146,7 +149,99 @@ function SettingsLoadingSpinner() {
   );
 }
 
-type SettingsTab = "profile" | "keybinds" | "commands" | "macros" | "pipelines" | "plugins" | "emoji" | "agent" | "notifications" | "terminal" | "account" | "about";
+function AboutRim() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-rim-text">About RIM</h2>
+        <p className="mt-1 text-sm text-rim-text-muted">
+          A programmable communication workspace.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rim-accent/10 text-rim-accent font-bold text-lg">
+            R
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-rim-text">RIM</p>
+            <p className="text-xs text-rim-text-faint">Version 0.1.0</p>
+          </div>
+        </div>
+
+        <p className="text-sm text-rim-text-muted leading-relaxed">
+          RIM is not another chat app. Chat is the communication layer &mdash; commands, keybinds,
+          macros, and plugins are the product. Built for teams that think in workflows, not just
+          messages.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="rounded-md bg-rim-void px-3 py-2">
+            <span className="text-rim-text-faint">Runtime</span>
+            <p className="font-medium text-rim-text">Tauri 2 + React 19</p>
+          </div>
+          <div className="rounded-md bg-rim-void px-3 py-2">
+            <span className="text-rim-text-faint">Backend</span>
+            <p className="font-medium text-rim-text">Rust + Actix + GraphQL</p>
+          </div>
+          <div className="rounded-md bg-rim-void px-3 py-2">
+            <span className="text-rim-text-faint">UI</span>
+            <p className="font-medium text-rim-text">TypeScript + Tailwind CSS</p>
+          </div>
+          <div className="rounded-md bg-rim-void px-3 py-2">
+            <span className="text-rim-text-faint">License</span>
+            <p className="font-medium text-rim-text">Proprietary</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-3">
+        <p className="text-sm font-medium text-rim-text">Core Capabilities</p>
+        <ul className="space-y-1.5 text-sm text-rim-text-muted">
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Command palette with 19+ keybinds and slash commands
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Macro builder with AI-assisted step generation
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Reactive pipelines &mdash; event-driven automation
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Plugin system with capability-based security
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            AI agent with tool-calling and multi-provider support
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Incident management with timeline and postmortem
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Channel lenses &mdash; filtered message views
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-1 w-1 rounded-full bg-rim-accent" />
+            Integrated terminal with Nerd Font support
+          </li>
+        </ul>
+      </div>
+
+      <p className="text-xs text-rim-text-faint">
+        Built with obsessive attention to developer workflows.
+      </p>
+    </div>
+  );
+}
+
+type SettingsTab = "profile" | "keybinds" | "commands" | "macros" | "pipelines" | "plugins" | "plugin-ai" | "emoji" | "state" | "agent" | "ai-keys" | "notifications" | "terminal" | "account" | "about";
 
 const tabs: { key: SettingsTab; label: string }[] = [
   { key: "profile", label: "Profile" },
@@ -155,8 +250,11 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "macros", label: "Macros" },
   { key: "pipelines", label: "Pipelines" },
   { key: "plugins", label: "Plugins" },
+  { key: "plugin-ai", label: "Plugin AI" },
   { key: "emoji", label: "Emoji" },
+  { key: "state", label: "State" },
   { key: "agent", label: "AI Agent" },
+  { key: "ai-keys", label: "AI Keys" },
   { key: "notifications", label: "Notifications" },
   { key: "terminal", label: "Terminal" },
   { key: "account", label: "Account" },
@@ -213,18 +311,21 @@ export function SettingsPage() {
             {activeTab === "macros" && <MacroSettings />}
             {activeTab === "pipelines" && <PipelineSettings />}
             {activeTab === "plugins" && <PluginSettingsPage />}
+            {activeTab === "plugin-ai" && <PluginAiConsentPanel />}
             {activeTab === "emoji" && (
               <EmojiManagement serverId={workspaceId} isAdmin />
             )}
+            {activeTab === "state" && (
+              <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
+            )}
             {activeTab === "agent" && <AgentSettingsPanel />}
+            {activeTab === "ai-keys" && <AiProviderKeySettings />}
             {activeTab === "notifications" && <NotificationSettings />}
             {activeTab === "terminal" && <TerminalSettings />}
             {activeTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
             )}
-            {activeTab === "about" && (
-              <p className="text-sm text-rim-text-muted">About RIM coming soon.</p>
-            )}
+            {activeTab === "about" && <AboutRim />}
           </Suspense>
         </div>
       </div>

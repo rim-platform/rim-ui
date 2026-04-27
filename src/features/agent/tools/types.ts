@@ -1,3 +1,4 @@
+import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import type { AiToolDefinition } from "../providers/types";
 
 export interface AiToolResult {
@@ -15,4 +16,12 @@ export interface RegisteredTool {
   handler: AiToolHandler;
   sideEffect?: boolean;
   requiresConfirmation?: boolean;
+  sensitivity?: CommandSensitivity;
+  /**
+   * Raw backend `nl_description` retained alongside the tool. The tool's
+   * `definition.description` is the LLM-facing string (nlDescription plus
+   * sanitised intent_samples footer); the ConfirmCommandModal wants the
+   * plain nlDescription as its subtitle, so we keep both.
+   */
+  nlDescription?: string;
 }

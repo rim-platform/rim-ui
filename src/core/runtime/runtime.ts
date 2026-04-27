@@ -6,6 +6,7 @@ export type RuntimeCapabilities = {
   multiPaneShell: boolean;
   dockedThreadPane: boolean;
   pluginHost: boolean;
+  agent: boolean;
   deviceLocalKeybinds: boolean;
   globalShortcuts: boolean;
   localProcess: boolean;
@@ -34,6 +35,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       multiPaneShell: true,
       dockedThreadPane: true,
       pluginHost: true,
+      agent: true,
       deviceLocalKeybinds: true,
       globalShortcuts: true,
       localProcess: true,
@@ -48,6 +50,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       multiPaneShell: true,
       dockedThreadPane: true,
       pluginHost: false,
+      agent: false,
       deviceLocalKeybinds: true,
       globalShortcuts: false,
       localProcess: false,
@@ -61,6 +64,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
     multiPaneShell: false,
     dockedThreadPane: false,
     pluginHost: false,
+    agent: false,
     deviceLocalKeybinds: false,
     globalShortcuts: false,
     localProcess: false,

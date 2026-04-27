@@ -7,6 +7,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.multiPaneShell).toBe(true);
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(true);
+    expect(caps.agent).toBe(true);
     expect(caps.globalShortcuts).toBe(true);
     expect(caps.localProcess).toBe(true);
     expect(caps.filesystemAccess).toBe(true);
@@ -19,6 +20,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.multiPaneShell).toBe(true);
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(false);
+    expect(caps.agent).toBe(false);
     expect(caps.globalShortcuts).toBe(false);
     expect(caps.localProcess).toBe(false);
     expect(caps.filesystemAccess).toBe(false);
@@ -31,6 +33,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.multiPaneShell).toBe(false);
     expect(caps.dockedThreadPane).toBe(false);
     expect(caps.pluginHost).toBe(false);
+    expect(caps.agent).toBe(false);
     expect(caps.deviceLocalKeybinds).toBe(false);
     expect(caps.globalShortcuts).toBe(false);
     expect(caps.localProcess).toBe(false);

@@ -1,12 +1,56 @@
 export type TrustLevel = "official" | "verified" | "community" | "unverified";
 
+// Authoritative list sourced from src-tauri/src/plugin_host/capability.rs METHOD_CAPABILITY_MAP.
+// If Rust adds a new capability key, add it here and update capabilityLabels in PluginCapabilityPrompt.
 export type PluginCapability =
-  | "filesystem"
+  | "chat.read"
+  | "chat.write"
+  | "events.read"
+  | "local.process"
   | "network"
-  | "notifications"
-  | "clipboard"
-  | "shell"
-  | "system_info";
+  | "fs.read"
+  | "fs.write"
+  | "ui.notify"
+  | "ui.panel";
+
+/** Exhaustive tuple of all valid PluginCapability values — used for runtime validation. */
+export const PLUGIN_CAPABILITIES: readonly PluginCapability[] = [
+  "chat.read",
+  "chat.write",
+  "events.read",
+  "local.process",
+  "network",
+  "fs.read",
+  "fs.write",
+  "ui.notify",
+  "ui.panel",
+] as const;
+
+/** Type guard: returns true when `v` is a known PluginCapability string. */
+export function isPluginCapability(v: unknown): v is PluginCapability {
+  return PLUGIN_CAPABILITIES.includes(v as PluginCapability);
+}
+
+/**
+ * Defensively parses an unknown value into `PluginCapability[]`.
+ * Unknown strings are dropped and logged. In production console.warn is the
+ * only signal — TODO(P6-W3-followup): route through toast/audit when a shared
+ * drift-signal subsystem exists.
+ */
+export function parsePluginCapabilities(value: unknown): PluginCapability[] {
+  if (!Array.isArray(value)) {
+    console.warn("[PluginCapability] expected array, got:", typeof value);
+    return [];
+  }
+  return value.reduce<PluginCapability[]>((acc, v) => {
+    if (isPluginCapability(v)) {
+      acc.push(v);
+    } else {
+      console.warn("[PluginCapability] dropped unrecognised capability value:", v);
+    }
+    return acc;
+  }, []);
+}
 
 export type PluginContextType = "message" | "conversation";
 
@@ -42,11 +86,40 @@ export interface PluginManifest {
 
 export type PluginHealth = "running" | "stopped" | "crashed" | "timeout";
 
+/**
+ * Mirror of the Rust `PluginInfo` struct returned by `plugin_list`.
+ * All fields are flat — no nested manifest shape. Do NOT add polymorphic
+ * field-fishing against this type; read the fields Rust populates directly.
+ */
 export interface PluginInfo {
-  manifest: PluginManifest;
+  /** Runtime plugin ID (matches manifest plugin_id). */
+  plugin_id: string;
+  /** Mirror of the manifest plugin_id field, always identical to plugin_id. */
+  manifest_id: string;
+  display_name: string;
+  version: string;
+  description: string;
+  author?: string;
+  /** Derived server-side from status === Enabled. Do NOT recompute in TypeScript. */
   enabled: boolean;
-  approved_capabilities: PluginCapability[];
-  health: PluginHealth;
+  capabilities: string[];
+  approved_capabilities: string[];
+  approved_ai_commands: string[];
+  /** Command IDs from the manifest that are flagged ai_callable: true. */
+  ai_callable_commands: string[];
+  /** True when the manifest changed since last consent — UI must prompt re-approval. */
+  ai_consent_required: boolean;
+  context_actions?: PluginContextAction[];
+  /** Panel definitions from the manifest — used by the shell for slot layout. */
+  panels?: PluginPanelDef[];
+  health?: PluginHealth;
+}
+
+export interface PluginContextAction {
+  id: string;
+  title: string;
+  command_id: string;
+  context_types: string[];
 }
 
 export interface PluginCommandResult {

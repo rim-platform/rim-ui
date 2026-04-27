@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
+import { renderWithProviders as render } from "../../../test/utils";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
@@ -40,22 +41,20 @@ describe("MessageItem", () => {
   });
 
   it("renders formatted time", () => {
-    render(<MessageItem {...defaultProps} />);
-    // formatTime renders something for the sentAt date
-    const container = document.querySelector("[data-message-id='msg-1']");
-    expect(container).toBeInTheDocument();
+    const { container } = render(<MessageItem {...defaultProps} />);
+    // formatTime renders the sentAt on the message row element
+    expect(container.querySelector("[data-message-id='msg-1']")).toBeInTheDocument();
   });
 
   it("renders pin icon when message is pinned", () => {
-    render(
+    const { container } = render(
       <MessageItem
         {...defaultProps}
         message={{ ...defaultMessage, isPinned: true }}
       />,
     );
-    // Pin icon from lucide renders as SVG; we can check for the SVG
-    const container = document.querySelector("[data-message-id='msg-1']");
-    expect(container).toBeInTheDocument();
+    // Pin icon from lucide renders as SVG; shape check via the message row.
+    expect(container.querySelector("[data-message-id='msg-1']")).toBeInTheDocument();
   });
 
   it("renders deleted message text when isDeleted", () => {
@@ -119,21 +118,22 @@ describe("MessageItem", () => {
 
   it("calls onContextMenu on right-click for non-deleted messages", () => {
     const onContextMenu = vi.fn();
-    render(
+    const { container } = render(
       <MessageItem
         {...defaultProps}
         onContextMenu={onContextMenu}
       />,
     );
 
-    const container = document.querySelector("[data-message-id='msg-1']")!;
-    fireEvent.contextMenu(container);
+    const row = container.querySelector("[data-message-id='msg-1']");
+    expect(row).toBeInTheDocument();
+    fireEvent.contextMenu(row as Element);
     expect(onContextMenu).toHaveBeenCalled();
   });
 
   it("does not call onContextMenu on right-click for deleted messages", () => {
     const onContextMenu = vi.fn();
-    render(
+    const { container } = render(
       <MessageItem
         {...defaultProps}
         onContextMenu={onContextMenu}
@@ -141,8 +141,9 @@ describe("MessageItem", () => {
       />,
     );
 
-    const container = document.querySelector("[data-message-id='msg-1']")!;
-    fireEvent.contextMenu(container);
+    const row = container.querySelector("[data-message-id='msg-1']");
+    expect(row).toBeInTheDocument();
+    fireEvent.contextMenu(row as Element);
     expect(onContextMenu).not.toHaveBeenCalled();
   });
 

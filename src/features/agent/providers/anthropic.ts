@@ -1,3 +1,5 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
+
 import type {
   AiProvider,
   AiProviderConfig,
@@ -7,10 +9,8 @@ import type {
   AiMessage,
   AiContentBlock,
   AiToolDefinition,
+  ValidationOutcome,
 } from "./types";
-
-const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const API_VERSION = "2023-06-01";
 
 const config: AiProviderConfig = {
   id: "anthropic",
@@ -85,58 +85,91 @@ function toAnthropicTools(tools: AiToolDefinition[]) {
   }));
 }
 
-export function createAnthropicProvider(apiKey: string): AiProvider {
+/**
+ * Wire shape exposed by `agent_proxy::ChatStreamEvent` (snake_case, tag = "kind").
+ * `data` is the parsed JSON payload of the SSE `data:` line — we forward it
+ * straight to the existing event-type switch below, preserving the prior
+ * fetch+ReadableStream behaviour without rewriting any reassembly logic.
+ */
+type ChatStreamEvent =
+  | { kind: "sse_event"; event_type: string | null; data: Record<string, unknown> }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/**
+ * Construct an Anthropic provider that loads the API key on every `chat()`
+ * call via `loadKey` and drops the local reference once the IPC invoke
+ * settles. The loader thunk is the only long-lived key-adjacent object the
+ * registry holds — the key bytes themselves are never captured by this
+ * factory's closure. See `runtime/keyStore.ts` module header for the full
+ * invariant (Phase 4 #59 closure).
+ *
+ * `validateCredentials` and `fetchModels` retain their existing
+ * explicit-key parameter because they are invoked from the settings panel
+ * with the user's in-form value (not yet saved to Stronghold); those paths
+ * are already per-call and do not need loader indirection.
+ */
+export function createAnthropicProvider(
+  loadKey: () => Promise<string>,
+): AiProvider {
   return {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      const body: Record<string, unknown> = {
+      // Load per-request: the returned string lives only in the
+      // `proxyRequest` object passed to `invoke`. Once `invoke` serialises
+      // the arg across the Tauri bridge, we drop the reference by letting
+      // `proxyRequest` fall out of scope at function end.
+      const apiKey = await loadKey();
+      const proxyRequest = {
+        provider: "anthropic" as const,
         model: request.model,
         messages: toAnthropicMessages(request.messages),
+        ...(request.systemPrompt ? { system_prompt: request.systemPrompt } : {}),
+        ...(request.tools && request.tools.length > 0
+          ? { tools: toAnthropicTools(request.tools) }
+          : {}),
         max_tokens: request.maxTokens ?? 4096,
-        stream: true,
+        api_key: apiKey,
       };
 
-      if (request.systemPrompt) {
-        body.system = request.systemPrompt;
-      }
+      // Bounded queue of stream events drained by the async iterator below.
+      // The Tauri Channel callback fires synchronously off the IPC bridge;
+      // we cannot make it `await` the consumer, so we buffer here and let
+      // the iterator pull at its own pace.
+      const queue: ChatStreamEvent[] = [];
+      let waiter: ((ev: ChatStreamEvent) => void) | null = null;
 
-      if (request.tools && request.tools.length > 0) {
-        body.tools = toAnthropicTools(request.tools);
-      }
+      const onEvent = new Channel<ChatStreamEvent>();
+      onEvent.onmessage = (msg) => {
+        if (waiter) {
+          const w = waiter;
+          waiter = null;
+          w(msg);
+        } else {
+          queue.push(msg);
+        }
+      };
 
-      let response: Response;
-      try {
-        response = await fetch(ANTHROPIC_API, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": API_VERSION,
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
-      } catch (err) {
-        yield { kind: "error", message: err instanceof Error ? err.message : "Network error" };
-        return;
-      }
+      void invoke("agent_chat_completion", {
+        request: proxyRequest,
+        onEvent,
+      }).catch((err: unknown) => {
+        // The proxy emits ChatStreamEvent::Error on the channel before
+        // rejecting, so the queue path normally surfaces the message.
+        // We only land here if the channel never fired (e.g. IPC layer
+        // refused the call) — synthesize a terminal error so the iterator
+        // has something to drain on.
+        const message = typeof err === "string" ? err : err instanceof Error ? err.message : "agent_chat_completion failed";
+        if (waiter) {
+          const w = waiter;
+          waiter = null;
+          w({ kind: "error", message });
+        } else {
+          queue.push({ kind: "error", message });
+        }
+      });
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => "Unknown error");
-        yield { kind: "error", message: `Anthropic API error ${response.status}: ${text}` };
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { kind: "error", message: "No response body" };
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
       let inputTokens = 0;
       let outputTokens = 0;
 
@@ -145,108 +178,94 @@ export function createAnthropicProvider(apiKey: string): AiProvider {
       let currentToolName = "";
       let toolInputJson = "";
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+      while (true) {
+        const event = queue.shift() ?? (await new Promise<ChatStreamEvent>((resolve) => {
+          waiter = resolve;
+        }));
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+        if (event.kind === "error") {
+          yield { kind: "error", message: event.message };
+          return;
+        }
 
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") continue;
+        if (event.kind === "done") {
+          yield { kind: "done", usage: { inputTokens, outputTokens } };
+          return;
+        }
 
-            let event: Record<string, unknown>;
+        // event.kind === "sse_event" — the IPC proxy forwards the parsed
+        // JSON payload of the provider's `data:` line; the per-event type
+        // switch below is the same logic that used to run after JSON.parse
+        // on a manual TextDecoder buffer.
+        const payload = event.data;
+        const eventType = payload.type as string;
+
+        if (eventType === "content_block_start") {
+          const block = payload.content_block as Record<string, unknown>;
+          if (block?.type === "tool_use") {
+            currentToolId = block.id as string;
+            currentToolName = block.name as string;
+            toolInputJson = "";
+          }
+        } else if (eventType === "content_block_delta") {
+          const delta = payload.delta as Record<string, unknown>;
+          if (delta?.type === "text_delta") {
+            yield { kind: "text_delta", text: delta.text as string };
+          } else if (delta?.type === "input_json_delta") {
+            toolInputJson += delta.partial_json as string;
+          }
+        } else if (eventType === "content_block_stop") {
+          if (currentToolId) {
+            let input: Record<string, unknown> = {};
             try {
-              event = JSON.parse(data);
+              input = JSON.parse(toolInputJson || "{}");
             } catch {
-              continue;
+              // malformed tool input
             }
-
-            const eventType = event.type as string;
-
-            if (eventType === "content_block_start") {
-              const block = event.content_block as Record<string, unknown>;
-              if (block?.type === "tool_use") {
-                currentToolId = block.id as string;
-                currentToolName = block.name as string;
-                toolInputJson = "";
-              }
-            } else if (eventType === "content_block_delta") {
-              const delta = event.delta as Record<string, unknown>;
-              if (delta?.type === "text_delta") {
-                yield { kind: "text_delta", text: delta.text as string };
-              } else if (delta?.type === "input_json_delta") {
-                toolInputJson += delta.partial_json as string;
-              }
-            } else if (eventType === "content_block_stop") {
-              if (currentToolId) {
-                let input: Record<string, unknown> = {};
-                try {
-                  input = JSON.parse(toolInputJson || "{}");
-                } catch {
-                  // malformed tool input
-                }
-                yield { kind: "tool_use", id: currentToolId, name: currentToolName, input };
-                currentToolId = "";
-                currentToolName = "";
-                toolInputJson = "";
-              }
-            } else if (eventType === "message_start") {
-              const usage = (event.message as Record<string, unknown>)?.usage as Record<string, number> | undefined;
-              if (usage) {
-                inputTokens = usage.input_tokens ?? 0;
-              }
-            } else if (eventType === "message_delta") {
-              const usage = event.usage as Record<string, number> | undefined;
-              if (usage) {
-                outputTokens = usage.output_tokens ?? 0;
-              }
-            }
+            yield { kind: "tool_use", id: currentToolId, name: currentToolName, input };
+            currentToolId = "";
+            currentToolName = "";
+            toolInputJson = "";
+          }
+        } else if (eventType === "message_start") {
+          const usage = (payload.message as Record<string, unknown>)?.usage as Record<string, number> | undefined;
+          if (usage) {
+            inputTokens = usage.input_tokens ?? 0;
+          }
+        } else if (eventType === "message_delta") {
+          const usage = payload.usage as Record<string, number> | undefined;
+          if (usage) {
+            outputTokens = usage.output_tokens ?? 0;
           }
         }
-      } finally {
-        reader.releaseLock();
       }
-
-      yield { kind: "done", usage: { inputTokens, outputTokens } };
     },
 
-    async validateCredentials(key: string): Promise<boolean> {
+    async validateCredentials(key: string): Promise<ValidationOutcome> {
       try {
-        // Use models list endpoint for validation — cheaper than sending a message
-        const res = await fetch("https://api.anthropic.com/v1/models", {
-          headers: {
-            "x-api-key": key,
-            "anthropic-version": API_VERSION,
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
+        // The Rust proxy returns a tagged `ValidationOutcome` (see
+        // `agent_proxy::ValidationOutcome`). An invoke-level reject here
+        // means the IPC boundary itself failed (command not registered,
+        // deserialization mismatch) — surface that as a network_error so
+        // the UI doesn't flash "Invalid API key" for what's really an
+        // internal plumbing issue.
+        return await invoke<ValidationOutcome>("agent_validate_credentials", {
+          provider: "anthropic",
+          apiKey: key,
         });
-        return res.ok;
-      } catch {
-        return false;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { kind: "network_error", message };
       }
     },
 
     async fetchModels(key: string): Promise<AiModelDef[]> {
-      const res = await fetch("https://api.anthropic.com/v1/models?limit=100", {
-        headers: {
-          "x-api-key": key,
-          "anthropic-version": API_VERSION,
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`Anthropic API error ${res.status}`);
-      }
-
-      const data = await res.json() as {
+      const data = await invoke<{
         data: { id: string; display_name: string; type: string }[];
-      };
+      }>("agent_list_models", {
+        provider: "anthropic",
+        apiKey: key,
+      });
 
       const models: AiModelDef[] = data.data
         .filter((m) => m.type === "model")
@@ -271,3 +290,4 @@ export function createAnthropicProvider(apiKey: string): AiProvider {
     },
   };
 }
+

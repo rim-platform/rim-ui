@@ -29,6 +29,17 @@ export const queryKeys = {
     ["activeIncident", serverId, conversationId] as const,
   incidentTimeline: (incidentId?: string) =>
     ["incidentTimeline", incidentId] as const,
+  listIncidents: (
+    serverId?: string,
+    statusFilter?: readonly string[] | null,
+    severityFilter?: readonly string[] | null,
+  ) =>
+    [
+      "listIncidents",
+      serverId,
+      statusFilter ? [...statusFilter].sort().join(",") : null,
+      severityFilter ? [...severityFilter].sort().join(",") : null,
+    ] as const,
   keybinds: (scope?: string, workspaceId?: string) =>
     ["keybinds", scope, workspaceId] as const,
   unreadCounts: (workspaceId?: string) =>
@@ -40,4 +51,6 @@ export const queryKeys = {
   workspaceStateList: (serverId?: string, scope?: string, prefix?: string) =>
     ["workspaceStateList", serverId, scope ?? "SERVER", prefix] as const,
   pipelines: (serverId?: string) => ["pipelines", serverId] as const,
+  listAuditLog: (typedVerb?: string, after?: string) =>
+    ["listAuditLog", typedVerb ?? null, after ?? null] as const,
 };

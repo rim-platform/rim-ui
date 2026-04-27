@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+  isTauri: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock("../../../core/logger", () => ({
@@ -124,7 +125,7 @@ describe("createPluginBridge", () => {
   });
 
   it("allows messages when required capability is approved", () => {
-    const caps: PluginCapability[] = ["notifications"];
+    const caps: PluginCapability[] = ["ui.notify"];
     const bridge = createPluginBridge({
       pluginId: "test-plugin",
       approvedCapabilities: caps,

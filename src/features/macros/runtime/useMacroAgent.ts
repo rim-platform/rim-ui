@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 
-import { getProvider } from "../../agent/providers/registry";
-import { loadApiKey } from "../../agent/runtime/keyStore";
+import { registerProvider, getProvider } from "../../agent/providers/registry";
+import { loadApiKey, ProviderKeyMissingError } from "../../agent/runtime/keyStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import type { AiMessage } from "../../agent/providers/types";
 import type { CommandDefinition } from "../../commands/types";
@@ -120,14 +120,43 @@ export function useMacroAgent(): UseMacroAgentResult {
         const settings = useAgentStore.getState().settings;
         const { providerId, modelId } = settings;
 
-        const apiKey = await loadApiKey(providerId);
-        if (!apiKey) {
+        // Presence-check Stronghold without holding the returned key in scope.
+        // Post-#59 the provider's own loader thunk reads Stronghold
+        // per-request; the key is NOT captured by any closure in this file.
+        const hasKey = !!(await loadApiKey(providerId));
+        if (!hasKey) {
           throw new Error("no-api-key");
         }
 
-        const provider = getProvider(providerId);
+        // Lazy-register: if the macro builder is invoked before AgentOverlay
+        // has ever opened, there is no registered provider yet. Register one
+        // here using the same Stronghold-reading loader pattern as
+        // AgentOverlay. If a provider is already registered, we reuse it —
+        // but first-open from the macro surface must still work.
+        let provider = getProvider(providerId);
         if (!provider) {
-          throw new Error(`Provider "${providerId}" is not registered. Configure the AI agent in Settings.`);
+          const loader = async () => {
+            const key = await loadApiKey(providerId);
+            if (!key) throw new ProviderKeyMissingError(providerId);
+            return key;
+          };
+          if (providerId === "anthropic") {
+            const { createAnthropicProvider } = await import(
+              "../../agent/providers/anthropic"
+            );
+            provider = createAnthropicProvider(loader);
+            registerProvider(provider);
+          } else if (providerId === "openai") {
+            const { createOpenAiProvider } = await import(
+              "../../agent/providers/openai"
+            );
+            provider = createOpenAiProvider(loader);
+            registerProvider(provider);
+          } else {
+            throw new Error(
+              `Provider "${providerId}" is not supported. Configure the AI agent in Settings.`,
+            );
+          }
         }
 
         const systemPrompt = buildSystemPrompt(commands);

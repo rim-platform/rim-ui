@@ -214,7 +214,7 @@ impl BackendClient {
             "serverId": server_id,
             "conversationId": conversation_id,
             "dir": "BACKWARD",
-            "limit": limit.min(100).max(1),
+            "limit": limit.clamp(1, 100),
             "includeDeleted": false,
         });
 
@@ -248,7 +248,7 @@ impl BackendClient {
             "serverId": server_id,
             "conversationId": conversation_id,
             "query": search_query,
-            "limit": limit.min(100).max(1),
+            "limit": limit.clamp(1, 100),
             "includeDeleted": false,
         });
 
@@ -287,9 +287,7 @@ mod tests {
         let holder = SessionHolder::new();
         assert!(holder.get_session().await.is_none());
 
-        holder
-            .set_session("abc123".into(), "csrf456".into())
-            .await;
+        holder.set_session("abc123".into(), "csrf456".into()).await;
         let (cookie, csrf) = holder.get_session().await.unwrap();
         assert_eq!(cookie, "abc123");
         assert_eq!(csrf, "csrf456");

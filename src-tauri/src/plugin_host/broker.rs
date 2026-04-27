@@ -5,8 +5,8 @@ use crate::plugin_host::capability::{self, CapabilityGate};
 use crate::plugin_host::event_forwarder::EventForwarder;
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::wire::{
-    self, JsonRpcRequest, JsonRpcResponse, WireError, CAPABILITY_DENIED,
-    INTERNAL_ERROR, METHOD_NOT_FOUND, RATE_LIMITED,
+    self, JsonRpcRequest, JsonRpcResponse, WireError, CAPABILITY_DENIED, INTERNAL_ERROR,
+    METHOD_NOT_FOUND, RATE_LIMITED,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -176,11 +176,11 @@ impl PluginBroker {
 
     fn handle_log(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
         if let Some(params) = &request.params {
-            let level = params.get("level").and_then(|v| v.as_str()).unwrap_or("info");
-            let message = params
-                .get("message")
+            let level = params
+                .get("level")
                 .and_then(|v| v.as_str())
-                .unwrap_or("");
+                .unwrap_or("info");
+            let message = params.get("message").and_then(|v| v.as_str()).unwrap_or("");
             log::info!("[plugin:{}] [{}] {}", self.plugin_id, level, message);
         }
         JsonRpcResponse::success(request.id.clone(), serde_json::json!({"ok": true}))
@@ -198,15 +198,25 @@ impl PluginBroker {
             }
         };
 
-        let params = request.params.as_ref().cloned().unwrap_or(serde_json::json!({}));
+        let params = request
+            .params
+            .as_ref()
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
         let capability = capability::capability_for_method(method)
             .unwrap_or("unknown")
             .to_string();
 
         let result = match method {
             "rim.chat.send_message" => {
-                let server_id = params.get("server_id").and_then(|v| v.as_str()).unwrap_or("");
-                let conversation_id = params.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+                let server_id = params
+                    .get("server_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let conversation_id = params
+                    .get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 let parent_message_id = params.get("parent_message_id").and_then(|v| v.as_str());
 
@@ -218,11 +228,19 @@ impl PluginBroker {
                     );
                 }
 
-                client.send_message(server_id, conversation_id, text, parent_message_id).await
+                client
+                    .send_message(server_id, conversation_id, text, parent_message_id)
+                    .await
             }
             "rim.chat.get_messages" => {
-                let server_id = params.get("server_id").and_then(|v| v.as_str()).unwrap_or("");
-                let conversation_id = params.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+                let server_id = params
+                    .get("server_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let conversation_id = params
+                    .get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(50) as i32;
                 let cursor = params.get("cursor").and_then(|v| v.as_str());
 
@@ -234,11 +252,19 @@ impl PluginBroker {
                     );
                 }
 
-                client.get_messages(server_id, conversation_id, limit, cursor).await
+                client
+                    .get_messages(server_id, conversation_id, limit, cursor)
+                    .await
             }
             "rim.chat.search_messages" => {
-                let server_id = params.get("server_id").and_then(|v| v.as_str()).unwrap_or("");
-                let conversation_id = params.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+                let server_id = params
+                    .get("server_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let conversation_id = params
+                    .get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
                 let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(20) as i32;
 
@@ -250,7 +276,9 @@ impl PluginBroker {
                     );
                 }
 
-                client.search_messages(server_id, conversation_id, query, limit).await
+                client
+                    .search_messages(server_id, conversation_id, query, limit)
+                    .await
             }
             _ => unreachable!(),
         };
@@ -271,11 +299,7 @@ impl PluginBroker {
 
         match result {
             Ok(data) => JsonRpcResponse::success(request.id.clone(), data),
-            Err(e) => JsonRpcResponse::error(
-                request.id.clone(),
-                INTERNAL_ERROR,
-                e.to_string(),
-            ),
+            Err(e) => JsonRpcResponse::error(request.id.clone(), INTERNAL_ERROR, e.to_string()),
         }
     }
 
@@ -291,7 +315,11 @@ impl PluginBroker {
             }
         };
 
-        let params = request.params.as_ref().cloned().unwrap_or(serde_json::json!({}));
+        let params = request
+            .params
+            .as_ref()
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
         let event_types: Vec<String> = params
             .get("event_types")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -305,12 +333,11 @@ impl PluginBroker {
             );
         }
 
-        if let Err(e) = forwarder.subscribe(&self.plugin_id, event_types.clone()).await {
-            return JsonRpcResponse::error(
-                request.id.clone(),
-                wire::INVALID_PARAMS,
-                e.to_string(),
-            );
+        if let Err(e) = forwarder
+            .subscribe(&self.plugin_id, event_types.clone())
+            .await
+        {
+            return JsonRpcResponse::error(request.id.clone(), wire::INVALID_PARAMS, e.to_string());
         }
 
         backend_client::log_audit(&AuditEntry {
@@ -340,7 +367,11 @@ impl PluginBroker {
             }
         };
 
-        let params = request.params.as_ref().cloned().unwrap_or(serde_json::json!({}));
+        let params = request
+            .params
+            .as_ref()
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
         let panel_id = match params.get("panel_id").and_then(|v| v.as_str()) {
             Some(id) => id.to_string(),
             None => {
@@ -381,20 +412,18 @@ impl PluginBroker {
             .unwrap_or(false);
 
         let result = if patch {
-            relay.patch_state(&self.plugin_id, &panel_id, state)
+            relay
+                .patch_state(&self.plugin_id, &panel_id, state)
                 .map(|merged| serde_json::json!({"panel_id": panel_id, "state": merged}))
         } else {
-            relay.set_state(&self.plugin_id, &panel_id, state.clone())
+            relay
+                .set_state(&self.plugin_id, &panel_id, state.clone())
                 .map(|_| serde_json::json!({"panel_id": panel_id, "state": state}))
         };
 
         match result {
             Ok(data) => JsonRpcResponse::success(request.id.clone(), data),
-            Err(e) => JsonRpcResponse::error(
-                request.id.clone(),
-                INTERNAL_ERROR,
-                e.to_string(),
-            ),
+            Err(e) => JsonRpcResponse::error(request.id.clone(), INTERNAL_ERROR, e.to_string()),
         }
     }
 
@@ -603,7 +632,9 @@ mod tests {
         assert!(resp.error.is_none());
 
         // Verify the subscription was registered (public channel events)
-        let subs = forwarder.subscribers_for("message.created", None, true).await;
+        let subs = forwarder
+            .subscribers_for("message.created", None, true)
+            .await;
         assert_eq!(subs, vec!["dev.example.test"]);
     }
 

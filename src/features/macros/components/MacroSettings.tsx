@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Play, ChevronUp, ChevronDown, X, Wand2, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Play, ChevronUp, ChevronDown, X, Wand2, Loader2, AlertTriangle } from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
@@ -233,6 +233,7 @@ interface PendingAiMacro {
 export function MacroSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: macros, isLoading } = useMyMacros(workspaceId ?? undefined);
+  const { data: commands } = useCommands("PALETTE");
   const deleteMacro = useDeleteMacroMutation();
   const executeMacro = useExecuteMacroMutation();
 
@@ -241,6 +242,7 @@ export function MacroSettings() {
   const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
+  const [dangerousConfirm, setDangerousConfirm] = useState<Macro | null>(null);
 
   const handleAiStepsGenerated = useCallback((macro: GeneratedMacro) => {
     setPendingAiMacro({
@@ -265,12 +267,14 @@ export function MacroSettings() {
   );
 
   const handleExecute = useCallback(
-    async (macroId: string) => {
+    async (macroId: string, confirmedDangerous: boolean) => {
       setExecutingId(macroId);
+      setDangerousConfirm(null);
       try {
         const result = await executeMacro.mutateAsync({
           macroId,
           commandContext: { workspaceId: workspaceId ?? undefined },
+          confirmedDangerous: confirmedDangerous || undefined,
         });
         if (result.executeMacro.status === "SUCCESS") {
           toast.success(result.executeMacro.message || "Macro executed successfully");
@@ -284,6 +288,25 @@ export function MacroSettings() {
       }
     },
     [executeMacro, workspaceId],
+  );
+
+  /** Check if a macro contains dangerous commands and prompt confirmation if so. */
+  const handleRunMacro = useCallback(
+    (macro: Macro) => {
+      if (!commands) {
+        // Commands not loaded yet — run without check
+        void handleExecute(macro.id, false);
+        return;
+      }
+      const dangerousIds = new Set(commands.filter((c) => c.dangerous).map((c) => c.id));
+      const hasDangerous = macro.steps.some((s) => dangerousIds.has(s.commandId));
+      if (hasDangerous) {
+        setDangerousConfirm(macro);
+      } else {
+        void handleExecute(macro.id, false);
+      }
+    },
+    [commands, handleExecute],
   );
 
   if (editing !== null) {
@@ -371,7 +394,7 @@ export function MacroSettings() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => handleExecute(macro.id)}
+                  onClick={() => handleRunMacro(macro)}
                   disabled={executingId === macro.id}
                   title="Run macro"
                   className={cn(
@@ -423,6 +446,54 @@ export function MacroSettings() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Dangerous command confirmation dialog */}
+      {dangerousConfirm && (
+        <div className="mt-4 rounded-lg border border-rim-danger/30 bg-rim-danger/5 p-4 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-danger" />
+            <div>
+              <p className="text-sm font-medium text-rim-danger">
+                Macro contains dangerous commands
+              </p>
+              <p className="mt-1 text-xs text-rim-text-muted">
+                &ldquo;{dangerousConfirm.name}&rdquo; includes commands marked as dangerous.
+                These may delete data or make irreversible changes. Are you sure you want to run it?
+              </p>
+              {commands && (
+                <div className="mt-2 space-y-1">
+                  {[...new Set(
+                    dangerousConfirm.steps
+                      .filter((s) => commands.some((c) => c.id === s.commandId && c.dangerous))
+                      .map((s) => s.commandId),
+                  )].map((cmdId) => (
+                    <div key={cmdId} className="flex items-center gap-1.5 text-xs">
+                      <span className="h-1 w-1 rounded-full bg-rim-danger" />
+                      <span className="font-mono text-rim-text-faint">{cmdId}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExecute(dangerousConfirm.id, true)}
+              className="rounded-lg bg-rim-danger/20 px-3 py-1.5 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/30"
+            >
+              Run anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setDangerousConfirm(null)}
+              className="rounded-lg border border-rim-line px-3 py-1.5 text-xs text-rim-text-muted transition hover:bg-rim-void/50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

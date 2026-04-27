@@ -61,6 +61,65 @@ export enum AttachmentStatusEnum {
   UPLOADED = 'UPLOADED'
 }
 
+export type AuditLogEntry = {
+  actorUserId: Scalars['ID']['output'];
+  argsRedacted: Scalars['JSON']['output'];
+  capabilityCheckOutcome?: Maybe<Scalars['String']['output']>;
+  commandId: Scalars['String']['output'];
+  confirmationKind: Scalars['String']['output'];
+  confirmationOutcome?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  dangerous: Scalars['Boolean']['output'];
+  errorKind?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  initiator: Scalars['String']['output'];
+  outcome: AuditOutcomeGql;
+  sensitivity: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+  typedVerb?: Maybe<TypedVerbGql>;
+};
+
+export type AuditLogFilterInput = {
+  actorUserId?: InputMaybe<Scalars['ID']['input']>;
+  commandId?: InputMaybe<Scalars['String']['input']>;
+  serverId?: InputMaybe<Scalars['ID']['input']>;
+  since?: InputMaybe<Scalars['String']['input']>;
+  typedVerb?: InputMaybe<TypedVerbGql>;
+  until?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type AuditLogPage = {
+  items: Array<AuditLogEntry>;
+  /** Opaque cursor pointing after the last item; pass to `after` on next query. */
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  pageInfo: AuditLogPageInfo;
+};
+
+export type AuditLogPageInfo = {
+  hasNextPage: Scalars['Boolean']['output'];
+  hasPrevPage: Scalars['Boolean']['output'];
+};
+
+export type AuditLogPaginationInput = {
+  /** Opaque cursor from the previous page's `nextCursor`. */
+  after?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * GraphQL enum for audit log outcome — mirrors [`rim_services::audit::dto::AuditOutcome`].
+ * Rust variants → SCREAMING_SNAKE in GraphQL (e.g. `MacroPartialFailure` → `MACRO_PARTIAL_FAILURE`).
+ */
+export enum AuditOutcomeGql {
+  CONFIRMATION_REQUIRED = 'CONFIRMATION_REQUIRED',
+  ERROR = 'ERROR',
+  MACRO_PARTIAL_FAILURE = 'MACRO_PARTIAL_FAILURE',
+  PERMISSION_DENIED = 'PERMISSION_DENIED',
+  RATE_LIMITED = 'RATE_LIMITED',
+  STEP_ERROR = 'STEP_ERROR',
+  SUCCESS = 'SUCCESS'
+}
+
 export type BootstrapInput = {
   password: Scalars['String']['input'];
   secret: Scalars['String']['input'];
@@ -109,19 +168,92 @@ export type ChannelPage = {
 };
 
 export type Command = {
+  /**
+   * `true` iff the command is exposed to the AI Agent. Phase 1: always
+   * `false` (no built-in opts in yet). Phase 4 starts flipping specific
+   * commands on.
+   */
+  aiCallable: Scalars['Boolean']['output'];
+  /**
+   * Typed argument schema driving palette form rendering AND the AI
+   * tool-schema generator's `input_schema`. Populated from the backend
+   * `CommandDefinitionDto.arguments` field at resolve time — frontend
+   * hardcoded schemas are removed in Phase 3 §4.B.
+   */
+  arguments: Array<CommandArgument>;
   category: Scalars['String']['output'];
   dangerous: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
   executionTarget: CommandExecutionTarget;
   id: Scalars['String']['output'];
+  /**
+   * Example phrases a user might speak/type to invoke this command.
+   * Individually sanitized at registration; bounded in count and length.
+   */
+  intentSamples: Array<Scalars['String']['output']>;
   keybindCapable: Scalars['Boolean']['output'];
+  /**
+   * AI-optimised natural-language description; falls back to `description`
+   * when absent. Sanitized at registration time, so the frontend can trust
+   * this field even when rendering inside a prompt template.
+   */
+  nlDescription?: Maybe<Scalars['String']['output']>;
   requiredCapabilities: Array<Scalars['String']['output']>;
   requiredContext: Array<Scalars['String']['output']>;
+  /**
+   * Classification tier driving audit verbosity, mutating-call caps, and
+   * the UX confirm-modal placement.
+   */
+  sensitivity: CommandSensitivity;
   sourceKind: CommandSourceKind;
   title: Scalars['String']['output'];
   visibleInContextMenus: Scalars['Boolean']['output'];
   visibleInPalette: Scalars['Boolean']['output'];
 };
+
+/**
+ * GraphQL projection of [`rim_services::command::dto::CommandArgumentDto`].
+ *
+ * `default_value` and `allowed_values` carry the per-argument constraints
+ * the AI tool-schema generator needs to emit a usable `input_schema` (Phase
+ * 3 §4.B). `default_value` is wrapped in async-graphql's `Json` scalar
+ * because typed args span string/int/float/bool/JSON-object — a single
+ * scalar surface keeps the GraphQL schema flat.
+ */
+export type CommandArgument = {
+  allowedValues?: Maybe<Array<Scalars['String']['output']>>;
+  argumentType: CommandArgumentType;
+  defaultValue?: Maybe<Scalars['JSON']['output']>;
+  description: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  required: Scalars['Boolean']['output'];
+  title: Scalars['String']['output'];
+};
+
+/**
+ * GraphQL enum mirroring [`rim_services::command::dto::CommandArgumentTypeDto`].
+ *
+ * Drives the frontend AI tool-schema generator (Phase 3 §4.B) — each variant
+ * maps to a JSON-schema fragment for the `input_schema` field of an
+ * `AiToolDefinition`. Wire contract: SCREAMING_SNAKE (`STRING`, `WORKSPACE_ID`,
+ * `SELECTION_TEXT`, …) auto-generated by async-graphql's `Enum` derive.
+ *
+ * Adding a variant on the DTO without extending this enum + the `From`
+ * match below is a compile error — that's the drift-prevention point.
+ */
+export enum CommandArgumentType {
+  BOOLEAN = 'BOOLEAN',
+  CONVERSATION_ID = 'CONVERSATION_ID',
+  ENUM = 'ENUM',
+  FLOAT = 'FLOAT',
+  INTEGER = 'INTEGER',
+  MESSAGE_ID = 'MESSAGE_ID',
+  SELECTION_TEXT = 'SELECTION_TEXT',
+  STRING = 'STRING',
+  THREAD_ID = 'THREAD_ID',
+  USER_ID = 'USER_ID',
+  WORKSPACE_ID = 'WORKSPACE_ID'
+}
 
 export type CommandContextInput = {
   activePanel?: InputMaybe<Scalars['String']['input']>;
@@ -139,7 +271,49 @@ export enum CommandExecutionTarget {
   DESKTOP_LOCAL = 'DESKTOP_LOCAL'
 }
 
+/**
+ * GraphQL enum mirroring [`rim_services::command::initiator::CommandInitiator`].
+ *
+ * Must stay in sync with the DTO variants — the `From` impl below is the
+ * enforcement point. Adding a variant on the DTO without extending this
+ * enum + the match below is a compile error.
+ *
+ * Wire contract: SCREAMING_SNAKE variants (`PALETTE`, `AGENT`, `MACRO`,
+ * `KEYBIND`, `CONTEXT_MENU`, `PLUGIN`, `CLI`, `MCP`) — async-graphql's
+ * `Enum` derive handles the conversion. Auto-discovered by the schema
+ * because it's referenced from `ExecuteCommandInput.initiator` and
+ * `ExecuteMacroInput.initiator` — no explicit registration in `lib.rs`
+ * is required.
+ *
+ * Per Fury v2 §3.11 (H4 part 1).
+ */
+export enum CommandInitiator {
+  /** AI agent issued the command via the dispatcher. */
+  AGENT = 'AGENT',
+  /** Out-of-process CLI client (rim-cli). */
+  CLI = 'CLI',
+  /** Context menu (right-click) on a chat element. */
+  CONTEXT_MENU = 'CONTEXT_MENU',
+  /** Keyboard shortcut bound to a command. */
+  KEYBIND = 'KEYBIND',
+  /** Inside a macro / user command expansion. */
+  MACRO = 'MACRO',
+  /** MCP (Model Context Protocol) server. */
+  MCP = 'MCP',
+  /** User typed/clicked in the command palette. */
+  PALETTE = 'PALETTE',
+  /** Plugin's own runtime invoked the command. */
+  PLUGIN = 'PLUGIN'
+}
+
 export type CommandResult = {
+  /**
+   * Populated **iff** `status == CONFIRMATION_REQUIRED`. Carries the
+   * server-issued challenge (token + argsHash + expiresAt). The
+   * frontend presents the modal, then re-issues the original
+   * `executeCommand` mutation with `confirmation: { inBandToken: { ... } }`.
+   */
+  confirmationRequired?: Maybe<ConfirmationChallenge>;
   followUpCommands: Array<Scalars['String']['output']>;
   message: Scalars['String']['output'];
   payload?: Maybe<Scalars['JSON']['output']>;
@@ -148,8 +322,39 @@ export type CommandResult = {
 };
 
 export enum CommandResultStatus {
+  /**
+   * Command is `dangerous: true` and the caller did not submit a
+   * matching [`ConfirmationProofInput`]. The accompanying
+   * `confirmationRequired` field on the result carries the
+   * server-issued challenge — present the modal, then re-submit with
+   * `confirmation: { inBandToken: { token, argsHash } }`.
+   */
+  CONFIRMATION_REQUIRED = 'CONFIRMATION_REQUIRED',
   ERROR = 'ERROR',
   SUCCESS = 'SUCCESS'
+}
+
+/**
+ * GraphQL enum mirroring [`rim_services::command::sensitivity::CommandSensitivityDto`].
+ *
+ * Must stay in sync with `CommandSensitivityDto` variants — the `From` impl
+ * below is the enforcement point. Adding a variant on the DTO without
+ * extending this enum + the match below is a compile error.
+ *
+ * Wire contract: SCREAMING_SNAKE variants (`SAFE`, `SENSITIVE`, `MUTATING`,
+ * `RESTRICTED`) — async-graphql's `Enum` derive handles the conversion.
+ * The frontend codegen picks this up via `/api/sdl` and mirrors it as a
+ * TypeScript union.
+ */
+export enum CommandSensitivity {
+  /** Mutates durable state; counts against agent mutating-call cap. */
+  MUTATING = 'MUTATING',
+  /** High-blast-radius admin/destructive; always requires confirmation. */
+  RESTRICTED = 'RESTRICTED',
+  /** Read-only, no user-visible side effects. */
+  SAFE = 'SAFE',
+  /** Tracked in audit but low blast radius. */
+  SENSITIVE = 'SENSITIVE'
 }
 
 export enum CommandSourceKind {
@@ -160,10 +365,37 @@ export enum CommandSourceKind {
 }
 
 export enum CommandSurface {
+  AI = 'AI',
   CONTEXT_MENU = 'CONTEXT_MENU',
   KEYBIND_PICKER = 'KEYBIND_PICKER',
   PALETTE = 'PALETTE'
 }
+
+/**
+ * GraphQL projection of a server-issued
+ * [`rim_services::command::confirmation::ConfirmationChallengeDto`]. The
+ * frontend opens its confirm-modal with these fields, then submits a
+ * matching [`ConfirmationProofInput`].
+ */
+export type ConfirmationChallenge = {
+  argsHash: Scalars['String']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  token: Scalars['String']['output'];
+};
+
+/**
+ * GraphQL input for submitting a confirmation proof. Exactly one of
+ * `inBandToken` or `outOfBand` MUST be populated; submitting both or
+ * neither results in a `VALIDATION` error.
+ *
+ * `outOfBand` is a Phase-1 placeholder for MCP-style consent flows
+ * (M5 / Phase 6); the server currently rejects it with
+ * `CONFIRMATION_FAILED { code: UNSUPPORTED }`.
+ */
+export type ConfirmationProofInput = {
+  inBandToken?: InputMaybe<InBandTokenInput>;
+  outOfBand?: InputMaybe<OutOfBandProofInput>;
+};
 
 export type Conversation = {
   conversationType: ConversationTypeEnum;
@@ -243,8 +475,12 @@ export type CreateKeybindInput = {
 };
 
 export type CreateMacroInput = {
+  aiCallable?: Scalars['Boolean']['input'];
   description?: InputMaybe<Scalars['String']['input']>;
+  intentSamples?: Array<Scalars['String']['input']>;
   name: Scalars['String']['input'];
+  nlDescription?: Scalars['String']['input'];
+  sensitivity?: CommandSensitivity;
   serverId: Scalars['ID']['input'];
   steps: Array<MacroStepInput>;
 };
@@ -329,13 +565,57 @@ export type ExecuteCommandInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   commandContext?: InputMaybe<CommandContextInput>;
   commandId: Scalars['String']['input'];
+  /**
+   * Server-issued, server-verified confirmation proof. Required when
+   * re-submitting after a previous `executeCommand` returned
+   * `status: CONFIRMATION_REQUIRED`. Closes H1 (TOCTOU) by binding the
+   * proof to `(actor, commandId, args, context)` server-side.
+   */
+  confirmation?: InputMaybe<ConfirmationProofInput>;
+  /**
+   * **Deprecated** — use `confirmation` instead. Pre-Phase-1 callers
+   * (the unmigrated frontend) set this to `true` after `window.confirm()`.
+   * When `confirmation` is absent and this is `Some(true)`, the server
+   * synthesizes a self-issued in-band proof so the H1 gate has a single
+   * authoritative path. Removed in Phase 4 once the frontend modal lands.
+   */
   confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * Who issued this command. Optional for back-compat — when omitted, the
+   * backend defaults to `PALETTE` (the conservative human default). Phase
+   * 4 frontend dispatcher will start sending the explicit value from every
+   * call site (palette / agent / keybind / context-menu / macro). Until
+   * then this field is opt-in.
+   *
+   * Per Fury v2 §3.11. The default is enforced server-side
+   * (`CommandInitiator::default() == Palette`) so a client that submits
+   * `null` is treated as a human action — never as agent action.
+   */
+  initiator?: InputMaybe<CommandInitiator>;
   isPipe?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type ExecuteMacroInput = {
   commandContext?: InputMaybe<CommandContextInput>;
+  /**
+   * Server-issued confirmation proof. Same shape and semantics as
+   * `ExecuteCommandInput.confirmation`. Phase 1 note: macros are an
+   * "all-or-nothing" confirmation surface — a single proof issued
+   * at macro-execute time covers the whole expansion. Phase 4 may
+   * add per-step proofs once the modal can render a step list.
+   */
+  confirmation?: InputMaybe<ConfirmationProofInput>;
+  /**
+   * **Deprecated** — see `ExecuteCommandInput.confirmed_dangerous`.
+   * Removed in Phase 4.
+   */
   confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * Who triggered this macro. Same back-compat semantics as
+   * `ExecuteCommandInput.initiator`: optional, server-defaults to
+   * `PALETTE`.
+   */
+  initiator?: InputMaybe<CommandInitiator>;
   macroId: Scalars['ID']['input'];
 };
 
@@ -402,6 +682,11 @@ export type HeartbeatInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+export type InBandTokenInput = {
+  argsHash: Scalars['String']['input'];
+  token: Scalars['String']['input'];
+};
+
 export type InboxCursorInput = {
   conversationId: Scalars['ID']['input'];
   lastActivityAt: Scalars['DateTime']['input'];
@@ -429,11 +714,28 @@ export type IncidentGql = {
   updatedAt: Scalars['DateTime']['output'];
 };
 
+export type IncidentListCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  incidentId: Scalars['ID']['input'];
+};
+
+export type IncidentListCursorOutput = {
+  createdAt: Scalars['DateTime']['output'];
+  incidentId: Scalars['ID']['output'];
+};
+
 export type IncidentMessageTagGql = {
   incidentId: Scalars['ID']['output'];
   messageId: Scalars['ID']['output'];
   phase: IncidentPhaseNameGql;
   tagType?: Maybe<MessageTagTypeGql>;
+};
+
+export type IncidentPage = {
+  items: Array<IncidentGql>;
+  next?: Maybe<IncidentListCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<IncidentListCursorOutput>;
 };
 
 export type IncidentPhaseGql = {
@@ -573,10 +875,14 @@ export type LoginPayload = {
 };
 
 export type MacroDef = {
+  aiCallable: Scalars['Boolean']['output'];
   createdAt: Scalars['DateTime']['output'];
   description?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  intentSamples: Array<Scalars['String']['output']>;
   name: Scalars['String']['output'];
+  nlDescription: Scalars['String']['output'];
+  sensitivity: CommandSensitivity;
   serverId: Scalars['ID']['output'];
   steps: Array<MacroStep>;
   userId: Scalars['ID']['output'];
@@ -1031,6 +1337,10 @@ export type MutedConversation = {
   mutedUntil?: Maybe<Scalars['DateTime']['output']>;
 };
 
+export type OutOfBandProofInput = {
+  requestId: Scalars['String']['input'];
+};
+
 export enum PageDir {
   AFTER = 'AFTER',
   BEFORE = 'BEFORE'
@@ -1139,6 +1449,19 @@ export type Query = {
   channelLenses: Array<ChannelLens>;
   channels: ChannelPage;
   command?: Maybe<Command>;
+  /**
+   * P5-A7 — AI Agent command-discovery meta-tool (v2 §5 R1 #3, M6).
+   *
+   * Returns the actor's accessible AI-callable command surface, optionally
+   * ranked by `intent_phrase` relevance (literal substring + token-overlap
+   * against `intent_samples`, `title`, `nl_description`), truncated to
+   * `limit` (default 50, hard-capped at 100), and scoped to a workspace for
+   * macro synthesis.
+   *
+   * Rate-limited: 5 calls / 60-second sliding window per actor (M6).
+   * Returns `RATE_LIMITED` on overage.
+   */
+  commandDiscover: Array<Command>;
   commands: Array<Command>;
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
@@ -1149,6 +1472,9 @@ export type Query = {
   integrations: Array<Integration>;
   keybindLayers: KeybindLayers;
   keybinds: Array<Keybind>;
+  /** Query the command audit log. Requires `audit.read` capability. */
+  listAuditLog: AuditLogPage;
+  listIncidents: IncidentPage;
   macroByName?: Maybe<MacroDef>;
   me: User;
   message: Message;
@@ -1161,6 +1487,7 @@ export type Query = {
   myServers: Array<Server>;
   mySkillProfile: SkillProfileGql;
   pinnedMessages: Array<Message>;
+  pipeline: PipelineGql;
   pipelines: Array<PipelineGql>;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
@@ -1219,6 +1546,13 @@ export type QueryCommandArgs = {
 };
 
 
+export type QueryCommandDiscoverArgs = {
+  intentPhrase?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  workspaceId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
 export type QueryCommandsArgs = {
   commandContext?: InputMaybe<CommandContextInput>;
   surface?: InputMaybe<CommandSurface>;
@@ -1259,6 +1593,22 @@ export type QueryKeybindLayersArgs = {
 export type QueryKeybindsArgs = {
   scope: KeybindScope;
   workspaceId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type QueryListAuditLogArgs = {
+  filter?: InputMaybe<AuditLogFilterInput>;
+  pagination?: InputMaybe<AuditLogPaginationInput>;
+};
+
+
+export type QueryListIncidentsArgs = {
+  cursor?: InputMaybe<IncidentListCursorInput>;
+  dir: PageDir;
+  limit?: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+  severityFilter?: InputMaybe<Array<IncidentSeverityGql>>;
+  statusFilter?: InputMaybe<Array<IncidentStatusGql>>;
 };
 
 
@@ -1316,6 +1666,11 @@ export type QueryMyMentionsArgs = {
 export type QueryPinnedMessagesArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryPipelineArgs = {
+  pipelineId: Scalars['ID']['input'];
 };
 
 
@@ -1569,6 +1924,20 @@ export type ToggleReactionInput = {
   serverId: Scalars['ID']['input'];
 };
 
+export enum TypedVerbGql {
+  CLOSE = 'CLOSE',
+  CONFIGURE = 'CONFIGURE',
+  DELETE = 'DELETE',
+  EXECUTE = 'EXECUTE',
+  NAVIGATE = 'NAVIGATE',
+  OPEN = 'OPEN',
+  OTHER = 'OTHER',
+  READ = 'READ',
+  SEND = 'SEND',
+  TOGGLE = 'TOGGLE',
+  WRITE = 'WRITE'
+}
+
 export type UnmuteConversationInput = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -1614,9 +1983,13 @@ export type UpdateKeybindInput = {
 };
 
 export type UpdateMacroInput = {
+  aiCallable?: Scalars['Boolean']['input'];
   description?: InputMaybe<Scalars['String']['input']>;
+  intentSamples?: Array<Scalars['String']['input']>;
   macroId: Scalars['ID']['input'];
   name: Scalars['String']['input'];
+  nlDescription?: Scalars['String']['input'];
+  sensitivity?: CommandSensitivity;
   steps: Array<MacroStepInput>;
 };
 

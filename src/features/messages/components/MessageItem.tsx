@@ -8,6 +8,7 @@ import { UserHoverCard } from "../../../shared/ui/UserHoverCard";
 import { UserHoverCardPortal } from "../../../shared/ui/UserHoverCardPortal";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
 import type { DisplayDensity } from "../../../shell/state/useShellStore";
@@ -151,6 +152,7 @@ export const MessageItem = memo(function MessageItem({
       ? storePresence
       : authorPresenceStatus ?? null;
 
+  const { emojis: customEmojis } = useCustomEmojis(message.serverId ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editText, setEditText] = useState(message.text ?? "");
   const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
@@ -352,6 +354,7 @@ export const MessageItem = memo(function MessageItem({
       {pickerOpen && (
         <EmojiPicker
           position={getPickerPosition()}
+          customEmojis={customEmojis}
           onSelect={(emoji) => {
             onToggleReaction(message.id, emoji);
             setPickerOpen(false);
@@ -612,6 +615,7 @@ export const MessageItem = memo(function MessageItem({
 }, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.message.id !== next.message.id) return false;
+  if (prev.message.serverId !== next.message.serverId) return false;
   if (prev.message.text !== next.message.text) return false;
   if (prev.message.isDeleted !== next.message.isDeleted) return false;
   if (prev.message.isPinned !== next.message.isPinned) return false;

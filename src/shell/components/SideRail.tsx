@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Inbox, LogOut, Puzzle, Search, Settings, Sparkles } from "lucide-react";
+import { ClipboardList, History, Inbox, LogOut, Puzzle, Search, Settings, Sparkles } from "lucide-react";
 
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
@@ -39,9 +39,9 @@ export function SideRail() {
   const pluginPanels = (plugins ?? [])
     .filter((p) => p.enabled && p.health === "running")
     .flatMap((p) =>
-      (p.manifest.panels ?? []).map((panel) => ({
-        pluginId: p.manifest.id,
-        pluginName: p.manifest.name,
+      (p.panels ?? []).map((panel) => ({
+        pluginId: p.plugin_id,
+        pluginName: p.display_name,
         panel,
       })),
     );
@@ -122,6 +122,14 @@ export function SideRail() {
       </nav>
 
       <div className="flex flex-col items-center gap-1 pb-2">
+        <AuditLogButton
+          mainSurface={mainSurface}
+          setMainSurface={setMainSurface}
+        />
+        <IncidentHistoryButton
+          mainSurface={mainSurface}
+          setMainSurface={setMainSurface}
+        />
         <SettingsButton
           mainSurface={mainSurface}
           setMainSurface={setMainSurface}
@@ -272,6 +280,58 @@ function SettingsButton({
         )}
       >
         <Settings className="h-5 w-5" />
+      </button>
+    </HoverTooltip>
+  );
+}
+
+function AuditLogButton({
+  mainSurface,
+  setMainSurface,
+}: {
+  mainSurface: { kind: string };
+  setMainSurface: (surface: { kind: "audit-log" }) => void;
+}) {
+  return (
+    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Audit log</span>}>
+      <button
+        type="button"
+        onClick={() => setMainSurface({ kind: "audit-log" })}
+        aria-label="Audit log"
+        className={cn(
+          "rounded-xl p-2.5 transition",
+          mainSurface.kind === "audit-log"
+            ? "bg-rim-accent/15 text-rim-accent"
+            : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
+        )}
+      >
+        <ClipboardList className="h-5 w-5" />
+      </button>
+    </HoverTooltip>
+  );
+}
+
+function IncidentHistoryButton({
+  mainSurface,
+  setMainSurface,
+}: {
+  mainSurface: { kind: string };
+  setMainSurface: (surface: { kind: "incidents" }) => void;
+}) {
+  return (
+    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Incident history</span>}>
+      <button
+        type="button"
+        onClick={() => setMainSurface({ kind: "incidents" })}
+        aria-label="Incident history"
+        className={cn(
+          "rounded-xl p-2.5 transition",
+          mainSurface.kind === "incidents"
+            ? "bg-rim-accent/15 text-rim-accent"
+            : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
+        )}
+      >
+        <History className="h-5 w-5" />
       </button>
     </HoverTooltip>
   );

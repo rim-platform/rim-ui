@@ -12,6 +12,7 @@ import { QuickAccessAssigner } from "../../features/commands/components/QuickAcc
 import { SearchOverlay } from "../../features/messages/components/SearchOverlay";
 import { ToastContainer } from "../../shared/toast";
 import { AgentOverlay } from "../../features/agent/components/AgentOverlay";
+import { ConfirmCommandModal } from "../../features/agent/components/ConfirmCommandModal";
 import { useUnreadCounts } from "../../features/conversations/api/useUnreadCounts";
 import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
 import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePresence";
@@ -37,7 +38,9 @@ import { ConnectionBanner } from "../../features/system/components/ConnectionBan
 import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
 import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
 import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
+import { IncidentHistoryPage } from "../../features/incidents/components/IncidentHistoryPage";
 import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
+import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
 import { useSpatialNavigation } from "../navigation/useSpatialNavigation";
@@ -145,10 +148,10 @@ function WorkspaceShell() {
   const resolvedPluginPanel = useMemo(() => {
     if (!activePluginPanel || !plugins) return null;
     const plugin = plugins.find(
-      (p) => p.manifest.id === activePluginPanel.pluginId && p.enabled,
+      (p) => p.plugin_id === activePluginPanel.pluginId && p.enabled,
     );
     if (!plugin) return null;
-    const panel = plugin.manifest.panels?.find(
+    const panel = plugin.panels?.find(
       (p) => p.id === activePluginPanel.panelId,
     );
     if (!panel) return null;
@@ -249,6 +252,18 @@ function WorkspaceShell() {
           </main>
         )}
 
+        {mainSurface.kind === "incidents" && (
+          <main className="flex min-w-0 flex-1 flex-col">
+            <IncidentHistoryPage />
+          </main>
+        )}
+
+        {mainSurface.kind === "audit-log" && (
+          <main className="flex min-w-0 flex-1 flex-col">
+            <AuditLogPage />
+          </main>
+        )}
+
         {mainSurface.kind === "plugin" && (
           <main className="flex min-w-0 flex-1 flex-col items-center justify-center">
             <p className="text-sm text-rim-text-muted">
@@ -266,6 +281,7 @@ function WorkspaceShell() {
         <CommandPalette />
         <SearchOverlay />
         <AgentOverlay />
+        <ConfirmCommandModal />
         <QuickAccessAssigner />
         {workspaceId && selectedConversationId && (
           <StartIncidentDialog serverId={workspaceId} conversationId={selectedConversationId} />

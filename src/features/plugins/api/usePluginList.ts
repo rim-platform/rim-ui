@@ -1,65 +1,54 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 
 import { queryKeys } from "../../../core/query/keys";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import type { PluginInfo } from "../types";
 
 const MOCK_PLUGINS: PluginInfo[] = [
   {
-    manifest: {
-      id: "rim-code-highlight",
-      name: "Code Highlight",
-      version: "1.0.0",
-      description: "Syntax highlighting for code blocks in messages",
-      author: "RIM Team",
-      trust_level: "official",
-      capabilities: ["clipboard"],
-      commands: [
-        {
-          id: "highlight_selection",
-          title: "Highlight Code",
-          description: "Apply syntax highlighting to selected code block",
-          context_menu_action: true,
-          context_types: ["message"],
-          suggested_keybind: "Ctrl+Shift+H",
-        },
-      ],
-      panels: [
-        {
-          id: "main",
-          title: "Code Highlight",
-          slot: "tool_panel",
-        },
-      ],
-    },
+    plugin_id: "rim-code-highlight",
+    manifest_id: "rim-code-highlight",
+    display_name: "Code Highlight",
+    version: "1.0.0",
+    description: "Syntax highlighting for code blocks in messages",
+    author: "RIM Team",
     enabled: true,
-    approved_capabilities: ["clipboard"],
+    capabilities: ["chat.read", "ui.notify"],
+    approved_capabilities: ["chat.read", "ui.notify"],
+    approved_ai_commands: [],
+    ai_callable_commands: [],
+    ai_consent_required: false,
     health: "running",
   },
   {
-    manifest: {
-      id: "community-emoji-pack",
-      name: "Emoji Pack",
-      version: "0.3.2",
-      description: "Extended emoji collection with custom reactions",
-      author: "communitydev",
-      trust_level: "community",
-      capabilities: ["network"],
-    },
+    plugin_id: "community-emoji-pack",
+    manifest_id: "community-emoji-pack",
+    display_name: "Emoji Pack",
+    version: "0.3.2",
+    description: "Extended emoji collection with custom reactions",
+    author: "communitydev",
     enabled: false,
+    capabilities: ["network", "fs.read"],
     approved_capabilities: [],
+    approved_ai_commands: [],
+    ai_callable_commands: [],
+    ai_consent_required: false,
     health: "stopped",
   },
 ];
 
-async function fetchPluginList(): Promise<PluginInfo[]> {
-  try {
-    return await invoke<PluginInfo[]>("plugin_list");
-  } catch {
-    // Tauri command not yet available — return mock data for development
-    return MOCK_PLUGINS;
+export async function fetchPluginList(): Promise<PluginInfo[]> {
+  const result = await safeInvoke<PluginInfo[]>("plugin_list", {});
+  if (!result.ok) {
+    if (result.error.kind === "ipc_unavailable") {
+      // Web mode or dev without Tauri — return mock data
+      return MOCK_PLUGINS;
+    }
+    // Unexpected backend error — return empty rather than crashing the UI
+    return [];
   }
+  return result.value;
 }
 
 export function usePluginList() {

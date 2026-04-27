@@ -1,3 +1,4 @@
+mod agent_proxy;
 mod plugin_host;
 mod terminal;
 
@@ -17,12 +18,11 @@ fn greet(name: &str) -> String {
 /// the existing key.
 #[tauri::command]
 fn get_stronghold_password() -> Result<String, String> {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
-    const SERVICE: &str = "com.rim.rim-ui";
     const USER: &str = "stronghold-master-key";
 
-    let entry = keyring::Entry::new(SERVICE, USER)
+    let entry = keyring::Entry::new(agent_proxy::KEYRING_SERVICE, USER)
         .map_err(|e| format!("keyring init failed: {e}"))?;
 
     // Try to retrieve an existing password.
@@ -31,8 +31,7 @@ fn get_stronghold_password() -> Result<String, String> {
         Err(keyring::Error::NoEntry) => {
             // First run — generate a new random password.
             let mut bytes = [0u8; 32];
-            getrandom::fill(&mut bytes)
-                .map_err(|e| format!("random generation failed: {e}"))?;
+            getrandom::fill(&mut bytes).map_err(|e| format!("random generation failed: {e}"))?;
             let password = URL_SAFE_NO_PAD.encode(bytes);
             entry
                 .set_password(&password)
@@ -55,9 +54,8 @@ pub fn run() {
                 .app_local_data_dir()
                 .expect("failed to resolve app local data dir");
             let salt_path = app_data_dir.join("salt.txt");
-            app.handle().plugin(
-                tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build(),
-            )?;
+            app.handle()
+                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
 
             let app_data_dir = app
                 .path()
@@ -80,6 +78,9 @@ pub fn run() {
             plugin_host::commands::plugin_uninstall,
             plugin_host::commands::plugin_approve_capabilities,
             plugin_host::commands::plugin_revoke_capability,
+            plugin_host::commands::plugin_approve_ai_commands,
+            plugin_host::commands::plugin_revoke_ai_consent,
+            plugin_host::commands::plugin_run_ai_command,
             plugin_host::commands::plugin_suggested_keybinds,
             plugin_host::commands::plugin_context_actions,
             plugin_host::commands::plugin_install_from_git,
@@ -91,6 +92,14 @@ pub fn run() {
             terminal::commands::terminal_resize,
             terminal::commands::terminal_close,
             terminal::commands::terminal_list,
+            agent_proxy::agent_chat_completion,
+            agent_proxy::agent_validate_credentials,
+            agent_proxy::agent_validate_provided_key,
+            agent_proxy::agent_list_models,
+            agent_proxy::set_provider_key,
+            agent_proxy::clear_provider_key,
+            agent_proxy::is_provider_key_configured,
+            agent_proxy::migrate_provider_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

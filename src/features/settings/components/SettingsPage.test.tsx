@@ -28,8 +28,16 @@ vi.mock("../../plugins/components/PluginSettingsPage", () => ({
   PluginSettingsPage: () => <div data-testid="plugin-settings">Plugins Panel</div>,
 }));
 
+vi.mock("../../plugins/components/PluginAiConsentPanel", () => ({
+  PluginAiConsentPanel: () => <div data-testid="plugin-ai-settings">Plugin AI Panel</div>,
+}));
+
 vi.mock("../../agent/settings/AgentSettingsPanel", () => ({
   AgentSettingsPanel: () => <div data-testid="agent-settings">Agent Panel</div>,
+}));
+
+vi.mock("../../agent/settings/AiProviderKeySettings", () => ({
+  AiProviderKeySettings: () => <div data-testid="ai-key-settings">AI Keys Panel</div>,
 }));
 
 vi.mock("../../notifications/components/NotificationSettings", () => ({
@@ -70,7 +78,9 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Keybinds")).toBeInTheDocument();
     expect(screen.getByText("Commands")).toBeInTheDocument();
     expect(screen.getByText("Plugins")).toBeInTheDocument();
+    expect(screen.getByText("Plugin AI")).toBeInTheDocument();
     expect(screen.getByText("AI Agent")).toBeInTheDocument();
+    expect(screen.getByText("AI Keys")).toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("About")).toBeInTheDocument();
   });
@@ -121,12 +131,18 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("account-settings")).toBeInTheDocument();
   });
 
-  it("switches to About tab and shows placeholder", async () => {
+  it("switches to About tab and shows about panel", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
 
     await user.click(screen.getByText("About"));
-    expect(screen.getByText("About RIM coming soon.")).toBeInTheDocument();
+    // About panel renders an "About RIM" heading plus product blurb.
+    expect(
+      screen.getByRole("heading", { name: "About RIM" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("A programmable communication workspace."),
+    ).toBeInTheDocument();
   });
 
   it("close button navigates to conversation surface", async () => {

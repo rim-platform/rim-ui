@@ -1,6 +1,7 @@
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::manifest::{ManifestError, PluginManifest};
 use crate::plugin_host::simple_manifest;
+use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -12,6 +13,13 @@ pub enum GitInstallError {
     NoManifest,
     #[error("manifest error: {0}")]
     Manifest(#[from] ManifestError),
+    #[error("invalid manifest: {0}")]
+    InvalidManifest(#[from] ValidationError),
+    /// Lifecycle rejection (e.g. already installed) during install_from_git.
+    /// Kept distinct from Io so the JS surface can distinguish "install refused"
+    /// from "disk error".
+    #[error("lifecycle error: {0}")]
+    LifecycleFailure(String),
     #[error("plugin already exists: {0}")]
     AlreadyExists(String),
     #[error("io error: {0}")]
@@ -29,8 +37,22 @@ pub enum GitInstallError {
 }
 
 impl Serialize for GitInstallError {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(None)?;
+        match self {
+            // Preserve inner typed ValidationError so JS can branch on the
+            // specific N1/F2 violation without string-parsing.
+            Self::InvalidManifest(inner) => {
+                map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("data", inner)?;
+            }
+            other => {
+                map.serialize_entry("kind", "GIT_INSTALL_ERROR")?;
+                map.serialize_entry("message", &other.to_string())?;
+            }
+        }
+        map.end()
     }
 }
 
@@ -61,10 +83,7 @@ fn staging_dir() -> PathBuf {
 }
 
 /// Clone a git repo to the staging directory.
-pub async fn git_clone(
-    url: &str,
-    branch: Option<&str>,
-) -> Result<PathBuf, GitInstallError> {
+pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitInstallError> {
     let staging = staging_dir();
     std::fs::create_dir_all(&staging)?;
 
@@ -77,11 +96,7 @@ pub async fn git_clone(
         std::fs::remove_dir_all(&clone_dir)?;
     }
 
-    let mut args = vec![
-        "clone".to_string(),
-        "--depth".to_string(),
-        "1".to_string(),
-    ];
+    let mut args = vec!["clone".to_string(), "--depth".to_string(), "1".to_string()];
     if let Some(b) = branch {
         args.push("--branch".to_string());
         args.push(b.to_string());
@@ -122,10 +137,7 @@ pub fn detect_manifest(clone_dir: &Path) -> Result<PluginManifest, GitInstallErr
 }
 
 /// Move a cloned plugin from staging to the final plugins directory.
-pub fn finalize_install(
-    clone_dir: &Path,
-    plugin_id: &str,
-) -> Result<PathBuf, GitInstallError> {
+pub fn finalize_install(clone_dir: &Path, plugin_id: &str) -> Result<PathBuf, GitInstallError> {
     let final_dir = plugins_dir().join(plugin_id);
 
     if final_dir.exists() {
@@ -161,7 +173,10 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
 }
 
 /// Run post-install steps if the plugin declares them.
-pub async fn run_post_install(plugin_dir: &Path, _manifest: &PluginManifest) -> Result<(), GitInstallError> {
+pub async fn run_post_install(
+    plugin_dir: &Path,
+    _manifest: &PluginManifest,
+) -> Result<(), GitInstallError> {
     // Detect package manager needs
     if plugin_dir.join("package.json").exists() {
         let output = tokio::process::Command::new("npm")
@@ -229,6 +244,18 @@ pub async fn install_from_git(
         )));
     }
 
+    // N1 + F2 validation: capability key shape + AI-surface install-ID leak check.
+    // Must run BEFORE persisting to disk so a malformed manifest never reaches the registry.
+    if let Err(e) = validate_plugin_manifest(&manifest) {
+        log::warn!(
+            "[AUDIT] event=plugin_install_rejected plugin_id={} reason={}",
+            manifest.plugin_id,
+            e
+        );
+        let _ = std::fs::remove_dir_all(&clone_dir);
+        return Err(GitInstallError::InvalidManifest(e));
+    }
+
     let final_dir = match finalize_install(&clone_dir, &manifest.plugin_id) {
         Ok(d) => d,
         Err(e) => {
@@ -273,11 +300,27 @@ pub async fn update_plugin(
 
     let new_manifest = detect_manifest(plugin_dir)?;
 
+    // N1 + F2 validation on the updated manifest — same gate as fresh install.
+    if let Err(e) = validate_plugin_manifest(&new_manifest) {
+        log::warn!(
+            "[AUDIT] event=plugin_update_rejected plugin_id={} reason={}",
+            new_manifest.plugin_id,
+            e
+        );
+        return Err(GitInstallError::InvalidManifest(e));
+    }
+
     // Detect capability changes
-    let old_caps: std::collections::HashSet<&str> =
-        old_manifest.capabilities.iter().map(|s| s.as_str()).collect();
-    let new_caps: std::collections::HashSet<&str> =
-        new_manifest.capabilities.iter().map(|s| s.as_str()).collect();
+    let old_caps: std::collections::HashSet<&str> = old_manifest
+        .capabilities
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let new_caps: std::collections::HashSet<&str> = new_manifest
+        .capabilities
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
 
     let added: Vec<String> = new_caps
         .difference(&old_caps)
@@ -290,9 +333,7 @@ pub async fn update_plugin(
 
     let capabilities_changed = !added.is_empty() || !removed.is_empty();
 
-    if let Err(e) = run_post_install(plugin_dir, &new_manifest).await {
-        return Err(e);
-    }
+    run_post_install(plugin_dir, &new_manifest).await?;
 
     let result = PluginUpdateResult {
         plugin_id: new_manifest.plugin_id.clone(),
@@ -398,5 +439,66 @@ mod tests {
 
         // We can't easily test finalize_install because it uses the global plugins_dir,
         // but we verify the collision check in install_from_git via existing_plugin_ids.
+    }
+
+    // ── Phase 1 regression: update path is actually gated ──
+
+    #[test]
+    fn detect_manifest_with_invalid_capability_fails_validation() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // Write a manifest with a capability that fails N1 (wrong prefix)
+        let manifest = serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.test",
+            "display_name": "Test",
+            "version": "2.0.0",
+            "description": "updated",
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main.js",
+            "capabilities": ["system.evil"]
+        });
+        std::fs::write(tmp.path().join(MANIFEST_FILE), manifest.to_string()).unwrap();
+
+        // detect_manifest loads the raw manifest (weak structural validate only),
+        // then validate_plugin_manifest runs N1+F2 — this proves the gate fires.
+        let m = detect_manifest(tmp.path()).unwrap();
+        let err = validate_plugin_manifest(&m).unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidCapabilityKey { .. }),
+            "update path must reject invalid capability keys: {err:?}"
+        );
+    }
+
+    #[test]
+    fn detect_manifest_with_install_id_leak_fails_validation() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let manifest = serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.test",
+            "display_name": "Test",
+            "version": "2.0.0",
+            "description": "updated",
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main.js",
+            "capabilities": ["plugin.dev.example.test.do_thing"],
+            "commands": [{
+                "id": "expose",
+                "title": "Expose",
+                "description": "leaks",
+                "ai_callable": true,
+                "output_schema": {
+                    "type": "object",
+                    "properties": { "plugin_install_id": { "type": "string" } }
+                }
+            }]
+        });
+        std::fs::write(tmp.path().join(MANIFEST_FILE), manifest.to_string()).unwrap();
+
+        let m = detect_manifest(tmp.path()).unwrap();
+        let err = validate_plugin_manifest(&m).unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InstallIdLeakInAiSurface { .. }),
+            "update path must reject install-ID leaks: {err:?}"
+        );
     }
 }

@@ -6,6 +6,13 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { logger } from "../../../core/logger";
 import { agentRateLimiter } from "./rateLimiter";
+import { runWithConfirmation } from "./confirmationGate";
+import {
+  MAX_PARALLEL_TOOL_CALLS,
+  PARALLEL_CAP_MESSAGE,
+  createTurnBudget,
+  sanitizeToolError,
+} from "./turnBudget";
 
 const MAX_TOOL_ROUNDS = 10;
 
@@ -79,7 +86,6 @@ export interface AgentRunOptions {
   prompt: string;
   providerId: string;
   modelId: string;
-  apiKey: string;
   systemPrompt?: string;
   signal?: AbortSignal;
   existingMessages?: AiMessage[];
@@ -125,6 +131,7 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
   const outputPrice = modelDef?.outputPricePerMToken ?? 0;
 
   let toolRounds = 0;
+  const turnBudget = createTurnBudget();
 
   try {
     while (toolRounds <= MAX_TOOL_ROUNDS) {
@@ -200,9 +207,23 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
       }
       messages.push({ role: "assistant", content: assistantContent });
 
-      // Execute tools and add results
+      // Execute tools and add results.
+      // Per-round parallel cap: any tool_use beyond MAX_PARALLEL_TOOL_CALLS
+      // is rejected with a synthetic tool_result so the assistant message
+      // stays well-formed (every tool_use must have a matching result).
       const toolResultContent: AiContentBlock[] = [];
-      for (const tc of pendingToolCalls) {
+      for (let i = 0; i < pendingToolCalls.length; i++) {
+        const tc = pendingToolCalls[i]!;
+        if (i >= MAX_PARALLEL_TOOL_CALLS) {
+          toolResultContent.push({
+            type: "tool_result",
+            tool_use_id: tc.id,
+            content: PARALLEL_CAP_MESSAGE,
+            is_error: true,
+          });
+          continue;
+        }
+
         const tool = getTool(tc.name);
         if (!tool) {
           toolResultContent.push({
@@ -214,24 +235,30 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
           continue;
         }
 
-        try {
-          // Require user confirmation for write actions before executing
-          if (tool.requiresConfirmation) {
-            const description = `Agent wants to execute: ${tc.name}\n\nInput: ${JSON.stringify(tc.input, null, 2)}`;
-            const approved = window.confirm(description);
-            if (!approved) {
-              toolResultContent.push({
-                type: "tool_result",
-                tool_use_id: tc.id,
-                content: "Error: User denied this action.",
-                is_error: true,
-              });
-              continue;
-            }
-          }
+        // Per-run mutating cap: reserve before invoking. On cap-breach,
+        // surface the synthetic skip-result and do NOT call the handler.
+        const skip = turnBudget.reserve(tool);
+        if (skip) {
+          toolResultContent.push({
+            type: "tool_result",
+            tool_use_id: tc.id,
+            content: skip,
+            is_error: true,
+          });
+          continue;
+        }
 
+        try {
           store.setToolActivity(`Running ${tc.name}...`);
-          const result = await tool.handler(tc.input);
+          // Confirmation flow is server-driven: backend returns
+          // CONFIRMATION_REQUIRED, the gate surfaces the modal, the user
+          // approves/rejects, and the gate re-calls with proof. The legacy
+          // `requiresConfirmation` + `window.confirm` path is removed —
+          // backend `dangerous: true` is now the single source of truth.
+          const result = await runWithConfirmation(
+            () => tool.handler(tc.input),
+            { sensitivity: tool.sensitivity },
+          );
 
           if (tool.sideEffect) {
             store.appendText(`\n> Action: ${tc.name}\n`);
@@ -247,7 +274,7 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
           toolResultContent.push({
             type: "tool_result",
             tool_use_id: tc.id,
-            content: `Error: ${err instanceof Error ? err.message : "unknown error"}`,
+            content: sanitizeToolError(err),
             is_error: true,
           });
         }

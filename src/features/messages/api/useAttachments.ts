@@ -102,13 +102,18 @@ const CSRF_HEADER = "x-csrf-token";
 /**
  * Upload a file to the REST endpoint using the upload token from createAttachment.
  */
-export async function uploadFileRest(file: File, uploadToken: string): Promise<void> {
+export async function uploadFileRest(
+  file: File,
+  uploadToken: string,
+  attachmentId: string,
+): Promise<void> {
   const baseUrl = import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api";
   const uploadUrl = baseUrl.replace(/\/api$/, "") + "/api/files/upload";
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_token", uploadToken);
+  formData.append("attachment_id", attachmentId);
 
   const headers: Record<string, string> = {};
   const csrf = getCookie(CSRF_COOKIE);

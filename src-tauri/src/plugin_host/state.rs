@@ -15,6 +15,13 @@ pub struct PluginRecord {
     pub plugin_id: String,
     pub status: PluginStatus,
     pub approved_capabilities: Vec<String>,
+    /// AI command IDs the user has explicitly consented to expose to the agent.
+    #[serde(default)]
+    pub approved_ai_commands: Vec<String>,
+    /// SHA-256 hex of the manifest JSON at install time. Re-consent required when
+    /// the ai_callable command set changes (Widow H3 v1→v2 drift protection).
+    #[serde(default)]
+    pub manifest_hash: String,
     pub last_error: Option<String>,
 }
 
@@ -26,7 +33,19 @@ pub struct PluginStateStore {
 impl PluginStateStore {
     pub fn load(path: &Path) -> Self {
         match std::fs::read_to_string(path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(store) => store,
+                Err(e) => {
+                    // A corrupt state file vaporizes all approved capabilities and AI
+                    // consents. Log before defaulting so an operator can recover the file.
+                    log::warn!(
+                        "[AUDIT] event=plugin_state_corrupt path={} reason={}",
+                        path.display(),
+                        e
+                    );
+                    Self::default()
+                }
+            },
             Err(_) => Self::default(),
         }
     }
@@ -35,9 +54,13 @@ impl PluginStateStore {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        std::fs::write(path, json)
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        // Atomic write: write to a sibling temp file, then rename over the target.
+        // Prevents power-loss from leaving a truncated state file that silently
+        // vaporizes all approved capabilities and AI consents on next boot.
+        let tmp_path = path.with_extension("json.tmp");
+        std::fs::write(&tmp_path, &json)?;
+        std::fs::rename(&tmp_path, path)
     }
 
     pub fn get(&self, plugin_id: &str) -> Option<&PluginRecord> {
@@ -69,6 +92,8 @@ mod tests {
             plugin_id: "dev.example.test".into(),
             status: PluginStatus::Enabled,
             approved_capabilities: vec!["local.process".into()],
+            approved_ai_commands: vec![],
+            manifest_hash: String::new(),
             last_error: None,
         });
 

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import type { SafeInvokeError } from "../../../core/tauri/safeInvoke";
 import { buildTerminalTheme } from "../terminalTheme";
 import { useTerminalStore } from "../state/useTerminalStore";
+import { logger } from "../../../core/logger";
 
 const DEFAULT_FONT_FAMILY = "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', 'Hack Nerd Font Mono', 'MesloLGS NF', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Consolas', monospace";
 
@@ -34,6 +36,28 @@ interface UseTerminalSessionOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
+function logTerminalInvokeError(
+  command: string,
+  sessionId: string,
+  error: SafeInvokeError,
+  level: "warn" | "error",
+): void {
+  switch (error.kind) {
+    case "ipc_unavailable":
+      // Expected in web mode — no terminal host, suppress.
+      return;
+    case "permission_denied":
+      logger[level](`[RIM:Terminal] ${command} permission denied`, { sessionId, message: error.message });
+      return;
+    case "invalid_args":
+      logger[level](`[RIM:Terminal] ${command} invalid args`, { sessionId, message: error.message, field: error.field });
+      return;
+    case "backend_error":
+      logger[level](`[RIM:Terminal] ${command} backend error`, { sessionId, code: error.code, message: error.message });
+      return;
+  }
+}
+
 /**
  * Manages one xterm.js terminal instance lifecycle:
  * - Dynamically imports xterm.js
@@ -54,7 +78,9 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
     try {
       fit.fit();
       const { cols, rows } = term;
-      invoke("terminal_resize", { sessionId, cols, rows }).catch(() => {});
+      void safeInvoke("terminal_resize", { sessionId, cols, rows }).then((result) => {
+        if (!result.ok) logTerminalInvokeError("terminal_resize", sessionId, result.error, "warn");
+      });
     } catch {
       // fit() can throw if container is not visible
     }
@@ -63,6 +89,7 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
   useEffect(() => {
     if (!sessionId || !containerRef.current) return;
 
+    const sid: string = sessionId;
     const container = containerRef.current;
     let destroyed = false;
 
@@ -101,21 +128,25 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
         try {
           fitAddon.fit();
           const { cols, rows } = terminal;
-          invoke("terminal_resize", { sessionId, cols, rows }).catch(() => {});
+          void safeInvoke("terminal_resize", { sessionId: sid, cols, rows }).then((result) => {
+            if (!result.ok) logTerminalInvokeError("terminal_resize", sid, result.error, "warn");
+          });
         } catch {
-          // ignore
+          // ignore — fit() can throw if container is not visible
         }
       });
 
       // Wire input: xterm → PTY
       const onDataDisposable = terminal.onData((data: string) => {
         const encoded = encodeBase64(data);
-        invoke("terminal_write", { sessionId, data: encoded }).catch(() => {});
+        void safeInvoke("terminal_write", { sessionId: sid, data: encoded }).then((result) => {
+          if (!result.ok) logTerminalInvokeError("terminal_write", sid, result.error, "error");
+        });
       });
 
       // Wire output: PTY → xterm
       const unlisten = await listen<string>(
-        `terminal://output/${sessionId}`,
+        `terminal://output/${sid}`,
         (event) => {
           if (destroyed) return;
           const bytes = decodeBase64(event.payload);
@@ -125,7 +156,7 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
 
       // Listen for PTY exit
       const unlistenExit = await listen<number>(
-        `terminal://exit/${sessionId}`,
+        `terminal://exit/${sid}`,
         () => {
           if (destroyed) return;
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
@@ -138,14 +169,46 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
         try {
           fitAddon.fit();
           const { cols, rows } = terminal;
-          invoke("terminal_resize", { sessionId, cols, rows }).catch(() => {});
+          void safeInvoke("terminal_resize", { sessionId: sid, cols, rows }).then((result) => {
+            if (!result.ok) logTerminalInvokeError("terminal_resize", sid, result.error, "warn");
+          });
         } catch {
-          // ignore
+          // ignore — fit() can throw if container is not visible
         }
       });
       resizeObserver.observe(container);
 
+      // Subscribe to font changes — apply to running terminal immediately
+      let prevFontFamily = useTerminalStore.getState().fontFamily;
+      let prevFontSize = useTerminalStore.getState().fontSize;
+      const unsubFont = useTerminalStore.subscribe((state) => {
+        if (destroyed) return;
+        const familyChanged = state.fontFamily !== prevFontFamily;
+        const sizeChanged = state.fontSize !== prevFontSize;
+        if (!familyChanged && !sizeChanged) return;
+
+        if (sizeChanged) {
+          terminal.options.fontSize = state.fontSize || 13;
+          prevFontSize = state.fontSize;
+        }
+        if (familyChanged) {
+          terminal.options.fontFamily = state.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+          prevFontFamily = state.fontFamily;
+        }
+        // Refit after font change — character grid dimensions change
+        try {
+          fitAddon.fit();
+          const { cols, rows } = terminal;
+          void safeInvoke("terminal_resize", { sessionId: sid, cols, rows }).then((result) => {
+            if (!result.ok) logTerminalInvokeError("terminal_resize", sid, result.error, "warn");
+          });
+        } catch {
+          // ignore — container may not be visible
+        }
+      });
+
       cleanupRef.current = () => {
+        unsubFont();
         onDataDisposable.dispose();
         unlisten();
         unlistenExit();
@@ -157,7 +220,7 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
     }
 
     setup().catch((err) => {
-      console.error(`[RIM:Terminal] setup failed for session ${sessionId}:`, err);
+      logger.error("[RIM:Terminal] setup failed", { sessionId: sid, error: err });
     });
 
     return () => {
@@ -167,7 +230,8 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
         cleanupRef.current = null;
       }
     };
-  }, [sessionId, containerRef, handleResize]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleResize is for external callers only; the effect manages its own resize logic
+  }, [sessionId, containerRef]);
 
   return { terminalRef, fitAddonRef, handleResize };
 }

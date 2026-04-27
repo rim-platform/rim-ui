@@ -24,10 +24,7 @@ impl TerminalState {
 impl Drop for TerminalState {
     fn drop(&mut self) {
         // Recover data even from a poisoned mutex — cleanup must happen regardless
-        let mut sessions = self
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         // Drain all sessions — Drop on PtySession handles cleanup
         sessions.drain();
     }

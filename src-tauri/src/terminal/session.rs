@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
 const READ_BUF_SIZE: usize = 4096;
@@ -114,8 +114,7 @@ impl PtySession {
                         }
                         Ok(n) => {
                             let encoded = BASE64.encode(&buf[..n]);
-                            let _ =
-                                app_handle.emit(&format!("terminal://output/{sid}"), encoded);
+                            let _ = app_handle.emit(&format!("terminal://output/{sid}"), encoded);
                         }
                         Err(e) => {
                             log::error!("pty read error for {sid}: {e}");
@@ -242,9 +241,8 @@ fn which_shell(name: &str) -> Result<String, ()> {
 
 fn resolve_cwd(cwd: Option<String>) -> Result<PathBuf, SessionError> {
     if let Some(c) = cwd {
-        let path = std::fs::canonicalize(&c).map_err(|e| {
-            SessionError::InvalidCwd(format!("cannot canonicalize '{c}': {e}"))
-        })?;
+        let path = std::fs::canonicalize(&c)
+            .map_err(|e| SessionError::InvalidCwd(format!("cannot canonicalize '{c}': {e}")))?;
         if !path.is_dir() {
             return Err(SessionError::InvalidCwd(format!(
                 "not a directory: {}",

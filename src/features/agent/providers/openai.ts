@@ -1,3 +1,5 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
+
 import type {
   AiProvider,
   AiProviderConfig,
@@ -6,9 +8,8 @@ import type {
   AiStreamChunk,
   AiMessage,
   AiToolDefinition,
+  ValidationOutcome,
 } from "./types";
-
-const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 
 /** Static fallback — used when API is unreachable. */
 const STATIC_MODELS: AiModelDef[] = [
@@ -148,159 +149,168 @@ function toOpenAiTools(tools: AiToolDefinition[]) {
   }));
 }
 
-export function createOpenAiProvider(apiKey: string): AiProvider {
+/**
+ * Wire shape exposed by `agent_proxy::ChatStreamEvent` (snake_case, tag = "kind").
+ * The proxy is a dumb passthrough for SSE — `data` is the parsed JSON of the
+ * provider's `data:` line; the per-event switch below is the same logic that
+ * used to run inline against a fetch+ReadableStream.
+ */
+type ChatStreamEvent =
+  | { kind: "sse_event"; event_type: string | null; data: Record<string, unknown> }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/**
+ * Construct an OpenAI provider that loads the API key on every `chat()`
+ * call via `loadKey`. See `anthropic.ts::createAnthropicProvider` for the
+ * full rationale (Phase 4 #59 closure).
+ */
+export function createOpenAiProvider(
+  loadKey: () => Promise<string>,
+): AiProvider {
   return {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      const body: Record<string, unknown> = {
+      const apiKey = await loadKey();
+      const proxyRequest = {
+        provider: "openai" as const,
         model: request.model,
         messages: toOpenAiMessages(request.messages, request.systemPrompt),
+        ...(request.tools && request.tools.length > 0
+          ? { tools: toOpenAiTools(request.tools) }
+          : {}),
         max_tokens: request.maxTokens ?? 4096,
-        stream: true,
-        stream_options: { include_usage: true },
+        api_key: apiKey,
       };
 
-      if (request.tools && request.tools.length > 0) {
-        body.tools = toOpenAiTools(request.tools);
-      }
+      const queue: ChatStreamEvent[] = [];
+      let waiter: ((ev: ChatStreamEvent) => void) | null = null;
 
-      let response: Response;
-      try {
-        response = await fetch(OPENAI_API, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
-      } catch (err) {
-        yield { kind: "error", message: err instanceof Error ? err.message : "Network error" };
-        return;
-      }
+      const onEvent = new Channel<ChatStreamEvent>();
+      onEvent.onmessage = (msg) => {
+        if (waiter) {
+          const w = waiter;
+          waiter = null;
+          w(msg);
+        } else {
+          queue.push(msg);
+        }
+      };
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => "Unknown error");
-        yield { kind: "error", message: `OpenAI API error ${response.status}: ${text}` };
-        return;
-      }
+      void invoke("agent_chat_completion", {
+        request: proxyRequest,
+        onEvent,
+      }).catch((err: unknown) => {
+        const message = typeof err === "string" ? err : err instanceof Error ? err.message : "agent_chat_completion failed";
+        if (waiter) {
+          const w = waiter;
+          waiter = null;
+          w({ kind: "error", message });
+        } else {
+          queue.push({ kind: "error", message });
+        }
+      });
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { kind: "error", message: "No response body" };
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
       let inputTokens = 0;
       let outputTokens = 0;
 
-      // Track tool calls being built
+      // Track tool calls being built across SSE chunks (OpenAI fragments
+      // tool_calls.function.arguments across many delta frames).
       const toolCalls = new Map<number, { id: string; name: string; args: string }>();
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+      while (true) {
+        const event = queue.shift() ?? (await new Promise<ChatStreamEvent>((resolve) => {
+          waiter = resolve;
+        }));
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+        if (event.kind === "error") {
+          yield { kind: "error", message: event.message };
+          return;
+        }
 
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") continue;
+        if (event.kind === "done") {
+          yield { kind: "done", usage: { inputTokens, outputTokens } };
+          return;
+        }
 
-            let event: Record<string, unknown>;
-            try {
-              event = JSON.parse(data);
-            } catch {
-              continue;
-            }
+        const payload = event.data;
+        const choices = payload.choices as { delta?: Record<string, unknown>; finish_reason?: string }[] | undefined;
+        const usage = payload.usage as Record<string, number> | undefined;
 
-            const choices = event.choices as { delta?: Record<string, unknown>; finish_reason?: string }[] | undefined;
-            const usage = event.usage as Record<string, number> | undefined;
+        if (usage) {
+          inputTokens = usage.prompt_tokens ?? inputTokens;
+          outputTokens = usage.completion_tokens ?? outputTokens;
+        }
 
-            if (usage) {
-              inputTokens = usage.prompt_tokens ?? inputTokens;
-              outputTokens = usage.completion_tokens ?? outputTokens;
-            }
+        if (!choices || choices.length === 0) continue;
+        const delta = choices[0].delta;
+        if (!delta) continue;
 
-            if (!choices || choices.length === 0) continue;
-            const delta = choices[0].delta;
-            if (!delta) continue;
+        // Text content
+        if (delta.content) {
+          yield { kind: "text_delta", text: delta.content as string };
+        }
 
-            // Text content
-            if (delta.content) {
-              yield { kind: "text_delta", text: delta.content as string };
-            }
-
-            // Tool calls
-            const tc = delta.tool_calls as { index: number; id?: string; function?: { name?: string; arguments?: string } }[] | undefined;
-            if (tc) {
-              for (const call of tc) {
-                const existing = toolCalls.get(call.index);
-                if (!existing) {
-                  toolCalls.set(call.index, {
-                    id: call.id ?? "",
-                    name: call.function?.name ?? "",
-                    args: call.function?.arguments ?? "",
-                  });
-                } else {
-                  if (call.function?.arguments) {
-                    existing.args += call.function.arguments;
-                  }
-                }
+        // Tool calls
+        const tc = delta.tool_calls as { index: number; id?: string; function?: { name?: string; arguments?: string } }[] | undefined;
+        if (tc) {
+          for (const call of tc) {
+            const existing = toolCalls.get(call.index);
+            if (!existing) {
+              toolCalls.set(call.index, {
+                id: call.id ?? "",
+                name: call.function?.name ?? "",
+                args: call.function?.arguments ?? "",
+              });
+            } else {
+              if (call.function?.arguments) {
+                existing.args += call.function.arguments;
               }
-            }
-
-            // Emit completed tool calls on finish
-            if (choices[0].finish_reason === "tool_calls") {
-              for (const [, call] of toolCalls) {
-                let input: Record<string, unknown> = {};
-                try {
-                  input = JSON.parse(call.args || "{}");
-                } catch {
-                  // malformed
-                }
-                yield { kind: "tool_use", id: call.id, name: call.name, input };
-              }
-              toolCalls.clear();
             }
           }
         }
-      } finally {
-        reader.releaseLock();
-      }
 
-      yield { kind: "done", usage: { inputTokens, outputTokens } };
+        // Emit completed tool calls on finish
+        if (choices[0].finish_reason === "tool_calls") {
+          for (const [, call] of toolCalls) {
+            let input: Record<string, unknown> = {};
+            try {
+              input = JSON.parse(call.args || "{}");
+            } catch {
+              // malformed
+            }
+            yield { kind: "tool_use", id: call.id, name: call.name, input };
+          }
+          toolCalls.clear();
+        }
+      }
     },
 
-    async validateCredentials(key: string): Promise<boolean> {
+    async validateCredentials(key: string): Promise<ValidationOutcome> {
       try {
-        const res = await fetch("https://api.openai.com/v1/models", {
-          headers: { "Authorization": `Bearer ${key}` },
+        // Same ValidationOutcome contract as anthropic — see that provider
+        // for the rationale. IPC-layer reject → network_error so we don't
+        // blame the user's key for a plumbing failure.
+        return await invoke<ValidationOutcome>("agent_validate_credentials", {
+          provider: "openai",
+          apiKey: key,
         });
-        return res.ok;
-      } catch {
-        return false;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { kind: "network_error", message };
       }
     },
 
     async fetchModels(key: string): Promise<AiModelDef[]> {
-      const res = await fetch("https://api.openai.com/v1/models", {
-        headers: { "Authorization": `Bearer ${key}` },
-      });
+      const data = await invoke<{ data: { id: string; owned_by: string }[] }>(
+        "agent_list_models",
+        {
+          provider: "openai",
+          apiKey: key,
+        },
+      );
 
-      if (!res.ok) {
-        throw new Error(`OpenAI API error ${res.status}`);
-      }
-
-      const data = await res.json() as { data: { id: string; owned_by: string }[] };
       const chatModels = data.data
         .filter((m) => CHAT_MODEL_PREFIXES.some((p) => m.id.startsWith(p)))
         .sort((a, b) => a.id.localeCompare(b.id))

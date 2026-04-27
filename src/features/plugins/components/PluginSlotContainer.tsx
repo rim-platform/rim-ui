@@ -1,8 +1,7 @@
 import { X, Puzzle } from "lucide-react";
 
-import { TrustBadge } from "./TrustBadge";
 import { PluginPanel } from "./PluginPanel";
-import type { PluginInfo, PluginPanelDef } from "../types";
+import { parsePluginCapabilities, type PluginInfo, type PluginPanelDef } from "../types";
 
 interface PluginSlotContainerProps {
   plugin: PluginInfo;
@@ -18,7 +17,6 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
         <div className="flex items-center gap-2">
           <Puzzle className="h-4 w-4 text-rim-accent" />
           <span className="text-sm font-medium text-rim-text">{panel.title}</span>
-          <TrustBadge level={plugin.manifest.trust_level} />
         </div>
         <button
           type="button"
@@ -34,9 +32,9 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
       {/* Plugin iframe */}
       <div className="min-h-0 flex-1">
         <PluginPanel
-          pluginId={plugin.manifest.id}
+          pluginId={plugin.plugin_id}
           panelId={panel.id}
-          approvedCapabilities={plugin.approved_capabilities}
+          approvedCapabilities={parsePluginCapabilities(plugin.approved_capabilities)}
           onClose={onClose}
         />
       </div>

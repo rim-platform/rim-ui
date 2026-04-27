@@ -1,3 +1,4 @@
+import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import type { AiToolDefinition } from "../providers/types";
 import type { AiToolHandler, RegisteredTool } from "./types";
 
@@ -6,13 +7,20 @@ const tools = new Map<string, RegisteredTool>();
 export function registerTool(
   definition: AiToolDefinition,
   handler: AiToolHandler,
-  options?: { sideEffect?: boolean; requiresConfirmation?: boolean },
+  options?: {
+    sideEffect?: boolean;
+    requiresConfirmation?: boolean;
+    sensitivity?: CommandSensitivity;
+    nlDescription?: string;
+  },
 ): void {
   tools.set(definition.name, {
     definition,
     handler,
     sideEffect: options?.sideEffect,
     requiresConfirmation: options?.requiresConfirmation,
+    sensitivity: options?.sensitivity,
+    nlDescription: options?.nlDescription,
   });
 }
 

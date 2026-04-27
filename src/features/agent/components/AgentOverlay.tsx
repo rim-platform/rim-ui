@@ -8,49 +8,54 @@ import { useAgentStore } from "../state/useAgentStore";
 import type { AgentMessage } from "../state/useAgentStore";
 import { runAgent } from "../runtime/agentEngine";
 import type { AiMessage } from "../providers/types";
-import { registerBuiltinTools } from "../tools/builtins";
+import { loadAgentTools } from "../tools/loader";
 import { registerProvider } from "../providers/registry";
-import { loadApiKey } from "../runtime/keyStore";
+import { loadApiKey, ProviderKeyMissingError } from "../runtime/keyStore";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
 
-// Register tools once
+// Register tools once (dual-mode: hardcoded builtins + backend AI surface, backend-wins)
 let toolsRegistered = false;
-function ensureToolsRegistered() {
-  if (!toolsRegistered) {
-    registerBuiltinTools();
-    toolsRegistered = true;
-  }
+let toolsLoading: Promise<void> | null = null;
+function ensureToolsRegistered(): Promise<void> {
+  if (toolsRegistered) return Promise.resolve();
+  if (toolsLoading) return toolsLoading;
+  toolsLoading = loadAgentTools()
+    .then(() => {
+      toolsRegistered = true;
+    })
+    .finally(() => {
+      toolsLoading = null;
+    });
+  return toolsLoading;
 }
 
-// Track which provider has been registered to avoid re-registration on every submit.
-// Also track a simple hash of the API key so we re-register when the key changes.
-let registeredProviderId: string | null = null;
-let registeredKeyHash: string | null = null;
+// Providers are registered once per providerId. Post-#59 the provider
+// instance no longer closes over the key — it holds a loader thunk that
+// reads Stronghold per-request. Switching the key in Settings is therefore
+// invisible at this layer: the same provider instance keeps serving, and
+// the next `chat()` reads whatever Stronghold currently holds.
+const registeredProviders = new Set<string>();
 
-/** Simple hash to detect API key changes without storing the key in plaintext. */
-function simpleKeyHash(key: string): string {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash << 5) - hash + key.charCodeAt(i);
-    hash |= 0; // Convert to 32-bit integer
-  }
-  return String(hash);
+function makeKeyLoader(providerId: string): () => Promise<string> {
+  return async () => {
+    const key = await loadApiKey(providerId);
+    if (!key) throw new ProviderKeyMissingError(providerId);
+    return key;
+  };
 }
 
-async function ensureProviderRegistered(providerId: string, apiKey: string): Promise<void> {
-  const keyHash = simpleKeyHash(apiKey);
-  if (registeredProviderId === providerId && registeredKeyHash === keyHash) return;
+async function ensureProviderRegistered(providerId: string): Promise<void> {
+  if (registeredProviders.has(providerId)) return;
 
   if (providerId === "anthropic") {
     const { createAnthropicProvider } = await import("../providers/anthropic");
-    registerProvider(createAnthropicProvider(apiKey));
+    registerProvider(createAnthropicProvider(makeKeyLoader(providerId)));
   } else if (providerId === "openai") {
     const { createOpenAiProvider } = await import("../providers/openai");
-    registerProvider(createOpenAiProvider(apiKey));
+    registerProvider(createOpenAiProvider(makeKeyLoader(providerId)));
   }
 
-  registeredProviderId = providerId;
-  registeredKeyHash = keyHash;
+  registeredProviders.add(providerId);
 }
 
 const DISCLAIMER_FLAG = "agent-disclaimer-accepted";
@@ -174,20 +179,23 @@ export function AgentOverlay() {
     );
 
     void (async () => {
-      const apiKey = await loadApiKey(settings.providerId);
-      if (!apiKey) {
+      // Presence-check Stronghold before we spin up runAgent. We intentionally
+      // DON'T hold the returned key in scope — the provider's loader thunk
+      // will re-read it inside `chat()` per the #59 invariant.
+      const hasKey = !!(await loadApiKey(settings.providerId));
+      if (!hasKey) {
         useAgentStore.getState().appendText("Please configure your API key in Settings → AI Agent.");
         useAgentStore.getState().setStatus("error");
         return;
       }
 
-      await ensureProviderRegistered(settings.providerId, apiKey);
+      await ensureProviderRegistered(settings.providerId);
+      await ensureToolsRegistered();
 
       await runAgent({
         prompt: trimmed,
         providerId: settings.providerId,
         modelId: settings.modelId,
-        apiKey,
         systemPrompt: settings.systemPrompt || undefined,
         signal: abort.signal,
         existingMessages: existingAiMessages.length > 0 ? existingAiMessages : undefined,

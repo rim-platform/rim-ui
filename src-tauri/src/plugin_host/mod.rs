@@ -13,13 +13,14 @@ pub mod panel_relay;
 pub mod process;
 pub mod simple_manifest;
 pub mod state;
+pub mod validation;
 pub mod wire;
 
 use commands::PendingUiEvent;
 use manifest::PluginManifest;
 use panel_registry::PanelRegistry;
 use panel_relay::PanelRelay;
-use state::{PluginStateStore, state_file_path};
+use state::{state_file_path, PluginStateStore};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -48,17 +49,15 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     for result in discovery::discover_plugins(&plugins_dir) {
         match result {
             Ok(discovered) => {
-                plugin_dirs.insert(
-                    discovered.manifest.plugin_id.clone(),
-                    discovered.plugin_dir,
-                );
-                manifests.insert(
-                    discovered.manifest.plugin_id.clone(),
-                    discovered.manifest,
-                );
+                plugin_dirs.insert(discovered.manifest.plugin_id.clone(), discovered.plugin_dir);
+                manifests.insert(discovered.manifest.plugin_id.clone(), discovered.manifest);
             }
             Err((path, err)) => {
-                eprintln!("plugin_host: failed to load plugin at {}: {}", path.display(), err);
+                eprintln!(
+                    "plugin_host: failed to load plugin at {}: {}",
+                    path.display(),
+                    err
+                );
             }
         }
     }

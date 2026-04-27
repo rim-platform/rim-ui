@@ -52,7 +52,11 @@ pub struct JsonRpcError {
 }
 
 impl JsonRpcRequest {
-    pub fn new(method: impl Into<String>, params: Option<serde_json::Value>, id: impl Into<serde_json::Value>) -> Self {
+    pub fn new(
+        method: impl Into<String>,
+        params: Option<serde_json::Value>,
+        id: impl Into<serde_json::Value>,
+    ) -> Self {
         Self {
             jsonrpc: "2.0".into(),
             method: method.into(),

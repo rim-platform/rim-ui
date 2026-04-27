@@ -1,6 +1,57 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+
+// Mock emoji-mart so the test exercises our wrapper (positioning, portal,
+// escape/click-outside handlers, prop forwarding) without depending on the
+// library's web-component / shadow-DOM internals — those are not reachable
+// through @testing-library queries.
+const pickerSpy = vi.fn();
+
+vi.mock("@emoji-mart/react", () => ({
+  default: (props: Record<string, unknown>) => {
+    pickerSpy(props);
+    return (
+      <div data-testid="emoji-mart-picker">
+        <button
+          type="button"
+          data-testid="emit-native"
+          onClick={() => {
+            const onSelect = props.onEmojiSelect as
+              | ((e: { native?: string; id?: string; name?: string }) => void)
+              | undefined;
+            onSelect?.({ native: "👍" });
+          }}
+        >
+          native
+        </button>
+        <button
+          type="button"
+          data-testid="emit-custom"
+          onClick={() => {
+            const onSelect = props.onEmojiSelect as
+              | ((e: { native?: string; id?: string; name?: string }) => void)
+              | undefined;
+            onSelect?.({ id: "custom_e1", name: "tada" });
+          }}
+        >
+          custom
+        </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock("@emoji-mart/data", () => ({ default: {} }));
+
 import { EmojiPicker } from "./EmojiPicker";
+
+// Helper: render EmojiPicker and wait for the React.lazy() Suspense boundary
+// to resolve (emoji-mart is dynamically imported, so we poll until mounted).
+async function renderPicker(props: Parameters<typeof EmojiPicker>[0]) {
+  render(<EmojiPicker {...props} />);
+  // findByTestId retries until the lazy chunk resolves and Suspense commits
+  await screen.findByTestId("emoji-mart-picker");
+}
 
 describe("EmojiPicker", () => {
   const defaultProps = {
@@ -9,66 +60,106 @@ describe("EmojiPicker", () => {
     onClose: vi.fn(),
   };
 
-  it("renders with role='listbox'", () => {
-    render(<EmojiPicker {...defaultProps} />);
-    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  beforeEach(() => {
+    pickerSpy.mockClear();
   });
 
-  it("renders default emoji options", () => {
-    render(<EmojiPicker {...defaultProps} />);
-    const options = screen.getAllByRole("option");
-    expect(options.length).toBe(10); // EMOJI_OPTIONS has 10 items
+  it("renders the emoji-mart picker into a portal", async () => {
+    await renderPicker(defaultProps);
+    expect(screen.getByTestId("emoji-mart-picker")).toBeInTheDocument();
   });
 
-  it("calls onSelect when emoji is clicked", () => {
+  it("forwards dark theme and emoji-mart config", async () => {
+    await renderPicker(defaultProps);
+    expect(pickerSpy).toHaveBeenCalled();
+    const props = pickerSpy.mock.lastCall![0] as Record<string, unknown>;
+    expect(props.theme).toBe("dark");
+    expect(props.set).toBe("native");
+  });
+
+  it("emits the native unicode value on standard emoji selection", async () => {
     const onSelect = vi.fn();
-    render(<EmojiPicker {...defaultProps} onSelect={onSelect} />);
-    const options = screen.getAllByRole("option");
-    fireEvent.click(options[0]);
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    await renderPicker({ ...defaultProps, onSelect });
+    fireEvent.click(screen.getByTestId("emit-native"));
+    expect(onSelect).toHaveBeenCalledWith("👍");
   });
 
-  it("closes on Escape key", () => {
-    const onClose = vi.fn();
-    render(<EmojiPicker {...defaultProps} onClose={onClose} />);
-    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("navigates with arrow keys", () => {
+  it("emits :name: shortcode for custom emojis", async () => {
     const onSelect = vi.fn();
-    render(<EmojiPicker {...defaultProps} onSelect={onSelect} />);
-    const listbox = screen.getByRole("listbox");
-    fireEvent.keyDown(listbox, { key: "ArrowRight" });
-    fireEvent.keyDown(listbox, { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    await renderPicker({ ...defaultProps, onSelect });
+    fireEvent.click(screen.getByTestId("emit-custom"));
+    expect(onSelect).toHaveBeenCalledWith(":tada:");
   });
 
-  it("renders custom emojis when provided", () => {
+  it("forwards a Custom category when customEmojis is provided", async () => {
     const customEmojis = [
       { id: "e1", name: "tada", imageUrl: "https://example.com/tada.png" },
       { id: "e2", name: "wave", imageUrl: "https://example.com/wave.png" },
     ];
-    render(<EmojiPicker {...defaultProps} customEmojis={customEmojis} />);
-    expect(screen.getByText("Custom")).toBeInTheDocument();
-    expect(screen.getByAltText("tada")).toBeInTheDocument();
-    expect(screen.getByAltText("wave")).toBeInTheDocument();
+    await renderPicker({ ...defaultProps, customEmojis });
+    const props = pickerSpy.mock.lastCall![0] as { custom?: unknown };
+    expect(props.custom).toEqual([
+      {
+        id: "custom",
+        name: "Custom",
+        emojis: [
+          {
+            id: "custom_e1",
+            name: "tada",
+            keywords: ["tada"],
+            skins: [{ src: "https://example.com/tada.png" }],
+          },
+          {
+            id: "custom_e2",
+            name: "wave",
+            keywords: ["wave"],
+            skins: [{ src: "https://example.com/wave.png" }],
+          },
+        ],
+      },
+    ]);
   });
 
-  it("selects custom emoji with shortcode format", () => {
-    const onSelect = vi.fn();
-    const customEmojis = [
-      { id: "e1", name: "tada", imageUrl: "https://example.com/tada.png" },
-    ];
-    render(<EmojiPicker {...defaultProps} onSelect={onSelect} customEmojis={customEmojis} />);
-    fireEvent.click(screen.getByAltText("tada"));
-    expect(onSelect).toHaveBeenCalledWith(":tada:");
+  it("does not forward a custom category when no customEmojis are provided", async () => {
+    await renderPicker(defaultProps);
+    const props = pickerSpy.mock.lastCall![0] as { custom?: unknown };
+    expect(props.custom).toBeUndefined();
   });
 
-  it("closes on click outside", () => {
+  it("calls onClose when Escape is pressed anywhere", async () => {
     const onClose = vi.fn();
-    render(<EmojiPicker {...defaultProps} onClose={onClose} />);
-    fireEvent.mouseDown(document.body);
-    expect(onClose).toHaveBeenCalled();
+    await renderPicker({ ...defaultProps, onClose });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose on outside click after the click-outside listener is attached", async () => {
+    // Install fake timers BEFORE render so the wrapper's setTimeout(..., 0)
+    // (deferring the mousedown listener to avoid the opening click immediately
+    // closing the picker) is captured from the start.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onClose = vi.fn();
+    try {
+      render(<EmojiPicker {...defaultProps} onClose={onClose} />);
+      // Flush the lazy import promise (real async) then advance fake timers
+      await vi.runAllTimersAsync();
+      fireEvent.mouseDown(document.body);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not call onClose when mousedown happens inside the picker", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onClose = vi.fn();
+    try {
+      render(<EmojiPicker {...defaultProps} onClose={onClose} />);
+      await vi.runAllTimersAsync();
+      fireEvent.mouseDown(screen.getByTestId("emoji-mart-picker"));
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
