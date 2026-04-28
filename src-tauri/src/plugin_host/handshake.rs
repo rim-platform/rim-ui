@@ -57,7 +57,7 @@ where
 
     let request = JsonRpcRequest::new(
         "rim.handshake",
-        Some(serde_json::to_value(&params).map_err(|e| WireError::Json(e))?),
+        Some(serde_json::to_value(&params).map_err(WireError::Json)?),
         0,
     );
 
@@ -73,8 +73,7 @@ where
         .result
         .ok_or_else(|| HandshakeError::InvalidResponse("missing result field".into()))
         .and_then(|v| {
-            serde_json::from_value(v)
-                .map_err(|e| HandshakeError::InvalidResponse(e.to_string()))
+            serde_json::from_value(v).map_err(|e| HandshakeError::InvalidResponse(e.to_string()))
         })?;
 
     if !result.accepted {
@@ -115,7 +114,9 @@ mod tests {
                 "error": null
             }),
         );
-        wire::write_frame(&mut response_buf, &response).await.unwrap();
+        wire::write_frame(&mut response_buf, &response)
+            .await
+            .unwrap();
 
         let mut request_buf = Vec::new();
         let mut reader = std::io::Cursor::new(response_buf);
@@ -150,19 +151,16 @@ mod tests {
                 "error": "incompatible host"
             }),
         );
-        wire::write_frame(&mut response_buf, &response).await.unwrap();
+        wire::write_frame(&mut response_buf, &response)
+            .await
+            .unwrap();
 
         let mut request_buf = Vec::new();
         let mut reader = std::io::Cursor::new(response_buf);
 
-        let err = perform_handshake(
-            &mut reader,
-            &mut request_buf,
-            "dev.example.test",
-            &[],
-        )
-        .await
-        .unwrap_err();
+        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, HandshakeError::Rejected(_)));
     }
@@ -179,19 +177,16 @@ mod tests {
                 "error": null
             }),
         );
-        wire::write_frame(&mut response_buf, &response).await.unwrap();
+        wire::write_frame(&mut response_buf, &response)
+            .await
+            .unwrap();
 
         let mut request_buf = Vec::new();
         let mut reader = std::io::Cursor::new(response_buf);
 
-        let err = perform_handshake(
-            &mut reader,
-            &mut request_buf,
-            "dev.example.test",
-            &[],
-        )
-        .await
-        .unwrap_err();
+        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, HandshakeError::VersionMismatch(99)));
     }
@@ -208,19 +203,16 @@ mod tests {
                 "error": null
             }),
         );
-        wire::write_frame(&mut response_buf, &response).await.unwrap();
+        wire::write_frame(&mut response_buf, &response)
+            .await
+            .unwrap();
 
         let mut request_buf = Vec::new();
         let mut reader = std::io::Cursor::new(response_buf);
 
-        let err = perform_handshake(
-            &mut reader,
-            &mut request_buf,
-            "dev.example.test",
-            &[],
-        )
-        .await
-        .unwrap_err();
+        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, HandshakeError::PluginIdMismatch { .. }));
     }

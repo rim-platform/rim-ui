@@ -23,6 +23,14 @@ pub struct ManifestCommand {
     pub required_capabilities: Vec<String>,
     #[serde(default)]
     pub arguments: Vec<serde_json::Value>,
+    /// Opt-in for AI agent exposure. F2 validation rejects ai_callable commands
+    /// whose output_schema would leak a plugin_install_id before registration.
+    #[serde(default)]
+    pub ai_callable: bool,
+    /// JSON-Schema-shaped output envelope declaration. None → F2 requires manual review
+    /// for ai_callable commands (cannot statically prove absence of install-ID leak).
+    #[serde(default)]
+    pub output_schema: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,6 +195,24 @@ impl PluginManifest {
             .iter()
             .any(|prefix| self.plugin_id.starts_with(prefix))
     }
+
+    /// SHA-256 hex of the canonical JSON serialization. Used to detect manifest
+    /// drift between installs so the consent gate can demand re-approval when
+    /// the ai_callable command set changes.
+    pub fn content_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let json = serde_json::to_string(self).unwrap_or_default();
+        hex::encode(Sha256::digest(json.as_bytes()))
+    }
+
+    /// Returns the set of ai_callable command IDs declared in this manifest.
+    pub fn ai_callable_command_ids(&self) -> Vec<String> {
+        self.commands
+            .iter()
+            .filter(|c| c.ai_callable)
+            .map(|c| c.id.clone())
+            .collect()
+    }
 }
 
 fn validate_plugin_id(id: &str) -> Result<(), ManifestError> {
@@ -298,6 +324,8 @@ mod tests {
                     required_context: vec![],
                     required_capabilities: vec![],
                     arguments: vec![],
+                    ai_callable: false,
+                    output_schema: None,
                 },
                 ManifestCommand {
                     id: "other_action".into(),
@@ -308,6 +336,8 @@ mod tests {
                     required_context: vec!["message".into()],
                     required_capabilities: vec![],
                     arguments: vec![],
+                    ai_callable: false,
+                    output_schema: None,
                 },
             ],
             keybind_suggestions: vec![KeybindSuggestion {

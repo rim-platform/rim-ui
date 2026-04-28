@@ -50,10 +50,23 @@ export type AiStreamChunk =
   | { kind: "done"; usage: { inputTokens: number; outputTokens: number } }
   | { kind: "error"; message: string };
 
+/**
+ * Result of `AiProvider.validateCredentials`. Post-#59 this replaces the
+ * previous `Promise<boolean>` contract so the Settings UI can distinguish
+ * "provider said the key is bad" (user must fix the key) from "we couldn't
+ * reach the provider" (user must fix their network). Pre-fix both paths
+ * collapsed to `false` and produced a misleading "Invalid API key" toast
+ * on a DNS/TLS failure (Hawkeye WARN #4).
+ */
+export type ValidationOutcome =
+  | { kind: "valid" }
+  | { kind: "invalid" }
+  | { kind: "network_error"; message: string };
+
 export interface AiProvider {
   readonly config: AiProviderConfig;
   chat(request: AiChatRequest): AsyncIterable<AiStreamChunk>;
-  validateCredentials(apiKey: string): Promise<boolean>;
+  validateCredentials(apiKey: string): Promise<ValidationOutcome>;
   /** Fetch available models dynamically. Falls back to static list on failure. */
   fetchModels?(apiKey: string): Promise<AiModelDef[]>;
 }

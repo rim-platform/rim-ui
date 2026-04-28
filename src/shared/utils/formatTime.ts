@@ -1,5 +1,6 @@
 export function formatTime(iso: string): string {
   const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {

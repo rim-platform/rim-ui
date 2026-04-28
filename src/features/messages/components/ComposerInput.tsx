@@ -13,6 +13,7 @@ import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCo
 import { useResolvedKeybinds } from "../../commands/api/useKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { toast } from "../../../shared/toast";
 import type { CommandDefinition } from "../../commands/types";
@@ -76,6 +77,7 @@ export function ComposerInput({
 
   // Fetch all commands and keybinds for inline command preview
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const { emojis: customEmojis } = useCustomEmojis(workspaceId);
   const { data: allCommands } = useCommands("PALETTE");
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const executeCommandMutation = useExecuteCommandMutation();
@@ -579,6 +581,7 @@ export function ComposerInput({
           position={getEmojiPickerPosition()}
           onSelect={insertEmoji}
           onClose={() => setEmojiPickerOpen(false)}
+          customEmojis={customEmojis}
         />
       )}
     </>

@@ -23,7 +23,7 @@ function makeProvider(id: string, name: string): AiProvider {
       yield { kind: "done" as const, usage: { inputTokens: 0, outputTokens: 0 } };
     },
     async validateCredentials() {
-      return true;
+      return { kind: "valid" as const };
     },
   };
 }

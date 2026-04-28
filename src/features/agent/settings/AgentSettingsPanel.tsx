@@ -3,7 +3,7 @@ import { Eye, EyeOff, CheckCircle, XCircle, Loader2, RefreshCw, ExternalLink } f
 
 import type { AiModelDef } from "../providers/types";
 import { useAgentStore } from "../state/useAgentStore";
-import { getProvider, registerProvider } from "../providers/registry";
+import { getProvider } from "../providers/registry";
 import { createAnthropicProvider } from "../providers/anthropic";
 import { createOpenAiProvider } from "../providers/openai";
 import { saveApiKey, loadApiKey } from "../runtime/keyStore";
@@ -18,15 +18,26 @@ const API_KEY_URLS: Record<string, string> = {
   openai: "https://platform.openai.com/api-keys",
 };
 
+// Trivial placeholder loader used only when we need to synthesise a provider
+// instance to read its static `config.models` list. The loader is never
+// invoked because this path does not call `chat()`. Post-#59 the factory
+// signature expects a thunk, not a key — passing a no-op satisfies the
+// type without handing it any secret material.
+const NEVER_INVOKED_KEY_LOADER = async (): Promise<string> => {
+  throw new Error(
+    "loader never invoked — static-models path must not call chat()",
+  );
+};
+
 function getStaticModelsForProvider(providerId: string): AiModelDef[] {
   const existing = getProvider(providerId);
   if (existing) return existing.config.models;
 
   if (providerId === "anthropic") {
-    return createAnthropicProvider("").config.models;
+    return createAnthropicProvider(NEVER_INVOKED_KEY_LOADER).config.models;
   }
   if (providerId === "openai") {
-    return createOpenAiProvider("").config.models;
+    return createOpenAiProvider(NEVER_INVOKED_KEY_LOADER).config.models;
   }
   return [];
 }
@@ -38,7 +49,15 @@ export function AgentSettingsPanel() {
 
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState<boolean | null>(null);
+  // `null` = not yet tested. Otherwise a discriminated result from the
+  // provider (post-#59: distinguish "invalid" from "network_error" so the
+  // user doesn't blame their key for a DNS hiccup — Hawkeye WARN #4).
+  const [validationResult, setValidationResult] = useState<
+    | { kind: "valid" }
+    | { kind: "invalid" }
+    | { kind: "network_error"; message: string }
+    | null
+  >(null);
   const [keyInput, setKeyInput] = useState("");
   const [dynamicModels, setDynamicModels] = useState<AiModelDef[] | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -79,15 +98,21 @@ export function AgentSettingsPanel() {
     setFetchingModels(true);
     setModelsError(null);
     try {
+      // Local-scope loader for one-shot fetchModels. Deliberately NOT
+      // registered against the global provider registry — that's
+      // AgentOverlay's responsibility, and its loader reads Stronghold
+      // fresh per chat-request. Registering here would pin an unsaved
+      // key into the registry's closure for the lifetime of the session,
+      // violating the #59 invariant.
+      const loader = async () => apiKey;
       let provider;
       if (settings.providerId === "anthropic") {
-        provider = createAnthropicProvider(apiKey);
+        provider = createAnthropicProvider(loader);
       } else if (settings.providerId === "openai") {
-        provider = createOpenAiProvider(apiKey);
+        provider = createOpenAiProvider(loader);
       }
 
       if (provider?.fetchModels) {
-        registerProvider(provider);
         const fetched = await provider.fetchModels(apiKey);
         setDynamicModels(fetched);
         if (fetched.length > 0 && !fetched.find((m) => m.id === settings.modelId)) {
@@ -118,20 +143,26 @@ export function AgentSettingsPanel() {
     setValidationResult(null);
 
     try {
+      // Same rationale as handleFetchModels: local-scope provider only.
+      // We DO NOT register this instance globally — AgentOverlay will
+      // re-register with a Stronghold-reading loader on its first chat()
+      // call. That's the registry's source of truth for run-time dispatch.
+      const loader = async () => apiKey;
       let provider;
       if (settings.providerId === "anthropic") {
-        provider = createAnthropicProvider(apiKey);
+        provider = createAnthropicProvider(loader);
       } else if (settings.providerId === "openai") {
-        provider = createOpenAiProvider(apiKey);
+        provider = createOpenAiProvider(loader);
       }
 
       if (provider) {
-        registerProvider(provider);
-        const valid = await provider.validateCredentials(apiKey);
-        setValidationResult(valid);
+        const outcome = await provider.validateCredentials(apiKey);
+        setValidationResult(outcome);
 
-        // On success, auto-fetch models
-        if (valid && provider.fetchModels) {
+        // On valid credentials, auto-fetch models. On invalid / network
+        // error we skip the fetch — it would fail with the same cause and
+        // spam a second error line.
+        if (outcome.kind === "valid" && provider.fetchModels) {
           setFetchingModels(true);
           setModelsError(null);
           try {
@@ -147,8 +178,13 @@ export function AgentSettingsPanel() {
           }
         }
       }
-    } catch {
-      setValidationResult(false);
+    } catch (err) {
+      // The provider wrapper already catches invoke errors and maps them
+      // to `network_error`. This outer catch only fires on an unexpected
+      // synchronous throw (e.g. provider factory blew up) — surface it as
+      // a network_error too rather than silently flipping to "Invalid".
+      const message = err instanceof Error ? err.message : "validation failed";
+      setValidationResult({ kind: "network_error", message });
     } finally {
       setValidating(false);
     }
@@ -238,15 +274,24 @@ export function AgentSettingsPanel() {
         </div>
         {validationResult !== null && (
           <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-            {validationResult ? (
+            {validationResult.kind === "valid" && (
               <>
                 <CheckCircle className="h-3 w-3 text-rim-success" />
                 <span className="text-rim-success">API key is valid</span>
               </>
-            ) : (
+            )}
+            {validationResult.kind === "invalid" && (
               <>
                 <XCircle className="h-3 w-3 text-rim-danger" />
                 <span className="text-rim-danger">Invalid API key</span>
+              </>
+            )}
+            {validationResult.kind === "network_error" && (
+              <>
+                <XCircle className="h-3 w-3 text-rim-warm" />
+                <span className="text-rim-warm">
+                  Could not reach provider. Check your network and try again.
+                </span>
               </>
             )}
           </div>
@@ -254,7 +299,7 @@ export function AgentSettingsPanel() {
       </div>
 
       {/* Model — visible only after API key is set */}
-      {(hasApiKey || validationResult) && (
+      {(hasApiKey || validationResult?.kind === "valid") && (
         <div>
           <label className="mb-1.5 block text-xs font-medium text-rim-text-muted">Model</label>
           <div className="flex gap-2">
@@ -298,7 +343,7 @@ export function AgentSettingsPanel() {
       )}
 
       {/* System Prompt — visible only after API key is set */}
-      {(hasApiKey || validationResult) && (
+      {(hasApiKey || validationResult?.kind === "valid") && (
         <div>
           <label className="mb-1.5 block text-xs font-medium text-rim-text-muted">
             Custom System Prompt <span className="text-rim-text-faint">(optional)</span>

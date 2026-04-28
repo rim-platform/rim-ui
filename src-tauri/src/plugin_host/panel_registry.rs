@@ -19,12 +19,7 @@ impl PanelRegistry {
 
     /// Register an iframe as belonging to a plugin's panel.
     /// Called when the frontend mounts the iframe.
-    pub fn register(
-        &self,
-        iframe_id: &str,
-        plugin_id: &str,
-        panel_id: &str,
-    ) -> Result<(), String> {
+    pub fn register(&self, iframe_id: &str, plugin_id: &str, panel_id: &str) -> Result<(), String> {
         let mut iframes = self.iframes.write().map_err(|e| e.to_string())?;
         iframes.insert(
             iframe_id.to_string(),
@@ -92,10 +87,7 @@ mod tests {
             .unwrap();
 
         let result = registry.lookup("iframe-1").unwrap();
-        assert_eq!(
-            result,
-            Some(("dev.example.test".into(), "main".into()))
-        );
+        assert_eq!(result, Some(("dev.example.test".into(), "main".into())));
     }
 
     #[test]

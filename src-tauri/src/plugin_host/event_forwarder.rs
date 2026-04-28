@@ -141,10 +141,8 @@ impl EventForwarder {
         event_type: &str,
         payload: serde_json::Value,
     ) -> Result<(), WireError> {
-        let notification = JsonRpcNotification::new(
-            format!("rim.event.{event_type}"),
-            Some(payload),
-        );
+        let notification =
+            JsonRpcNotification::new(format!("rim.event.{event_type}"), Some(payload));
         let mut w = writer.lock().await;
         wire::write_frame(&mut *w, &notification).await
     }
@@ -152,22 +150,24 @@ impl EventForwarder {
     /// Check if a plugin has any active subscriptions.
     pub async fn has_subscriptions(&self, plugin_id: &str) -> bool {
         let subs = self.subscriptions.read().await;
-        subs.get(plugin_id)
-            .map(|s| !s.is_empty())
-            .unwrap_or(false)
+        subs.get(plugin_id).map(|s| !s.is_empty()).unwrap_or(false)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn subscribe_and_query() {
         let forwarder = EventForwarder::new();
 
         forwarder
-            .subscribe("dev.example.a", vec!["message.created".into(), "message.deleted".into()])
+            .subscribe(
+                "dev.example.a",
+                vec!["message.created".into(), "message.deleted".into()],
+            )
             .await
             .unwrap();
         forwarder

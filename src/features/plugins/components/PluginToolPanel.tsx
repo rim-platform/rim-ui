@@ -3,7 +3,6 @@ import { Puzzle } from "lucide-react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { usePluginList } from "../api/usePluginList";
 import { usePluginEnable, usePluginDisable } from "../api/usePluginActions";
-import { TrustBadge } from "./TrustBadge";
 import { PluginErrorBoundary } from "./PluginErrorBoundary";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { cn } from "../../../shared/ui/cn";
@@ -56,20 +55,20 @@ export function PluginToolPanel() {
   return (
     <div className="space-y-1">
       {enabledPlugins.map((plugin) => {
-        const indicator = healthIndicator[plugin.health];
+        const indicator = plugin.health ? healthIndicator[plugin.health] : healthIndicator["stopped"];
 
         return (
-          <div key={plugin.manifest.id} className="px-1">
+          <div key={plugin.plugin_id} className="px-1">
             <PluginErrorBoundary
-              pluginId={plugin.manifest.id}
-              pluginName={plugin.manifest.name}
-              health={plugin.health}
+              pluginId={plugin.plugin_id}
+              pluginName={plugin.display_name}
+              health={plugin.health ?? "stopped"}
               onRestart={() => {
-                disable.mutate(plugin.manifest.id, {
-                  onSuccess: () => enable.mutate(plugin.manifest.id),
+                disable.mutate(plugin.plugin_id, {
+                  onSuccess: () => enable.mutate(plugin.plugin_id),
                 });
               }}
-              onDisable={() => disable.mutate(plugin.manifest.id)}
+              onDisable={() => disable.mutate(plugin.plugin_id)}
             >
               <button
                 type="button"
@@ -80,8 +79,7 @@ export function PluginToolPanel() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm text-rim-text">{plugin.manifest.name}</span>
-                    <TrustBadge level={plugin.manifest.trust_level} />
+                    <span className="truncate text-sm text-rim-text">{plugin.display_name}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className={cn("h-1.5 w-1.5 rounded-full", indicator.color)} />

@@ -1,6 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import { logger } from "../../../core/logger";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import type { PluginCapability } from "../types";
 
@@ -25,7 +24,7 @@ export type HostToPluginMessage =
 
 // Capability requirements for each message type
 const messageCapabilities: Record<string, PluginCapability | null> = {
-  "rim.ui.notification.show": "notifications",
+  "rim.ui.notification.show": "ui.notify",
   "rim.ui.dialog.confirm": null,
   "rim.command.execute": null,
   "rim.settings.get": null,
@@ -142,13 +141,17 @@ async function relayUiEventToProcess(
   eventName: string,
   payload: unknown,
 ): Promise<void> {
-  try {
-    await invoke("plugin_relay_ui_event", {
-      ...{ pluginId, eventName, payload: payload ?? null },
-    });
-  } catch {
-    // Tauri command not yet available — no-op for development
-    logger.debug(`[RIM:PluginBridge] Mock relay ui_event: ${pluginId}.${eventName}`);
+  const result = await safeInvoke<void>("plugin_relay_ui_event", {
+    pluginId,
+    eventName,
+    payload: payload ?? null,
+  });
+  if (!result.ok) {
+    if (result.error.kind === "ipc_unavailable") {
+      logger.debug(`[RIM:PluginBridge] Mock relay ui_event: ${pluginId}.${eventName}`);
+      return;
+    }
+    logger.warn(`[RIM:PluginBridge] relay ui_event failed (${result.error.kind}):`, result.error.message);
   }
 }
 
@@ -160,15 +163,16 @@ export async function fetchAndRelayPanelState(
   pluginId: string,
   sendToPlugin: (message: HostToPluginMessage) => void,
 ): Promise<void> {
-  try {
-    const state = await invoke<unknown>("plugin_panel_state", {
-      ...{ pluginId },
-    });
-    if (state !== null && state !== undefined) {
-      sendToPlugin({ type: "panel.state_update", state });
+  const result = await safeInvoke<unknown>("plugin_panel_state", { pluginId });
+  if (!result.ok) {
+    if (result.error.kind === "ipc_unavailable") {
+      logger.debug(`[RIM:PluginBridge] Mock fetch panel state: ${pluginId}`);
+      return;
     }
-  } catch {
-    // Tauri command not yet available — no-op for development
-    logger.debug(`[RIM:PluginBridge] Mock fetch panel state: ${pluginId}`);
+    logger.warn(`[RIM:PluginBridge] fetch panel state failed (${result.error.kind}):`, result.error.message);
+    return;
+  }
+  if (result.value !== null && result.value !== undefined) {
+    sendToPlugin({ type: "panel.state_update", state: result.value });
   }
 }

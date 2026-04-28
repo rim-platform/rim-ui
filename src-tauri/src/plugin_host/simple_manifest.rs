@@ -105,6 +105,8 @@ pub fn parse_simple_manifest(
                     required_context: vec![],
                     required_capabilities: vec![],
                     arguments: vec![],
+                    ai_callable: false,
+                    output_schema: None,
                 });
             }
             _ => {
@@ -120,12 +122,10 @@ pub fn parse_simple_manifest(
         }
     }
 
-    let plugin_id = plugin_id.ok_or_else(|| {
-        ManifestError::Validation("missing required header: rim-plugin".into())
-    })?;
-    let display_name = name.ok_or_else(|| {
-        ManifestError::Validation("missing required header: rim-name".into())
-    })?;
+    let plugin_id = plugin_id
+        .ok_or_else(|| ManifestError::Validation("missing required header: rim-plugin".into()))?;
+    let display_name =
+        name.ok_or_else(|| ManifestError::Validation("missing required header: rim-name".into()))?;
     let version = version.unwrap_or_else(|| "0.1.0".into());
 
     let entrypoint = detect_entrypoint(file_name);
@@ -260,7 +260,8 @@ console.log("hello");
 
     #[test]
     fn malformed_command_rejected() {
-        let source = "# rim-plugin: dev.example.test\n# rim-name: Test\n# rim-command: no_pipe_here\n";
+        let source =
+            "# rim-plugin: dev.example.test\n# rim-name: Test\n# rim-command: no_pipe_here\n";
         let err = parse_simple_manifest(source, "main.js").unwrap_err();
         assert!(err.to_string().contains("rim-command must have format"));
     }
@@ -274,7 +275,8 @@ console.log("hello");
 
     #[test]
     fn stops_at_non_comment_line() {
-        let source = "# rim-plugin: dev.example.test\n# rim-name: Test\ncode();\n# rim-version: 2.0.0\n";
+        let source =
+            "# rim-plugin: dev.example.test\n# rim-name: Test\ncode();\n# rim-version: 2.0.0\n";
         let manifest = parse_simple_manifest(source, "main.js").unwrap();
         // rim-version after code line should be ignored
         assert_eq!(manifest.version, "0.1.0");

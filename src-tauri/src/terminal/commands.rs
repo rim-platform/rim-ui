@@ -1,8 +1,8 @@
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use tauri::State;
 
 use super::session::{PtySession, SessionInfo};
-use super::{MAX_SESSIONS, TerminalState};
+use super::{TerminalState, MAX_SESSIONS};
 
 #[tauri::command]
 pub fn terminal_create(
@@ -23,8 +23,8 @@ pub fn terminal_create(
     }
 
     let session_id = uuid::Uuid::new_v4().to_string();
-    let session = PtySession::spawn(app_handle, session_id.clone(), shell, cwd)
-        .map_err(|e| e.to_string())?;
+    let session =
+        PtySession::spawn(app_handle, session_id.clone(), shell, cwd).map_err(|e| e.to_string())?;
 
     sessions.insert(session_id.clone(), session);
     Ok(session_id)

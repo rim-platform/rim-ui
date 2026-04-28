@@ -8,7 +8,9 @@ export type MainSurface =
   | { kind: "conversation" }
   | { kind: "settings" }
   | { kind: "plugin"; pluginId: string }
-  | { kind: "marketplace" };
+  | { kind: "marketplace" }
+  | { kind: "incidents" }
+  | { kind: "audit-log" };
 
 export type ActivePluginPanel = {
   pluginId: string;

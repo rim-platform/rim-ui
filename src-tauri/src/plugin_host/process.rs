@@ -34,7 +34,11 @@ pub struct PluginPipes {
 
 impl PluginProcess {
     /// Spawn a plugin child process from the given entrypoint within the plugin directory.
-    pub fn spawn(plugin_id: &str, plugin_dir: &Path, entrypoint: &str) -> Result<(Self, PluginPipes), ProcessError> {
+    pub fn spawn(
+        plugin_id: &str,
+        plugin_dir: &Path,
+        entrypoint: &str,
+    ) -> Result<(Self, PluginPipes), ProcessError> {
         let entrypoint_path = plugin_dir.join(entrypoint);
         if !entrypoint_path.exists() {
             return Err(ProcessError::EntrypointNotFound(

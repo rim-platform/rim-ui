@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { usePluginList } from "./usePluginList";
 import type { CommandDefinition } from "../../commands/types";
-import type { PluginCommandDef, PluginContextType, PluginInfo } from "../types";
+import type { PluginContextType } from "../types";
 
 function pluginCommandId(pluginId: string, commandId: string): string {
   return `plugin.${pluginId}.${commandId}`;
@@ -11,24 +11,6 @@ function pluginCommandId(pluginId: string, commandId: string): string {
 // Extended command definition that carries context_types metadata
 export interface PluginCommandDefinition extends CommandDefinition {
   contextTypes: PluginContextType[];
-}
-
-function pluginCommandToDefinition(plugin: PluginInfo, cmd: PluginCommandDef): PluginCommandDefinition {
-  return {
-    id: pluginCommandId(plugin.manifest.id, cmd.id),
-    title: cmd.title,
-    description: cmd.description,
-    category: plugin.manifest.name,
-    sourceKind: "PLUGIN",
-    executionTarget: "DESKTOP_LOCAL",
-    requiredContext: [],
-    requiredCapabilities: [],
-    visibleInPalette: true,
-    visibleInContextMenus: cmd.context_menu_action ?? false,
-    keybindCapable: true,
-    dangerous: false,
-    contextTypes: cmd.context_types ?? [],
-  };
 }
 
 export function usePluginCommands() {
@@ -40,8 +22,23 @@ export function usePluginCommands() {
     const commands: PluginCommandDefinition[] = [];
     for (const plugin of plugins) {
       if (!plugin.enabled || plugin.health !== "running") continue;
-      for (const cmd of plugin.manifest.commands ?? []) {
-        commands.push(pluginCommandToDefinition(plugin, cmd));
+      // context_actions from the Rust flat shape — qualified IDs already applied.
+      for (const action of plugin.context_actions ?? []) {
+        commands.push({
+          id: pluginCommandId(plugin.plugin_id, action.command_id),
+          title: action.title,
+          description: action.title,
+          category: plugin.display_name,
+          sourceKind: "PLUGIN",
+          executionTarget: "DESKTOP_LOCAL",
+          requiredContext: [],
+          requiredCapabilities: [],
+          visibleInPalette: true,
+          visibleInContextMenus: true,
+          keybindCapable: true,
+          dangerous: false,
+          contextTypes: action.context_types as PluginContextType[],
+        });
       }
     }
     return commands;

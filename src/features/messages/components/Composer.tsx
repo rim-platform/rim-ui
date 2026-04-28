@@ -174,7 +174,11 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
           messageId,
         });
 
-        await uploadFileRest(file, ticket.createAttachment.uploadToken);
+        await uploadFileRest(
+          file,
+          ticket.createAttachment.uploadToken,
+          ticket.createAttachment.attachmentId,
+        );
 
         await finalizeAttachment.mutateAsync({
           attachmentId: ticket.createAttachment.attachmentId,

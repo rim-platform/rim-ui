@@ -7,8 +7,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { usePluginList } from "../api/usePluginList";
 import { usePluginEnable, usePluginDisable, usePluginUninstall } from "../api/usePluginActions";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
-import { TrustBadge } from "./TrustBadge";
-import type { PluginInfo, PluginManifest, PluginHealth } from "../types";
+import type { PluginInfo, PluginHealth } from "../types";
 
 const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
   running: { color: "bg-rim-success", label: "Running" },
@@ -23,7 +22,7 @@ export function PluginSettingsPage() {
   const enable = usePluginEnable();
   const disable = usePluginDisable();
   const uninstall = usePluginUninstall();
-  const [permissionsTarget, setPermissionsTarget] = useState<PluginManifest | null>(null);
+  const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
 
   if (!capabilities.pluginHost) {
     return (
@@ -48,9 +47,9 @@ export function PluginSettingsPage() {
 
   function handleToggle(plugin: PluginInfo) {
     if (plugin.enabled) {
-      disable.mutate(plugin.manifest.id);
+      disable.mutate(plugin.plugin_id);
     } else {
-      enable.mutate(plugin.manifest.id);
+      enable.mutate(plugin.plugin_id);
     }
   }
 
@@ -63,9 +62,11 @@ export function PluginSettingsPage() {
       <h2 className="text-sm font-medium text-rim-text">Installed Plugins</h2>
 
       <div className="space-y-2">
-        {plugins.map((plugin) => (
+        {plugins.map((plugin) => {
+          const healthState = plugin.health ? healthDisplay[plugin.health] : null;
+          return (
           <div
-            key={plugin.manifest.id}
+            key={plugin.plugin_id}
             className="flex items-center gap-4 rounded-lg border border-rim-line bg-rim-void p-4"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rim-accent/10">
@@ -74,16 +75,17 @@ export function PluginSettingsPage() {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-rim-text">{plugin.manifest.name}</span>
-                <TrustBadge level={plugin.manifest.trust_level} />
+                <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
               </div>
-              <p className="text-xs text-rim-text-muted">{plugin.manifest.description}</p>
+              <p className="text-xs text-rim-text-muted">{plugin.description}</p>
               <div className="flex items-center gap-3 text-[11px] text-rim-text-muted">
-                <span>v{plugin.manifest.version} by {plugin.manifest.author}</span>
-                <span className="flex items-center gap-1">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", healthDisplay[plugin.health].color)} />
-                  {healthDisplay[plugin.health].label}
-                </span>
+                <span>v{plugin.version}{plugin.author ? ` by ${plugin.author}` : ""}</span>
+                {healthState && (
+                  <span className="flex items-center gap-1">
+                    <span className={cn("h-1.5 w-1.5 rounded-full", healthState.color)} />
+                    {healthState.label}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -91,7 +93,7 @@ export function PluginSettingsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPermissionsTarget(plugin.manifest)}
+                onClick={() => setPermissionsTarget(plugin)}
               >
                 Permissions
               </Button>
@@ -113,7 +115,7 @@ export function PluginSettingsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleUninstall(plugin.manifest.id)}
+                onClick={() => handleUninstall(plugin.plugin_id)}
                 title="Uninstall"
                 aria-label="Uninstall plugin"
               >
@@ -121,14 +123,15 @@ export function PluginSettingsPage() {
               </Button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {permissionsTarget && (
         <PluginCapabilityPrompt
           open={true}
           onClose={() => setPermissionsTarget(null)}
-          manifest={permissionsTarget}
+          plugin={permissionsTarget}
         />
       )}
     </div>

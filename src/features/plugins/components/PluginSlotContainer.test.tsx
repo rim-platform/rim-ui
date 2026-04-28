@@ -39,17 +39,18 @@ import type { PluginInfo, PluginPanelDef } from "../types";
 
 describe("PluginSlotContainer", () => {
   const mockPlugin: PluginInfo = {
-    manifest: {
-      id: "test-plugin",
-      name: "Test Plugin",
-      version: "1.0.0",
-      description: "A test plugin",
-      author: "Test Author",
-      trust_level: "verified",
-      capabilities: [],
-    },
+    plugin_id: "test-plugin",
+    manifest_id: "test-plugin",
+    display_name: "Test Plugin",
+    version: "1.0.0",
+    description: "A test plugin",
+    author: "Test Author",
     enabled: true,
+    capabilities: [],
     approved_capabilities: [],
+    approved_ai_commands: [],
+    ai_callable_commands: [],
+    ai_consent_required: false,
     health: "running",
   };
 
@@ -69,18 +70,6 @@ describe("PluginSlotContainer", () => {
     );
 
     expect(screen.getByText("Test Panel")).toBeInTheDocument();
-  });
-
-  it("renders the trust badge", () => {
-    render(
-      <PluginSlotContainer
-        plugin={mockPlugin}
-        panel={mockPanel}
-        onClose={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Verified")).toBeInTheDocument();
   });
 
   it("renders a close button", () => {

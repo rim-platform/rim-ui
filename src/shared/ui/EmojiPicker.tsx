@@ -1,16 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { lazy, Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "./cn";
+
 import { Z } from "./zIndex";
+
 /** Minimal custom emoji shape needed by the picker (avoids importing from features/emoji). */
 export interface CustomEmoji {
   id: string;
   name: string;
   imageUrl: string;
 }
-
-const EMOJI_OPTIONS = ["\u{1F44D}", "\u{1F44E}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F389}", "\u{1F680}", "\u{1F440}", "\u2705"];
-const COLS = 5;
 
 interface EmojiPickerProps {
   position: { x: number; y: number };
@@ -22,40 +20,70 @@ interface EmojiPickerProps {
 
 export type { EmojiPickerProps };
 
+// Dynamically import the heavy emoji-mart bundle (~450 kB data + picker JS)
+// only when the picker is first rendered. Subsequent renders use the cached module.
+const LazyPicker = lazy(async () => {
+  const [{ default: Picker }, { default: data }] = await Promise.all([
+    import("@emoji-mart/react"),
+    import("@emoji-mart/data"),
+  ]);
+
+  // Wrap into a named default export that Suspense / lazy can consume
+  function EmojiMartPicker(props: React.ComponentProps<typeof Picker>) {
+    return <Picker {...props} data={data} />;
+  }
+
+  return { default: EmojiMartPicker };
+});
+
+const PICKER_WIDTH = 352;
+const PICKER_HEIGHT = 435;
+
+/**
+ * Full-featured emoji picker using emoji-mart.
+ * - All Unicode emojis organized by category
+ * - Search bar
+ * - Skin tone picker
+ * - Frequently used / recents
+ * - Custom workspace emojis
+ * - Dark theme matching RIM design
+ *
+ * emoji-mart is loaded lazily on first render (not part of the main bundle).
+ */
 export function EmojiPicker({ position, onSelect, onClose, customEmojis }: EmojiPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [focusedIndex, setFocusedIndex] = useState(0);
 
-  const hasCustom = customEmojis && customEmojis.length > 0;
-  const totalItems = (hasCustom ? customEmojis.length : 0) + EMOJI_OPTIONS.length;
+  // Convert custom emojis to emoji-mart format
+  const custom = useMemo(() => {
+    if (!customEmojis || customEmojis.length === 0) return undefined;
+    return [
+      {
+        id: "custom",
+        name: "Custom",
+        emojis: customEmojis.map((e) => ({
+          id: `custom_${e.id}`,
+          name: e.name,
+          keywords: [e.name],
+          skins: [{ src: e.imageUrl }],
+        })),
+      },
+    ];
+  }, [customEmojis]);
 
   // Smart positioning: decide whether to render above or below the anchor point
-  const computeStyle = useCallback((): React.CSSProperties => {
-    const pickerHeight = hasCustom ? 200 : 120;
-    const pickerWidth = 220;
+  const style = useMemo((): React.CSSProperties => {
     const spaceBelow = window.innerHeight - position.y;
-    const showAbove = spaceBelow < pickerHeight && position.y > pickerHeight;
+    const showAbove = spaceBelow < PICKER_HEIGHT && position.y > PICKER_HEIGHT;
 
     return {
       position: "fixed",
-      left: Math.min(position.x, window.innerWidth - pickerWidth - 8),
+      left: Math.min(position.x, window.innerWidth - PICKER_WIDTH - 8),
       zIndex: Z.POPOVER,
       ...(showAbove
         ? { bottom: window.innerHeight - position.y + 4 }
         : { top: position.y + 4 }),
     };
-  }, [position.x, position.y, hasCustom]);
-
-  const [style, setStyle] = useState<React.CSSProperties>(() => computeStyle());
-
-  useEffect(() => {
-    setStyle(computeStyle());
-  }, [computeStyle]);
-
-  // Auto-focus container
-  useEffect(() => {
-    containerRef.current?.focus();
-  }, []);
+  }, [position.x, position.y]);
 
   // Close on click outside
   useEffect(() => {
@@ -64,115 +92,64 @@ export function EmojiPicker({ position, onSelect, onClose, customEmojis }: Emoji
         onClose();
       }
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    // Use setTimeout to avoid the same click that opened the picker from closing it
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClick);
+    };
   }, [onClose]);
 
-  function handleSelect(index: number) {
-    const customCount = hasCustom ? customEmojis!.length : 0;
-    if (index < customCount && customEmojis) {
-      // Custom emoji — insert as :name: shortcode
-      onSelect(`:${customEmojis[index].name}:`);
-    } else {
-      onSelect(EMOJI_OPTIONS[index - customCount]);
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    switch (e.key) {
-      case "ArrowRight":
-        e.preventDefault();
-        setFocusedIndex((prev) => Math.min(prev + 1, totalItems - 1));
-        break;
-      case "ArrowLeft":
-        e.preventDefault();
-        setFocusedIndex((prev) => Math.max(prev - 1, 0));
-        break;
-      case "ArrowDown":
-        e.preventDefault();
-        setFocusedIndex((prev) => Math.min(prev + COLS, totalItems - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setFocusedIndex((prev) => Math.max(prev - COLS, 0));
-        break;
-      case "Enter":
-        e.preventDefault();
-        handleSelect(focusedIndex);
-        break;
-      case "Escape":
-        e.preventDefault();
+  // Close on Escape
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
         onClose();
-        break;
+      }
     }
-  }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
-  const customCount = hasCustom ? customEmojis.length : 0;
+  const handleEmojiSelect = useCallback(
+    (emoji: { native?: string; id?: string; name?: string; shortcodes?: string }) => {
+      if (emoji.native) {
+        // Standard Unicode emoji
+        onSelect(emoji.native);
+      } else if (emoji.id?.startsWith("custom_")) {
+        // Custom emoji — insert as :name: shortcode
+        onSelect(`:${emoji.name}:`);
+      } else if (emoji.shortcodes) {
+        // Fallback — use shortcode representation
+        onSelect(emoji.shortcodes);
+      }
+    },
+    [onSelect],
+  );
 
   return createPortal(
     <div
       ref={containerRef}
-      role="listbox"
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
-      className="min-w-[200px] max-h-[280px] overflow-y-auto rounded-lg border border-rim-line bg-rim-panel p-2 shadow-lg outline-none"
       style={style}
+      className="rounded-lg shadow-xl"
     >
-      {hasCustom && (
-        <>
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-rim-text-faint">
-            Custom
-          </p>
-          <div className="grid grid-cols-5 gap-1.5">
-            {customEmojis.map((emoji, index) => (
-              <button
-                key={emoji.id}
-                role="option"
-                aria-selected={focusedIndex === index}
-                aria-label={emoji.name}
-                type="button"
-                tabIndex={-1}
-                onClick={() => onSelect(`:${emoji.name}:`)}
-                onMouseEnter={() => setFocusedIndex(index)}
-                className={cn(
-                  "rounded p-1",
-                  focusedIndex === index ? "bg-rim-accent/20" : "hover:bg-rim-void",
-                )}
-                title={`:${emoji.name}:`}
-              >
-                <img
-                  src={emoji.imageUrl}
-                  alt={emoji.name}
-                  className="h-5 w-5 object-contain"
-                />
-              </button>
-            ))}
-          </div>
-          <div className="my-1.5 border-t border-rim-line" />
-        </>
-      )}
-      <div className="grid grid-cols-5 gap-1.5">
-        {EMOJI_OPTIONS.map((emoji, index) => {
-          const globalIndex = customCount + index;
-          return (
-            <button
-              key={emoji}
-              role="option"
-              aria-selected={focusedIndex === globalIndex}
-              type="button"
-              tabIndex={-1}
-              onClick={() => onSelect(emoji)}
-              onMouseEnter={() => setFocusedIndex(globalIndex)}
-              className={cn(
-                "rounded p-1 text-base",
-                focusedIndex === globalIndex ? "bg-rim-accent/20" : "hover:bg-rim-void",
-              )}
-            >
-              {emoji}
-            </button>
-          );
-        })}
-      </div>
+      <Suspense fallback={null}>
+        <LazyPicker
+          onEmojiSelect={handleEmojiSelect}
+          theme="dark"
+          custom={custom}
+          perLine={9}
+          emojiSize={22}
+          emojiButtonSize={32}
+          maxFrequentRows={2}
+          previewPosition="none"
+          skinTonePosition="search"
+          navPosition="top"
+          set="native"
+        />
+      </Suspense>
     </div>,
     document.body,
   );

@@ -10,10 +10,7 @@ pub enum PanelRelayError {
     #[error("state size exceeds limit ({0} bytes, max {MAX_STATE_SIZE_BYTES})")]
     StateTooLarge(usize),
     #[error("panel '{panel_id}' not declared in manifest of plugin '{plugin_id}'")]
-    PanelNotOwned {
-        plugin_id: String,
-        panel_id: String,
-    },
+    PanelNotOwned { plugin_id: String, panel_id: String },
     #[error("lock poisoned")]
     LockPoisoned,
 }
@@ -48,7 +45,10 @@ impl PanelRelay {
     ) -> Result<(), PanelRelayError> {
         self.check_size(plugin_id, &state)?;
 
-        let mut states = self.states.write().map_err(|_| PanelRelayError::LockPoisoned)?;
+        let mut states = self
+            .states
+            .write()
+            .map_err(|_| PanelRelayError::LockPoisoned)?;
         states
             .entry(plugin_id.to_string())
             .or_default()
@@ -63,7 +63,10 @@ impl PanelRelay {
         panel_id: &str,
         patch: serde_json::Value,
     ) -> Result<serde_json::Value, PanelRelayError> {
-        let mut states = self.states.write().map_err(|_| PanelRelayError::LockPoisoned)?;
+        let mut states = self
+            .states
+            .write()
+            .map_err(|_| PanelRelayError::LockPoisoned)?;
         let plugin_states = states.entry(plugin_id.to_string()).or_default();
         let current = plugin_states
             .entry(panel_id.to_string())
@@ -100,7 +103,10 @@ impl PanelRelay {
         plugin_id: &str,
         panel_id: &str,
     ) -> Result<Option<serde_json::Value>, PanelRelayError> {
-        let states = self.states.read().map_err(|_| PanelRelayError::LockPoisoned)?;
+        let states = self
+            .states
+            .read()
+            .map_err(|_| PanelRelayError::LockPoisoned)?;
         Ok(states
             .get(plugin_id)
             .and_then(|ps| ps.get(panel_id))
@@ -109,7 +115,10 @@ impl PanelRelay {
 
     /// Clean up all state for a plugin (on disable/uninstall/crash).
     pub fn cleanup_plugin(&self, plugin_id: &str) -> Result<(), PanelRelayError> {
-        let mut states = self.states.write().map_err(|_| PanelRelayError::LockPoisoned)?;
+        let mut states = self
+            .states
+            .write()
+            .map_err(|_| PanelRelayError::LockPoisoned)?;
         states.remove(plugin_id);
         Ok(())
     }
@@ -123,7 +132,10 @@ impl PanelRelay {
             .map(|s| s.len())
             .unwrap_or(0);
 
-        let states = self.states.read().map_err(|_| PanelRelayError::LockPoisoned)?;
+        let states = self
+            .states
+            .read()
+            .map_err(|_| PanelRelayError::LockPoisoned)?;
         let existing_size = self.total_size_for_plugin_inner(&states, plugin_id);
 
         // Approximate: new state replaces one panel, but we check total conservatively
@@ -183,12 +195,19 @@ mod tests {
             .unwrap();
 
         let merged = relay
-            .patch_state("dev.example.test", "main", serde_json::json!({"b": 99, "c": 3}))
+            .patch_state(
+                "dev.example.test",
+                "main",
+                serde_json::json!({"b": 99, "c": 3}),
+            )
             .unwrap();
 
         assert_eq!(merged, serde_json::json!({"a": 1, "b": 99, "c": 3}));
 
-        let state = relay.get_state("dev.example.test", "main").unwrap().unwrap();
+        let state = relay
+            .get_state("dev.example.test", "main")
+            .unwrap()
+            .unwrap();
         assert_eq!(state, serde_json::json!({"a": 1, "b": 99, "c": 3}));
     }
 
@@ -213,8 +232,14 @@ mod tests {
 
         relay.cleanup_plugin("dev.example.test").unwrap();
 
-        assert!(relay.get_state("dev.example.test", "panel_a").unwrap().is_none());
-        assert!(relay.get_state("dev.example.test", "panel_b").unwrap().is_none());
+        assert!(relay
+            .get_state("dev.example.test", "panel_a")
+            .unwrap()
+            .is_none());
+        assert!(relay
+            .get_state("dev.example.test", "panel_b")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
