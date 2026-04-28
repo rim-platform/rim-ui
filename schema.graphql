@@ -464,6 +464,30 @@ input CreateCustomEmojiInput {
 	imageBase64: String!
 }
 
+"""
+Input for `createInstanceInvite`.
+
+Both fields are optional: `expires_at` defaults to `now() + 7 days`,
+`max_uses` defaults to 1.
+"""
+input CreateInstanceInviteInput {
+	expiresAt: DateTime
+	maxUses: Int
+}
+
+"""
+Payload returned after successfully creating an instance invite.
+
+`invite_token` is the raw (unhashed) token — shown to the admin exactly once.
+"""
+type CreateInstanceInvitePayloadGql {
+	"""
+	The raw invite token. Shown to the admin once; never stored unhashed.
+	"""
+	inviteToken: String!
+	invite: InstanceInviteGql!
+}
+
 input CreateInviteInput {
 	serverId: ID!
 	expiresAt: DateTime
@@ -798,6 +822,23 @@ input IncrementWorkspaceStateInput {
 	delta: Int!
 }
 
+"""
+Output type for an instance invite (admin view).
+
+Mirrors the `InstanceInvite` SDL type in spec §9.2.
+Note: the raw invite token is **not** exposed here — it is only emitted
+once in `CreateInstanceInvitePayload.inviteToken`.
+"""
+type InstanceInviteGql {
+	id: ID!
+	createdByUserId: ID!
+	expiresAt: DateTime!
+	maxUses: Int!
+	useCount: Int!
+	revokedAt: DateTime
+	createdAt: DateTime!
+}
+
 type Integration {
 	id: String!
 	kind: IntegrationKind!
@@ -821,6 +862,42 @@ type Invite {
 	maxUses: Int!
 	useCount: Int!
 	revokedAt: DateTime
+}
+
+"""
+Read-only preview of a registration token.
+
+Does NOT consume the token. Workspace-invite previews carry server and
+inviter info; instance/bootstrap previews are minimal (§4.7).
+"""
+type InviteTokenPreviewGql {
+	tokenType: InviteTokenTypeGql!
+	"""
+	`None` for workspace invites that were issued without an expiry.
+	"""
+	expiresAt: DateTime
+	"""
+	Populated only when `token_type == WORKSPACE`.
+	"""
+	workspace: WorkspaceInvitePreviewGql
+}
+
+"""
+GraphQL enum for the type of an invite token, used by `InviteTokenPreview`.
+
+Both bootstrap and instance invites surface as `INSTANCE` to the frontend;
+the FE shows identical "create your RIM account" copy for both.
+Mirrors [`rim_services::auth::dto::InviteTokenType`].
+"""
+enum InviteTokenTypeGql {
+	"""
+	Bootstrap or instance invite: create-an-account flow.
+	"""
+	INSTANCE
+	"""
+	Workspace invite: join-a-workspace flow.
+	"""
+	WORKSPACE
 }
 
 """
@@ -987,13 +1064,36 @@ enum MessageTagTypeGql {
 }
 
 type Mutation {
-	bootstrap(input: BootstrapInput!): BootstrapPayload!
+	bootstrap(input: BootstrapInput!): BootstrapPayload! @deprecated(reason: "Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release.")
 	login(input: LoginInput!): LoginPayload!
 	logout: Boolean!
 	createInvite(input: CreateInviteInput!): CreateInvitePayload!
 	acceptInvite(input: AcceptInviteInput!): AcceptInvitePayload!
 	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
 	revokeInvite(inviteId: ID!): Boolean!
+	"""
+	Unified signup mutation for all token-based and open-mode registration paths.
+	
+	In invite-only mode, exactly one of `bootstrapToken`, `instanceInviteToken`,
+	or `workspaceInviteToken` must be supplied.
+	In open mode, all token fields must be absent.
+	
+	On success, sets session and CSRF cookies via `AuthIntent`.
+	"""
+	signupWithInvite(input: SignupWithInviteInput!): SignupWithInvitePayloadGql!
+	"""
+	Create a new instance invite (admin-only gate: must own at least one workspace).
+	
+	Returns the raw invite token exactly once in the payload. Store it; it cannot
+	be retrieved again.
+	"""
+	createInstanceInvite(input: CreateInstanceInviteInput!): CreateInstanceInvitePayloadGql!
+	"""
+	Revoke an existing instance invite (admin-only gate: must own at least one workspace).
+	
+	Returns `true` on success. Returns `NOT_FOUND` if the invite does not exist.
+	"""
+	revokeInstanceInvite(inviteId: ID!): Boolean!
 	sendMessage(input: SendMessageInput!): Message!
 	replyToMessage(input: ReplyToMessageInput!): Message!
 	createConversation(input: CreateConversationInput!): Conversation!
@@ -1229,6 +1329,30 @@ type Query {
 	Query the command audit log. Requires `audit.read` capability.
 	"""
 	listAuditLog(filter: AuditLogFilterInput, pagination: AuditLogPaginationInput): AuditLogPage!
+	"""
+	Return the deployment-wide registration mode.
+	
+	Used by the login page to decide whether to render a "Sign up" link.
+	No authentication required — this is public configuration metadata.
+	"""
+	registrationMode: RegistrationModeGql!
+	"""
+	List all active (non-revoked) instance invites.
+	
+	Admin-only: requires the caller to be `Owner` on at least one workspace.
+	Returns `FORBIDDEN` otherwise.
+	"""
+	listInstanceInvites: [InstanceInviteGql!]!
+	"""
+	Preview a registration token without consuming it.
+	
+	Returns minimal metadata so the frontend can render the correct signup
+	copy before the user submits credentials. Rate-limited at 30 req / 5 min
+	per IP; no authentication required.
+	
+	See spec §4.7.
+	"""
+	previewInviteToken(token: String!): InviteTokenPreviewGql!
 }
 
 type ReactionGroup {
@@ -1236,6 +1360,23 @@ type ReactionGroup {
 	count: Int!
 	reactedByMe: Boolean!
 	userIds: [ID!]!
+}
+
+"""
+GraphQL enum for the deployment-wide registration mode.
+
+Mirrors [`rim_services::auth::dto::RegistrationMode`].
+Variants appear in the SDL as `INVITE_ONLY` and `OPEN`.
+"""
+enum RegistrationModeGql {
+	"""
+	Default: signup requires a valid token (bootstrap, instance, or workspace invite).
+	"""
+	INVITE_ONLY
+	"""
+	`RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited.
+	"""
+	OPEN
 }
 
 input ReplyToMessageInput {
@@ -1306,6 +1447,31 @@ enum SettingScope {
 	WORKSPACE
 	INTEGRATION
 	DEVICE_LOCAL
+}
+
+"""
+Input for `signupWithInvite`.
+
+Exactly one token MUST be set in invite-only mode; all must be absent in
+open mode. The resolver enforces this with a `Validation` error.
+"""
+input SignupWithInviteInput {
+	username: String!
+	password: String!
+	bootstrapToken: String
+	instanceInviteToken: String
+	workspaceInviteToken: String
+}
+
+"""
+Payload returned from `signupWithInvite`.
+
+`server_id` is `Some` only when a `workspaceInviteToken` was used;
+bootstrap and instance-invite paths land in "no workspaces yet" state.
+"""
+type SignupWithInvitePayloadGql {
+	userId: ID!
+	serverId: ID
 }
 
 type SkillProfileGql {
@@ -1490,6 +1656,18 @@ type UserPresenceGql {
 	lastSeenAt: DateTime!
 }
 
+"""
+Minimal workspace info included in a workspace-invite preview.
+
+See spec §4.7 — inviter name and server name are disclosed because
+the user was already shown them on the invite-link landing page.
+"""
+type WorkspaceInvitePreviewGql {
+	serverId: ID!
+	serverName: String!
+	invitedByDisplayName: String!
+}
+
 type WorkspaceStateEntryGql {
 	id: ID!
 	serverId: ID!
@@ -1508,6 +1686,10 @@ enum WorkspaceStateScopeGql {
 	USER
 }
 
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

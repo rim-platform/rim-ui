@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { useMyServers } from "../api/useMyServers";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
+import { EmptyWorkspaceState } from "./EmptyWorkspaceState";
 
 export function WorkspaceSelector() {
   const { data: servers, isPending, isError } = useMyServers();
@@ -31,14 +32,7 @@ export function WorkspaceSelector() {
   }
 
   if (!servers || servers.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-rim-void">
-        <div className="text-center">
-          <p className="text-sm text-rim-text-muted">You don't belong to any workspaces yet.</p>
-          <p className="mt-1 text-xs text-rim-text-faint">Ask an admin for an invite.</p>
-        </div>
-      </div>
-    );
+    return <EmptyWorkspaceState />;
   }
 
   return (

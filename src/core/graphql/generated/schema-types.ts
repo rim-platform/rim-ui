@@ -454,6 +454,28 @@ export type CreateCustomEmojiInput = {
   serverId: Scalars['ID']['input'];
 };
 
+/**
+ * Input for `createInstanceInvite`.
+ *
+ * Both fields are optional: `expires_at` defaults to `now() + 7 days`,
+ * `max_uses` defaults to 1.
+ */
+export type CreateInstanceInviteInput = {
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
+  maxUses?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * Payload returned after successfully creating an instance invite.
+ *
+ * `invite_token` is the raw (unhashed) token — shown to the admin exactly once.
+ */
+export type CreateInstanceInvitePayloadGql = {
+  invite: InstanceInviteGql;
+  /** The raw invite token. Shown to the admin once; never stored unhashed. */
+  inviteToken: Scalars['String']['output'];
+};
+
 export type CreateInviteInput = {
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   maxUses?: InputMaybe<Scalars['Int']['input']>;
@@ -781,6 +803,23 @@ export type IncrementWorkspaceStateInput = {
   serverId: Scalars['ID']['input'];
 };
 
+/**
+ * Output type for an instance invite (admin view).
+ *
+ * Mirrors the `InstanceInvite` SDL type in spec §9.2.
+ * Note: the raw invite token is **not** exposed here — it is only emitted
+ * once in `CreateInstanceInvitePayload.inviteToken`.
+ */
+export type InstanceInviteGql = {
+  createdAt: Scalars['DateTime']['output'];
+  createdByUserId: Scalars['ID']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  maxUses: Scalars['Int']['output'];
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  useCount: Scalars['Int']['output'];
+};
+
 export type Integration = {
   enabled: Scalars['Boolean']['output'];
   id: Scalars['String']['output'];
@@ -805,6 +844,34 @@ export type Invite = {
   serverId: Scalars['ID']['output'];
   useCount: Scalars['Int']['output'];
 };
+
+/**
+ * Read-only preview of a registration token.
+ *
+ * Does NOT consume the token. Workspace-invite previews carry server and
+ * inviter info; instance/bootstrap previews are minimal (§4.7).
+ */
+export type InviteTokenPreviewGql = {
+  /** `None` for workspace invites that were issued without an expiry. */
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  tokenType: InviteTokenTypeGql;
+  /** Populated only when `token_type == WORKSPACE`. */
+  workspace?: Maybe<WorkspaceInvitePreviewGql>;
+};
+
+/**
+ * GraphQL enum for the type of an invite token, used by `InviteTokenPreview`.
+ *
+ * Both bootstrap and instance invites surface as `INSTANCE` to the frontend;
+ * the FE shows identical "create your RIM account" copy for both.
+ * Mirrors [`rim_services::auth::dto::InviteTokenType`].
+ */
+export enum InviteTokenTypeGql {
+  /** Bootstrap or instance invite: create-an-account flow. */
+  INSTANCE = 'INSTANCE',
+  /** Workspace invite: join-a-workspace flow. */
+  WORKSPACE = 'WORKSPACE'
+}
 
 export type JoinServerByInviteInput = {
   inviteToken: Scalars['String']['input'];
@@ -967,11 +1034,19 @@ export enum MessageTagTypeGql {
 export type Mutation = {
   acceptInvite: AcceptInvitePayload;
   advanceIncidentPhase: IncidentPhaseGql;
+  /** @deprecated Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release. */
   bootstrap: BootstrapPayload;
   createAttachment: UploadTicket;
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
+  /**
+   * Create a new instance invite (admin-only gate: must own at least one workspace).
+   *
+   * Returns the raw invite token exactly once in the payload. Store it; it cannot
+   * be retrieved again.
+   */
+  createInstanceInvite: CreateInstanceInvitePayloadGql;
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
@@ -1008,9 +1083,25 @@ export type Mutation = {
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   resolveIncident: IncidentGql;
+  /**
+   * Revoke an existing instance invite (admin-only gate: must own at least one workspace).
+   *
+   * Returns `true` on success. Returns `NOT_FOUND` if the invite does not exist.
+   */
+  revokeInstanceInvite: Scalars['Boolean']['output'];
   revokeInvite: Scalars['Boolean']['output'];
   sendMessage: Message;
   setWorkspaceState: WorkspaceStateEntryGql;
+  /**
+   * Unified signup mutation for all token-based and open-mode registration paths.
+   *
+   * In invite-only mode, exactly one of `bootstrapToken`, `instanceInviteToken`,
+   * or `workspaceInviteToken` must be supplied.
+   * In open mode, all token fields must be absent.
+   *
+   * On success, sets session and CSRF cookies via `AuthIntent`.
+   */
+  signupWithInvite: SignupWithInvitePayloadGql;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
   tagIncidentMessage: IncidentMessageTagGql;
@@ -1060,6 +1151,11 @@ export type MutationCreateConversationArgs = {
 
 export type MutationCreateCustomEmojiArgs = {
   input: CreateCustomEmojiInput;
+};
+
+
+export type MutationCreateInstanceInviteArgs = {
+  input: CreateInstanceInviteInput;
 };
 
 
@@ -1240,6 +1336,11 @@ export type MutationResolveIncidentArgs = {
 };
 
 
+export type MutationRevokeInstanceInviteArgs = {
+  inviteId: Scalars['ID']['input'];
+};
+
+
 export type MutationRevokeInviteArgs = {
   inviteId: Scalars['ID']['input'];
 };
@@ -1252,6 +1353,11 @@ export type MutationSendMessageArgs = {
 
 export type MutationSetWorkspaceStateArgs = {
   input: SetWorkspaceStateInput;
+};
+
+
+export type MutationSignupWithInviteArgs = {
+  input: SignupWithInviteInput;
 };
 
 
@@ -1475,6 +1581,13 @@ export type Query = {
   /** Query the command audit log. Requires `audit.read` capability. */
   listAuditLog: AuditLogPage;
   listIncidents: IncidentPage;
+  /**
+   * List all active (non-revoked) instance invites.
+   *
+   * Admin-only: requires the caller to be `Owner` on at least one workspace.
+   * Returns `FORBIDDEN` otherwise.
+   */
+  listInstanceInvites: Array<InstanceInviteGql>;
   macroByName?: Maybe<MacroDef>;
   me: User;
   message: Message;
@@ -1489,6 +1602,23 @@ export type Query = {
   pinnedMessages: Array<Message>;
   pipeline: PipelineGql;
   pipelines: Array<PipelineGql>;
+  /**
+   * Preview a registration token without consuming it.
+   *
+   * Returns minimal metadata so the frontend can render the correct signup
+   * copy before the user submits credentials. Rate-limited at 30 req / 5 min
+   * per IP; no authentication required.
+   *
+   * See spec §4.7.
+   */
+  previewInviteToken: InviteTokenPreviewGql;
+  /**
+   * Return the deployment-wide registration mode.
+   *
+   * Used by the login page to decide whether to render a "Sign up" link.
+   * No authentication required — this is public configuration metadata.
+   */
+  registrationMode: RegistrationModeGql;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
   searchMessages: Array<SearchResultMessage>;
@@ -1680,6 +1810,11 @@ export type QueryPipelinesArgs = {
 };
 
 
+export type QueryPreviewInviteTokenArgs = {
+  token: Scalars['String']['input'];
+};
+
+
 export type QueryResolveKeybindArgs = {
   context: KeybindContext;
   keystroke: Scalars['String']['input'];
@@ -1781,6 +1916,19 @@ export type ReactionGroup = {
   userIds: Array<Scalars['ID']['output']>;
 };
 
+/**
+ * GraphQL enum for the deployment-wide registration mode.
+ *
+ * Mirrors [`rim_services::auth::dto::RegistrationMode`].
+ * Variants appear in the SDL as `INVITE_ONLY` and `OPEN`.
+ */
+export enum RegistrationModeGql {
+  /** Default: signup requires a valid token (bootstrap, instance, or workspace invite). */
+  INVITE_ONLY = 'INVITE_ONLY',
+  /** `RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited. */
+  OPEN = 'OPEN'
+}
+
 export type ReplyToMessageInput = {
   conversationId: Scalars['ID']['input'];
   parentMessageId?: InputMaybe<Scalars['ID']['input']>;
@@ -1850,6 +1998,31 @@ export enum SettingScope {
   USER = 'USER',
   WORKSPACE = 'WORKSPACE'
 }
+
+/**
+ * Input for `signupWithInvite`.
+ *
+ * Exactly one token MUST be set in invite-only mode; all must be absent in
+ * open mode. The resolver enforces this with a `Validation` error.
+ */
+export type SignupWithInviteInput = {
+  bootstrapToken?: InputMaybe<Scalars['String']['input']>;
+  instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
+  password: Scalars['String']['input'];
+  username: Scalars['String']['input'];
+  workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Payload returned from `signupWithInvite`.
+ *
+ * `server_id` is `Some` only when a `workspaceInviteToken` was used;
+ * bootstrap and instance-invite paths land in "no workspaces yet" state.
+ */
+export type SignupWithInvitePayloadGql = {
+  serverId?: Maybe<Scalars['ID']['output']>;
+  userId: Scalars['ID']['output'];
+};
 
 export type SkillProfileGql = {
   featuresUsed: Array<FeatureUsage>;
@@ -2036,6 +2209,18 @@ export type UserPresenceGql = {
   lastSeenAt: Scalars['DateTime']['output'];
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
+};
+
+/**
+ * Minimal workspace info included in a workspace-invite preview.
+ *
+ * See spec §4.7 — inviter name and server name are disclosed because
+ * the user was already shown them on the invite-link landing page.
+ */
+export type WorkspaceInvitePreviewGql = {
+  invitedByDisplayName: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+  serverName: Scalars['String']['output'];
 };
 
 export type WorkspaceStateEntryGql = {

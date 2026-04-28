@@ -1,9 +1,9 @@
-import { useMemo, lazy, Suspense } from "react";
+import { useEffect, useMemo, lazy, Suspense } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
-import { AuthGate } from "../../features/auth/components/AuthGate";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
 import { MessageTimeline } from "../../features/messages/components/MessageTimeline";
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
@@ -58,6 +58,17 @@ export function AppShell() {
   const { isHydrating } = useSessionHydration();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { capabilities } = useRuntime();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isHydrating && !session) {
+      navigate("/login", {
+        replace: true,
+        state: { returnTo: location.pathname + location.search },
+      });
+    }
+  }, [isHydrating, session, navigate, location.pathname, location.search]);
 
   if (isHydrating) {
     return (
@@ -71,14 +82,8 @@ export function AppShell() {
   }
 
   if (!session) {
-    return (
-      <div className="flex h-screen flex-col bg-rim-void text-rim-text">
-        {capabilities.customTitleBar && <TitleBar />}
-        <div className="min-h-0 flex-1">
-          <AuthGate />
-        </div>
-      </div>
-    );
+    // Redirect is in-flight via useEffect; render nothing to avoid flash.
+    return null;
   }
 
   if (!workspaceId) {

@@ -53,4 +53,6 @@ export const queryKeys = {
   pipelines: (serverId?: string) => ["pipelines", serverId] as const,
   listAuditLog: (typedVerb?: string, after?: string) =>
     ["listAuditLog", typedVerb ?? null, after ?? null] as const,
+  serverConfig: () => ["serverConfig"] as const,
+  previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
 };
