@@ -77,6 +77,49 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 
 import { JoinPage } from "./JoinPage";
 
+describe("JoinPage — no-referrer meta tag (L3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession = null;
+    mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
+  });
+
+  it("injects a no-referrer meta tag into document.head on mount", () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/join/tok-abc"]}>
+        <Routes>
+          <Route path="/join/:token" element={<JoinPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const meta = document.querySelector("meta[name='referrer']");
+    expect(meta).not.toBeNull();
+    expect(meta!.getAttribute("content")).toBe("no-referrer");
+
+    // Unmount explicitly so that the useEffect cleanup removes the meta before
+    // this test's scope ends. RTL's auto-cleanup would also do this, but being
+    // explicit keeps the assertion and cleanup co-located.
+    unmount();
+  });
+
+  it("removes the no-referrer meta tag from document.head on unmount", () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/join/tok-abc"]}>
+        <Routes>
+          <Route path="/join/:token" element={<JoinPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelector("meta[name='referrer']")).not.toBeNull();
+
+    unmount();
+
+    expect(document.querySelector("meta[name='referrer']")).toBeNull();
+  });
+});
+
 describe("JoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();

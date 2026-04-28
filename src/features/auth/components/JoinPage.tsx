@@ -15,8 +15,17 @@
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
  * - Instance token (`serverId` absent): navigate to `/`. `AppShell` shows the
  *   empty-workspace state (user has no workspaces yet).
+ *
+ * Security note (L3): A `<meta name="referrer" content="no-referrer">` tag is
+ * injected on mount and removed on unmount. The invite token is in the URL path;
+ * suppressing the Referer header prevents it from leaking to third-party origins
+ * (e.g. any CDN assets or analytics the browser might contact). Defense-in-depth
+ * — the global `strict-origin-when-cross-origin` policy already sends only the
+ * origin, not the full path, to cross-origin targets. We suppress even the origin
+ * here as an additional precaution.
  */
 
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 
@@ -28,7 +37,25 @@ import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
 
+/**
+ * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
+ * on mount and removes it on unmount. Used on routes that carry sensitive tokens
+ * in their URL path to prevent token leakage via the Referer header.
+ */
+function useNoReferrerMeta(): void {
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "referrer";
+    meta.content = "no-referrer";
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, []);
+}
+
 export function JoinPage() {
+  useNoReferrerMeta();
   const { token } = useParams<{ token: string }>();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);

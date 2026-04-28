@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 
 import { useResetPasswordMutation } from "../api/usePasswordResetMutations";
@@ -6,7 +6,25 @@ import { cn } from "../../../shared/ui/cn";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { useHealthCheck } from "../../system/api/useHealthCheck";
 
+/**
+ * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
+ * on mount and removes it on unmount. Used on routes that carry sensitive tokens
+ * in their URL path to prevent token leakage via the Referer header (L3).
+ */
+function useNoReferrerMeta(): void {
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "referrer";
+    meta.content = "no-referrer";
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, []);
+}
+
 export function ResetPasswordPage() {
+  useNoReferrerMeta();
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState("");

@@ -60,7 +60,9 @@ function MutationError({ error }: { error: unknown }) {
  * Renders the username/password form and the "Forgot password?" link.
  *
  * Does not handle navigation — calls `props.onSuccess` and lets the parent
- * decide the post-login destination (for `?return_to=` support).
+ * decide the post-login destination. The return target is router state only
+ * (`location.state.returnTo`); do not parse it from the query string without
+ * a server-side allowlist (open-redirect risk).
  */
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const [username, setUsername] = useState("");

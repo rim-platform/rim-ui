@@ -130,6 +130,7 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const signup = useSignupWithInviteMutation();
 
@@ -152,6 +153,22 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
       return false;
     }
     setEmailError(null);
+    return true;
+  }
+
+  /**
+   * Validates the displayName field client-side (Hawkeye SF2).
+   * Only validates when non-empty after trim — the field is optional.
+   * Returns `false` and sets an inline error when the trimmed value exceeds
+   * 80 characters (matching the backend's 1–80 char constraint).
+   */
+  function validateDisplayName(value: string): boolean {
+    const trimmed = value.trim();
+    if (trimmed.length > 80) {
+      setDisplayNameError("Display name must be at most 80 characters.");
+      return false;
+    }
+    setDisplayNameError(null);
     return true;
   }
 
@@ -186,9 +203,12 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
     e.preventDefault();
     setFormError(null);
 
-    // Client-side email validation gate — prevents the round-trip for obvious
-    // malformed input (server remains the source of truth for uniqueness).
+    // Client-side validation gates — prevents round-trips for obvious invalid
+    // input. Server remains the source of truth for uniqueness and final rules.
     if (!validateEmail(email)) {
+      return;
+    }
+    if (!validateDisplayName(displayName)) {
       return;
     }
 
@@ -263,9 +283,14 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
             <Field
               label="Display name (optional)"
               value={displayName}
-              onChange={setDisplayName}
+              onChange={(v) => {
+                setDisplayName(v);
+                // Clear the inline error while the user edits.
+                if (displayNameError) setDisplayNameError(null);
+              }}
               placeholder=""
               hint="If left blank, your username will be shown."
+              error={displayNameError}
             />
             {(formError || signup.error) && !emailError && (
               <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
