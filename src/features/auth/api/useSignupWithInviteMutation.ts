@@ -10,16 +10,16 @@
  * The backend sets session and CSRF cookies on success, matching the behavior
  * of the `login` mutation.
  *
- * **Input field notes (reconciled with SDL):**
- * - `username` is the user-facing identifier (not `email` — spec r2 drift vs
- *   actual SDL; the backend does not have an `email` field).
- * - `displayName` is NOT in the SDL — the backend derives it server-side.
- *   This is a naming drift from the original spec §4.2. No `displayName` field
- *   should be rendered; see `JoinForm` docs.
- * - `workspaceInviteToken` maps to the token from `/join/:token` URLs for
- *   workspace invites.
- * - `instanceInviteToken` maps to the token from `/join/:token` URLs for
- *   instance invites (bootstrap and admin-issued).
+ * **Input fields (per amendment 2026-04-28b, reconciled with SDL):**
+ * - `username` — required; user-facing unique handle.
+ * - `email` — required; trimmed + lowercased server-side; case-insensitive
+ *   unique. Returns `EMAIL_TAKEN` error extension code on conflict.
+ * - `displayName` — optional (1–80 chars when present). Omit entirely (do NOT
+ *   send `""`) when the user leaves the field blank. Falls back to `username`
+ *   server-side when absent.
+ * - `password` — required.
+ * - `workspaceInviteToken` — from `/join/:token` URLs for workspace invites.
+ * - `instanceInviteToken` — from `/join/:token` URLs for instance invites.
  *
  * @returns TanStack Query mutation result. On success, `data.signupWithInvite`
  *   contains `{ userId, serverId? }`. `serverId` is present only for workspace
@@ -57,7 +57,8 @@ export interface SignupWithInviteResponse {
  * Usage:
  * ```ts
  * const signup = useSignupWithInviteMutation();
- * signup.mutate({ username, password, workspaceInviteToken: token });
+ * signup.mutate({ username, email, password, workspaceInviteToken: token });
+ * // displayName is optional — omit entirely (not "") when blank.
  * ```
  */
 export function useSignupWithInviteMutation() {

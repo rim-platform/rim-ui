@@ -115,12 +115,14 @@ describe("JoinPage", () => {
     renderAtPath("/join/ws-token-abc");
 
     await user.type(screen.getByPlaceholderText("yourname"), "alice");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
     await user.type(screen.getByPlaceholderText("password"), "password123");
     await user.click(screen.getByText("Create account"));
 
     expect(mockSignupMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         username: "alice",
+        email: "alice@example.com",
         password: "password123",
         workspaceInviteToken: "ws-token-abc",
       }),
@@ -165,6 +167,7 @@ describe("JoinPage", () => {
     renderAtPath("/join/inst-token-abc");
 
     await user.type(screen.getByPlaceholderText("yourname"), "bob");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "bob@example.com");
     await user.type(screen.getByPlaceholderText("password"), "password123");
     await user.click(screen.getByText("Create account"));
 
@@ -215,10 +218,14 @@ describe("JoinPage", () => {
     expect(screen.getByText("Join workspace")).toBeInTheDocument();
   });
 
-  it("displayName field is absent — the form does not render it", () => {
+  it("optional displayName field is rendered but not required", () => {
     renderAtPath("/join/ws-token-abc");
 
-    expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/display name/i)).not.toBeInTheDocument();
+    // Display name label is present
+    expect(screen.getByText("Display name (optional)")).toBeInTheDocument();
+    // Helper text is shown
+    expect(screen.getByText("If left blank, your username will be shown.")).toBeInTheDocument();
+    // The email field is present and required
+    expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
   });
 });

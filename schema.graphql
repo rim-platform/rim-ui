@@ -1454,9 +1454,22 @@ Input for `signupWithInvite`.
 
 Exactly one token MUST be set in invite-only mode; all must be absent in
 open mode. The resolver enforces this with a `Validation` error.
+
+`email` is required (max 254 chars, server trims + lowercases, case-insensitive unique).
+`displayName` is optional; falls back to `username` server-side if absent or blank.
 """
 input SignupWithInviteInput {
 	username: String!
+	"""
+	Required. The user's email address. Trimmed and lowercased before storage.
+	Must match the pragmatic email regex from spec §13.3.
+	"""
+	email: String!
+	"""
+	Optional display name (1–80 chars when present). Falls back to `username`
+	when absent or blank after trim.
+	"""
+	displayName: String
 	password: String!
 	bootstrapToken: String
 	instanceInviteToken: String

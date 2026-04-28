@@ -2004,9 +2004,22 @@ export enum SettingScope {
  *
  * Exactly one token MUST be set in invite-only mode; all must be absent in
  * open mode. The resolver enforces this with a `Validation` error.
+ *
+ * `email` is required (max 254 chars, server trims + lowercases, case-insensitive unique).
+ * `displayName` is optional; falls back to `username` server-side if absent or blank.
  */
 export type SignupWithInviteInput = {
   bootstrapToken?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Optional display name (1–80 chars when present). Falls back to `username`
+   * when absent or blank after trim.
+   */
+  displayName?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Required. The user's email address. Trimmed and lowercased before storage.
+   * Must match the pragmatic email regex from spec §13.3.
+   */
+  email: Scalars['String']['input'];
   instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
   password: Scalars['String']['input'];
   username: Scalars['String']['input'];
