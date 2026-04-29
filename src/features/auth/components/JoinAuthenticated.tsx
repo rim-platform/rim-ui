@@ -10,6 +10,8 @@
  * - `INSTANCE` token: renders an error message explaining that instance
  *   invites are only for new users. An authenticated user does not need a
  *   second account.
+ * - `BOOTSTRAP` token: same error message as INSTANCE — bootstrap tokens are
+ *   for first-time account creation and cannot be used by an existing session.
  *
  * Props:
  * - `token` — raw invite token from the URL param.
@@ -36,7 +38,8 @@ interface JoinAuthenticatedProps {
  * Branch rendered when an already-authenticated user visits `/join/:token`.
  *
  * Workspace tokens: shows a confirmation button to accept the invite.
- * Instance tokens: shows an error — existing users cannot use instance tokens.
+ * Instance and bootstrap tokens: shows an error — existing users cannot use
+ * these token types since they are only for new account creation.
  */
 export function JoinAuthenticated({
   token,
@@ -47,7 +50,7 @@ export function JoinAuthenticated({
   const joinServer = useJoinServerByInviteMutation();
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
 
-  if (tokenType === InviteTokenType.INSTANCE) {
+  if (tokenType === InviteTokenType.INSTANCE || tokenType === InviteTokenType.BOOTSTRAP) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
         <div className="w-full max-w-lg text-center space-y-2">

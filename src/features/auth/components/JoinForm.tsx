@@ -1,9 +1,10 @@
 /**
  * `JoinForm` — registration form used on `/join/:token` and `/join` (open mode).
  *
- * Handles three token-type variants via the `variant` prop:
+ * Handles four token-type variants via the `variant` prop:
  * - `"WORKSPACE"`: header shows workspace name, copy says "Create your account."
- * - `"INSTANCE"`: header says "Create your RIM account." No workspace name.
+ * - `"INSTANCE"`: header says "Create your RIM account." No workspace name. Routes via `instanceInviteToken`.
+ * - `"BOOTSTRAP"`: same UI as INSTANCE ("Create your RIM account"). Routes via `bootstrapToken`.
  * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
  *
  * **Fields:**
@@ -45,7 +46,8 @@ interface JoinFormProps {
   /**
    * Which registration path this form represents.
    * - `WORKSPACE` — workspace invite token, shows workspace name.
-   * - `INSTANCE` — instance/bootstrap invite token.
+   * - `INSTANCE` — instance invite token; routes via `instanceInviteToken`.
+   * - `BOOTSTRAP` — bootstrap token; same UI as INSTANCE but routes via `bootstrapToken`.
    * - `OPEN` — no token; open registration.
    */
   variant: JoinFormVariant;
@@ -96,10 +98,18 @@ function Field({ label, value, onChange, placeholder, type = "text", hint, error
   );
 }
 
+/**
+ * Returns the header copy for the given variant.
+ *
+ * BOOTSTRAP and INSTANCE share the same copy ("Create your RIM account") —
+ * the distinction is only at the mutation-input level (`bootstrapToken` vs
+ * `instanceInviteToken`).
+ */
 function headerCopy(variant: JoinFormVariant, workspaceName?: string): string {
   if (variant === InviteTokenType.WORKSPACE && workspaceName) {
     return `You're joining ${workspaceName}`;
   }
+  // BOOTSTRAP, INSTANCE, and OPEN all show the same default copy.
   return "Create your RIM account";
 }
 
@@ -179,6 +189,9 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
    * - `displayName`: omitted entirely from the payload when blank after trim
    *   (NOT sent as `""`). Falls back to `username` server-side.
    * - Token fields: exactly one is set per variant; none are set in OPEN mode.
+   *   - `WORKSPACE` → `workspaceInviteToken`
+   *   - `INSTANCE`  → `instanceInviteToken`
+   *   - `BOOTSTRAP` → `bootstrapToken`
    */
   function buildInput() {
     const trimmedDisplayName = displayName.trim();
@@ -194,6 +207,9 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
     }
     if (variant === InviteTokenType.INSTANCE && token) {
       return { ...base, instanceInviteToken: token };
+    }
+    if (variant === InviteTokenType.BOOTSTRAP && token) {
+      return { ...base, bootstrapToken: token };
     }
     // OPEN — no token fields
     return base;

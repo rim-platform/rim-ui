@@ -20,7 +20,7 @@ Three things change visibly:
 
 A fourth conditional: when the server reports `registrationMode === "OPEN"`, a "Create account" link appears on `/login` pointing to `/join` (no token). In `INVITE_ONLY` mode, `/join` 404s.
 
-The `registrationMode` enum is exposed via a new `serverConfig` GraphQL query, fetched once at app boot, cached in TanStack Query, surfaced via a thin hook (`useServerConfig`). The hook keeps its broad name on purpose — server config will likely grow other fields (password policy, branding, feature flags); a narrower `useRegistrationMode` would force a rename later. It does **not** become a runtime capability — runtime capabilities are device/platform facts (Tauri vs web), not server policy. Mixing them muddies the abstraction.
+The `registrationMode` enum is exposed via a new top-level `registrationMode` GraphQL query (originally specced as `serverConfig.registrationMode`; see §8.2 for the supersedure), fetched once at app boot, cached in TanStack Query, surfaced via a thin hook (`useServerConfig`) that wraps the scalar in a forward-compatible `ServerConfig` shape on the JS side. The hook keeps its broad name on purpose — server config will likely grow other fields (password policy, branding, feature flags); a narrower `useRegistrationMode` would force a rename later. It does **not** become a runtime capability — runtime capabilities are device/platform facts (Tauri vs web), not server policy. Mixing them muddies the abstraction.
 
 ---
 
@@ -30,10 +30,10 @@ The `registrationMode` enum is exposed via a new `serverConfig` GraphQL query, f
 |---|---|
 | **Workspace invite** | An invite token bound to a specific workspace (server). Backend's existing `JoinServerByInvite` mutation. After acceptance, the user is a member of that workspace. |
 | **Instance invite** | An invite token NOT bound to a workspace — admits the user to the RIM instance with zero workspace memberships. Used for: bootstrap flow, instance-admin onboarding, "create your own workspace" handoffs. |
-| **Token type** | `WORKSPACE` or `INSTANCE` — discriminator returned by the backend's token preview query. Frontend reads, never writes. |
+| **Token type** | `WORKSPACE`, `INSTANCE`, or `BOOTSTRAP` — discriminator returned by the backend's token preview query. Frontend reads, never writes. (Originally specced as `WORKSPACE | INSTANCE`; backend split out `BOOTSTRAP` as its own variant — see §8.2.) |
 | **`registrationMode`** | Server-side enum (`OPEN | INVITE_ONLY`). When `OPEN`, `/join` (no token) accepts registrations; rate-limited by backend. |
 | **Empty-workspace state** | The UI shown when the user has a session but `myServers().length === 0`. Promotes `CreateWorkspaceDialog` to the foreground. |
-| **Bootstrap user** | The first instance owner. Receives a one-time signed link from the operator's CLI. From the FE's POV, this is just an instance invite — no special UI path. |
+| **Bootstrap user** | The first instance owner. Receives a one-time signed link from the operator's CLI. The backend now distinguishes bootstrap tokens (`tokenType === BOOTSTRAP`) from instance invites (`tokenType === INSTANCE`); the FE shares the same `JoinForm` UI copy across both ("Create your RIM account") and only branches on the mutation input field — see §8.2. |
 
 ---
 
@@ -148,6 +148,7 @@ Replace the line above with a horizontal divider (`─── OR ───`) and 
 5. On success: render `JoinForm` (NEW) with token-aware copy:
    - `tokenType === "WORKSPACE"`: header "You're joining **{workspaceName}**". Form title "Create your account."
    - `tokenType === "INSTANCE"`: header "Create your RIM account." No workspace mention.
+   - `tokenType === "BOOTSTRAP"`: same UI copy as INSTANCE ("Create your RIM account"). The split is at the mutation-input layer only — `buildInput()` routes BOOTSTRAP tokens via the `bootstrapToken` field and INSTANCE tokens via `instanceInviteToken`. Verified in `src/features/auth/components/JoinForm.tsx::headerCopy()` and `buildInput()`.
 6. Submit: call `useSignupWithInviteMutation(token, { email, password, displayName })` — see §8 for contract details. On success, the response includes `{ userId, joinedWorkspaceId? }`.
 7. Post-signup navigate:
    - If `joinedWorkspaceId` is present (workspace invite): set workspace, navigate to `/`.
@@ -161,7 +162,7 @@ Replace the line above with a horizontal divider (`─── OR ───`) and 
 
 ### 4.3 Already-authenticated case
 
-The current `JoinPage` has a `JoinAuthenticated` branch — if the user is already logged in and clicks an invite link, they get a "Join workspace" button instead of a registration form. **Keep this behavior.** It's correct for the case where an existing user receives an invite to a second workspace. The branch only applies to `WORKSPACE` tokens (instance tokens against an authenticated user are nonsensical — show an error: "You already have a RIM account; instance invites are only for new users.").
+The current `JoinPage` has a `JoinAuthenticated` branch — if the user is already logged in and clicks an invite link, they get a "Join workspace" button instead of a registration form. **Keep this behavior.** It's correct for the case where an existing user receives an invite to a second workspace. The branch only applies to `WORKSPACE` tokens. Both `INSTANCE` and `BOOTSTRAP` tokens against an authenticated user are nonsensical — show an error: "You already have a RIM account; instance invites are only for new users." (Verified in `JoinAuthenticated.tsx`: the `BOOTSTRAP || INSTANCE` branch renders the same error copy.)
 
 ### 4.4 Error states
 
@@ -181,7 +182,7 @@ Iron-man's contract returns two codes (collapsed from the three I originally ass
 - `src/features/auth/components/JoinForm.tsx` — NEW. The actual signup form (workspace-or-instance variant via prop).
 - `src/features/auth/components/InvalidTokenState.tsx` — NEW (extract). Currently inline in `JoinPage`.
 - `src/features/auth/components/JoinAuthenticated.tsx` — EXTRACT from current `JoinPage`. Logic unchanged.
-- `src/features/auth/api/usePreviewInviteToken.ts` — NEW hook. Wraps a query to the backend's preview endpoint. Fury is pushing iron-man to add this in parallel; if its shape comes back different from §8.2, Fury will send a follow-up and this spec will get a r3 amendment.
+- `src/features/auth/api/usePreviewInviteToken.ts` — NEW hook. Wraps a query to the backend's preview endpoint. The shape did diverge — see §8.2 item 2 for the BOOTSTRAP variant addition.
 - `src/features/auth/api/useSignupWithInviteMutation.ts` — NEW hook. Wraps the `signupWithInvite` mutation.
 
 ---
@@ -268,7 +269,7 @@ Unchanged. `useAuthStore` remains the source of truth for `{ userId }`. `useSess
 
 | Operation | Name | Used by | Status |
 |---|---|---|---|
-| Query | `serverConfig` | `useServerConfig` | NEW — iron-man shipping `registrationMode` enum |
+| Query | `registrationMode` (top-level; FE wraps as `ServerConfig`) | `useServerConfig` | SHIPPED — see §8.2 item 1 supersedure |
 | Query | `previewInviteToken(token)` | `usePreviewInviteToken` | NEW — Fury pushing iron-man to add this in parallel |
 | Mutation | `signupWithInvite(input)` | `useSignupWithInviteMutation` | NEW — iron-man shipped this name (was `acceptInvite` in r1) |
 | Mutation | `login` | `useLoginMutation` | EXISTS, no change |
@@ -277,27 +278,24 @@ Unchanged. `useAuthStore` remains the source of truth for `{ userId }`. `useSess
 
 ### 8.2 Contract (reconciled with iron-man's r1 backend spec)
 
-1. **`serverConfig` query shape.** Reconciled:
+1. **`serverConfig` query shape.** **SUPERSEDED (Hawkeye SD2) — backend shipped a top-level `registrationMode` query, not a nested `serverConfig` wrapper.** Actual shape:
    ```graphql
    enum RegistrationMode { OPEN INVITE_ONLY }
-   type ServerConfig {
-     registrationMode: RegistrationMode!
-   }
-   type Query { serverConfig: ServerConfig! }
+   type Query { registrationMode: RegistrationMode! }
    ```
-   Single field today, room to grow (password policy, branding, feature flags). Frontend imports `RegistrationMode` from `schema-types.ts` after `npm run codegen` — never hand-write the enum values.
+   The frontend `useServerConfig` hook (`src/features/auth/api/useServerConfig.ts`) issues `query RegistrationMode { registrationMode }` and wraps the scalar in a `ServerConfig` shape on the JS side: `{ registrationMode }`. Rationale: simpler GraphQL surface today (one scalar field, no wrapper type), while the FE keeps its own `ServerConfig` interface internally for forward-compat — when the server later grows additional config fields (password policy, branding, feature flags), they slot into the existing JS shape and the hook signature stays stable. Frontend imports `RegistrationMode` from `schema-types.ts` after `npm run codegen` — never hand-write the enum values.
 
 2. **`previewInviteToken` query shape.** Assumed (Fury is pushing iron-man to add this in parallel; not in iron-man's r1 backend spec yet):
    ```graphql
    type InvitePreview {
-     tokenType: InviteTokenType!  # WORKSPACE | INSTANCE
+     tokenType: InviteTokenType!  # WORKSPACE | INSTANCE | BOOTSTRAP
      workspaceId: ID
      workspaceName: String
    }
-   enum InviteTokenType { WORKSPACE | INSTANCE }
+   enum InviteTokenType { WORKSPACE | INSTANCE | BOOTSTRAP }
    type Query { previewInviteToken(token: String!): InvitePreview! }
    ```
-   Errors come back as typed GraphQL errors with extensions: `{ code: "INVALID_TOKEN" | "EXPIRED_TOKEN" }`. If iron-man's eventual shape diverges, Fury sends a follow-up; don't guess.
+   **Update:** the shipped backend split `BOOTSTRAP` out as its own enum variant (originally folded under `INSTANCE`). Frontend `JoinForm` shares one copy variant across `BOOTSTRAP` and `INSTANCE`; the split is observable only in `buildInput()` (token routing field) and in `JoinAuthenticated`'s error-vs-join branch. Errors come back as typed GraphQL errors with extensions: `{ code: "INVALID_TOKEN" | "EXPIRED_TOKEN" }`. If iron-man's eventual shape diverges further, Fury sends a follow-up; don't guess.
 
 3. **`signupWithInvite` mutation shape.** Reconciled:
    ```graphql
@@ -404,7 +402,7 @@ Both r1 questions are now LOCKED by Jakub:
 1. **Empty-state copy on `/login` (invite-only).** LOCKED: *"No account? Ask your workspace admin for an invite."* Tested as exact string in §9.1.
 2. **Display name field on `/join`.** LOCKED: optional, ships at signup, server-side default to email-localpart.
 
-No outstanding questions blocking spider-man. The only contract item still moving is `previewInviteToken` (Fury is pushing iron-man to add it); if its shape diverges from §8.2, Fury will send a follow-up amendment, not a re-spec.
+No outstanding questions blocking spider-man. `previewInviteToken` shipped with the BOOTSTRAP/INSTANCE/WORKSPACE three-variant enum; see §8.2 item 2.
 
 ---
 

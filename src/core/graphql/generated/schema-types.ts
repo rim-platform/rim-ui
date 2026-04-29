@@ -862,12 +862,18 @@ export type InviteTokenPreviewGql = {
 /**
  * GraphQL enum for the type of an invite token, used by `InviteTokenPreview`.
  *
- * Both bootstrap and instance invites surface as `INSTANCE` to the frontend;
- * the FE shows identical "create your RIM account" copy for both.
+ * `BOOTSTRAP` and `INSTANCE` both trigger the "create your RIM account" form
+ * copy on the frontend, but they are distinct so the frontend knows which input
+ * field to populate on `signupWithInvite`:
+ * - `BOOTSTRAP` → use `bootstrapToken`
+ * - `INSTANCE`  → use `instanceInviteToken`
+ *
  * Mirrors [`rim_services::auth::dto::InviteTokenType`].
  */
 export enum InviteTokenTypeGql {
-  /** Bootstrap or instance invite: create-an-account flow. */
+  /** Bootstrap token: routes to `bootstrapToken` input on `signupWithInvite`. */
+  BOOTSTRAP = 'BOOTSTRAP',
+  /** Instance invite: routes to `instanceInviteToken` input on `signupWithInvite`. */
   INSTANCE = 'INSTANCE',
   /** Workspace invite: join-a-workspace flow. */
   WORKSPACE = 'WORKSPACE'

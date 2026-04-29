@@ -20,6 +20,9 @@
  * - `password` — required.
  * - `workspaceInviteToken` — from `/join/:token` URLs for workspace invites.
  * - `instanceInviteToken` — from `/join/:token` URLs for instance invites.
+ * - `bootstrapToken` — from `/join/:token` URLs for bootstrap tokens (first-user
+ *   provisioning). Distinct from `instanceInviteToken`; use `bootstrapToken` when
+ *   the preview returns `tokenType === BOOTSTRAP`.
  *
  * @returns TanStack Query mutation result. On success, `data.signupWithInvite`
  *   contains `{ userId, serverId? }`. `serverId` is present only for workspace

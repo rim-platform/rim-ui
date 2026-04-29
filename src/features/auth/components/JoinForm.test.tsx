@@ -1,11 +1,15 @@
 /**
- * Tests for `JoinForm` — amendment 2026-04-28b field additions.
+ * Tests for `JoinForm` — amendment 2026-04-28b field additions + BOOTSTRAP variant.
  *
  * Covers the four new assertions from spec §13b:
  * (a) Malformed email rejected client-side, inline error before submit.
  * (b) SERVER EMAIL_TAKEN error renders inline next to email field.
  * (c) displayName trimming — leading/trailing whitespace stripped before send.
  * (d) displayName empty after trim → omitted from request payload entirely.
+ *
+ * Also covers the BOOTSTRAP token variant (added 2026-04-28c):
+ * (e) BOOTSTRAP variant routes via `bootstrapToken`, NOT `instanceInviteToken`.
+ * (f) INSTANCE variant still routes via `instanceInviteToken` (regression guard).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -34,6 +38,32 @@ function renderWorkspaceJoinForm(onSuccess = vi.fn()) {
         variant={InviteTokenType.WORKSPACE}
         token="tok-abc"
         workspaceName="Acme Corp"
+        onSuccess={onSuccess}
+      />
+    </MemoryRouter>,
+  );
+}
+
+/** Renders `JoinForm` with an INSTANCE token variant. */
+function renderInstanceJoinForm(onSuccess = vi.fn()) {
+  return render(
+    <MemoryRouter>
+      <JoinForm
+        variant={InviteTokenType.INSTANCE}
+        token="instance-tok-123"
+        onSuccess={onSuccess}
+      />
+    </MemoryRouter>,
+  );
+}
+
+/** Renders `JoinForm` with a BOOTSTRAP token variant. */
+function renderBootstrapJoinForm(onSuccess = vi.fn()) {
+  return render(
+    <MemoryRouter>
+      <JoinForm
+        variant={InviteTokenType.BOOTSTRAP}
+        token="bootstrap-tok-456"
         onSuccess={onSuccess}
       />
     </MemoryRouter>,
@@ -184,6 +214,70 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
     const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
     expect(Object.prototype.hasOwnProperty.call(input, "displayName")).toBe(false);
+  });
+});
+
+// ── BOOTSTRAP / INSTANCE token routing ───────────────────────────────────────
+
+describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Fills in valid required fields and submits the form.
+   * The mock mutation must be configured before calling this.
+   */
+  async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByPlaceholderText("yourname"), "testuser");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "test@example.com");
+    await user.type(screen.getByPlaceholderText("password"), "password123");
+    await user.click(screen.getByText("Create account"));
+  }
+
+  it("(e) BOOTSTRAP variant routes via bootstrapToken, not instanceInviteToken", async () => {
+    mockSignupMutate.mockImplementation(
+      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void }) => {
+        opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: null } });
+      },
+    );
+
+    const user = userEvent.setup();
+    renderBootstrapJoinForm();
+    await fillAndSubmit(user);
+
+    expect(mockSignupMutate).toHaveBeenCalledOnce();
+
+    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
+    // Must use bootstrapToken, NOT instanceInviteToken.
+    expect(input).toHaveProperty("bootstrapToken", "bootstrap-tok-456");
+    expect(Object.prototype.hasOwnProperty.call(input, "instanceInviteToken")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
+  });
+
+  it("(e) BOOTSTRAP variant shows 'Create your RIM account' header copy (same as INSTANCE)", () => {
+    renderBootstrapJoinForm();
+    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
+  });
+
+  it("(f) INSTANCE variant routes via instanceInviteToken, not bootstrapToken", async () => {
+    mockSignupMutate.mockImplementation(
+      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void }) => {
+        opts.onSuccess({ signupWithInvite: { userId: "u2", serverId: null } });
+      },
+    );
+
+    const user = userEvent.setup();
+    renderInstanceJoinForm();
+    await fillAndSubmit(user);
+
+    expect(mockSignupMutate).toHaveBeenCalledOnce();
+
+    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
+    // Must use instanceInviteToken, NOT bootstrapToken.
+    expect(input).toHaveProperty("instanceInviteToken", "instance-tok-123");
+    expect(Object.prototype.hasOwnProperty.call(input, "bootstrapToken")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
   });
 });
 

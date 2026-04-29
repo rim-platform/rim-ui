@@ -271,4 +271,77 @@ describe("JoinPage", () => {
     // The email field is present and required
     expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
   });
+
+  it("bootstrap token happy path: shows 'Create your RIM account' copy", () => {
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderAtPath("/join/bootstrap-tok-abc");
+
+    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
+    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+  });
+
+  it("bootstrap token: signup mutation called with bootstrapToken, not instanceInviteToken", async () => {
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    mockSignupMutate.mockImplementation(
+      (
+        _input: unknown,
+        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: null } }) => void },
+      ) => {
+        opts.onSuccess({ signupWithInvite: { userId: "u-bootstrap", serverId: null } });
+      },
+    );
+
+    const user = userEvent.setup();
+    renderAtPath("/join/bootstrap-tok-abc");
+
+    await user.type(screen.getByPlaceholderText("yourname"), "newadmin");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "admin@example.com");
+    await user.type(screen.getByPlaceholderText("password"), "password123");
+    await user.click(screen.getByText("Create account"));
+
+    expect(mockSignupMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: "newadmin",
+        email: "admin@example.com",
+        bootstrapToken: "bootstrap-tok-abc",
+      }),
+      expect.any(Object),
+    );
+
+    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
+    expect(Object.prototype.hasOwnProperty.call(input, "instanceInviteToken")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
+  });
+
+  it("already authenticated with bootstrap token: renders instance-token error copy", () => {
+    mockSession = { userId: "existing-user" };
+
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderAtPath("/join/bootstrap-tok-abc");
+
+    expect(
+      screen.getByText("You already have a RIM account; instance invites are only for new users."),
+    ).toBeInTheDocument();
+  });
 });

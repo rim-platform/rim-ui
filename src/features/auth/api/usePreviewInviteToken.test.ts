@@ -65,6 +65,28 @@ describe("usePreviewInviteToken", () => {
     expect(result.current.data?.workspace).toBeNull();
   });
 
+  it("returns BOOTSTRAP tokenType with null workspace on bootstrap invite", async () => {
+    server.use(
+      mockGraphQLQuery("PreviewInviteToken", {
+        previewInviteToken: {
+          tokenType: "BOOTSTRAP",
+          expiresAt: null,
+          workspace: null,
+        },
+      }),
+    );
+
+    const { result } = renderHook(
+      () => usePreviewInviteToken("bootstrap-token"),
+      { wrapper: TestProviders },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.tokenType).toBe(InviteTokenType.BOOTSTRAP);
+    expect(result.current.data?.workspace).toBeNull();
+  });
+
   it("surfaces INVALID_TOKEN code via error extensions", async () => {
     server.use(
       http.post("*/api", async () => {
