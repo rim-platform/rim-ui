@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { PresenceStatus } from "../../../core/graphql/generated/schema-types";
 
 const HEARTBEAT_MUTATION = gql`
   mutation Heartbeat($input: HeartbeatInput!) {
@@ -15,7 +16,7 @@ export function useHeartbeat(workspaceId: string | null) {
   useEffect(() => {
     if (!workspaceId) return;
 
-    const sendHeartbeat = (status: "ONLINE" | "AWAY") => {
+    const sendHeartbeat = (status: PresenceStatus) => {
       const now = Date.now();
       if (now - lastSentRef.current < 10_000) return;
       lastSentRef.current = now;
@@ -27,18 +28,18 @@ export function useHeartbeat(workspaceId: string | null) {
     };
 
     // Send initial heartbeat
-    sendHeartbeat("ONLINE");
+    sendHeartbeat(PresenceStatus.ONLINE);
 
     // Periodic heartbeat every 30s
     const interval = setInterval(() => {
       const isVisible = document.visibilityState === "visible";
-      sendHeartbeat(isVisible ? "ONLINE" : "AWAY");
+      sendHeartbeat(isVisible ? PresenceStatus.ONLINE : PresenceStatus.AWAY);
     }, 30_000);
 
     // Visibility change → immediate heartbeat
     const handleVisibility = () => {
       sendHeartbeat(
-        document.visibilityState === "visible" ? "ONLINE" : "AWAY",
+        document.visibilityState === "visible" ? PresenceStatus.ONLINE : PresenceStatus.AWAY,
       );
     };
     document.addEventListener("visibilitychange", handleVisibility);

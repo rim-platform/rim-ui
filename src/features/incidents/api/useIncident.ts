@@ -124,7 +124,12 @@ const ADVANCE_INCIDENT_PHASE = gql`
 
 const TAG_INCIDENT_MESSAGE = gql`
   mutation TagIncidentMessage($input: TagIncidentMessageInput!) {
-    tagIncidentMessage(input: $input)
+    tagIncidentMessage(input: $input) {
+      messageId
+      incidentId
+      phase
+      tagType
+    }
   }
 `;
 

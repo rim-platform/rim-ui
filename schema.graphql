@@ -1155,6 +1155,31 @@ type Mutation {
 	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
 	deletePipeline(pipelineId: ID!): Boolean!
 	togglePipeline(pipelineId: ID!, enabled: Boolean!): PipelineGql!
+	"""
+	Update fields on the authenticated user's profile.
+	
+	Returns the full updated `User` so the client can refresh local cache
+	without an extra `me { ... }` round-trip.
+	
+	# Errors
+	
+	- `UNAUTHENTICATED` — no session.
+	- `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
+	`bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
+	- `NOT_FOUND` — caller's user row missing (should not happen in practice).
+	- `INTERNAL` — repository failure.
+	
+	# Examples
+	
+	```graphql
+	mutation Update($input: UpdateMyProfileInput!) {
+	updateMyProfile(input: $input) {
+	id username displayName avatarUrl statusText bio
+	}
+	}
+	```
+	"""
+	updateMyProfile(input: UpdateMyProfileInput!): User!
 }
 
 input MuteConversationInput {
@@ -1630,6 +1655,20 @@ input UpdateMacroInput {
 	nlDescription: String! = ""
 	intentSamples: [String!]! = []
 	sensitivity: CommandSensitivity! = SAFE
+}
+
+"""
+Patch fields on the authenticated user's profile.
+
+Each field is independently optional. Omitting a field leaves the existing
+value unchanged. Sending an explicit empty string clears the field
+(after trim + control-char strip).
+"""
+input UpdateMyProfileInput {
+	displayName: String
+	avatarUrl: String
+	statusText: String
+	bio: String
 }
 
 input UpdatePipelineInput {

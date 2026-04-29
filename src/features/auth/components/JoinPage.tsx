@@ -81,6 +81,42 @@ export function JoinPage() {
   );
 }
 
+/**
+ * Maps an `InviteTokenType` (from a preview query) to the corresponding
+ * `JoinForm` `variant` prop value.
+ *
+ * Implemented as an exhaustive switch with a `never`-typed default arm:
+ * if a new `InviteTokenType` enum member is added server-side and pulled
+ * through codegen, this function will fail to type-check until the new
+ * case is mapped explicitly. This is a deliberate replacement for the
+ * previous `as InviteTokenType` cast at the call site, which silently
+ * accepted any string the server returned.
+ *
+ * Note: `JoinForm`'s own `JoinFormVariant` is `InviteTokenType | "OPEN"`.
+ * `OPEN` is intentionally not produced here — it is only used by the
+ * open-registration route, which never reaches preview.
+ *
+ * @throws Never at runtime under correct typing. Throws an `Error` only
+ *   if a non-enum value is passed at runtime (e.g. server returned an
+ *   unknown string ahead of a frontend rebuild).
+ */
+function inviteTokenTypeToJoinFormVariant(
+  tokenType: InviteTokenType,
+): InviteTokenType {
+  switch (tokenType) {
+    case InviteTokenType.WORKSPACE:
+      return InviteTokenType.WORKSPACE;
+    case InviteTokenType.INSTANCE:
+      return InviteTokenType.INSTANCE;
+    case InviteTokenType.BOOTSTRAP:
+      return InviteTokenType.BOOTSTRAP;
+    default: {
+      const _exhaustive: never = tokenType;
+      throw new Error(`Unhandled InviteTokenType: ${String(_exhaustive)}`);
+    }
+  }
+}
+
 interface JoinPageWithTokenProps {
   token: string;
   isAuthenticated: boolean;
@@ -120,7 +156,7 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
 
   return (
     <JoinForm
-      variant={preview.tokenType as InviteTokenType}
+      variant={inviteTokenTypeToJoinFormVariant(preview.tokenType)}
       token={token}
       workspaceName={preview.workspace?.serverName}
       onSuccess={onSignupSuccess}

@@ -138,10 +138,12 @@ describe("JoinPage", () => {
     );
   }
 
-  it("workspace token happy path: shows workspace name and signup form", () => {
+  it("WORKSPACE preview → JoinForm renders with workspace-variant copy", () => {
     renderAtPath("/join/ws-token-abc");
     expect(screen.getByText(/Acme Corp/)).toBeInTheDocument();
     expect(screen.getByText("Create account")).toBeInTheDocument();
+    // Negation: workspace variant must NOT show the generic instance/bootstrap heading
+    expect(screen.queryByText("Create your RIM account")).not.toBeInTheDocument();
   });
 
   it("workspace token: signup mutation called with workspaceInviteToken on submit", async () => {
@@ -217,6 +219,49 @@ describe("JoinPage", () => {
     expect(mockSignupMutate).toHaveBeenCalled();
     expect(mockSetWorkspaceId).not.toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("INSTANCE preview → JoinForm renders with instance-variant copy and submits with instanceInviteToken", async () => {
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    mockSignupMutate.mockImplementation(
+      (
+        _input: unknown,
+        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: null } }) => void },
+      ) => {
+        opts.onSuccess({ signupWithInvite: { userId: "u-instance", serverId: null } });
+      },
+    );
+
+    const user = userEvent.setup();
+    renderAtPath("/join/inst-token-xyz");
+
+    // Instance variant shows the generic heading, not a workspace name
+    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("yourname"), "charlie");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "charlie@example.com");
+    await user.type(screen.getByPlaceholderText("password"), "password123");
+    await user.click(screen.getByText("Create account"));
+
+    expect(mockSignupMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: "charlie",
+        email: "charlie@example.com",
+        instanceInviteToken: "inst-token-xyz",
+      }),
+      expect.any(Object),
+    );
+
+    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
+    expect(Object.prototype.hasOwnProperty.call(input, "bootstrapToken")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
   });
 
   it("INVALID_TOKEN error: renders matching copy", () => {

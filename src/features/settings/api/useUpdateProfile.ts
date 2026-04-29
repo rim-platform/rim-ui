@@ -2,21 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { UpdateMyProfileInput } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 
-const UPDATE_MY_PROFILE_MUTATION = gql`
-  mutation UpdateMyProfile(
-    $displayName: String
-    $avatarUrl: String
-    $statusText: String
-    $bio: String
-  ) {
-    updateMyProfile(
-      displayName: $displayName
-      avatarUrl: $avatarUrl
-      statusText: $statusText
-      bio: $bio
-    ) {
+const UPDATE_MY_PROFILE = gql`
+  mutation UpdateMyProfile($input: UpdateMyProfileInput!) {
+    updateMyProfile(input: $input) {
       id
       username
       displayName
@@ -27,13 +18,6 @@ const UPDATE_MY_PROFILE_MUTATION = gql`
   }
 `;
 
-interface UpdateProfileVars {
-  displayName?: string;
-  avatarUrl?: string;
-  statusText?: string;
-  bio?: string;
-}
-
 interface ProfileUser {
   id: string;
   username: string;
@@ -43,12 +27,29 @@ interface ProfileUser {
   bio: string | null;
 }
 
+/**
+ * React Query mutation hook for updating the current user's profile.
+ *
+ * Accepts the four optional profile fields individually and wraps them
+ * in the `UpdateMyProfileInput` object required by the GraphQL schema.
+ * On success the `me` query and `serverMembers` cache are invalidated
+ * so all consumers see fresh data.
+ *
+ * @example
+ * ```tsx
+ * const { mutate } = useUpdateProfileMutation();
+ * mutate({ displayName: "Alice", statusText: "On call" });
+ * ```
+ */
 export function useUpdateProfileMutation() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (vars: UpdateProfileVars) =>
-      graphqlClient.request<{ updateMyProfile: ProfileUser }>(UPDATE_MY_PROFILE_MUTATION, vars),
+    mutationFn: (vars: UpdateMyProfileInput) =>
+      graphqlClient.request<{ updateMyProfile: ProfileUser }>(
+        UPDATE_MY_PROFILE,
+        { input: vars },
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.me });
       qc.invalidateQueries({ queryKey: ["serverMembers"] });

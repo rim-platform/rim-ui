@@ -1120,6 +1120,7 @@ export type Mutation = {
   updateIncidentStatus: IncidentGql;
   updateKeybind: Keybind;
   updateMacro: MacroDef;
+  updateMyProfile: User;
   updatePipeline: PipelineGql;
   updateUserCommand: Command;
 };
@@ -1426,6 +1427,11 @@ export type MutationUpdateKeybindArgs = {
 
 export type MutationUpdateMacroArgs = {
   input: UpdateMacroInput;
+};
+
+
+export type MutationUpdateMyProfileArgs = {
+  input: UpdateMyProfileInput;
 };
 
 
@@ -2183,6 +2189,13 @@ export type UpdateMacroInput = {
   nlDescription?: Scalars['String']['input'];
   sensitivity?: CommandSensitivity;
   steps: Array<MacroStepInput>;
+};
+
+export type UpdateMyProfileInput = {
+  avatarUrl?: InputMaybe<Scalars['String']['input']>;
+  bio?: InputMaybe<Scalars['String']['input']>;
+  displayName?: InputMaybe<Scalars['String']['input']>;
+  statusText?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdatePipelineInput = {
