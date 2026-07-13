@@ -25,13 +25,10 @@ export function usePinnedMessages(workspaceId?: string, conversationId?: string)
     enabled: Boolean(workspaceId && conversationId),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<PinnedMessagesResponse>(
-        PINNED_MESSAGES_QUERY,
-        {
-          serverId: workspaceId!,
-          conversationId: conversationId!,
-        },
-      );
+      const res = await graphqlClient.request<PinnedMessagesResponse>(PINNED_MESSAGES_QUERY, {
+        serverId: workspaceId!,
+        conversationId: conversationId!,
+      });
       return res.pinnedMessages;
     },
   });

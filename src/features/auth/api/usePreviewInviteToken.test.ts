@@ -32,10 +32,9 @@ describe("usePreviewInviteToken", () => {
       }),
     );
 
-    const { result } = renderHook(
-      () => usePreviewInviteToken("valid-workspace-token"),
-      { wrapper: TestProviders },
-    );
+    const { result } = renderHook(() => usePreviewInviteToken("valid-workspace-token"), {
+      wrapper: TestProviders,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -54,10 +53,9 @@ describe("usePreviewInviteToken", () => {
       }),
     );
 
-    const { result } = renderHook(
-      () => usePreviewInviteToken("instance-token"),
-      { wrapper: TestProviders },
-    );
+    const { result } = renderHook(() => usePreviewInviteToken("instance-token"), {
+      wrapper: TestProviders,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -76,10 +74,9 @@ describe("usePreviewInviteToken", () => {
       }),
     );
 
-    const { result } = renderHook(
-      () => usePreviewInviteToken("bootstrap-token"),
-      { wrapper: TestProviders },
-    );
+    const { result } = renderHook(() => usePreviewInviteToken("bootstrap-token"), {
+      wrapper: TestProviders,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -102,10 +99,9 @@ describe("usePreviewInviteToken", () => {
       }),
     );
 
-    const { result } = renderHook(
-      () => usePreviewInviteToken("invalid-token"),
-      { wrapper: TestProviders },
-    );
+    const { result } = renderHook(() => usePreviewInviteToken("invalid-token"), {
+      wrapper: TestProviders,
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
@@ -128,10 +124,9 @@ describe("usePreviewInviteToken", () => {
       }),
     );
 
-    const { result } = renderHook(
-      () => usePreviewInviteToken("expired-token"),
-      { wrapper: TestProviders },
-    );
+    const { result } = renderHook(() => usePreviewInviteToken("expired-token"), {
+      wrapper: TestProviders,
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 

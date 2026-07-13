@@ -51,7 +51,9 @@ describe("safeInvoke", () => {
 
       const error = assertError(result, "ipc_unavailable");
       expect(error.kind).toBe("ipc_unavailable");
-      expect((error as Extract<SafeInvokeError, { kind: "ipc_unavailable" }>).message).toContain("plugin_list");
+      expect((error as Extract<SafeInvokeError, { kind: "ipc_unavailable" }>).message).toContain(
+        "plugin_list",
+      );
       // invoke() must NOT be called — we bail before the IPC call
       expect(mockInvoke).not.toHaveBeenCalled();
     });
@@ -67,10 +69,15 @@ describe("safeInvoke", () => {
     it("maps structured PERMISSION_DENIED backend error", async () => {
       mockInvoke.mockRejectedValue({ kind: "PERMISSION_DENIED", message: "capability missing" });
 
-      const result = await safeInvoke("plugin_approve_capabilities", { pluginId: "x", capabilities: [] });
+      const result = await safeInvoke("plugin_approve_capabilities", {
+        pluginId: "x",
+        capabilities: [],
+      });
 
       const error = assertError(result, "permission_denied");
-      expect((error as Extract<SafeInvokeError, { kind: "permission_denied" }>).message).toBe("capability missing");
+      expect((error as Extract<SafeInvokeError, { kind: "permission_denied" }>).message).toBe(
+        "capability missing",
+      );
     });
 
     it("maps Tauri string error containing 'not allowed'", async () => {
@@ -106,7 +113,10 @@ describe("safeInvoke", () => {
     });
 
     it("maps structured CAPABILITY_MISSING backend error", async () => {
-      mockInvoke.mockRejectedValue({ kind: "CAPABILITY_MISSING", message: "plugin:default not granted" });
+      mockInvoke.mockRejectedValue({
+        kind: "CAPABILITY_MISSING",
+        message: "plugin:default not granted",
+      });
 
       const result = await safeInvoke("plugin_list", {});
 
@@ -130,11 +140,18 @@ describe("safeInvoke", () => {
     });
 
     it("maps structured INVALID_ARGS with optional field", async () => {
-      mockInvoke.mockRejectedValue({ kind: "INVALID_ARGS", message: "must be non-empty", field: "pluginId" });
+      mockInvoke.mockRejectedValue({
+        kind: "INVALID_ARGS",
+        message: "must be non-empty",
+        field: "pluginId",
+      });
 
       const result = await safeInvoke("plugin_enable", {});
 
-      const error = assertError(result, "invalid_args") as Extract<SafeInvokeError, { kind: "invalid_args" }>;
+      const error = assertError(result, "invalid_args") as Extract<
+        SafeInvokeError,
+        { kind: "invalid_args" }
+      >;
       expect(error.field).toBe("pluginId");
     });
 
@@ -167,7 +184,10 @@ describe("safeInvoke", () => {
 
       const result = await safeInvoke("channel_create", {});
 
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("CONFLICT");
       expect(error.message).toBe("conflict: channel title already exists");
     });
@@ -189,11 +209,17 @@ describe("safeInvoke", () => {
     });
 
     it("maps structured backend error with custom kind (e.g. LIFECYCLE_ERROR)", async () => {
-      mockInvoke.mockRejectedValue({ kind: "LIFECYCLE_ERROR", message: "plugin crashed on startup" });
+      mockInvoke.mockRejectedValue({
+        kind: "LIFECYCLE_ERROR",
+        message: "plugin crashed on startup",
+      });
 
       const result = await safeInvoke("plugin_enable", { pluginId: "my-plugin" });
 
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("LIFECYCLE_ERROR");
       expect(error.message).toBe("plugin crashed on startup");
     });
@@ -203,7 +229,10 @@ describe("safeInvoke", () => {
 
       const result = await safeInvoke("plugin_enable", {});
 
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("UNKNOWN");
     });
 
@@ -212,7 +241,10 @@ describe("safeInvoke", () => {
 
       const result = await safeInvoke("plugin_list", {});
 
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.message).toBe("network timeout");
     });
 
@@ -221,7 +253,10 @@ describe("safeInvoke", () => {
 
       const result = await safeInvoke("plugin_list", {});
 
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("SOME_FUTURE_ERROR");
     });
   });
@@ -238,7 +273,10 @@ describe("safeInvoke", () => {
     it("'not found' → backend_error NOT_FOUND", async () => {
       mockInvoke.mockRejectedValue("not found");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("NOT_FOUND");
       expect(error.message).toBe("not found");
     });
@@ -246,14 +284,20 @@ describe("safeInvoke", () => {
     it("'validation error: …' → invalid_args, message preserved", async () => {
       mockInvoke.mockRejectedValue("validation error: field too long");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "invalid_args") as Extract<SafeInvokeError, { kind: "invalid_args" }>;
+      const error = assertError(result, "invalid_args") as Extract<
+        SafeInvokeError,
+        { kind: "invalid_args" }
+      >;
       expect(error.message).toBe("validation error: field too long");
     });
 
     it("'conflict: …' → backend_error CONFLICT, message preserved", async () => {
       mockInvoke.mockRejectedValue("conflict: duplicate key");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("CONFLICT");
       expect(error.message).toBe("conflict: duplicate key");
     });
@@ -267,14 +311,20 @@ describe("safeInvoke", () => {
     it("'dependency unavailable' → backend_error DEPENDENCY_UNAVAILABLE", async () => {
       mockInvoke.mockRejectedValue("dependency unavailable");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("DEPENDENCY_UNAVAILABLE");
     });
 
     it("'dependency timed out' → backend_error DEPENDENCY_TIMED_OUT", async () => {
       mockInvoke.mockRejectedValue("dependency timed out");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("DEPENDENCY_TIMED_OUT");
     });
 
@@ -293,7 +343,10 @@ describe("safeInvoke", () => {
     it("'confirmation proof is stale; please re-confirm' → confirmation_stale, message preserved", async () => {
       mockInvoke.mockRejectedValue("confirmation proof is stale; please re-confirm");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "confirmation_stale") as Extract<SafeInvokeError, { kind: "confirmation_stale" }>;
+      const error = assertError(result, "confirmation_stale") as Extract<
+        SafeInvokeError,
+        { kind: "confirmation_stale" }
+      >;
       expect(error.message).toBe("confirmation proof is stale; please re-confirm");
     });
 
@@ -306,7 +359,10 @@ describe("safeInvoke", () => {
     it("'rate limit exceeded; retry after 30s' → rate_limited, retryAfterMs=30000, message intact", async () => {
       mockInvoke.mockRejectedValue("rate limit exceeded; retry after 30s");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "rate_limited") as Extract<SafeInvokeError, { kind: "rate_limited" }>;
+      const error = assertError(result, "rate_limited") as Extract<
+        SafeInvokeError,
+        { kind: "rate_limited" }
+      >;
       expect(error.retryAfterMs).toBe(30000);
       expect(error.message).toBe("rate limit exceeded; retry after 30s");
     });
@@ -314,29 +370,48 @@ describe("safeInvoke", () => {
     it("'rate limit exceeded; retry after 5s' → rate_limited, retryAfterMs=5000", async () => {
       mockInvoke.mockRejectedValue("rate limit exceeded; retry after 5s");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "rate_limited") as Extract<SafeInvokeError, { kind: "rate_limited" }>;
+      const error = assertError(result, "rate_limited") as Extract<
+        SafeInvokeError,
+        { kind: "rate_limited" }
+      >;
       expect(error.retryAfterMs).toBe(5000);
     });
 
     it("structured RATE_LIMITED with retry_after_ms → rate_limited, retryAfterMs preserved", async () => {
-      mockInvoke.mockRejectedValue({ kind: "RATE_LIMITED", message: "rate limit exceeded", retry_after_ms: 60000 });
+      mockInvoke.mockRejectedValue({
+        kind: "RATE_LIMITED",
+        message: "rate limit exceeded",
+        retry_after_ms: 60000,
+      });
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "rate_limited") as Extract<SafeInvokeError, { kind: "rate_limited" }>;
+      const error = assertError(result, "rate_limited") as Extract<
+        SafeInvokeError,
+        { kind: "rate_limited" }
+      >;
       expect(error.retryAfterMs).toBe(60000);
       expect(error.message).toBe("rate limit exceeded");
     });
 
     it("structured CONFIRMATION_STALE → confirmation_stale", async () => {
-      mockInvoke.mockRejectedValue({ kind: "CONFIRMATION_STALE", message: "confirmation expired or was already used" });
+      mockInvoke.mockRejectedValue({
+        kind: "CONFIRMATION_STALE",
+        message: "confirmation expired or was already used",
+      });
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "confirmation_stale") as Extract<SafeInvokeError, { kind: "confirmation_stale" }>;
+      const error = assertError(result, "confirmation_stale") as Extract<
+        SafeInvokeError,
+        { kind: "confirmation_stale" }
+      >;
       expect(error.message).toBe("confirmation expired or was already used");
     });
 
     it("'internal error' → backend_error INTERNAL_ERROR", async () => {
       mockInvoke.mockRejectedValue("internal error");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("INTERNAL_ERROR");
     });
 
@@ -345,7 +420,10 @@ describe("safeInvoke", () => {
     it("'toString' does NOT hit STATIC_CODES (prototype-pollution guard)", async () => {
       mockInvoke.mockRejectedValue("toString");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("UNKNOWN");
     });
 
@@ -354,21 +432,30 @@ describe("safeInvoke", () => {
       // it must not match the old loose includes("invalid") heuristic.
       mockInvoke.mockRejectedValue("invalid signature");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("UNKNOWN");
     });
 
     it("'some plugin entered invalid state' does NOT trigger invalid_args", async () => {
       mockInvoke.mockRejectedValue("some plugin entered invalid state");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("UNKNOWN");
     });
 
     it("'some random unknown rust string' → backend_error UNKNOWN", async () => {
       mockInvoke.mockRejectedValue("some random unknown rust string");
       const result = await safeInvoke("cmd", {});
-      const error = assertError(result, "backend_error") as Extract<SafeInvokeError, { kind: "backend_error" }>;
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
       expect(error.code).toBe("UNKNOWN");
     });
   });

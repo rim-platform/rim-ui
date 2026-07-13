@@ -11,7 +11,9 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 vi.mock("./CreateWorkspaceDialog", () => ({
   CreateWorkspaceDialog: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="create-workspace-dialog">
-      <button type="button" onClick={onClose}>Close</button>
+      <button type="button" onClick={onClose}>
+        Close
+      </button>
     </div>
   ),
 }));

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { getApiOrigin } from "../../../core/graphql/config";
 import { UpdateMyProfileInput } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 
@@ -46,10 +47,7 @@ export function useUpdateProfileMutation() {
 
   return useMutation({
     mutationFn: (vars: UpdateMyProfileInput) =>
-      graphqlClient.request<{ updateMyProfile: ProfileUser }>(
-        UPDATE_MY_PROFILE,
-        { input: vars },
-      ),
+      graphqlClient.request<{ updateMyProfile: ProfileUser }>(UPDATE_MY_PROFILE, { input: vars }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.me });
       qc.invalidateQueries({ queryKey: ["serverMembers"] });
@@ -61,9 +59,7 @@ const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
 function getCsrfToken(): string | undefined {
-  const row = document.cookie
-    .split("; ")
-    .find((r) => r.startsWith(`${CSRF_COOKIE}=`));
+  const row = document.cookie.split("; ").find((r) => r.startsWith(`${CSRF_COOKIE}=`));
   return row ? decodeURIComponent(row.split("=")[1]) : undefined;
 }
 
@@ -72,8 +68,7 @@ function getCsrfToken(): string | undefined {
  * Returns the avatar URL path to use with updateMyProfile.
  */
 export async function uploadAvatar(file: Blob): Promise<string> {
-  const baseUrl = import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api";
-  const uploadUrl = baseUrl.replace(/\/api$/, "") + "/api/files/avatar";
+  const uploadUrl = getApiOrigin() + "/api/files/avatar";
 
   const formData = new FormData();
   formData.append("file", file, "avatar.png");

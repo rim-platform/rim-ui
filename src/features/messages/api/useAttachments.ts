@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient, getCookie } from "../../../core/graphql/client";
+import { getApiOrigin } from "../../../core/graphql/config";
 import { ATTACHMENT_FIELDS } from "../../../graphql/fragments/message";
 
 const CREATE_ATTACHMENT_MUTATION = gql`
@@ -107,8 +108,7 @@ export async function uploadFileRest(
   uploadToken: string,
   attachmentId: string,
 ): Promise<void> {
-  const baseUrl = import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api";
-  const uploadUrl = baseUrl.replace(/\/api$/, "") + "/api/files/upload";
+  const uploadUrl = getApiOrigin() + "/api/files/upload";
 
   const formData = new FormData();
   formData.append("file", file);

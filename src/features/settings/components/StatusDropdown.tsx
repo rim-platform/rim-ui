@@ -164,9 +164,7 @@ export function StatusDropdown({ position, onClose }: StatusDropdownProps) {
       {!showCustom ? (
         <>
           {/* Header */}
-          <div className="px-3 py-2 text-xs font-medium text-rim-text-muted">
-            Set status...
-          </div>
+          <div className="px-3 py-2 text-xs font-medium text-rim-text-muted">Set status...</div>
 
           <div className="h-px bg-rim-line" />
 

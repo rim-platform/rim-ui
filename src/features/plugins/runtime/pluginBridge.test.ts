@@ -71,10 +71,7 @@ describe("createPluginBridge", () => {
 
     bridge.sendToPlugin({ type: "panel.visibility", visible: true });
 
-    expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: "panel.visibility", visible: true },
-      "*",
-    );
+    expect(postMessageSpy).toHaveBeenCalledWith({ type: "panel.visibility", visible: true }, "*");
 
     bridge.destroy();
   });
@@ -177,10 +174,7 @@ describe("createPluginBridge", () => {
 
     bridge.destroy();
 
-    expect(removeEventListenerSpy).toHaveBeenCalledWith(
-      "message",
-      expect.any(Function),
-    );
+    expect(removeEventListenerSpy).toHaveBeenCalledWith("message", expect.any(Function));
 
     removeEventListenerSpy.mockRestore();
   });

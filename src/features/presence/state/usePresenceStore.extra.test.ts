@@ -44,9 +44,7 @@ describe("usePresenceStore (extra coverage)", () => {
 
   it("setBulk merges with existing data", () => {
     usePresenceStore.getState().setPresence("user-1", "ONLINE");
-    usePresenceStore.getState().setBulk([
-      { userId: "user-2", status: "AWAY" },
-    ]);
+    usePresenceStore.getState().setBulk([{ userId: "user-2", status: "AWAY" }]);
 
     const map = usePresenceStore.getState().presenceMap;
     expect(map["user-1"]).toBe("ONLINE");
@@ -55,9 +53,7 @@ describe("usePresenceStore (extra coverage)", () => {
 
   it("setBulk overwrites existing entries for same user", () => {
     usePresenceStore.getState().setPresence("user-1", "ONLINE");
-    usePresenceStore.getState().setBulk([
-      { userId: "user-1", status: "OFFLINE" },
-    ]);
+    usePresenceStore.getState().setBulk([{ userId: "user-1", status: "OFFLINE" }]);
 
     expect(usePresenceStore.getState().presenceMap["user-1"]).toBe("OFFLINE");
   });

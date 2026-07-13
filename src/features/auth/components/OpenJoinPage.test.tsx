@@ -18,13 +18,15 @@ vi.mock("../api/useSignupWithInviteMutation", () => ({
 }));
 
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
-  useWorkspaceStore: (selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown) =>
-    selector({ workspaceId: null, setWorkspaceId: vi.fn() }),
+  useWorkspaceStore: (
+    selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
+  ) => selector({ workspaceId: null, setWorkspaceId: vi.fn() }),
 }));
 
 vi.mock("../state/useAuthStore", () => ({
-  useAuthStore: (selector: (s: { session: null; setSession: (s: { userId: string }) => void }) => unknown) =>
-    selector({ session: null, setSession: vi.fn() }),
+  useAuthStore: (
+    selector: (s: { session: null; setSession: (s: { userId: string }) => void }) => unknown,
+  ) => selector({ session: null, setSession: vi.fn() }),
 }));
 
 const mockUseServerConfig = vi.fn();
@@ -70,9 +72,7 @@ describe("OpenJoinPage", () => {
     renderPage();
 
     expect(
-      screen.getByText(
-        "Registration is invite-only on this RIM instance.",
-      ),
+      screen.getByText("Registration is invite-only on this RIM instance."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Create account")).not.toBeInTheDocument();
   });

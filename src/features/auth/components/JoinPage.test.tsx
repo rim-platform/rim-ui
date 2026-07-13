@@ -66,13 +66,18 @@ vi.mock("../api/usePreviewInviteToken", () => ({
 let mockSession: { userId: string } | null = null;
 
 vi.mock("../state/useAuthStore", () => ({
-  useAuthStore: (selector: (s: { session: { userId: string } | null; setSession: (s: { userId: string }) => void }) => unknown) =>
-    selector({ session: mockSession, setSession: mockSetSession }),
+  useAuthStore: (
+    selector: (s: {
+      session: { userId: string } | null;
+      setSession: (s: { userId: string }) => void;
+    }) => unknown,
+  ) => selector({ session: mockSession, setSession: mockSetSession }),
 }));
 
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
-  useWorkspaceStore: (selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown) =>
-    selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
+  useWorkspaceStore: (
+    selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
+  ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
 }));
 
 import { JoinPage } from "./JoinPage";
@@ -150,7 +155,9 @@ describe("JoinPage", () => {
     mockSignupMutate.mockImplementation(
       (
         input: unknown,
-        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void },
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
       ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
@@ -276,9 +283,7 @@ describe("JoinPage", () => {
     renderAtPath("/join/bad-token");
 
     expect(
-      screen.getByText(
-        "This invite link is no longer valid. Ask your admin for a fresh invite.",
-      ),
+      screen.getByText("This invite link is no longer valid. Ask your admin for a fresh invite."),
     ).toBeInTheDocument();
   });
 

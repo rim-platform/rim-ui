@@ -48,6 +48,67 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        // Register the rim-plugin:// URI scheme for serving plugin panel assets.
+        // The handler resolves rim-plugin://<plugin_id>/<panel_id>/<rest> to
+        // ~/.rim/plugins/<plugin_id>/panels/<panel_id>/<rest> with full
+        // path-traversal validation.  See plugin_protocol.rs for the resolver
+        // and its security model.
+        .register_asynchronous_uri_scheme_protocol("rim-plugin", |_app, request, responder| {
+            use plugin_host::plugin_protocol::{resolve_plugin_uri, ResolveResult};
+
+            let uri = request.uri().to_string();
+            // Strip the scheme+authority: "rim-plugin://host/path" → "/path"
+            // Tauri passes the full URI; we want everything after the authority.
+            let path_part = uri
+                .strip_prefix("rim-plugin://")
+                .unwrap_or(&uri);
+
+            let plugins_root = plugin_host::discovery::plugins_dir();
+
+            match resolve_plugin_uri(path_part, &plugins_root) {
+                ResolveResult::Ok(file_path) => {
+                    match std::fs::read(&file_path) {
+                        Ok(bytes) => {
+                            let mime = guess_mime(&file_path);
+                            let response = tauri::http::Response::builder()
+                                .status(200)
+                                .header("Content-Type", mime)
+                                .header("Content-Security-Policy",
+                                    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+                                .body(bytes)
+                                .expect("failed to build response");
+                            responder.respond(response);
+                        }
+                        Err(e) => {
+                            log::warn!("[plugin_protocol] failed to read {:?}: {}", file_path, e);
+                            responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(404)
+                                    .body(b"Not Found".to_vec())
+                                    .unwrap(),
+                            );
+                        }
+                    }
+                }
+                ResolveResult::NotFound => {
+                    responder.respond(
+                        tauri::http::Response::builder()
+                            .status(404)
+                            .body(b"Not Found".to_vec())
+                            .unwrap(),
+                    );
+                }
+                ResolveResult::Forbidden => {
+                    log::warn!("[AUDIT] event=plugin_protocol_forbidden uri={}", uri);
+                    responder.respond(
+                        tauri::http::Response::builder()
+                            .status(403)
+                            .body(b"Forbidden".to_vec())
+                            .unwrap(),
+                    );
+                }
+            }
+        })
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -84,6 +145,8 @@ pub fn run() {
             plugin_host::commands::plugin_suggested_keybinds,
             plugin_host::commands::plugin_context_actions,
             plugin_host::commands::plugin_install_from_git,
+            plugin_host::commands::plugin_install_from_local,
+            plugin_host::commands::plugin_trust_fingerprint,
             plugin_host::commands::plugin_update,
             plugin_host::commands::plugin_panel_state,
             plugin_host::commands::plugin_relay_ui_event,
@@ -103,4 +166,22 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Guess a MIME type from a file extension.
+///
+/// Falls back to `"application/octet-stream"` for unknown extensions.
+fn guess_mime(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") | Some("mjs") => "text/javascript",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("svg") => "image/svg+xml",
+        Some("wasm") => "application/wasm",
+        Some("txt") => "text/plain",
+        _ => "application/octet-stream",
+    }
 }

@@ -19,16 +19,24 @@ describe("useMemberLookup", () => {
   });
 
   it("returns a resolve function", () => {
-    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
-    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<typeof useServerMembers>);
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
+    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useServerMembers
+    >);
 
     const { result } = renderHook(() => useMemberLookup("ws-1"));
     expect(typeof result.current.resolve).toBe("function");
   });
 
   it("resolve returns fallback for unknown userId", () => {
-    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
-    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<typeof useServerMembers>);
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
+    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useServerMembers
+    >);
 
     const { result } = renderHook(() => useMemberLookup("ws-1"));
     const info = result.current.resolve("unknown-user-id-xxx");
@@ -48,7 +56,9 @@ describe("useMemberLookup", () => {
         bio: "Hello",
       },
     } as ReturnType<typeof useCurrentUser>);
-    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<typeof useServerMembers>);
+    vi.mocked(useServerMembers).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useServerMembers
+    >);
 
     const { result } = renderHook(() => useMemberLookup("ws-1"));
     const info = result.current.resolve("me-id");
@@ -60,7 +70,9 @@ describe("useMemberLookup", () => {
   });
 
   it("resolve returns server member info", () => {
-    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
     vi.mocked(useServerMembers).mockReturnValue({
       data: [
         {
@@ -120,7 +132,9 @@ describe("useMemberLookup", () => {
   });
 
   it("uses username as displayName fallback", () => {
-    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
     vi.mocked(useServerMembers).mockReturnValue({
       data: [
         {
@@ -142,7 +156,9 @@ describe("useMemberLookup", () => {
   });
 
   it("exposes a map of all members", () => {
-    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<typeof useCurrentUser>);
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
     vi.mocked(useServerMembers).mockReturnValue({
       data: [
         {

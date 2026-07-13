@@ -8,7 +8,28 @@ export interface LayoutPreset {
 }
 
 export const BUILT_IN_PRESETS: LayoutPreset[] = [
-  { id: "focus", name: "Focus", sidebarCollapsed: true, isThreadOpen: false, pinnedPanelOpen: false, zenMode: false },
-  { id: "review", name: "Review", sidebarCollapsed: false, isThreadOpen: true, pinnedPanelOpen: false, zenMode: false },
-  { id: "triage", name: "Triage", sidebarCollapsed: false, isThreadOpen: false, pinnedPanelOpen: false, zenMode: false },
+  {
+    id: "focus",
+    name: "Focus",
+    sidebarCollapsed: true,
+    isThreadOpen: false,
+    pinnedPanelOpen: false,
+    zenMode: false,
+  },
+  {
+    id: "review",
+    name: "Review",
+    sidebarCollapsed: false,
+    isThreadOpen: true,
+    pinnedPanelOpen: false,
+    zenMode: false,
+  },
+  {
+    id: "triage",
+    name: "Triage",
+    sidebarCollapsed: false,
+    isThreadOpen: false,
+    pinnedPanelOpen: false,
+    zenMode: false,
+  },
 ];

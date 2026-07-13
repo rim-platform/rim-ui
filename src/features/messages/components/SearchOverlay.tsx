@@ -1,20 +1,35 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, Loader2, X, Clock } from "lucide-react";
+import { Search, Loader2, X, Clock, Info } from "lucide-react";
 
 import { Z } from "../../../shared/ui/zIndex";
 import { cn } from "../../../shared/ui/cn";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
-import { useSearchMessages, type SearchMessageItem } from "../api/useSearchMessages";
+import {
+  useSearchMessages,
+  flattenSearchPages,
+  type SearchMessageItem,
+} from "../api/useSearchMessages";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useChannels } from "../../conversations/api/useChannels";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
+import { SearchSnippet } from "./SearchSnippet";
 
-interface ResultGroup {
-  conversationId: string;
-  label: string;
-  items: SearchMessageItem[];
-}
+/** Operator legend shown in the "Search tips" popover. Mirrors `../rim-server/docs/search.md`. */
+const SEARCH_OPERATORS: { operator: string; example: string; meaning: string }[] = [
+  { operator: "from:", example: "from:@alice", meaning: "Only messages from this user." },
+  { operator: "in:", example: "in:#general", meaning: "Only messages in this channel." },
+  { operator: "has:link", example: "has:link", meaning: "Only messages containing a URL." },
+  {
+    operator: "has:attachment",
+    example: "has:attachment",
+    meaning: "Only messages with an attachment.",
+  },
+  { operator: "before:", example: "before:2026-07-01", meaning: "Sent before this date." },
+  { operator: "after:", example: "after:2026-06-01", meaning: "Sent on or after this date." },
+];
+
+const PREFETCH_THRESHOLD = 5;
 
 export function SearchOverlay() {
   const isOpen = useSearchOverlayStore((s) => s.isOpen);
@@ -32,14 +47,19 @@ export function SearchOverlay() {
   const openThreadForMessage = useShellStore((s) => s.openThreadForMessage);
   const { data: channelsData } = useChannels(workspaceId ?? undefined);
 
+  // The scope chip (All / current channel) sets `conversationId` as an explicit
+  // query-input field. It coexists with an in-query `in:#x` operator — the
+  // backend intersects both rather than one overriding the other. We don't try
+  // to unify them into a single UI control; a user can narrow with the chip,
+  // the operator, or both.
   const conversationId = scope.kind === "conversation" ? scope.conversationId : undefined;
-  const { data: results, isPending, isError, refetch } = useSearchMessages(
-    workspaceId ?? undefined,
-    conversationId,
-    query,
-  );
+  const { data, isPending, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useSearchMessages(workspaceId ?? undefined, conversationId, query);
+
+  const flatResults = useMemo(() => flattenSearchPages(data), [data]);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [tipsOpen, setTipsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -54,35 +74,10 @@ export function SearchOverlay() {
     return map;
   }, [channelsData]);
 
-  // Group results by conversation
-  const groups = useMemo<ResultGroup[]>(() => {
-    if (!results || results.length === 0) return [];
-    const groupMap = new Map<string, SearchMessageItem[]>();
-    for (const item of results) {
-      const existing = groupMap.get(item.conversationId);
-      if (existing) {
-        existing.push(item);
-      } else {
-        groupMap.set(item.conversationId, [item]);
-      }
-    }
-    return Array.from(groupMap.entries()).map(([convId, items]) => {
-      // Use conversationTitle from search results (backend provides it)
-      const firstItem = items[0];
-      const title = firstItem.conversationTitle;
-      const type = firstItem.conversationType;
-      const prefix = type === "CHANNEL" ? "# " : type === "DIRECT" ? "@ " : "";
-      const label = title
-        ? `${prefix}${title}`
-        : channelNameMap.get(convId)
-          ? `# ${channelNameMap.get(convId)}`
-          : convId.slice(0, 8);
-      return { conversationId: convId, label, items };
-    });
-  }, [results, channelNameMap]);
-
-  // Flat list for keyboard navigation
-  const flatResults = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  // Total keyboard-navigable rows: the flat results, plus one extra "Load
+  // more" row while another page is available.
+  const navCount = flatResults.length + (hasNextPage ? 1 : 0);
+  const isLoadMoreSelected = hasNextPage && selectedIndex === flatResults.length;
 
   // Focus input on open
   useEffect(() => {
@@ -91,17 +86,30 @@ export function SearchOverlay() {
     }
   }, [isOpen]);
 
-  // Reset selection on results change
+  // Reset selection whenever the user starts a new search. (Not on `data`
+  // change — that also fires when a page is appended via fetchNextPage, and
+  // resetting then would fight the user's in-progress keyboard navigation.)
   useEffect(() => {
     setSelectedIndex(0);
-  }, [results]);
+  }, [query]);
 
-  // Scroll selected into view
+  // Scroll selected row into view
   useEffect(() => {
     if (!listRef.current) return;
     const items = listRef.current.querySelectorAll("[data-search-result]");
     items[selectedIndex]?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
+
+  // Infinite scroll: prefetch the next page once the selected row is within
+  // PREFETCH_THRESHOLD of the last loaded item. The explicit "Load more" row
+  // below is a keyboard/click fallback for when this hasn't fired yet (e.g.
+  // mouse-only navigation that never moves `selectedIndex`).
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || flatResults.length === 0) return;
+    if (selectedIndex >= flatResults.length - PREFETCH_THRESHOLD) {
+      fetchNextPage();
+    }
+  }, [selectedIndex, hasNextPage, isFetchingNextPage, flatResults.length, fetchNextPage]);
 
   const jumpToMessage = useCallback(
     (msg: SearchMessageItem) => {
@@ -119,7 +127,15 @@ export function SearchOverlay() {
         setHighlightedMessageId(msg.id);
       }
     },
-    [query, close, addRecentSearch, setMainSurface, setSelectedConversationId, setHighlightedMessageId, openThreadForMessage],
+    [
+      query,
+      close,
+      addRecentSearch,
+      setMainSurface,
+      setSelectedConversationId,
+      setHighlightedMessageId,
+      openThreadForMessage,
+    ],
   );
 
   const handleKeyDown = useCallback(
@@ -127,34 +143,26 @@ export function SearchOverlay() {
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
-          setSelectedIndex((i) => Math.min(i + 1, flatResults.length - 1));
+          setSelectedIndex((i) => Math.min(i + 1, Math.max(navCount - 1, 0)));
           break;
         case "ArrowUp":
           event.preventDefault();
           setSelectedIndex((i) => Math.max(i - 1, 0));
           break;
-        case "Tab": {
-          // Tab to next group
-          event.preventDefault();
-          let current = 0;
-          for (const group of groups) {
-            if (selectedIndex < current + group.items.length) {
-              setSelectedIndex(Math.min(current + group.items.length, flatResults.length - 1));
-              return;
-            }
-            current += group.items.length;
-          }
-          break;
-        }
         case "Enter":
           event.preventDefault();
-          if (flatResults[selectedIndex]) {
+          if (isLoadMoreSelected) {
+            if (!isFetchingNextPage) fetchNextPage();
+          } else if (flatResults[selectedIndex]) {
             jumpToMessage(flatResults[selectedIndex]);
           }
           break;
         case "Escape":
           event.preventDefault();
-          if (query) {
+          // Tips popover closes first, then the query, then the overlay.
+          if (tipsOpen) {
+            setTipsOpen(false);
+          } else if (query) {
             setQuery("");
           } else {
             close();
@@ -162,7 +170,19 @@ export function SearchOverlay() {
           break;
       }
     },
-    [flatResults, selectedIndex, groups, query, setQuery, close, jumpToMessage],
+    [
+      navCount,
+      isLoadMoreSelected,
+      isFetchingNextPage,
+      fetchNextPage,
+      flatResults,
+      selectedIndex,
+      jumpToMessage,
+      tipsOpen,
+      query,
+      setQuery,
+      close,
+    ],
   );
 
   if (!isOpen) return null;
@@ -170,18 +190,17 @@ export function SearchOverlay() {
   const hasQuery = query.trim().length > 0;
   const showLoading = hasQuery && isPending;
   const showResults = hasQuery && !isPending && !isError && flatResults.length > 0;
-  const showNoResults = hasQuery && !isPending && !isError && results && results.length === 0;
+  const showNoResults = hasQuery && !isPending && !isError && data && flatResults.length === 0;
   const showError = hasQuery && isError;
   const showEmpty = !hasQuery;
 
   // Scope label for display
-  const scopeLabel = scope.kind === "conversation"
-    ? channelNameMap.get(scope.conversationId)
-      ? `# ${channelNameMap.get(scope.conversationId)}`
-      : "Current channel"
-    : "All";
-
-  let flatIndex = 0;
+  const scopeLabel =
+    scope.kind === "conversation"
+      ? channelNameMap.get(scope.conversationId)
+        ? `# ${channelNameMap.get(scope.conversationId)}`
+        : "Current channel"
+      : "All";
 
   return (
     <div
@@ -197,28 +216,61 @@ export function SearchOverlay() {
         onKeyDown={handleKeyDown}
       >
         {/* Search input */}
-        <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
+        <div className="relative flex items-center gap-2 border-b border-rim-line px-4 py-3">
           <Search className="h-4 w-4 shrink-0 text-rim-text-muted" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search messages..."
+            placeholder="Search — try from:@user, in:#channel, has:link, before:2026-01-01"
             className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
           />
           <span className="shrink-0 rounded bg-rim-void px-2 py-0.5 text-[10px] text-rim-text-muted">
             {scopeLabel}
           </span>
+          <button
+            type="button"
+            onClick={() => setTipsOpen((v) => !v)}
+            className={cn(
+              "shrink-0 text-rim-text-muted transition hover:text-rim-text",
+              tipsOpen && "text-rim-accent",
+            )}
+            aria-label="Search tips"
+            aria-expanded={tipsOpen}
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="text-rim-text-muted transition hover:text-rim-text"
+              className="shrink-0 text-rim-text-muted transition hover:text-rim-text"
               aria-label="Clear search"
             >
               <X className="h-3.5 w-3.5" />
             </button>
+          )}
+
+          {tipsOpen && (
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-rim-line bg-rim-panel p-3 shadow-xl">
+              <p className="mb-2 text-[10px] uppercase tracking-wider text-rim-text-faint">
+                Search operators
+              </p>
+              <ul className="space-y-1">
+                {SEARCH_OPERATORS.map((op) => (
+                  <li key={op.operator} className="flex items-baseline gap-2 text-xs">
+                    <code className="shrink-0 rounded bg-rim-void px-1.5 py-0.5 text-rim-accent">
+                      {op.example}
+                    </code>
+                    <span className="text-rim-text-muted">{op.meaning}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[10px] text-rim-text-faint">
+                Operators can be combined with each other and with free text.
+              </p>
+            </div>
           )}
         </div>
 
@@ -226,7 +278,9 @@ export function SearchOverlay() {
         <div ref={listRef} className="max-h-96 overflow-y-auto p-1">
           {showEmpty && recentSearches.length > 0 && (
             <div className="px-3 py-2">
-              <p className="mb-1 text-[10px] uppercase tracking-wider text-rim-text-faint">Recent</p>
+              <p className="mb-1 text-[10px] uppercase tracking-wider text-rim-text-faint">
+                Recent
+              </p>
               {recentSearches.map((recent) => (
                 <button
                   key={recent}
@@ -258,50 +312,65 @@ export function SearchOverlay() {
             </div>
           )}
 
-          {showResults && groups.map((group) => {
-            const groupStartIndex = flatIndex;
-            const groupEl = (
-              <div key={group.conversationId}>
-                <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-rim-text-faint">
-                  {group.label} — {group.items.length} hit{group.items.length !== 1 ? "s" : ""}
-                </div>
-                {group.items.map((msg) => {
-                  const idx = flatIndex++;
-                  const authorName = msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
-                  return (
-                    <button
-                      key={msg.id}
-                      type="button"
-                      data-search-result
-                      className={cn(
-                        "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition",
-                        selectedIndex === idx
-                          ? "bg-rim-accent/10"
-                          : "hover:bg-white/5",
-                      )}
-                      onMouseEnter={() => setSelectedIndex(idx)}
-                      onClick={() => jumpToMessage(msg)}
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-xs font-medium text-rim-text">
-                          {authorName}
-                        </span>
-                        <span className="shrink-0 text-[10px] text-rim-text-faint">
-                          {formatRelativeTime(msg.sentAt)}
-                        </span>
-                      </div>
-                      <HighlightedText text={msg.text ?? ""} query={query} />
-                    </button>
-                  );
-                })}
-              </div>
-            );
-            // Ensure flatIndex is updated even if we skip rendering
-            if (flatIndex === groupStartIndex) {
-              flatIndex += group.items.length;
-            }
-            return groupEl;
-          })}
+          {showResults && (
+            <>
+              {flatResults.map((msg, idx) => {
+                const authorName =
+                  msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+                const type = msg.conversationType;
+                const prefix = type === "CHANNEL" ? "# " : type === "DIRECT" ? "@ " : "";
+                const convLabel = msg.conversationTitle
+                  ? `${prefix}${msg.conversationTitle}`
+                  : channelNameMap.get(msg.conversationId)
+                    ? `# ${channelNameMap.get(msg.conversationId)}`
+                    : msg.conversationId.slice(0, 8);
+                return (
+                  <button
+                    key={msg.id}
+                    type="button"
+                    data-search-result
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left transition",
+                      selectedIndex === idx ? "bg-rim-accent/10" : "hover:bg-white/5",
+                    )}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    onClick={() => jumpToMessage(msg)}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-xs font-medium text-rim-text">
+                        {authorName}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-rim-text-faint">
+                        {formatRelativeTime(msg.sentAt)}
+                      </span>
+                    </div>
+                    <span className="truncate text-[10px] text-rim-text-faint">{convLabel}</span>
+                    <SearchSnippet headline={msg.headline} text={msg.text ?? ""} />
+                  </button>
+                );
+              })}
+
+              {hasNextPage && (
+                <button
+                  type="button"
+                  data-search-result
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs text-rim-text-muted transition hover:bg-white/5 disabled:opacity-50",
+                    isLoadMoreSelected && "bg-rim-accent/10",
+                  )}
+                  onMouseEnter={() => setSelectedIndex(flatResults.length)}
+                >
+                  {isFetchingNextPage ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    "Load more"
+                  )}
+                </button>
+              )}
+            </>
+          )}
 
           {showNoResults && (
             <div className="flex flex-col items-center py-10 text-center">
@@ -327,50 +396,17 @@ export function SearchOverlay() {
 
         {/* Footer */}
         <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
-          <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
-          <span><kbd className="font-mono">Tab</kbd> next group</span>
-          <span><kbd className="font-mono">Enter</kbd> jump</span>
-          <span><kbd className="font-mono">Esc</kbd> close</span>
+          <span>
+            <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-mono">Enter</kbd> jump
+          </span>
+          <span>
+            <kbd className="font-mono">Esc</kbd> close
+          </span>
         </div>
       </div>
     </div>
-  );
-}
-
-function HighlightedText({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) {
-    return <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2">{text}</p>;
-  }
-
-  const parts: { text: string; match: boolean }[] = [];
-  const lower = text.toLowerCase();
-  const qLower = query.trim().toLowerCase();
-  let lastIndex = 0;
-
-  let pos = lower.indexOf(qLower);
-  while (pos !== -1) {
-    if (pos > lastIndex) {
-      parts.push({ text: text.slice(lastIndex, pos), match: false });
-    }
-    parts.push({ text: text.slice(pos, pos + qLower.length), match: true });
-    lastIndex = pos + qLower.length;
-    pos = lower.indexOf(qLower, lastIndex);
-  }
-  if (lastIndex < text.length) {
-    parts.push({ text: text.slice(lastIndex), match: false });
-  }
-
-  return (
-    <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2">
-      {parts.map((part, i) =>
-        part.match ? (
-          <span key={i} className="rounded-sm bg-rim-accent/20 text-rim-accent">
-            {part.text}
-          </span>
-        ) : (
-          <span key={i}>{part.text}</span>
-        ),
-      )}
-    </p>
   );
 }

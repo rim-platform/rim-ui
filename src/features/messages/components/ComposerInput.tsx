@@ -39,8 +39,7 @@ const MAX_COMMAND_SUGGESTIONS = 8;
 
 /** Discriminated union for the unified slash/command suggestion list */
 type SlashItem =
-  | { kind: "builtin"; value: SlashCommand }
-  | { kind: "command"; value: CommandSuggestion };
+  { kind: "builtin"; value: SlashCommand } | { kind: "command"; value: CommandSuggestion };
 
 interface ComposerInputProps {
   text: string;
@@ -53,7 +52,14 @@ interface ComposerInputProps {
   canSubmit: boolean;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   mentionMapRef: React.RefObject<Map<string, string>>;
-  serverMembers: Array<{ userId: string; username: string; displayName: string | null; avatarUrl: string | null }> | undefined;
+  serverMembers:
+    | Array<{
+        userId: string;
+        username: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+      }>
+    | undefined;
   onFilePickerOpen: () => void;
 }
 
@@ -123,28 +129,31 @@ export function ComposerInput({
   }, []);
 
   // Filter members based on mention query
-  const updateMentionSuggestions = useCallback((query: string) => {
-    if (!serverMembers) {
-      setMentionSuggestions([]);
-      return;
-    }
-    const lower = query.toLowerCase();
-    const filtered = serverMembers
-      .filter((m) => {
-        const name = (m.displayName ?? m.username ?? "").toLowerCase();
-        const uname = (m.username ?? "").toLowerCase();
-        return name.includes(lower) || uname.includes(lower);
-      })
-      .slice(0, 8)
-      .map((m) => ({
-        userId: m.userId,
-        username: m.username,
-        displayName: m.displayName,
-        avatarUrl: m.avatarUrl,
-      }));
-    setMentionSuggestions(filtered);
-    setSelectedMention(0);
-  }, [serverMembers]);
+  const updateMentionSuggestions = useCallback(
+    (query: string) => {
+      if (!serverMembers) {
+        setMentionSuggestions([]);
+        return;
+      }
+      const lower = query.toLowerCase();
+      const filtered = serverMembers
+        .filter((m) => {
+          const name = (m.displayName ?? m.username ?? "").toLowerCase();
+          const uname = (m.username ?? "").toLowerCase();
+          return name.includes(lower) || uname.includes(lower);
+        })
+        .slice(0, 8)
+        .map((m) => ({
+          userId: m.userId,
+          username: m.username,
+          displayName: m.displayName,
+          avatarUrl: m.avatarUrl,
+        }));
+      setMentionSuggestions(filtered);
+      setSelectedMention(0);
+    },
+    [serverMembers],
+  );
 
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.currentTarget.value;
@@ -286,7 +295,10 @@ export function ComposerInput({
     const after = text.slice(cursorPos);
     const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
     if (match) {
-      const atStart = before.length - match[0].length + (match[0].startsWith(" ") || match[0].startsWith("\n") ? 1 : 0);
+      const atStart =
+        before.length -
+        match[0].length +
+        (match[0].startsWith(" ") || match[0].startsWith("\n") ? 1 : 0);
       const newBefore = before.slice(0, atStart) + `@${member.username} `;
       const newText = newBefore + after;
       onTextChange(newText);
@@ -386,7 +398,13 @@ export function ComposerInput({
     }
 
     // Enter without Shift sends the message
-    if (e.key === "Enter" && !e.shiftKey && suggestions.length === 0 && slashItems.length === 0 && mentionSuggestions.length === 0) {
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      suggestions.length === 0 &&
+      slashItems.length === 0 &&
+      mentionSuggestions.length === 0
+    ) {
       e.preventDefault();
       onSubmit();
     }
@@ -408,7 +426,8 @@ export function ComposerInput({
   }, []);
 
   // Compute suggestions position — only measure DOM when suggestions are visible
-  const hasSuggestions = suggestions.length > 0 || slashItems.length > 0 || mentionSuggestions.length > 0;
+  const hasSuggestions =
+    suggestions.length > 0 || slashItems.length > 0 || mentionSuggestions.length > 0;
   const suggestionsStyle = useMemo<React.CSSProperties>(() => {
     if (!hasSuggestions || !textareaRef.current) return { position: "absolute", top: 0, left: 0 };
     const rect = textareaRef.current.getBoundingClientRect();
@@ -465,116 +484,147 @@ export function ComposerInput({
           className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
           aria-label="Send message"
         >
-          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {isUploading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
         </button>
       </div>
 
-      {slashItems.length > 0 && createPortal(
-        <div
-          className="max-h-[320px] overflow-y-auto rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-          ref={commandListRef}
-          role="listbox"
-        >
-          {slashItems.map((item, i) => {
-            const isSelected = i === selectedSlashIndex;
-            // Insert separator before first command item if preceded by built-in items
-            const showSeparator = item.kind === "command" && i > 0 && slashItems[i - 1].kind === "builtin";
+      {slashItems.length > 0 &&
+        createPortal(
+          <div
+            className="max-h-[320px] overflow-y-auto rounded-lg border border-rim-line bg-rim-panel shadow-lg"
+            style={suggestionsStyle}
+            ref={commandListRef}
+            role="listbox"
+          >
+            {slashItems.map((item, i) => {
+              const isSelected = i === selectedSlashIndex;
+              // Insert separator before first command item if preceded by built-in items
+              const showSeparator =
+                item.kind === "command" && i > 0 && slashItems[i - 1].kind === "builtin";
 
-            return item.kind === "builtin" ? (
-              <button
-                key={`builtin-${item.value.command}`}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => applySlashSuggestion(item.value)}
-                className={cn(
-                  "flex w-full flex-col gap-0.5 px-3 py-1.5",
-                  isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-rim-text">{item.value.command}</span>
-                  <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">chat</span>
-                </div>
-                <span className="truncate text-xs text-rim-text-muted">{item.value.description}</span>
-              </button>
-            ) : (
-              <div key={`cmd-${item.value.id}`}>
-                {showSeparator && <div className="mx-3 border-t border-rim-line" />}
+              return item.kind === "builtin" ? (
                 <button
+                  key={`builtin-${item.value.command}`}
                   type="button"
                   role="option"
                   aria-selected={isSelected}
-                  onClick={() => applyCommandSuggestion(item.value)}
+                  onClick={() => applySlashSuggestion(item.value)}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-1.5",
                     isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-rim-text">{item.value.title}</span>
-                    <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">{item.value.category}</span>
-                    {item.value.keybind && (
-                      <span className="ml-auto font-mono text-[10px] text-rim-text-faint">{item.value.keybind}</span>
-                    )}
+                    <span className="text-sm font-semibold text-rim-text">
+                      {item.value.command}
+                    </span>
+                    <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">
+                      chat
+                    </span>
                   </div>
-                  <span className="truncate text-xs text-rim-text-muted">{item.value.description}</span>
+                  <span className="truncate text-xs text-rim-text-muted">
+                    {item.value.description}
+                  </span>
                 </button>
-              </div>
-            );
-          })}
-        </div>,
-        document.body,
-      )}
+              ) : (
+                <div key={`cmd-${item.value.id}`}>
+                  {showSeparator && <div className="mx-3 border-t border-rim-line" />}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => applyCommandSuggestion(item.value)}
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 px-3 py-1.5",
+                      isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-rim-text">
+                        {item.value.title}
+                      </span>
+                      <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">
+                        {item.value.category}
+                      </span>
+                      {item.value.keybind && (
+                        <span className="ml-auto font-mono text-[10px] text-rim-text-faint">
+                          {item.value.keybind}
+                        </span>
+                      )}
+                    </div>
+                    <span className="truncate text-xs text-rim-text-muted">
+                      {item.value.description}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
 
-      {suggestions.length > 0 && createPortal(
-        <div
-          ref={suggestionsRef}
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-        >
-          {suggestions.map((s, i) => (
-            <button
-              key={s.code}
-              type="button"
-              onClick={() => applySuggestion(s)}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedSuggestion ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-rim-void/50",
-              )}
-            >
-              <span className="text-base">{s.emoji}</span>
-              <span className="text-rim-text-muted">{s.code}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
+      {suggestions.length > 0 &&
+        createPortal(
+          <div
+            ref={suggestionsRef}
+            className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
+            style={suggestionsStyle}
+          >
+            {suggestions.map((s, i) => (
+              <button
+                key={s.code}
+                type="button"
+                onClick={() => applySuggestion(s)}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
+                  i === selectedSuggestion
+                    ? "bg-rim-accent/20 text-rim-text"
+                    : "text-rim-text hover:bg-rim-void/50",
+                )}
+              >
+                <span className="text-base">{s.emoji}</span>
+                <span className="text-rim-text-muted">{s.code}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
 
-      {mentionSuggestions.length > 0 && createPortal(
-        <div
-          className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
-          style={suggestionsStyle}
-        >
-          {mentionSuggestions.map((m, i) => (
-            <button
-              key={m.userId}
-              type="button"
-              onClick={() => applyMention(m)}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
-                i === selectedMention ? "bg-rim-accent/20 text-rim-text" : "text-rim-text hover:bg-rim-void/50",
-              )}
-            >
-              <Avatar url={m.avatarUrl} name={m.displayName ?? m.username} userId={m.userId} size="sm" />
-              <span className="font-medium">{m.displayName ?? m.username}</span>
-              <span className="text-rim-text-faint">@{m.username}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
+      {mentionSuggestions.length > 0 &&
+        createPortal(
+          <div
+            className="rounded-lg border border-rim-line bg-rim-panel shadow-lg"
+            style={suggestionsStyle}
+          >
+            {mentionSuggestions.map((m, i) => (
+              <button
+                key={m.userId}
+                type="button"
+                onClick={() => applyMention(m)}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
+                  i === selectedMention
+                    ? "bg-rim-accent/20 text-rim-text"
+                    : "text-rim-text hover:bg-rim-void/50",
+                )}
+              >
+                <Avatar
+                  url={m.avatarUrl}
+                  name={m.displayName ?? m.username}
+                  userId={m.userId}
+                  size="sm"
+                />
+                <span className="font-medium">{m.displayName ?? m.username}</span>
+                <span className="text-rim-text-faint">@{m.username}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
 
       {emojiPickerOpen && (
         <EmojiPicker

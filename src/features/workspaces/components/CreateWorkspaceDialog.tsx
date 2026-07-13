@@ -29,7 +29,9 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
     <Dialog open title="New workspace" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint">Name</span>
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+            Name
+          </span>
           <input
             type="text"
             value={name}

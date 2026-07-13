@@ -93,9 +93,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
   }, []);
 
   const updateAction = useCallback((index: number, field: "commandId" | "args", value: string) => {
-    setActions((prev) =>
-      prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)),
-    );
+    setActions((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
   }, []);
 
   const addCondition = useCallback(() => {
@@ -112,9 +110,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
 
   const updateCondition = useCallback(
     (index: number, field: keyof ConditionDraft, value: string) => {
-      setConditions((prev) =>
-        prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)),
-      );
+      setConditions((prev) => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
     },
     [],
   );
@@ -130,16 +126,17 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       conversationId: triggerConversationId.trim() || undefined,
     };
 
-    const filter = conditions.length > 0
-      ? {
-          conditions: conditions.map((c) => ({
-            conditionType: c.conditionType,
-            pattern: c.pattern.trim() || undefined,
-            userId: c.userId.trim() || undefined,
-            conversationId: c.conversationId.trim() || undefined,
-          })),
-        }
-      : undefined;
+    const filter =
+      conditions.length > 0
+        ? {
+            conditions: conditions.map((c) => ({
+              conditionType: c.conditionType,
+              pattern: c.pattern.trim() || undefined,
+              userId: c.userId.trim() || undefined,
+              conversationId: c.conversationId.trim() || undefined,
+            })),
+          }
+        : undefined;
 
     const mappedActions = validActions.map((a) => {
       let args: unknown = undefined;
@@ -154,7 +151,8 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
     });
 
     const parsedCd = cooldownSecs.trim() ? parseInt(cooldownSecs, 10) : undefined;
-    const cd = parsedCd !== undefined && !Number.isNaN(parsedCd) && parsedCd >= 0 ? parsedCd : undefined;
+    const cd =
+      parsedCd !== undefined && !Number.isNaN(parsedCd) && parsedCd >= 0 ? parsedCd : undefined;
 
     try {
       if (initial) {
@@ -185,8 +183,18 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       toast.error(err instanceof Error ? err.message : "Failed to save pipeline");
     }
   }, [
-    name, description, triggerKind, triggerConversationId, cooldownSecs,
-    conditions, actions, initial, serverId, createPipeline, updatePipeline, onSave,
+    name,
+    description,
+    triggerKind,
+    triggerConversationId,
+    cooldownSecs,
+    conditions,
+    actions,
+    initial,
+    serverId,
+    createPipeline,
+    updatePipeline,
+    onSave,
   ]);
 
   const isSaving = createPipeline.isPending || updatePipeline.isPending;
@@ -261,7 +269,9 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
           </button>
         </div>
         {conditions.length === 0 && (
-          <p className="text-xs text-rim-text-faint">No filters — pipeline will fire on every matching trigger.</p>
+          <p className="text-xs text-rim-text-faint">
+            No filters — pipeline will fire on every matching trigger.
+          </p>
         )}
         <div className="space-y-2">
           {conditions.map((cond, index) => (
@@ -327,9 +337,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       {/* Actions */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-sm font-medium text-rim-text">
-            Actions ({actions.length}/10)
-          </label>
+          <label className="text-sm font-medium text-rim-text">Actions ({actions.length}/10)</label>
           <button
             type="button"
             onClick={addAction}
@@ -478,9 +486,7 @@ export function PipelineSettings() {
         </button>
       </div>
 
-      {isLoading && (
-        <p className="text-sm text-rim-text-muted">Loading pipelines...</p>
-      )}
+      {isLoading && <p className="text-sm text-rim-text-muted">Loading pipelines...</p>}
 
       {!isLoading && (!pipelines || pipelines.length === 0) && (
         <p className="text-sm text-rim-text-muted">
@@ -491,10 +497,7 @@ export function PipelineSettings() {
       {pipelines && pipelines.length > 0 && (
         <div className="divide-y divide-rim-line rounded-lg border border-rim-line">
           {pipelines.map((pipeline) => (
-            <div
-              key={pipeline.id}
-              className="flex items-center justify-between gap-4 px-4 py-3"
-            >
+            <div key={pipeline.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-rim-text">{pipeline.name}</span>
@@ -510,13 +513,13 @@ export function PipelineSettings() {
                   </span>
                 </div>
                 {pipeline.description && (
-                  <div className="truncate text-xs text-rim-text-muted">
-                    {pipeline.description}
-                  </div>
+                  <div className="truncate text-xs text-rim-text-muted">{pipeline.description}</div>
                 )}
                 <div className="flex items-center gap-3 text-xs text-rim-text-faint">
                   <span>Trigger: {triggerLabel(pipeline.trigger.kind)}</span>
-                  <span>{pipeline.actions.length} action{pipeline.actions.length !== 1 ? "s" : ""}</span>
+                  <span>
+                    {pipeline.actions.length} action{pipeline.actions.length !== 1 ? "s" : ""}
+                  </span>
                   {pipeline.lastFiredAt && (
                     <span>Last fired: {new Date(pipeline.lastFiredAt).toLocaleString()}</span>
                   )}

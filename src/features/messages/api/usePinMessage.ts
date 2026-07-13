@@ -45,9 +45,7 @@ export function usePinMessageMutation() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            items: page.items.map((m) =>
-              m.id === vars.messageId ? { ...m, isPinned: true } : m,
-            ),
+            items: page.items.map((m) => (m.id === vars.messageId ? { ...m, isPinned: true } : m)),
           })),
         };
       });
@@ -55,12 +53,17 @@ export function usePinMessageMutation() {
     },
     onError: (_err, vars, context) => {
       if (context?.previousData) {
-        qc.setQueryData(queryKeys.messages(vars.serverId, vars.conversationId), context.previousData);
+        qc.setQueryData(
+          queryKeys.messages(vars.serverId, vars.conversationId),
+          context.previousData,
+        );
       }
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(vars.serverId, vars.conversationId) });
+      qc.invalidateQueries({
+        queryKey: queryKeys.pinnedMessages(vars.serverId, vars.conversationId),
+      });
     },
   });
 }
@@ -87,9 +90,7 @@ export function useUnpinMessageMutation() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            items: page.items.map((m) =>
-              m.id === vars.messageId ? { ...m, isPinned: false } : m,
-            ),
+            items: page.items.map((m) => (m.id === vars.messageId ? { ...m, isPinned: false } : m)),
           })),
         };
       });
@@ -97,12 +98,17 @@ export function useUnpinMessageMutation() {
     },
     onError: (_err, vars, context) => {
       if (context?.previousData) {
-        qc.setQueryData(queryKeys.messages(vars.serverId, vars.conversationId), context.previousData);
+        qc.setQueryData(
+          queryKeys.messages(vars.serverId, vars.conversationId),
+          context.previousData,
+        );
       }
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(vars.serverId, vars.conversationId) });
+      qc.invalidateQueries({
+        queryKey: queryKeys.pinnedMessages(vars.serverId, vars.conversationId),
+      });
     },
   });
 }

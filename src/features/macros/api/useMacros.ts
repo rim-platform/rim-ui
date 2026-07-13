@@ -83,10 +83,9 @@ export function useMyMacros(serverId?: string) {
     enabled: Boolean(serverId),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ myMacros: Macro[] }>(
-        MyMacrosDocument,
-        { serverId },
-      );
+      const res = await graphqlClient.request<{ myMacros: Macro[] }>(MyMacrosDocument, {
+        serverId,
+      });
       return res.myMacros;
     },
   });
@@ -95,8 +94,7 @@ export function useMyMacros(serverId?: string) {
 export function useCreateMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateMacroInput) =>
-      graphqlClient.request(CreateMacroDocument, { input }),
+    mutationFn: (input: CreateMacroInput) => graphqlClient.request(CreateMacroDocument, { input }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.macros(vars.serverId) });
     },
@@ -106,8 +104,7 @@ export function useCreateMacroMutation() {
 export function useUpdateMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateMacroInput) =>
-      graphqlClient.request(UpdateMacroDocument, { input }),
+    mutationFn: (input: UpdateMacroInput) => graphqlClient.request(UpdateMacroDocument, { input }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },
@@ -117,8 +114,7 @@ export function useUpdateMacroMutation() {
 export function useDeleteMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (macroId: string) =>
-      graphqlClient.request(DeleteMacroDocument, { macroId }),
+    mutationFn: (macroId: string) => graphqlClient.request(DeleteMacroDocument, { macroId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },
@@ -139,13 +135,10 @@ export function useExecuteMacroMutation() {
  * Resolve a macro name to its definition (including the ID).
  * Returns null if the macro does not exist.
  */
-export async function fetchMacroByName(
-  serverId: string,
-  name: string,
-): Promise<Macro | null> {
-  const res = await graphqlClient.request<{ macroByName: Macro | null }>(
-    MacroByNameDocument,
-    { serverId, name },
-  );
+export async function fetchMacroByName(serverId: string, name: string): Promise<Macro | null> {
+  const res = await graphqlClient.request<{ macroByName: Macro | null }>(MacroByNameDocument, {
+    serverId,
+    name,
+  });
   return res.macroByName;
 }

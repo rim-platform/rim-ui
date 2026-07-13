@@ -20,9 +20,7 @@ export function useKeybindLabel(
     // Match presetArgs — check that every key in the filter matches the keybind's presetArgs
     const kbArgs = kb.presetArgs as Record<string, unknown> | null;
     if (!kbArgs) return false;
-    return Object.entries(presetArgs).every(
-      ([key, value]) => kbArgs[key] === value,
-    );
+    return Object.entries(presetArgs).every(([key, value]) => kbArgs[key] === value);
   });
 
   return match?.keystroke ?? null;

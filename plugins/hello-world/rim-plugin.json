@@ -1,0 +1,35 @@
+{
+  "manifest_version": 1,
+  "plugin_id": "dev.example.hello-world",
+  "display_name": "Hello World",
+  "version": "0.1.0",
+  "description": "Reference plugin — proof-of-life for the Phase 1 spawn→broker→capability-gate cycle.",
+  "author": "RIM team",
+  "runtime_kind": "DesktopLocalProcess",
+  "entrypoint": "main.py",
+  "capabilities": ["plugin.dev.example.hello-world.greet"],
+  "commands": [
+    {
+      "id": "greet",
+      "title": "Hello: Greet",
+      "description": "Returns a greeting string from the plugin process via the broker.",
+      "keybind_capable": false,
+      "dangerous": false,
+      "required_context": [],
+      "required_capabilities": [],
+      "arguments": [{ "name": "name", "type": "string", "required": false }],
+      "ai_callable": false,
+      "output_schema": null
+    }
+  ],
+  "keybind_suggestions": [],
+  "context_actions": [],
+  "panels": [
+    {
+      "id": "main",
+      "title": "Hello World",
+      "description": "A simple panel with a greeting button."
+    }
+  ],
+  "settings_schema": []
+}

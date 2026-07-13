@@ -15,10 +15,7 @@ export interface AuditLogPage {
 }
 
 const LIST_AUDIT_LOG = gql`
-  query ListAuditLog(
-    $filter: AuditLogFilterInput
-    $pagination: AuditLogPaginationInput
-  ) {
+  query ListAuditLog($filter: AuditLogFilterInput, $pagination: AuditLogPaginationInput) {
     listAuditLog(filter: $filter, pagination: $pagination) {
       items {
         id
@@ -65,13 +62,10 @@ export function useListAuditLog({
     staleTime: 15_000,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ listAuditLog: AuditLogPage }>(
-        LIST_AUDIT_LOG,
-        {
-          filter: Object.keys(filter).length > 0 ? filter : null,
-          pagination,
-        },
-      );
+      const res = await graphqlClient.request<{ listAuditLog: AuditLogPage }>(LIST_AUDIT_LOG, {
+        filter: Object.keys(filter).length > 0 ? filter : null,
+        pagination,
+      });
       return res.listAuditLog;
     },
   });

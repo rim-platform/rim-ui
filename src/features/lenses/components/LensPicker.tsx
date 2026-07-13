@@ -27,7 +27,9 @@ export function LensPicker({ serverId, conversationId }: LensPickerProps) {
 
   return (
     <>
-      <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Channel lenses</span>}>
+      <HoverTooltip
+        content={<span className="text-xs text-rim-text whitespace-nowrap">Channel lenses</span>}
+      >
         <button
           ref={triggerRef}
           type="button"
@@ -169,7 +171,7 @@ function LensPickerDropdown({
   }
 
   function handleEnterOnFocused() {
-    let idx = 0;
+    let idx: number;
     if (activeLensId) {
       if (focusedIndex === 0) {
         onClear();
@@ -234,9 +236,7 @@ function LensPickerDropdown({
                 onMouseEnter={() => setFocusedIndex(currentIndex)}
                 className={cn(
                   "group flex items-center gap-2 px-3 py-1.5 transition-colors",
-                  focusedIndex === currentIndex
-                    ? "bg-rim-accent/10"
-                    : "hover:bg-white/5",
+                  focusedIndex === currentIndex ? "bg-rim-accent/10" : "hover:bg-white/5",
                 )}
               >
                 <button

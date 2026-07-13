@@ -30,10 +30,7 @@ export class ConfirmationRequiredError extends Error {
   readonly challenge: ConfirmationChallengeData;
 
   constructor(challenge: ConfirmationChallengeData) {
-    super(
-      challenge.serverMessage ??
-        `Confirmation required for "${challenge.toolName}".`,
-    );
+    super(challenge.serverMessage ?? `Confirmation required for "${challenge.toolName}".`);
     this.name = "ConfirmationRequiredError";
     this.challenge = challenge;
   }
@@ -67,7 +64,7 @@ export async function runWithConfirmation(
   const modal = useConfirmationModalStore.getState();
 
   let attempt = 0;
-  let pending: ConfirmationChallengeData | null = null;
+  let pending: ConfirmationChallengeData;
 
   // Helper: present the modal and wait for the user. Returns proof to use
   // for the re-call, or null if the user rejected.

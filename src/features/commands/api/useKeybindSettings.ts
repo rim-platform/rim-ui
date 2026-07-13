@@ -62,10 +62,10 @@ export function useKeybindsByScope(scope: KeybindScope, workspaceId?: string) {
   return useQuery({
     queryKey: queryKeys.keybinds(scope, workspaceId),
     queryFn: async () => {
-      const res = await graphqlClient.request<{ keybinds: ResolvedKeybind[] }>(
-        KeybindsDocument,
-        { scope, workspaceId }
-      );
+      const res = await graphqlClient.request<{ keybinds: ResolvedKeybind[] }>(KeybindsDocument, {
+        scope,
+        workspaceId,
+      });
       return res.keybinds;
     },
   });

@@ -48,11 +48,7 @@ function renderWorkspaceJoinForm(onSuccess = vi.fn()) {
 function renderInstanceJoinForm(onSuccess = vi.fn()) {
   return render(
     <MemoryRouter>
-      <JoinForm
-        variant={InviteTokenType.INSTANCE}
-        token="instance-tok-123"
-        onSuccess={onSuccess}
-      />
+      <JoinForm variant={InviteTokenType.INSTANCE} token="instance-tok-123" onSuccess={onSuccess} />
     </MemoryRouter>,
   );
 }
@@ -92,7 +88,7 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
     // noValidate must be present so the React-side EMAIL_REGEX gate is the
     // sole validator; without it browser native validation would bypass handleSubmit.
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
     expect(document.querySelector("form")!.noValidate).toBe(true);
 
     await fillValidBase(user);
@@ -150,7 +146,12 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
   it("(c) trims leading and trailing whitespace from displayName before sending", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
     );
@@ -161,7 +162,10 @@ describe("JoinForm — amendment 2026-04-28b", () => {
     await fillValidBase(user);
     await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
     // Type a display name with surrounding whitespace.
-    await user.type(screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!, "  Alice  ");
+    await user.type(
+      screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!,
+      "  Alice  ",
+    );
     await user.click(screen.getByText("Create account"));
 
     expect(mockSignupMutate).toHaveBeenCalledOnce();
@@ -175,7 +179,12 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
   it("(d) omits displayName from the payload when left blank (not sent as empty string)", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
     );
@@ -197,7 +206,12 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
   it("(d) also omits displayName when the field contains only whitespace", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
     );
@@ -207,7 +221,10 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
     await fillValidBase(user);
     await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
-    await user.type(screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!, "   ");
+    await user.type(
+      screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!,
+      "   ",
+    );
     await user.click(screen.getByText("Create account"));
 
     expect(mockSignupMutate).toHaveBeenCalledOnce();
@@ -237,7 +254,12 @@ describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
 
   it("(e) BOOTSTRAP variant routes via bootstrapToken, not instanceInviteToken", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: null } });
       },
     );
@@ -262,7 +284,12 @@ describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
 
   it("(f) INSTANCE variant routes via instanceInviteToken, not bootstrapToken", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u2", serverId: null } });
       },
     );
@@ -324,14 +351,17 @@ describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
     expect(mockSignupMutate).not.toHaveBeenCalled();
 
     // Locked copy from spec (Hawkeye SF2).
-    expect(
-      screen.getByText("Display name must be at most 80 characters."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Display name must be at most 80 characters.")).toBeInTheDocument();
   });
 
   it("accepts a displayName of exactly 80 characters — mutation is called", async () => {
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
     );
@@ -367,7 +397,12 @@ describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
   it("accepts displayName that is over 80 chars before trimming but at most 80 after trim", async () => {
     // e.g. 79 "a" chars + 2 spaces on each side = 83 total chars, but trimmed = 79 (valid)
     mockSignupMutate.mockImplementation(
-      (input: unknown, opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void }) => {
+      (
+        input: unknown,
+        opts: {
+          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
+        },
+      ) => {
         opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
       },
     );

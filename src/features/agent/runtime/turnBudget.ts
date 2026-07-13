@@ -76,6 +76,7 @@ export function createTurnBudget(): TurnBudget {
  */
 const URL_RE = /\b[a-z]+:\/\/\S+/gi;
 const ABS_PATH_RE = /(?:\/[^/\s]+){2,}|\b[a-zA-Z]:\\[^\s]+/g;
+// eslint-disable-next-line no-control-regex -- intentionally matches control chars to strip them
 const CONTROL_RE = /[\x00-\x1F\x7F]+/g;
 const MAX_ERR_LEN = 200;
 

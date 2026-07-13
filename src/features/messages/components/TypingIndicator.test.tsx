@@ -16,9 +16,7 @@ describe("TypingIndicator", () => {
   it("shows singular typing message for one user", () => {
     useTypingStore.setState({
       typingByConversation: {
-        "conv-1": [
-          { userId: "u1", username: "alice", expiresAt: Date.now() + 10000 },
-        ],
+        "conv-1": [{ userId: "u1", username: "alice", expiresAt: Date.now() + 10000 }],
       },
     });
 
@@ -58,9 +56,7 @@ describe("TypingIndicator", () => {
   it("renders nothing for a different conversation", () => {
     useTypingStore.setState({
       typingByConversation: {
-        "conv-2": [
-          { userId: "u1", username: "alice", expiresAt: Date.now() + 10000 },
-        ],
+        "conv-2": [{ userId: "u1", username: "alice", expiresAt: Date.now() + 10000 }],
       },
     });
 

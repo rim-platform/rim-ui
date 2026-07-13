@@ -6,9 +6,7 @@ describe("deriveConfirmationVerb", () => {
   it("extracts verb from `domain.verb_object` ids", () => {
     expect(deriveConfirmationVerb("chat.delete_message")).toBe("delete");
     expect(deriveConfirmationVerb("chat.create_channel")).toBe("create");
-    expect(deriveConfirmationVerb("workspace.uninstall_plugin")).toBe(
-      "uninstall",
-    );
+    expect(deriveConfirmationVerb("workspace.uninstall_plugin")).toBe("uninstall");
     expect(deriveConfirmationVerb("incidents.start_incident")).toBe("start");
   });
 
@@ -29,9 +27,7 @@ describe("deriveConfirmationVerb", () => {
   });
 
   it("falls back to 'confirm' for non-string input", () => {
-    expect(deriveConfirmationVerb(undefined as unknown as string)).toBe(
-      "confirm",
-    );
+    expect(deriveConfirmationVerb(undefined as unknown as string)).toBe("confirm");
     expect(deriveConfirmationVerb(null as unknown as string)).toBe("confirm");
   });
 });

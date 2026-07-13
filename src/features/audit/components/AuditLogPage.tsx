@@ -113,9 +113,7 @@ function AuditRow({ entry }: AuditRowProps) {
       <span
         className={cn(
           "rounded px-1.5 py-0.5 text-center text-[10px] font-bold uppercase leading-none",
-          entry.typedVerb
-            ? VERB_BADGE[entry.typedVerb]
-            : "bg-rim-panel-soft text-rim-text-faint",
+          entry.typedVerb ? VERB_BADGE[entry.typedVerb] : "bg-rim-panel-soft text-rim-text-faint",
         )}
         data-testid="typed-verb-chip"
       >
@@ -139,9 +137,7 @@ function AuditRow({ entry }: AuditRowProps) {
       <span className="truncate text-xs text-rim-text-muted">{entry.initiator}</span>
 
       {/* Timestamp */}
-      <span className="text-right text-xs text-rim-text-faint">
-        {formatTime(entry.createdAt)}
-      </span>
+      <span className="text-right text-xs text-rim-text-faint">{formatTime(entry.createdAt)}</span>
     </li>
   );
 }
@@ -294,11 +290,7 @@ export function AuditLogPage() {
 
           {!query.isPending && !query.isError && items.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-rim-text-muted">
-              <p>
-                {filterActive
-                  ? "No entries match this filter."
-                  : "No audit log entries yet."}
-              </p>
+              <p>{filterActive ? "No entries match this filter." : "No audit log entries yet."}</p>
               {filterActive && (
                 <button
                   type="button"

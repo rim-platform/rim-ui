@@ -1,4 +1,11 @@
-query ThreadMessages($serverId: ID!, $conversationId: ID!, $threadId: ID!, $dir: PageDir!, $limit: Int!, $includeDeleted: Boolean!) {
+query ThreadMessages(
+  $serverId: ID!
+  $conversationId: ID!
+  $threadId: ID!
+  $dir: PageDir!
+  $limit: Int!
+  $includeDeleted: Boolean!
+) {
   threadMessages(
     serverId: $serverId
     conversationId: $conversationId

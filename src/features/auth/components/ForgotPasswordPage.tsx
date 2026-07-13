@@ -36,7 +36,8 @@ export function ForgotPasswordPage() {
           {submitted ? (
             <div className="space-y-4">
               <p className="text-sm text-rim-text-muted">
-                If the account exists, a reset link has been sent. Check with your administrator for the reset link.
+                If the account exists, a reset link has been sent. Check with your administrator for
+                the reset link.
               </p>
               <Link
                 to="/"

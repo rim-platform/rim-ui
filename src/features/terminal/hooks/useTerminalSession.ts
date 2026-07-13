@@ -9,7 +9,8 @@ import { buildTerminalTheme } from "../terminalTheme";
 import { useTerminalStore } from "../state/useTerminalStore";
 import { logger } from "../../../core/logger";
 
-const DEFAULT_FONT_FAMILY = "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', 'Hack Nerd Font Mono', 'MesloLGS NF', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Consolas', monospace";
+const DEFAULT_FONT_FAMILY =
+  "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', 'Hack Nerd Font Mono', 'MesloLGS NF', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Consolas', monospace";
 
 /** Base64 encode a string to send to PTY. */
 function encodeBase64(str: string): string {
@@ -47,13 +48,24 @@ function logTerminalInvokeError(
       // Expected in web mode — no terminal host, suppress.
       return;
     case "permission_denied":
-      logger[level](`[RIM:Terminal] ${command} permission denied`, { sessionId, message: error.message });
+      logger[level](`[RIM:Terminal] ${command} permission denied`, {
+        sessionId,
+        message: error.message,
+      });
       return;
     case "invalid_args":
-      logger[level](`[RIM:Terminal] ${command} invalid args`, { sessionId, message: error.message, field: error.field });
+      logger[level](`[RIM:Terminal] ${command} invalid args`, {
+        sessionId,
+        message: error.message,
+        field: error.field,
+      });
       return;
     case "backend_error":
-      logger[level](`[RIM:Terminal] ${command} backend error`, { sessionId, code: error.code, message: error.message });
+      logger[level](`[RIM:Terminal] ${command} backend error`, {
+        sessionId,
+        code: error.code,
+        message: error.message,
+      });
       return;
   }
 }
@@ -145,23 +157,17 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
       });
 
       // Wire output: PTY → xterm
-      const unlisten = await listen<string>(
-        `terminal://output/${sid}`,
-        (event) => {
-          if (destroyed) return;
-          const bytes = decodeBase64(event.payload);
-          terminal.write(bytes);
-        },
-      );
+      const unlisten = await listen<string>(`terminal://output/${sid}`, (event) => {
+        if (destroyed) return;
+        const bytes = decodeBase64(event.payload);
+        terminal.write(bytes);
+      });
 
       // Listen for PTY exit
-      const unlistenExit = await listen<number>(
-        `terminal://exit/${sid}`,
-        () => {
-          if (destroyed) return;
-          terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-        },
-      );
+      const unlistenExit = await listen<number>(`terminal://exit/${sid}`, () => {
+        if (destroyed) return;
+        terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+      });
 
       // ResizeObserver for container size changes
       const resizeObserver = new ResizeObserver(() => {
@@ -230,7 +236,6 @@ export function useTerminalSession({ sessionId, containerRef }: UseTerminalSessi
         cleanupRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleResize is for external callers only; the effect manages its own resize logic
   }, [sessionId, containerRef]);
 
   return { terminalRef, fitAddonRef, handleResize };

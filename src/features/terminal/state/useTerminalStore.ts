@@ -93,8 +93,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
 
-      setPanelHeight: (height) =>
-        set({ panelHeight: Math.max(MIN_HEIGHT, height) }),
+      setPanelHeight: (height) => set({ panelHeight: Math.max(MIN_HEIGHT, height) }),
 
       setPreferredShell: (shell) => set({ preferredShell: shell }),
       setFontFamily: (font) => set({ fontFamily: font }),

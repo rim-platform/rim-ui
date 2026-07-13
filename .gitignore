@@ -26,3 +26,9 @@ schema.json
 *.njsproj
 *.sln
 *.sw?
+
+# Local/generated (added during C1 commit)
+coverage/
+.claude/
+.env
+src-tauri/target/

@@ -29,13 +29,14 @@ interface GroupInfo {
   isFirstInGroup: boolean;
 }
 
-function computeGroups(messages: { authorId: string; sentAt: string; isDeleted?: boolean }[]): GroupInfo[] {
+function computeGroups(
+  messages: { authorId: string; sentAt: string; isDeleted?: boolean }[],
+): GroupInfo[] {
   return messages.map((msg, i) => {
     if (i === 0) return { isGrouped: false, isFirstInGroup: true };
     const prev = messages[i - 1];
     const sameAuthor = msg.authorId === prev.authorId;
-    const within2Min =
-      new Date(msg.sentAt).getTime() - new Date(prev.sentAt).getTime() < 120_000;
+    const within2Min = new Date(msg.sentAt).getTime() - new Date(prev.sentAt).getTime() < 120_000;
     const isGrouped = sameAuthor && within2Min && !prev.isDeleted;
     return { isGrouped, isFirstInGroup: !isGrouped };
   });
@@ -65,13 +66,10 @@ export function MessageTimeline() {
 
   // --- Lens integration ---
   const activeLensId = useLensStore((s) =>
-    conversationId ? s.activeLenses[conversationId] ?? null : null,
+    conversationId ? (s.activeLenses[conversationId] ?? null) : null,
   );
   const clearLens = useLensStore((s) => s.setActiveLens);
-  const { data: lensesList } = useLenses(
-    workspaceId ?? undefined,
-    conversationId ?? undefined,
-  );
+  const { data: lensesList } = useLenses(workspaceId ?? undefined, conversationId ?? undefined);
   const activeLens = useMemo(
     () => lensesList?.find((l) => l.id === activeLensId) ?? null,
     [lensesList, activeLensId],
@@ -82,17 +80,8 @@ export function MessageTimeline() {
     activeLensId,
   );
 
-  const {
-    data,
-    isPending,
-    isError,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage,
-  } = useConversationMessages(
-    workspaceId ?? undefined,
-    conversationId ?? undefined,
-  );
+  const { data, isPending, isError, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useConversationMessages(workspaceId ?? undefined, conversationId ?? undefined);
   const toggleReaction = useToggleReactionMutation();
   const editMessage = useEditMessageMutation();
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
@@ -107,7 +96,7 @@ export function MessageTimeline() {
       return lensQuery.data?.items ?? [];
     }
     if (!data?.pages) return [];
-    return [...data.pages].reverse().flatMap(p => p.items);
+    return [...data.pages].reverse().flatMap((p) => p.items);
   }, [isLensActive, lensQuery.data?.items, data?.pages]);
 
   const groups = useMemo(() => computeGroups(items), [items]);
@@ -115,8 +104,8 @@ export function MessageTimeline() {
   const qc = useQueryClient();
 
   // Watermark / "New messages" divider
-  const watermark = useUnreadStore(
-    (s) => (conversationId ? s.watermarks[conversationId] ?? null : null),
+  const watermark = useUnreadStore((s) =>
+    conversationId ? (s.watermarks[conversationId] ?? null) : null,
   );
   const clearWatermark = useUnreadStore((s) => s.clearWatermark);
   const { mutate: markAsRead } = useMarkAsRead();
@@ -154,27 +143,31 @@ export function MessageTimeline() {
   // Forward dialog state
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
 
-  const handleDeleteMessage = useCallback(async (msg: { id: string }) => {
-    await deleteMessageFn(msg.id);
-  }, [deleteMessageFn]);
+  const handleDeleteMessage = useCallback(
+    async (msg: { id: string }) => {
+      await deleteMessageFn(msg.id);
+    },
+    [deleteMessageFn],
+  );
 
   const handleForwardMessage = useCallback((msg: { id: string; text: string }) => {
     setForwardMessage(msg);
   }, []);
 
   // C3: Keyboard navigation for message list (vim-style modal)
-  const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } = useMessageNavigation({
-    items,
-    conversationId,
-    workspaceId,
-    currentUserId,
-    editingMessageId,
-    setEditingMessageId,
-    openThread,
-    onDeleteMessage: handleDeleteMessage,
-    onForwardMessage: handleForwardMessage,
-    firstNewIndex,
-  });
+  const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } =
+    useMessageNavigation({
+      items,
+      conversationId,
+      workspaceId,
+      currentUserId,
+      editingMessageId,
+      setEditingMessageId,
+      openThread,
+      onDeleteMessage: handleDeleteMessage,
+      onForwardMessage: handleForwardMessage,
+      firstNewIndex,
+    });
 
   // Ref to track the fade-out timer so we can cancel on unmount / conversation switch
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -474,12 +467,18 @@ export function MessageTimeline() {
         )}
         {items.length === 0 ? (
           <p className="py-8 text-center text-sm text-rim-text-muted">
-            {isLensActive ? "No messages match this lens." : "No messages yet. Start the conversation below."}
+            {isLensActive
+              ? "No messages match this lens."
+              : "No messages yet. Start the conversation below."}
           </p>
         ) : (
           items.map((msg, index) => {
             const member = memberLookup.resolve(msg.authorId);
-            const name = member.displayName || msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+            const name =
+              member.displayName ||
+              msg.author?.displayName ||
+              msg.author?.username ||
+              msg.authorId.slice(0, 8);
             const group = groups[index] ?? { isGrouped: false, isFirstInGroup: true };
             return (
               <div key={msg.id}>
@@ -495,7 +494,9 @@ export function MessageTimeline() {
                     data-new-messages-divider
                   >
                     <div className="flex-1 border-t border-rim-warm/40" />
-                    <span className="select-none text-xs font-medium text-rim-warm">New messages</span>
+                    <span className="select-none text-xs font-medium text-rim-warm">
+                      New messages
+                    </span>
                     <div className="flex-1 border-t border-rim-warm/40" />
                   </div>
                 )}
@@ -538,21 +539,39 @@ export function MessageTimeline() {
       {/* Action hints bar -- shown in navigation mode */}
       {navigationMode && (
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex justify-center pb-1">
-          <div className={cn(
-            "inline-flex items-center gap-3 rounded border border-rim-line bg-rim-panel px-3 py-1.5",
-            "text-[10px] text-rim-text-faint shadow-lg transition-opacity duration-150",
-          )}>
+          <div
+            className={cn(
+              "inline-flex items-center gap-3 rounded border border-rim-line bg-rim-panel px-3 py-1.5",
+              "text-[10px] text-rim-text-faint shadow-lg transition-opacity duration-150",
+            )}
+          >
             <span className="font-medium text-rim-accent">NAVIGATE</span>
             <span className="text-rim-line">|</span>
-            <span><kbd className="font-mono">j/k</kbd> Navigate</span>
+            <span>
+              <kbd className="font-mono">j/k</kbd> Navigate
+            </span>
             {selectedMessageIndex >= 0 && (
               <>
-                <span><kbd className="font-mono">r</kbd> Reply</span>
-                {isSelectedOwnMessage && <span><kbd className="font-mono">e</kbd> Edit</span>}
-                <span><kbd className="font-mono">t</kbd> Thread</span>
-                <span><kbd className="font-mono">p</kbd> Pin</span>
-                <span><kbd className="font-mono">c</kbd> Copy</span>
-                <span><kbd className="font-mono">f</kbd> Forward</span>
+                <span>
+                  <kbd className="font-mono">r</kbd> Reply
+                </span>
+                {isSelectedOwnMessage && (
+                  <span>
+                    <kbd className="font-mono">e</kbd> Edit
+                  </span>
+                )}
+                <span>
+                  <kbd className="font-mono">t</kbd> Thread
+                </span>
+                <span>
+                  <kbd className="font-mono">p</kbd> Pin
+                </span>
+                <span>
+                  <kbd className="font-mono">c</kbd> Copy
+                </span>
+                <span>
+                  <kbd className="font-mono">f</kbd> Forward
+                </span>
                 {isSelectedOwnMessage && (
                   <span>
                     <kbd className="font-mono">d</kbd>{" "}
@@ -567,11 +586,19 @@ export function MessageTimeline() {
             )}
             <span className="text-rim-line">|</span>
             {firstNewIndex >= 0 && (
-              <span><kbd className="font-mono">⇧N</kbd> Jump to new</span>
+              <span>
+                <kbd className="font-mono">⇧N</kbd> Jump to new
+              </span>
             )}
-            <span><kbd className="font-mono">/</kbd> Search</span>
-            <span><kbd className="font-mono">i</kbd> Compose</span>
-            <span><kbd className="font-mono">Esc</kbd> Exit</span>
+            <span>
+              <kbd className="font-mono">/</kbd> Search
+            </span>
+            <span>
+              <kbd className="font-mono">i</kbd> Compose
+            </span>
+            <span>
+              <kbd className="font-mono">Esc</kbd> Exit
+            </span>
           </div>
         </div>
       )}

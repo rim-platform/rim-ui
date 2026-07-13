@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import type { Macro, MacroStep, CreateMacroInput, UpdateMacroInput, ExecuteMacroInput } from "./useMacros";
+import type {
+  Macro,
+  MacroStep,
+  CreateMacroInput,
+  UpdateMacroInput,
+  ExecuteMacroInput,
+} from "./useMacros";
 
 describe("Macro types", () => {
   it("MacroStep has commandId and args", () => {
@@ -16,9 +22,7 @@ describe("Macro types", () => {
       id: "macro-1",
       name: "Greeting",
       description: "Sends a greeting",
-      steps: [
-        { commandId: "chat.send_message", args: { text: "Hi!" } },
-      ],
+      steps: [{ commandId: "chat.send_message", args: { text: "Hi!" } }],
     };
     expect(macro.id).toBe("macro-1");
     expect(macro.name).toBe("Greeting");

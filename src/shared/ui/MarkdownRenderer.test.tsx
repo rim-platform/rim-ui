@@ -25,16 +25,12 @@ describe("MarkdownRenderer", () => {
   });
 
   it("applies className prop", () => {
-    const { container } = render(
-      <MarkdownRenderer content="test" className="my-class" />,
-    );
+    const { container } = render(<MarkdownRenderer content="test" className="my-class" />);
     expect(container.firstElementChild).toHaveClass("my-class");
   });
 
   it("sanitizes dangerous HTML via DOMPurify", () => {
-    const { container } = render(
-      <MarkdownRenderer content='<script>alert("xss")</script>Hello' />,
-    );
+    const { container } = render(<MarkdownRenderer content='<script>alert("xss")</script>Hello' />);
     expect(container.querySelector("script")).toBeNull();
     expect(container.textContent).toContain("Hello");
   });
@@ -45,9 +41,7 @@ describe("MarkdownRenderer", () => {
   });
 
   it("renders lists", () => {
-    const { container } = render(
-      <MarkdownRenderer content={"- Item A\n- Item B\n- Item C"} />,
-    );
+    const { container } = render(<MarkdownRenderer content={"- Item A\n- Item B\n- Item C"} />);
     const listItems = container.querySelectorAll("li");
     expect(listItems).toHaveLength(3);
   });

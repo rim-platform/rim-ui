@@ -1,8 +1,6 @@
 import { create } from "zustand";
 
-export type SearchScope =
-  | { kind: "all" }
-  | { kind: "conversation"; conversationId: string };
+export type SearchScope = { kind: "all" } | { kind: "conversation"; conversationId: string };
 
 type SearchOverlayState = {
   isOpen: boolean;

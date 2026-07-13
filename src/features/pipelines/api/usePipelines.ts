@@ -90,10 +90,9 @@ export function usePipelines(serverId?: string) {
     enabled: Boolean(serverId),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ pipelines: Pipeline[] }>(
-        PipelinesDocument,
-        { serverId },
-      );
+      const res = await graphqlClient.request<{ pipelines: Pipeline[] }>(PipelinesDocument, {
+        serverId,
+      });
       return res.pipelines;
     },
   });

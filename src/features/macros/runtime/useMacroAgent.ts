@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 
+import { invoke } from "@tauri-apps/api/core";
 import { registerProvider, getProvider } from "../../agent/providers/registry";
 import { loadApiKey, ProviderKeyMissingError } from "../../agent/runtime/keyStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
@@ -21,10 +22,7 @@ interface UseMacroAgentResult {
 
 function buildSystemPrompt(commands: CommandDefinition[]): string {
   const commandList = commands
-    .map(
-      (c) =>
-        `- ${c.id}: ${c.description} (category: ${c.category})`,
-    )
+    .map((c) => `- ${c.id}: ${c.description} (category: ${c.category})`)
     .join("\n");
 
   return `You are a macro builder for RIM, a programmable communication workspace.
@@ -120,10 +118,11 @@ export function useMacroAgent(): UseMacroAgentResult {
         const settings = useAgentStore.getState().settings;
         const { providerId, modelId } = settings;
 
-        // Presence-check Stronghold without holding the returned key in scope.
-        // Post-#59 the provider's own loader thunk reads Stronghold
-        // per-request; the key is NOT captured by any closure in this file.
-        const hasKey = !!(await loadApiKey(providerId));
+        // Presence-check the OS keyring — single source of truth after the
+        // Stronghold → keyring cutover (agent-settings-consolidation §3).
+        const hasKey = await invoke<boolean>("is_provider_key_configured", {
+          provider: providerId,
+        });
         if (!hasKey) {
           throw new Error("no-api-key");
         }
@@ -141,15 +140,11 @@ export function useMacroAgent(): UseMacroAgentResult {
             return key;
           };
           if (providerId === "anthropic") {
-            const { createAnthropicProvider } = await import(
-              "../../agent/providers/anthropic"
-            );
+            const { createAnthropicProvider } = await import("../../agent/providers/anthropic");
             provider = createAnthropicProvider(loader);
             registerProvider(provider);
           } else if (providerId === "openai") {
-            const { createOpenAiProvider } = await import(
-              "../../agent/providers/openai"
-            );
+            const { createOpenAiProvider } = await import("../../agent/providers/openai");
             provider = createOpenAiProvider(loader);
             registerProvider(provider);
           } else {
@@ -160,9 +155,7 @@ export function useMacroAgent(): UseMacroAgentResult {
         }
 
         const systemPrompt = buildSystemPrompt(commands);
-        const messages: AiMessage[] = [
-          { role: "user", content: description },
-        ];
+        const messages: AiMessage[] = [{ role: "user", content: description }];
 
         const stream = provider.chat({
           model: modelId,
@@ -184,8 +177,7 @@ export function useMacroAgent(): UseMacroAgentResult {
         const result = parseMacroResponse(fullText, validCommandIds);
         return result;
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Unknown error occurred";
+        const message = err instanceof Error ? err.message : "Unknown error occurred";
         setError(message);
         throw err;
       } finally {

@@ -115,9 +115,7 @@ describe("PipelineResultView", () => {
   });
 
   it("does not show payload toggle when payload is null", () => {
-    const stages: PipeStageResult[] = [
-      makeStage({ stageIndex: 0, payload: null }),
-    ];
+    const stages: PipeStageResult[] = [makeStage({ stageIndex: 0, payload: null })];
 
     render(<PipelineResultView stages={stages} />);
 

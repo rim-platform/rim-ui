@@ -7,10 +7,13 @@ pub mod event_forwarder;
 pub mod git_install;
 pub mod handshake;
 pub mod lifecycle;
+pub mod local_install;
 pub mod manifest;
 pub mod panel_registry;
 pub mod panel_relay;
+pub mod plugin_protocol;
 pub mod process;
+pub mod runtime;
 pub mod simple_manifest;
 pub mod state;
 pub mod validation;
@@ -20,10 +23,10 @@ use commands::PendingUiEvent;
 use manifest::PluginManifest;
 use panel_registry::PanelRegistry;
 use panel_relay::PanelRelay;
-use state::{state_file_path, PluginStateStore};
+use state::{state_file_path, PluginStatus, PluginStateStore};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct PluginHostState {
     pub store: Mutex<PluginStateStore>,
@@ -31,9 +34,9 @@ pub struct PluginHostState {
     pub state_path: PathBuf,
     pub plugin_dirs: Mutex<HashMap<String, PathBuf>>,
     /// Shutdown senders for running plugin broker loops, keyed by plugin_id.
-    #[allow(dead_code)]
     pub shutdown_txs: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
-    pub panel_relay: PanelRelay,
+    /// Arc so the broker loop tasks can hold a shared reference after `start_plugin` returns.
+    pub panel_relay: Arc<PanelRelay>,
     #[allow(dead_code)]
     pub panel_registry: PanelRegistry,
     pub pending_ui_events: Mutex<Vec<PendingUiEvent>>,
@@ -62,14 +65,43 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         }
     }
 
-    PluginHostState {
+    let plugin_host_state = PluginHostState {
         store: Mutex::new(store),
         manifests: Mutex::new(manifests),
         state_path,
         plugin_dirs: Mutex::new(plugin_dirs),
         shutdown_txs: Mutex::new(HashMap::new()),
-        panel_relay: PanelRelay::new(),
+        panel_relay: Arc::new(PanelRelay::new()),
         panel_registry: PanelRegistry::new(),
         pending_ui_events: Mutex::new(Vec::new()),
+    };
+
+    // Re-spawn any plugins that were Enabled on last shutdown.
+    // Collect (plugin_id, manifest) pairs first to avoid holding the lock
+    // across the spawn calls.
+    let to_spawn: Vec<(String, PluginManifest)> = {
+        let store = plugin_host_state.store.lock().expect("plugin store lock");
+        let manifests = plugin_host_state.manifests.lock().expect("plugin manifests lock");
+        store
+            .plugins
+            .iter()
+            .filter(|(_, record)| record.status == PluginStatus::Enabled)
+            .filter_map(|(id, _)| {
+                manifests.get(id).map(|m| (id.clone(), m.clone()))
+            })
+            .collect()
+    };
+
+    for (plugin_id, manifest) in to_spawn {
+        match runtime::start_plugin(&plugin_id, &manifest, &plugin_host_state) {
+            Ok(()) => log::info!("[plugin_host] auto-started plugin {}", plugin_id),
+            Err(e) => log::warn!(
+                "[plugin_host] failed to auto-start plugin {}: {}",
+                plugin_id,
+                e
+            ),
+        }
     }
+
+    plugin_host_state
 }

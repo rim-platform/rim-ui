@@ -27,29 +27,19 @@ function makeTool(opts: Partial<RegisteredTool> = {}): RegisteredTool {
 describe("isMutating", () => {
   it("treats sideEffect=true as mutating regardless of sensitivity", () => {
     expect(isMutating(makeTool({ sideEffect: true }))).toBe(true);
-    expect(
-      isMutating(
-        makeTool({ sideEffect: true, sensitivity: CommandSensitivity.SAFE }),
-      ),
-    ).toBe(true);
+    expect(isMutating(makeTool({ sideEffect: true, sensitivity: CommandSensitivity.SAFE }))).toBe(
+      true,
+    );
   });
 
   it("treats MUTATING and RESTRICTED sensitivities as mutating", () => {
-    expect(
-      isMutating(makeTool({ sensitivity: CommandSensitivity.MUTATING })),
-    ).toBe(true);
-    expect(
-      isMutating(makeTool({ sensitivity: CommandSensitivity.RESTRICTED })),
-    ).toBe(true);
+    expect(isMutating(makeTool({ sensitivity: CommandSensitivity.MUTATING }))).toBe(true);
+    expect(isMutating(makeTool({ sensitivity: CommandSensitivity.RESTRICTED }))).toBe(true);
   });
 
   it("treats SAFE and SENSITIVE as non-mutating", () => {
-    expect(isMutating(makeTool({ sensitivity: CommandSensitivity.SAFE }))).toBe(
-      false,
-    );
-    expect(
-      isMutating(makeTool({ sensitivity: CommandSensitivity.SENSITIVE })),
-    ).toBe(false);
+    expect(isMutating(makeTool({ sensitivity: CommandSensitivity.SAFE }))).toBe(false);
+    expect(isMutating(makeTool({ sensitivity: CommandSensitivity.SENSITIVE }))).toBe(false);
   });
 
   it("defaults to non-mutating when no flags are set", () => {
@@ -122,25 +112,19 @@ describe("sanitizeToolError", () => {
   });
 
   it("strips absolute unix paths", () => {
-    const out = sanitizeToolError(
-      new Error("ENOENT at /home/kuba/secrets/db.sqlite"),
-    );
+    const out = sanitizeToolError(new Error("ENOENT at /home/kuba/secrets/db.sqlite"));
     expect(out).toContain("[path]");
     expect(out).not.toContain("/home/kuba");
   });
 
   it("strips Windows absolute paths", () => {
-    const out = sanitizeToolError(
-      new Error("cannot open C:\\Users\\admin\\Desktop\\notes.txt"),
-    );
+    const out = sanitizeToolError(new Error("cannot open C:\\Users\\admin\\Desktop\\notes.txt"));
     expect(out).toContain("[path]");
     expect(out).not.toContain("admin");
   });
 
   it("collapses control characters into spaces", () => {
-    const out = sanitizeToolError(
-      new Error("line1\nline2\tline3\r\nstacktrace here"),
-    );
+    const out = sanitizeToolError(new Error("line1\nline2\tline3\r\nstacktrace here"));
     expect(out).not.toMatch(/[\n\t\r]/);
     expect(out).toContain("line1");
     expect(out).toContain("line3");
@@ -155,9 +139,7 @@ describe("sanitizeToolError", () => {
 
   it("returns a generic message for non-Error/non-string values", () => {
     expect(sanitizeToolError(42)).toBe("Tool execution failed.");
-    expect(sanitizeToolError({ leak: "secret" })).toBe(
-      "Tool execution failed.",
-    );
+    expect(sanitizeToolError({ leak: "secret" })).toBe("Tool execution failed.");
     expect(sanitizeToolError(undefined)).toBe("Tool execution failed.");
     expect(sanitizeToolError(null)).toBe("Tool execution failed.");
   });

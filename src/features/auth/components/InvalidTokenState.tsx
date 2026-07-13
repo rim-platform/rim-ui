@@ -17,12 +17,9 @@
 import type { InviteErrorCode } from "../types";
 
 const COPY: Record<InviteErrorCode, string> = {
-  INVALID_TOKEN:
-    "This invite link is no longer valid. Ask your admin for a fresh invite.",
-  EXPIRED_TOKEN:
-    "This invite has expired. Ask your admin for a fresh invite.",
-  NETWORK:
-    "Couldn't load invite. Check your connection and refresh.",
+  INVALID_TOKEN: "This invite link is no longer valid. Ask your admin for a fresh invite.",
+  EXPIRED_TOKEN: "This invite has expired. Ask your admin for a fresh invite.",
+  NETWORK: "Couldn't load invite. Check your connection and refresh.",
 };
 
 interface InvalidTokenStateProps {

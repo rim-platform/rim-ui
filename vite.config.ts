@@ -13,11 +13,19 @@ export default defineConfig(async () => ({
       output: {
         manualChunks(id) {
           // GraphQL runtime — stable, rarely changes, benefits from separate cache entry
-          if (id.includes("node_modules/graphql/") || id.includes("node_modules/graphql-request/") || id.includes("node_modules/graphql-ws/")) {
+          if (
+            id.includes("node_modules/graphql/") ||
+            id.includes("node_modules/graphql-request/") ||
+            id.includes("node_modules/graphql-ws/")
+          ) {
             return "vendor-graphql";
           }
           // React ecosystem — large, stable
-          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/react-router-dom/")) {
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/") ||
+            id.includes("node_modules/react-router-dom/")
+          ) {
             return "vendor-react";
           }
         },

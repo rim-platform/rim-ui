@@ -51,7 +51,10 @@ export function TerminalPane() {
       const handleMouseMove = (ev: MouseEvent) => {
         const delta = dragStartY.current - ev.clientY;
         const maxHeight = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO);
-        const newHeight = Math.min(Math.max(MIN_HEIGHT, dragStartHeight.current + delta), maxHeight);
+        const newHeight = Math.min(
+          Math.max(MIN_HEIGHT, dragStartHeight.current + delta),
+          maxHeight,
+        );
         setPanelHeight(newHeight);
       };
 

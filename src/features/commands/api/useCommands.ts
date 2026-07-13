@@ -55,10 +55,10 @@ export function useCommands(surface?: CommandSurface, commandContext?: CommandCo
     gcTime: Infinity,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
-        CommandsDocument,
-        { surface: surface ?? "PALETTE", commandContext }
-      );
+      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(CommandsDocument, {
+        surface: surface ?? "PALETTE",
+        commandContext,
+      });
       return res.commands;
     },
   });
@@ -73,18 +73,15 @@ export function useExecuteCommandMutation() {
       confirmedDangerous?: boolean;
       isPipe?: boolean;
     }) =>
-      graphqlClient.request<{ executeCommand: CommandResult }>(
-        ExecuteCommandDocument,
-        {
-          input: {
-            commandId: input.commandId,
-            args: input.args,
-            commandContext: input.commandContext,
-            confirmedDangerous: input.confirmedDangerous,
-            isPipe: input.isPipe,
-          },
-        }
-      ),
+      graphqlClient.request<{ executeCommand: CommandResult }>(ExecuteCommandDocument, {
+        input: {
+          commandId: input.commandId,
+          args: input.args,
+          commandContext: input.commandContext,
+          confirmedDangerous: input.confirmedDangerous,
+          isPipe: input.isPipe,
+        },
+      }),
   });
 }
 

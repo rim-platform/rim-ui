@@ -20,7 +20,9 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
     observe(): void {}
     unobserve(): void {}
     disconnect(): void {}
-    takeRecords(): IntersectionObserverEntry[] { return []; }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
   }
   Object.defineProperty(globalThis, "IntersectionObserver", {
     value: MockIntersectionObserver,
@@ -29,16 +31,36 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
   });
 }
 
+// jsdom does not implement Element.scrollIntoView. Keyboard-navigable lists
+// (CommandPalette, ThreadPanel, MessageTimeline, SearchOverlay, ...) call it
+// to keep the selected/highlighted row visible. Provide a no-op so those
+// effects don't throw; tests that care about scroll position should assert
+// on it via a spy, not this global stub.
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
+
 // Node.js 22+ exposes a built-in `localStorage` (--localstorage-file) that
 // can shadow the jsdom implementation. Ensure a working Storage API is available.
-if (typeof globalThis.localStorage === "undefined" || typeof globalThis.localStorage.getItem !== "function") {
+if (
+  typeof globalThis.localStorage === "undefined" ||
+  typeof globalThis.localStorage.getItem !== "function"
+) {
   const store = new Map<string, string>();
   const storage: Storage = {
     getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => { store.set(key, value); },
-    removeItem: (key: string) => { store.delete(key); },
-    clear: () => { store.clear(); },
-    get length() { return store.size; },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
+    get length() {
+      return store.size;
+    },
     key: (index: number) => [...store.keys()][index] ?? null,
   };
   Object.defineProperty(globalThis, "localStorage", { value: storage, writable: true });

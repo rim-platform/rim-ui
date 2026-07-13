@@ -293,7 +293,9 @@ function EntryRow({ entry, onEdit, onDelete, isDeleting }: EntryRowProps) {
   }, [onDelete, entry.key]);
 
   return (
-    <div className={`rounded-lg border bg-rim-panel transition ${expired ? "border-rim-danger/30 opacity-60" : "border-rim-line"}`}>
+    <div
+      className={`rounded-lg border bg-rim-panel transition ${expired ? "border-rim-danger/30 opacity-60" : "border-rim-line"}`}
+    >
       {/* Header row */}
       <div
         className="flex cursor-pointer items-center gap-2 px-3 py-2"
@@ -311,7 +313,11 @@ function EntryRow({ entry, onEdit, onDelete, isDeleting }: EntryRowProps) {
         {entry.expiresAt && (
           <span
             className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${expired ? "bg-rim-danger/20 text-rim-danger" : "bg-rim-warm/20 text-rim-warm"}`}
-            title={expired ? `Expired ${formatRelativeTime(entry.expiresAt)}` : `Expires ${formatRelativeTime(entry.expiresAt)}`}
+            title={
+              expired
+                ? `Expired ${formatRelativeTime(entry.expiresAt)}`
+                : `Expires ${formatRelativeTime(entry.expiresAt)}`
+            }
           >
             <Clock className="h-3 w-3" />
             {expired ? "expired" : formatRelativeTime(entry.expiresAt)}
@@ -406,25 +412,30 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
   const [prefix, setPrefix] = useState("");
   const deferredPrefix = useDeferredValue(prefix);
   const [editorMode, setEditorMode] = useState<
-    | { kind: "closed" }
-    | { kind: "create" }
-    | { kind: "edit"; entry: WorkspaceStateEntryGql }
+    { kind: "closed" } | { kind: "create" } | { kind: "edit"; entry: WorkspaceStateEntryGql }
   >({ kind: "closed" });
 
-  const { data: entries, isLoading, error } = useWorkspaceStateList(serverId, deferredPrefix, scope, DEFAULT_LIST_LIMIT);
+  const {
+    data: entries,
+    isLoading,
+    error,
+  } = useWorkspaceStateList(serverId, deferredPrefix, scope, DEFAULT_LIST_LIMIT);
 
   // Single delete mutation instance shared by all entry rows
   const deleteWorkspaceState = useDeleteWorkspaceState();
-  const handleDeleteEntry = useCallback(async (key: string) => {
-    if (!serverId) return;
-    try {
-      await deleteWorkspaceState.mutateAsync({ serverId, key, scope });
-      toast.success(`Deleted "${key}"`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to delete";
-      toast.error(msg);
-    }
-  }, [deleteWorkspaceState, serverId, scope]);
+  const handleDeleteEntry = useCallback(
+    async (key: string) => {
+      if (!serverId) return;
+      try {
+        await deleteWorkspaceState.mutateAsync({ serverId, key, scope });
+        toast.success(`Deleted "${key}"`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to delete";
+        toast.error(msg);
+      }
+    },
+    [deleteWorkspaceState, serverId, scope],
+  );
 
   // Sort entries: non-expired first, then alphabetically by key
   const sortedEntries = useMemo(() => {
@@ -464,8 +475,8 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
       <div>
         <h2 className="text-base font-semibold text-rim-text">Workspace State</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Key-value store for workspace configuration, feature flags, and runtime state.
-          Keys are scoped to the server or individual users. Values are JSON with optional TTL.
+          Key-value store for workspace configuration, feature flags, and runtime state. Keys are
+          scoped to the server or individual users. Values are JSON with optional TTL.
         </p>
       </div>
 

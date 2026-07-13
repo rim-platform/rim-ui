@@ -33,7 +33,7 @@ export function parseKeystroke(event: KeyboardEvent): string {
 export function matchKeybind(
   keystroke: string,
   context: KeybindContext,
-  keybinds: ResolvedKeybind[]
+  keybinds: ResolvedKeybind[],
 ): ResolvedKeybind | null {
   if (!keystroke) return null;
 
@@ -42,7 +42,7 @@ export function matchKeybind(
       (kb) =>
         kb.isEnabled &&
         kb.keystroke === keystroke &&
-        (kb.context === context || kb.context === "GLOBAL")
+        (kb.context === context || kb.context === "GLOBAL"),
     ) ?? null
   );
 }
@@ -50,9 +50,7 @@ export function matchKeybind(
 /**
  * Map a shell focused surface to a KeybindContext.
  */
-export function surfaceToContext(
-  focusedSurface: string | null
-): KeybindContext {
+export function surfaceToContext(focusedSurface: string | null): KeybindContext {
   switch (focusedSurface) {
     case "composer":
       return "COMPOSER";

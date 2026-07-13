@@ -10,11 +10,10 @@ export async function showMessageNotification(opts: {
   messageText: string;
   showPreview: boolean;
 }) {
-  let granted = await isPermissionGranted();
+  const granted = await isPermissionGranted();
   if (!granted) {
     const permission = await requestPermission();
     if (permission !== "granted") return;
-    granted = true;
   }
 
   sendNotification({

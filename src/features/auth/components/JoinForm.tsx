@@ -38,7 +38,7 @@ import { InviteTokenType } from "../types";
  * Spec §13b: `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`
  * Exported so tests can import the same constant rather than duplicating it.
  */
-export const EMAIL_REGEX = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+export const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
 type JoinFormVariant = InviteTokenType | "OPEN";
 
@@ -74,7 +74,16 @@ interface FieldProps {
   required?: boolean;
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", hint, error, required }: FieldProps) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  hint,
+  error,
+  required,
+}: FieldProps) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
@@ -88,12 +97,8 @@ function Field({ label, value, onChange, placeholder, type = "text", hint, error
         required={required}
         className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
       />
-      {error && (
-        <span className="mt-1 block text-xs text-rim-danger">{error}</span>
-      )}
-      {!error && hint && (
-        <span className="mt-1 block text-xs text-rim-text-faint">{hint}</span>
-      )}
+      {error && <span className="mt-1 block text-xs text-rim-danger">{error}</span>}
+      {!error && hint && <span className="mt-1 block text-xs text-rim-text-faint">{hint}</span>}
     </label>
   );
 }
@@ -230,37 +235,28 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
 
     signup.mutate(buildInput(), {
       onSuccess: (data) => {
-        onSuccess(
-          data.signupWithInvite.userId,
-          data.signupWithInvite.serverId ?? null,
-        );
+        onSuccess(data.signupWithInvite.userId, data.signupWithInvite.serverId ?? null);
       },
       onError: (err) => {
         const mapped = mapSignupError(err);
         if (mapped?.field === "email") {
           setEmailError(mapped.message);
         } else {
-          setFormError(
-            err instanceof Error ? err.message : "Registration failed. Try again.",
-          );
+          setFormError(err instanceof Error ? err.message : "Registration failed. Try again.");
         }
       },
     });
   }
 
   const canSubmit =
-    username.trim().length > 0 &&
-    email.trim().length > 0 &&
-    password.trim().length >= 8;
+    username.trim().length > 0 && email.trim().length > 0 && password.trim().length >= 8;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
         <header className="text-center">
           <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
-          <p className="mt-1 text-sm text-rim-text-muted">
-            {headerCopy(variant, workspaceName)}
-          </p>
+          <p className="mt-1 text-sm text-rim-text-muted">{headerCopy(variant, workspaceName)}</p>
           {variant === InviteTokenType.WORKSPACE && workspaceName && (
             <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>
           )}
@@ -311,9 +307,7 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
             {(formError || signup.error) && !emailError && (
               <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
                 {formError ??
-                  (signup.error instanceof Error
-                    ? signup.error.message
-                    : "Registration failed.")}
+                  (signup.error instanceof Error ? signup.error.message : "Registration failed.")}
               </p>
             )}
             <button

@@ -26,13 +26,11 @@ interface ChannelLike {
 }
 
 function mockChatCompletion(events: unknown[]): void {
-  invokeMock.mockImplementationOnce(
-    async (_cmd: string, args: { onEvent: ChannelLike }) => {
-      for (const ev of events) {
-        args.onEvent.send(ev);
-      }
-    },
-  );
+  invokeMock.mockImplementationOnce(async (_cmd: string, args: { onEvent: ChannelLike }) => {
+    for (const ev of events) {
+      args.onEvent.send(ev);
+    }
+  });
 }
 
 describe("createOpenAiProvider", () => {
@@ -55,7 +53,11 @@ describe("createOpenAiProvider", () => {
     expect(modelIds).toContain("gpt-4o-mini");
   });
 
-  it("chat invokes agent_chat_completion with provider=openai, api_key, snake_case body", async () => {
+  it("chat invokes agent_chat_completion with provider=openai, snake_case body — no api_key field", async () => {
+    // Contract: ChatCompletionRequest on the Rust side uses
+    // #[serde(deny_unknown_fields)] and has NO api_key field. The key is
+    // read from the OS keyring by the proxy inline (deny_unknown_fields
+    // regression test in agent_proxy.rs:749 locks this in).
     mockChatCompletion([{ kind: "done" }]);
 
     const provider = createOpenAiProvider(async () => "sk-my-key");
@@ -75,7 +77,8 @@ describe("createOpenAiProvider", () => {
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("openai");
     expect(req.model).toBe("gpt-4o");
-    expect(req.api_key).toBe("sk-my-key");
+    // api_key MUST NOT be present — deny_unknown_fields rejects it.
+    expect(req).not.toHaveProperty("api_key");
     expect(req.max_tokens).toBe(4096);
     // System prompt is folded into messages, NOT a separate field for OpenAI
     const msgs = req.messages as { role: string; content?: string }[];
@@ -92,8 +95,7 @@ describe("createOpenAiProvider", () => {
     })) {
       // drain
     }
-    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> })
-      .request;
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
     expect(req).not.toHaveProperty("tools");
   });
 
@@ -117,8 +119,7 @@ describe("createOpenAiProvider", () => {
       // drain
     }
 
-    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> })
-      .request;
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
     expect(req.tools).toEqual([
       {
         type: "function",
@@ -154,8 +155,7 @@ describe("createOpenAiProvider", () => {
       // drain
     }
 
-    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> })
-      .request;
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
     const msgs = req.messages as Record<string, unknown>[];
     const assistant = msgs.find((m) => m.role === "assistant")!;
     expect(assistant.tool_calls).toHaveLength(1);
@@ -178,9 +178,7 @@ describe("createOpenAiProvider", () => {
     })) {
       chunks.push(c);
     }
-    expect(chunks).toEqual([
-      { kind: "error", message: "provider 429: rate_limit" },
-    ]);
+    expect(chunks).toEqual([{ kind: "error", message: "provider 429: rate_limit" }]);
   });
 
   it("chat yields error when invoke rejects without firing channel events", async () => {
@@ -292,82 +290,5 @@ describe("createOpenAiProvider", () => {
       input: { q: "hi" },
     });
     expect(chunks.at(-1)).toMatchObject({ kind: "done" });
-  });
-
-  describe("validateCredentials", () => {
-    it("invokes agent_validate_credentials with provider=openai", async () => {
-      invokeMock.mockResolvedValueOnce({ kind: "valid" });
-      const provider = createOpenAiProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "valid",
-      });
-      const [cmd, args] = invokeMock.mock.calls[0]!;
-      expect(cmd).toBe("agent_validate_credentials");
-      expect(args).toEqual({ provider: "openai", apiKey: "sk-test" });
-    });
-
-    it("propagates invalid outcome from the proxy", async () => {
-      invokeMock.mockResolvedValueOnce({ kind: "invalid" });
-      const provider = createOpenAiProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "invalid",
-      });
-    });
-
-    it("maps invoke rejection onto network_error", async () => {
-      // WARN #4 contract — same as anthropic: bad plumbing != bad key.
-      invokeMock.mockRejectedValueOnce(new Error("fail"));
-      const provider = createOpenAiProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "network_error",
-        message: "fail",
-      });
-    });
-  });
-
-  describe("fetchModels", () => {
-    it("invokes agent_list_models and filters chat models by prefix", async () => {
-      invokeMock.mockResolvedValueOnce({
-        data: [
-          { id: "gpt-4o", owned_by: "openai" },
-          { id: "gpt-4o-mini", owned_by: "openai" },
-          { id: "o3-mini", owned_by: "openai" },
-          { id: "dall-e-3", owned_by: "openai" },
-          { id: "whisper-1", owned_by: "openai" },
-          { id: "tts-1", owned_by: "openai" },
-        ],
-      });
-
-      const provider = createOpenAiProvider(async () => "sk-test");
-      const models = await provider.fetchModels!("sk-test");
-      const [cmd, args] = invokeMock.mock.calls[0]!;
-      expect(cmd).toBe("agent_list_models");
-      expect(args).toEqual({ provider: "openai", apiKey: "sk-test" });
-      const ids = models.map((m) => m.id);
-      expect(ids).toContain("gpt-4o");
-      expect(ids).toContain("gpt-4o-mini");
-      expect(ids).toContain("o3-mini");
-      expect(ids).not.toContain("dall-e-3");
-      expect(ids).not.toContain("whisper-1");
-      expect(ids).not.toContain("tts-1");
-    });
-
-    it("propagates ProxyError string on rejection", async () => {
-      invokeMock.mockRejectedValueOnce("provider returned error 500: boom");
-      const provider = createOpenAiProvider(async () => "sk-test");
-      await expect(provider.fetchModels!("sk-test")).rejects.toBe(
-        "provider returned error 500: boom",
-      );
-    });
-
-    it("throws when no chat models returned", async () => {
-      invokeMock.mockResolvedValueOnce({
-        data: [{ id: "dall-e-3", owned_by: "openai" }],
-      });
-      const provider = createOpenAiProvider(async () => "sk-test");
-      await expect(provider.fetchModels!("sk-test")).rejects.toThrow(
-        "No chat models returned",
-      );
-    });
   });
 });

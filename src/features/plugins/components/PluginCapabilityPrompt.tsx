@@ -11,7 +11,7 @@ const capabilityLabels: Record<PluginCapability, string> = {
   "chat.write": "Send Chat Messages",
   "events.read": "Receive Workspace Events",
   "local.process": "Run Local Processes",
-  "network": "Network Access",
+  network: "Network Access",
   "fs.read": "Read Files",
   "fs.write": "Write Files",
   "ui.notify": "Show Notifications",
@@ -23,7 +23,7 @@ const capabilityDescriptions: Record<PluginCapability, string> = {
   "chat.write": "Send, edit, and delete messages on your behalf",
   "events.read": "Subscribe to workspace events such as member joins and status changes",
   "local.process": "Spawn and control processes on your device",
-  "network": "Make outbound network requests to external services",
+  network: "Make outbound network requests to external services",
   "fs.read": "Read files and list directories on your device",
   "fs.write": "Create, modify, and delete files on your device",
   "ui.notify": "Show desktop notifications",
@@ -71,7 +71,10 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
-            <p className="text-xs text-rim-text-muted">v{plugin.version}{plugin.author ? ` by ${plugin.author}` : ""}</p>
+            <p className="text-xs text-rim-text-muted">
+              v{plugin.version}
+              {plugin.author ? ` by ${plugin.author}` : ""}
+            </p>
           </div>
         </div>
 

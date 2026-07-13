@@ -26,7 +26,9 @@ interface ResetPasswordResponse {
 export function useRequestPasswordResetMutation() {
   return useMutation({
     mutationFn: (username: string) =>
-      graphqlClient.request<RequestPasswordResetResponse>(REQUEST_PASSWORD_RESET_MUTATION, { username }),
+      graphqlClient.request<RequestPasswordResetResponse>(REQUEST_PASSWORD_RESET_MUTATION, {
+        username,
+      }),
   });
 }
 

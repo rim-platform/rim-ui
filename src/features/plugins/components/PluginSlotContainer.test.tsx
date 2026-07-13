@@ -61,38 +61,20 @@ describe("PluginSlotContainer", () => {
   };
 
   it("renders the panel title", () => {
-    render(
-      <PluginSlotContainer
-        plugin={mockPlugin}
-        panel={mockPanel}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
 
     expect(screen.getByText("Test Panel")).toBeInTheDocument();
   });
 
   it("renders a close button", () => {
-    render(
-      <PluginSlotContainer
-        plugin={mockPlugin}
-        panel={mockPanel}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
 
     expect(screen.getByLabelText("Close plugin panel")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked", () => {
     const onClose = vi.fn();
-    render(
-      <PluginSlotContainer
-        plugin={mockPlugin}
-        panel={mockPanel}
-        onClose={onClose}
-      />,
-    );
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={onClose} />);
 
     fireEvent.click(screen.getByLabelText("Close plugin panel"));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -100,11 +82,7 @@ describe("PluginSlotContainer", () => {
 
   it("renders the PluginPanel iframe for the plugin", () => {
     const { container } = render(
-      <PluginSlotContainer
-        plugin={mockPlugin}
-        panel={mockPanel}
-        onClose={vi.fn()}
-      />,
+      <PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />,
     );
 
     const iframe = container.querySelector("iframe");

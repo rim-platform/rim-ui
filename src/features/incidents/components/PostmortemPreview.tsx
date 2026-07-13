@@ -86,10 +86,14 @@ export function PostmortemPreview({ serverId, conversationId, onClose }: Postmor
               disabled={generatePostmortem.isPending}
               className={cn(
                 "flex items-center gap-1.5 rounded bg-rim-accent px-3 py-1.5 text-sm text-white transition",
-                generatePostmortem.isPending ? "opacity-50 cursor-not-allowed" : "hover:brightness-110",
+                generatePostmortem.isPending
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:brightness-110",
               )}
             >
-              <RefreshCw className={cn("h-3.5 w-3.5", generatePostmortem.isPending && "animate-spin")} />
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", generatePostmortem.isPending && "animate-spin")}
+              />
               {generatePostmortem.isPending ? "Generating..." : "Generate Postmortem"}
             </button>
           </div>
@@ -102,7 +106,9 @@ export function PostmortemPreview({ serverId, conversationId, onClose }: Postmor
                 disabled={generatePostmortem.isPending}
                 className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
               >
-                <RefreshCw className={cn("h-3 w-3", generatePostmortem.isPending && "animate-spin")} />
+                <RefreshCw
+                  className={cn("h-3 w-3", generatePostmortem.isPending && "animate-spin")}
+                />
                 Regenerate
               </button>
             </div>

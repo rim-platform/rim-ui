@@ -109,10 +109,28 @@ export interface PluginInfo {
   ai_callable_commands: string[];
   /** True when the manifest changed since last consent — UI must prompt re-approval. */
   ai_consent_required: boolean;
+  /**
+   * True when the on-disk bundle fingerprint differs from the TOFU fingerprint
+   * recorded at install time.  The UI must surface a warning and require the user
+   * to trust the new version via `plugin_trust_fingerprint` before enabling.
+   */
+  fingerprint_changed: boolean;
   context_actions?: PluginContextAction[];
   /** Panel definitions from the manifest — used by the shell for slot layout. */
   panels?: PluginPanelDef[];
   health?: PluginHealth;
+}
+
+/**
+ * Returned by `plugin_install_from_local` and `plugin_install_from_git` on success.
+ * Mirror of the Rust `PluginInstallResult` struct.
+ */
+export interface PluginInstallResult {
+  plugin_id: string;
+  display_name: string;
+  version: string;
+  capabilities: string[];
+  install_path: string;
 }
 
 export interface PluginContextAction {
@@ -128,11 +146,7 @@ export interface PluginCommandResult {
 }
 
 export type PluginEventKind =
-  | "plugin_started"
-  | "plugin_stopped"
-  | "plugin_crashed"
-  | "plugin_timeout"
-  | "plugin_log";
+  "plugin_started" | "plugin_stopped" | "plugin_crashed" | "plugin_timeout" | "plugin_log";
 
 export interface PluginEvent {
   plugin_id: string;

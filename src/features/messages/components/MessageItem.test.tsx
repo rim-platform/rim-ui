@@ -48,22 +48,14 @@ describe("MessageItem", () => {
 
   it("renders pin icon when message is pinned", () => {
     const { container } = render(
-      <MessageItem
-        {...defaultProps}
-        message={{ ...defaultMessage, isPinned: true }}
-      />,
+      <MessageItem {...defaultProps} message={{ ...defaultMessage, isPinned: true }} />,
     );
     // Pin icon from lucide renders as SVG; shape check via the message row.
     expect(container.querySelector("[data-message-id='msg-1']")).toBeInTheDocument();
   });
 
   it("renders deleted message text when isDeleted", () => {
-    render(
-      <MessageItem
-        {...defaultProps}
-        message={{ ...defaultMessage, isDeleted: true }}
-      />,
-    );
+    render(<MessageItem {...defaultProps} message={{ ...defaultMessage, isDeleted: true }} />);
     expect(screen.getByText("This message was deleted")).toBeInTheDocument();
   });
 
@@ -78,12 +70,7 @@ describe("MessageItem", () => {
   });
 
   it("renders empty message placeholder", () => {
-    render(
-      <MessageItem
-        {...defaultProps}
-        message={{ ...defaultMessage, text: null }}
-      />,
-    );
+    render(<MessageItem {...defaultProps} message={{ ...defaultMessage, text: null }} />);
     expect(screen.getByText("[empty message]")).toBeInTheDocument();
   });
 
@@ -92,12 +79,7 @@ describe("MessageItem", () => {
       { emoji: "👍", count: 3, reactedByMe: false },
       { emoji: "❤️", count: 1, reactedByMe: true },
     ];
-    render(
-      <MessageItem
-        {...defaultProps}
-        reactions={reactions}
-      />,
-    );
+    render(<MessageItem {...defaultProps} reactions={reactions} />);
     expect(screen.getByText("👍")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("❤️")).toBeInTheDocument();
@@ -118,12 +100,7 @@ describe("MessageItem", () => {
 
   it("calls onContextMenu on right-click for non-deleted messages", () => {
     const onContextMenu = vi.fn();
-    const { container } = render(
-      <MessageItem
-        {...defaultProps}
-        onContextMenu={onContextMenu}
-      />,
-    );
+    const { container } = render(<MessageItem {...defaultProps} onContextMenu={onContextMenu} />);
 
     const row = container.querySelector("[data-message-id='msg-1']");
     expect(row).toBeInTheDocument();
@@ -159,12 +136,7 @@ describe("MessageItem", () => {
 
   it("calls onOpenThread when thread button is clicked", () => {
     const onOpenThread = vi.fn();
-    render(
-      <MessageItem
-        {...defaultProps}
-        onOpenThread={onOpenThread}
-      />,
-    );
+    render(<MessageItem {...defaultProps} onOpenThread={onOpenThread} />);
     fireEvent.click(screen.getByLabelText("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith("msg-1");
   });
@@ -185,12 +157,7 @@ describe("MessageItem", () => {
         siteName: "Example",
       },
     ];
-    render(
-      <MessageItem
-        {...defaultProps}
-        linkPreviews={linkPreviews}
-      />,
-    );
+    render(<MessageItem {...defaultProps} linkPreviews={linkPreviews} />);
     expect(screen.getByText("Example Site")).toBeInTheDocument();
   });
 });

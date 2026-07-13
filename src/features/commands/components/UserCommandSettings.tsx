@@ -27,8 +27,7 @@ export function UserCommandSettings() {
   const [editSteps, setEditSteps] = useState<UserCommandStepInput[]>([]);
 
   const userCommands = commands?.filter((cmd) => cmd.sourceKind === "USER") ?? [];
-  const availableCommands =
-    commands?.filter((cmd) => cmd.executionTarget === "BACKEND") ?? [];
+  const availableCommands = commands?.filter((cmd) => cmd.executionTarget === "BACKEND") ?? [];
 
   function addStep() {
     setSteps([...steps, { commandId: "" }]);
@@ -70,7 +69,7 @@ export function UserCommandSettings() {
           setNewDescription("");
           setSteps([]);
         },
-      }
+      },
     );
   }
 
@@ -146,9 +145,7 @@ export function UserCommandSettings() {
       {showCreate && (
         <div className="mb-3 rounded-md border border-rim-line bg-rim-void p-3 space-y-2">
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Command ID
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Command ID</label>
             <div className="flex items-center">
               <span className="text-[11px] text-rim-text-muted mr-1">user.</span>
               <input
@@ -161,9 +158,7 @@ export function UserCommandSettings() {
             </div>
           </div>
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Title
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Title</label>
             <input
               type="text"
               value={newTitle}
@@ -173,9 +168,7 @@ export function UserCommandSettings() {
             />
           </div>
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Description
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Description</label>
             <input
               type="text"
               value={newDescription}
@@ -193,9 +186,7 @@ export function UserCommandSettings() {
             <div className="space-y-1">
               {steps.map((step, index) => (
                 <div key={index} className="flex items-center gap-1">
-                  <span className="w-4 shrink-0 text-[10px] text-rim-text-muted">
-                    {index + 1}.
-                  </span>
+                  <span className="w-4 shrink-0 text-[10px] text-rim-text-muted">{index + 1}.</span>
                   <select
                     value={step.commandId}
                     onChange={(e) => updateStep(index, e.target.value)}
@@ -244,9 +235,7 @@ export function UserCommandSettings() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleCreate}
-              disabled={
-                !newId || !newTitle || steps.length === 0 || createMutation.isPending
-              }
+              disabled={!newId || !newTitle || steps.length === 0 || createMutation.isPending}
               className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Creating..." : "Create"}
@@ -262,9 +251,7 @@ export function UserCommandSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-rim-danger">
-              {(createMutation.error as Error).message}
-            </p>
+            <p className="text-[11px] text-rim-danger">{(createMutation.error as Error).message}</p>
           )}
         </div>
       )}
@@ -284,9 +271,7 @@ export function UserCommandSettings() {
                 className="rounded-md border border-rim-accent/30 bg-rim-void p-3 space-y-2"
               >
                 <div>
-                  <label className="block text-[11px] text-rim-text-muted mb-1">
-                    Title
-                  </label>
+                  <label className="block text-[11px] text-rim-text-muted mb-1">Title</label>
                   <input
                     type="text"
                     value={editTitle}
@@ -296,9 +281,7 @@ export function UserCommandSettings() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-rim-text-muted mb-1">
-                    Description
-                  </label>
+                  <label className="block text-[11px] text-rim-text-muted mb-1">Description</label>
                   <input
                     type="text"
                     value={editDescription}
@@ -392,9 +375,7 @@ export function UserCommandSettings() {
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{cmd.title}</div>
-                <div className="truncate font-mono text-[10px] text-rim-text-muted">
-                  {cmd.id}
-                </div>
+                <div className="truncate font-mono text-[10px] text-rim-text-muted">{cmd.id}</div>
               </div>
               <button
                 onClick={() => startEditingCommand(cmd)}

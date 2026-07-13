@@ -11,19 +11,14 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
  */
 export function useTypingEventHandler() {
   useEffect(() => {
-    const unsub = eventBus.on<TypingStartedEvent>(
-      BUS_EVENTS.TYPING_STARTED,
-      (payload) => {
-        const currentUserId = useAuthStore.getState().session?.userId;
-        if (payload.userId !== currentUserId) {
-          useTypingStore.getState().addTyping(
-            payload.conversationId,
-            payload.userId,
-            payload.username,
-          );
-        }
-      },
-    );
+    const unsub = eventBus.on<TypingStartedEvent>(BUS_EVENTS.TYPING_STARTED, (payload) => {
+      const currentUserId = useAuthStore.getState().session?.userId;
+      if (payload.userId !== currentUserId) {
+        useTypingStore
+          .getState()
+          .addTyping(payload.conversationId, payload.userId, payload.username);
+      }
+    });
 
     return unsub;
   }, []);

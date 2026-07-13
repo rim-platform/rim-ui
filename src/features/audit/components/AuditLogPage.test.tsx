@@ -76,8 +76,18 @@ describe("AuditLogPage", () => {
   it("renders audit log entries with typed verb chip", async () => {
     requestMock.mockResolvedValueOnce(
       makePage([
-        makeEntry({ id: "a-1", commandId: "message.send", typedVerb: TypedVerbGql.WRITE, outcome: AuditOutcomeGql.SUCCESS }),
-        makeEntry({ id: "a-2", commandId: "channel.open", typedVerb: TypedVerbGql.READ, outcome: AuditOutcomeGql.SUCCESS }),
+        makeEntry({
+          id: "a-1",
+          commandId: "message.send",
+          typedVerb: TypedVerbGql.WRITE,
+          outcome: AuditOutcomeGql.SUCCESS,
+        }),
+        makeEntry({
+          id: "a-2",
+          commandId: "channel.open",
+          typedVerb: TypedVerbGql.READ,
+          outcome: AuditOutcomeGql.SUCCESS,
+        }),
       ]),
     );
 
@@ -206,10 +216,10 @@ describe("AuditLogPage", () => {
 
   it("Older button sends next cursor in pagination", async () => {
     requestMock.mockResolvedValueOnce(
-      makePage(
-        [makeEntry({ id: "a-1", commandId: "cmd.a", typedVerb: TypedVerbGql.READ })],
-        { hasNextPage: true, nextCursor: "cursor-abc" },
-      ),
+      makePage([makeEntry({ id: "a-1", commandId: "cmd.a", typedVerb: TypedVerbGql.READ })], {
+        hasNextPage: true,
+        nextCursor: "cursor-abc",
+      }),
     );
     renderWithProviders(<AuditLogPage />);
 

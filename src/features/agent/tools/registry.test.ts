@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { registerTool, unregisterTool, getTool, getAllToolDefinitions, getAllTools } from "./registry";
+import {
+  registerTool,
+  unregisterTool,
+  getTool,
+  getAllToolDefinitions,
+  getAllTools,
+} from "./registry";
 
 describe("agent tool registry", () => {
   const testDefinition = {

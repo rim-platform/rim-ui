@@ -71,9 +71,7 @@ export function StartIncidentDialog({ serverId, conversationId }: StartIncidentD
         </div>
 
         <div>
-          <label className="mb-1 block text-xs text-rim-text-muted">
-            Severity
-          </label>
+          <label className="mb-1 block text-xs text-rim-text-muted">Severity</label>
           <div className="flex gap-2">
             {SEVERITY_OPTIONS.map((opt) => (
               <button

@@ -49,9 +49,7 @@ describe("argNameLooksSensitive", () => {
 
 describe("valueLooksSecret", () => {
   it("detects vendor prefixes", () => {
-    expect(
-      valueLooksSecret("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"),
-    ).toBe(true);
+    expect(valueLooksSecret("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789")).toBe(true);
     expect(valueLooksSecret("xoxb-12345-abc")).toBe(true);
     expect(valueLooksSecret("ghp_abcdefghijklmnopqrstuvwxyz012345")).toBe(true);
     expect(valueLooksSecret("glpat-abc123def456")).toBe(true);
@@ -61,15 +59,11 @@ describe("valueLooksSecret", () => {
   });
 
   it("detects JWT shape", () => {
-    expect(
-      valueLooksSecret("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abc123"),
-    ).toBe(true);
+    expect(valueLooksSecret("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abc123")).toBe(true);
   });
 
   it("detects high-entropy base64-ish tokens", () => {
-    expect(
-      valueLooksSecret("AbCdEf0123456789XyZwVuTsRqPoNmLkJiHgFeDcBa9876"),
-    ).toBe(true);
+    expect(valueLooksSecret("AbCdEf0123456789XyZwVuTsRqPoNmLkJiHgFeDcBa9876")).toBe(true);
   });
 
   it("does not flag short or low-diversity strings", () => {

@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import { server } from "../../../test/mocks/server";
 import { mockGraphQLQuery, mockGraphQLMutation } from "../../../test/mocks/graphql";
-import { useWorkspaceState, useWorkspaceStateList, useSetWorkspaceState } from "./useWorkspaceState";
+import {
+  useWorkspaceState,
+  useWorkspaceStateList,
+  useSetWorkspaceState,
+} from "./useWorkspaceState";
 import { WorkspaceStateScopeGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 
@@ -42,9 +46,7 @@ describe("useWorkspaceState", () => {
   });
 
   it("fetches a single workspace state entry", async () => {
-    server.use(
-      mockGraphQLQuery("WorkspaceState", { workspaceState: MOCK_ENTRY }),
-    );
+    server.use(mockGraphQLQuery("WorkspaceState", { workspaceState: MOCK_ENTRY }));
 
     const { Wrapper } = createWrapper();
     const { result } = renderHook(
@@ -61,10 +63,9 @@ describe("useWorkspaceState", () => {
 
   it("is disabled when serverId is undefined", () => {
     const { Wrapper } = createWrapper();
-    const { result } = renderHook(
-      () => useWorkspaceState(undefined, "theme.mode"),
-      { wrapper: Wrapper },
-    );
+    const { result } = renderHook(() => useWorkspaceState(undefined, "theme.mode"), {
+      wrapper: Wrapper,
+    });
 
     // Query should not fire — stays in pending/idle state
     expect(result.current.fetchStatus).toBe("idle");
@@ -72,24 +73,20 @@ describe("useWorkspaceState", () => {
 
   it("is disabled when key is undefined", () => {
     const { Wrapper } = createWrapper();
-    const { result } = renderHook(
-      () => useWorkspaceState("server-1", undefined),
-      { wrapper: Wrapper },
-    );
+    const { result } = renderHook(() => useWorkspaceState("server-1", undefined), {
+      wrapper: Wrapper,
+    });
 
     expect(result.current.fetchStatus).toBe("idle");
   });
 
   it("defaults scope to SERVER", async () => {
-    server.use(
-      mockGraphQLQuery("WorkspaceState", { workspaceState: MOCK_ENTRY }),
-    );
+    server.use(mockGraphQLQuery("WorkspaceState", { workspaceState: MOCK_ENTRY }));
 
     const { Wrapper } = createWrapper();
-    const { result } = renderHook(
-      () => useWorkspaceState("server-1", "theme.mode"),
-      { wrapper: Wrapper },
-    );
+    const { result } = renderHook(() => useWorkspaceState("server-1", "theme.mode"), {
+      wrapper: Wrapper,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(MOCK_ENTRY);
@@ -120,10 +117,9 @@ describe("useWorkspaceStateList", () => {
 
   it("is disabled when serverId is undefined", () => {
     const { Wrapper } = createWrapper();
-    const { result } = renderHook(
-      () => useWorkspaceStateList(undefined, "theme."),
-      { wrapper: Wrapper },
-    );
+    const { result } = renderHook(() => useWorkspaceStateList(undefined, "theme."), {
+      wrapper: Wrapper,
+    });
 
     expect(result.current.fetchStatus).toBe("idle");
   });
@@ -145,10 +141,7 @@ describe("useSetWorkspaceState", () => {
     const { Wrapper, qc } = createWrapper();
 
     // Seed cache to verify invalidation
-    qc.setQueryData(
-      queryKeys.workspaceState("server-1", "SERVER", "theme.mode"),
-      MOCK_ENTRY,
-    );
+    qc.setQueryData(queryKeys.workspaceState("server-1", "SERVER", "theme.mode"), MOCK_ENTRY);
 
     const { result } = renderHook(() => useSetWorkspaceState(), {
       wrapper: Wrapper,

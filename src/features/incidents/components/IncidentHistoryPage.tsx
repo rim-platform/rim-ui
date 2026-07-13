@@ -9,14 +9,8 @@ import {
   IncidentSeverityGql,
   IncidentStatusGql,
 } from "../../../core/graphql/generated/schema-types";
-import type {
-  IncidentGql,
-} from "../../../core/graphql/generated/schema-types";
-import {
-  useListIncidents,
-  type IncidentListCursor,
-  type PageDir,
-} from "../api/useListIncidents";
+import type { IncidentGql } from "../../../core/graphql/generated/schema-types";
+import { useListIncidents, type IncidentListCursor, type PageDir } from "../api/useListIncidents";
 
 const STATUS_OPTIONS: { value: IncidentStatusGql; label: string }[] = [
   { value: IncidentStatusGql.ACTIVE, label: "Active" },
@@ -122,7 +116,9 @@ function IncidentRow({ incident, onSelect }: IncidentRowProps) {
       <span
         className={cn(
           "rounded px-1.5 py-0.5 text-center text-[10px] font-bold uppercase leading-none",
-          incident.severity ? SEVERITY_BADGE[incident.severity] : "bg-rim-panel-soft text-rim-text-faint",
+          incident.severity
+            ? SEVERITY_BADGE[incident.severity]
+            : "bg-rim-panel-soft text-rim-text-faint",
         )}
       >
         {incident.severity ? SEVERITY_LABEL[incident.severity] : "—"}
@@ -149,7 +145,14 @@ function IncidentRow({ incident, onSelect }: IncidentRowProps) {
   );
 }
 
-export function IncidentHistoryPage() {
+interface IncidentHistoryPageProps {
+  /** When true, hides this page's own header/back/close chrome — used by `IncidentsHub`,
+   * which already renders that chrome one level up (segmented sub-tab header). Defaults
+   * to `false` so standalone rendering (and existing tests) is unaffected. */
+  embedded?: boolean;
+}
+
+export function IncidentHistoryPage({ embedded = false }: IncidentHistoryPageProps = {}) {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const setSelectedConversationId = useShellStore((s) => s.setSelectedConversationId);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -236,29 +239,31 @@ export function IncidentHistoryPage() {
 
   return (
     <div className="flex h-full flex-col" data-testid="incident-history-page">
-      <header className="flex h-10 items-center justify-between border-b border-rim-line px-8">
-        <div className="flex items-center gap-2">
+      {!embedded && (
+        <header className="flex h-10 items-center justify-between border-b border-rim-line px-8">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              aria-label="Back to conversation"
+              className="rounded p-1 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <AlertTriangle className="h-4 w-4 text-rim-danger" />
+            <h1 className="text-lg font-semibold text-rim-text">Incident History</h1>
+          </div>
           <button
             type="button"
             onClick={handleClose}
-            aria-label="Back to conversation"
-            className="rounded p-1 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+            aria-label="Close incident history"
+            title="Close"
+            className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
-          <AlertTriangle className="h-4 w-4 text-rim-danger" />
-          <h1 className="text-lg font-semibold text-rim-text">Incident History</h1>
-        </div>
-        <button
-          type="button"
-          onClick={handleClose}
-          aria-label="Close incident history"
-          title="Close"
-          className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </header>
+        </header>
+      )}
 
       <div className="flex flex-col gap-3 border-b border-rim-line px-8 py-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -324,11 +329,7 @@ export function IncidentHistoryPage() {
 
           {showEmpty && (
             <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-rim-text-muted">
-              <p>
-                {filtersActive
-                  ? "No incidents match these filters."
-                  : "No incidents yet."}
-              </p>
+              <p>{filtersActive ? "No incidents match these filters." : "No incidents yet."}</p>
               {filtersActive && (
                 <button
                   type="button"
@@ -344,11 +345,7 @@ export function IncidentHistoryPage() {
           {!showSkeleton && !query.isError && items.length > 0 && (
             <ul aria-label="Incidents">
               {items.map((incident) => (
-                <IncidentRow
-                  key={incident.id}
-                  incident={incident}
-                  onSelect={handleSelect}
-                />
+                <IncidentRow key={incident.id} incident={incident} onSelect={handleSelect} />
               ))}
             </ul>
           )}

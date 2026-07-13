@@ -26,6 +26,9 @@ pub enum LifecycleError {
     AiConsentRequired,
     #[error("plugin process is not running: {0}")]
     PluginNotRunning(String),
+    /// Bundle fingerprint changed since TOFU install — user must trust new version.
+    #[error("plugin bundle fingerprint changed since install: {0}")]
+    FingerprintChanged(String),
 }
 
 impl serde::Serialize for LifecycleError {
@@ -78,6 +81,8 @@ pub fn install(
         approved_capabilities: vec![],
         approved_ai_commands: vec![],
         manifest_hash: manifest.content_hash(),
+        bundle_fingerprint: String::new(),
+        fingerprint_changed: false,
         last_error: None,
     });
     Ok(())

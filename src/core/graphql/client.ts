@@ -6,9 +6,7 @@ const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
 export function getCookie(name: string): string | undefined {
-  const row = document.cookie
-    .split("; ")
-    .find((r) => r.startsWith(`${name}=`));
+  const row = document.cookie.split("; ").find((r) => r.startsWith(`${name}=`));
   return row ? decodeURIComponent(row.split("=")[1]) : undefined;
 }
 

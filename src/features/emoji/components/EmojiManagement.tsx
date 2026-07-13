@@ -5,6 +5,8 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { useCustomEmojis } from "../api/useCustomEmojis";
 import type { CustomEmoji } from "../api/useCustomEmojis";
+import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
+import { useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { cn } from "../../../shared/ui/cn";
 
 const MAX_FILE_SIZE = 256 * 1024; // 256 KB
@@ -44,12 +46,25 @@ function fileToBase64(file: File): Promise<string> {
 
 interface EmojiManagementProps {
   serverId: string | null;
-  /** Whether the current user can manage (upload/delete) emoji */
-  isAdmin?: boolean;
 }
 
-export function EmojiManagement({ serverId, isAdmin }: EmojiManagementProps) {
+/**
+ * Custom-emoji management tab. Gating matches the backend's actual permission model
+ * (`DefaultCustomEmojiService`), not a single admin flag:
+ * - **Upload**: any server member — the backend only checks membership, not role.
+ * - **Delete**: the server owner, OR the emoji's own uploader (`emoji.uploadedBy`) —
+ *   there is no moderator carve-out. This replaced a hardcoded `isAdmin` prop that
+ *   previously gated both actions identically and defaulted to `true`.
+ */
+export function EmojiManagement({ serverId }: EmojiManagementProps) {
   const { emojis, isLoading } = useCustomEmojis(serverId);
+  const { data: me } = useCurrentUser();
+  const isOwner = useIsOwner(serverId ?? undefined);
+
+  const canDelete = useCallback(
+    (emoji: CustomEmoji) => isOwner || emoji.uploadedBy === me?.id,
+    [isOwner, me?.id],
+  );
   const [name, setName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -82,40 +97,46 @@ export function EmojiManagement({ serverId, isAdmin }: EmojiManagementProps) {
     },
   });
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setError(null);
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setError("Only image files are allowed.");
-      return;
-    }
+      if (!file.type.startsWith("image/")) {
+        setError("Only image files are allowed.");
+        return;
+      }
 
-    if (file.size > MAX_FILE_SIZE) {
-      setError("File must be under 256 KB.");
-      return;
-    }
+      if (file.size > MAX_FILE_SIZE) {
+        setError("File must be under 256 KB.");
+        return;
+      }
 
-    setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreview(url);
+      setSelectedFile(file);
+      const url = URL.createObjectURL(file);
+      setPreview(url);
 
-    // Auto-fill name from filename if empty
-    if (!name) {
-      const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-      setName(baseName);
-    }
-  }, [name]);
+      // Auto-fill name from filename if empty
+      if (!name) {
+        const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+        setName(baseName);
+      }
+    },
+    [name],
+  );
 
   const handleUpload = useCallback(() => {
     if (!selectedFile || !name.trim()) return;
     createEmoji.mutate({ emojiName: name.trim(), file: selectedFile });
   }, [selectedFile, name, createEmoji]);
 
-  const handleDelete = useCallback((emoji: CustomEmoji) => {
-    deleteEmoji.mutate(emoji.id);
-  }, [deleteEmoji]);
+  const handleDelete = useCallback(
+    (emoji: CustomEmoji) => {
+      deleteEmoji.mutate(emoji.id);
+    },
+    [deleteEmoji],
+  );
 
   const resetForm = useCallback(() => {
     setName("");
@@ -134,74 +155,67 @@ export function EmojiManagement({ serverId, isAdmin }: EmojiManagementProps) {
         Add custom emoji that everyone in this workspace can use.
       </p>
 
-      {isAdmin && (
-        <div className="mt-4 rounded-lg border border-rim-line bg-rim-panel-soft p-4">
-          <h3 className="text-sm font-medium text-rim-text">Upload Emoji</h3>
-          <div className="mt-3 flex items-end gap-3">
-            <div className="flex-1">
-              <label className="block text-xs text-rim-text-muted" htmlFor="emoji-name">
-                Name
-              </label>
-              <input
-                id="emoji-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
-                placeholder="emoji_name"
-                className="mt-1 w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
-                maxLength={32}
-              />
-            </div>
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded border border-rim-line bg-rim-panel px-3 py-1.5 text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-              >
-                {selectedFile ? "Change" : "Choose File"}
-              </button>
-            </div>
-            {preview && (
-              <img
-                src={preview}
-                alt="Preview"
-                className="h-8 w-8 rounded object-contain"
-              />
-            )}
+      <div className="mt-4 rounded-lg border border-rim-line bg-rim-panel-soft p-4">
+        <h3 className="text-sm font-medium text-rim-text">Upload Emoji</h3>
+        <div className="mt-3 flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs text-rim-text-muted" htmlFor="emoji-name">
+              Name
+            </label>
+            <input
+              id="emoji-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+              placeholder="emoji_name"
+              className="mt-1 w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
+              maxLength={32}
+            />
+          </div>
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
             <button
               type="button"
-              onClick={handleUpload}
-              disabled={!selectedFile || !name.trim() || createEmoji.isPending}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded bg-rim-accent px-3 py-1.5 text-sm text-rim-text transition hover:brightness-110",
-                (!selectedFile || !name.trim() || createEmoji.isPending) && "cursor-not-allowed opacity-50",
-              )}
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded border border-rim-line bg-rim-panel px-3 py-1.5 text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
             >
-              <Upload className="h-3.5 w-3.5" />
-              {createEmoji.isPending ? "Uploading..." : "Upload"}
+              {selectedFile ? "Change" : "Choose File"}
             </button>
-            {(selectedFile || name) && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-xs text-rim-text-faint transition hover:text-rim-text-muted"
-              >
-                Clear
-              </button>
-            )}
           </div>
-          {error && (
-            <p className="mt-2 text-xs text-rim-danger">{error}</p>
+          {preview && (
+            <img src={preview} alt="Preview" className="h-8 w-8 rounded object-contain" />
+          )}
+          <button
+            type="button"
+            onClick={handleUpload}
+            disabled={!selectedFile || !name.trim() || createEmoji.isPending}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded bg-rim-accent px-3 py-1.5 text-sm text-rim-text transition hover:brightness-110",
+              (!selectedFile || !name.trim() || createEmoji.isPending) &&
+                "cursor-not-allowed opacity-50",
+            )}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {createEmoji.isPending ? "Uploading..." : "Upload"}
+          </button>
+          {(selectedFile || name) && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-xs text-rim-text-faint transition hover:text-rim-text-muted"
+            >
+              Clear
+            </button>
           )}
         </div>
-      )}
+        {error && <p className="mt-2 text-xs text-rim-danger">{error}</p>}
+      </div>
 
       <div className="mt-4">
         {isLoading ? (
@@ -215,15 +229,9 @@ export function EmojiManagement({ serverId, isAdmin }: EmojiManagementProps) {
                 key={emoji.id}
                 className="flex items-center gap-3 rounded-lg border border-rim-line bg-rim-panel-soft px-3 py-2"
               >
-                <img
-                  src={emoji.imageUrl}
-                  alt={emoji.name}
-                  className="h-8 w-8 object-contain"
-                />
-                <span className="flex-1 text-sm text-rim-text">
-                  :{emoji.name}:
-                </span>
-                {isAdmin && (
+                <img src={emoji.imageUrl} alt={emoji.name} className="h-8 w-8 object-contain" />
+                <span className="flex-1 text-sm text-rim-text">:{emoji.name}:</span>
+                {canDelete(emoji) && (
                   <button
                     type="button"
                     onClick={() => handleDelete(emoji)}

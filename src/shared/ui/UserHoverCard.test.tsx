@@ -36,7 +36,9 @@ describe("UserHoverCard", () => {
     );
 
     fireEvent.mouseEnter(screen.getByText("Trigger"));
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
 
     expect(screen.getByText("@hoveruser")).toBeInTheDocument();
     expect(screen.getByText("Hover User")).toBeInTheDocument();
@@ -53,11 +55,15 @@ describe("UserHoverCard", () => {
     );
 
     fireEvent.mouseEnter(screen.getByText("Trigger"));
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(screen.getByText("@hoveruser")).toBeInTheDocument();
 
     fireEvent.mouseLeave(screen.getByText("Trigger"));
-    act(() => { vi.advanceTimersByTime(200); });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.queryByText("@hoveruser")).not.toBeInTheDocument();
 
     vi.useRealTimers();

@@ -1,4 +1,10 @@
-query Messages($serverId: ID!, $conversationId: ID!, $dir: PageDir!, $limit: Int!, $includeDeleted: Boolean!) {
+query Messages(
+  $serverId: ID!
+  $conversationId: ID!
+  $dir: PageDir!
+  $limit: Int!
+  $includeDeleted: Boolean!
+) {
   messages(
     serverId: $serverId
     conversationId: $conversationId

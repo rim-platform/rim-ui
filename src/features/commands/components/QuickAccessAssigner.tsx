@@ -28,11 +28,7 @@ export function QuickAccessAssigner() {
   // Listen for Ctrl+Shift+B globally to trigger
   useEffect(() => {
     function handleTrigger(e: KeyboardEvent) {
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        (e.key === "b" || e.key === "B")
-      ) {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "b" || e.key === "B")) {
         const hoverTarget = useHoverContextStore.getState().target;
         if (hoverTarget) {
           e.preventDefault();
@@ -112,11 +108,7 @@ export function QuickAccessAssigner() {
   }, [isOpen, saving, handleKeystrokeCapture]);
 
   return (
-    <Dialog
-      open={isOpen}
-      onClose={close}
-      title={`Assign shortcut for ${target?.label ?? "..."}`}
-    >
+    <Dialog open={isOpen} onClose={close} title={`Assign shortcut for ${target?.label ?? "..."}`}>
       <div className="flex flex-col items-center gap-4 py-4">
         {saving && captured ? (
           <p className="text-sm text-rim-text-muted">

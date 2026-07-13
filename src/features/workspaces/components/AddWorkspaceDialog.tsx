@@ -63,8 +63,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
       if (msg.includes("already a member")) return "You are already a member of this workspace.";
       if (msg.includes("PermissionDenied") || msg.includes("permission"))
         return "This invite is expired or revoked.";
-      if (msg.includes("not found") || msg.includes("NotFound"))
-        return "Invalid invite code.";
+      if (msg.includes("not found") || msg.includes("NotFound")) return "Invalid invite code.";
       return msg;
     }
     return "Something went wrong.";

@@ -77,11 +77,5 @@ export function OpenJoinPage() {
     navigate("/");
   }
 
-  return (
-    <JoinForm
-      variant="OPEN"
-      token={null}
-      onSuccess={handleSuccess}
-    />
-  );
+  return <JoinForm variant="OPEN" token={null} onSuccess={handleSuccess} />;
 }

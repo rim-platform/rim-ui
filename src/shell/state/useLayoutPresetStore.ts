@@ -60,9 +60,7 @@ export const useLayoutPresetStore = create<LayoutPresetState>()(
         const all = getAllPresets(customPresets);
         if (all.length === 0) return;
 
-        const currentIndex = activePresetId
-          ? all.findIndex((p) => p.id === activePresetId)
-          : -1;
+        const currentIndex = activePresetId ? all.findIndex((p) => p.id === activePresetId) : -1;
         const nextIndex = (currentIndex + 1) % all.length;
         const next = all[nextIndex];
 

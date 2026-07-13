@@ -6,10 +6,21 @@ export type DisplayDensity = "comfortable" | "compact" | "ultra-compact";
 
 export type MainSurface =
   | { kind: "conversation" }
-  | { kind: "settings" }
+  /**
+   * Opens the Settings page. Pass an optional `tab` to land on a specific
+   * settings tab (e.g. `"plugins"`). Falls back to `"profile"` when absent.
+   * Use a string literal rather than importing `SettingsTab` to avoid a
+   * circular dependency with the settings feature module.
+   */
+  | { kind: "settings"; tab?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
-  | { kind: "incidents" }
+  /**
+   * Opens the Incidents hub. Pass an optional `tab` to land on a specific sub-tab (e.g.
+   * `"oncall"` — used by the `oncall.who` command and the status-bar `OnCallIndicator`).
+   * Falls back to `"history"` when absent. Same trick as the `settings` surface's `tab`.
+   */
+  | { kind: "incidents"; tab?: "history" | "oncall" | "escalation" }
   | { kind: "audit-log" };
 
 export type ActivePluginPanel = {
@@ -90,7 +101,12 @@ export const useShellStore = create<ShellState>((set) => ({
   closePluginPanel: () => set({ activePluginPanel: null }),
 
   setSelectedConversationId: (id) =>
-    set({ selectedConversationId: id, selectedRootMessageId: null, isThreadOpen: false, editingMessageId: null }),
+    set({
+      selectedConversationId: id,
+      selectedRootMessageId: null,
+      isThreadOpen: false,
+      editingMessageId: null,
+    }),
 
   openThreadForMessage: (rootMessageId) =>
     set({ selectedRootMessageId: rootMessageId, isThreadOpen: true }),
@@ -102,8 +118,7 @@ export const useShellStore = create<ShellState>((set) => ({
       isThreadOpen: false,
     })),
 
-  toggleSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
   setFocusedSurface: (surface) => set({ focusedSurface: surface }),
 
@@ -124,8 +139,7 @@ export const useShellStore = create<ShellState>((set) => ({
       return { displayDensity: next };
     }),
 
-  toggleZenMode: () =>
-    set((state) => ({ zenMode: !state.zenMode })),
+  toggleZenMode: () => set((state) => ({ zenMode: !state.zenMode })),
 
   setNavigationMode: (enabled) => set({ navigationMode: enabled }),
 

@@ -23,16 +23,8 @@ import { cn } from "../../../shared/ui/cn";
  */
 export function HealthIndicator() {
   const { isSuccess, isError } = useHealthCheck();
-  const color = isSuccess
-    ? "bg-rim-success"
-    : isError
-      ? "bg-rim-danger"
-      : "bg-rim-warm";
-  const label = isSuccess
-    ? "Backend reachable"
-    : isError
-      ? "Backend unreachable"
-      : "Connecting...";
+  const color = isSuccess ? "bg-rim-success" : isError ? "bg-rim-danger" : "bg-rim-warm";
+  const label = isSuccess ? "Backend reachable" : isError ? "Backend unreachable" : "Connecting...";
 
   return (
     <div className="flex items-center justify-center gap-2 text-xs text-rim-text-muted">

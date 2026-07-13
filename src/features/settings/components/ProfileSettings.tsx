@@ -22,13 +22,10 @@ function resizeImageToBlob(file: File, size: number): Promise<Blob> {
       const sy = (img.height - minDim) / 2;
       ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
 
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error("Canvas toBlob failed"));
-        },
-        "image/png",
-      );
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Canvas toBlob failed"));
+      }, "image/png");
     };
     img.onerror = () => {
       URL.revokeObjectURL(blobUrl);
@@ -66,37 +63,40 @@ export function ProfileSettings() {
     fileInputRef.current?.click();
   }, []);
 
-  const handleAvatarChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleAvatarChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setAvatarError("Please select an image file.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setAvatarError("Image must be under 2MB.");
-      return;
-    }
+      if (!file.type.startsWith("image/")) {
+        setAvatarError("Please select an image file.");
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        setAvatarError("Image must be under 2MB.");
+        return;
+      }
 
-    setAvatarError(null);
-    setAvatarUploading(true);
+      setAvatarError(null);
+      setAvatarUploading(true);
 
-    try {
-      const resized = await resizeImageToBlob(file, 256);
-      const url = await uploadAvatar(resized);
-      setAvatarPreview(url);
+      try {
+        const resized = await resizeImageToBlob(file, 256);
+        const url = await uploadAvatar(resized);
+        setAvatarPreview(url);
 
-      // Update profile with new avatar URL
-      await updateProfile.mutateAsync({ avatarUrl: url });
-    } catch (err) {
-      setAvatarError(err instanceof Error ? err.message : "Avatar upload failed.");
-    } finally {
-      setAvatarUploading(false);
-      // Reset input so same file can be selected again
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }, [updateProfile]);
+        // Update profile with new avatar URL
+        await updateProfile.mutateAsync({ avatarUrl: url });
+      } catch (err) {
+        setAvatarError(err instanceof Error ? err.message : "Avatar upload failed.");
+      } finally {
+        setAvatarUploading(false);
+        // Reset input so same file can be selected again
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [updateProfile],
+  );
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
@@ -131,7 +131,9 @@ export function ProfileSettings() {
             <img src={avatarPreview} alt="Avatar" className="h-full w-full object-cover" />
           ) : (
             <span className="text-2xl font-medium text-rim-text-muted">
-              {user?.displayName?.charAt(0).toUpperCase() ?? user?.username?.charAt(0).toUpperCase() ?? "?"}
+              {user?.displayName?.charAt(0).toUpperCase() ??
+                user?.username?.charAt(0).toUpperCase() ??
+                "?"}
             </span>
           )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
@@ -157,7 +159,10 @@ export function ProfileSettings() {
 
       {/* Display name */}
       <div>
-        <label htmlFor="profile-display-name" className="mb-1 block text-sm font-medium text-rim-text">
+        <label
+          htmlFor="profile-display-name"
+          className="mb-1 block text-sm font-medium text-rim-text"
+        >
           Display name
         </label>
         <input
@@ -221,9 +226,7 @@ export function ProfileSettings() {
         {updateProfile.isSuccess && !saveError && (
           <span className="text-sm text-rim-success">Saved!</span>
         )}
-        {saveError && (
-          <span className="text-sm text-rim-danger">{saveError}</span>
-        )}
+        {saveError && <span className="text-sm text-rim-danger">{saveError}</span>}
       </div>
     </div>
   );

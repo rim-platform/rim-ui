@@ -9,6 +9,7 @@ import type { AgentMessage } from "../state/useAgentStore";
 import { runAgent } from "../runtime/agentEngine";
 import type { AiMessage } from "../providers/types";
 import { loadAgentTools } from "../tools/loader";
+import { invoke } from "@tauri-apps/api/core";
 import { registerProvider } from "../providers/registry";
 import { loadApiKey, ProviderKeyMissingError } from "../runtime/keyStore";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
@@ -175,16 +176,24 @@ export function AgentOverlay() {
 
     // Build existing messages for context (before the new prompt)
     const existingAiMessages = toAiMessages(
-      useAgentStore.getState().conversations.find((c) => c.id === convId)?.messages.slice(0, -1) ?? [],
+      useAgentStore
+        .getState()
+        .conversations.find((c) => c.id === convId)
+        ?.messages.slice(0, -1) ?? [],
     );
 
     void (async () => {
-      // Presence-check Stronghold before we spin up runAgent. We intentionally
-      // DON'T hold the returned key in scope — the provider's loader thunk
-      // will re-read it inside `chat()` per the #59 invariant.
-      const hasKey = !!(await loadApiKey(settings.providerId));
+      // Presence-check the OS keyring before spinning up runAgent. The keyring
+      // is the single source of truth after the Stronghold → keyring cutover
+      // (agent-settings-consolidation decision §3). We do NOT hold any key
+      // bytes here — the Rust proxy reads from the keyring inline per-request.
+      const hasKey = await invoke<boolean>("is_provider_key_configured", {
+        provider: settings.providerId,
+      });
       if (!hasKey) {
-        useAgentStore.getState().appendText("Please configure your API key in Settings → AI Agent.");
+        useAgentStore
+          .getState()
+          .appendText("Please configure your API key in Settings → AI Agent.");
         useAgentStore.getState().setStatus("error");
         return;
       }
@@ -311,10 +320,7 @@ export function AgentOverlay() {
 
         {/* Message list */}
         {hasMessages && (
-          <div
-            ref={outputRef}
-            className="flex-1 space-y-3 overflow-y-auto px-4 py-3"
-          >
+          <div ref={outputRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {messages.map((msg, i) => (
               <MessageBubble key={`${msg.timestamp}-${i}`} message={msg} />
             ))}
@@ -338,9 +344,7 @@ export function AgentOverlay() {
         {!hasMessages && status === "idle" && (
           <div className="flex flex-col items-center py-10 text-center">
             <Sparkles className="mb-2 h-6 w-6 text-rim-accent/40" />
-            <p className="text-sm text-rim-text-muted">
-              Ask anything about your workspace
-            </p>
+            <p className="text-sm text-rim-text-muted">Ask anything about your workspace</p>
             <p className="mt-1 text-xs text-rim-text-faint">
               Messages, channels, members — the agent can search and summarize for you.
             </p>
@@ -410,9 +414,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
       <div
         className={cn(
           "max-w-[85%] rounded-lg px-3 py-2",
-          isUser
-            ? "bg-rim-accent/15 text-rim-text"
-            : "bg-rim-void text-rim-text",
+          isUser ? "bg-rim-accent/15 text-rim-text" : "bg-rim-void text-rim-text",
         )}
       >
         {isUser ? (

@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -14,12 +14,34 @@ import { cn } from "../../../shared/ui/cn";
 import { useTerminalStore } from "../../terminal/state/useTerminalStore";
 
 // Lazy-load heavier / rarely-used settings panels
-const PluginSettingsPage = lazy(() => import("../../plugins/components/PluginSettingsPage").then(m => ({ default: m.PluginSettingsPage })));
-const PluginAiConsentPanel = lazy(() => import("../../plugins/components/PluginAiConsentPanel").then(m => ({ default: m.PluginAiConsentPanel })));
-const AgentSettingsPanel = lazy(() => import("../../agent/settings/AgentSettingsPanel").then(m => ({ default: m.AgentSettingsPanel })));
-const EmojiManagement = lazy(() => import("../../emoji/components/EmojiManagement").then(m => ({ default: m.EmojiManagement })));
-const WorkspaceStateSettings = lazy(() => import("../../workspace-state/components/WorkspaceStateSettings").then(m => ({ default: m.WorkspaceStateSettings })));
-const AiProviderKeySettings = lazy(() => import("../../agent/settings/AiProviderKeySettings").then(m => ({ default: m.AiProviderKeySettings })));
+const PluginSettingsPage = lazy(() =>
+  import("../../plugins/components/PluginSettingsPage").then((m) => ({
+    default: m.PluginSettingsPage,
+  })),
+);
+const PluginAiConsentPanel = lazy(() =>
+  import("../../plugins/components/PluginAiConsentPanel").then((m) => ({
+    default: m.PluginAiConsentPanel,
+  })),
+);
+const AgentSettingsPanel = lazy(() =>
+  import("../../agent/settings/AgentSettingsPanel").then((m) => ({
+    default: m.AgentSettingsPanel,
+  })),
+);
+const EmojiManagement = lazy(() =>
+  import("../../emoji/components/EmojiManagement").then((m) => ({ default: m.EmojiManagement })),
+);
+const WorkspaceStateSettings = lazy(() =>
+  import("../../workspace-state/components/WorkspaceStateSettings").then((m) => ({
+    default: m.WorkspaceStateSettings,
+  })),
+);
+const IngestTokenSettings = lazy(() =>
+  import("../../integrations/components/IngestTokenSettings").then((m) => ({
+    default: m.IngestTokenSettings,
+  })),
+);
 
 function TerminalSettings() {
   const enabled = useTerminalStore((s) => s.enabled);
@@ -32,17 +54,17 @@ function TerminalSettings() {
   const setFontSize = useTerminalStore((s) => s.setFontSize);
 
   // Platform-specific placeholder
-  const shellPlaceholder =
-    navigator.platform.startsWith("Win")
-      ? "e.g. pwsh.exe, cmd.exe, C:\\Program Files\\Git\\bin\\bash.exe"
-      : "e.g. /bin/zsh, /usr/bin/fish, /bin/bash";
+  const shellPlaceholder = navigator.platform.startsWith("Win")
+    ? "e.g. pwsh.exe, cmd.exe, C:\\Program Files\\Git\\bin\\bash.exe"
+    : "e.g. /bin/zsh, /usr/bin/fish, /bin/bash";
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-rim-text">Terminal</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Integrated terminal running your system shell. Toggle with Ctrl+` (Cmd+` on macOS) when enabled.
+          Integrated terminal running your system shell. Toggle with Ctrl+` (Cmd+` on macOS) when
+          enabled.
         </p>
       </div>
 
@@ -50,7 +72,8 @@ function TerminalSettings() {
         <div>
           <p className="text-sm font-medium text-rim-text">Enable Terminal</p>
           <p className="text-xs text-rim-text-muted">
-            Show the integrated terminal pane. When disabled, the terminal shortcut and UI are hidden.
+            Show the integrated terminal pane. When disabled, the terminal shortcut and UI are
+            hidden.
           </p>
         </div>
         <button
@@ -111,7 +134,8 @@ function TerminalSettings() {
         />
         {!fontFamily.trim() && (
           <p className="mt-1.5 text-[11px] text-rim-text-faint">
-            Using default: Nerd Font Mono variants, then JetBrains Mono / Fira Code / system monospace
+            Using default: Nerd Font Mono variants, then JetBrains Mono / Fira Code / system
+            monospace
           </p>
         )}
       </div>
@@ -154,9 +178,7 @@ function AboutRim() {
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-rim-text">About RIM</h2>
-        <p className="mt-1 text-sm text-rim-text-muted">
-          A programmable communication workspace.
-        </p>
+        <p className="mt-1 text-sm text-rim-text-muted">A programmable communication workspace.</p>
       </div>
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-4">
@@ -241,7 +263,22 @@ function AboutRim() {
   );
 }
 
-type SettingsTab = "profile" | "keybinds" | "commands" | "macros" | "pipelines" | "plugins" | "plugin-ai" | "emoji" | "state" | "agent" | "ai-keys" | "notifications" | "terminal" | "account" | "about";
+type SettingsTab =
+  | "profile"
+  | "keybinds"
+  | "commands"
+  | "macros"
+  | "pipelines"
+  | "plugins"
+  | "plugin-ai"
+  | "emoji"
+  | "state"
+  | "agent"
+  | "notifications"
+  | "terminal"
+  | "integrations"
+  | "account"
+  | "about";
 
 const tabs: { key: SettingsTab; label: string }[] = [
   { key: "profile", label: "Profile" },
@@ -254,17 +291,40 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "emoji", label: "Emoji" },
   { key: "state", label: "State" },
   { key: "agent", label: "AI Agent" },
-  { key: "ai-keys", label: "AI Keys" },
   { key: "notifications", label: "Notifications" },
   { key: "terminal", label: "Terminal" },
+  { key: "integrations", label: "Integrations" },
   { key: "account", label: "Account" },
   { key: "about", label: "About" },
 ];
 
 export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
+  const mainSurface = useShellStore((s) => s.mainSurface);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+
+  // Resolve the requested tab from the surface, defaulting to "profile".
+  // We validate that the requested tab actually exists in our tab list so a
+  // stale or typo'd value doesn't silently show an empty panel.
+  const resolveTab = (surface: typeof mainSurface): SettingsTab => {
+    if (surface.kind === "settings" && surface.tab) {
+      const found = tabs.find((t) => t.key === surface.tab);
+      if (found) return found.key;
+    }
+    return "profile";
+  };
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(mainSurface));
+
+  // When the caller navigates to settings again (e.g. "Manage plugins" while
+  // settings is already open), the surface updates but the component stays
+  // mounted, so we need to sync.
+  useEffect(() => {
+    if (mainSurface.kind === "settings") {
+      setActiveTab(resolveTab(mainSurface));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainSurface]);
 
   return (
     <div className="flex h-full flex-col">
@@ -312,16 +372,14 @@ export function SettingsPage() {
             {activeTab === "pipelines" && <PipelineSettings />}
             {activeTab === "plugins" && <PluginSettingsPage />}
             {activeTab === "plugin-ai" && <PluginAiConsentPanel />}
-            {activeTab === "emoji" && (
-              <EmojiManagement serverId={workspaceId} isAdmin />
-            )}
+            {activeTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
             {activeTab === "state" && (
               <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
             )}
             {activeTab === "agent" && <AgentSettingsPanel />}
-            {activeTab === "ai-keys" && <AiProviderKeySettings />}
             {activeTab === "notifications" && <NotificationSettings />}
             {activeTab === "terminal" && <TerminalSettings />}
+            {activeTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
             {activeTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
             )}

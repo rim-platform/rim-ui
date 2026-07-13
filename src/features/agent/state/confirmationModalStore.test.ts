@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import {
-  useConfirmationModalStore,
-  type ConfirmationRequest,
-} from "./confirmationModalStore";
+import { useConfirmationModalStore, type ConfirmationRequest } from "./confirmationModalStore";
 
 function makeRequest(overrides: Partial<ConfirmationRequest> = {}): ConfirmationRequest {
   return {
@@ -39,9 +36,7 @@ describe("useConfirmationModalStore", () => {
 
   it("opening a second request while one is pending resolves the first as rejected", async () => {
     const first = useConfirmationModalStore.getState().open(makeRequest({ token: "tok-1" }));
-    const second = useConfirmationModalStore
-      .getState()
-      .open(makeRequest({ token: "tok-2" }));
+    const second = useConfirmationModalStore.getState().open(makeRequest({ token: "tok-2" }));
     await expect(first).resolves.toEqual({ approved: false });
     expect(useConfirmationModalStore.getState().request?.token).toBe("tok-2");
     useConfirmationModalStore.getState().approve();

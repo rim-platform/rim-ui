@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Send, X } from "lucide-react";
 
-import {
-  useThreadByRootMessage,
-  useThreadMessages,
-} from "../api/useThreads";
+import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
 import { useReplyToMessageMutation } from "../api/useReplyToMessage";
 import { useConversationMessages } from "../../messages/api/useMessages";
 import { useToggleReactionMutation } from "../../messages/api/useToggleReaction";
@@ -43,12 +40,40 @@ export function ThreadPanel() {
   // Debug: trace the entire data chain (only when values change)
   useEffect(() => {
     logger.debug("[ThreadPanel] rootMessageId:", rootMessageId);
-    logger.debug("[ThreadPanel] threadByRoot:", thread, "status:", threadByRoot.status, "error:", threadByRoot.error);
+    logger.debug(
+      "[ThreadPanel] threadByRoot:",
+      thread,
+      "status:",
+      threadByRoot.status,
+      "error:",
+      threadByRoot.error,
+    );
     logger.debug("[ThreadPanel] threadId:", threadId);
-    logger.debug("[ThreadPanel] threadMessages enabled:", Boolean(workspaceId && conversationId && threadId));
-    logger.debug("[ThreadPanel] threadMessages data:", threadMessages, "status:", threadMsgs.status, "error:", threadMsgs.error);
+    logger.debug(
+      "[ThreadPanel] threadMessages enabled:",
+      Boolean(workspaceId && conversationId && threadId),
+    );
+    logger.debug(
+      "[ThreadPanel] threadMessages data:",
+      threadMessages,
+      "status:",
+      threadMsgs.status,
+      "error:",
+      threadMsgs.error,
+    );
     logger.debug("[ThreadPanel] threadMessages items:", threadMessages?.items?.length);
-  }, [rootMessageId, thread, threadByRoot.status, threadByRoot.error, threadId, workspaceId, conversationId, threadMessages, threadMsgs.status, threadMsgs.error]);
+  }, [
+    rootMessageId,
+    thread,
+    threadByRoot.status,
+    threadByRoot.error,
+    threadId,
+    workspaceId,
+    conversationId,
+    threadMessages,
+    threadMsgs.status,
+    threadMsgs.error,
+  ]);
 
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const toggleReaction = useToggleReactionMutation();
@@ -131,9 +156,7 @@ export function ThreadPanel() {
     }
 
     const timer = setTimeout(() => {
-      const el = scrollRef.current?.querySelector(
-        `[data-message-id="${highlightedMessageId}"]`,
-      );
+      const el = scrollRef.current?.querySelector(`[data-message-id="${highlightedMessageId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.classList.add("bg-rim-accent/10");
@@ -189,25 +212,29 @@ export function ThreadPanel() {
       </div>
 
       {/* Root message */}
-      {rootMessage && (() => {
-        const name = rootMessage.author?.displayName || rootMessage.author?.username || rootMessage.authorId.slice(0, 8);
-        return (
-          <div className="border-b border-rim-line px-4 py-3">
-            <MessageItem
-              message={rootMessage}
-              authorName={name}
-              authorInitial={name.charAt(0).toUpperCase()}
-              authorAvatarUrl={rootMessage.author?.avatarUrl}
-              isCurrentUser={rootMessage.author?.id === currentUserId}
-              reactions={rootMessage.reactions}
-              onOpenThread={openThread}
-              onToggleReaction={handleToggleReaction}
-              onContextMenu={handleContextMenu}
-              linkPreviews={rootMessage.linkPreviews}
-            />
-          </div>
-        );
-      })()}
+      {rootMessage &&
+        (() => {
+          const name =
+            rootMessage.author?.displayName ||
+            rootMessage.author?.username ||
+            rootMessage.authorId.slice(0, 8);
+          return (
+            <div className="border-b border-rim-line px-4 py-3">
+              <MessageItem
+                message={rootMessage}
+                authorName={name}
+                authorInitial={name.charAt(0).toUpperCase()}
+                authorAvatarUrl={rootMessage.author?.avatarUrl}
+                isCurrentUser={rootMessage.author?.id === currentUserId}
+                reactions={rootMessage.reactions}
+                onOpenThread={openThread}
+                onToggleReaction={handleToggleReaction}
+                onContextMenu={handleContextMenu}
+                linkPreviews={rootMessage.linkPreviews}
+              />
+            </div>
+          );
+        })()}
 
       {/* Thread replies — scrollable area */}
       <div
@@ -221,7 +248,8 @@ export function ThreadPanel() {
           </p>
         ) : (
           items.map((msg) => {
-            const name = msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+            const name =
+              msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
             return (
               <MessageItem
                 key={msg.id}
@@ -314,7 +342,10 @@ function ThreadComposer({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-rim-line px-4 py-3">
+    <form
+      onSubmit={handleSubmit}
+      className="flex items-end gap-2 border-t border-rim-line px-4 py-3"
+    >
       <textarea
         ref={textareaRef}
         rows={1}

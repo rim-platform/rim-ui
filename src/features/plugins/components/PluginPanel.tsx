@@ -17,20 +17,30 @@ const TIMEOUT_DELAY = 30000;
 function validatePluginUrl(pluginId: string, panelId: string): string | null {
   // Reject any path traversal attempts
   if (
-    pluginId.includes("..") || pluginId.includes("/") || pluginId.includes("\\") ||
-    panelId.includes("..") || panelId.includes("/") || panelId.includes("\\")
+    pluginId.includes("..") ||
+    pluginId.includes("/") ||
+    pluginId.includes("\\") ||
+    panelId.includes("..") ||
+    panelId.includes("/") ||
+    panelId.includes("\\")
   ) {
     return null;
   }
   // Reject encoded traversal
   if (
-    pluginId.includes("%2e") || pluginId.includes("%2f") || pluginId.includes("%5c") ||
-    panelId.includes("%2e") || panelId.includes("%2f") || panelId.includes("%5c")
+    pluginId.includes("%2e") ||
+    pluginId.includes("%2f") ||
+    pluginId.includes("%5c") ||
+    panelId.includes("%2e") ||
+    panelId.includes("%2f") ||
+    panelId.includes("%5c")
   ) {
     return null;
   }
-  // Only allow alphanumeric, dash, underscore
-  const safePattern = /^[a-zA-Z0-9_-]+$/;
+  // Allow alphanumeric, dash, underscore, and dot (required for reverse-domain plugin IDs
+  // like dev.example.hello-world). Note: we already rejected literal ".." above, so a
+  // single dot here is safe — it cannot form a traversal after the earlier checks.
+  const safePattern = /^[a-zA-Z0-9._-]+$/;
   if (!safePattern.test(pluginId) || !safePattern.test(panelId)) {
     return null;
   }
@@ -46,7 +56,12 @@ interface PluginPanelProps {
   onClose: () => void;
 }
 
-export function PluginPanel({ pluginId, panelId, approvedCapabilities, onClose }: PluginPanelProps) {
+export function PluginPanel({
+  pluginId,
+  panelId,
+  approvedCapabilities,
+  onClose,
+}: PluginPanelProps) {
   const { capabilities } = useRuntime();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -155,11 +170,7 @@ function PluginPanelInner({
   }, [src, iframeRef, setLoadState]);
 
   return (
-    <div
-      className="relative flex h-full flex-col"
-      onKeyDown={onWrapperKeyDown}
-      tabIndex={-1}
-    >
+    <div className="relative flex h-full flex-col" onKeyDown={onWrapperKeyDown} tabIndex={-1}>
       {/* Loading overlay */}
       {loadState === "loading" && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-rim-void/80">
@@ -171,7 +182,9 @@ function PluginPanelInner({
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-rim-void/80">
           <AlertTriangle className="h-5 w-5 text-rim-warm" />
           <p className="text-xs text-rim-warm">Plugin is taking longer than expected</p>
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
         </div>
       )}
 
@@ -180,8 +193,12 @@ function PluginPanelInner({
           <AlertTriangle className="h-5 w-5 text-rim-danger" />
           <p className="text-xs text-rim-danger">Plugin timed out</p>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handleRetry}>Retry</Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+            <Button variant="secondary" size="sm" onClick={handleRetry}>
+              Retry
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
           </div>
         </div>
       )}
@@ -191,8 +208,12 @@ function PluginPanelInner({
           <AlertTriangle className="h-5 w-5 text-rim-danger" />
           <p className="text-xs text-rim-danger">Failed to load plugin</p>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handleRetry}>Retry</Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+            <Button variant="secondary" size="sm" onClick={handleRetry}>
+              Retry
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
           </div>
         </div>
       )}

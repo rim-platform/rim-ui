@@ -57,40 +57,44 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
   }, [open, onClose]);
 
   // Focus trap
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== "Tab" || !panelRef.current) return;
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== "Tab" || !panelRef.current) return;
 
-      const focusable = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-      if (focusable.length === 0) return;
+    const focusable = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (focusable.length === 0) return;
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
 
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
       }
-    },
-    [],
-  );
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }, []);
 
   if (!open) return null;
 
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50" style={{ zIndex: Z.OVERLAY_BACKDROP }} onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-black/50"
+        style={{ zIndex: Z.OVERLAY_BACKDROP }}
+        onClick={onClose}
+      />
 
       {/* Container */}
-      <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: Z.OVERLAY_CONTENT }}>
+      <div
+        className="fixed inset-0 flex items-center justify-center p-4"
+        style={{ zIndex: Z.OVERLAY_CONTENT }}
+      >
         <div
           ref={panelRef}
           role="dialog"

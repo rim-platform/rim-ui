@@ -3,12 +3,14 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 
 const SERVER_QUERY = gql`
   query Server($serverId: ID!) {
     server(serverId: $serverId) {
       id
       name
+      viewerRole
     }
   }
 `;
@@ -16,6 +18,7 @@ const SERVER_QUERY = gql`
 interface ServerDetail {
   id: string;
   name: string;
+  viewerRole: ServerMemberRoleGql;
 }
 
 interface ServerResponse {

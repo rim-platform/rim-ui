@@ -33,11 +33,22 @@ interface JoinServerByInviteResponse {
   };
 }
 
+/**
+ * Creates a workspace invite. `recipientEmail` is optional and best-effort —
+ * when provided, the backend also emails the invite link, but the raw
+ * `inviteToken`/link is always returned and shown regardless of whether the
+ * email send succeeds (Track B3, `track-b3-email.md` §5). Omit it (or pass
+ * an empty string) for the link-only path, unchanged from before B3.
+ */
 export function useCreateInviteMutation() {
   return useMutation({
-    mutationFn: (serverId: string) =>
+    mutationFn: ({ serverId, recipientEmail }: { serverId: string; recipientEmail?: string }) =>
       graphqlClient.request<CreateInviteResponse>(CREATE_INVITE_MUTATION, {
-        input: { serverId, maxUses: 10 },
+        input: {
+          serverId,
+          maxUses: 10,
+          ...(recipientEmail ? { recipientEmail } : {}),
+        },
       }),
   });
 }

@@ -33,9 +33,7 @@ export function EmptyWorkspaceState() {
           </header>
 
           <div className="rounded-xl border border-rim-line bg-rim-panel p-6 space-y-4">
-            <p className="text-sm text-rim-text-muted">
-              You don't belong to any workspaces yet.
-            </p>
+            <p className="text-sm text-rim-text-muted">You don't belong to any workspaces yet.</p>
             <div className="space-y-3">
               <p className="text-sm text-rim-text-faint">Create your first workspace</p>
               <button
@@ -52,9 +50,7 @@ export function EmptyWorkspaceState() {
         </div>
       </div>
 
-      {showDialog && (
-        <CreateWorkspaceDialog onClose={() => setShowDialog(false)} />
-      )}
+      {showDialog && <CreateWorkspaceDialog onClose={() => setShowDialog(false)} />}
     </>
   );
 }

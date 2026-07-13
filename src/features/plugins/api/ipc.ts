@@ -21,9 +21,6 @@ export type PluginIpcError = SafeInvokeError;
  * - Throws `PluginIpcError` on typed backend failures (permission_denied, invalid_args, backend_error).
  * - Silently swallows `ipc_unavailable` errors (web mode / dev without Tauri runtime).
  */
-export async function safeInvoke(
-  command: string,
-  args: Record<string, unknown>,
-): Promise<void> {
+export async function safeInvoke(command: string, args: Record<string, unknown>): Promise<void> {
   await safeInvokeOrThrow<void>(command, args);
 }

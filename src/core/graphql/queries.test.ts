@@ -9,9 +9,8 @@ describe("MESSAGES_QUERY", () => {
   it("contains the Messages operation", () => {
     // graphql-request gql returns a DocumentNode or string;
     // verify the query text includes expected fields
-    const queryStr = typeof MESSAGES_QUERY === "string"
-      ? MESSAGES_QUERY
-      : JSON.stringify(MESSAGES_QUERY);
+    const queryStr =
+      typeof MESSAGES_QUERY === "string" ? MESSAGES_QUERY : JSON.stringify(MESSAGES_QUERY);
     expect(queryStr).toContain("messages");
     expect(queryStr).toContain("serverId");
     expect(queryStr).toContain("conversationId");

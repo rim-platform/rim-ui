@@ -111,11 +111,9 @@ describe("ResetPasswordPage", () => {
   });
 
   it("shows success message after reset", async () => {
-    mockMutate.mockImplementation(
-      (_: unknown, opts: { onSuccess: () => void }) => {
-        opts.onSuccess();
-      },
-    );
+    mockMutate.mockImplementation((_: unknown, opts: { onSuccess: () => void }) => {
+      opts.onSuccess();
+    });
 
     const user = userEvent.setup();
     renderWithToken("abc123");

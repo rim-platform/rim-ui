@@ -49,9 +49,7 @@ export function useEditMessageMutation() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            items: page.items.map((m) =>
-              m.id === vars.messageId ? { ...m, text: vars.text } : m,
-            ),
+            items: page.items.map((m) => (m.id === vars.messageId ? { ...m, text: vars.text } : m)),
           })),
         };
       });

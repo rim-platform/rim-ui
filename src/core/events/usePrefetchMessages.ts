@@ -14,10 +14,7 @@ interface MessagesResponse {
   };
 }
 
-export function usePrefetchMessages(
-  workspaceId: string | null,
-  conversationIds: string[],
-) {
+export function usePrefetchMessages(workspaceId: string | null, conversationIds: string[]) {
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -33,16 +30,13 @@ export function usePrefetchMessages(
       qc.prefetchInfiniteQuery({
         queryKey,
         queryFn: async () => {
-          const res = await graphqlClient.request<MessagesResponse>(
-            MESSAGES_QUERY,
-            {
-              serverId: workspaceId,
-              conversationId: convId,
-              dir: "BEFORE",
-              limit: 50,
-              includeDeleted: false,
-            },
-          );
+          const res = await graphqlClient.request<MessagesResponse>(MESSAGES_QUERY, {
+            serverId: workspaceId,
+            conversationId: convId,
+            dir: "BEFORE",
+            limit: 50,
+            includeDeleted: false,
+          });
           return res.messages;
         },
         initialPageParam: null,

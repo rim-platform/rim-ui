@@ -42,7 +42,9 @@ export function PluginErrorBoundary({
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // Timer logic: 2s -> loading, 15s -> slow
@@ -92,7 +94,9 @@ export function PluginErrorBoundary({
           <span className="text-xs text-rim-warm">{pluginName} is taking longer than expected</span>
         </div>
         <div className="mt-2 flex gap-2">
-          <Button variant="secondary" size="sm" onClick={onDisable}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={onDisable}>
+            Cancel
+          </Button>
         </div>
       </div>
     );
@@ -104,9 +108,7 @@ export function PluginErrorBoundary({
     <div
       className={cn(
         "rounded-lg border p-3",
-        isCrashed
-          ? "border-rim-danger/30 bg-rim-danger/5"
-          : "border-rim-warm/30 bg-rim-warm/5",
+        isCrashed ? "border-rim-danger/30 bg-rim-danger/5" : "border-rim-warm/30 bg-rim-warm/5",
       )}
     >
       <div className="flex items-center gap-2">

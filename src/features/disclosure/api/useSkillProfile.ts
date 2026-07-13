@@ -53,8 +53,7 @@ export const skillProfileQueryKey = ["skillProfile"] as const;
 export function useSkillProfile() {
   return useQuery({
     queryKey: skillProfileQueryKey,
-    queryFn: () =>
-      graphqlClient.request<{ mySkillProfile: SkillProfile }>(MY_SKILL_PROFILE_QUERY),
+    queryFn: () => graphqlClient.request<{ mySkillProfile: SkillProfile }>(MY_SKILL_PROFILE_QUERY),
     select: (data) => data.mySkillProfile,
   });
 }
@@ -64,10 +63,9 @@ export function useRecordFeatureUsage() {
 
   return useMutation({
     mutationFn: (featureId: string) =>
-      graphqlClient.request<{ recordFeatureUsage: SkillProfile }>(
-        RECORD_FEATURE_USAGE_MUTATION,
-        { featureId },
-      ),
+      graphqlClient.request<{ recordFeatureUsage: SkillProfile }>(RECORD_FEATURE_USAGE_MUTATION, {
+        featureId,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: skillProfileQueryKey });
     },
@@ -79,10 +77,9 @@ export function useOverrideSkillTier() {
 
   return useMutation({
     mutationFn: (tier: SkillTier) =>
-      graphqlClient.request<{ overrideSkillTier: SkillProfile }>(
-        OVERRIDE_SKILL_TIER_MUTATION,
-        { tier },
-      ),
+      graphqlClient.request<{ overrideSkillTier: SkillProfile }>(OVERRIDE_SKILL_TIER_MUTATION, {
+        tier,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: skillProfileQueryKey });
     },

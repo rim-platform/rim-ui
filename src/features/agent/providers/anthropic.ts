@@ -3,13 +3,11 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   AiProvider,
   AiProviderConfig,
-  AiModelDef,
   AiChatRequest,
   AiStreamChunk,
   AiMessage,
   AiContentBlock,
   AiToolDefinition,
-  ValidationOutcome,
 } from "./types";
 
 const config: AiProviderConfig = {
@@ -66,14 +64,26 @@ function toAnthropicMessages(messages: AiMessage[]): AnthropicMessage[] {
     .filter((m) => m.role !== "system")
     .map((m) => ({
       role: m.role as "user" | "assistant",
-      content: typeof m.content === "string"
-        ? m.content
-        : m.content.map((block: AiContentBlock) => {
-            if (block.type === "text") return { type: "text" as const, text: block.text };
-            if (block.type === "tool_use") return { type: "tool_use" as const, id: block.id, name: block.name, input: block.input };
-            if (block.type === "tool_result") return { type: "tool_result" as const, tool_use_id: block.tool_use_id, content: block.content };
-            return { type: "text" as const, text: "" };
-          }),
+      content:
+        typeof m.content === "string"
+          ? m.content
+          : m.content.map((block: AiContentBlock) => {
+              if (block.type === "text") return { type: "text" as const, text: block.text };
+              if (block.type === "tool_use")
+                return {
+                  type: "tool_use" as const,
+                  id: block.id,
+                  name: block.name,
+                  input: block.input,
+                };
+              if (block.type === "tool_result")
+                return {
+                  type: "tool_result" as const,
+                  tool_use_id: block.tool_use_id,
+                  content: block.content,
+                };
+              return { type: "text" as const, text: "" };
+            }),
     }));
 }
 
@@ -97,30 +107,29 @@ type ChatStreamEvent =
   | { kind: "error"; message: string };
 
 /**
- * Construct an Anthropic provider that loads the API key on every `chat()`
- * call via `loadKey` and drops the local reference once the IPC invoke
- * settles. The loader thunk is the only long-lived key-adjacent object the
- * registry holds — the key bytes themselves are never captured by this
- * factory's closure. See `runtime/keyStore.ts` module header for the full
- * invariant (Phase 4 #59 closure).
+ * Construct an Anthropic provider that dispatches `chat()` calls to the
+ * Tauri `agent_chat_completion` command. The API key is read directly from
+ * the OS keyring by the Rust proxy on every request — the JS side never
+ * holds or transmits the key bytes (Phase 5 / Option B, §2 of the
+ * agent-settings-consolidation decision). The `loadKey` parameter is
+ * retained for callers that registered providers before the keyring cutover;
+ * it is no longer used inside `chat()` and will be removed once all
+ * call-sites are updated (step 9 of the consolidation task list).
  *
  * `validateCredentials` and `fetchModels` retain their existing
  * explicit-key parameter because they are invoked from the settings panel
- * with the user's in-form value (not yet saved to Stronghold); those paths
+ * with the user's in-form value (not yet saved to the keyring); those paths
  * are already per-call and do not need loader indirection.
  */
-export function createAnthropicProvider(
-  loadKey: () => Promise<string>,
-): AiProvider {
+export function createAnthropicProvider(_loadKey: () => Promise<string>): AiProvider {
   return {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      // Load per-request: the returned string lives only in the
-      // `proxyRequest` object passed to `invoke`. Once `invoke` serialises
-      // the arg across the Tauri bridge, we drop the reference by letting
-      // `proxyRequest` fall out of scope at function end.
-      const apiKey = await loadKey();
+      // The Rust proxy reads the API key from the OS keyring on every request
+      // (agent_proxy.rs:295). Do NOT send api_key here — ChatCompletionRequest
+      // uses #[serde(deny_unknown_fields)] and will reject any unknown field,
+      // including the legacy api_key (Pete's #8, agent_proxy.rs:96–98).
       const proxyRequest = {
         provider: "anthropic" as const,
         model: request.model,
@@ -130,7 +139,6 @@ export function createAnthropicProvider(
           ? { tools: toAnthropicTools(request.tools) }
           : {}),
         max_tokens: request.maxTokens ?? 4096,
-        api_key: apiKey,
       };
 
       // Bounded queue of stream events drained by the async iterator below.
@@ -160,7 +168,12 @@ export function createAnthropicProvider(
         // We only land here if the channel never fired (e.g. IPC layer
         // refused the call) — synthesize a terminal error so the iterator
         // has something to drain on.
-        const message = typeof err === "string" ? err : err instanceof Error ? err.message : "agent_chat_completion failed";
+        const message =
+          typeof err === "string"
+            ? err
+            : err instanceof Error
+              ? err.message
+              : "agent_chat_completion failed";
         if (waiter) {
           const w = waiter;
           waiter = null;
@@ -179,9 +192,11 @@ export function createAnthropicProvider(
       let toolInputJson = "";
 
       while (true) {
-        const event = queue.shift() ?? (await new Promise<ChatStreamEvent>((resolve) => {
-          waiter = resolve;
-        }));
+        const event =
+          queue.shift() ??
+          (await new Promise<ChatStreamEvent>((resolve) => {
+            waiter = resolve;
+          }));
 
         if (event.kind === "error") {
           yield { kind: "error", message: event.message };
@@ -228,7 +243,8 @@ export function createAnthropicProvider(
             toolInputJson = "";
           }
         } else if (eventType === "message_start") {
-          const usage = (payload.message as Record<string, unknown>)?.usage as Record<string, number> | undefined;
+          const usage = (payload.message as Record<string, unknown>)?.usage as
+            Record<string, number> | undefined;
           if (usage) {
             inputTokens = usage.input_tokens ?? 0;
           }
@@ -240,54 +256,5 @@ export function createAnthropicProvider(
         }
       }
     },
-
-    async validateCredentials(key: string): Promise<ValidationOutcome> {
-      try {
-        // The Rust proxy returns a tagged `ValidationOutcome` (see
-        // `agent_proxy::ValidationOutcome`). An invoke-level reject here
-        // means the IPC boundary itself failed (command not registered,
-        // deserialization mismatch) — surface that as a network_error so
-        // the UI doesn't flash "Invalid API key" for what's really an
-        // internal plumbing issue.
-        return await invoke<ValidationOutcome>("agent_validate_credentials", {
-          provider: "anthropic",
-          apiKey: key,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { kind: "network_error", message };
-      }
-    },
-
-    async fetchModels(key: string): Promise<AiModelDef[]> {
-      const data = await invoke<{
-        data: { id: string; display_name: string; type: string }[];
-      }>("agent_list_models", {
-        provider: "anthropic",
-        apiKey: key,
-      });
-
-      const models: AiModelDef[] = data.data
-        .filter((m) => m.type === "model")
-        .map((m) => {
-          const staticMatch = config.models.find((s) => s.id === m.id);
-          return {
-            id: m.id,
-            name: m.display_name || m.id,
-            contextWindow: staticMatch?.contextWindow ?? 200_000,
-            supportsTools: true,
-            supportsStreaming: true,
-            inputPricePerMToken: staticMatch?.inputPricePerMToken,
-            outputPricePerMToken: staticMatch?.outputPricePerMToken,
-          };
-        });
-
-      if (models.length === 0) {
-        throw new Error("No models returned from Anthropic API");
-      }
-
-      return models;
-    },
   };
 }
-

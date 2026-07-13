@@ -10,9 +10,7 @@ import {
 } from "../state/confirmationModalStore";
 import { ConfirmCommandModal } from "./ConfirmCommandModal";
 
-function makeRequest(
-  overrides: Partial<ConfirmationRequest> = {},
-): ConfirmationRequest {
+function makeRequest(overrides: Partial<ConfirmationRequest> = {}): ConfirmationRequest {
   return {
     commandId: "chat.delete_message",
     toolName: "chat.delete_message",
@@ -63,18 +61,14 @@ describe("ConfirmCommandModal — chips + sensitivity", () => {
         .getState()
         .open(makeRequest({ sensitivity: CommandSensitivity.RESTRICTED }));
     });
-    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent(
-      "RESTRICTED",
-    );
+    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("RESTRICTED");
     expect(screen.getByTestId("initiator-chip")).toHaveTextContent("AGENT");
   });
 
   it("falls back to SAFE styling when sensitivity is missing", () => {
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore
-        .getState()
-        .open(makeRequest({ sensitivity: undefined }));
+      void useConfirmationModalStore.getState().open(makeRequest({ sensitivity: undefined }));
     });
     expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("SAFE");
   });
@@ -134,9 +128,7 @@ describe("ConfirmCommandModal — args block", () => {
   ])("redacts the %s vendor prefix by value shape", (_label, canary) => {
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore
-        .getState()
-        .open(makeRequest({ args: { detect: canary } }));
+      void useConfirmationModalStore.getState().open(makeRequest({ args: { detect: canary } }));
     });
     const argsBlock = screen.getByTestId("args-block");
     expect(argsBlock).not.toHaveTextContent(canary);
@@ -146,13 +138,9 @@ describe("ConfirmCommandModal — args block", () => {
   it("renders the empty-args placeholder when no arguments are supplied", () => {
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore
-        .getState()
-        .open(makeRequest({ args: {} }));
+      void useConfirmationModalStore.getState().open(makeRequest({ args: {} }));
     });
-    expect(screen.getByTestId("args-block")).toHaveTextContent(
-      "(no arguments)",
-    );
+    expect(screen.getByTestId("args-block")).toHaveTextContent("(no arguments)");
   });
 
   it("collapses arg counts above the limit with a +N more chip", () => {
@@ -162,9 +150,7 @@ describe("ConfirmCommandModal — args block", () => {
     act(() => {
       void useConfirmationModalStore.getState().open(makeRequest({ args }));
     });
-    expect(screen.getByTestId("args-block")).toHaveTextContent(
-      "+3 more arguments",
-    );
+    expect(screen.getByTestId("args-block")).toHaveTextContent("+3 more arguments");
   });
 });
 
@@ -341,9 +327,7 @@ describe("ConfirmCommandModal — tier-4 type-to-confirm", () => {
         .getState()
         .open(makeRequest({ sensitivity: CommandSensitivity.MUTATING }));
     });
-    expect(
-      screen.queryByTestId("type-to-confirm-block"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("type-to-confirm-block")).not.toBeInTheDocument();
   });
 
   it("bare Enter inside the verb input does NOT submit", () => {
@@ -435,22 +419,18 @@ describe("ConfirmCommandModal — cross-channel chip", () => {
       );
     });
     expect(screen.getByTestId("cross-channel-chip")).toBeInTheDocument();
-    expect(screen.getByTestId("cross-channel-chip")).toHaveTextContent(
-      "ops-inci",
-    );
+    expect(screen.getByTestId("cross-channel-chip")).toHaveTextContent("ops-inci");
   });
 
   it("does NOT render when the destination matches the active conversation", () => {
     useShellStore.setState({ selectedConversationId: "general" });
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore.getState().open(
-        makeRequest({ args: { conversation_id: "general", message: "hi" } }),
-      );
+      void useConfirmationModalStore
+        .getState()
+        .open(makeRequest({ args: { conversation_id: "general", message: "hi" } }));
     });
-    expect(
-      screen.queryByTestId("cross-channel-chip"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cross-channel-chip")).not.toBeInTheDocument();
   });
 });
 
@@ -458,9 +438,9 @@ describe("ConfirmCommandModal — tool-result-origin warning", () => {
   it("renders the warning banner when sameTurnAfterToolResult is true", () => {
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore.getState().open(
-        makeRequest({ sameTurnAfterToolResult: true }),
-      );
+      void useConfirmationModalStore
+        .getState()
+        .open(makeRequest({ sameTurnAfterToolResult: true }));
     });
     expect(screen.getByTestId("tool-result-warning")).toBeInTheDocument();
     expect(screen.getByTestId("tool-result-warning")).toHaveTextContent(
@@ -473,9 +453,7 @@ describe("ConfirmCommandModal — tool-result-origin warning", () => {
     act(() => {
       void useConfirmationModalStore.getState().open(makeRequest());
     });
-    expect(
-      screen.queryByTestId("tool-result-warning"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-result-warning")).not.toBeInTheDocument();
   });
 });
 
@@ -528,9 +506,7 @@ describe("ConfirmCommandModal — accessibility", () => {
     });
     // Wait one rAF tick for the focus useEffect to run.
     await new Promise((r) => requestAnimationFrame(() => r(undefined)));
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Close" }),
-    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
     // Tier-4 (RESTRICTED) shares this useEffect path — locked via wiring,
     // not a separate assertion.
   });
@@ -538,9 +514,7 @@ describe("ConfirmCommandModal — accessibility", () => {
   it("announces redacted values via aria-label on the value cell", () => {
     render(<ConfirmCommandModal />);
     act(() => {
-      void useConfirmationModalStore.getState().open(
-        makeRequest({ args: { password: "x" } }),
-      );
+      void useConfirmationModalStore.getState().open(makeRequest({ args: { password: "x" } }));
     });
     const redactedCell = screen.getByLabelText("redacted");
     expect(redactedCell).toHaveTextContent("[REDACTED]");

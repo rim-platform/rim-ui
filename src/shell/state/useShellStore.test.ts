@@ -31,6 +31,16 @@ describe("useShellStore", () => {
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
   });
 
+  it("sets main surface to settings with an optional tab hint", () => {
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "plugins" });
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugins" });
+  });
+
+  it("sets main surface to settings with keybinds tab hint", () => {
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "keybinds" });
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "keybinds" });
+  });
+
   it("sets main surface to plugin with id", () => {
     useShellStore.getState().setMainSurface({ kind: "plugin", pluginId: "p1" });
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "plugin", pluginId: "p1" });

@@ -35,13 +35,11 @@ interface ChannelLike {
  * arrive on the Channel; the invoke promise resolves once `Done` flushes.
  */
 function mockChatCompletion(events: unknown[]): void {
-  invokeMock.mockImplementationOnce(
-    async (_cmd: string, args: { onEvent: ChannelLike }) => {
-      for (const ev of events) {
-        args.onEvent.send(ev);
-      }
-    },
-  );
+  invokeMock.mockImplementationOnce(async (_cmd: string, args: { onEvent: ChannelLike }) => {
+    for (const ev of events) {
+      args.onEvent.send(ev);
+    }
+  });
 }
 
 describe("createAnthropicProvider", () => {
@@ -74,7 +72,11 @@ describe("createAnthropicProvider", () => {
     }
   });
 
-  it("chat invokes agent_chat_completion with provider, model, api_key, and snake_case body", async () => {
+  it("chat invokes agent_chat_completion with provider, model, and snake_case body — no api_key field", async () => {
+    // Contract: ChatCompletionRequest on the Rust side uses
+    // #[serde(deny_unknown_fields)] and has NO api_key field (Pete's #8,
+    // agent_proxy.rs:96–98). The key is read from the OS keyring by the
+    // proxy inline. Any payload that includes api_key is rejected.
     mockChatCompletion([{ kind: "done" }]);
 
     const provider = createAnthropicProvider(async () => "sk-my-key");
@@ -94,7 +96,9 @@ describe("createAnthropicProvider", () => {
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("anthropic");
     expect(req.model).toBe("claude-sonnet-4-20250514");
-    expect(req.api_key).toBe("sk-my-key");
+    // api_key MUST NOT be present — deny_unknown_fields on the Rust side
+    // would reject any payload containing this field.
+    expect(req).not.toHaveProperty("api_key");
     expect(req.system_prompt).toBe("Be helpful");
     expect(req.max_tokens).toBe(4096);
   });
@@ -112,8 +116,7 @@ describe("createAnthropicProvider", () => {
       // drain
     }
 
-    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> })
-      .request;
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
     expect(req).not.toHaveProperty("system_prompt");
     expect(req).not.toHaveProperty("tools");
   });
@@ -138,10 +141,13 @@ describe("createAnthropicProvider", () => {
       // drain
     }
 
-    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> })
-      .request;
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
     expect(req.tools).toEqual([
-      { name: "search", description: "Search things", input_schema: { type: "object", properties: {} } },
+      {
+        name: "search",
+        description: "Search things",
+        input_schema: { type: "object", properties: {} },
+      },
     ]);
   });
 
@@ -274,100 +280,5 @@ describe("createAnthropicProvider", () => {
       input: { q: "hello" },
     });
     expect(chunks.at(-1)).toMatchObject({ kind: "done" });
-  });
-
-  describe("validateCredentials", () => {
-    it("invokes agent_validate_credentials with provider+apiKey", async () => {
-      invokeMock.mockResolvedValueOnce({ kind: "valid" });
-      const provider = createAnthropicProvider(async () => "sk-test");
-      const outcome = await provider.validateCredentials("sk-test");
-      expect(outcome).toEqual({ kind: "valid" });
-      const [cmd, args] = invokeMock.mock.calls[0]!;
-      expect(cmd).toBe("agent_validate_credentials");
-      expect(args).toEqual({ provider: "anthropic", apiKey: "sk-test" });
-    });
-
-    it("propagates invalid outcome from the proxy", async () => {
-      invokeMock.mockResolvedValueOnce({ kind: "invalid" });
-      const provider = createAnthropicProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "invalid",
-      });
-    });
-
-    it("maps invoke rejection onto network_error (not invalid)", async () => {
-      // WARN #4 contract: a transport-level failure must NOT look like a
-      // bad key to the UI. The proxy itself now returns `NetworkError`,
-      // but if the IPC boundary itself rejects (proxy panic, serde error),
-      // we still land in this fallback — the shape must stay network_error.
-      invokeMock.mockRejectedValueOnce(new Error("network error: no route"));
-      const provider = createAnthropicProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "network_error",
-        message: "network error: no route",
-      });
-    });
-
-    it("propagates network_error from the proxy verbatim", async () => {
-      invokeMock.mockResolvedValueOnce({
-        kind: "network_error",
-        message: "dns lookup failed",
-      });
-      const provider = createAnthropicProvider(async () => "sk-test");
-      expect(await provider.validateCredentials("sk-test")).toEqual({
-        kind: "network_error",
-        message: "dns lookup failed",
-      });
-    });
-  });
-
-  describe("fetchModels", () => {
-    it("invokes agent_list_models and parses Anthropic shape", async () => {
-      invokeMock.mockResolvedValueOnce({
-        data: [
-          { id: "claude-sonnet-4-20250514", display_name: "Claude Sonnet 4", type: "model" },
-          { id: "claude-opus-4-20250514", display_name: "Claude Opus 4", type: "model" },
-        ],
-      });
-
-      const provider = createAnthropicProvider(async () => "sk-test");
-      const models = await provider.fetchModels!("sk-test");
-
-      const [cmd, args] = invokeMock.mock.calls[0]!;
-      expect(cmd).toBe("agent_list_models");
-      expect(args).toEqual({ provider: "anthropic", apiKey: "sk-test" });
-      expect(models).toHaveLength(2);
-      expect(models[0].id).toBe("claude-sonnet-4-20250514");
-      expect(models[0].supportsTools).toBe(true);
-    });
-
-    it("propagates ProxyError string when invoke rejects", async () => {
-      invokeMock.mockRejectedValueOnce("provider returned error 500: boom");
-      const provider = createAnthropicProvider(async () => "sk-test");
-      await expect(provider.fetchModels!("sk-test")).rejects.toBe(
-        "provider returned error 500: boom",
-      );
-    });
-
-    it("throws when no models returned", async () => {
-      invokeMock.mockResolvedValueOnce({ data: [] });
-      const provider = createAnthropicProvider(async () => "sk-test");
-      await expect(provider.fetchModels!("sk-test")).rejects.toThrow(
-        "No models returned",
-      );
-    });
-
-    it("filters out non-model entries", async () => {
-      invokeMock.mockResolvedValueOnce({
-        data: [
-          { id: "claude-sonnet-4-20250514", display_name: "Sonnet", type: "model" },
-          { id: "some-embedding", display_name: "Embedding", type: "embedding" },
-        ],
-      });
-      const provider = createAnthropicProvider(async () => "sk-test");
-      const models = await provider.fetchModels!("sk-test");
-      expect(models).toHaveLength(1);
-      expect(models[0].id).toBe("claude-sonnet-4-20250514");
-    });
   });
 });

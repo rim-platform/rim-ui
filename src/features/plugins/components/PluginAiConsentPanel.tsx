@@ -9,7 +9,12 @@ import { toast } from "../../../shared/toast/useToastStore";
 import { logger } from "../../../core/logger";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { usePluginList } from "../api/usePluginList";
-import { useApproveAiCommands, useRevokeAiConsent, useRevokeAllAiConsent, useRevokeAllPluginsAiConsent } from "../api/usePluginAiConsent";
+import {
+  useApproveAiCommands,
+  useRevokeAiConsent,
+  useRevokeAllAiConsent,
+  useRevokeAllPluginsAiConsent,
+} from "../api/usePluginAiConsent";
 import type { PluginIpcError } from "../api/ipc";
 import type { PluginInfo } from "../types";
 
@@ -57,19 +62,14 @@ function GrantConfirmModal({
   if (!plugin) return null;
 
   return (
-    <Dialog
-      open={open}
-      onClose={onCancel}
-      title="Grant AI Access?"
-      maxWidth="max-w-md"
-    >
+    <Dialog open={open} onClose={onCancel} title="Grant AI Access?" maxWidth="max-w-md">
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
           <p className="text-xs text-rim-warm">
             You are granting the AI agent permission to invoke commands in{" "}
-            <strong>{plugin.display_name}</strong> on your behalf. The agent can
-            call these commands automatically without asking each time.
+            <strong>{plugin.display_name}</strong> on your behalf. The agent can call these commands
+            automatically without asking each time.
           </p>
         </div>
 
@@ -117,12 +117,10 @@ function PluginConsentRow({ plugin }: PluginConsentRowProps) {
   const revoke = useRevokeAiConsent();
   const revokeAll = useRevokeAllAiConsent();
 
-  const isApproved = (commandId: string) =>
-    plugin.approved_ai_commands.includes(commandId);
+  const isApproved = (commandId: string) => plugin.approved_ai_commands.includes(commandId);
 
   const allApproved =
-    plugin.ai_callable_commands.length > 0 &&
-    plugin.ai_callable_commands.every(isApproved);
+    plugin.ai_callable_commands.length > 0 && plugin.ai_callable_commands.every(isApproved);
 
   const noneApproved = plugin.approved_ai_commands.length === 0;
 
@@ -204,12 +202,8 @@ function PluginConsentRow({ plugin }: PluginConsentRowProps) {
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-rim-text">
-                {plugin.display_name}
-              </span>
-              <span className="text-xs text-rim-text-faint font-mono">
-                {plugin.manifest_id}
-              </span>
+              <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
+              <span className="text-xs text-rim-text-faint font-mono">{plugin.manifest_id}</span>
               {showConsentRequiredBadge && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
                   <AlertTriangle className="h-2.5 w-2.5" />
@@ -253,11 +247,7 @@ function PluginConsentRow({ plugin }: PluginConsentRowProps) {
                 className="rounded p-1 text-rim-text-muted transition hover:text-rim-text"
                 aria-label={expanded ? "Collapse" : "Expand"}
               >
-                {expanded ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
+                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
             </div>
           )}
@@ -331,20 +321,17 @@ function RevokeAllConfirmDialog({
   isPending,
 }: RevokeAllConfirmDialogProps) {
   return (
-    <Dialog
-      open={open}
-      onClose={onCancel}
-      title="Revoke all AI grants?"
-      maxWidth="max-w-md"
-    >
+    <Dialog open={open} onClose={onCancel} title="Revoke all AI grants?" maxWidth="max-w-md">
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-lg border border-rim-danger/30 bg-rim-danger/5 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-danger" />
           <p className="text-xs text-rim-text-muted">
             Revoke AI consent for{" "}
-            <strong className="text-rim-text">{totalGrants} approved command{totalGrants !== 1 ? "s" : ""}</strong>{" "}
-            across all plugins? The AI agent will immediately lose access to these commands for
-            the current session.
+            <strong className="text-rim-text">
+              {totalGrants} approved command{totalGrants !== 1 ? "s" : ""}
+            </strong>{" "}
+            across all plugins? The AI agent will immediately lose access to these commands for the
+            current session.
           </p>
         </div>
 
@@ -383,15 +370,17 @@ export function PluginAiConsentPanel() {
 
     listen("plugin-ai-consent-changed", () => {
       void refetch();
-    }).then((fn) => {
-      if (cancelled) {
-        fn(); // resolved after unmount — unregister immediately
-      } else {
-        unlisten = fn;
-      }
-    }).catch((err) => {
-      logger.warn("[RIM:Plugin] Failed to register plugin-ai-consent-changed listener:", err);
-    });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn(); // resolved after unmount — unregister immediately
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((err) => {
+        logger.warn("[RIM:Plugin] Failed to register plugin-ai-consent-changed listener:", err);
+      });
 
     return () => {
       cancelled = true;
@@ -459,8 +448,8 @@ export function PluginAiConsentPanel() {
           <div>
             <h2 className="text-sm font-medium text-rim-text">Plugin AI Access</h2>
             <p className="mt-1 text-xs text-rim-text-muted">
-              Control which plugin commands the AI agent can invoke on your behalf.
-              Approval means the agent can call these commands automatically during a session.
+              Control which plugin commands the AI agent can invoke on your behalf. Approval means
+              the agent can call these commands automatically during a session.
             </p>
           </div>
           {totalApprovedGrants > 0 && (

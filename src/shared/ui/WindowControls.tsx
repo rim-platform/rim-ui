@@ -32,7 +32,8 @@ export function WindowControls({ className }: WindowControlsProps) {
     }
   }
 
-  const baseBtn = "flex h-full w-[46px] items-center justify-center text-rim-text-muted transition-colors";
+  const baseBtn =
+    "flex h-full w-[46px] items-center justify-center text-rim-text-muted transition-colors";
 
   return (
     <div className={cn("pointer-events-auto flex h-full items-center", className)}>

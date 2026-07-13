@@ -18,7 +18,11 @@ export function PinnedMessagesPanel({
   workspaceId,
   onClose,
 }: PinnedMessagesPanelProps) {
-  const { data: pinnedMessages, isPending, isError } = usePinnedMessages(workspaceId, conversationId);
+  const {
+    data: pinnedMessages,
+    isPending,
+    isError,
+  } = usePinnedMessages(workspaceId, conversationId);
   const memberLookup = useMemberLookup(workspaceId);
   const memberDisplayMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -60,16 +64,10 @@ export function PinnedMessagesPanel({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {isPending && (
-          <p className="text-sm text-rim-text-muted">Loading...</p>
-        )}
-        {isError && (
-          <p className="text-sm text-rim-danger">Failed to load pinned messages.</p>
-        )}
+        {isPending && <p className="text-sm text-rim-text-muted">Loading...</p>}
+        {isError && <p className="text-sm text-rim-danger">Failed to load pinned messages.</p>}
         {!isPending && !isError && (!pinnedMessages || pinnedMessages.length === 0) && (
-          <p className="text-sm text-rim-text-muted">
-            No pinned messages yet.
-          </p>
+          <p className="text-sm text-rim-text-muted">No pinned messages yet.</p>
         )}
         {pinnedMessages && pinnedMessages.length > 0 && (
           <div className="space-y-3" onKeyDown={handlePinnedKeyDown}>
@@ -90,9 +88,7 @@ export function PinnedMessagesPanel({
                   <span className="text-sm font-medium text-rim-text">
                     {msg.author?.displayName ?? msg.author?.username ?? msg.authorId.slice(0, 8)}
                   </span>
-                  <span className="text-xs text-rim-text-faint">
-                    {formatTime(msg.sentAt)}
-                  </span>
+                  <span className="text-xs text-rim-text-faint">{formatTime(msg.sentAt)}</span>
                 </div>
                 <MarkdownRenderer
                   content={msg.text ?? ""}
@@ -107,4 +103,3 @@ export function PinnedMessagesPanel({
     </div>
   );
 }
-

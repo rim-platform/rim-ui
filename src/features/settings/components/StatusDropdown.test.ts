@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  saveStatusExpiry,
-  getStatusExpiry,
-  clearStatusExpiry,
-} from "./StatusDropdown";
+import { saveStatusExpiry, getStatusExpiry, clearStatusExpiry } from "./StatusDropdown";
 
 describe("StatusDropdown utility functions", () => {
   beforeEach(() => {

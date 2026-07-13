@@ -24,11 +24,7 @@ describe("ToastItem", () => {
   });
 
   it("renders description when provided", () => {
-    render(
-      <ToastItem
-        toast={makeToast({ description: "More details here" })}
-      />,
-    );
+    render(<ToastItem toast={makeToast({ description: "More details here" })} />);
     expect(screen.getByText("More details here")).toBeInTheDocument();
   });
 
@@ -72,16 +68,12 @@ describe("ToastItem", () => {
   });
 
   it("renders with info variant styles", () => {
-    const { container } = render(
-      <ToastItem toast={makeToast({ variant: "info" })} />,
-    );
+    const { container } = render(<ToastItem toast={makeToast({ variant: "info" })} />);
     expect(container.firstElementChild?.className).toContain("rim-accent");
   });
 
   it("renders with warning variant styles", () => {
-    const { container } = render(
-      <ToastItem toast={makeToast({ variant: "warning" })} />,
-    );
+    const { container } = render(<ToastItem toast={makeToast({ variant: "warning" })} />);
     expect(container.firstElementChild?.className).toContain("rim-warm");
   });
 });

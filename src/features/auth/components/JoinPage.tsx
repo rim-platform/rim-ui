@@ -100,9 +100,7 @@ export function JoinPage() {
  *   if a non-enum value is passed at runtime (e.g. server returned an
  *   unknown string ahead of a frontend rebuild).
  */
-function inviteTokenTypeToJoinFormVariant(
-  tokenType: InviteTokenType,
-): InviteTokenType {
+function inviteTokenTypeToJoinFormVariant(tokenType: InviteTokenType): InviteTokenType {
   switch (tokenType) {
     case InviteTokenType.WORKSPACE:
       return InviteTokenType.WORKSPACE;
@@ -139,7 +137,13 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
     return (
       <InvalidTokenState
         code={code}
-        onRetry={code === "NETWORK" ? () => { void refetch(); } : undefined}
+        onRetry={
+          code === "NETWORK"
+            ? () => {
+                void refetch();
+              }
+            : undefined
+        }
       />
     );
   }

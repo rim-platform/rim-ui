@@ -62,7 +62,11 @@ export function CommandPalette() {
   );
 
   const mapCommandResult = useCallback(
-    (result: { item: CommandDefinition; score: number; matches: Array<Array<[number, number]> | null> }) => result,
+    (result: {
+      item: CommandDefinition;
+      score: number;
+      matches: Array<Array<[number, number]> | null>;
+    }) => result,
     [],
   );
 
@@ -153,18 +157,16 @@ export function CommandPalette() {
   // Execute a pipe chain as a single command string
   const executePipeChain = useCallback(
     async (segments: string[], finalSegment?: string) => {
-      const allSegments = finalSegment
-        ? [...segments, finalSegment]
-        : segments;
+      const allSegments = finalSegment ? [...segments, finalSegment] : segments;
       if (allSegments.length === 0) return;
       const pipeExpression = allSegments.join(" | ");
       setPipeSegments([]);
       setPipeExecuting(true);
       const stageCount = allSegments.length;
-      const toastId = toast.info(
-        `Executing pipe: stage 1/${stageCount}...`,
-        { id: "pipe-progress", persistent: true },
-      );
+      const toastId = toast.info(`Executing pipe: stage 1/${stageCount}...`, {
+        id: "pipe-progress",
+        persistent: true,
+      });
       try {
         const res = await executeCommandMutation.mutateAsync({
           commandId: pipeExpression,
@@ -209,18 +211,33 @@ export function CommandPalette() {
         await executePipeChain(pipeSegments, command.id);
         return;
       }
+      // Close immediately so the palette dismisses before the async result arrives —
+      // the toast will appear on top without requiring the palette to stay open.
       closeCommandPalette();
-      await dispatchCommand(
-        command,
-        (input) => executeCommandMutation.mutateAsync(input),
-        {
-          commandContext: {
-            workspaceId: workspaceId ?? undefined,
+      try {
+        const result = await dispatchCommand(
+          command,
+          (input) => executeCommandMutation.mutateAsync(input),
+          {
+            commandContext: {
+              workspaceId: workspaceId ?? undefined,
+            },
           },
+        );
+        if (result === null || result.status === "ERROR") {
+          toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
+        } else {
+          const payloadPreview =
+            result.payload !== null && result.payload !== undefined
+              ? ` — ${String(result.payload).slice(0, 80)}`
+              : "";
+          toast.success(`${command.title}${payloadPreview}`);
         }
-      );
+      } catch (err) {
+        toast.error(`${command.title}: ${err instanceof Error ? err.message : "Command failed"}`);
+      }
     },
-    [closeCommandPalette, executeCommandMutation, workspaceId, pipeSegments, executePipeChain]
+    [closeCommandPalette, executeCommandMutation, workspaceId, pipeSegments, executePipeChain],
   );
 
   const handleKeyDown = useCallback(
@@ -266,7 +283,16 @@ export function CommandPalette() {
           break;
       }
     },
-    [sortedResults, selectedIndex, executeSelected, closeCommandPalette, pipeSegments, searchQuery, setSearchQuery, executePipeChain]
+    [
+      sortedResults,
+      selectedIndex,
+      executeSelected,
+      closeCommandPalette,
+      pipeSegments,
+      searchQuery,
+      setSearchQuery,
+      executePipeChain,
+    ],
   );
 
   if (!isOpen) return null;
@@ -398,10 +424,18 @@ export function CommandPalette() {
 
         {/* Footer */}
         <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
-          <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
-          <span><kbd className="font-mono">Enter</kbd> execute</span>
-          <span><kbd className="font-mono">|</kbd> pipe</span>
-          <span><kbd className="font-mono">Esc</kbd> close</span>
+          <span>
+            <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-mono">Enter</kbd> execute
+          </span>
+          <span>
+            <kbd className="font-mono">|</kbd> pipe
+          </span>
+          <span>
+            <kbd className="font-mono">Esc</kbd> close
+          </span>
         </div>
       </div>
     </div>

@@ -8,7 +8,6 @@ import type {
   AiStreamChunk,
   AiMessage,
   AiToolDefinition,
-  ValidationOutcome,
 } from "./types";
 
 /** Static fallback — used when API is unreachable. */
@@ -69,9 +68,6 @@ const STATIC_MODELS: AiModelDef[] = [
   },
 ];
 
-/** Model IDs we consider relevant for chat (filter out embeddings, tts, whisper, dall-e etc.) */
-const CHAT_MODEL_PREFIXES = ["gpt", "o"];
-
 const config: AiProviderConfig = {
   id: "openai",
   name: "OpenAI",
@@ -100,7 +96,11 @@ function toOpenAiMessages(messages: AiMessage[], systemPrompt?: string): OpenAiM
       // OpenAI expects a single assistant message with both content and tool_calls.
       if (m.role === "assistant") {
         let textContent = "";
-        const toolCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[] = [];
+        const toolCalls: {
+          id: string;
+          type: "function";
+          function: { name: string; arguments: string };
+        }[] = [];
 
         for (const block of m.content) {
           if (block.type === "text") {
@@ -161,18 +161,21 @@ type ChatStreamEvent =
   | { kind: "error"; message: string };
 
 /**
- * Construct an OpenAI provider that loads the API key on every `chat()`
- * call via `loadKey`. See `anthropic.ts::createAnthropicProvider` for the
- * full rationale (Phase 4 #59 closure).
+ * Construct an OpenAI provider that dispatches `chat()` calls to the
+ * Tauri `agent_chat_completion` command. The API key is read directly from
+ * the OS keyring by the Rust proxy on every request — the JS side never
+ * holds or transmits the key bytes (Phase 5 / Option B). See
+ * `anthropic.ts::createAnthropicProvider` for the full rationale. The
+ * `_loadKey` parameter is retained for call-site compatibility and will be
+ * removed in the cleanup pass (step 9 of the consolidation task list).
  */
-export function createOpenAiProvider(
-  loadKey: () => Promise<string>,
-): AiProvider {
+export function createOpenAiProvider(_loadKey: () => Promise<string>): AiProvider {
   return {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      const apiKey = await loadKey();
+      // The Rust proxy reads the API key from the OS keyring on every request.
+      // Do NOT send api_key — ChatCompletionRequest uses deny_unknown_fields.
       const proxyRequest = {
         provider: "openai" as const,
         model: request.model,
@@ -181,7 +184,6 @@ export function createOpenAiProvider(
           ? { tools: toOpenAiTools(request.tools) }
           : {}),
         max_tokens: request.maxTokens ?? 4096,
-        api_key: apiKey,
       };
 
       const queue: ChatStreamEvent[] = [];
@@ -202,7 +204,12 @@ export function createOpenAiProvider(
         request: proxyRequest,
         onEvent,
       }).catch((err: unknown) => {
-        const message = typeof err === "string" ? err : err instanceof Error ? err.message : "agent_chat_completion failed";
+        const message =
+          typeof err === "string"
+            ? err
+            : err instanceof Error
+              ? err.message
+              : "agent_chat_completion failed";
         if (waiter) {
           const w = waiter;
           waiter = null;
@@ -220,9 +227,11 @@ export function createOpenAiProvider(
       const toolCalls = new Map<number, { id: string; name: string; args: string }>();
 
       while (true) {
-        const event = queue.shift() ?? (await new Promise<ChatStreamEvent>((resolve) => {
-          waiter = resolve;
-        }));
+        const event =
+          queue.shift() ??
+          (await new Promise<ChatStreamEvent>((resolve) => {
+            waiter = resolve;
+          }));
 
         if (event.kind === "error") {
           yield { kind: "error", message: event.message };
@@ -235,7 +244,8 @@ export function createOpenAiProvider(
         }
 
         const payload = event.data;
-        const choices = payload.choices as { delta?: Record<string, unknown>; finish_reason?: string }[] | undefined;
+        const choices = payload.choices as
+          { delta?: Record<string, unknown>; finish_reason?: string }[] | undefined;
         const usage = payload.usage as Record<string, number> | undefined;
 
         if (usage) {
@@ -253,7 +263,9 @@ export function createOpenAiProvider(
         }
 
         // Tool calls
-        const tc = delta.tool_calls as { index: number; id?: string; function?: { name?: string; arguments?: string } }[] | undefined;
+        const tc = delta.tool_calls as
+          | { index: number; id?: string; function?: { name?: string; arguments?: string } }[]
+          | undefined;
         if (tc) {
           for (const call of tc) {
             const existing = toolCalls.get(call.index);
@@ -285,53 +297,6 @@ export function createOpenAiProvider(
           toolCalls.clear();
         }
       }
-    },
-
-    async validateCredentials(key: string): Promise<ValidationOutcome> {
-      try {
-        // Same ValidationOutcome contract as anthropic — see that provider
-        // for the rationale. IPC-layer reject → network_error so we don't
-        // blame the user's key for a plumbing failure.
-        return await invoke<ValidationOutcome>("agent_validate_credentials", {
-          provider: "openai",
-          apiKey: key,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { kind: "network_error", message };
-      }
-    },
-
-    async fetchModels(key: string): Promise<AiModelDef[]> {
-      const data = await invoke<{ data: { id: string; owned_by: string }[] }>(
-        "agent_list_models",
-        {
-          provider: "openai",
-          apiKey: key,
-        },
-      );
-
-      const chatModels = data.data
-        .filter((m) => CHAT_MODEL_PREFIXES.some((p) => m.id.startsWith(p)))
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map((m) => {
-          const staticMatch = STATIC_MODELS.find((s) => s.id === m.id);
-          return {
-            id: m.id,
-            name: m.id,
-            contextWindow: staticMatch?.contextWindow ?? 128_000,
-            supportsTools: true,
-            supportsStreaming: true,
-            inputPricePerMToken: staticMatch?.inputPricePerMToken,
-            outputPricePerMToken: staticMatch?.outputPricePerMToken,
-          };
-        });
-
-      if (chatModels.length === 0) {
-        throw new Error("No chat models returned from OpenAI API");
-      }
-
-      return chatModels;
     },
   };
 }

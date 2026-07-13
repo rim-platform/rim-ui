@@ -1,5 +1,9 @@
 query ThreadByRootMessage($serverId: ID!, $conversationId: ID!, $rootMessageId: ID!) {
-  threadByRootMessage(serverId: $serverId, conversationId: $conversationId, rootMessageId: $rootMessageId) {
+  threadByRootMessage(
+    serverId: $serverId
+    conversationId: $conversationId
+    rootMessageId: $rootMessageId
+  ) {
     id
     serverId
     conversationId

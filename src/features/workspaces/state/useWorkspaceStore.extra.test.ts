@@ -3,17 +3,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("../../../shell/state/useShellStore", () => {
   const mockSetSelectedConversationId = vi.fn();
   return {
-    useShellStore: Object.assign(
-      vi.fn(),
-      {
-        getState: () => ({
-          setSelectedConversationId: mockSetSelectedConversationId,
-        }),
-        setState: vi.fn(),
-        subscribe: vi.fn(),
-        __mockSetSelectedConversationId: mockSetSelectedConversationId,
-      },
-    ),
+    useShellStore: Object.assign(vi.fn(), {
+      getState: () => ({
+        setSelectedConversationId: mockSetSelectedConversationId,
+      }),
+      setState: vi.fn(),
+      subscribe: vi.fn(),
+      __mockSetSelectedConversationId: mockSetSelectedConversationId,
+    }),
   };
 });
 
@@ -36,7 +33,9 @@ describe("useWorkspaceStore (extra)", () => {
   });
 
   it("setWorkspaceId resets selected conversation", () => {
-    const mockFn = (useShellStore as unknown as { __mockSetSelectedConversationId: ReturnType<typeof vi.fn> }).__mockSetSelectedConversationId;
+    const mockFn = (
+      useShellStore as unknown as { __mockSetSelectedConversationId: ReturnType<typeof vi.fn> }
+    ).__mockSetSelectedConversationId;
     useWorkspaceStore.getState().setWorkspaceId("ws-2");
     expect(mockFn).toHaveBeenCalledWith(null);
   });

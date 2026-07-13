@@ -201,10 +201,7 @@ describe("Plugin types", () => {
     it("emits a console.warn per dropped value", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       parsePluginCapabilities(["chat.write", "BOGUS"]);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[PluginCapability]"),
-        "BOGUS",
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[PluginCapability]"), "BOGUS");
     });
 
     it("returns [] for null input without throwing", () => {

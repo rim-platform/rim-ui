@@ -19,6 +19,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
     approved_ai_commands: [],
     ai_callable_commands: [],
     ai_consent_required: false,
+    fingerprint_changed: false,
     health: "running",
   },
   {
@@ -34,6 +35,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
     approved_ai_commands: [],
     ai_callable_commands: [],
     ai_consent_required: false,
+    fingerprint_changed: false,
     health: "stopped",
   },
 ];

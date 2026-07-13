@@ -28,11 +28,7 @@ function StagePayload({ payload }: { payload: unknown }) {
         className="flex items-center gap-1 text-[11px] text-rim-text-faint hover:text-rim-text-muted transition-colors"
         onClick={() => setExpanded((prev) => !prev)}
       >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3" />
-        ) : (
-          <ChevronRight className="h-3 w-3" />
-        )}
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         payload
       </button>
       {expanded && (
@@ -48,7 +44,12 @@ export function PipelineResultView({ stages }: PipelineResultViewProps) {
   if (stages.length === 0) return null;
 
   return (
-    <div className="mt-2 space-y-1" data-testid="pipeline-result-view" role="list" aria-label="Pipeline execution results">
+    <div
+      className="mt-2 space-y-1"
+      data-testid="pipeline-result-view"
+      role="list"
+      aria-label="Pipeline execution results"
+    >
       <div className="text-[10px] uppercase tracking-wider text-rim-text-faint px-1 pb-0.5">
         Pipeline stages
       </div>
@@ -62,19 +63,13 @@ export function PipelineResultView({ stages }: PipelineResultViewProps) {
             role="listitem"
             className={cn(
               "flex flex-col rounded px-2 py-1.5 text-xs",
-              isError
-                ? "bg-rim-danger/10 border border-rim-danger/30"
-                : "bg-rim-void/50",
+              isError ? "bg-rim-danger/10 border border-rim-danger/30" : "bg-rim-void/50",
             )}
           >
             <div className="flex items-center gap-2">
               <span aria-label={stageLabel}>{statusIcon(stage.status)}</span>
-              <span className="font-mono text-rim-text-muted">
-                {stage.stageIndex + 1}.
-              </span>
-              <span className="font-medium text-rim-text truncate">
-                {stage.commandId}
-              </span>
+              <span className="font-mono text-rim-text-muted">{stage.stageIndex + 1}.</span>
+              <span className="font-medium text-rim-text truncate">{stage.commandId}</span>
             </div>
             <div
               className={cn(

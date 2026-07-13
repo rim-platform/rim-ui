@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import {
-  executeCommandWithProof,
-  makeBackendToolHandler,
-} from "./loader";
+import { executeCommandWithProof, makeBackendToolHandler } from "./loader";
 
 // This test file exists ONLY to catch the class of bug that #63 closed:
 // a GraphQL mutation/query whose selection set omits a backend-populated
@@ -97,12 +94,10 @@ describe("EXECUTE_COMMAND_MUTATION selection set", () => {
       },
     });
 
-    await executeCommandWithProof(
-      "chat.delete_message",
-      { id: "m-1" },
-      "chat.delete_message",
-      { token: "tok", argsHash: "hash" },
-    );
+    await executeCommandWithProof("chat.delete_message", { id: "m-1" }, "chat.delete_message", {
+      token: "tok",
+      argsHash: "hash",
+    });
 
     const flat = getBody().replace(/\s+/g, " ");
     expect(flat).toContain("confirmationRequired");

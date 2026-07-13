@@ -34,11 +34,7 @@ export function navigatePanel(direction: Direction): void {
   const visiblePanels = getVisiblePanels(shell);
   const currentPanel = surfaceToPanelId(shell.focusedSurface);
 
-  const target = getAdjacentPanel(
-    currentPanel ?? "mainSurface",
-    direction,
-    visiblePanels,
-  );
+  const target = getAdjacentPanel(currentPanel ?? "mainSurface", direction, visiblePanels);
 
   if (!target) return;
 
@@ -64,11 +60,7 @@ export function useSpatialNavigation(): void {
 
       // Don't interfere with text inputs
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
         return;
       }
 

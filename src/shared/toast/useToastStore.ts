@@ -79,9 +79,7 @@ export const useToastStore = create<ToastState>((set, get) => ({
           .reverse()
           .find((t) => t.variant !== "error");
         if (toDismiss) {
-          toasts = toasts.map((t) =>
-            t.id === toDismiss.id ? { ...t, dismissing: true } : t,
-          );
+          toasts = toasts.map((t) => (t.id === toDismiss.id ? { ...t, dismissing: true } : t));
         }
       }
 
@@ -93,9 +91,7 @@ export const useToastStore = create<ToastState>((set, get) => ({
 
   dismiss: (id) => {
     set((state) => ({
-      toasts: state.toasts.map((t) =>
-        t.id === id ? { ...t, dismissing: true } : t,
-      ),
+      toasts: state.toasts.map((t) => (t.id === id ? { ...t, dismissing: true } : t)),
     }));
   },
 
@@ -132,7 +128,7 @@ interface ToastOptions {
 
 function createToast(variant: ToastVariant, title: string, options?: ToastOptions): string {
   const defaultDuration = DEFAULT_DURATIONS[variant];
-  const persistent = options?.persistent ?? (variant === "error");
+  const persistent = options?.persistent ?? variant === "error";
 
   return useToastStore.getState().add({
     id: options?.id,

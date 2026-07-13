@@ -23,10 +23,7 @@ export function TestProviders({ children }: { children: ReactNode }) {
   );
 }
 
-export function renderWithProviders(
-  ui: ReactElement,
-  options?: Omit<RenderOptions, "wrapper">,
-) {
+export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, "wrapper">) {
   return render(ui, { wrapper: TestProviders, ...options });
 }
 

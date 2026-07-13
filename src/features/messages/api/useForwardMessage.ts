@@ -35,7 +35,9 @@ export function useForwardMessageMutation() {
         },
       }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.targetConversationId) });
+      qc.invalidateQueries({
+        queryKey: queryKeys.messages(vars.serverId, vars.targetConversationId),
+      });
     },
   });
 }

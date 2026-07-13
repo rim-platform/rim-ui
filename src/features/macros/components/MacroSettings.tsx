@@ -1,5 +1,16 @@
 import { useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Play, ChevronUp, ChevronDown, X, Wand2, Loader2, AlertTriangle } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Play,
+  ChevronUp,
+  ChevronDown,
+  X,
+  Wand2,
+  Loader2,
+  AlertTriangle,
+} from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
@@ -166,7 +177,13 @@ function MacroEditor({
                 />
                 <input
                   type="text"
-                  defaultValue={step.args != null && typeof step.args === "object" && Object.keys(step.args as Record<string, unknown>).length > 0 ? JSON.stringify(step.args) : ""}
+                  defaultValue={
+                    step.args != null &&
+                    typeof step.args === "object" &&
+                    Object.keys(step.args as Record<string, unknown>).length > 0
+                      ? JSON.stringify(step.args)
+                      : ""
+                  }
                   onBlur={(e) => updateStep(index, "args", e.target.value || "{}")}
                   placeholder='{"key": "value"}'
                   className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-xs font-mono text-rim-text-muted outline-none focus:border-rim-accent"
@@ -363,9 +380,7 @@ export function MacroSettings() {
         onStepsGenerated={handleAiStepsGenerated}
       />
 
-      {isLoading && (
-        <p className="text-sm text-rim-text-muted">Loading macros...</p>
-      )}
+      {isLoading && <p className="text-sm text-rim-text-muted">Loading macros...</p>}
 
       {!isLoading && (!macros || macros.length === 0) && (
         <p className="text-sm text-rim-text-muted">
@@ -376,16 +391,11 @@ export function MacroSettings() {
       {macros && macros.length > 0 && (
         <div className="divide-y divide-rim-line rounded-lg border border-rim-line">
           {macros.map((macro) => (
-            <div
-              key={macro.id}
-              className="flex items-center justify-between gap-4 px-4 py-3"
-            >
+            <div key={macro.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-rim-text">{macro.name}</div>
                 {macro.description && (
-                  <div className="truncate text-xs text-rim-text-muted">
-                    {macro.description}
-                  </div>
+                  <div className="truncate text-xs text-rim-text-muted">{macro.description}</div>
                 )}
                 <div className="text-xs text-rim-text-faint">
                   {macro.steps.length} step{macro.steps.length !== 1 ? "s" : ""}
@@ -459,16 +469,18 @@ export function MacroSettings() {
                 Macro contains dangerous commands
               </p>
               <p className="mt-1 text-xs text-rim-text-muted">
-                &ldquo;{dangerousConfirm.name}&rdquo; includes commands marked as dangerous.
-                These may delete data or make irreversible changes. Are you sure you want to run it?
+                &ldquo;{dangerousConfirm.name}&rdquo; includes commands marked as dangerous. These
+                may delete data or make irreversible changes. Are you sure you want to run it?
               </p>
               {commands && (
                 <div className="mt-2 space-y-1">
-                  {[...new Set(
-                    dangerousConfirm.steps
-                      .filter((s) => commands.some((c) => c.id === s.commandId && c.dangerous))
-                      .map((s) => s.commandId),
-                  )].map((cmdId) => (
+                  {[
+                    ...new Set(
+                      dangerousConfirm.steps
+                        .filter((s) => commands.some((c) => c.id === s.commandId && c.dangerous))
+                        .map((s) => s.commandId),
+                    ),
+                  ].map((cmdId) => (
                     <div key={cmdId} className="flex items-center gap-1.5 text-xs">
                       <span className="h-1 w-1 rounded-full bg-rim-danger" />
                       <span className="font-mono text-rim-text-faint">{cmdId}</span>

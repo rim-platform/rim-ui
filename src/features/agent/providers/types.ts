@@ -59,14 +59,14 @@ export type AiStreamChunk =
  * on a DNS/TLS failure (Hawkeye WARN #4).
  */
 export type ValidationOutcome =
-  | { kind: "valid" }
-  | { kind: "invalid" }
-  | { kind: "network_error"; message: string };
+  { kind: "valid" } | { kind: "invalid" } | { kind: "network_error"; message: string };
 
 export interface AiProvider {
   readonly config: AiProviderConfig;
+  /**
+   * Stream a chat completion. The API key is read from the OS keyring by the
+   * Rust proxy on every request — the JS side never holds the key bytes.
+   * (Phase 5 / Option B, agent-settings-consolidation §3.)
+   */
   chat(request: AiChatRequest): AsyncIterable<AiStreamChunk>;
-  validateCredentials(apiKey: string): Promise<ValidationOutcome>;
-  /** Fetch available models dynamically. Falls back to static list on failure. */
-  fetchModels?(apiKey: string): Promise<AiModelDef[]>;
 }

@@ -73,8 +73,20 @@ export function AccountSettings({ onNavigateToProfile }: AccountSettingsProps) {
       <section>
         <h3 className="text-sm font-medium text-rim-text mb-2">Session</h3>
         <div className="space-y-1 text-sm text-rim-text-muted">
-          <p>Logged in as: <span className="text-rim-text font-medium">{user?.username ?? "Unknown"}</span></p>
-          <p>Session started: <span className="text-rim-text">{new Date().toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" })}</span></p>
+          <p>
+            Logged in as:{" "}
+            <span className="text-rim-text font-medium">{user?.username ?? "Unknown"}</span>
+          </p>
+          <p>
+            Session started:{" "}
+            <span className="text-rim-text">
+              {new Date().toLocaleDateString([], {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </span>
+          </p>
         </div>
       </section>
 
@@ -109,14 +121,8 @@ export function AccountSettings({ onNavigateToProfile }: AccountSettingsProps) {
         </button>
       </section>
 
-      <Dialog
-        open={showSignOutDialog}
-        onClose={() => setShowSignOutDialog(false)}
-        title="Sign out"
-      >
-        <p className="text-sm text-rim-text-muted mb-4">
-          Are you sure you want to sign out?
-        </p>
+      <Dialog open={showSignOutDialog} onClose={() => setShowSignOutDialog(false)} title="Sign out">
+        <p className="text-sm text-rim-text-muted mb-4">Are you sure you want to sign out?</p>
         <div className="flex justify-end gap-2">
           <button
             type="button"

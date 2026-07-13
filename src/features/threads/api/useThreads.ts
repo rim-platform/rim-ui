@@ -7,7 +7,11 @@ import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
   query ThreadByRootMessage($serverId: ID!, $conversationId: ID!, $rootMessageId: ID!) {
-    threadByRootMessage(serverId: $serverId, conversationId: $conversationId, rootMessageId: $rootMessageId) {
+    threadByRootMessage(
+      serverId: $serverId
+      conversationId: $conversationId
+      rootMessageId: $rootMessageId
+    ) {
       id
       serverId
       conversationId
@@ -21,7 +25,14 @@ const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
 `;
 
 const THREAD_MESSAGES_QUERY = gql`
-  query ThreadMessages($serverId: ID!, $conversationId: ID!, $threadId: ID!, $dir: PageDir!, $limit: Int!, $includeDeleted: Boolean!) {
+  query ThreadMessages(
+    $serverId: ID!
+    $conversationId: ID!
+    $threadId: ID!
+    $dir: PageDir!
+    $limit: Int!
+    $includeDeleted: Boolean!
+  ) {
     threadMessages(
       serverId: $serverId
       conversationId: $conversationId
@@ -137,19 +148,15 @@ export function useThreadMessages(
     enabled: Boolean(workspaceId && conversationId && threadId),
     staleTime: 10_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<ThreadMessagesResponse>(
-        THREAD_MESSAGES_QUERY,
-        {
-          serverId: workspaceId!,
-          conversationId: conversationId!,
-          threadId: threadId!,
-          dir: "AFTER",
-          limit: 80,
-          includeDeleted: false,
-        },
-      );
+      const res = await graphqlClient.request<ThreadMessagesResponse>(THREAD_MESSAGES_QUERY, {
+        serverId: workspaceId!,
+        conversationId: conversationId!,
+        threadId: threadId!,
+        dir: "AFTER",
+        limit: 80,
+        includeDeleted: false,
+      });
       return res.threadMessages;
     },
   });
 }
-

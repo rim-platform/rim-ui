@@ -13,7 +13,12 @@ import {
 
 // --- Re-exports for convenience ---
 
-export type { WorkspaceStateEntryGql, SetWorkspaceStateInput, DeleteWorkspaceStateInput, IncrementWorkspaceStateInput };
+export type {
+  WorkspaceStateEntryGql,
+  SetWorkspaceStateInput,
+  DeleteWorkspaceStateInput,
+  IncrementWorkspaceStateInput,
+};
 export { WorkspaceStateScopeGql } from "../../../core/graphql/generated/schema-types";
 
 // --- Documents ---
@@ -36,7 +41,12 @@ const WorkspaceStateDocument = gql`
 `;
 
 const WorkspaceStateListDocument = gql`
-  query WorkspaceStateList($serverId: ID!, $prefix: String!, $scope: WorkspaceStateScopeGql!, $limit: Int) {
+  query WorkspaceStateList(
+    $serverId: ID!
+    $prefix: String!
+    $scope: WorkspaceStateScopeGql!
+    $limit: Int
+  ) {
     workspaceStateList(serverId: $serverId, prefix: $prefix, scope: $scope, limit: $limit) {
       id
       serverId
@@ -124,10 +134,11 @@ export function useWorkspaceState(
     enabled: Boolean(serverId && key),
     staleTime: 10_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<WorkspaceStateResponse>(
-        WorkspaceStateDocument,
-        { serverId: serverId!, key: key!, scope: resolvedScope },
-      );
+      const res = await graphqlClient.request<WorkspaceStateResponse>(WorkspaceStateDocument, {
+        serverId: serverId!,
+        key: key!,
+        scope: resolvedScope,
+      });
       return res.workspaceState;
     },
   });
@@ -194,10 +205,9 @@ export function useIncrementWorkspaceState() {
 
   return useMutation({
     mutationFn: (input: IncrementWorkspaceStateInput) =>
-      graphqlClient.request<IncrementWorkspaceStateResponse>(
-        IncrementWorkspaceStateDocument,
-        { input },
-      ),
+      graphqlClient.request<IncrementWorkspaceStateResponse>(IncrementWorkspaceStateDocument, {
+        input,
+      }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({
         queryKey: queryKeys.workspaceState(vars.serverId, vars.scope, vars.key),

@@ -57,7 +57,11 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
   );
 
   const mapResultItem = useCallback(
-    (result: { item: (typeof resolvedMembers)[number]; score: number; matches: Array<Array<[number, number]> | null> }) => result,
+    (result: {
+      item: (typeof resolvedMembers)[number];
+      score: number;
+      matches: Array<Array<[number, number]> | null>;
+    }) => result,
     [],
   );
 
@@ -308,15 +312,21 @@ function NewMessagePickerFooter({ selectedCount }: { selectedCount: number }) {
 
   return (
     <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
-      <span><kbd className="font-mono">&#8593;&#8595;</kbd> navigate</span>
-      <span><kbd className="font-mono">Enter</kbd> select</span>
+      <span>
+        <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
+      </span>
+      <span>
+        <kbd className="font-mono">Enter</kbd> select
+      </span>
       {selectedCount > 0 && (
         <span>
           <kbd className="font-mono">{confirmHint}</kbd>{" "}
           {selectedCount === 1 ? "open DM" : "create group"}
         </span>
       )}
-      <span className="ml-auto"><kbd className="font-mono">Esc</kbd> close</span>
+      <span className="ml-auto">
+        <kbd className="font-mono">Esc</kbd> close
+      </span>
     </div>
   );
 }

@@ -79,9 +79,7 @@ export function EmojiPicker({ position, onSelect, onClose, customEmojis }: Emoji
       position: "fixed",
       left: Math.min(position.x, window.innerWidth - PICKER_WIDTH - 8),
       zIndex: Z.POPOVER,
-      ...(showAbove
-        ? { bottom: window.innerHeight - position.y + 4 }
-        : { top: position.y + 4 }),
+      ...(showAbove ? { bottom: window.innerHeight - position.y + 4 } : { top: position.y + 4 }),
     };
   }, [position.x, position.y]);
 
@@ -130,11 +128,7 @@ export function EmojiPicker({ position, onSelect, onClose, customEmojis }: Emoji
   );
 
   return createPortal(
-    <div
-      ref={containerRef}
-      style={style}
-      className="rounded-lg shadow-xl"
-    >
+    <div ref={containerRef} style={style} className="rounded-lg shadow-xl">
       <Suspense fallback={null}>
         <LazyPicker
           onEmojiSelect={handleEmojiSelect}

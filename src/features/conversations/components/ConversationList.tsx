@@ -87,15 +87,9 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   const channels = channelsData?.items ?? [];
   const messages = inboxData?.items ?? [];
 
-  const allItems = useMemo(
-    () => [...channels, ...messages],
-    [channels, messages],
-  );
+  const allItems = useMemo(() => [...channels, ...messages], [channels, messages]);
 
-  const allConversationIds = useMemo(
-    () => allItems.map((c) => c.id),
-    [allItems],
-  );
+  const allConversationIds = useMemo(() => allItems.map((c) => c.id), [allItems]);
   usePrefetchMessages(workspaceId, allConversationIds);
 
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -189,8 +183,14 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
       role="listbox"
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
-      onBlur={() => { setIsKeyboardNavigating(false); setFocusedIndex(-1); }}
-      onMouseDown={() => { setIsKeyboardNavigating(false); setFocusedIndex(-1); }}
+      onBlur={() => {
+        setIsKeyboardNavigating(false);
+        setFocusedIndex(-1);
+      }}
+      onMouseDown={() => {
+        setIsKeyboardNavigating(false);
+        setFocusedIndex(-1);
+      }}
     >
       {channels.length > 0 && (
         <div>
@@ -268,7 +268,13 @@ const ConversationItem = memo(function ConversationItem({
   unreadCount,
   isMuted,
 }: {
-  conv: { id: string; serverId: string; conversationType: string; title: string; memberIds: string[] };
+  conv: {
+    id: string;
+    serverId: string;
+    conversationType: string;
+    title: string;
+    memberIds: string[];
+  };
   globalIndex: number;
   selectedId: string | null;
   focusedIndex: number;
@@ -304,7 +310,7 @@ const ConversationItem = memo(function ConversationItem({
 
   const hasDraft = useDraftStore((s) => !!s.drafts[conv.id]);
 
-  const hoverKind = conv.conversationType === "DIRECT" ? "dm" as const : "channel" as const;
+  const hoverKind = conv.conversationType === "DIRECT" ? ("dm" as const) : ("channel" as const);
 
   // Look up quick-access keybind for this specific channel
   const keystroke = useKeybindLabel("workspace.navigate_to_channel", { conversationId: conv.id });
@@ -340,7 +346,9 @@ const ConversationItem = memo(function ConversationItem({
         active
           ? "bg-rim-accent/10 text-rim-accent"
           : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
-        isKeyboardNavigating && focused && "ring-1 ring-rim-accent ring-offset-1 ring-offset-rim-panel",
+        isKeyboardNavigating &&
+          focused &&
+          "ring-1 ring-rim-accent ring-offset-1 ring-offset-rim-panel",
       )}
     >
       {conv.conversationType === "DIRECT" ? (
@@ -349,23 +357,35 @@ const ConversationItem = memo(function ConversationItem({
           name={displayTitle ?? "?"}
           userId={otherMemberId ?? ""}
           size="xs"
-          presenceStatus={presenceStatus === "ONLINE" || presenceStatus === "AWAY" || presenceStatus === "OFFLINE" ? presenceStatus : null}
+          presenceStatus={
+            presenceStatus === "ONLINE" || presenceStatus === "AWAY" || presenceStatus === "OFFLINE"
+              ? presenceStatus
+              : null
+          }
         />
       ) : (
         <Icon className="h-4 w-4 shrink-0" />
       )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1">
-          <span className={cn("block truncate", unreadCount > 0 && !active && "font-semibold text-rim-text", isMuted && "text-rim-text-faint")}>{displayTitle ?? "Untitled"}</span>
-          {isMuted && (
-            <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />
-          )}
+          <span
+            className={cn(
+              "block truncate",
+              unreadCount > 0 && !active && "font-semibold text-rim-text",
+              isMuted && "text-rim-text-faint",
+            )}
+          >
+            {displayTitle ?? "Untitled"}
+          </span>
+          {isMuted && <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />}
           {hasDraft && !active && (
             <span className="shrink-0 text-[10px] italic text-rim-warm">Draft</span>
           )}
         </span>
         {conv.conversationType === "DIRECT" && otherMemberStatusText && (
-          <span className="block truncate text-[10px] text-rim-text-faint">{otherMemberStatusText}</span>
+          <span className="block truncate text-[10px] text-rim-text-faint">
+            {otherMemberStatusText}
+          </span>
         )}
       </span>
       {unreadCount > 0 && !active ? (
@@ -381,7 +401,13 @@ const ConversationItem = memo(function ConversationItem({
   return (
     <li role="option" aria-selected={active}>
       {keystroke ? (
-        <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{displayTitle ?? "Untitled"} ({keystroke})</span>}>
+        <HoverTooltip
+          content={
+            <span className="text-xs text-rim-text whitespace-nowrap">
+              {displayTitle ?? "Untitled"} ({keystroke})
+            </span>
+          }
+        >
           {button}
         </HoverTooltip>
       ) : (

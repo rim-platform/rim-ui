@@ -7,9 +7,7 @@ export interface AiToolResult {
   isError: boolean;
 }
 
-export type AiToolHandler = (
-  input: Record<string, unknown>,
-) => Promise<string>;
+export type AiToolHandler = (input: Record<string, unknown>) => Promise<string>;
 
 export interface RegisteredTool {
   definition: AiToolDefinition;

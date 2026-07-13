@@ -7,6 +7,8 @@ export type { DropdownMenuItem, DropdownMenuProps } from "./DropdownMenu";
 export { EmojiPicker } from "./EmojiPicker";
 export type { EmojiPickerProps } from "./EmojiPicker";
 export { HoverTooltip } from "./HoverTooltip";
+export { SurfaceErrorBoundary } from "./SurfaceErrorBoundary";
+export type { SurfaceErrorBoundaryProps } from "./SurfaceErrorBoundary";
 export { UserHoverCard } from "./UserHoverCard";
 export { WindowControls } from "./WindowControls";
 export { cn } from "./cn";

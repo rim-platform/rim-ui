@@ -18,7 +18,7 @@ const SHORTCODE_MAP: Record<string, string> = {
   "B)": "😎",
   ":/": "😕",
   ":'(": "😢",
-  "XD": "😆",
+  XD: "😆",
   ":fire:": "🔥",
   ":thumbsup:": "👍",
   ":thumbsdown:": "👎",
@@ -102,7 +102,10 @@ export function getShortcodeSuggestions(partial: string): Array<{ code: string; 
   if (!partial.startsWith(":") || partial.length < 2) return [];
   const lower = partial.toLowerCase();
   return Object.entries(SHORTCODE_MAP)
-    .filter(([code]) => code.startsWith(":") && code.endsWith(":") && code.toLowerCase().startsWith(lower))
+    .filter(
+      ([code]) =>
+        code.startsWith(":") && code.endsWith(":") && code.toLowerCase().startsWith(lower),
+    )
     .map(([code, emoji]) => ({ code, emoji }))
     .slice(0, 8);
 }

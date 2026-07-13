@@ -70,9 +70,7 @@ describe("keyStore — Stronghold fallback", () => {
     await save("anthropic", "sk-test");
 
     const { toast: t } = await import("../../../shared/toast/useToastStore");
-    expect(t.warning).toHaveBeenCalledWith(
-      expect.stringContaining("Secure storage unavailable"),
-    );
+    expect(t.warning).toHaveBeenCalledWith(expect.stringContaining("Secure storage unavailable"));
   });
 
   it("saveApiKey: toast emitted only once across multiple failures", async () => {

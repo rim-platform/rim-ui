@@ -1,9 +1,4 @@
-export type PanelId =
-  | "workspaceRail"
-  | "sideRail"
-  | "toolPanel"
-  | "mainSurface"
-  | "threadPane";
+export type PanelId = "workspaceRail" | "sideRail" | "toolPanel" | "mainSurface" | "threadPane";
 
 export type Direction = "left" | "right";
 
@@ -59,7 +54,9 @@ export function getAdjacentPanel(
   const idx = visiblePanels.indexOf(currentPanel);
   if (idx === -1) {
     // Current panel not visible — return first or last based on direction
-    return direction === "right" ? visiblePanels[0] ?? null : visiblePanels[visiblePanels.length - 1] ?? null;
+    return direction === "right"
+      ? (visiblePanels[0] ?? null)
+      : (visiblePanels[visiblePanels.length - 1] ?? null);
   }
 
   const nextIdx = direction === "right" ? idx + 1 : idx - 1;

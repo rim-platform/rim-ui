@@ -101,9 +101,7 @@ function maskWalk(value: unknown, forced: boolean): unknown {
   return forced ? REDACTED_PLACEHOLDER : String(value);
 }
 
-export function maskForDisplay(
-  args: Record<string, unknown>,
-): Record<string, unknown> {
+export function maskForDisplay(args: Record<string, unknown>): Record<string, unknown> {
   return maskWalk(args, false) as Record<string, unknown>;
 }
 

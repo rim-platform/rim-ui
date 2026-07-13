@@ -105,16 +105,11 @@ export function useListIncidents({
   // as "no filter on this field" (per strange's filter semantics: empty array
   // would still be accepted but null is the documented "no filter" signal).
   const status = statusFilter && statusFilter.length > 0 ? statusFilter : null;
-  const severity =
-    severityFilter && severityFilter.length > 0 ? severityFilter : null;
+  const severity = severityFilter && severityFilter.length > 0 ? severityFilter : null;
 
   return useQuery({
     queryKey: [
-      ...queryKeys.listIncidents(
-        serverId ?? undefined,
-        status ?? undefined,
-        severity ?? undefined,
-      ),
+      ...queryKeys.listIncidents(serverId ?? undefined, status ?? undefined, severity ?? undefined),
       dir,
       cursor?.incidentId ?? null,
     ] as const,
@@ -122,17 +117,14 @@ export function useListIncidents({
     staleTime: 15_000,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ listIncidents: IncidentPage }>(
-        LIST_INCIDENTS,
-        {
-          serverId: serverId!,
-          statusFilter: status,
-          severityFilter: severity,
-          dir,
-          cursor,
-          limit,
-        },
-      );
+      const res = await graphqlClient.request<{ listIncidents: IncidentPage }>(LIST_INCIDENTS, {
+        serverId: serverId!,
+        statusFilter: status,
+        severityFilter: severity,
+        dir,
+        cursor,
+        limit,
+      });
       return res.listIncidents;
     },
   });

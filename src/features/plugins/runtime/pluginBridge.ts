@@ -7,7 +7,12 @@ import type { PluginCapability } from "../types";
 type PluginToHostMessage =
   | { type: "rim.ui.notification.show"; title: string; body: string }
   | { type: "rim.ui.dialog.confirm"; title: string; body: string; requestId: string }
-  | { type: "rim.command.execute"; commandId: string; args?: Record<string, unknown>; requestId?: string }
+  | {
+      type: "rim.command.execute";
+      commandId: string;
+      args?: Record<string, unknown>;
+      requestId?: string;
+    }
   | { type: "rim.settings.get"; key: string; requestId: string }
   | { type: "rim.settings.set"; key: string; value: unknown }
   | { type: "rim.plugin.ui_event"; eventName: string; payload: unknown };
@@ -94,7 +99,9 @@ export function createPluginBridge(config: BridgeConfig) {
             keybindCapable: false,
             dangerous: false,
           },
-          async () => ({ executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] } }),
+          async () => ({
+            executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+          }),
           { args: msg.args },
         );
         break;
@@ -151,7 +158,10 @@ async function relayUiEventToProcess(
       logger.debug(`[RIM:PluginBridge] Mock relay ui_event: ${pluginId}.${eventName}`);
       return;
     }
-    logger.warn(`[RIM:PluginBridge] relay ui_event failed (${result.error.kind}):`, result.error.message);
+    logger.warn(
+      `[RIM:PluginBridge] relay ui_event failed (${result.error.kind}):`,
+      result.error.message,
+    );
   }
 }
 
@@ -169,7 +179,10 @@ export async function fetchAndRelayPanelState(
       logger.debug(`[RIM:PluginBridge] Mock fetch panel state: ${pluginId}`);
       return;
     }
-    logger.warn(`[RIM:PluginBridge] fetch panel state failed (${result.error.kind}):`, result.error.message);
+    logger.warn(
+      `[RIM:PluginBridge] fetch panel state failed (${result.error.kind}):`,
+      result.error.message,
+    );
     return;
   }
   if (result.value !== null && result.value !== undefined) {

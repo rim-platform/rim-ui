@@ -154,15 +154,12 @@ describe("slashCommands (extra coverage)", () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockGraphqlRequest).toHaveBeenCalledWith(
-          expect.anything(),
-          {
-            input: {
-              macroId: "macro-123",
-              commandContext: { workspaceId: "ws-1" },
-            },
+        expect(mockGraphqlRequest).toHaveBeenCalledWith(expect.anything(), {
+          input: {
+            macroId: "macro-123",
+            commandContext: { workspaceId: "ws-1" },
           },
-        );
+        });
       });
     });
 
@@ -172,9 +169,7 @@ describe("slashCommands (extra coverage)", () => {
       macroHandler("nonexistent");
 
       await vi.waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith(
-          'Macro not found: "nonexistent"',
-        );
+        expect(mockToast.error).toHaveBeenCalledWith('Macro not found: "nonexistent"');
       });
     });
 
@@ -184,9 +179,7 @@ describe("slashCommands (extra coverage)", () => {
       macroHandler("deploy-all");
 
       await vi.waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith(
-          "Failed to execute macro: Network error",
-        );
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to execute macro: Network error");
       });
     });
 
@@ -204,9 +197,7 @@ describe("slashCommands (extra coverage)", () => {
       macroHandler("test-macro");
 
       await vi.waitFor(() => {
-        expect(mockToast.success).toHaveBeenCalledWith(
-          'Macro "test-macro" executed',
-        );
+        expect(mockToast.success).toHaveBeenCalledWith('Macro "test-macro" executed');
       });
     });
 
@@ -224,9 +215,7 @@ describe("slashCommands (extra coverage)", () => {
       macroHandler("broken-macro");
 
       await vi.waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith(
-          "Macro failed: Step 2 failed",
-        );
+        expect(mockToast.error).toHaveBeenCalledWith("Macro failed: Step 2 failed");
       });
     });
   });

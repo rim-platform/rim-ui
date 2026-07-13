@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, History, Inbox, LogOut, Puzzle, Search, Settings, Sparkles } from "lucide-react";
+import {
+  ClipboardList,
+  History,
+  Inbox,
+  LogOut,
+  Puzzle,
+  Search,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
@@ -97,8 +106,7 @@ export function SideRail() {
             <div className="my-1 h-px w-6 bg-rim-line" />
             {pluginPanels.map(({ pluginId, pluginName, panel }) => {
               const isActive =
-                activePluginPanel?.pluginId === pluginId &&
-                activePluginPanel?.panelId === panel.id;
+                activePluginPanel?.pluginId === pluginId && activePluginPanel?.panelId === panel.id;
               return (
                 <button
                   key={`${pluginId}-${panel.id}`}
@@ -122,18 +130,9 @@ export function SideRail() {
       </nav>
 
       <div className="flex flex-col items-center gap-1 pb-2">
-        <AuditLogButton
-          mainSurface={mainSurface}
-          setMainSurface={setMainSurface}
-        />
-        <IncidentHistoryButton
-          mainSurface={mainSurface}
-          setMainSurface={setMainSurface}
-        />
-        <SettingsButton
-          mainSurface={mainSurface}
-          setMainSurface={setMainSurface}
-        />
+        <AuditLogButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
+        <IncidentHistoryButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
+        <SettingsButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
       </div>
 
       <UserMenu avatarInitial={avatarInitial} username={user?.username} />
@@ -229,10 +228,7 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
       )}
 
       {statusPosition && (
-        <StatusDropdown
-          position={statusPosition}
-          onClose={() => setStatusPosition(null)}
-        />
+        <StatusDropdown position={statusPosition} onClose={() => setStatusPosition(null)} />
       )}
     </div>
   );
@@ -243,7 +239,9 @@ function SearchButton({ openSearch }: { openSearch: (scope: { kind: "all" }) => 
   const label = keystroke ? `Search workspace (${keystroke})` : "Search workspace";
 
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}
+    >
       <button
         type="button"
         onClick={() => openSearch({ kind: "all" })}
@@ -267,7 +265,9 @@ function SettingsButton({
   const label = keystroke ? `Settings (${keystroke})` : "Settings";
 
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}
+    >
       <button
         type="button"
         onClick={() => setMainSurface({ kind: "settings" })}
@@ -293,7 +293,9 @@ function AuditLogButton({
   setMainSurface: (surface: { kind: "audit-log" }) => void;
 }) {
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Audit log</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">Audit log</span>}
+    >
       <button
         type="button"
         onClick={() => setMainSurface({ kind: "audit-log" })}
@@ -319,7 +321,9 @@ function IncidentHistoryButton({
   setMainSurface: (surface: { kind: "incidents" }) => void;
 }) {
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Incident history</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">Incident history</span>}
+    >
       <button
         type="button"
         onClick={() => setMainSurface({ kind: "incidents" })}

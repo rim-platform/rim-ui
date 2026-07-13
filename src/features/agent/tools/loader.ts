@@ -16,16 +16,8 @@ import type { AiToolDefinition } from "../providers/types";
 import { ConfirmationRequiredError } from "../runtime/confirmationGate";
 import { getCurrentCommandContext } from "./commandContext";
 import { registerGetCurrentContextTool } from "./getCurrentContext";
-import {
-  buildAiToolFromCommand,
-  buildAiToolRegistrationOptions,
-} from "./generator";
-import {
-  registerTool,
-  getAllTools,
-  getTool,
-  unregisterTool,
-} from "./registry";
+import { buildAiToolFromCommand, buildAiToolRegistrationOptions } from "./generator";
+import { registerTool, getAllTools, getTool, unregisterTool } from "./registry";
 import type { AiToolHandler, RegisteredTool } from "./types";
 
 function clearRegistry(): void {
@@ -179,9 +171,7 @@ function interpretResult(
   }
   if (result.status === CommandResultStatus.CONFIRMATION_REQUIRED) {
     if (!result.confirmationRequired) {
-      throw new Error(
-        "CONFIRMATION_REQUIRED status returned without a challenge payload",
-      );
+      throw new Error("CONFIRMATION_REQUIRED status returned without a challenge payload");
     }
     // Enrich the challenge with registry-side context so the modal can
     // render sensitivity tier + nl_description without a second lookup.
@@ -211,9 +201,7 @@ export function makeBackendToolHandler(commandId: string): AiToolHandler {
   };
 }
 
-export function commandsToBackendTools(
-  commands: ReadonlyArray<Command>,
-): BackendTool[] {
+export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
   return commands.map((cmd) => ({
     definition: buildAiToolFromCommand(cmd),
     handler: makeBackendToolHandler(cmd.id),
@@ -222,9 +210,7 @@ export function commandsToBackendTools(
 }
 
 async function fetchAiCommands(): Promise<Command[]> {
-  const res = await graphqlClient.request<{ commands: Command[] }>(
-    AI_COMMANDS_QUERY,
-  );
+  const res = await graphqlClient.request<{ commands: Command[] }>(AI_COMMANDS_QUERY);
   return res.commands;
 }
 
@@ -254,15 +240,12 @@ function buildPluginToolDefinition(
 function makePluginToolHandler(pluginId: string, commandId: string): AiToolHandler {
   return async (input) => {
     try {
-      const result = await invoke<unknown>(
-        "plugin_run_ai_command",
-        { pluginId, commandId, input },
-      );
+      const result = await invoke<unknown>("plugin_run_ai_command", { pluginId, commandId, input });
       return payloadToString(result);
     } catch (err) {
-      throw new Error(
-        `Plugin command ${pluginId}/${commandId} failed: ${String(err)}`,
-      );
+      throw new Error(`Plugin command ${pluginId}/${commandId} failed: ${String(err)}`, {
+        cause: err,
+      });
     }
   };
 }
@@ -311,11 +294,8 @@ export async function loadAgentTools(): Promise<MergeResult> {
     // Network/server failure: fall back to hardcoded-only registry.
     // Do NOT block agent boot — the user can still use builtin tools.
     fetchFailed = true;
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[agent.loader] Failed to fetch backend AI tools, using hardcoded only",
-      err,
-    );
+
+    console.warn("[agent.loader] Failed to fetch backend AI tools, using hardcoded only", err);
   }
 
   if (fetchFailed) {

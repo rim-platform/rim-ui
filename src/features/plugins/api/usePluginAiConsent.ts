@@ -54,7 +54,11 @@ export function useRevokeAllAiConsent() {
       const failed = commandIds.filter((_, i) => {
         const result = results[i];
         if (result.status === "rejected") {
-          logger.error("[RIM:Plugin] revoke failed", { pluginId, commandId: commandIds[i], error: result.reason });
+          logger.error("[RIM:Plugin] revoke failed", {
+            pluginId,
+            commandId: commandIds[i],
+            error: result.reason,
+          });
           return true;
         }
         return false;

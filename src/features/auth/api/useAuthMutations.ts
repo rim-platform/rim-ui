@@ -71,7 +71,6 @@ export function useLoginMutation() {
 
 export function useLogoutMutation() {
   return useMutation({
-    mutationFn: () =>
-      graphqlClient.request<LogoutResponse>(LOGOUT_MUTATION),
+    mutationFn: () => graphqlClient.request<LogoutResponse>(LOGOUT_MUTATION),
   });
 }

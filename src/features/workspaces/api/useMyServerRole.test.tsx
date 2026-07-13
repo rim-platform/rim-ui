@@ -1,0 +1,73 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+
+const requestMock = vi.fn();
+
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: {
+    request: (...args: unknown[]) => requestMock(...args),
+  },
+}));
+
+import { useMyServerRole, useCanManageOnCall, useIsOwner } from "./useMyServerRole";
+
+function wrapper({ children }: { children: ReactNode }) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
+
+describe("useMyServerRole", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it("returns undefined while loading", () => {
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useMyServerRole("srv-1"), { wrapper });
+    expect(result.current).toBeUndefined();
+  });
+
+  it("returns the viewer's role once loaded", async () => {
+    requestMock.mockResolvedValue({
+      server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.MODERATOR },
+    });
+    const { result } = renderHook(() => useMyServerRole("srv-1"), { wrapper });
+    await waitFor(() => expect(result.current).toBe(ServerMemberRoleGql.MODERATOR));
+  });
+});
+
+describe("useCanManageOnCall", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it.each([
+    [ServerMemberRoleGql.OWNER, true],
+    [ServerMemberRoleGql.MODERATOR, true],
+    [ServerMemberRoleGql.GUEST, false],
+  ])("role %s -> canManageOnCall %s", async (role, expected) => {
+    requestMock.mockResolvedValue({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
+    const { result } = renderHook(() => useCanManageOnCall("srv-1"), { wrapper });
+    await waitFor(() => expect(result.current).toBe(expected));
+  });
+});
+
+describe("useIsOwner", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it.each([
+    [ServerMemberRoleGql.OWNER, true],
+    [ServerMemberRoleGql.MODERATOR, false],
+    [ServerMemberRoleGql.GUEST, false],
+  ])("role %s -> isOwner %s", async (role, expected) => {
+    requestMock.mockResolvedValue({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
+    const { result } = renderHook(() => useIsOwner("srv-1"), { wrapper });
+    await waitFor(() => expect(result.current).toBe(expected));
+  });
+});

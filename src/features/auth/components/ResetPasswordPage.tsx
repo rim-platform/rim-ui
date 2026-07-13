@@ -106,7 +106,9 @@ export function ResetPasswordPage() {
               )}
               {resetPassword.error && (
                 <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                  {resetPassword.error instanceof Error ? resetPassword.error.message : "Failed to reset password"}
+                  {resetPassword.error instanceof Error
+                    ? resetPassword.error.message
+                    : "Failed to reset password"}
                 </p>
               )}
               <button

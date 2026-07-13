@@ -101,11 +101,7 @@ function narrowError(err: unknown): SafeInvokeError {
     const code = err.kind;
     const message = typeof err.message === "string" ? err.message : JSON.stringify(err);
     // permission-class backend codes
-    if (
-      code === "PERMISSION_DENIED" ||
-      code === "CAPABILITY_MISSING" ||
-      code === "UNAUTHORIZED"
-    ) {
+    if (code === "PERMISSION_DENIED" || code === "CAPABILITY_MISSING" || code === "UNAUTHORIZED") {
       return { kind: "permission_denied", message };
     }
     // invalid-args-class backend codes
@@ -211,7 +207,10 @@ export async function safeInvoke<T>(
   if (!isTauri()) {
     return {
       ok: false,
-      error: { kind: "ipc_unavailable", message: `IPC not available (web mode) — command: ${command}` },
+      error: {
+        kind: "ipc_unavailable",
+        message: `IPC not available (web mode) — command: ${command}`,
+      },
     };
   }
 

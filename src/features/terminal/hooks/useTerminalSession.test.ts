@@ -131,7 +131,9 @@ describe("useTerminalSession — safeInvoke error handling", () => {
   it("terminal_resize: permission_denied logs at warn level", async () => {
     mockSafeInvoke.mockImplementation((command: string) => {
       if (command === "terminal_resize") {
-        return Promise.resolve(errResult({ kind: "permission_denied", message: "terminal resize not allowed" }));
+        return Promise.resolve(
+          errResult({ kind: "permission_denied", message: "terminal resize not allowed" }),
+        );
       }
       return Promise.resolve(okResult());
     });
@@ -152,7 +154,13 @@ describe("useTerminalSession — safeInvoke error handling", () => {
   it("terminal_resize: backend_error logs at warn level with code", async () => {
     mockSafeInvoke.mockImplementation((command: string) => {
       if (command === "terminal_resize") {
-        return Promise.resolve(errResult({ kind: "backend_error", code: "SESSION_NOT_FOUND", message: "no such session" }));
+        return Promise.resolve(
+          errResult({
+            kind: "backend_error",
+            code: "SESSION_NOT_FOUND",
+            message: "no such session",
+          }),
+        );
       }
       return Promise.resolve(okResult());
     });
@@ -203,7 +211,9 @@ describe("useTerminalSession — safeInvoke error handling", () => {
   it("terminal_write: backend_error logs at error level", async () => {
     mockSafeInvoke.mockImplementation((command: string) => {
       if (command === "terminal_write") {
-        return Promise.resolve(errResult({ kind: "backend_error", code: "WRITE_FAILED", message: "pty gone" }));
+        return Promise.resolve(
+          errResult({ kind: "backend_error", code: "WRITE_FAILED", message: "pty gone" }),
+        );
       }
       return Promise.resolve(okResult());
     });

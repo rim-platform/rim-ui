@@ -69,10 +69,12 @@ export function useMemberLookup(serverId?: string) {
     }
 
     function resolve(userId: string): MemberInfo {
-      return map.get(userId) ?? {
-        displayName: userId.slice(0, 8),
-        isCurrentUser: false,
-      };
+      return (
+        map.get(userId) ?? {
+          displayName: userId.slice(0, 8),
+          isCurrentUser: false,
+        }
+      );
     }
 
     return { resolve, map };

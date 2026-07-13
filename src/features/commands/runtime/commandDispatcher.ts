@@ -12,11 +12,13 @@ import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { useIncidentStore } from "../../incidents/state/useIncidentStore";
+import { useOnCallStore } from "../../oncall/state/useOnCallStore";
 import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { gql } from "graphql-request";
 
 interface ConversationItem {
@@ -38,8 +40,12 @@ interface ConversationPage {
  */
 function getCachedConversationIds(): string[] {
   const workspaceId = useWorkspaceStore.getState().workspaceId;
-  const channels = queryClient.getQueryData<ConversationPage>(queryKeys.channels(workspaceId ?? undefined));
-  const inbox = queryClient.getQueryData<ConversationPage>(queryKeys.conversations(workspaceId ?? undefined));
+  const channels = queryClient.getQueryData<ConversationPage>(
+    queryKeys.channels(workspaceId ?? undefined),
+  );
+  const inbox = queryClient.getQueryData<ConversationPage>(
+    queryKeys.conversations(workspaceId ?? undefined),
+  );
   return [...(channels?.items ?? []), ...(inbox?.items ?? [])].map((c) => c.id);
 }
 
@@ -71,11 +77,17 @@ const RESOLVE_INCIDENT_GQL = gql`
   }
 `;
 
-function resolveIncidentFromCommand(incidentId: string, workspaceId: string, conversationId: string) {
+function resolveIncidentFromCommand(
+  incidentId: string,
+  workspaceId: string,
+  conversationId: string,
+) {
   graphqlClient
     .request(RESOLVE_INCIDENT_GQL, { incidentId })
     .then(() => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.activeIncident(workspaceId, conversationId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+      });
       toast.success("Incident resolved");
     })
     .catch(() => {
@@ -83,8 +95,56 @@ function resolveIncidentFromCommand(incidentId: string, workspaceId: string, con
     });
 }
 
-// Registry of desktop-local command handlers
-const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = {
+/**
+ * Ack via the primary unified-dispatch path (Track C1c): `incident.ack` is
+ * `Mutating`/`dangerous:false`, and `requires_confirmation_for_initiator` only fires for the
+ * `Restricted` tier, the `dangerous` flag, or agentic+>=Mutating dispatch — every C1 human ack
+ * surface (palette/keybind/context-menu/banner button/paged-toast) is non-agentic, so this is
+ * single-action with no confirmation prompt. There is deliberately no direct-mutation
+ * fallback — this keeps ack consistent with the other three C1 builtins and pre-fits C2.
+ */
+function ackIncidentFromCommand(
+  incidentId: string,
+  workspaceId: string,
+  conversationId: string,
+  executeBackend: ExecuteBackendCommand,
+) {
+  executeBackend({ commandId: "incident.ack", args: { incidentId } })
+    .then((res) => {
+      if (res.executeCommand.status === "ERROR") {
+        toast.error(res.executeCommand.message || "Failed to acknowledge incident");
+        return;
+      }
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incidentId) });
+      toast.success("Incident acknowledged");
+    })
+    .catch(() => {
+      toast.error("Failed to acknowledge incident");
+    });
+}
+
+/** Reads the viewer's cached server role (no extra round-trip) to gate `oncall.take_shift`. */
+function canManageOnCall(workspaceId: string): boolean {
+  const server = queryClient.getQueryData<{ viewerRole: ServerMemberRoleGql }>(
+    queryKeys.server(workspaceId),
+  );
+  return (
+    server?.viewerRole === ServerMemberRoleGql.OWNER ||
+    server?.viewerRole === ServerMemberRoleGql.MODERATOR
+  );
+}
+
+// Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
+// every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
+// args, and the handler supplies FE-computed args — see `incident.start`/`incident.resolve`
+// above and the four Track C1 builtins below for the pattern.
+const localHandlers: Record<
+  string,
+  (args: Record<string, unknown> | undefined, executeBackend: ExecuteBackendCommand) => void
+> = {
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
@@ -97,7 +157,9 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
   "workspace.search_in_channel": () => {
     const convId = useShellStore.getState().selectedConversationId;
     if (convId) {
-      useSearchOverlayStore.getState().openWithScope({ kind: "conversation", conversationId: convId });
+      useSearchOverlayStore
+        .getState()
+        .openWithScope({ kind: "conversation", conversationId: convId });
     } else {
       useSearchOverlayStore.getState().openWithScope({ kind: "all" });
     }
@@ -209,10 +271,9 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
     const workspaceId = useWorkspaceStore.getState().workspaceId;
     if (workspaceId) {
       useUnreadStore.getState().markAllRead();
-      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } })
-        .catch(() => {
-          toast.error("Failed to mark all as read");
-        });
+      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
+        toast.error("Failed to mark all as read");
+      });
     }
   },
   "workspace.reload_commands": () => {
@@ -255,6 +316,56 @@ const localHandlers: Record<string, (args?: Record<string, unknown>) => void> = 
     }
     useIncidentStore.getState().setShowPostmortem(true);
   },
+  // ── Track C1 builtins (oncall.who / oncall.take_shift / incident.ack / incident.escalate)
+  "incident.ack": (_args, executeBackend) => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    ackIncidentFromCommand(incident.id, workspaceId, conversationId, executeBackend);
+  },
+  "incident.escalate": (_args, executeBackend) => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    executeBackend({ commandId: "incident.escalate", args: { incidentId: incident.id } })
+      .then((res) => {
+        if (res.executeCommand.status === "ERROR") {
+          toast.error(res.executeCommand.message || "Failed to escalate incident");
+          return;
+        }
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incident.id) });
+        toast.success("Incident escalated");
+      })
+      .catch(() => toast.error("Failed to escalate incident"));
+  },
+  "oncall.who": () => {
+    useShellStore.getState().setMainSurface({ kind: "incidents", tab: "oncall" });
+  },
+  "oncall.take_shift": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    if (!workspaceId) return;
+    if (!canManageOnCall(workspaceId)) {
+      toast.error("Managing on-call requires Moderator");
+      return;
+    }
+    // The backend command stays a general primitive requiring explicit args — correct for
+    // macro/pipeline/agent use. The interactive FE supplies them via this modal on confirm
+    // (createOnCallOverride), not by re-dispatching this command with args.
+    useOnCallStore.getState().openOverrideModal();
+  },
   "workspace.toggle_zen_mode": () => {
     const shell = useShellStore.getState();
     shell.toggleZenMode();
@@ -282,14 +393,14 @@ export async function dispatchCommand(
     commandContext?: Record<string, unknown>;
     confirmedDangerous?: boolean;
     isPipe?: boolean;
-  }
+  },
 ): Promise<CommandResult | null> {
   // Local handlers always take precedence — even if the backend marks a
   // command as "Backend", the frontend may have a local handler that opens
   // a dialog or performs a client-side action instead.
   const localHandler = localHandlers[command.id];
   if (localHandler) {
-    localHandler(context?.args);
+    localHandler(context?.args, executeBackend);
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 
@@ -301,7 +412,12 @@ export async function dispatchCommand(
 
   if (command.executionTarget === "DESKTOP_LOCAL") {
     logger.warn(`[RIM] No local handler for command: ${command.id}`);
-    return { status: "ERROR", message: `No local handler for ${command.id}`, payload: null, followUpCommands: [] };
+    return {
+      status: "ERROR",
+      message: `No local handler for ${command.id}`,
+      payload: null,
+      followUpCommands: [],
+    };
   }
 
   // Backend command
@@ -322,10 +438,9 @@ async function dispatchPluginCommand(
   args?: Record<string, unknown>,
 ): Promise<CommandResult> {
   try {
-    const result = await invoke<{ status: string; payload: unknown }>(
-      "plugin_execute_command",
-      { ...{ pluginId, command, args: args ?? {} } },
-    );
+    const result = await invoke<{ status: string; payload: unknown }>("plugin_execute_command", {
+      ...{ pluginId, command, args: args ?? {} },
+    });
     return {
       status: result.status === "ok" ? "SUCCESS" : "ERROR",
       message: result.status === "ok" ? "Plugin command executed" : "Plugin command failed",

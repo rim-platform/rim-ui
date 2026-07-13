@@ -48,7 +48,12 @@ const CHANNEL_LENSES_QUERY = gql`
 
 const APPLY_LENS_QUERY = gql`
   query ApplyChannelLens($serverId: ID!, $conversationId: ID!, $lensId: ID!, $limit: Int! = 50) {
-    applyChannelLens(serverId: $serverId, conversationId: $conversationId, lensId: $lensId, limit: $limit) {
+    applyChannelLens(
+      serverId: $serverId
+      conversationId: $conversationId
+      lensId: $lensId
+      limit: $limit
+    ) {
       ...MessageWithReactions
     }
   }
@@ -210,7 +215,9 @@ export function useUpdateLensMutation() {
       }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.lenses(vars.serverId, vars.conversationId) });
-      qc.invalidateQueries({ queryKey: queryKeys.lensMessages(vars.serverId, vars.conversationId, vars.lensId) });
+      qc.invalidateQueries({
+        queryKey: queryKeys.lensMessages(vars.serverId, vars.conversationId, vars.lensId),
+      });
     },
   });
 }

@@ -146,17 +146,27 @@ export function MessageContextMenu({
     }
 
     return result;
-  }, [messageId, messageText, isOwnMessage, isPinned, hasThread, onClose, pluginContextMenuCommands, executeCommandMutation, pinMessage, unpinMessage, workspaceId, conversationId, activeIncident, x, y]);
+  }, [
+    messageId,
+    messageText,
+    isOwnMessage,
+    isPinned,
+    hasThread,
+    onClose,
+    pluginContextMenuCommands,
+    executeCommandMutation,
+    pinMessage,
+    unpinMessage,
+    workspaceId,
+    conversationId,
+    activeIncident,
+    x,
+    y,
+  ]);
 
   return (
     <>
-      {!pendingDelete && (
-        <DropdownMenu
-          items={items}
-          position={{ x, y }}
-          onClose={onClose}
-        />
-      )}
+      {!pendingDelete && <DropdownMenu items={items} position={{ x, y }} onClose={onClose} />}
       {tagMenuPos && (
         <TagMessageMenu
           messageId={messageId}

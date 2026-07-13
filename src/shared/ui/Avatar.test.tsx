@@ -33,25 +33,19 @@ describe("Avatar", () => {
   });
 
   it("shows online presence indicator", () => {
-    const { container } = render(
-      <Avatar name="Alice" userId="user-1" presenceStatus="ONLINE" />,
-    );
+    const { container } = render(<Avatar name="Alice" userId="user-1" presenceStatus="ONLINE" />);
     const presenceIndicator = container.querySelector(".bg-rim-success");
     expect(presenceIndicator).toBeInTheDocument();
   });
 
   it("shows away presence indicator", () => {
-    const { container } = render(
-      <Avatar name="Alice" userId="user-1" presenceStatus="AWAY" />,
-    );
+    const { container } = render(<Avatar name="Alice" userId="user-1" presenceStatus="AWAY" />);
     const presenceIndicator = container.querySelector(".bg-rim-warm");
     expect(presenceIndicator).toBeInTheDocument();
   });
 
   it("shows offline presence indicator", () => {
-    const { container } = render(
-      <Avatar name="Alice" userId="user-1" presenceStatus="OFFLINE" />,
-    );
+    const { container } = render(<Avatar name="Alice" userId="user-1" presenceStatus="OFFLINE" />);
     const presenceIndicator = container.querySelector(".bg-rim-text-faint");
     expect(presenceIndicator).toBeInTheDocument();
   });

@@ -131,14 +131,10 @@ describe("PluginAiConsentPanel", () => {
   });
 
   it("shows empty state when no AI-enabled plugins", () => {
-    mockPlugins = [
-      makePlugin({ ai_callable_commands: [], ai_consent_required: false }),
-    ];
+    mockPlugins = [makePlugin({ ai_callable_commands: [], ai_consent_required: false })];
     render(<PluginAiConsentPanel />, { wrapper });
 
-    expect(
-      screen.getByText("No plugins with AI-callable commands installed."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No plugins with AI-callable commands installed.")).toBeInTheDocument();
   });
 
   it("expands command list on chevron click and shows checkboxes", async () => {
@@ -400,7 +396,10 @@ describe("PluginAiConsentPanel", () => {
     expect(mockRevokeAllPluginsMutate).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ pluginId: "plugin-a", commandIds: ["plugin-a::run"] }),
-        expect.objectContaining({ pluginId: "plugin-b", commandIds: ["plugin-b::search", "plugin-b::list"] }),
+        expect.objectContaining({
+          pluginId: "plugin-b",
+          commandIds: ["plugin-b::search", "plugin-b::list"],
+        }),
       ]),
       expect.any(Object),
     );
@@ -411,9 +410,14 @@ describe("PluginAiConsentPanel", () => {
     mockPlugins = [makePlugin({ approved_ai_commands: ["test-plugin::run"] })];
 
     // Capture the onSuccess callback from the mutate call
-    mockRevokeAllPluginsMutate.mockImplementation((_vars: unknown, callbacks: { onSuccess?: (data: { revokedCount: number; failedCount: number }) => void }) => {
-      callbacks?.onSuccess?.({ revokedCount: 1, failedCount: 0 });
-    });
+    mockRevokeAllPluginsMutate.mockImplementation(
+      (
+        _vars: unknown,
+        callbacks: { onSuccess?: (data: { revokedCount: number; failedCount: number }) => void },
+      ) => {
+        callbacks?.onSuccess?.({ revokedCount: 1, failedCount: 0 });
+      },
+    );
 
     render(<PluginAiConsentPanel />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: "Revoke all grants" }));
@@ -425,11 +429,18 @@ describe("PluginAiConsentPanel", () => {
 
   it("partial-failure: onSuccess with failedCount > 0 toasts error with counts", async () => {
     const { toast } = await import("../../../shared/toast/useToastStore");
-    mockPlugins = [makePlugin({ approved_ai_commands: ["test-plugin::run", "test-plugin::query"] })];
+    mockPlugins = [
+      makePlugin({ approved_ai_commands: ["test-plugin::run", "test-plugin::query"] }),
+    ];
 
-    mockRevokeAllPluginsMutate.mockImplementation((_vars: unknown, callbacks: { onSuccess?: (data: { revokedCount: number; failedCount: number }) => void }) => {
-      callbacks?.onSuccess?.({ revokedCount: 1, failedCount: 1 });
-    });
+    mockRevokeAllPluginsMutate.mockImplementation(
+      (
+        _vars: unknown,
+        callbacks: { onSuccess?: (data: { revokedCount: number; failedCount: number }) => void },
+      ) => {
+        callbacks?.onSuccess?.({ revokedCount: 1, failedCount: 1 });
+      },
+    );
 
     render(<PluginAiConsentPanel />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: "Revoke all grants" }));
@@ -443,9 +454,11 @@ describe("PluginAiConsentPanel", () => {
     const { toast } = await import("../../../shared/toast/useToastStore");
     mockPlugins = [makePlugin({ approved_ai_commands: ["test-plugin::run"] })];
 
-    mockRevokeAllPluginsMutate.mockImplementation((_vars: unknown, callbacks: { onError?: () => void }) => {
-      callbacks?.onError?.();
-    });
+    mockRevokeAllPluginsMutate.mockImplementation(
+      (_vars: unknown, callbacks: { onError?: () => void }) => {
+        callbacks?.onError?.();
+      },
+    );
 
     render(<PluginAiConsentPanel />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: "Revoke all grants" }));

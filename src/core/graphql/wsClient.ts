@@ -1,27 +1,6 @@
 import { createClient } from "graphql-ws";
 
-function getWsEndpoint(): string {
-  const httpEndpoint = import.meta.env.VITE_GRAPHQL_ENDPOINT || "http://localhost:8080/api";
-
-  // If the endpoint is a relative path (e.g. "/api"), resolve it against the
-  // current page origin so the WebSocket constructor receives an absolute URL
-  // with the ws(s):// scheme.  Browsers require an absolute URL for WebSocket.
-  let absolute: string;
-  if (/^https?:\/\//.test(httpEndpoint)) {
-    absolute = httpEndpoint;
-  } else {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    absolute = `${proto}//${window.location.host}${httpEndpoint}`;
-    // Already has the correct ws(s) scheme, just append /ws
-    return absolute.replace(/\/api$/, "/api/ws");
-  }
-
-  // Convert http(s) to ws(s) and append /ws
-  return absolute
-    .replace(/^https:/, "wss:")
-    .replace(/^http:/, "ws:")
-    .replace(/\/api$/, "/api/ws");
-}
+import { getWsEndpoint } from "./config";
 
 type ConnectionListener = () => void;
 

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { eventBus } from "../../../core/events/eventBus";
 import { BUS_EVENTS } from "../../../core/events/busEvents";
-import type { WorkspaceStateChangedEvent, WorkspaceStateDeletedEvent } from "../../../core/events/busEvents";
+import type {
+  WorkspaceStateChangedEvent,
+  WorkspaceStateDeletedEvent,
+} from "../../../core/events/busEvents";
 
 describe("workspace state bus events", () => {
   beforeEach(() => {

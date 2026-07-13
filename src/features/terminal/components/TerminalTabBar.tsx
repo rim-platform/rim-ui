@@ -22,7 +22,7 @@ async function createSession(): Promise<void> {
     const shell = preferredShell.trim() || null;
     const sessionId = await invoke<string>("terminal_create", { shell });
     // Show shell name on tab (extract basename from path)
-    const shellLabel = shell ? shell.split(/[/\\]/).pop() ?? "Terminal" : "Terminal";
+    const shellLabel = shell ? (shell.split(/[/\\]/).pop() ?? "Terminal") : "Terminal";
     const session: TerminalSession = { id: sessionId, shell: shellLabel };
     addSession(session);
   } catch (err) {
@@ -60,8 +60,7 @@ export function TerminalTabBar() {
       e.preventDefault();
       e.stopPropagation();
 
-      const { sessions: currentSessions, activeSessionId: currentId } =
-        useTerminalStore.getState();
+      const { sessions: currentSessions, activeSessionId: currentId } = useTerminalStore.getState();
       if (currentSessions.length < 2 || !currentId) return;
 
       const idx = currentSessions.findIndex((s) => s.id === currentId);
@@ -83,7 +82,10 @@ export function TerminalTabBar() {
   }, [handleTabSwitch]);
 
   return (
-    <div className="flex h-8 shrink-0 items-center gap-px border-b border-rim-line bg-rim-void px-1" role="tablist">
+    <div
+      className="flex h-8 shrink-0 items-center gap-px border-b border-rim-line bg-rim-void px-1"
+      role="tablist"
+    >
       {sessions.map((session) => (
         <div
           key={session.id}
@@ -101,9 +103,7 @@ export function TerminalTabBar() {
           tabIndex={0}
           aria-selected={session.id === activeSessionId}
         >
-          <span className="truncate max-w-[100px]">
-            {session.shell || "Terminal"}
-          </span>
+          <span className="truncate max-w-[100px]">{session.shell || "Terminal"}</span>
           <button
             type="button"
             onClick={(e) => {

@@ -67,9 +67,6 @@ export interface SignupWithInviteResponse {
 export function useSignupWithInviteMutation() {
   return useMutation({
     mutationFn: (input: SignupWithInviteInput) =>
-      graphqlClient.request<SignupWithInviteResponse>(
-        SIGNUP_WITH_INVITE_MUTATION,
-        { input },
-      ),
+      graphqlClient.request<SignupWithInviteResponse>(SIGNUP_WITH_INVITE_MUTATION, { input }),
   });
 }

@@ -108,7 +108,11 @@ export function ForwardDialog({
     }
   }
 
-  function resolveTitle(conv: { title: string; conversationType: string; memberIds: string[] }): string {
+  function resolveTitle(conv: {
+    title: string;
+    conversationType: string;
+    memberIds: string[];
+  }): string {
     if (conv.conversationType === "DIRECT" && !conv.title) {
       const otherId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
       return memberLookup.resolve(otherId).displayName;

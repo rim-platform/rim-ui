@@ -27,7 +27,7 @@ export function useResolvedKeybinds(workspaceId?: string) {
     queryFn: async () => {
       const res = await graphqlClient.request<{ resolvedKeybinds: ResolvedKeybind[] }>(
         ResolvedKeybindsDocument,
-        { workspaceId }
+        { workspaceId },
       );
       return res.resolvedKeybinds;
     },

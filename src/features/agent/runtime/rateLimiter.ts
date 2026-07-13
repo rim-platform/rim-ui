@@ -45,9 +45,7 @@ class AgentRateLimiter {
     outputPrice: number,
   ): void {
     // Prices are per million tokens
-    const cost =
-      (inputTokens * inputPrice) / 1_000_000 +
-      (outputTokens * outputPrice) / 1_000_000;
+    const cost = (inputTokens * inputPrice) / 1_000_000 + (outputTokens * outputPrice) / 1_000_000;
     this.sessionCost += cost;
   }
 

@@ -61,7 +61,12 @@ export function useReplyToMessageMutation() {
       logger.error("[RIM:Thread] Reply mutation failed:", error, "vars:", vars);
     },
     onSuccess: async (data, vars) => {
-      logger.debug("[RIM:Thread] Reply success:", data.replyToMessage.id, "threadId:", data.replyToMessage.threadId);
+      logger.debug(
+        "[RIM:Thread] Reply success:",
+        data.replyToMessage.id,
+        "threadId:",
+        data.replyToMessage.threadId,
+      );
       const threadId = data.replyToMessage.threadId ?? undefined;
 
       // Invalidate conversation messages (root message gets updated with rootThreadId)

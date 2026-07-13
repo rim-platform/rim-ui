@@ -26,14 +26,23 @@ export function useChannels(workspaceId?: string) {
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ channels: { items: { id: string; serverId: string; conversationType: string; title: string; memberIds: string[]; topic: string | null }[]; pageInfo: { hasNext: boolean; hasPrev: boolean } } }>(
-        ChannelsDocument,
-        {
-          serverId: workspaceId!,
-          dir: "AFTER",
-          limit: 100,
-        },
-      );
+      const res = await graphqlClient.request<{
+        channels: {
+          items: {
+            id: string;
+            serverId: string;
+            conversationType: string;
+            title: string;
+            memberIds: string[];
+            topic: string | null;
+          }[];
+          pageInfo: { hasNext: boolean; hasPrev: boolean };
+        };
+      }>(ChannelsDocument, {
+        serverId: workspaceId!,
+        dir: "AFTER",
+        limit: 100,
+      });
       return res.channels;
     },
   });

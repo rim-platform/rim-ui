@@ -6,6 +6,8 @@ import { BUILT_IN_PRESETS } from "../types/layoutPreset";
 import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
 import { SkillTier } from "../../core/graphql/generated/schema-types";
 import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
+import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { OnCallIndicator } from "../../features/oncall/components/OnCallIndicator";
 
 /** Map internal keybind context strings to user-friendly labels. */
 function humanizeContext(ctx: string | null): string | null {
@@ -67,6 +69,7 @@ export function StatusBar() {
 
   const activePresetId = useLayoutPresetStore((s) => s.activePresetId);
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const rawContext = surfaceToContext(focusedSurface);
   const contextLabel = humanizeContext(rawContext);
@@ -91,8 +94,9 @@ export function StatusBar() {
       {/* Center spacer */}
       <div className="flex-1" />
 
-      {/* Right: density + mode + keybind context + layout preset */}
+      {/* Right: density + mode + keybind context + layout preset + on-call */}
       <div className="flex items-center gap-2">
+        <OnCallIndicator serverId={workspaceId} />
         {displayDensity !== "comfortable" && (
           <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-faint">
             {displayDensity === "compact" ? "Compact" : "Ultra Compact"}
@@ -105,8 +109,9 @@ export function StatusBar() {
             </span>
           )}
         </DisclosureGate>
-        {mainSurface.kind === "conversation" && rawContext !== "TERMINAL" && (
-          navigationMode ? (
+        {mainSurface.kind === "conversation" &&
+          rawContext !== "TERMINAL" &&
+          (navigationMode ? (
             <span className="rounded bg-rim-accent/20 px-1.5 py-px font-medium text-rim-accent">
               NAVIGATE
             </span>
@@ -114,11 +119,8 @@ export function StatusBar() {
             <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-muted">
               COMPOSE
             </span>
-          )
-        )}
-        {contextLabel && (
-          <span className="text-rim-text-faint">{contextLabel}</span>
-        )}
+          ))}
+        {contextLabel && <span className="text-rim-text-faint">{contextLabel}</span>}
       </div>
     </div>
   );

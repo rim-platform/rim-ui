@@ -8,25 +8,29 @@ interface AgentDisclaimerDialogProps {
 
 export function AgentDisclaimerDialog({ open, onAccept, onCancel }: AgentDisclaimerDialogProps) {
   return (
-    <Dialog open={open} onClose={onCancel} title="AI Agent — Data Sharing Notice" maxWidth="max-w-md">
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="AI Agent — Data Sharing Notice"
+      maxWidth="max-w-md"
+    >
       <div className="space-y-4">
         <div className="rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
           <p className="text-xs leading-relaxed text-rim-warm">
-            When you use the AI Agent, workspace data — including messages, channel names,
-            member usernames, and other content — is sent to the selected third-party AI
-            provider (Anthropic, OpenAI, etc.) for processing.
+            When you use the AI Agent, workspace data — including messages, channel names, member
+            usernames, and other content — is sent to the selected third-party AI provider
+            (Anthropic, OpenAI, etc.) for processing.
           </p>
         </div>
 
         <p className="text-xs leading-relaxed text-rim-text-muted">
-          The AI provider may process this data according to their own privacy policy
-          and terms of service. RIM does not control how the provider handles your data
-          once it is transmitted.
+          The AI provider may process this data according to their own privacy policy and terms of
+          service. RIM does not control how the provider handles your data once it is transmitted.
         </p>
 
         <p className="text-xs leading-relaxed text-rim-text-muted">
-          Do not use the AI Agent if your workspace contains sensitive, confidential,
-          or regulated data that should not be shared with third parties.
+          Do not use the AI Agent if your workspace contains sensitive, confidential, or regulated
+          data that should not be shared with third parties.
         </p>
 
         <div className="flex justify-end gap-2 pt-2">

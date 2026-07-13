@@ -1,5 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Hash, MessageCircle, Pin, Search, Users, BellOff, Bell, UserPlus, AlertTriangle } from "lucide-react";
+import {
+  Hash,
+  MessageCircle,
+  Pin,
+  Search,
+  Users,
+  BellOff,
+  Bell,
+  UserPlus,
+  AlertTriangle,
+} from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
@@ -14,10 +24,19 @@ import { useUpdateTopicMutation } from "../../features/conversations/api/useUpda
 import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
-import { usePresenceStore, type PresenceStatus } from "../../features/presence/state/usePresenceStore";
-import { IncidentSeverityGql, IncidentPhaseNameGql } from "../../core/graphql/generated/schema-types";
+import {
+  usePresenceStore,
+  type PresenceStatus,
+} from "../../features/presence/state/usePresenceStore";
+import {
+  IncidentSeverityGql,
+  IncidentPhaseNameGql,
+} from "../../core/graphql/generated/schema-types";
 import { useMutedStore } from "../../features/conversations/state/useMutedStore";
-import { useMuteConversationMutation, useUnmuteConversationMutation } from "../../features/conversations/api/useMuteConversation";
+import {
+  useMuteConversationMutation,
+  useUnmuteConversationMutation,
+} from "../../features/conversations/api/useMuteConversation";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { IncidentBanner } from "../../features/incidents/components/IncidentBanner";
 import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
@@ -44,7 +63,9 @@ export function ConversationHeader() {
   const conversation =
     convPage?.items.find((c) => c.id === conversationId) ??
     channelsPage?.items.find((c) => c.id === conversationId);
-  const Icon = conversation ? typeIcon[conversation.conversationType as ConversationTypeEnum] ?? Hash : Hash;
+  const Icon = conversation
+    ? (typeIcon[conversation.conversationType as ConversationTypeEnum] ?? Hash)
+    : Hash;
 
   // For DMs, show the other user's name instead of "Untitled"
   let displayTitle = conversation?.title;
@@ -86,6 +107,22 @@ export function ConversationHeader() {
         severity: activeIncidentData.severity ?? IncidentSeverityGql.SEV_4,
         currentPhase: IncidentPhaseNameGql.DETECTION,
         startedAt: activeIncidentData.startedAt,
+        acknowledgedAt: activeIncidentData.acknowledgedAt ?? null,
+        acknowledgedByUser: activeIncidentData.acknowledgedByUser
+          ? {
+              id: activeIncidentData.acknowledgedByUser.id,
+              username: activeIncidentData.acknowledgedByUser.username,
+              displayName: activeIncidentData.acknowledgedByUser.displayName ?? null,
+              avatarUrl: activeIncidentData.acknowledgedByUser.avatarUrl ?? null,
+            }
+          : null,
+        escalationRun: activeIncidentData.escalationRun
+          ? {
+              currentStepIndex: activeIncidentData.escalationRun.currentStepIndex,
+              nextFireAt: activeIncidentData.escalationRun.nextFireAt ?? null,
+              status: activeIncidentData.escalationRun.status,
+            }
+          : null,
       });
     } else {
       setActiveIncident(null);
@@ -111,100 +148,104 @@ export function ConversationHeader() {
     }
   }, [conversation?.conversationType, topic]);
 
-  const handleTopicKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") {
-      setIsEditingTopic(false);
-    } else if (e.key === "Enter") {
-      if (workspaceId && conversationId && topicDraft !== (topic ?? "")) {
-        updateTopic.mutate({ serverId: workspaceId, conversationId, topic: topicDraft });
+  const handleTopicKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        setIsEditingTopic(false);
+      } else if (e.key === "Enter") {
+        if (workspaceId && conversationId && topicDraft !== (topic ?? "")) {
+          updateTopic.mutate({ serverId: workspaceId, conversationId, topic: topicDraft });
+        }
+        setIsEditingTopic(false);
       }
-      setIsEditingTopic(false);
-    }
-  }, [workspaceId, conversationId, topicDraft, topic, updateTopic]);
+    },
+    [workspaceId, conversationId, topicDraft, topic, updateTopic],
+  );
 
   return (
     <div>
-    <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
-      <div className="flex min-w-0 items-center gap-3">
-        {dmOtherUserId ? (
-          <Avatar
-            url={dmAvatarUrl}
-            name={displayTitle ?? "?"}
-            userId={dmOtherUserId}
-            size="sm"
-            presenceStatus={presenceStatus ?? null}
-          />
-        ) : (
-          <Icon className="h-5 w-5 text-rim-text-muted" />
+      <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {dmOtherUserId ? (
+            <Avatar
+              url={dmAvatarUrl}
+              name={displayTitle ?? "?"}
+              userId={dmOtherUserId}
+              size="sm"
+              presenceStatus={presenceStatus ?? null}
+            />
+          ) : (
+            <Icon className="h-5 w-5 text-rim-text-muted" />
+          )}
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium text-rim-text">
+              {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
+            </h2>
+            {conversation?.conversationType === "CHANNEL" &&
+              (isEditingTopic ? (
+                <input
+                  ref={topicInputRef}
+                  type="text"
+                  value={topicDraft}
+                  onChange={(e) => setTopicDraft(e.target.value)}
+                  onKeyDown={handleTopicKeyDown}
+                  onBlur={() => setIsEditingTopic(false)}
+                  placeholder="Set a topic..."
+                  className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleTopicClick}
+                  className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
+                >
+                  {topic || "Set a topic..."}
+                </button>
+              ))}
+            {conversation?.conversationType !== "CHANNEL" && (
+              <p className="text-xs text-rim-text-faint">
+                {workspace?.name ?? ""}
+                {conversation && ` \u00b7 ${conversation.memberIds.length} members`}
+              </p>
+            )}
+          </div>
+        </div>
+        {conversationId && (
+          <div className="flex items-center gap-1">
+            {!activeIncident && (
+              <HoverTooltip
+                content={
+                  <span className="text-xs text-rim-text whitespace-nowrap">Start incident</span>
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowStartDialog(true)}
+                  aria-label="Start incident"
+                  className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                </button>
+              </HoverTooltip>
+            )}
+            <InviteButton onClick={() => setInviteOpen(true)} />
+            <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
+            {conversation?.conversationType === "CHANNEL" && workspaceId && (
+              <LensPicker serverId={workspaceId} conversationId={conversationId} />
+            )}
+            {conversation?.conversationType === "CHANNEL" && <PinnedMessagesButton />}
+            <ChannelSearchButton
+              conversationId={conversationId}
+              displayTitle={displayTitle}
+              openSearch={openSearch}
+            />
+          </div>
         )}
-        <div className="min-w-0">
-          <h2 className="text-sm font-medium text-rim-text">
-            {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
-          </h2>
-          {conversation?.conversationType === "CHANNEL" && (
-            isEditingTopic ? (
-              <input
-                ref={topicInputRef}
-                type="text"
-                value={topicDraft}
-                onChange={(e) => setTopicDraft(e.target.value)}
-                onKeyDown={handleTopicKeyDown}
-                onBlur={() => setIsEditingTopic(false)}
-                placeholder="Set a topic..."
-                className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={handleTopicClick}
-                className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
-              >
-                {topic || "Set a topic..."}
-              </button>
-            )
-          )}
-          {conversation?.conversationType !== "CHANNEL" && (
-            <p className="text-xs text-rim-text-faint">
-              {workspace?.name ?? ""}
-              {conversation && ` \u00b7 ${conversation.memberIds.length} members`}
-            </p>
-          )}
-        </div>
+        <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
       </div>
-      {conversationId && (
-        <div className="flex items-center gap-1">
-          {!activeIncident && (
-            <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Start incident</span>}>
-              <button
-                type="button"
-                onClick={() => setShowStartDialog(true)}
-                aria-label="Start incident"
-                className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-              >
-                <AlertTriangle className="h-4 w-4" />
-              </button>
-            </HoverTooltip>
-          )}
-          <InviteButton onClick={() => setInviteOpen(true)} />
-          <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
-          {conversation?.conversationType === "CHANNEL" && workspaceId && (
-            <LensPicker serverId={workspaceId} conversationId={conversationId} />
-          )}
-          {conversation?.conversationType === "CHANNEL" && (
-            <PinnedMessagesButton />
-          )}
-          <ChannelSearchButton
-            conversationId={conversationId}
-            displayTitle={displayTitle}
-            openSearch={openSearch}
-          />
-        </div>
+      {activeIncident && workspaceId && conversationId && (
+        <IncidentBanner serverId={workspaceId} conversationId={conversationId} />
       )}
-      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
-    </div>
-    {activeIncident && workspaceId && conversationId && (
-      <IncidentBanner serverId={workspaceId} conversationId={conversationId} />
-    )}
     </div>
   );
 }
@@ -212,11 +253,18 @@ export function ConversationHeader() {
 function InviteButton({ onClick }: { onClick: () => void }) {
   const keybind = useKeybindLabel("admin.invite_member");
   return (
-    <HoverTooltip content={
-      <span className="text-xs text-rim-text whitespace-nowrap">
-        Invite member{keybind && <kbd className="ml-1.5 rounded border border-rim-line bg-rim-void px-1 py-0.5 text-[10px] font-mono text-rim-text-muted">{keybind}</kbd>}
-      </span>
-    }>
+    <HoverTooltip
+      content={
+        <span className="text-xs text-rim-text whitespace-nowrap">
+          Invite member
+          {keybind && (
+            <kbd className="ml-1.5 rounded border border-rim-line bg-rim-void px-1 py-0.5 text-[10px] font-mono text-rim-text-muted">
+              {keybind}
+            </kbd>
+          )}
+        </span>
+      }
+    >
       <button
         type="button"
         onClick={onClick}
@@ -234,7 +282,9 @@ function PinnedMessagesButton() {
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
 
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">Pinned messages</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">Pinned messages</span>}
+    >
       <button
         type="button"
         onClick={() => setPinnedPanelOpen(!pinnedPanelOpen)}
@@ -247,7 +297,13 @@ function PinnedMessagesButton() {
   );
 }
 
-function MuteToggleButton({ conversationId, workspaceId }: { conversationId: string; workspaceId: string }) {
+function MuteToggleButton({
+  conversationId,
+  workspaceId,
+}: {
+  conversationId: string;
+  workspaceId: string;
+}) {
   const isMuted = useMutedStore((s) => s.mutedIds.has(conversationId));
   const muteConversation = useMuteConversationMutation();
   const unmuteConversation = useUnmuteConversationMutation();
@@ -255,7 +311,9 @@ function MuteToggleButton({ conversationId, workspaceId }: { conversationId: str
   const label = isMuted ? "Unmute conversation" : "Mute conversation";
 
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}
+    >
       <button
         type="button"
         onClick={() => {
@@ -287,7 +345,9 @@ function ChannelSearchButton({
   const label = keystroke ? `Search in channel (${keystroke})` : "Search in channel";
 
   return (
-    <HoverTooltip content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}>
+    <HoverTooltip
+      content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}
+    >
       <button
         type="button"
         onClick={() => openSearch({ kind: "conversation", conversationId })}

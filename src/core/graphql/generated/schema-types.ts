@@ -454,6 +454,22 @@ export type CreateCustomEmojiInput = {
   serverId: Scalars['ID']['input'];
 };
 
+export type CreateIngestTokenInput = {
+  conversationId: Scalars['ID']['input'];
+  label: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+  severityDefault?: InputMaybe<IncidentSeverityGql>;
+};
+
+/**
+ * Result of `createIngestToken` — `raw_token` is surfaced exactly once and is never
+ * retrievable again (mirrors invite-token creation).
+ */
+export type CreateIngestTokenResultGql = {
+  rawToken: Scalars['String']['output'];
+  token: IngestTokenGql;
+};
+
 /**
  * Input for `createInstanceInvite`.
  *
@@ -463,6 +479,11 @@ export type CreateCustomEmojiInput = {
 export type CreateInstanceInviteInput = {
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   maxUses?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Optional recipient to email the invite link to (Track B3). Validated server-side;
+   * malformed addresses return a validation error.
+   */
+  recipientEmail?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**
@@ -479,6 +500,11 @@ export type CreateInstanceInvitePayloadGql = {
 export type CreateInviteInput = {
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   maxUses?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Optional recipient to email the invite link to (Track B3). Validated server-side;
+   * malformed addresses return a validation error.
+   */
+  recipientEmail?: InputMaybe<Scalars['String']['input']>;
   serverId: Scalars['ID']['input'];
 };
 
@@ -576,6 +602,78 @@ export type EditMessageInput = {
   serverId: Scalars['ID']['input'];
   text: Scalars['String']['input'];
 };
+
+/**
+ * `MENTION_IN_CHANNEL`/`EMAIL` — `PUSH` is reserved for a future track and intentionally has no
+ * GraphQL representation yet (mirrors `rim_core::escalation::model::EscalationAction`, which has
+ * no `Push` variant either — see that enum's doc comment).
+ */
+export enum EscalationActionKindGql {
+  EMAIL = 'EMAIL',
+  MENTION_IN_CHANNEL = 'MENTION_IN_CHANNEL'
+}
+
+export type EscalationPolicyGql = {
+  createdAt: Scalars['DateTime']['output'];
+  createdBy: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+  /** Ordered by `position`. */
+  steps: Array<EscalationStepGql>;
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+export enum EscalationRunStatusGql {
+  ACTIVE = 'ACTIVE',
+  CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED'
+}
+
+export type EscalationStepGql = {
+  actions: Array<EscalationActionKindGql>;
+  delaySeconds: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  policyId: Scalars['ID']['output'];
+  /** 0-based order within the policy. */
+  position: Scalars['Int']['output'];
+  targetKind: EscalationTargetKindGql;
+  /** Present only when `targetKind` is `ON_CALL`. */
+  targetScheduleId?: Maybe<Scalars['ID']['output']>;
+  /** Present only when `targetKind` is `USER`. */
+  targetUserId?: Maybe<Scalars['ID']['output']>;
+};
+
+/**
+ * A step input for `createEscalationPolicy`/`updateEscalationPolicy` — no `id`/`policyId`
+ * (assigned by the repository) since the full step list is replaced atomically (§3).
+ */
+export type EscalationStepInputGql = {
+  /** At least one action is required — enforced at the service boundary. */
+  actions: Array<EscalationActionKindGql>;
+  delaySeconds: Scalars['Int']['input'];
+  target: EscalationTargetInputGql;
+};
+
+/**
+ * An `EscalationTarget`, flattened for GraphQL: `kind` selects which of `userId`/`scheduleId`
+ * is populated (GraphQL has no native tagged-union input type) — same flattened-union pattern
+ * as [`RotationKindInputGql`], including strict rejection of a field that belongs to the
+ * *other* kind.
+ */
+export type EscalationTargetInputGql = {
+  kind: EscalationTargetKindGql;
+  /** Required for `ON_CALL`; must not be set for `USER`. */
+  scheduleId?: InputMaybe<Scalars['ID']['input']>;
+  /** Required for `USER`; must not be set for `ON_CALL`. */
+  userId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Discriminator for [`EscalationStepGql::target_kind`] / [`EscalationTargetInputGql::kind`]. */
+export enum EscalationTargetKindGql {
+  ON_CALL = 'ON_CALL',
+  USER = 'USER'
+}
 
 export type Event = {
   description: Scalars['String']['output'];
@@ -719,9 +817,48 @@ export type InboxCursorOutput = {
   lastActivityAt: Scalars['DateTime']['output'];
 };
 
+/**
+ * Read projection of the DB `escalation_run` row for a live incident (§10 FLAG C) — backs
+ * `Incident.escalationRun`. See `IncidentGql`'s `escalation_run` resolver for the
+ * nullability rationale.
+ */
+export type IncidentEscalationRunGql = {
+  currentStepIndex: Scalars['Int']['output'];
+  nextFireAt?: Maybe<Scalars['DateTime']['output']>;
+  status: EscalationRunStatusGql;
+};
+
 export type IncidentGql = {
+  /** Set by `acknowledgeIncident` (§4). `None` until acked. */
+  acknowledgedAt?: Maybe<Scalars['DateTime']['output']>;
+  /**
+   * Bare id companion to `acknowledgedByUser` below — kept alongside it (rather than only
+   * exposing the nested object) so a client that only needs the id avoids a DataLoader round
+   * trip (§10).
+   */
+  acknowledgedBy?: Maybe<Scalars['ID']['output']>;
+  /**
+   * Nested `User` for `acknowledgedBy`, resolved via the shared `User` DataLoader (the
+   * `message.author` pattern) rather than requiring a second round-trip. `None` if the
+   * incident hasn't been acknowledged.
+   */
+  acknowledgedByUser?: Maybe<User>;
   conversationId: Scalars['ID']['output'];
   createdAt: Scalars['DateTime']['output'];
+  /**
+   * The escalation policy armed at declare time, if any (§3/§10). `None` if the incident was
+   * declared without an escalation chain.
+   */
+  escalationPolicyId?: Maybe<Scalars['ID']['output']>;
+  /**
+   * The incident's active escalation run, if any (§10 FLAG C) — lets a client loading
+   * mid-incident, or reconnecting, render a live "escalating to L2 in 4:32" countdown (the
+   * `EscalationStepFired` event alone can't give `nextFireAt` to a fresh client). `None` if no
+   * policy is attached, or the run has already completed/been cancelled — only the currently
+   * `Active` run is meaningful to show. Pure read projection of the DB `escalation_run` row;
+   * adds no persistence.
+   */
+  escalationRun?: Maybe<IncidentEscalationRunGql>;
   id: Scalars['ID']['output'];
   mitigatedAt?: Maybe<Scalars['DateTime']['output']>;
   originalTopic?: Maybe<Scalars['String']['output']>;
@@ -801,6 +938,22 @@ export type IncrementWorkspaceStateInput = {
   key: Scalars['String']['input'];
   scope: WorkspaceStateScopeGql;
   serverId: Scalars['ID']['input'];
+};
+
+/**
+ * GraphQL projection of an alert-ingest token (Track B2). Never exposes `token_hash` — the raw
+ * token is only ever returned once, at creation, via [`CreateIngestTokenResultGql::raw_token`].
+ */
+export type IngestTokenGql = {
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  createdBy: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  label: Scalars['String']['output'];
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  serverId: Scalars['ID']['output'];
+  severityDefault?: Maybe<IncidentSeverityGql>;
 };
 
 /**
@@ -1039,6 +1192,14 @@ export enum MessageTagTypeGql {
 
 export type Mutation = {
   acceptInvite: AcceptInvitePayload;
+  /**
+   * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
+   * responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
+   * Cancels the incident's active escalation run, if any.
+   */
+  acknowledgeIncident: IncidentGql;
+  /** Add a rotation layer to a schedule. Owner-only. */
+  addRotationLayer: RotationLayerGql;
   advanceIncidentPhase: IncidentPhaseGql;
   /** @deprecated Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release. */
   bootstrap: BootstrapPayload;
@@ -1046,6 +1207,18 @@ export type Mutation = {
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
+  /**
+   * Create an escalation policy. Owner+Moderator (server-scoped — per-channel moderator
+   * roles don't apply). Every step target is validated to belong to this server (C1 security
+   * review): a `User` target must be a current member, an `OnCall` target's schedule must
+   * belong to this server.
+   */
+  createEscalationPolicy: EscalationPolicyGql;
+  /**
+   * Mint a new alert-ingest token for a channel. Owner-only. The raw token is returned
+   * exactly once, in `rawToken` — it is never retrievable again after this call.
+   */
+  createIngestToken: CreateIngestTokenResultGql;
   /**
    * Create a new instance invite (admin-only gate: must own at least one workspace).
    *
@@ -1056,15 +1229,28 @@ export type Mutation = {
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
+  /** Create a one-off on-call override for a schedule. Owner-only. */
+  createOnCallOverride: OnCallOverrideGql;
+  /** Create an on-call schedule. Owner-only. */
+  createOnCallSchedule: OnCallScheduleGql;
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
   deleteAttachment: Scalars['Boolean']['output'];
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
+  /** Delete an escalation policy. Owner+Moderator (resolved via the policy's own server). */
+  deleteEscalationPolicy: Scalars['Boolean']['output'];
   deleteKeybind: Scalars['Boolean']['output'];
   deleteMacro: Scalars['Boolean']['output'];
   deleteMessage: Scalars['Boolean']['output'];
+  /** Delete an on-call override. Owner-only (resolved via the override's owning schedule). */
+  deleteOnCallOverride: Scalars['Boolean']['output'];
+  /**
+   * Delete an on-call schedule (cascades to its rotation layers/participants/overrides).
+   * Owner-only.
+   */
+  deleteOnCallSchedule: Scalars['Boolean']['output'];
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
@@ -1085,10 +1271,14 @@ export type Mutation = {
   overrideSkillTier: SkillProfileGql;
   pinMessage: Scalars['Boolean']['output'];
   recordFeatureUsage: SkillProfileGql;
+  /** Remove a rotation layer (cascades to its participants). Owner-only. */
+  removeRotationLayer: Scalars['Boolean']['output'];
   replyToMessage: Message;
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   resolveIncident: IncidentGql;
+  /** Revoke an ingest token. Owner-only, permanent (no un-revoke). */
+  revokeIngestToken: Scalars['Boolean']['output'];
   /**
    * Revoke an existing instance invite (admin-only gate: must own at least one workspace).
    *
@@ -1097,6 +1287,18 @@ export type Mutation = {
   revokeInstanceInvite: Scalars['Boolean']['output'];
   revokeInvite: Scalars['Boolean']['output'];
   sendMessage: Message;
+  /**
+   * Set a conversation's default escalation policy — the policy `ingestAlert`-declared
+   * incidents always use (there's no human to pick an override for an alert-declared
+   * incident), and `startIncident`'s fallback when no per-call override is given.
+   * Owner+Moderator.
+   */
+  setChannelEscalationPolicy: Scalars['Boolean']['output'];
+  /**
+   * Replace a rotation layer's full ordered participant list. `userIds[0]` becomes the first
+   * shift. Owner-only.
+   */
+  setRotationParticipants: RotationLayerGql;
   setWorkspaceState: WorkspaceStateEntryGql;
   /**
    * Unified signup mutation for all token-based and open-mode registration paths.
@@ -1117,17 +1319,68 @@ export type Mutation = {
   unpinMessage: Scalars['Boolean']['output'];
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
+  /**
+   * Update an escalation policy's `name` and/or full step list. `steps: Some(_)` replaces
+   * every step atomically; `None` leaves the existing steps untouched. Owner+Moderator
+   * (resolved via the policy's own server); same per-target server constraint as create.
+   */
+  updateEscalationPolicy: EscalationPolicyGql;
   updateIncidentStatus: IncidentGql;
   updateKeybind: Keybind;
   updateMacro: MacroDef;
+  /**
+   * Update fields on the authenticated user's profile.
+   *
+   * Returns the full updated `User` so the client can refresh local cache
+   * without an extra `me { ... }` round-trip.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED` — no session.
+   * - `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
+   * `bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
+   * - `NOT_FOUND` — caller's user row missing (should not happen in practice).
+   * - `INTERNAL` — repository failure.
+   *
+   * # Examples
+   *
+   * ```graphql
+   * mutation Update($input: UpdateMyProfileInput!) {
+   * updateMyProfile(input: $input) {
+   * id username displayName avatarUrl statusText bio
+   * }
+   * }
+   * ```
+   */
   updateMyProfile: User;
+  /** Update an on-call schedule's `name`/`timezone`. Owner-only. */
+  updateOnCallSchedule: OnCallScheduleGql;
   updatePipeline: PipelineGql;
+  /**
+   * Update a rotation layer's `name`/`priority`/`kind`/`anchorAt`. Owner-only (resolved via
+   * the layer's owning schedule).
+   */
+  updateRotationLayer: RotationLayerGql;
   updateUserCommand: Command;
 };
 
 
 export type MutationAcceptInviteArgs = {
   input: AcceptInviteInput;
+};
+
+
+export type MutationAcknowledgeIncidentArgs = {
+  incidentId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddRotationLayerArgs = {
+  anchorAt: Scalars['DateTime']['input'];
+  kind: RotationKindInputGql;
+  name: Scalars['String']['input'];
+  priority: Scalars['Int']['input'];
+  scheduleId: Scalars['ID']['input'];
 };
 
 
@@ -1161,6 +1414,18 @@ export type MutationCreateCustomEmojiArgs = {
 };
 
 
+export type MutationCreateEscalationPolicyArgs = {
+  name: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+  steps: Array<EscalationStepInputGql>;
+};
+
+
+export type MutationCreateIngestTokenArgs = {
+  input: CreateIngestTokenInput;
+};
+
+
 export type MutationCreateInstanceInviteArgs = {
   input: CreateInstanceInviteInput;
 };
@@ -1178,6 +1443,21 @@ export type MutationCreateKeybindArgs = {
 
 export type MutationCreateMacroArgs = {
   input: CreateMacroInput;
+};
+
+
+export type MutationCreateOnCallOverrideArgs = {
+  endAt: Scalars['DateTime']['input'];
+  scheduleId: Scalars['ID']['input'];
+  startAt: Scalars['DateTime']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
+export type MutationCreateOnCallScheduleArgs = {
+  name: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+  timezone: Scalars['String']['input'];
 };
 
 
@@ -1212,6 +1492,11 @@ export type MutationDeleteCustomEmojiArgs = {
 };
 
 
+export type MutationDeleteEscalationPolicyArgs = {
+  policyId: Scalars['ID']['input'];
+};
+
+
 export type MutationDeleteKeybindArgs = {
   input: DeleteKeybindInput;
 };
@@ -1224,6 +1509,16 @@ export type MutationDeleteMacroArgs = {
 
 export type MutationDeleteMessageArgs = {
   input: DeleteMessageInput;
+};
+
+
+export type MutationDeleteOnCallOverrideArgs = {
+  overrideId: Scalars['ID']['input'];
+};
+
+
+export type MutationDeleteOnCallScheduleArgs = {
+  scheduleId: Scalars['ID']['input'];
 };
 
 
@@ -1322,6 +1617,11 @@ export type MutationRecordFeatureUsageArgs = {
 };
 
 
+export type MutationRemoveRotationLayerArgs = {
+  layerId: Scalars['ID']['input'];
+};
+
+
 export type MutationReplyToMessageArgs = {
   input: ReplyToMessageInput;
 };
@@ -1343,6 +1643,11 @@ export type MutationResolveIncidentArgs = {
 };
 
 
+export type MutationRevokeIngestTokenArgs = {
+  tokenId: Scalars['ID']['input'];
+};
+
+
 export type MutationRevokeInstanceInviteArgs = {
   inviteId: Scalars['ID']['input'];
 };
@@ -1355,6 +1660,19 @@ export type MutationRevokeInviteArgs = {
 
 export type MutationSendMessageArgs = {
   input: SendMessageInput;
+};
+
+
+export type MutationSetChannelEscalationPolicyArgs = {
+  conversationId: Scalars['ID']['input'];
+  policyId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetRotationParticipantsArgs = {
+  layerId: Scalars['ID']['input'];
+  userIds: Array<Scalars['ID']['input']>;
 };
 
 
@@ -1415,6 +1733,13 @@ export type MutationUpdateConversationTopicArgs = {
 };
 
 
+export type MutationUpdateEscalationPolicyArgs = {
+  name?: InputMaybe<Scalars['String']['input']>;
+  policyId: Scalars['ID']['input'];
+  steps?: InputMaybe<Array<EscalationStepInputGql>>;
+};
+
+
 export type MutationUpdateIncidentStatusArgs = {
   input: UpdateIncidentStatusInput;
 };
@@ -1435,8 +1760,24 @@ export type MutationUpdateMyProfileArgs = {
 };
 
 
+export type MutationUpdateOnCallScheduleArgs = {
+  name?: InputMaybe<Scalars['String']['input']>;
+  scheduleId: Scalars['ID']['input'];
+  timezone?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type MutationUpdatePipelineArgs = {
   input: UpdatePipelineInput;
+};
+
+
+export type MutationUpdateRotationLayerArgs = {
+  anchorAt?: InputMaybe<Scalars['DateTime']['input']>;
+  kind?: InputMaybe<RotationKindInputGql>;
+  layerId: Scalars['ID']['input'];
+  name?: InputMaybe<Scalars['String']['input']>;
+  priority?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1453,6 +1794,58 @@ export type MuteConversationInput = {
 export type MutedConversation = {
   conversationId: Scalars['ID']['output'];
   mutedUntil?: Maybe<Scalars['DateTime']['output']>;
+};
+
+/**
+ * Answer to "who is on call now" (`whoIsOnCall`/`serverOnCall` queries). `currentUser`/`nextUser`
+ * are resolved via the shared `User` DataLoader (the `message.author` pattern) rather than
+ * exposed as bare ids.
+ */
+export type OnCallNowGql = {
+  currentUser?: Maybe<User>;
+  nextUser?: Maybe<User>;
+  scheduleId: Scalars['ID']['output'];
+  shiftEndsAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type OnCallOverrideGql = {
+  createdBy: Scalars['ID']['output'];
+  endAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  scheduleId: Scalars['ID']['output'];
+  startAt: Scalars['DateTime']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type OnCallScheduleGql = {
+  createdAt: Scalars['DateTime']['output'];
+  createdBy: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  /**
+   * This schedule's existing rotation layers, each with its participants attached, ordered
+   * `priority DESC, created_at ASC` (§10) — lets the frontend editor load and edit existing
+   * rotations rather than only being able to create new ones. Any server member may read.
+   */
+  rotationLayers: Array<RotationLayerGql>;
+  serverId: Scalars['ID']['output'];
+  timezone: Scalars['String']['output'];
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+/**
+ * One contiguous block of on-call coverage (`onCallShifts` query). `user` is resolved via the
+ * shared `User` DataLoader, not exposed as a bare id.
+ */
+export type OnCallShiftGql = {
+  endAt: Scalars['DateTime']['output'];
+  /**
+   * `true` if this block came from a one-off `OnCallOverride` rather than the base rotation
+   * layer (§10 FLAG B) — lets the frontend render override segments distinctly.
+   */
+  isOverride: Scalars['Boolean']['output'];
+  startAt: Scalars['DateTime']['output'];
+  user?: Maybe<User>;
 };
 
 export type OutOfBandProofInput = {
@@ -1584,9 +1977,13 @@ export type Query = {
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
   defaultKeybinds: Array<DefaultKeybind>;
+  /** List a server's escalation policies. Any workspace member may read. */
+  escalationPolicies: Array<EscalationPolicyGql>;
   events: Array<Event>;
   inboxConversations: ConversationPage;
   incidentTimeline: IncidentTimelineGql;
+  /** List every alert-ingest token for a server (including revoked). Owner-only. */
+  ingestTokens: Array<IngestTokenGql>;
   integrations: Array<Integration>;
   keybindLayers: KeybindLayers;
   keybinds: Array<Keybind>;
@@ -1611,6 +2008,13 @@ export type Query = {
   myMentions: Array<Message>;
   myServers: Array<Server>;
   mySkillProfile: SkillProfileGql;
+  /** List a server's on-call schedules. Any workspace member may read. */
+  onCallSchedules: Array<OnCallScheduleGql>;
+  /**
+   * Resolve on-call coverage for a schedule over `[from, to)`. Rejects spans over 90 days. Any
+   * workspace member may read.
+   */
+  onCallShifts: Array<OnCallShiftGql>;
   pinnedMessages: Array<Message>;
   pipeline: PipelineGql;
   pipelines: Array<PipelineGql>;
@@ -1633,16 +2037,42 @@ export type Query = {
   registrationMode: RegistrationModeGql;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
-  searchMessages: Array<SearchResultMessage>;
+  /**
+   * Full-text search over messages. Supports the `from:`/`in:`/`has:`/`before:`/`after:`
+   * operator syntax in `input.query` — see `docs/search.md`.
+   *
+   * **Breaking change (Track B1):** this replaced a flat, unpaginated `[SearchResultMessage!]!`
+   * return with top-level `limit`/`includeDeleted` args. It now takes a single
+   * `SearchMessagesInput` and returns a cursor-paginated `SearchResultPage`. Frontend codegen
+   * must be re-run against the updated schema.
+   *
+   * **Why cursor-paginated by recency, not relevance:** results are ordered `(sentAt, id)` —
+   * the same contract as every other message list (`docs/pagination.md`) — rather than by
+   * `SearchResultMessage.rank`. `ts_rank` is neither unique nor stable across concurrent
+   * inserts, so paginating by it would produce skips/duplicates across pages. `rank` and
+   * `headline` are still returned on every item for client-side display or a page-local sort.
+   * See `docs/search.md` for the full rationale.
+   */
+  searchMessages: SearchResultPage;
   server: Server;
   serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
+  /**
+   * Batch [`who_is_on_call`] across every on-call schedule on a server — avoids an N+1 of
+   * individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
+   */
+  serverOnCall: Array<OnCallNowGql>;
   settings: Array<Setting>;
   thread: Thread;
   threadByRootMessage?: Maybe<Thread>;
   threadMessages: MessagePage;
   threads: ThreadPage;
   unreadCounts: Array<UnreadCount>;
+  /**
+   * Resolve who is on call for a schedule right now (or at `at`, if provided). Any workspace
+   * member may read.
+   */
+  whoIsOnCall: OnCallNowGql;
   workspacePresence: Array<UserPresenceGql>;
   workspaceState?: Maybe<WorkspaceStateEntryGql>;
   workspaceStateList: Array<WorkspaceStateEntryGql>;
@@ -1712,6 +2142,11 @@ export type QueryCustomEmojisArgs = {
 };
 
 
+export type QueryEscalationPoliciesArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type QueryInboxConversationsArgs = {
   cursor?: InputMaybe<InboxCursorInput>;
   dir: PageDir;
@@ -1722,6 +2157,11 @@ export type QueryInboxConversationsArgs = {
 
 export type QueryIncidentTimelineArgs = {
   incidentId: Scalars['ID']['input'];
+};
+
+
+export type QueryIngestTokensArgs = {
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -1805,6 +2245,18 @@ export type QueryMyMentionsArgs = {
 };
 
 
+export type QueryOnCallSchedulesArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryOnCallShiftsArgs = {
+  from: Scalars['DateTime']['input'];
+  scheduleId: Scalars['ID']['input'];
+  to: Scalars['DateTime']['input'];
+};
+
+
 export type QueryPinnedMessagesArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -1840,11 +2292,7 @@ export type QueryResolvedKeybindsArgs = {
 
 
 export type QuerySearchMessagesArgs = {
-  conversationId?: InputMaybe<Scalars['ID']['input']>;
-  includeDeleted: Scalars['Boolean']['input'];
-  limit: Scalars['Int']['input'];
-  query: Scalars['String']['input'];
-  serverId: Scalars['ID']['input'];
+  input: SearchMessagesInput;
 };
 
 
@@ -1859,6 +2307,11 @@ export type QueryServerMacrosArgs = {
 
 
 export type QueryServerMembersArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryServerOnCallArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -1899,6 +2352,12 @@ export type QueryThreadsArgs = {
 
 export type QueryUnreadCountsArgs = {
   workspaceId: Scalars['ID']['input'];
+};
+
+
+export type QueryWhoIsOnCallArgs = {
+  at?: InputMaybe<Scalars['DateTime']['input']>;
+  scheduleId: Scalars['ID']['input'];
 };
 
 
@@ -1949,18 +2408,99 @@ export type ReplyToMessageInput = {
   text: Scalars['String']['input'];
 };
 
+/**
+ * Discriminator for [`RotationLayerGql::kind`] / [`RotationKindInputGql::kind`]. See
+ * `docs/oncall.md` for the timezone/DST semantics of each variant.
+ */
+export enum RotationKindGql {
+  CUSTOM = 'CUSTOM',
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY'
+}
+
+/**
+ * A `RotationKind`, flattened for GraphQL: `kind` selects which of the other fields are
+ * populated (GraphQL has no native tagged-union input type). `handoffTime` is `"HH:MM:SS"`
+ * 24-hour wall-clock local time.
+ */
+export type RotationKindInputGql = {
+  /** Required for `DAILY`/`WEEKLY`; ignored otherwise. */
+  handoffTime?: InputMaybe<Scalars['String']['input']>;
+  /** `0` (Monday) .. `6` (Sunday). Required for `WEEKLY`; ignored otherwise. */
+  handoffWeekday?: InputMaybe<Scalars['Int']['input']>;
+  /** Required for `CUSTOM` (must be `> 0`); ignored otherwise. */
+  intervalSeconds?: InputMaybe<Scalars['Int']['input']>;
+  kind: RotationKindGql;
+};
+
+export type RotationLayerGql = {
+  anchorAt: Scalars['DateTime']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  /** `"HH:MM:SS"`, present only when `kind` is `DAILY`/`WEEKLY`. */
+  handoffTime?: Maybe<Scalars['String']['output']>;
+  /** `0` (Monday) .. `6` (Sunday), present only when `kind` is `WEEKLY`. */
+  handoffWeekday?: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  /** Present only when `kind` is `CUSTOM`. */
+  intervalSeconds?: Maybe<Scalars['Int']['output']>;
+  kind: RotationKindGql;
+  name: Scalars['String']['output'];
+  /** Ordered by shift position. */
+  participants: Array<Scalars['ID']['output']>;
+  priority: Scalars['Int']['output'];
+  scheduleId: Scalars['ID']['output'];
+};
+
+/**
+ * Input for the `searchMessages` full-text-search query. See `docs/search.md` for the
+ * `from:`/`in:`/`has:`/`before:`/`after:` operator syntax accepted in `query`.
+ */
+export type SearchMessagesInput = {
+  /** Optional explicit single-conversation scope, in addition to the `in:` search operator. */
+  conversationId?: InputMaybe<Scalars['ID']['input']>;
+  cursor?: InputMaybe<MessageCursorInput>;
+  /** Defaults to `AFTER` (most-recent-first) if omitted. */
+  dir?: InputMaybe<PageDir>;
+  /** Clamped server-side; defaults to 25 if omitted. */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  query: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
 export type SearchResultMessage = {
   author?: Maybe<User>;
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
   conversationTitle?: Maybe<Scalars['String']['output']>;
   conversationType: ConversationTypeEnum;
+  /**
+   * `ts_headline` snippet with `<mark>...</mark>` highlights around matched terms. `None` when
+   * the query had no free-text component (a purely operator-based search, e.g. `from:@alice`).
+   */
+  headline?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  /**
+   * `ts_rank` relevance score. Informational / for client-side secondary sort — results are
+   * paginated by recency (`sentAt`, `id`), not by rank. See `docs/search.md`.
+   */
+  rank: Scalars['Float']['output'];
   rootMessageId?: Maybe<Scalars['ID']['output']>;
   sentAt: Scalars['DateTime']['output'];
   serverId: Scalars['ID']['output'];
   text?: Maybe<Scalars['String']['output']>;
   threadId?: Maybe<Scalars['ID']['output']>;
+};
+
+/**
+ * Cursor-paginated `searchMessages` result. Mirrors [`MessagePage`] — same `(sentAt, messageId)`
+ * cursor contract — because search results are paginated by recency, not relevance; see the
+ * `rank` field on [`SearchResultMessage`] and `docs/search.md` for why.
+ */
+export type SearchResultPage = {
+  items: Array<SearchResultMessage>;
+  next?: Maybe<MessageCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<MessageCursorOutput>;
 };
 
 export type SendMessageInput = {
@@ -1973,6 +2513,15 @@ export type SendMessageInput = {
 export type Server = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
+  /**
+   * The requesting actor's effective role in this server. **Display/affordance signal
+   * only — not an authorization boundary.** Every mutation independently re-checks the
+   * role server-side (defense in depth); this field just lets the client avoid rendering
+   * controls the viewer can't use. Non-null: every viewer who can query a `Server` is
+   * necessarily a member of it (query-level visibility already guards non-members), so
+   * there is no "not a member" variant to represent here.
+   */
+  viewerRole: ServerMemberRoleGql;
 };
 
 export type ServerMember = {
@@ -1986,6 +2535,17 @@ export type ServerMember = {
   userId: Scalars['ID']['output'];
   username: Scalars['String']['output'];
 };
+
+/**
+ * GraphQL exposure of `rim_core::server_member::model::ServerMemberRole`. Reused (not
+ * duplicated) across every place a member's role needs to cross the wire — currently
+ * `Server.viewerRole`.
+ */
+export enum ServerMemberRoleGql {
+  GUEST = 'GUEST',
+  MODERATOR = 'MODERATOR',
+  OWNER = 'OWNER'
+}
 
 export type SetWorkspaceStateInput = {
   key: Scalars['String']['input'];
@@ -2063,6 +2623,12 @@ export enum SkillTier {
 
 export type StartIncidentInput = {
   conversationId: Scalars['ID']['input'];
+  /**
+   * Overrides the conversation's default escalation policy (`setChannelEscalationPolicy`) for
+   * just this incident (§3/§10). `None` falls back to that default (or no escalation chain at
+   * all if none is set).
+   */
+  escalationPolicyId?: InputMaybe<Scalars['ID']['input']>;
   serverId: Scalars['ID']['input'];
   severity?: InputMaybe<IncidentSeverityGql>;
   title: Scalars['String']['input'];
@@ -2191,6 +2757,13 @@ export type UpdateMacroInput = {
   steps: Array<MacroStepInput>;
 };
 
+/**
+ * Patch fields on the authenticated user's profile.
+ *
+ * Each field is independently optional. Omitting a field leaves the existing
+ * value unchanged. Sending an explicit empty string clears the field
+ * (after trim + control-char strip).
+ */
 export type UpdateMyProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   bio?: InputMaybe<Scalars['String']['input']>;

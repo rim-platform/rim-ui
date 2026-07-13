@@ -14,12 +14,7 @@ import {
   makeBackendToolHandler,
   mergeBackendWins,
 } from "./loader";
-import {
-  getAllTools,
-  getTool,
-  registerTool,
-  unregisterTool,
-} from "./registry";
+import { getAllTools, getTool, registerTool, unregisterTool } from "./registry";
 import { makeCommand } from "./test-helpers";
 import type { AiToolHandler, RegisteredTool } from "./types";
 
@@ -43,10 +38,7 @@ function clearRegistry(): void {
   }
 }
 
-function fakeRegisteredTool(
-  name: string,
-  handler?: AiToolHandler,
-): RegisteredTool {
+function fakeRegisteredTool(name: string, handler?: AiToolHandler): RegisteredTool {
   const def: AiToolDefinition = {
     name,
     description: `desc for ${name}`,
@@ -60,11 +52,7 @@ function fakeRegisteredTool(
 
 describe("mergeBackendWins (pure)", () => {
   it("0 backend + N hardcoded → N hardcoded winners, no drops", () => {
-    const hardcoded = [
-      fakeRegisteredTool("a"),
-      fakeRegisteredTool("b"),
-      fakeRegisteredTool("c"),
-    ];
+    const hardcoded = [fakeRegisteredTool("a"), fakeRegisteredTool("b"), fakeRegisteredTool("c")];
     const result = mergeBackendWins(hardcoded, []);
     expect(result.winners.map((d) => d.name).sort()).toEqual(["a", "b", "c"]);
     expect(result.droppedBuiltinNames).toEqual([]);
@@ -91,15 +79,8 @@ describe("mergeBackendWins (pure)", () => {
   });
 
   it("multiple clashes → all hardcoded clashes dropped", () => {
-    const hardcoded = [
-      fakeRegisteredTool("a"),
-      fakeRegisteredTool("b"),
-      fakeRegisteredTool("c"),
-    ];
-    const backend = commandsToBackendTools([
-      makeCommand({ id: "a" }),
-      makeCommand({ id: "c" }),
-    ]);
+    const hardcoded = [fakeRegisteredTool("a"), fakeRegisteredTool("b"), fakeRegisteredTool("c")];
+    const backend = commandsToBackendTools([makeCommand({ id: "a" }), makeCommand({ id: "c" })]);
     const result = mergeBackendWins(hardcoded, backend);
     expect(result.winners.map((d) => d.name).sort()).toEqual(["a", "b", "c"]);
     expect(result.droppedBuiltinNames.sort()).toEqual(["a", "c"]);
@@ -271,12 +252,10 @@ describe("executeCommandWithProof", () => {
       },
     });
     await expect(
-      executeCommandWithProof(
-        "chat.delete_message",
-        { id: "m1" },
-        "chat.delete_message",
-        { token: "tok-stale", argsHash: "hash-9" },
-      ),
+      executeCommandWithProof("chat.delete_message", { id: "m1" }, "chat.delete_message", {
+        token: "tok-stale",
+        argsHash: "hash-9",
+      }),
     ).rejects.toMatchObject({
       name: "ConfirmationRequiredError",
       challenge: { token: "tok-fresh" },
@@ -332,18 +311,13 @@ describe("loadAgentTools (side-effecting integration)", () => {
     const builtinHandler: AiToolHandler = async () => "BUILTIN";
     vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {
       registerTool(fakeRegisteredTool("a").definition, async () => "a");
-      registerTool(
-        fakeRegisteredTool("send_message").definition,
-        builtinHandler,
-      );
+      registerTool(fakeRegisteredTool("send_message").definition, builtinHandler);
       registerTool(fakeRegisteredTool("c").definition, async () => "c");
     });
     vi.mocked(graphqlClient.request)
       .mockResolvedValueOnce({
         // First call: AI commands list during loadAgentTools
-        commands: [
-          makeCommand({ id: "send_message", nlDescription: "BACKEND VERSION" }),
-        ],
+        commands: [makeCommand({ id: "send_message", nlDescription: "BACKEND VERSION" })],
       })
       .mockResolvedValueOnce({
         // Second call: executeCommand from invoking the winning handler
@@ -371,9 +345,7 @@ describe("loadAgentTools (side-effecting integration)", () => {
       registerTool(fakeRegisteredTool("b").definition, async () => "b");
       registerTool(fakeRegisteredTool("c").definition, async () => "c");
     });
-    vi.mocked(graphqlClient.request).mockRejectedValueOnce(
-      new Error("network down"),
-    );
+    vi.mocked(graphqlClient.request).mockRejectedValueOnce(new Error("network down"));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const result = await loadAgentTools();
@@ -410,21 +382,14 @@ describe("loadAgentTools (side-effecting integration)", () => {
     const builtinHandler: AiToolHandler = async () => "BUILTIN_VERSION";
     vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {
       registerTool(fakeRegisteredTool("a").definition, async () => "a");
-      registerTool(
-        fakeRegisteredTool("send_message").definition,
-        builtinHandler,
-      );
+      registerTool(fakeRegisteredTool("send_message").definition, builtinHandler);
     });
     vi.mocked(graphqlClient.request)
       .mockResolvedValueOnce({
-        commands: [
-          makeCommand({ id: "send_message", nlDescription: "BACKEND_VERSION" }),
-        ],
+        commands: [makeCommand({ id: "send_message", nlDescription: "BACKEND_VERSION" })],
       })
       .mockResolvedValueOnce({
-        commands: [
-          makeCommand({ id: "send_message", nlDescription: "BACKEND_VERSION" }),
-        ],
+        commands: [makeCommand({ id: "send_message", nlDescription: "BACKEND_VERSION" })],
       })
       .mockResolvedValueOnce({
         executeCommand: { status: "SUCCESS", message: "ok", payload: { ok: true } },
@@ -500,12 +465,10 @@ describe("commandContext bridge", () => {
       executeCommand: { status: "SUCCESS", message: "ok", payload: null },
     });
 
-    await executeCommandWithProof(
-      "chat.delete_message",
-      { id: "m1" },
-      "chat.delete_message",
-      { token: "tok", argsHash: "hash" },
-    );
+    await executeCommandWithProof("chat.delete_message", { id: "m1" }, "chat.delete_message", {
+      token: "tok",
+      argsHash: "hash",
+    });
 
     const variables = vi.mocked(graphqlClient.request).mock.calls[0]![1] as {
       input: Record<string, unknown>;
@@ -531,10 +494,7 @@ describe("end-to-end: agent → backend → result loop", () => {
     // Hardcoded builtin with the same name to prove backend-wins dedup.
     const builtinHandler: AiToolHandler = async () => "BUILTIN_LIST";
     vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {
-      registerTool(
-        fakeRegisteredTool("chat.list_channels").definition,
-        builtinHandler,
-      );
+      registerTool(fakeRegisteredTool("chat.list_channels").definition, builtinHandler);
     });
 
     // Two-call mock chain: first AgentListAiCommands (returns the backend
@@ -546,8 +506,7 @@ describe("end-to-end: agent → backend → result loop", () => {
             id: "chat.list_channels",
             title: "List Channels",
             description: "List all channels in the current workspace.",
-            nlDescription:
-              "List all channels in the current workspace, ordered by name.",
+            nlDescription: "List all channels in the current workspace, ordered by name.",
             sensitivity: CommandSensitivity.SAFE,
             dangerous: false,
             arguments: [

@@ -16,10 +16,7 @@ const START_TYPING = gql`
  * Hook that tracks keystrokes and calls startTyping mutation (throttled).
  * Returns an onKeyDown handler to attach to the Composer textarea.
  */
-export function useTypingIndicator(
-  workspaceId: string,
-  conversationId: string,
-) {
+export function useTypingIndicator(workspaceId: string, conversationId: string) {
   const lastSentRef = useRef(0);
   // Use refs to always read the latest values without re-creating the callback
   const workspaceIdRef = useRef(workspaceId);

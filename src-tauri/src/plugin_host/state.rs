@@ -22,6 +22,15 @@ pub struct PluginRecord {
     /// the ai_callable command set changes (Widow H3 v1→v2 drift protection).
     #[serde(default)]
     pub manifest_hash: String,
+    /// SHA-256 hex of the entire bundle contents (all files, sorted deterministically)
+    /// recorded at install time (TOFU fingerprint). At enable time this is recomputed
+    /// and compared; a mismatch surfaces a `FingerprintChanged` warning before spawning.
+    #[serde(default)]
+    pub bundle_fingerprint: String,
+    /// Set to true when the bundle fingerprint has changed since the last pinned install.
+    /// Cleared when the user explicitly trusts the new version via `plugin_trust_fingerprint`.
+    #[serde(default)]
+    pub fingerprint_changed: bool,
     pub last_error: Option<String>,
 }
 
@@ -94,6 +103,8 @@ mod tests {
             approved_capabilities: vec!["local.process".into()],
             approved_ai_commands: vec![],
             manifest_hash: String::new(),
+            bundle_fingerprint: String::new(),
+            fingerprint_changed: false,
             last_error: None,
         });
 

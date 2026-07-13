@@ -75,7 +75,8 @@ export function useGlobalKeyHandlers() {
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement ||
         (active instanceof HTMLElement && active.isContentEditable)
-      ) return;
+      )
+        return;
 
       const composer = document.querySelector<HTMLTextAreaElement>("[data-composer-input]");
       if (composer) {

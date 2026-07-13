@@ -1,5 +1,14 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Pencil, Plug, Plus, Search, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import {
+  ChevronRight,
+  Pencil,
+  Plug,
+  Plus,
+  Search,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
@@ -80,10 +89,13 @@ function categorizeKeybind(commandId: string): CategoryKey {
 export function KeybindSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
-  const { data: keybinds, isLoading } = useResolvedKeybinds(
-    workspaceId ?? undefined
-  );
-  const { data: commands } = useCommands();
+  const { data: keybinds, isLoading } = useResolvedKeybinds(workspaceId ?? undefined);
+  // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
+  // `workspace.open_command_palette`), which causes their titles to fall back to
+  // raw IDs in the keybind list. KEYBIND_PICKER surface returns all commands
+  // that are keybind-capable regardless of palette visibility, so we use it
+  // here exclusively to build the title lookup map.
+  const { data: commands } = useCommands("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
@@ -186,7 +198,7 @@ export function KeybindSettings() {
           setNewCommandId("");
           setNewContext("GLOBAL");
         },
-      }
+      },
     );
   }
 
@@ -285,9 +297,7 @@ export function KeybindSettings() {
   }
 
   if (isLoading) {
-    return (
-      <div className="p-4 text-sm text-rim-text-muted">Loading keybinds...</div>
-    );
+    return <div className="p-4 text-sm text-rim-text-muted">Loading keybinds...</div>;
   }
 
   return (
@@ -318,9 +328,7 @@ export function KeybindSettings() {
       {showCreate && (
         <div className="mb-3 rounded-md border border-rim-line bg-rim-void p-3 space-y-2">
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Keystroke
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Keystroke</label>
             <input
               type="text"
               value={newKeystroke}
@@ -332,9 +340,7 @@ export function KeybindSettings() {
             />
           </div>
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Command
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Command</label>
             <select
               value={newCommandId}
               onChange={(e) => setNewCommandId(e.target.value)}
@@ -349,9 +355,7 @@ export function KeybindSettings() {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Context
-            </label>
+            <label className="block text-[11px] text-rim-text-muted mb-1">Context</label>
             <select
               value={newContext}
               onChange={(e) => setNewContext(e.target.value as KeybindContext)}
@@ -367,9 +371,7 @@ export function KeybindSettings() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleCreate}
-              disabled={
-                !newKeystroke || !newCommandId || createMutation.isPending
-              }
+              disabled={!newKeystroke || !newCommandId || createMutation.isPending}
               className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Saving..." : "Save"}
@@ -382,9 +384,7 @@ export function KeybindSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-rim-danger">
-              {(createMutation.error as Error).message}
-            </p>
+            <p className="text-[11px] text-rim-danger">{(createMutation.error as Error).message}</p>
           )}
         </div>
       )}
@@ -542,7 +542,9 @@ export function KeybindSettings() {
                       {kb.commandId.startsWith("plugin.") && (
                         <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
                       )}
-                      <span className="flex-1 truncate">{commandTitleMap.get(kb.commandId) ?? kb.commandId}</span>
+                      <span className="flex-1 truncate">
+                        {commandTitleMap.get(kb.commandId) ?? kb.commandId}
+                      </span>
                       <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
                         {kb.context}
                       </span>
@@ -610,9 +612,7 @@ export function KeybindSettings() {
                 <kbd className="shrink-0 rounded border border-rim-line bg-rim-void px-1.5 py-0.5 font-mono text-[11px] text-rim-text-muted">
                   {suggestion.keystroke}
                 </kbd>
-                <span className="flex-1 truncate text-rim-text">
-                  {suggestion.commandTitle}
-                </span>
+                <span className="flex-1 truncate text-rim-text">{suggestion.commandTitle}</span>
                 <span className="shrink-0 text-[10px] text-rim-text-muted">
                   {suggestion.pluginName}
                 </span>

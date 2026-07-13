@@ -31,9 +31,5 @@ export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
     label = `${names[0]} and ${names.length - 1} others are typing...`;
   }
 
-  return (
-    <div className="px-4 py-1 text-xs text-rim-text-muted">
-      {label}
-    </div>
-  );
+  return <div className="px-4 py-1 text-xs text-rim-text-muted">{label}</div>;
 }

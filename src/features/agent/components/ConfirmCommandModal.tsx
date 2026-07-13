@@ -15,10 +15,7 @@ import {
   REDACTED_PLACEHOLDER,
 } from "./ConfirmCommandModal/argsMasker";
 import { detectCrossChannel } from "./ConfirmCommandModal/crossChannelDetector";
-import {
-  deriveConfirmationVerb,
-  verbMatches,
-} from "./ConfirmCommandModal/verbDeriver";
+import { deriveConfirmationVerb, verbMatches } from "./ConfirmCommandModal/verbDeriver";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -40,9 +37,7 @@ interface SeverityVisuals {
   requireTypeToConfirm: boolean;
 }
 
-function severityVisuals(
-  sev: CommandSensitivity | undefined,
-): SeverityVisuals {
+function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
   switch (sev) {
     case CommandSensitivity.RESTRICTED:
       return {
@@ -112,28 +107,13 @@ export function ConfirmCommandModal() {
   const reject = useConfirmationModalStore((s) => s.reject);
 
   if (!request) return null;
-  return (
-    <ConfirmCommandModalContent
-      request={request}
-      onApprove={approve}
-      onReject={reject}
-    />
-  );
+  return <ConfirmCommandModalContent request={request} onApprove={approve} onReject={reject} />;
 }
 
-function ConfirmCommandModalContent({
-  request,
-  onApprove,
-  onReject,
-}: ContainerProps) {
-  const currentConversationId = useShellStore(
-    (s) => s.selectedConversationId,
-  );
+function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerProps) {
+  const currentConversationId = useShellStore((s) => s.selectedConversationId);
 
-  const visuals = useMemo(
-    () => severityVisuals(request.sensitivity),
-    [request.sensitivity],
-  );
+  const visuals = useMemo(() => severityVisuals(request.sensitivity), [request.sensitivity]);
   const sameTurn = !!request.sameTurnAfterToolResult;
   // Tier-4 trigger per §4.8: RESTRICTED, OR same-turn-after-tool-result +
   // sensitivity ≥ MUTATING.
@@ -151,10 +131,7 @@ function ConfirmCommandModalContent({
     [request.args, currentConversationId],
   );
 
-  const maskedArgs = useMemo(
-    () => maskForDisplay(request.args),
-    [request.args],
-  );
+  const maskedArgs = useMemo(() => maskForDisplay(request.args), [request.args]);
 
   const [typedVerb, setTypedVerb] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -238,9 +215,7 @@ function ConfirmCommandModalContent({
       return;
     }
     if (e.key === "Tab" && panelRef.current) {
-      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-        FOCUSABLE_SELECTOR,
-      );
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
@@ -310,10 +285,7 @@ function ConfirmCommandModalContent({
           <div className="space-y-4 px-6 py-5">
             {/* Title + subtitle */}
             <div>
-              <h2
-                id={titleId}
-                className="text-xl font-medium text-rim-text"
-              >
+              <h2 id={titleId} className="text-xl font-medium text-rim-text">
                 {titlePrefix(request)} <span className="text-rim-accent">{request.toolName}</span>
               </h2>
               {request.nlDescription && (
@@ -332,9 +304,7 @@ function ConfirmCommandModalContent({
               {sameTurn
                 ? " This action was suggested while the agent was reading external content."
                 : ""}
-              {requireType
-                ? ` Type the word ${expectedVerb} to confirm.`
-                : ""}
+              {requireType ? ` Type the word ${expectedVerb} to confirm.` : ""}
             </span>
 
             {/* Chips row */}
@@ -361,12 +331,12 @@ function ConfirmCommandModalContent({
             </div>
 
             {/* Cross-channel warning chip (§4.5).
-              * Phase 4 renders the raw conversation id (first 8 chars). The
-              * spec's full hover card (channel name, topic, member count) +
-              * hyperlink is a Phase 5+ follow-up that needs the channel
-              * metadata layer. Deliberate: H2 mitigation here is "did the
-              * destination differ, yes/no" — name resolution is nice-to-have,
-              * not load-bearing for the security property. */}
+             * Phase 4 renders the raw conversation id (first 8 chars). The
+             * spec's full hover card (channel name, topic, member count) +
+             * hyperlink is a Phase 5+ follow-up that needs the channel
+             * metadata layer. Deliberate: H2 mitigation here is "did the
+             * destination differ, yes/no" — name resolution is nice-to-have,
+             * not load-bearing for the security property. */}
             {crossChannel && (
               <div
                 className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
@@ -374,9 +344,7 @@ function ConfirmCommandModalContent({
               >
                 <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <div>
-                  <div className="font-medium">
-                    Destination differs from active conversation
-                  </div>
+                  <div className="font-medium">Destination differs from active conversation</div>
                   <div className="text-rim-text-muted">
                     Will post in conversation {crossChannel.targetId.slice(0, 8)}…
                   </div>
@@ -421,10 +389,7 @@ function ConfirmCommandModalContent({
                   )}
                   // Bare Enter inside this input is a no-op (per §6.3).
                   onKeyDown={(e) => {
-                    if (
-                      e.key === "Enter" &&
-                      !(e.metaKey || e.ctrlKey)
-                    ) {
+                    if (e.key === "Enter" && !(e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
                     }
                   }}
@@ -517,9 +482,7 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
         <span className="h-px flex-1 bg-rim-line" />
       </div>
       {entries.length === 0 ? (
-        <div className="text-xs italic text-rim-text-faint">
-          (no arguments)
-        </div>
+        <div className="text-xs italic text-rim-text-faint">(no arguments)</div>
       ) : (
         <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1">
           {visible.map(([k, v]) => {
@@ -529,9 +492,7 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
                 ? formatted.slice(0, ARG_VALUE_TRUNCATE_AT) + "…"
                 : formatted;
             const isRedacted = formatted === REDACTED_PLACEHOLDER;
-            return (
-              <ArgRow key={k} keyName={k} display={truncated} redacted={isRedacted} />
-            );
+            return <ArgRow key={k} keyName={k} display={truncated} redacted={isRedacted} />;
           })}
           {overflow > 0 && (
             <>
@@ -558,9 +519,7 @@ function ArgRow({
 }) {
   return (
     <>
-      <dt className="break-words font-mono text-xs text-rim-text-muted">
-        {keyName}
-      </dt>
+      <dt className="break-words font-mono text-xs text-rim-text-muted">{keyName}</dt>
       <dd
         className="break-words font-mono text-xs text-rim-text"
         aria-label={redacted ? "redacted" : undefined}

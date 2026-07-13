@@ -61,7 +61,9 @@ export function usePluginContextMenuCommands(contextType?: PluginContextType) {
   );
 }
 
-export function parsePluginCommandId(commandId: string): { pluginId: string; command: string } | null {
+export function parsePluginCommandId(
+  commandId: string,
+): { pluginId: string; command: string } | null {
   const match = commandId.match(/^plugin\.([^.]+)\.(.+)$/);
   if (!match) return null;
   return { pluginId: match[1], command: match[2] };

@@ -58,9 +58,7 @@ export function useServerConfig() {
   return useQuery({
     queryKey: queryKeys.serverConfig(),
     queryFn: async (): Promise<ServerConfig> => {
-      const res = await graphqlClient.request<RegistrationModeResponse>(
-        REGISTRATION_MODE_QUERY,
-      );
+      const res = await graphqlClient.request<RegistrationModeResponse>(REGISTRATION_MODE_QUERY);
       return { registrationMode: res.registrationMode };
     },
     staleTime: 5 * 60 * 1000, // 5 minutes — server policy changes rarely

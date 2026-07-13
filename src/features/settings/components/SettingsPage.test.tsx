@@ -36,10 +36,6 @@ vi.mock("../../agent/settings/AgentSettingsPanel", () => ({
   AgentSettingsPanel: () => <div data-testid="agent-settings">Agent Panel</div>,
 }));
 
-vi.mock("../../agent/settings/AiProviderKeySettings", () => ({
-  AiProviderKeySettings: () => <div data-testid="ai-key-settings">AI Keys Panel</div>,
-}));
-
 vi.mock("../../notifications/components/NotificationSettings", () => ({
   NotificationSettings: () => <div data-testid="notification-settings">Notifications Panel</div>,
 }));
@@ -54,9 +50,18 @@ vi.mock("../../emoji/components/EmojiManagement", () => ({
 
 const mockSetMainSurface = vi.fn();
 
+// Mutable so individual tests can point to a specific settings surface.
+const mockShellState: {
+  setMainSurface: typeof mockSetMainSurface;
+  mainSurface: Record<string, unknown>;
+} = {
+  setMainSurface: mockSetMainSurface,
+  mainSurface: { kind: "settings" },
+};
+
 vi.mock("../../../shell/state/useShellStore", () => ({
   useShellStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ setMainSurface: mockSetMainSurface }),
+    selector(mockShellState as unknown as Record<string, unknown>),
 }));
 
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
@@ -69,6 +74,8 @@ import { SettingsPage } from "./SettingsPage";
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset to default settings surface with no tab hint between tests.
+    mockShellState.mainSurface = { kind: "settings" };
   });
 
   it("renders with header and tabs", () => {
@@ -80,7 +87,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Plugins")).toBeInTheDocument();
     expect(screen.getByText("Plugin AI")).toBeInTheDocument();
     expect(screen.getByText("AI Agent")).toBeInTheDocument();
-    expect(screen.getByText("AI Keys")).toBeInTheDocument();
+    expect(screen.queryByText("AI Keys")).not.toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("About")).toBeInTheDocument();
   });
@@ -137,12 +144,8 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByText("About"));
     // About panel renders an "About RIM" heading plus product blurb.
-    expect(
-      screen.getByRole("heading", { name: "About RIM" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("A programmable communication workspace."),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "About RIM" })).toBeInTheDocument();
+    expect(screen.getByText("A programmable communication workspace.")).toBeInTheDocument();
   });
 
   it("close button navigates to conversation surface", async () => {
@@ -176,5 +179,33 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByText("Macros"));
     expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
+  });
+
+  // ── Tab routing via MainSurface ─────────────────────────────────────────────
+
+  it("opens on the Plugins tab when surface.tab is 'plugins'", async () => {
+    mockShellState.mainSurface = { kind: "settings", tab: "plugins" };
+    render(<SettingsPage />);
+    expect(await screen.findByTestId("plugin-settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
+  });
+
+  it("falls back to Profile tab when surface has no tab hint", () => {
+    mockShellState.mainSurface = { kind: "settings" };
+    render(<SettingsPage />);
+    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+  });
+
+  it("falls back to Profile tab when surface.tab is an unknown value", () => {
+    mockShellState.mainSurface = { kind: "settings", tab: "does-not-exist" };
+    render(<SettingsPage />);
+    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+  });
+
+  it("opens on the Keybinds tab when surface.tab is 'keybinds'", () => {
+    mockShellState.mainSurface = { kind: "settings", tab: "keybinds" };
+    render(<SettingsPage />);
+    expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
   });
 });

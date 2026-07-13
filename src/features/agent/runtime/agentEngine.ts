@@ -255,10 +255,9 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
           // approves/rejects, and the gate re-calls with proof. The legacy
           // `requiresConfirmation` + `window.confirm` path is removed —
           // backend `dangerous: true` is now the single source of truth.
-          const result = await runWithConfirmation(
-            () => tool.handler(tc.input),
-            { sensitivity: tool.sensitivity },
-          );
+          const result = await runWithConfirmation(() => tool.handler(tc.input), {
+            sensitivity: tool.sensitivity,
+          });
 
           if (tool.sideEffect) {
             store.appendText(`\n> Action: ${tc.name}\n`);

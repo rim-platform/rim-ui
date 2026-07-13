@@ -150,9 +150,7 @@ export function ToastItem({ toast: t }: ToastItemProps) {
         <div
           className="absolute bottom-0 left-0 h-0.5 rounded-b-lg bg-rim-text-faint/30"
           style={{
-            animation: paused
-              ? "none"
-              : `toast-progress ${t.duration}ms linear forwards`,
+            animation: paused ? "none" : `toast-progress ${t.duration}ms linear forwards`,
             animationPlayState: paused ? "paused" : "running",
           }}
         />

@@ -46,7 +46,10 @@ let cachedStronghold: Stronghold | null = null;
 let strongholdWarningEmitted = false;
 
 function emitStrongholdFallbackWarning(err: unknown): void {
-  logger.error("[keyStore] Stronghold unavailable — falling back to in-memory key store. Keys will NOT persist across sessions.", { target: "security", error: err });
+  logger.error(
+    "[keyStore] Stronghold unavailable — falling back to in-memory key store. Keys will NOT persist across sessions.",
+    { target: "security", error: err },
+  );
   if (!strongholdWarningEmitted) {
     strongholdWarningEmitted = true;
     toast.warning("Secure storage unavailable — credentials are in-memory only this session");
@@ -125,10 +128,7 @@ export class ProviderKeyMissingError extends Error {
   }
 }
 
-export async function withKey<T>(
-  providerId: string,
-  fn: (key: string) => Promise<T>,
-): Promise<T> {
+export async function withKey<T>(providerId: string, fn: (key: string) => Promise<T>): Promise<T> {
   const key = await loadApiKey(providerId);
   if (!key) throw new ProviderKeyMissingError(providerId);
   try {

@@ -43,7 +43,7 @@ export function PluginToolPanel() {
         <p className="text-xs text-rim-text-muted">No active plugins.</p>
         <button
           type="button"
-          onClick={() => setMainSurface({ kind: "settings" })}
+          onClick={() => setMainSurface({ kind: "settings", tab: "plugins" })}
           className="text-xs text-rim-accent hover:underline"
         >
           Manage plugins
@@ -55,7 +55,9 @@ export function PluginToolPanel() {
   return (
     <div className="space-y-1">
       {enabledPlugins.map((plugin) => {
-        const indicator = plugin.health ? healthIndicator[plugin.health] : healthIndicator["stopped"];
+        const indicator = plugin.health
+          ? healthIndicator[plugin.health]
+          : healthIndicator["stopped"];
 
         return (
           <div key={plugin.plugin_id} className="px-1">

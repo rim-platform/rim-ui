@@ -30,7 +30,8 @@ export function useCustomEmojis(serverId: string | null): {
 } {
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.customEmojis(serverId ?? undefined),
-    queryFn: () => graphqlClient.request<{ customEmojis: CustomEmoji[] }>(CUSTOM_EMOJIS_QUERY, { serverId }),
+    queryFn: () =>
+      graphqlClient.request<{ customEmojis: CustomEmoji[] }>(CUSTOM_EMOJIS_QUERY, { serverId }),
     enabled: !!serverId,
   });
   return { emojis: data?.customEmojis ?? [], isLoading };

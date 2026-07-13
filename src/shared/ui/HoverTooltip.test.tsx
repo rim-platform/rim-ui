@@ -44,7 +44,9 @@ describe("HoverTooltip", () => {
     );
 
     fireEvent.focus(screen.getByText("Trigger"));
-    act(() => { vi.advanceTimersByTime(10); });
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
 
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
 
@@ -66,7 +68,9 @@ describe("HoverTooltip", () => {
     expect(trigger).not.toHaveAttribute("aria-describedby");
 
     fireEvent.mouseEnter(trigger);
-    act(() => { vi.advanceTimersByTime(10); });
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
 
     expect(trigger).toHaveAttribute("aria-describedby");
     const tooltipId = trigger.getAttribute("aria-describedby");

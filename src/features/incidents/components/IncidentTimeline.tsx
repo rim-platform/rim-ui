@@ -4,8 +4,16 @@ import { Clock, X } from "lucide-react";
 import { cn } from "../../../shared/ui/cn";
 import { useIncidentTimeline } from "../api/useIncident";
 import { useIncidentStore } from "../state/useIncidentStore";
-import type { IncidentPhaseName, MessageTagType, IncidentPhase, IncidentMessageTag } from "../api/useIncident";
-import { IncidentPhaseNameGql, MessageTagTypeGql } from "../../../core/graphql/generated/schema-types";
+import type {
+  IncidentPhaseName,
+  MessageTagType,
+  IncidentPhase,
+  IncidentMessageTag,
+} from "../api/useIncident";
+import {
+  IncidentPhaseNameGql,
+  MessageTagTypeGql,
+} from "../../../core/graphql/generated/schema-types";
 
 const PHASE_LABELS: Record<IncidentPhaseName, string> = {
   [IncidentPhaseNameGql.DETECTION]: "Detection",
@@ -16,10 +24,26 @@ const PHASE_LABELS: Record<IncidentPhaseName, string> = {
 };
 
 const TAG_TYPE_STYLES: Record<MessageTagType, { dot: string; badge: string; label: string }> = {
-  [MessageTagTypeGql.DECISION]: { dot: "bg-[#a855f7]", badge: "bg-[#a855f7]/15 text-[#a855f7]", label: "Decision" },
-  [MessageTagTypeGql.ACTION_ITEM]: { dot: "bg-rim-accent", badge: "bg-rim-accent/15 text-rim-accent", label: "Action Item" },
-  [MessageTagTypeGql.ROOT_CAUSE]: { dot: "bg-rim-danger", badge: "bg-rim-danger/15 text-rim-danger", label: "Root Cause" },
-  [MessageTagTypeGql.TIMELINE_EVENT]: { dot: "bg-rim-text-faint", badge: "bg-rim-text-faint/15 text-rim-text-faint", label: "Timeline Event" },
+  [MessageTagTypeGql.DECISION]: {
+    dot: "bg-[#a855f7]",
+    badge: "bg-[#a855f7]/15 text-[#a855f7]",
+    label: "Decision",
+  },
+  [MessageTagTypeGql.ACTION_ITEM]: {
+    dot: "bg-rim-accent",
+    badge: "bg-rim-accent/15 text-rim-accent",
+    label: "Action Item",
+  },
+  [MessageTagTypeGql.ROOT_CAUSE]: {
+    dot: "bg-rim-danger",
+    badge: "bg-rim-danger/15 text-rim-danger",
+    label: "Root Cause",
+  },
+  [MessageTagTypeGql.TIMELINE_EVENT]: {
+    dot: "bg-rim-text-faint",
+    badge: "bg-rim-text-faint/15 text-rim-text-faint",
+    label: "Timeline Event",
+  },
 };
 
 function formatDuration(start: string, end: string | null): string {
@@ -54,9 +78,7 @@ function PhaseSection({
           </span>
         )}
       </div>
-      {phase.note && (
-        <p className="mt-1 text-xs text-rim-text-muted">{phase.note}</p>
-      )}
+      {phase.note && <p className="mt-1 text-xs text-rim-text-muted">{phase.note}</p>}
       {phaseTags.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {phaseTags.map((tag) => {
@@ -67,7 +89,12 @@ function PhaseSection({
                 key={`${tag.messageId}-${tag.tagType}`}
                 className="flex items-center gap-2 rounded border border-rim-line bg-rim-void px-2.5 py-1.5"
               >
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", style.badge)}>
+                <span
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                    style.badge,
+                  )}
+                >
                   {style.label}
                 </span>
                 <span className="truncate text-xs text-rim-text-muted">
@@ -120,12 +147,8 @@ export function IncidentTimelinePanel({ onClose }: IncidentTimelinePanelProps) {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {isPending && (
-          <p className="text-sm text-rim-text-muted">Loading timeline...</p>
-        )}
-        {isError && (
-          <p className="text-sm text-rim-danger">Failed to load timeline.</p>
-        )}
+        {isPending && <p className="text-sm text-rim-text-muted">Loading timeline...</p>}
+        {isError && <p className="text-sm text-rim-danger">Failed to load timeline.</p>}
         {!isPending && !isError && timeline && (
           <>
             <div className="mb-4 rounded-lg border border-rim-line bg-rim-void p-3">
@@ -135,11 +158,7 @@ export function IncidentTimelinePanel({ onClose }: IncidentTimelinePanelProps) {
               </p>
             </div>
             {timeline.phases.map((phase) => (
-              <PhaseSection
-                key={phase.id}
-                phase={phase}
-                taggedMessages={timeline.taggedMessages}
-              />
+              <PhaseSection key={phase.id} phase={phase} taggedMessages={timeline.taggedMessages} />
             ))}
             {timeline.phases.length === 0 && (
               <p className="text-sm text-rim-text-muted">No phases recorded yet.</p>

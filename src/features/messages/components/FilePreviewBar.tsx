@@ -21,11 +21,7 @@ export function FilePreviewBar({ pendingFiles, onRemove }: FilePreviewBarProps) 
           className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text"
         >
           {pf.previewUrl ? (
-            <img
-              src={pf.previewUrl}
-              alt={pf.file.name}
-              className="h-8 w-8 rounded object-cover"
-            />
+            <img src={pf.previewUrl} alt={pf.file.name} className="h-8 w-8 rounded object-cover" />
           ) : (
             <FileIcon className="h-4 w-4 text-rim-text-muted" />
           )}

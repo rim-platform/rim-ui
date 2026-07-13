@@ -70,12 +70,7 @@ export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuild
   );
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      title="Build Macro with AI"
-      maxWidth="max-w-lg"
-    >
+    <Dialog open={open} onClose={handleClose} title="Build Macro with AI" maxWidth="max-w-lg">
       <div className="space-y-4">
         {/* Prompt input */}
         <div>
@@ -91,9 +86,7 @@ export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuild
             disabled={isGenerating}
             className="w-full resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent disabled:opacity-60"
           />
-          <p className="mt-1 text-xs text-rim-text-faint">
-            Tip: Press Cmd/Ctrl+Enter to generate
-          </p>
+          <p className="mt-1 text-xs text-rim-text-faint">Tip: Press Cmd/Ctrl+Enter to generate</p>
         </div>
 
         {/* No-API-key error */}
@@ -101,8 +94,8 @@ export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuild
           <div className="flex items-start gap-2.5 rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
             <p className="text-sm text-rim-warm">
-              No AI provider configured. Go to{" "}
-              <strong>Settings &rsaquo; AI Agent</strong> to add your API key.
+              No AI provider configured. Go to <strong>Settings &rsaquo; AI Agent</strong> to add
+              your API key.
             </p>
           </div>
         )}

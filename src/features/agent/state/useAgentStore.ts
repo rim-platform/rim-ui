@@ -153,15 +153,15 @@ export const useAgentStore = create<AgentState>()(
           conversations: state.conversations.map((c) => {
             if (c.id !== conversationId) return c;
             const messages = [...c.messages, msg];
-            const trimmed = messages.length > MAX_MESSAGES_PER_CONVERSATION
-              ? messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION)
-              : messages;
+            const trimmed =
+              messages.length > MAX_MESSAGES_PER_CONVERSATION
+                ? messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION)
+                : messages;
             return {
               ...c,
               messages: trimmed,
-              title: c.messages.length === 0 && msg.role === "user"
-                ? msg.content.slice(0, 60)
-                : c.title,
+              title:
+                c.messages.length === 0 && msg.role === "user" ? msg.content.slice(0, 60) : c.title,
             };
           }),
         }));
@@ -181,12 +181,13 @@ export const useAgentStore = create<AgentState>()(
         }));
       },
 
-      setActiveConversation: (id) => set({
-        activeConversationId: id,
-        status: "idle",
-        toolActivity: null,
-        usage: null,
-      }),
+      setActiveConversation: (id) =>
+        set({
+          activeConversationId: id,
+          status: "idle",
+          toolActivity: null,
+          usage: null,
+        }),
 
       // Legacy appendText — appends to last assistant message in active conversation
       appendText: (text) => {
@@ -212,11 +213,12 @@ export const useAgentStore = create<AgentState>()(
       setToolActivity: (activity) => set({ toolActivity: activity }),
       setUsage: (usage) => set({ usage }),
 
-      reset: () => set({
-        status: "idle",
-        toolActivity: null,
-        usage: null,
-      }),
+      reset: () =>
+        set({
+          status: "idle",
+          toolActivity: null,
+          usage: null,
+        }),
 
       updateSettings: (patch) => {
         set((state) => ({

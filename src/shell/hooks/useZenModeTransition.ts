@@ -14,13 +14,16 @@ export function useZenModeTransition(zenMode: boolean) {
     }
   }, [zenMode]);
 
-  const handleZenTransitionEnd = useCallback((e: React.TransitionEvent) => {
-    // Only react to opacity transitions on zen-hidden wrappers
-    if (e.propertyName !== "opacity") return;
-    if (zenMode) {
-      setZenContentHidden(true);
-    }
-  }, [zenMode]);
+  const handleZenTransitionEnd = useCallback(
+    (e: React.TransitionEvent) => {
+      // Only react to opacity transitions on zen-hidden wrappers
+      if (e.propertyName !== "opacity") return;
+      if (zenMode) {
+        setZenContentHidden(true);
+      }
+    },
+    [zenMode],
+  );
 
   return { zenContentHidden, handleZenTransitionEnd };
 }

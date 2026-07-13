@@ -2,7 +2,11 @@ import { useState, useRef, useEffect, useMemo } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
-import { useCreateAttachmentMutation, useFinalizeAttachmentMutation, uploadFileRest } from "../api/useAttachments";
+import {
+  useCreateAttachmentMutation,
+  useFinalizeAttachmentMutation,
+  uploadFileRest,
+} from "../api/useAttachments";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
@@ -21,7 +25,13 @@ interface PendingFile {
   previewUrl: string | null;
 }
 
-export function Composer({ workspaceId, conversationId }: { workspaceId: string; conversationId: string }) {
+export function Composer({
+  workspaceId,
+  conversationId,
+}: {
+  workspaceId: string;
+  conversationId: string;
+}) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef(pendingFiles);
@@ -240,7 +250,10 @@ export function Composer({ workspaceId, conversationId }: { workspaceId: string;
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void handleSubmit();
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

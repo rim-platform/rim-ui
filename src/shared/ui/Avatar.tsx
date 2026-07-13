@@ -4,10 +4,22 @@ import { cn } from "./cn";
 // (e.g. bg-rim-avatar-1 through bg-rim-avatar-16) once avatar color CSS
 // custom properties are defined in src/styles/globals.css.
 const AVATAR_COLORS = [
-  "bg-red-600", "bg-orange-600", "bg-amber-600", "bg-yellow-600",
-  "bg-lime-600", "bg-green-600", "bg-emerald-600", "bg-teal-600",
-  "bg-cyan-600", "bg-sky-600", "bg-blue-600", "bg-indigo-600",
-  "bg-violet-600", "bg-purple-600", "bg-fuchsia-600", "bg-pink-600",
+  "bg-red-600",
+  "bg-orange-600",
+  "bg-amber-600",
+  "bg-yellow-600",
+  "bg-lime-600",
+  "bg-green-600",
+  "bg-emerald-600",
+  "bg-teal-600",
+  "bg-cyan-600",
+  "bg-sky-600",
+  "bg-blue-600",
+  "bg-indigo-600",
+  "bg-violet-600",
+  "bg-purple-600",
+  "bg-fuchsia-600",
+  "bg-pink-600",
 ];
 
 function hashUserId(userId: string): number {
@@ -47,25 +59,14 @@ export interface AvatarProps {
   className?: string;
 }
 
-export function Avatar({
-  url,
-  name,
-  userId,
-  size = "md",
-  presenceStatus,
-  className,
-}: AvatarProps) {
+export function Avatar({ url, name, userId, size = "md", presenceStatus, className }: AvatarProps) {
   const sizeClass = SIZE_MAP[size];
   const initial = name.charAt(0).toUpperCase() || "?";
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)}>
       {url ? (
-        <img
-          src={url}
-          alt={name}
-          className={cn("rounded-full object-cover", sizeClass)}
-        />
+        <img src={url} alt={name} className={cn("rounded-full object-cover", sizeClass)} />
       ) : (
         <span
           className={cn(

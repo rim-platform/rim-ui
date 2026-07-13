@@ -4,8 +4,18 @@ import { Plus, Trash2 } from "lucide-react";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { cn } from "../../../shared/ui/cn";
 import { useCreateLensMutation, useUpdateLensMutation } from "../api/useLenses";
-import type { ChannelLens, FilterCondition, FilterField, FilterLogic, FilterOp } from "../api/useLenses";
-import { FilterField as FF, FilterOp as FO, FilterLogic as FL } from "../../../core/graphql/generated/schema-types";
+import type {
+  ChannelLens,
+  FilterCondition,
+  FilterField,
+  FilterLogic,
+  FilterOp,
+} from "../api/useLenses";
+import {
+  FilterField as FF,
+  FilterOp as FO,
+  FilterLogic as FL,
+} from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 
 interface LensEditorProps {
@@ -44,7 +54,13 @@ function makeEmptyCondition(): FilterCondition {
 
 const MAX_CONDITIONS = 20;
 
-export function LensEditor({ open, onClose, serverId, conversationId, existingLens }: LensEditorProps) {
+export function LensEditor({
+  open,
+  onClose,
+  serverId,
+  conversationId,
+  existingLens,
+}: LensEditorProps) {
   const isEditing = Boolean(existingLens);
 
   const [name, setName] = useState(existingLens?.name ?? "");
@@ -70,9 +86,7 @@ export function LensEditor({ open, onClose, serverId, conversationId, existingLe
   }, []);
 
   const handleValueChange = useCallback((index: number, value: unknown) => {
-    setConditions((prev) =>
-      prev.map((c, i) => (i === index ? { ...c, value } : c)),
-    );
+    setConditions((prev) => prev.map((c, i) => (i === index ? { ...c, value } : c)));
   }, []);
 
   const addCondition = useCallback(() => {
@@ -125,10 +139,27 @@ export function LensEditor({ open, onClose, serverId, conversationId, existingLe
     } catch {
       toast.error(isEditing ? "Failed to update lens" : "Failed to create lens");
     }
-  }, [name, conditions, logic, isShared, isEditing, existingLens, serverId, conversationId, createLens, updateLens, onClose]);
+  }, [
+    name,
+    conditions,
+    logic,
+    isShared,
+    isEditing,
+    existingLens,
+    serverId,
+    conversationId,
+    createLens,
+    updateLens,
+    onClose,
+  ]);
 
   return (
-    <Dialog open={open} onClose={onClose} title={isEditing ? "Edit Lens" : "Create Lens"} maxWidth="max-w-md">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={isEditing ? "Edit Lens" : "Create Lens"}
+      maxWidth="max-w-md"
+    >
       <div className="space-y-4">
         {/* Name */}
         <div>
@@ -249,7 +280,13 @@ interface ConditionRowProps {
   canRemove: boolean;
 }
 
-function ConditionRow({ condition, onFieldChange, onValueChange, onRemove, canRemove }: ConditionRowProps) {
+function ConditionRow({
+  condition,
+  onFieldChange,
+  onValueChange,
+  onRemove,
+  canRemove,
+}: ConditionRowProps) {
   const isBooleanField = BOOLEAN_FIELDS.includes(condition.field);
 
   return (
@@ -280,7 +317,11 @@ function ConditionRow({ condition, onFieldChange, onValueChange, onRemove, canRe
       ) : condition.field === "AUTHOR_ID" ? (
         <input
           type="text"
-          value={Array.isArray(condition.value) ? (condition.value as string[]).join(", ") : String(condition.value ?? "")}
+          value={
+            Array.isArray(condition.value)
+              ? (condition.value as string[]).join(", ")
+              : String(condition.value ?? "")
+          }
           onChange={(e) =>
             onValueChange(
               e.target.value

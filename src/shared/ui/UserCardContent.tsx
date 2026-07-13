@@ -49,17 +49,13 @@ export function UserCardContent({
           presenceStatus={presenceStatus}
         />
         <div className="min-w-0 flex-1 pt-1">
-          <p className="text-base font-semibold text-rim-text truncate">
-            {resolvedDisplayName}
-          </p>
+          <p className="text-base font-semibold text-rim-text truncate">{resolvedDisplayName}</p>
           <p className="text-sm text-rim-text-muted truncate">@{username}</p>
         </div>
       </div>
 
       {/* Status */}
-      {statusText && (
-        <p className="mt-2 text-sm text-rim-text-muted">{statusText}</p>
-      )}
+      {statusText && <p className="mt-2 text-sm text-rim-text-muted">{statusText}</p>}
 
       {/* Details */}
       {(role || joinedAt || bio) && (
@@ -76,9 +72,7 @@ export function UserCardContent({
                 Joined: <span className="text-rim-text">{formatRelativeDate(joinedAt)}</span>
               </p>
             )}
-            {bio && (
-              <p className="mt-1.5 text-rim-text line-clamp-2">{bio}</p>
-            )}
+            {bio && <p className="mt-1.5 text-rim-text line-clamp-2">{bio}</p>}
           </div>
         </>
       )}

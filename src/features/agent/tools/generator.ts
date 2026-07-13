@@ -40,9 +40,7 @@ function jsonTypeForArg(t: CommandArgumentType): string {
   }
 }
 
-export function buildInputSchema(
-  args: ReadonlyArray<CommandArgument>,
-): Record<string, unknown> {
+export function buildInputSchema(args: ReadonlyArray<CommandArgument>): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   for (const arg of args) {
@@ -67,6 +65,7 @@ export function buildInputSchema(
   };
 }
 
+// eslint-disable-next-line no-control-regex -- intentionally matches control chars to strip them
 const ASCII_CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
 
 function sanitizeIntentSample(sample: string): string {
@@ -77,9 +76,7 @@ export function buildToolDescription(
   nlDescription: string,
   intentSamples: ReadonlyArray<string>,
 ): string {
-  const cleaned = intentSamples
-    .map(sanitizeIntentSample)
-    .filter((s) => s.length > 0);
+  const cleaned = intentSamples.map(sanitizeIntentSample).filter((s) => s.length > 0);
 
   if (cleaned.length === 0) {
     return nlDescription;
@@ -98,9 +95,7 @@ export function buildAiToolFromCommand(cmd: Command): AiToolDefinition {
   };
 }
 
-export function buildAiToolRegistrationOptions(
-  cmd: Command,
-): AiToolRegistrationOptions {
+export function buildAiToolRegistrationOptions(cmd: Command): AiToolRegistrationOptions {
   return {
     sensitivity: cmd.sensitivity,
     requiresConfirmation: cmd.dangerous,

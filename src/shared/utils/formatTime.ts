@@ -6,8 +6,11 @@ export function formatTime(iso: string): string {
   if (isToday) {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " +
-    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    date.toLocaleDateString([], { month: "short", day: "numeric" }) +
+    " " +
+    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 /** Human-friendly relative time string (e.g. "3m ago", "2d ago"). */

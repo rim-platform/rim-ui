@@ -28,7 +28,7 @@ cargo clippy --all-targets --all-features -- -D warnings  # Lint
 cargo test test_name -- --exact         # Single test
 ```
 
-**No frontend test runner, linter, or formatter is configured yet.** Use `npm run build` as the frontend verification gate.
+Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vitest), `npm run lint` (ESLint flat config — 0 errors required, warnings OK), `npm run format:check` (Prettier). See `docs/eslint-prettier.md` for the lint/format setup and `npm run lint:fix` / `npm run format` for local auto-fixing.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ cargo test test_name -- --exact         # Single test
 
 **API layer:** GraphQL via `graphql-request` with HTTP/2 parallel queries (no batching). Shared fragments in `src/graphql/fragments/`. Backend uses nested resolvers + DataLoader — frontend requests `msg.author { ... }` directly, no manual joining.
 
-**Feature-driven layout in `src/features/`:** Each feature (auth, conversations, messages, threads, agent, commands, notifications, presence, plugins) follows `api/` → hooks, `components/` → React, `state/` → Zustand stores.
+**Feature-driven layout in `src/features/`:** Each feature (auth, conversations, messages, threads, agent, commands, notifications, presence, plugins, incidents, oncall) follows `api/` → hooks, `components/` → React, `state/` → Zustand stores.
 
 **Shell (`src/shell/`):** AppShell is the main layout — workspace rail, side rail, tool panel, main surface, optional docked thread pane.
 

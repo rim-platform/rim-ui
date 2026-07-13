@@ -93,14 +93,13 @@ function makeScriptedProvider(opts: ScriptedProviderOptions): AiProvider {
     config,
     async *chat(req: AiChatRequest): AsyncIterable<AiStreamChunk> {
       opts.onRequest?.(req);
-      const chunks = opts.rounds[round] ?? [{ kind: "done", usage: { inputTokens: 0, outputTokens: 0 } }];
+      const chunks = opts.rounds[round] ?? [
+        { kind: "done", usage: { inputTokens: 0, outputTokens: 0 } },
+      ];
       round += 1;
       for (const c of chunks) {
         yield c;
       }
-    },
-    async validateCredentials() {
-      return { kind: "valid" as const };
     },
   };
 }
@@ -386,12 +385,15 @@ describe("runAgent — agent loop dispatches each backend-shipped tool", () => {
           onRequest: (req) => {
             // Capture the messages array on the second round so we can assert
             // the engine fed the tool_result back into the prompt.
-            if (!secondRoundMessages && req.messages.some(
-              (m) =>
-                m.role === "user" &&
-                Array.isArray(m.content) &&
-                m.content.some((b) => b.type === "tool_result"),
-            )) {
+            if (
+              !secondRoundMessages &&
+              req.messages.some(
+                (m) =>
+                  m.role === "user" &&
+                  Array.isArray(m.content) &&
+                  m.content.some((b) => b.type === "tool_result"),
+              )
+            ) {
               secondRoundMessages = req.messages;
             }
           },
@@ -420,11 +422,13 @@ describe("runAgent — agent loop dispatches each backend-shipped tool", () => {
           m.content.some((b) => b.type === "tool_result"),
       );
       expect(toolResultMsg).toBeDefined();
-      const toolResultBlock = (toolResultMsg!.content as Array<{
-        type: string;
-        tool_use_id?: string;
-        content?: string;
-      }>).find((b) => b.type === "tool_result");
+      const toolResultBlock = (
+        toolResultMsg!.content as Array<{
+          type: string;
+          tool_use_id?: string;
+          content?: string;
+        }>
+      ).find((b) => b.type === "tool_result");
       expect(toolResultBlock).toBeDefined();
       expect(toolResultBlock!.tool_use_id).toBe("call-1");
       // Payload survives the JSON round-trip from backend → handler → tool_result.
@@ -476,12 +480,15 @@ describe("runAgent — backend errors surface as is_error tool_result", () => {
           ],
         ],
         onRequest: (req) => {
-          if (!secondRoundMessages && req.messages.some(
-            (m) =>
-              m.role === "user" &&
-              Array.isArray(m.content) &&
-              m.content.some((b) => b.type === "tool_result"),
-          )) {
+          if (
+            !secondRoundMessages &&
+            req.messages.some(
+              (m) =>
+                m.role === "user" &&
+                Array.isArray(m.content) &&
+                m.content.some((b) => b.type === "tool_result"),
+            )
+          ) {
             secondRoundMessages = req.messages;
           }
         },
@@ -496,11 +503,13 @@ describe("runAgent — backend errors surface as is_error tool_result", () => {
         Array.isArray(m.content) &&
         m.content.some((b) => b.type === "tool_result"),
     );
-    const block = (toolResultMsg!.content as Array<{
-      type: string;
-      is_error?: boolean;
-      content?: string;
-    }>).find((b) => b.type === "tool_result")!;
+    const block = (
+      toolResultMsg!.content as Array<{
+        type: string;
+        is_error?: boolean;
+        content?: string;
+      }>
+    ).find((b) => b.type === "tool_result")!;
     expect(block.is_error).toBe(true);
     // sanitizeToolError strips PII — content should be a non-empty string but
     // we don't assert exact wording (sanitization rules live in turnBudget.ts).

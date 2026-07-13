@@ -1,11 +1,4 @@
-import {
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-  cloneElement,
-  type ReactElement,
-} from "react";
+import { useState, useRef, useCallback, useEffect, cloneElement, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 
 import type { PresenceStatus } from "./Avatar";
@@ -131,9 +124,7 @@ export function UserHoverCard({
     position: "fixed",
     zIndex: Z.POPOVER,
     top: position.y,
-    ...(position.flipRight
-      ? { right: window.innerWidth - position.x + 8 }
-      : { left: position.x }),
+    ...(position.flipRight ? { right: window.innerWidth - position.x + 8 } : { left: position.x }),
   };
 
   return (

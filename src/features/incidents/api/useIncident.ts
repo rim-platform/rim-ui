@@ -27,6 +27,29 @@ export type IncidentTimeline = IncidentTimelineGql;
 
 // --- Queries ---
 
+// Ack/escalation fields (Track C1c) shared by both queries below — `acknowledgedByUser`
+// resolves via the shared `User` DataLoader, and `escalationRun` is a pure read
+// projection of the active `escalation_run` row (nullable — see the schema doc comment
+// on `IncidentGql.escalationRun` for when it's absent).
+const INCIDENT_ACK_ESCALATION_FIELDS = gql`
+  fragment IncidentAckEscalationFields on IncidentGql {
+    escalationPolicyId
+    acknowledgedAt
+    acknowledgedBy
+    acknowledgedByUser {
+      id
+      username
+      displayName
+      avatarUrl
+    }
+    escalationRun {
+      currentStepIndex
+      nextFireAt
+      status
+    }
+  }
+`;
+
 const ACTIVE_INCIDENT = gql`
   query ActiveIncident($serverId: ID!, $conversationId: ID!) {
     activeIncident(serverId: $serverId, conversationId: $conversationId) {
@@ -42,8 +65,10 @@ const ACTIVE_INCIDENT = gql`
       mitigatedAt
       resolvedAt
       postmortemDraft
+      ...IncidentAckEscalationFields
     }
   }
+  ${INCIDENT_ACK_ESCALATION_FIELDS}
 `;
 
 const INCIDENT_TIMELINE = gql`
@@ -62,6 +87,7 @@ const INCIDENT_TIMELINE = gql`
         mitigatedAt
         resolvedAt
         postmortemDraft
+        ...IncidentAckEscalationFields
       }
       phases {
         id
@@ -79,6 +105,7 @@ const INCIDENT_TIMELINE = gql`
       }
     }
   }
+  ${INCIDENT_ACK_ESCALATION_FIELDS}
 `;
 
 // --- Mutations ---
@@ -313,6 +340,55 @@ export function useResolveIncident() {
   return useMutation({
     mutationFn: (vars: ResolveIncidentVars) =>
       graphqlClient.request(RESOLVE_INCIDENT, {
+        incidentId: vars.incidentId,
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.activeIncident(vars.serverId, vars.conversationId),
+      });
+      qc.invalidateQueries({
+        queryKey: queryKeys.incidentTimeline(vars.incidentId),
+      });
+    },
+  });
+}
+
+const ACKNOWLEDGE_INCIDENT = gql`
+  mutation AcknowledgeIncident($incidentId: ID!) {
+    acknowledgeIncident(incidentId: $incidentId) {
+      id
+      acknowledgedAt
+      acknowledgedBy
+      acknowledgedByUser {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+    }
+  }
+`;
+
+interface AcknowledgeIncidentVars {
+  incidentId: string;
+  serverId: string;
+  conversationId: string;
+}
+
+/**
+ * Direct `acknowledgeIncident` mutation (any member, idempotent). Kept for API-surface
+ * completeness (other CRUD hooks in this module follow the same shape), but **the C1 human
+ * ack surfaces (banner button, paged toast, keybind) deliberately do NOT use this hook** —
+ * per the C1c ack-tier resolution, they dispatch through the unified `incident.ack` command
+ * (`executeCommand`) instead, so ack behaves identically everywhere and stays consistent
+ * with `oncall.who`/`oncall.take_shift`/`incident.escalate`. See `IncidentBanner.tsx` and
+ * `commandDispatcher.ts`.
+ */
+export function useAcknowledgeIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: AcknowledgeIncidentVars) =>
+      graphqlClient.request<{ acknowledgeIncident: Incident }>(ACKNOWLEDGE_INCIDENT, {
         incidentId: vars.incidentId,
       }),
     onSuccess: (_data, vars) => {

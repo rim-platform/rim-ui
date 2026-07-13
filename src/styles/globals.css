@@ -72,8 +72,12 @@ body {
 }
 
 @keyframes focus-pulse {
-  0% { opacity: 0.8; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes toast-progress {

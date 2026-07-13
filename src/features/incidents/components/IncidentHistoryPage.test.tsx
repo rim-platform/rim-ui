@@ -31,20 +31,23 @@ const baseIncident = {
   updatedAt: "2026-04-22T10:00:00Z",
 };
 
-function makePage(items: Array<{
-  id: string;
-  title: string;
-  status: IncidentStatusGql;
-  severity: IncidentSeverityGql | null;
-  conversationId?: string;
-  startedAt?: string;
-  resolvedAt?: string | null;
-}>, opts: {
-  hasPrev?: boolean;
-  hasNext?: boolean;
-  next?: { createdAt: string; incidentId: string } | null;
-  prev?: { createdAt: string; incidentId: string } | null;
-} = {}) {
+function makePage(
+  items: Array<{
+    id: string;
+    title: string;
+    status: IncidentStatusGql;
+    severity: IncidentSeverityGql | null;
+    conversationId?: string;
+    startedAt?: string;
+    resolvedAt?: string | null;
+  }>,
+  opts: {
+    hasPrev?: boolean;
+    hasNext?: boolean;
+    next?: { createdAt: string; incidentId: string } | null;
+    prev?: { createdAt: string; incidentId: string } | null;
+  } = {},
+) {
   return {
     listIncidents: {
       items: items.map((i) => ({
@@ -206,7 +209,14 @@ describe("IncidentHistoryPage", () => {
   it("Older button advances cursor with dir=AFTER", async () => {
     requestMock.mockResolvedValueOnce(
       makePage(
-        [{ id: "inc-1", title: "A", status: IncidentStatusGql.RESOLVED, severity: IncidentSeverityGql.SEV_2 }],
+        [
+          {
+            id: "inc-1",
+            title: "A",
+            status: IncidentStatusGql.RESOLVED,
+            severity: IncidentSeverityGql.SEV_2,
+          },
+        ],
         {
           hasNext: true,
           next: { createdAt: "2026-04-22T08:00:00Z", incidentId: "inc-1" },
@@ -218,7 +228,14 @@ describe("IncidentHistoryPage", () => {
     await waitFor(() => expect(screen.getByText("A")).toBeInTheDocument());
 
     requestMock.mockResolvedValueOnce(
-      makePage([{ id: "inc-2", title: "B", status: IncidentStatusGql.RESOLVED, severity: IncidentSeverityGql.SEV_4 }]),
+      makePage([
+        {
+          id: "inc-2",
+          title: "B",
+          status: IncidentStatusGql.RESOLVED,
+          severity: IncidentSeverityGql.SEV_4,
+        },
+      ]),
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Older/ }));
@@ -233,7 +250,14 @@ describe("IncidentHistoryPage", () => {
   it("Newer button uses prev cursor with dir=BEFORE", async () => {
     requestMock.mockResolvedValueOnce(
       makePage(
-        [{ id: "inc-1", title: "A", status: IncidentStatusGql.RESOLVED, severity: IncidentSeverityGql.SEV_2 }],
+        [
+          {
+            id: "inc-1",
+            title: "A",
+            status: IncidentStatusGql.RESOLVED,
+            severity: IncidentSeverityGql.SEV_2,
+          },
+        ],
         {
           hasPrev: true,
           prev: { createdAt: "2026-04-22T11:00:00Z", incidentId: "inc-0" },

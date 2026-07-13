@@ -17,8 +17,7 @@ vi.mock("@emoji-mart/react", () => ({
           data-testid="emit-native"
           onClick={() => {
             const onSelect = props.onEmojiSelect as
-              | ((e: { native?: string; id?: string; name?: string }) => void)
-              | undefined;
+              ((e: { native?: string; id?: string; name?: string }) => void) | undefined;
             onSelect?.({ native: "👍" });
           }}
         >
@@ -29,8 +28,7 @@ vi.mock("@emoji-mart/react", () => ({
           data-testid="emit-custom"
           onClick={() => {
             const onSelect = props.onEmojiSelect as
-              | ((e: { native?: string; id?: string; name?: string }) => void)
-              | undefined;
+              ((e: { native?: string; id?: string; name?: string }) => void) | undefined;
             onSelect?.({ id: "custom_e1", name: "tada" });
           }}
         >

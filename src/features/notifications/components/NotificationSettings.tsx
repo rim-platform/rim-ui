@@ -1,7 +1,12 @@
 import { useNotificationSettingsStore } from "../state/useNotificationSettingsStore";
 import { cn } from "../../../shared/ui/cn";
 
-function Toggle({ checked, onChange, label, description }: {
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
@@ -11,9 +16,7 @@ function Toggle({ checked, onChange, label, description }: {
     <label className="flex items-center justify-between gap-4 py-3">
       <div>
         <div className="text-sm font-medium text-rim-text">{label}</div>
-        {description && (
-          <div className="text-xs text-rim-text-muted">{description}</div>
-        )}
+        {description && <div className="text-xs text-rim-text-muted">{description}</div>}
       </div>
       <button
         type="button"
