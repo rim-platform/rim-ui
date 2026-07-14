@@ -22,4 +22,13 @@ export interface RegisteredTool {
    * plain nlDescription as its subtitle, so we keep both.
    */
   nlDescription?: string;
+  /**
+   * Raw backend `Command.description` — the human-facing consequence line
+   * for the confirmation modal (C2 §4, e.g. incident.ack: "This cancels the
+   * escalation chain and stops paging on-call for this incident."). Distinct
+   * from `nlDescription` (model-facing, tuned for the LLM) and from
+   * `definition.description` (the LLM tool string with the intent-sample
+   * footer appended).
+   */
+  description?: string;
 }

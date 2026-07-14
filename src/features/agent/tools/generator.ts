@@ -11,6 +11,7 @@ export interface AiToolRegistrationOptions {
   requiresConfirmation?: boolean;
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
+  description?: string;
 }
 
 function jsonTypeForArg(t: CommandArgumentType): string {
@@ -99,10 +100,12 @@ export function buildAiToolRegistrationOptions(cmd: Command): AiToolRegistration
   return {
     sensitivity: cmd.sensitivity,
     requiresConfirmation: cmd.dangerous,
-    // Preserve the raw nl_description separately from the LLM-facing
-    // description (which has intent-sample footer appended). The
-    // ConfirmCommandModal subtitle renders this plain description per
-    // Ant-Man's UX spec.
+    // Preserve the raw nl_description and description separately from the
+    // LLM-facing description (which has the intent-sample footer appended).
+    // The ConfirmCommandModal subtitle renders `description ?? nlDescription`
+    // per the ratified C2 backend spec §4 (superseding the older
+    // nl_description-first ruling in docs/ux/confirm-command-modal-spec.md).
     nlDescription: cmd.nlDescription ?? undefined,
+    description: cmd.description,
   };
 }

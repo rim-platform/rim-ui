@@ -240,6 +240,39 @@ describe("runWithConfirmation", () => {
     unsubscribe();
   });
 
+  it("carries `description` from the challenge into the ConfirmationRequest handed to modal.open (C2 §4)", async () => {
+    const challenge = {
+      commandId: "incident.ack",
+      toolName: "incident.ack",
+      args: { incidentId: "inc-1" },
+      token: "tok-ack",
+      argsHash: "hash-ack",
+      expiresAt: "2026-04-24T12:00:05Z",
+      sensitivity: "MUTATING" as never,
+      nlDescription: "Acknowledge the active incident.",
+      description:
+        "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+    };
+
+    let capturedDescription: string | undefined;
+    const unsubscribe = useConfirmationModalStore.subscribe((state) => {
+      if (state.request) {
+        capturedDescription = state.request.description;
+        useConfirmationModalStore.getState().reject();
+      }
+    });
+
+    await runWithConfirmation(async () => {
+      throw new ConfirmationRequiredError(challenge);
+    });
+
+    unsubscribe();
+
+    expect(capturedDescription).toBe(
+      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+    );
+  });
+
   it("opts.sensitivity overrides the value from the challenge when present", async () => {
     const challenge = {
       commandId: "chat.delete_message",

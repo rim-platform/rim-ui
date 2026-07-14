@@ -30,6 +30,7 @@ vi.mock("./getCurrentContext", () => ({
 }));
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { queryClient } from "../../../core/query/queryClient";
 import { registerGetCurrentContextTool } from "./getCurrentContext";
 
 function clearRegistry(): void {
@@ -189,6 +190,50 @@ describe("makeBackendToolHandler", () => {
         serverMessage: "needs confirmation",
       },
     });
+  });
+
+  it("threads the registered `description` into the ConfirmationRequiredError challenge (C2 §4)", async () => {
+    unregisterTool("incident.ack");
+    registerTool(
+      {
+        name: "incident.ack",
+        description: "tool description (LLM-facing, unused here)",
+        input_schema: { type: "object", properties: {}, additionalProperties: false },
+      },
+      async () => "unused",
+      {
+        sensitivity: CommandSensitivity.MUTATING,
+        nlDescription: "Ack the incident",
+        description:
+          "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+      },
+    );
+
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: {
+        status: "CONFIRMATION_REQUIRED",
+        message: "needs confirmation",
+        payload: null,
+        confirmationRequired: {
+          token: "tok-ack",
+          argsHash: "hash-ack",
+          expiresAt: "2026-04-24T12:00:05Z",
+        },
+      },
+    });
+
+    const handler = makeBackendToolHandler("incident.ack");
+    await expect(handler({ incidentId: "inc-1" })).rejects.toMatchObject({
+      name: "ConfirmationRequiredError",
+      challenge: {
+        commandId: "incident.ack",
+        description:
+          "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+        nlDescription: "Ack the incident",
+      },
+    });
+
+    unregisterTool("incident.ack");
   });
 
   it("throws plain Error when CONFIRMATION_REQUIRED is missing the challenge payload", async () => {
@@ -409,6 +454,181 @@ describe("loadAgentTools (side-effecting integration)", () => {
     const result = await winner!.handler({});
     expect(JSON.parse(result)).toEqual({ ok: true });
     expect(winner!.definition.description).toContain("BACKEND_VERSION");
+  });
+});
+
+describe("interpretResult SUCCESS branch — post-execution invalidation call site (Delta 2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fires invalidation for a SUCCESS incident.ack call", async () => {
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => Promise.resolve());
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "ok", payload: { ok: true } },
+    });
+
+    const handler = makeBackendToolHandler("incident.ack");
+    await handler({ incidentId: "inc-9" });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["incidentTimeline", "inc-9"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["activeIncident"] });
+    spy.mockRestore();
+  });
+
+  it("fires invalidation for a SUCCESS incident.escalate call via executeCommandWithProof", async () => {
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => Promise.resolve());
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "ok", payload: { ok: true } },
+    });
+
+    await executeCommandWithProof(
+      "incident.escalate",
+      { incidentId: "inc-10" },
+      "incident.escalate",
+      { token: "t", argsHash: "h" },
+    );
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["incidentTimeline", "inc-10"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["activeIncident"] });
+    spy.mockRestore();
+  });
+
+  it("does not invalidate for a SUCCESS non-incident command", async () => {
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => Promise.resolve());
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "ok", payload: { channels: [] } },
+    });
+
+    const handler = makeBackendToolHandler("chat.list_channels");
+    await handler({});
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("does not invalidate on CONFIRMATION_REQUIRED for incident.ack", async () => {
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => Promise.resolve());
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: {
+        status: "CONFIRMATION_REQUIRED",
+        message: "needs confirmation",
+        payload: null,
+        confirmationRequired: { token: "t", argsHash: "h", expiresAt: "2026-04-24T12:00:05Z" },
+      },
+    });
+
+    const handler = makeBackendToolHandler("incident.ack");
+    await expect(handler({ incidentId: "inc-9" })).rejects.toMatchObject({
+      name: "ConfirmationRequiredError",
+    });
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("does not invalidate on an ERROR result for incident.escalate", async () => {
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => Promise.resolve());
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "ERROR", message: "boom", payload: null },
+    });
+
+    const handler = makeBackendToolHandler("incident.escalate");
+    await expect(handler({ incidentId: "inc-9" })).rejects.toThrow("boom");
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("C2 — four agent-callable commands are registered with no allowlist drop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearRegistry();
+  });
+
+  // FE mirror of the backend's §5 inventory test (track-c2-agent-operator.md).
+  // Delta 3 is VERIFIED-NO-CHANGE per vision's spec — this is a regression
+  // pin proving `commands(surface: AI)` with no client-side filtering
+  // registers all four C2 commands, including the two Mutating ones whose
+  // `description` must now be stored (Delta 1 threading).
+  it("registers oncall.who, oncall.take_shift, incident.ack, incident.escalate with correct sensitivity + description", async () => {
+    vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {});
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      commands: [
+        makeCommand({
+          id: "oncall.who",
+          title: "Who is on call",
+          description: "Show who is currently on call.",
+          nlDescription: "Find out who is on call right now.",
+          intentSamples: ["who's on call", "who is on-call right now"],
+          sensitivity: CommandSensitivity.SAFE,
+          dangerous: false,
+        }),
+        makeCommand({
+          id: "oncall.take_shift",
+          title: "Take on-call shift",
+          description: "Take over the current on-call shift.",
+          nlDescription: "Take the on-call shift right now.",
+          intentSamples: ["take the shift", "cover on-call for me"],
+          sensitivity: CommandSensitivity.MUTATING,
+          dangerous: false,
+        }),
+        makeCommand({
+          id: "incident.ack",
+          title: "Acknowledge incident",
+          description:
+            "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+          nlDescription: "Acknowledge the active incident.",
+          intentSamples: ["ack the incident", "acknowledge this"],
+          sensitivity: CommandSensitivity.MUTATING,
+          dangerous: false,
+        }),
+        makeCommand({
+          id: "incident.escalate",
+          title: "Escalate incident",
+          description: "Escalate an incident to the next on-call tier.",
+          nlDescription: "Escalate the active incident.",
+          intentSamples: ["escalate this incident", "page the next tier"],
+          sensitivity: CommandSensitivity.MUTATING,
+          dangerous: false,
+        }),
+      ],
+    });
+
+    const result = await loadAgentTools();
+
+    expect(result.droppedBuiltinNames).toEqual([]);
+
+    const who = getTool("oncall.who");
+    const takeShift = getTool("oncall.take_shift");
+    const ack = getTool("incident.ack");
+    const escalate = getTool("incident.escalate");
+
+    expect(who).toBeDefined();
+    expect(takeShift).toBeDefined();
+    expect(ack).toBeDefined();
+    expect(escalate).toBeDefined();
+
+    expect(who!.sensitivity).toBe(CommandSensitivity.SAFE);
+    expect(takeShift!.sensitivity).toBe(CommandSensitivity.MUTATING);
+    expect(ack!.sensitivity).toBe(CommandSensitivity.MUTATING);
+    expect(escalate!.sensitivity).toBe(CommandSensitivity.MUTATING);
+
+    expect(ack!.description).toBe(
+      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+    );
+    expect(escalate!.description).toBe("Escalate an incident to the next on-call tier.");
   });
 });
 

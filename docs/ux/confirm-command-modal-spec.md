@@ -136,11 +136,22 @@ The verb prefix is initiator-aware:
 The title text itself comes from `Command.title`. **Never** from the agent. Never from the macro. Always from the registered command definition.
 
 ### §4.3 Subtitle
-> {command.nl_description ?? command.description}
+> {command.description ?? command.nl_description}
 
 Font: `text-sm text-rim-text-muted`. Two-line clamp (`line-clamp-2`).
 
-Prefer `nl_description` (designed for natural-language surfaces); fall back to `description`.
+**Superseded 2026-07-13 (Track C2, vision):** subtitle source is now
+`description ?? nl_description`, per the ratified backend spec
+`../rim-server/docs/specs/track-c2-agent-operator.md` §4, which designates
+`Command.description` as the human-facing warning/consequence carrier.
+`nl_description` is model-facing (sanitized, length-capped, tuned for the
+LLM) and is clamp-prone at the two-line `line-clamp-2` limit; `description`
+is written for humans and is preferred whenever both are present.
+`nl_description` remains the fallback for commands without a `description`.
+The original ruling below (`nl_description` first) is retained struck-through
+for history — do not re-implement it.
+
+~~Prefer `nl_description` (designed for natural-language surfaces); fall back to `description`.~~
 
 ### §4.4 Chips row
 Two required chips, rendered as inline-flex pills, gap-2:

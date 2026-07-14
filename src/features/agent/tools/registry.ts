@@ -12,6 +12,7 @@ export function registerTool(
     requiresConfirmation?: boolean;
     sensitivity?: CommandSensitivity;
     nlDescription?: string;
+    description?: string;
   },
 ): void {
   tools.set(definition.name, {
@@ -21,6 +22,7 @@ export function registerTool(
     requiresConfirmation: options?.requiresConfirmation,
     sensitivity: options?.sensitivity,
     nlDescription: options?.nlDescription,
+    description: options?.description,
   });
 }
 

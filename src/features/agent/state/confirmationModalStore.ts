@@ -11,6 +11,13 @@ export interface ConfirmationRequest {
   expiresAt: string;
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
+  /**
+   * Raw backend `Command.description` — the human-facing consequence line
+   * for the confirmation modal (C2 §4), sourced from GraphQL
+   * `Command.description`. Preferred over `nlDescription` for the subtitle;
+   * `nlDescription` remains the fallback for commands without one.
+   */
+  description?: string;
   serverMessage?: string;
   /**
    * H2 #1 mitigation — backend flags this challenge as having been issued

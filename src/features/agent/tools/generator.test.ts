@@ -172,6 +172,25 @@ describe("buildAiToolRegistrationOptions", () => {
     );
     expect(opts.sensitivity).toBe(CommandSensitivity.RESTRICTED);
   });
+
+  it("preserves description independently of nlDescription (C2 §4 threading)", () => {
+    const opts = buildAiToolRegistrationOptions(
+      makeCommand({
+        description:
+          "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+        nlDescription: "Ack the incident",
+      }),
+    );
+    expect(opts.description).toBe(
+      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+    );
+    expect(opts.nlDescription).toBe("Ack the incident");
+  });
+
+  it("description is present verbatim on the registration options (C2 §4)", () => {
+    const opts = buildAiToolRegistrationOptions(makeCommand({ description: "palette copy" }));
+    expect(opts.description).toBe("palette copy");
+  });
 });
 
 describe("buildInputSchema", () => {

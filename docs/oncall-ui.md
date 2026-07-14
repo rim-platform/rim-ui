@@ -209,6 +209,34 @@ fires the handler with no args and the handler supplies FE-computed args:
   id (read from `useIncidentStore`), invalidates caches, toasts on success/failure.
 - **`incident.escalate`** — same pattern as `incident.ack`, no local UI.
 
+## C2 — AI agent operation
+
+The four commands above are also AI agent tools, with no FE allowlist: the agent tool
+loader (`src/features/agent/tools/loader.ts`) queries `commands(surface: AI)` and
+registers every command the backend returns (`ai_callable` is a backend flag, flipped
+per-command; the FE applies no client-side filter). `oncall.who` (Safe) runs one-shot;
+`oncall.take_shift` / `incident.ack` / `incident.escalate` (Mutating) are gated by
+`ConfirmCommandModal` through the server-issued confirmation challenge — the same
+`runWithConfirmation` gate every agent tool call goes through, no command-specific engine
+code.
+
+- **Ack modal consequence copy** is sourced from `Command.description` (threaded through
+  `RegisteredTool` → `ConfirmationRequiredError` → `ConfirmationRequest`), rendered as
+  `request.description ?? request.nlDescription` in `ConfirmCommandModal`'s subtitle. For
+  `incident.ack` this reads "Acknowledge an incident. This cancels the escalation chain
+  and stops paging on-call for this incident." — see
+  `docs/ux/confirm-command-modal-spec.md` §4.3 and
+  `../rim-server/docs/specs/track-c2-agent-operator.md` §4.
+- **Agent ack/escalate timeline visibility**: the backend's `incident_phase` note (e.g.
+  "Incident acknowledged by {user_id} via AI agent … — escalation chain cancelled, paging
+  stopped") renders through the existing `IncidentTimelinePanel` phase-notes rendering,
+  unconditionally — no FE parsing, no new surface. Because agent tool calls bypass
+  `commandDispatcher` (which is where the human ack/escalate paths invalidate incident
+  queries), `src/features/agent/tools/postExecution.ts` fires the equivalent
+  `incidentTimeline` / `activeIncident` invalidation from `loader.ts`'s `interpretResult`
+  SUCCESS branch, scoped to exactly `incident.ack` / `incident.escalate` — not a general
+  agent-invalidation framework.
+
 ## Remaining backend contract gap (tracked, not blocking what's shipped)
 
 Discovered while implementing C1c; the rotation-layers-listing and `isOverride` gaps

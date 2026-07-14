@@ -14,6 +14,12 @@ export interface ConfirmationChallengeData {
   expiresAt: string;
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
+  /**
+   * Raw backend `Command.description` — the human-facing consequence line
+   * for the confirmation modal (C2 §4). Mirrors `nlDescription` through the
+   * pipeline; the modal prefers this over `nlDescription` for its subtitle.
+   */
+  description?: string;
   serverMessage?: string;
 }
 
@@ -43,6 +49,7 @@ const MAX_STALE_RETRIES = 1;
 interface RunOptions {
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
+  description?: string;
 }
 
 /**
@@ -80,6 +87,7 @@ export async function runWithConfirmation(
       expiresAt: challenge.expiresAt,
       sensitivity: opts.sensitivity ?? challenge.sensitivity,
       nlDescription: opts.nlDescription ?? challenge.nlDescription,
+      description: opts.description ?? challenge.description,
       serverMessage: challenge.serverMessage,
     };
     const decision = await modal.open(request);
