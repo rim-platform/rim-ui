@@ -51,12 +51,20 @@ pub fn is_safe_segment(segment: &str) -> bool {
         return false;
     }
     // Literal traversal
-    if segment.contains("..") || segment.contains('/') || segment.contains('\\') || segment.contains('\0') {
+    if segment.contains("..")
+        || segment.contains('/')
+        || segment.contains('\\')
+        || segment.contains('\0')
+    {
         return false;
     }
     // Percent-encoded traversal — case-insensitive scan
     let lower = segment.to_lowercase();
-    if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") || lower.contains("%00") {
+    if lower.contains("%2e")
+        || lower.contains("%2f")
+        || lower.contains("%5c")
+        || lower.contains("%00")
+    {
         return false;
     }
     true
@@ -156,11 +164,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn setup(tmp: &TempDir, plugin_id: &str, panel_id: &str, filename: &str) -> PathBuf {
-        let panel_dir = tmp
-            .path()
-            .join(plugin_id)
-            .join("panels")
-            .join(panel_id);
+        let panel_dir = tmp.path().join(plugin_id).join("panels").join(panel_id);
         fs::create_dir_all(&panel_dir).unwrap();
         let file = panel_dir.join(filename);
         fs::write(&file, b"hello").unwrap();
@@ -172,11 +176,12 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         setup(&tmp, "dev.example.hello", "main", "index.html");
 
-        let result = resolve_plugin_uri(
-            "dev.example.hello/main/index.html",
-            tmp.path(),
+        let result = resolve_plugin_uri("dev.example.hello/main/index.html", tmp.path());
+        assert!(
+            matches!(result, ResolveResult::Ok(_)),
+            "expected Ok, got {:?}",
+            result
         );
-        assert!(matches!(result, ResolveResult::Ok(_)), "expected Ok, got {:?}", result);
     }
 
     #[test]
@@ -218,7 +223,11 @@ mod tests {
     fn missing_file_returns_not_found() {
         let tmp = TempDir::new().unwrap();
         // Create plugin dir but no file inside it
-        let panel_dir = tmp.path().join("dev.example.hello").join("panels").join("main");
+        let panel_dir = tmp
+            .path()
+            .join("dev.example.hello")
+            .join("panels")
+            .join("main");
         fs::create_dir_all(&panel_dir).unwrap();
 
         let result = resolve_plugin_uri("dev.example.hello/main/nonexistent.html", tmp.path());

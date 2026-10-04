@@ -23,7 +23,7 @@ use commands::PendingUiEvent;
 use manifest::PluginManifest;
 use panel_registry::PanelRegistry;
 use panel_relay::PanelRelay;
-use state::{state_file_path, PluginStatus, PluginStateStore};
+use state::{state_file_path, PluginStateStore, PluginStatus};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -81,14 +81,15 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     // across the spawn calls.
     let to_spawn: Vec<(String, PluginManifest)> = {
         let store = plugin_host_state.store.lock().expect("plugin store lock");
-        let manifests = plugin_host_state.manifests.lock().expect("plugin manifests lock");
+        let manifests = plugin_host_state
+            .manifests
+            .lock()
+            .expect("plugin manifests lock");
         store
             .plugins
             .iter()
             .filter(|(_, record)| record.status == PluginStatus::Enabled)
-            .filter_map(|(id, _)| {
-                manifests.get(id).map(|m| (id.clone(), m.clone()))
-            })
+            .filter_map(|(id, _)| manifests.get(id).map(|m| (id.clone(), m.clone())))
             .collect()
     };
 

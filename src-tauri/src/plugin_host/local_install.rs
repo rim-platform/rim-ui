@@ -101,9 +101,10 @@ pub fn check_path_safe(path: &Path) -> Result<(), LocalInstallError> {
         use std::path::Component;
         match component {
             Component::ParentDir => {
-                return Err(LocalInstallError::PathTraversal(
-                    format!("path contains `..`: {}", path.display()),
-                ));
+                return Err(LocalInstallError::PathTraversal(format!(
+                    "path contains `..`: {}",
+                    path.display()
+                )));
             }
             Component::Normal(os_name) => {
                 let seg = os_name.to_string_lossy();
@@ -205,7 +206,11 @@ fn collect_files(
 
 // ─── Copy helper (mirrors git_install::copy_dir_recursive) ───────────────────
 
-fn copy_dir_recursive(src: &Path, dst: &Path, src_canonical_root: &Path) -> Result<(), std::io::Error> {
+fn copy_dir_recursive(
+    src: &Path,
+    dst: &Path,
+    src_canonical_root: &Path,
+) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -284,14 +289,20 @@ pub async fn install_from_local(
     let canonical_source = source_path.canonicalize().map_err(|e| {
         LocalInstallError::Io(std::io::Error::new(
             e.kind(),
-            format!("failed to canonicalize source path {}: {e}", source_path.display()),
+            format!(
+                "failed to canonicalize source path {}: {e}",
+                source_path.display()
+            ),
         ))
     })?;
 
     if !canonical_source.is_dir() {
         return Err(LocalInstallError::Io(std::io::Error::new(
             std::io::ErrorKind::NotADirectory,
-            format!("source path is not a directory: {}", canonical_source.display()),
+            format!(
+                "source path is not a directory: {}",
+                canonical_source.display()
+            ),
         )));
     }
 
@@ -334,7 +345,8 @@ pub async fn install_from_local(
 
     // Step 7: bundle fingerprint (TOFU) — computed before copy so it reflects
     // the user-supplied source, not our copy.
-    let bundle_fingerprint = compute_bundle_fingerprint(&canonical_source).map_err(LocalInstallError::Io)?;
+    let bundle_fingerprint =
+        compute_bundle_fingerprint(&canonical_source).map_err(LocalInstallError::Io)?;
 
     // Step 8: copy into installed-plugins directory.
     std::fs::create_dir_all(&plugins_root)?;
@@ -478,7 +490,9 @@ mod tests {
             "entrypoint": "main.js",
         });
         std::fs::write(
-            tmp_src.path().join(crate::plugin_host::discovery::MANIFEST_FILE),
+            tmp_src
+                .path()
+                .join(crate::plugin_host::discovery::MANIFEST_FILE),
             manifest_json.to_string(),
         )
         .unwrap();
@@ -539,7 +553,9 @@ mod tests {
         write_manifest(tmp_src.path(), "dev.example.collision");
         let existing = vec!["dev.example.collision".to_string()];
 
-        let err = install_from_local(tmp_src.path(), &existing).await.unwrap_err();
+        let err = install_from_local(tmp_src.path(), &existing)
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, LocalInstallError::AlreadyExists(_)),
             "expected AlreadyExists, got {err:?}"

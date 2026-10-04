@@ -199,10 +199,9 @@ pub fn plugin_enable(
                 match local_install::compute_bundle_fingerprint(&plugin_dir) {
                     Ok(current_fp) if current_fp != stored_fingerprint => {
                         // Fingerprint mismatch — mark in store and return error so UI warns.
-                        let mut store = state
-                            .store
-                            .lock()
-                            .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+                        let mut store = state.store.lock().map_err(|e| {
+                            LifecycleError::Io(std::io::Error::other(e.to_string()))
+                        })?;
                         if let Some(record) = store.get(&plugin_id).cloned() {
                             store.upsert(PluginRecord {
                                 fingerprint_changed: true,
@@ -753,8 +752,8 @@ pub fn plugin_trust_fingerprint(
             .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?
     };
 
-    let new_fingerprint = local_install::compute_bundle_fingerprint(&plugin_dir)
-        .map_err(LifecycleError::Io)?;
+    let new_fingerprint =
+        local_install::compute_bundle_fingerprint(&plugin_dir).map_err(LifecycleError::Io)?;
 
     let mut store = state
         .store
