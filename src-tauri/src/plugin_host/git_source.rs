@@ -201,6 +201,17 @@ pub fn fetch_args() -> Vec<OsString> {
     vec!["fetch".into(), "--quiet".into()]
 }
 
+/// argv listing the top-level entries of the fetched upstream tree, used to
+/// decide whether an update would need post-install steps before merging it.
+pub fn ls_upstream_tree_args() -> Vec<OsString> {
+    vec![
+        "ls-tree".into(),
+        "--name-only".into(),
+        "--".into(),
+        UPSTREAM_REV.into(),
+    ]
+}
+
 /// argv fast-forwarding the working tree to the fetched upstream.
 pub fn merge_upstream_args() -> Vec<OsString> {
     vec![
@@ -382,6 +393,9 @@ mod tests {
     #[test]
     fn update_args_take_no_caller_input_and_separate_positionals() {
         assert_eq!(fetch_args(), [OsString::from("fetch"), "--quiet".into()]);
+        let ls = ls_upstream_tree_args();
+        assert_eq!(ls[ls.len() - 2], OsString::from("--"));
+        assert_eq!(ls[ls.len() - 1], OsString::from(UPSTREAM_REV));
         let merge = merge_upstream_args();
         assert!(merge.contains(&OsString::from("--ff-only")));
         assert_eq!(merge[merge.len() - 2], OsString::from("--"));

@@ -224,6 +224,34 @@ describe("safeInvoke", () => {
       expect(error.message).toBe("plugin crashed on startup");
     });
 
+    it("preserves the structured data payload of a backend error", async () => {
+      const data = { plugin_id: "dev.example.x", steps: [] };
+      mockInvoke.mockRejectedValue({
+        kind: "POST_INSTALL_CONSENT_REQUIRED",
+        message: "consent required",
+        data,
+      });
+
+      const result = await safeInvoke("plugin_install_from_git", {});
+
+      const error = assertError(result, "backend_error") as Extract<
+        SafeInvokeError,
+        { kind: "backend_error" }
+      >;
+      expect(error.code).toBe("POST_INSTALL_CONSENT_REQUIRED");
+      expect(error.message).toBe("consent required");
+      expect(error.data).toEqual(data);
+    });
+
+    it("omits data when the backend error has none", async () => {
+      mockInvoke.mockRejectedValue({ kind: "GIT_INSTALL_ERROR", message: "clone failed" });
+
+      const result = await safeInvoke("plugin_install_from_git", {});
+
+      const error = assertError(result, "backend_error");
+      expect("data" in error).toBe(false);
+    });
+
     it("maps unknown string error to backend_error with code UNKNOWN", async () => {
       mockInvoke.mockRejectedValue("something went horribly wrong");
 

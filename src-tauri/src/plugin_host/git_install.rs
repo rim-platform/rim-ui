@@ -1,6 +1,7 @@
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest};
+use crate::plugin_host::post_install::{self, PostInstallStep};
 use crate::plugin_host::simple_manifest;
 use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
 use serde::Serialize;
@@ -14,6 +15,15 @@ pub enum GitInstallError {
     /// The branch failed validation (S-H2) — nothing was spawned.
     #[error("invalid git branch: {0}")]
     InvalidBranch(String),
+    /// The plugin needs dependency-install steps that execute author code;
+    /// the caller must retry with explicit consent (S-H3). Nothing was run and
+    /// (for install) nothing was kept on disk; (for update) the working tree
+    /// was not advanced.
+    #[error("plugin {plugin_id} needs post-install steps that run code from the plugin author; explicit consent is required")]
+    PostInstallConsentRequired {
+        plugin_id: String,
+        steps: Vec<PostInstallStep>,
+    },
     #[error("git clone failed: {0}")]
     CloneFailed(String),
     #[error("no manifest found (rim-plugin.json or simple mode entrypoint)")]
@@ -61,6 +71,16 @@ impl Serialize for GitInstallError {
             Self::InvalidBranch(_) => {
                 map.serialize_entry("kind", "INVALID_GIT_BRANCH")?;
                 map.serialize_entry("message", &self.to_string())?;
+            }
+            Self::PostInstallConsentRequired { plugin_id, steps } => {
+                #[derive(Serialize)]
+                struct ConsentData<'a> {
+                    plugin_id: &'a str,
+                    steps: &'a [PostInstallStep],
+                }
+                map.serialize_entry("kind", "POST_INSTALL_CONSENT_REQUIRED")?;
+                map.serialize_entry("message", &self.to_string())?;
+                map.serialize_entry("data", &ConsentData { plugin_id, steps })?;
             }
             other => {
                 map.serialize_entry("kind", "GIT_INSTALL_ERROR")?;
@@ -188,53 +208,18 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-/// Run post-install steps if the plugin declares them.
-pub async fn run_post_install(
-    plugin_dir: &Path,
-    _manifest: &PluginManifest,
-) -> Result<(), GitInstallError> {
-    // Detect package manager needs
-    if plugin_dir.join("package.json").exists() {
-        let output = tokio::process::Command::new("npm")
-            .arg("install")
-            .arg("--production")
-            .current_dir(plugin_dir)
-            .output()
-            .await
-            .map_err(|e| GitInstallError::PostInstallFailed(format!("npm install: {e}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GitInstallError::PostInstallFailed(format!(
-                "npm install failed: {stderr}"
-            )));
-        }
-    }
-
-    if plugin_dir.join("requirements.txt").exists() {
-        let output = tokio::process::Command::new("pip")
-            .args(["install", "-r", "requirements.txt", "--user"])
-            .current_dir(plugin_dir)
-            .output()
-            .await
-            .map_err(|e| GitInstallError::PostInstallFailed(format!("pip install: {e}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GitInstallError::PostInstallFailed(format!(
-                "pip install failed: {stderr}"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Full git install flow: clone → detect manifest → validate → move → post-install.
+/// Full git install flow:
+/// validate URL → clone → detect manifest → validate → consent gate → move → post-install.
+///
+/// Post-install steps (npm/pip) run only when `allow_post_install` is true.
+/// When they would be needed and consent is absent, the staging clone is
+/// deleted and `PostInstallConsentRequired` is returned before anything is
+/// moved into the plugins directory or executed.
 pub async fn install_from_git(
     url: &str,
     branch: Option<&str>,
     existing_plugin_ids: &[String],
+    allow_post_install: bool,
 ) -> Result<(PluginManifest, PathBuf, PluginInstallResult), GitInstallError> {
     let clone_dir = git_clone(url, branch).await?;
 
@@ -272,6 +257,18 @@ pub async fn install_from_git(
         return Err(GitInstallError::InvalidManifest(e));
     }
 
+    // S-H3 consent gate — decided on the staged files, before anything is
+    // moved into the plugins directory or executed.
+    let planned_dir = plugins_dir().join(&manifest.plugin_id);
+    let steps = post_install::detect_steps(&clone_dir, &planned_dir);
+    let steps = match post_install::gate(&manifest.plugin_id, steps, allow_post_install) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&clone_dir);
+            return Err(e);
+        }
+    };
+
     let final_dir = match finalize_install(&clone_dir, &manifest.plugin_id) {
         Ok(d) => d,
         Err(e) => {
@@ -280,7 +277,14 @@ pub async fn install_from_git(
         }
     };
 
-    if let Err(e) = run_post_install(&final_dir, &manifest).await {
+    if let Err(e) = post_install::gate_and_run(
+        &manifest.plugin_id,
+        steps,
+        allow_post_install,
+        post_install::run_steps,
+    )
+    .await
+    {
         // Clean up on post-install failure
         let _ = std::fs::remove_dir_all(&final_dir);
         return Err(e);
@@ -315,14 +319,27 @@ async fn run_git_in(
     Ok(output)
 }
 
-/// Update a plugin: fetch upstream → fast-forward → re-parse manifest →
-/// detect capability changes. Every git call uses the hardened env, so a
-/// stored remote URL can never use a transport other than https/ssh.
+/// Update a plugin: fetch upstream → consent gate on the fetched tree →
+/// fast-forward → re-parse manifest → detect capability changes → post-install.
+///
+/// The consent gate runs on the *fetched* upstream tree before the working
+/// tree is advanced, so declining consent leaves the installed plugin exactly
+/// as it was.
 pub async fn update_plugin(
     plugin_dir: &Path,
     old_manifest: &PluginManifest,
+    allow_post_install: bool,
 ) -> Result<(PluginManifest, PluginUpdateResult), GitInstallError> {
     run_git_in(plugin_dir, git_source::fetch_args()).await?;
+
+    let listing = run_git_in(plugin_dir, git_source::ls_upstream_tree_args()).await?;
+    let upstream_files: Vec<String> = String::from_utf8_lossy(&listing.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let upstream_steps = post_install::steps_for_top_level_files(&upstream_files, plugin_dir);
+    post_install::gate(&old_manifest.plugin_id, upstream_steps, allow_post_install)?;
+
     run_git_in(plugin_dir, git_source::merge_upstream_args()).await?;
 
     let new_manifest = detect_manifest(plugin_dir)?;
@@ -360,7 +377,16 @@ pub async fn update_plugin(
 
     let capabilities_changed = !added.is_empty() || !removed.is_empty();
 
-    run_post_install(plugin_dir, &new_manifest).await?;
+    // Re-detect on the merged working tree (source of truth for what runs);
+    // gate_and_run re-applies the consent check.
+    let steps = post_install::detect_steps(plugin_dir, plugin_dir);
+    post_install::gate_and_run(
+        &new_manifest.plugin_id,
+        steps,
+        allow_post_install,
+        post_install::run_steps,
+    )
+    .await?;
 
     let result = PluginUpdateResult {
         plugin_id: new_manifest.plugin_id.clone(),

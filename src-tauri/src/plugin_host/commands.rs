@@ -347,10 +347,18 @@ pub fn plugin_revoke_capability(
     Ok(())
 }
 
+/// Install a plugin from a git repository.
+///
+/// `url`/`branch` are validated before git runs (`INVALID_GIT_URL` /
+/// `INVALID_GIT_BRANCH`). If the plugin needs dependency-install steps and
+/// `allow_post_install` is not `true`, nothing is installed and the command
+/// fails with `POST_INSTALL_CONSENT_REQUIRED` carrying the exact steps; the UI
+/// asks the user and retries with `allow_post_install: true`.
 #[tauri::command]
 pub async fn plugin_install_from_git(
     url: String,
     branch: Option<String>,
+    allow_post_install: Option<bool>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginInstallResult, GitInstallError> {
     let existing_ids: Vec<String> = {
@@ -361,8 +369,13 @@ pub async fn plugin_install_from_git(
         store.plugins.keys().cloned().collect()
     };
 
-    let (manifest, final_dir, result) =
-        git_install::install_from_git(&url, branch.as_deref(), &existing_ids).await?;
+    let (manifest, final_dir, result) = git_install::install_from_git(
+        &url,
+        branch.as_deref(),
+        &existing_ids,
+        allow_post_install.unwrap_or(false),
+    )
+    .await?;
 
     // Register in manifests and plugin_dirs caches
     {
@@ -398,9 +411,14 @@ pub async fn plugin_install_from_git(
     Ok(result)
 }
 
+/// Update a git-installed plugin. Same consent contract as
+/// [`plugin_install_from_git`]: without `allow_post_install: true`, an update
+/// that needs npm/pip steps fails with `POST_INSTALL_CONSENT_REQUIRED` before
+/// the working tree is advanced.
 #[tauri::command]
 pub async fn plugin_update(
     plugin_id: String,
+    allow_post_install: Option<bool>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginUpdateResult, GitInstallError> {
     let (plugin_dir, old_manifest) = {
@@ -435,7 +453,12 @@ pub async fn plugin_update(
         (dir, manifest)
     };
 
-    let (new_manifest, result) = git_install::update_plugin(&plugin_dir, &old_manifest).await?;
+    let (new_manifest, result) = git_install::update_plugin(
+        &plugin_dir,
+        &old_manifest,
+        allow_post_install.unwrap_or(false),
+    )
+    .await?;
 
     // Update manifests cache
     {

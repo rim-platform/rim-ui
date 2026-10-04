@@ -133,6 +133,63 @@ export interface PluginInstallResult {
   install_path: string;
 }
 
+/**
+ * One dependency-install command the host would run after installing or
+ * updating a git plugin. Mirror of the Rust `PostInstallStep` struct.
+ */
+export interface PostInstallStep {
+  program: string;
+  args: string[];
+  working_dir: string;
+  /** File that triggered the step, e.g. `package.json`. */
+  trigger_file: string;
+  /** Exact command line, e.g. `npm install --production`. */
+  command_line: string;
+}
+
+/**
+ * Payload of the `POST_INSTALL_CONSENT_REQUIRED` error returned by
+ * `plugin_install_from_git` / `plugin_update` when the plugin needs npm/pip
+ * steps and the caller did not pass `allowPostInstall: true`.
+ */
+export interface PostInstallConsentRequest {
+  plugin_id: string;
+  steps: PostInstallStep[];
+}
+
+export const POST_INSTALL_CONSENT_REQUIRED = "POST_INSTALL_CONSENT_REQUIRED";
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isPostInstallStep(v: unknown): v is PostInstallStep {
+  return (
+    isRecord(v) &&
+    typeof v["program"] === "string" &&
+    Array.isArray(v["args"]) &&
+    v["args"].every((a) => typeof a === "string") &&
+    typeof v["working_dir"] === "string" &&
+    typeof v["trigger_file"] === "string" &&
+    typeof v["command_line"] === "string"
+  );
+}
+
+/**
+ * Extract the consent request from a narrowed IPC error, or `null` when the
+ * error is anything else (or the payload is malformed — in which case the
+ * caller falls back to showing the error message, never to installing).
+ */
+export function parsePostInstallConsent(error: unknown): PostInstallConsentRequest | null {
+  if (!isRecord(error) || error["kind"] !== "backend_error") return null;
+  if (error["code"] !== POST_INSTALL_CONSENT_REQUIRED) return null;
+  const data = error["data"];
+  if (!isRecord(data) || typeof data["plugin_id"] !== "string") return null;
+  const steps = data["steps"];
+  if (!Array.isArray(steps) || steps.length === 0 || !steps.every(isPostInstallStep)) return null;
+  return { plugin_id: data["plugin_id"], steps };
+}
+
 export interface PluginContextAction {
   id: string;
   title: string;

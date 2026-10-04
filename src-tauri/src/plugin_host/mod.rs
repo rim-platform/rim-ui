@@ -13,6 +13,7 @@ pub mod manifest;
 pub mod panel_registry;
 pub mod panel_relay;
 pub mod plugin_protocol;
+pub mod post_install;
 pub mod process;
 pub mod runtime;
 pub mod simple_manifest;

@@ -48,7 +48,8 @@ export type SafeInvokeResult<T> = SafeInvokeOk<T> | SafeInvokeErr;
  * - `invalid_args` — Rust/serde rejected the arguments; optionally names the field.
  * - `rate_limited` — server-side rate limit hit; `retryAfterMs` gives the backoff duration.
  * - `confirmation_stale` — confirmation token expired or already used; caller should re-prompt.
- * - `backend_error` — Rust command returned an Err; carries a structured code + message.
+ * - `backend_error` — Rust command returned an Err; carries a structured code + message,
+ *   plus the variant's structured `data` payload when the Rust error has one.
  *
  * TODO(P8-FE-04): `rate_limited.retryAfterMs` and `confirmation_stale` are consumed by
  * ConfirmCommandModal / rate-limit banner in Phase 4. Until then callers fall back to
@@ -60,7 +61,7 @@ export type SafeInvokeError =
   | { kind: "invalid_args"; message: string; field?: string }
   | { kind: "rate_limited"; retryAfterMs: number; message: string }
   | { kind: "confirmation_stale"; message: string }
-  | { kind: "backend_error"; code: string; message: string };
+  | { kind: "backend_error"; code: string; message: string; data?: unknown };
 
 // ─── Shape guards ───────────────────────────────────────────────────────────
 
@@ -119,7 +120,12 @@ function narrowError(err: unknown): SafeInvokeError {
     if (code === "CONFIRMATION_STALE") {
       return { kind: "confirmation_stale", message };
     }
-    // Everything else with a structured shape → backend_error
+    // Everything else with a structured shape → backend_error. The structured
+    // payload is preserved so callers can act on typed variants (e.g.
+    // POST_INSTALL_CONSENT_REQUIRED carries the exact steps to show the user).
+    if (err.data !== undefined) {
+      return { kind: "backend_error", code, message, data: err.data };
+    }
     return { kind: "backend_error", code, message };
   }
 
