@@ -5,6 +5,7 @@ pub mod commands;
 pub mod discovery;
 pub mod event_forwarder;
 pub mod git_install;
+pub mod git_source;
 pub mod handshake;
 pub mod lifecycle;
 pub mod local_install;

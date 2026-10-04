@@ -1,4 +1,5 @@
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
+use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest};
 use crate::plugin_host::simple_manifest;
 use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
@@ -7,6 +8,12 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GitInstallError {
+    /// The repository URL failed validation (S-H2) — nothing was spawned.
+    #[error("invalid git URL: {0}")]
+    InvalidUrl(String),
+    /// The branch failed validation (S-H2) — nothing was spawned.
+    #[error("invalid git branch: {0}")]
+    InvalidBranch(String),
     #[error("git clone failed: {0}")]
     CloneFailed(String),
     #[error("no manifest found (rim-plugin.json or simple mode entrypoint)")]
@@ -47,6 +54,14 @@ impl Serialize for GitInstallError {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
                 map.serialize_entry("data", inner)?;
             }
+            Self::InvalidUrl(_) => {
+                map.serialize_entry("kind", "INVALID_GIT_URL")?;
+                map.serialize_entry("message", &self.to_string())?;
+            }
+            Self::InvalidBranch(_) => {
+                map.serialize_entry("kind", "INVALID_GIT_BRANCH")?;
+                map.serialize_entry("message", &self.to_string())?;
+            }
             other => {
                 map.serialize_entry("kind", "GIT_INSTALL_ERROR")?;
                 map.serialize_entry("message", &other.to_string())?;
@@ -83,7 +98,16 @@ fn staging_dir() -> PathBuf {
 }
 
 /// Clone a git repo to the staging directory.
+///
+/// `url` and `branch` are validated before git is spawned; the argv puts `--`
+/// before the positionals and the child runs with the hardened git env
+/// (see [`git_source`]).
 pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitInstallError> {
+    git_source::validate_git_url(url).map_err(GitInstallError::InvalidUrl)?;
+    if let Some(b) = branch {
+        git_source::validate_git_branch(b).map_err(GitInstallError::InvalidBranch)?;
+    }
+
     let staging = staging_dir();
     std::fs::create_dir_all(&staging)?;
 
@@ -96,16 +120,8 @@ pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitIn
         std::fs::remove_dir_all(&clone_dir)?;
     }
 
-    let mut args = vec!["clone".to_string(), "--depth".to_string(), "1".to_string()];
-    if let Some(b) = branch {
-        args.push("--branch".to_string());
-        args.push(b.to_string());
-    }
-    args.push(url.to_string());
-    args.push(clone_dir.display().to_string());
-
-    let output = tokio::process::Command::new("git")
-        .args(&args)
+    let output = git_source::git_command()
+        .args(git_source::clone_args(url, branch, &clone_dir))
         .output()
         .await
         .map_err(|e| GitInstallError::CloneFailed(e.to_string()))?;
@@ -281,22 +297,33 @@ pub async fn install_from_git(
     Ok((manifest, final_dir, result))
 }
 
-/// Update a plugin via git pull --ff-only, re-parse manifest, detect capability changes.
-pub async fn update_plugin(
-    plugin_dir: &Path,
-    old_manifest: &PluginManifest,
-) -> Result<(PluginManifest, PluginUpdateResult), GitInstallError> {
-    let output = tokio::process::Command::new("git")
-        .args(["pull", "--ff-only"])
-        .current_dir(plugin_dir)
+/// Run one hardened git command in `dir`, mapping failure to `PullFailed`.
+async fn run_git_in(
+    dir: &Path,
+    args: Vec<std::ffi::OsString>,
+) -> Result<std::process::Output, GitInstallError> {
+    let output = git_source::git_command()
+        .args(args)
+        .current_dir(dir)
         .output()
         .await
         .map_err(|e| GitInstallError::PullFailed(e.to_string()))?;
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(GitInstallError::PullFailed(stderr.to_string()));
     }
+    Ok(output)
+}
+
+/// Update a plugin: fetch upstream → fast-forward → re-parse manifest →
+/// detect capability changes. Every git call uses the hardened env, so a
+/// stored remote URL can never use a transport other than https/ssh.
+pub async fn update_plugin(
+    plugin_dir: &Path,
+    old_manifest: &PluginManifest,
+) -> Result<(PluginManifest, PluginUpdateResult), GitInstallError> {
+    run_git_in(plugin_dir, git_source::fetch_args()).await?;
+    run_git_in(plugin_dir, git_source::merge_upstream_args()).await?;
 
     let new_manifest = detect_manifest(plugin_dir)?;
 
