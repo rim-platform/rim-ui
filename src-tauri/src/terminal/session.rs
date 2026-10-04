@@ -6,6 +6,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
+use super::policy;
+
 const READ_BUF_SIZE: usize = 4096;
 
 #[derive(Debug, thiserror::Error)]
@@ -37,18 +39,14 @@ pub struct SessionInfo {
 }
 
 impl PtySession {
+    /// Spawn a PTY session. `shell_path` and `cwd_path` must already have been
+    /// validated through [`resolve_shell`] and [`resolve_cwd`].
     pub fn spawn(
         app_handle: AppHandle,
         session_id: String,
-        shell: Option<String>,
-        cwd: Option<String>,
+        shell_path: String,
+        cwd_path: PathBuf,
     ) -> Result<Self, SessionError> {
-        // Resolve and validate shell
-        let shell_path = resolve_shell(shell)?;
-
-        // Resolve and validate cwd
-        let cwd_path = resolve_cwd(cwd)?;
-
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -194,64 +192,48 @@ impl Drop for PtySession {
     }
 }
 
-fn resolve_shell(shell: Option<String>) -> Result<String, SessionError> {
-    if let Some(s) = shell {
-        let path = Path::new(&s);
-        if !path.is_file() {
-            return Err(SessionError::InvalidShell(format!(
-                "shell not found or not a file: {s}"
-            )));
-        }
-        return Ok(s);
-    }
-
-    // Platform-aware shell resolution
+/// Resolve the shell for a new session under the S-H1 policy: never an
+/// arbitrary caller-supplied path (see [`policy`]).
+pub fn resolve_shell(requested: Option<&str>) -> Result<String, SessionError> {
     if cfg!(windows) {
-        // Prefer PowerShell, fall back to cmd.exe
-        if let Ok(pwsh) = std::env::var("COMSPEC") {
-            // COMSPEC is typically C:\WINDOWS\system32\cmd.exe
-            // Check for PowerShell first
-            if let Ok(ps_path) = which_shell("pwsh.exe") {
-                return Ok(ps_path);
-            }
-            if let Ok(ps_path) = which_shell("powershell.exe") {
-                return Ok(ps_path);
-            }
-            return Ok(pwsh);
-        }
-        Ok("cmd.exe".to_string())
+        policy::select_windows_shell(requested, resolve_windows_shell)
+            .map_err(SessionError::InvalidShell)
     } else {
-        // Unix: use $SHELL, fall back to /bin/sh
-        Ok(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string()))
+        // An unreadable /etc/shells means no caller-supplied shell is accepted.
+        let allowed = std::fs::read_to_string("/etc/shells")
+            .map(|c| policy::parse_etc_shells(&c))
+            .unwrap_or_default();
+        let env_shell = std::env::var("SHELL").ok();
+        policy::select_unix_shell(requested, &allowed, env_shell.as_deref())
+            .map_err(SessionError::InvalidShell)
     }
+}
+
+/// Map an allowlisted Windows shell name to a full path.
+fn resolve_windows_shell(name: &str) -> Option<String> {
+    if name.eq_ignore_ascii_case("cmd.exe") {
+        if let Ok(comspec) = std::env::var("COMSPEC") {
+            return Some(comspec);
+        }
+    }
+    which_shell(name)
 }
 
 /// Try to find a shell executable on PATH.
-fn which_shell(name: &str) -> Result<String, ()> {
-    let path_var = std::env::var("PATH").map_err(|_| ())?;
+fn which_shell(name: &str) -> Option<String> {
+    let path_var = std::env::var("PATH").ok()?;
     let sep = if cfg!(windows) { ';' } else { ':' };
-    for dir in path_var.split(sep) {
-        let candidate = Path::new(dir).join(name);
-        if candidate.is_file() {
-            return candidate.to_str().map(|s| s.to_string()).ok_or(());
-        }
-    }
-    Err(())
+    path_var
+        .split(sep)
+        .map(|dir| Path::new(dir).join(name))
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| candidate.to_str().map(str::to_string))
 }
 
-fn resolve_cwd(cwd: Option<String>) -> Result<PathBuf, SessionError> {
-    if let Some(c) = cwd {
-        let path = std::fs::canonicalize(&c)
-            .map_err(|e| SessionError::InvalidCwd(format!("cannot canonicalize '{c}': {e}")))?;
-        if !path.is_dir() {
-            return Err(SessionError::InvalidCwd(format!(
-                "not a directory: {}",
-                path.display()
-            )));
-        }
-        Ok(path)
-    } else {
-        // Default to home directory
-        Ok(dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
-    }
+/// Resolve the working directory: the user's home directory, or an existing
+/// directory inside it.
+pub fn resolve_cwd(requested: Option<&str>) -> Result<PathBuf, SessionError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| SessionError::InvalidCwd("cannot resolve home directory".into()))?;
+    policy::select_cwd(requested, &home).map_err(SessionError::InvalidCwd)
 }

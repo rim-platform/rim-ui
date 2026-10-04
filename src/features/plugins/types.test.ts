@@ -13,7 +13,12 @@ import type {
   PluginPanelSlot,
   PluginContextType,
 } from "./types";
-import { isPluginCapability, parsePluginCapabilities, PLUGIN_CAPABILITIES } from "./types";
+import {
+  isPluginCapability,
+  parsePluginCapabilities,
+  parsePostInstallConsent,
+  PLUGIN_CAPABILITIES,
+} from "./types";
 
 describe("Plugin types", () => {
   it("TrustLevel supports all expected values", () => {
@@ -233,5 +238,44 @@ describe("Plugin types", () => {
       parsePluginCapabilities(["ui.notify", "fs.read"]);
       expect(warnSpy).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("parsePostInstallConsent", () => {
+  const step = {
+    program: "npm",
+    args: ["install", "--production"],
+    working_dir: "/p",
+    trigger_file: "package.json",
+    command_line: "npm install --production",
+  };
+  const consent = {
+    kind: "backend_error",
+    code: "POST_INSTALL_CONSENT_REQUIRED",
+    message: "consent required",
+    data: { plugin_id: "dev.x", steps: [step] },
+  };
+
+  it("extracts plugin id and steps from a consent error", () => {
+    expect(parsePostInstallConsent(consent)).toEqual({ plugin_id: "dev.x", steps: [step] });
+  });
+
+  it("returns null for other errors and malformed payloads", () => {
+    expect(parsePostInstallConsent(null)).toBeNull();
+    expect(parsePostInstallConsent({ ...consent, code: "GIT_INSTALL_ERROR" })).toBeNull();
+    expect(parsePostInstallConsent({ ...consent, kind: "invalid_args" })).toBeNull();
+    expect(parsePostInstallConsent({ ...consent, data: undefined })).toBeNull();
+    expect(
+      parsePostInstallConsent({ ...consent, data: { plugin_id: "dev.x", steps: [] } }),
+    ).toBeNull();
+    expect(
+      parsePostInstallConsent({
+        ...consent,
+        data: { plugin_id: "dev.x", steps: [{ ...step, args: [1] }] },
+      }),
+    ).toBeNull();
+    expect(
+      parsePostInstallConsent({ ...consent, data: { plugin_id: 7, steps: [step] } }),
+    ).toBeNull();
   });
 });

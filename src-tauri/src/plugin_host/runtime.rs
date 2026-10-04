@@ -71,14 +71,20 @@ pub fn start_plugin(
 ) -> Result<(), RuntimeError> {
     // Idempotency guard — do not spawn a second process.
     {
-        let txs = state.shutdown_txs.lock().map_err(|_| RuntimeError::LockPoisoned)?;
+        let txs = state
+            .shutdown_txs
+            .lock()
+            .map_err(|_| RuntimeError::LockPoisoned)?;
         if txs.contains_key(plugin_id) {
             return Err(RuntimeError::AlreadyRunning(plugin_id.to_string()));
         }
     }
 
     let plugin_dir: PathBuf = {
-        let dirs = state.plugin_dirs.lock().map_err(|_| RuntimeError::LockPoisoned)?;
+        let dirs = state
+            .plugin_dirs
+            .lock()
+            .map_err(|_| RuntimeError::LockPoisoned)?;
         dirs.get(plugin_id)
             .ok_or_else(|| RuntimeError::DirNotFound(plugin_id.to_string()))?
             .clone()
@@ -124,7 +130,10 @@ pub fn start_plugin(
     });
 
     {
-        let mut txs = state.shutdown_txs.lock().map_err(|_| RuntimeError::LockPoisoned)?;
+        let mut txs = state
+            .shutdown_txs
+            .lock()
+            .map_err(|_| RuntimeError::LockPoisoned)?;
         txs.insert(plugin_id.to_string(), shutdown_tx);
     }
 
@@ -148,7 +157,10 @@ pub fn start_plugin(
 /// ```
 pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(), RuntimeError> {
     let maybe_tx: Option<watch::Sender<bool>> = {
-        let mut txs = state.shutdown_txs.lock().map_err(|_| RuntimeError::LockPoisoned)?;
+        let mut txs = state
+            .shutdown_txs
+            .lock()
+            .map_err(|_| RuntimeError::LockPoisoned)?;
         txs.remove(plugin_id)
     };
 

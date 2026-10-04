@@ -55,7 +55,7 @@ function TerminalSettings() {
 
   // Platform-specific placeholder
   const shellPlaceholder = navigator.platform.startsWith("Win")
-    ? "e.g. pwsh.exe, cmd.exe, C:\\Program Files\\Git\\bin\\bash.exe"
+    ? "pwsh.exe, powershell.exe or cmd.exe"
     : "e.g. /bin/zsh, /usr/bin/fish, /bin/bash";
 
   return (
@@ -100,7 +100,9 @@ function TerminalSettings() {
           Shell
         </label>
         <p className="mt-1 text-xs text-rim-text-muted">
-          Path to the shell executable. Leave empty to use your system default.
+          Leave empty to use your system default. For security, only shells listed in /etc/shells
+          (Windows: pwsh.exe, powershell.exe, cmd.exe) are accepted, and RIM asks for confirmation
+          before opening the first terminal of each session.
         </p>
         <input
           id="shell-path"

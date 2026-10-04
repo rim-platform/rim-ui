@@ -22,7 +22,13 @@ import {
   usePluginTrustFingerprint,
 } from "../api/usePluginActions";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
-import type { PluginInfo, PluginHealth } from "../types";
+import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
+import {
+  parsePostInstallConsent,
+  type PluginInfo,
+  type PluginHealth,
+  type PostInstallConsentRequest,
+} from "../types";
 
 const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
   running: { color: "bg-rim-success", label: "Running" },
@@ -61,6 +67,11 @@ export function PluginSettingsPage() {
   const [gitUrl, setGitUrl] = useState("");
   const [gitUrlOpen, setGitUrlOpen] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  // Set when plugin_install_from_git stopped before running npm/pip steps.
+  const [consentRequest, setConsentRequest] = useState<{
+    url: string;
+    request: PostInstallConsentRequest;
+  } | null>(null);
 
   // Hidden file input for folder picker — see module docblock for why.
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -98,23 +109,38 @@ export function PluginSettingsPage() {
     [installFromLocal],
   );
 
+  const runGitInstall = useCallback(
+    (url: string, allowPostInstall: boolean) => {
+      setInstallError(null);
+      installFromGit.mutate(
+        { url, allowPostInstall },
+        {
+          onSuccess: () => {
+            setConsentRequest(null);
+            setGitUrl("");
+            setGitUrlOpen(false);
+          },
+          onError: (err) => {
+            const request = allowPostInstall ? null : parsePostInstallConsent(err);
+            if (request) {
+              // Nothing was installed yet — ask before running author code.
+              setConsentRequest({ url, request });
+              return;
+            }
+            setConsentRequest(null);
+            setInstallError("message" in err ? err.message : "Install failed");
+          },
+        },
+      );
+    },
+    [installFromGit],
+  );
+
   const handleGitInstall = useCallback(() => {
     const trimmed = gitUrl.trim();
     if (!trimmed) return;
-    setInstallError(null);
-    installFromGit.mutate(
-      { url: trimmed },
-      {
-        onSuccess: () => {
-          setGitUrl("");
-          setGitUrlOpen(false);
-        },
-        onError: (err) => {
-          setInstallError("message" in err ? err.message : "Install failed");
-        },
-      },
-    );
-  }, [gitUrl, installFromGit]);
+    runGitInstall(trimmed, false);
+  }, [gitUrl, runGitInstall]);
 
   if (!capabilities.pluginHost) {
     return <PluginDesktopOnlyCard />;
@@ -249,6 +275,15 @@ export function PluginSettingsPage() {
             ))}
           </div>
         </>
+      )}
+
+      {consentRequest && (
+        <PostInstallConsentDialog
+          request={consentRequest.request}
+          isPending={installFromGit.isPending}
+          onConfirm={() => runGitInstall(consentRequest.url, true)}
+          onCancel={() => setConsentRequest(null)}
+        />
       )}
 
       {permissionsTarget && (

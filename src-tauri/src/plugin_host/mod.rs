@@ -5,6 +5,7 @@ pub mod commands;
 pub mod discovery;
 pub mod event_forwarder;
 pub mod git_install;
+pub mod git_source;
 pub mod handshake;
 pub mod lifecycle;
 pub mod local_install;
@@ -12,6 +13,7 @@ pub mod manifest;
 pub mod panel_registry;
 pub mod panel_relay;
 pub mod plugin_protocol;
+pub mod post_install;
 pub mod process;
 pub mod runtime;
 pub mod simple_manifest;
@@ -23,7 +25,7 @@ use commands::PendingUiEvent;
 use manifest::PluginManifest;
 use panel_registry::PanelRegistry;
 use panel_relay::PanelRelay;
-use state::{state_file_path, PluginStatus, PluginStateStore};
+use state::{state_file_path, PluginStateStore, PluginStatus};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -81,14 +83,15 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     // across the spawn calls.
     let to_spawn: Vec<(String, PluginManifest)> = {
         let store = plugin_host_state.store.lock().expect("plugin store lock");
-        let manifests = plugin_host_state.manifests.lock().expect("plugin manifests lock");
+        let manifests = plugin_host_state
+            .manifests
+            .lock()
+            .expect("plugin manifests lock");
         store
             .plugins
             .iter()
             .filter(|(_, record)| record.status == PluginStatus::Enabled)
-            .filter_map(|(id, _)| {
-                manifests.get(id).map(|m| (id.clone(), m.clone()))
-            })
+            .filter_map(|(id, _)| manifests.get(id).map(|m| (id.clone(), m.clone())))
             .collect()
     };
 

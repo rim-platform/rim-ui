@@ -84,26 +84,41 @@ export function usePluginInstallFromLocal() {
   });
 }
 
+/** Variables for {@link usePluginInstallFromGit}. */
+export interface GitInstallVariables {
+  url: string;
+  branch?: string;
+  /**
+   * Explicit user consent to run the plugin's dependency-install steps
+   * (npm/pip), which execute code from the plugin author. Only set this to
+   * `true` after the user confirmed the exact steps returned in a
+   * `POST_INSTALL_CONSENT_REQUIRED` error (see `parsePostInstallConsent`).
+   */
+  allowPostInstall?: boolean;
+}
+
 /**
  * Install a plugin from a git URL.
  *
  * Calls `plugin_install_from_git` with the supplied URL and optional branch.
  * On success the plugin list is invalidated so the UI refreshes.
  *
- * @returns TanStack mutation — `mutate({ url, branch? })`.
+ * Error contract (thrown as `PluginIpcError`, `kind: "backend_error"`):
+ * - `INVALID_GIT_URL` / `INVALID_GIT_BRANCH` — rejected before git ran; show `message`.
+ * - `POST_INSTALL_CONSENT_REQUIRED` — nothing was installed; `data` lists the exact
+ *   npm/pip steps. Ask the user, then retry with `allowPostInstall: true`.
+ *
+ * @returns TanStack mutation — `mutate({ url, branch?, allowPostInstall? })`.
  */
 export function usePluginInstallFromGit() {
   const qc = useQueryClient();
 
-  return useMutation<
-    PluginInstallResult | undefined,
-    PluginIpcError,
-    { url: string; branch?: string }
-  >({
-    mutationFn: async ({ url, branch }) => {
+  return useMutation<PluginInstallResult | undefined, PluginIpcError, GitInstallVariables>({
+    mutationFn: async ({ url, branch, allowPostInstall }) => {
       const result = await coreSafeInvoke<PluginInstallResult>("plugin_install_from_git", {
         url,
         branch: branch ?? null,
+        allowPostInstall: allowPostInstall === true,
       });
       if (!result.ok) {
         if (result.error.kind === "ipc_unavailable") return undefined;

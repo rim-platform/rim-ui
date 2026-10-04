@@ -48,6 +48,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        // Native dialogs — used Rust-side only (terminal first-use confirmation,
+        // S-H1). No `dialog:*` permission is granted to the renderer.
+        .plugin(tauri_plugin_dialog::init())
         // Register the rim-plugin:// URI scheme for serving plugin panel assets.
         // The handler resolves rim-plugin://<plugin_id>/<panel_id>/<rest> to
         // ~/.rim/plugins/<plugin_id>/panels/<panel_id>/<rest> with full
