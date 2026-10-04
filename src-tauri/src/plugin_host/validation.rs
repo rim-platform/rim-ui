@@ -1,6 +1,6 @@
-//! MIRROR of `rim-server/rim_services/src/plugin_host/validation.rs` — keep in sync.
-//! Extraction to shared `rim_plugin_validation` crate filed as task TBD.
-//! If you change one, change the other AND its test corpus.
+//! Install-time plugin manifest validation. This is the only copy: the
+//! server-side mirror (`rim_services::plugin_host::validation`) was removed on
+//! 2026-10-04 as dead code, so there is nothing to keep in sync any more.
 
 use crate::plugin_host::manifest::{ManifestCommand, PluginManifest};
 
