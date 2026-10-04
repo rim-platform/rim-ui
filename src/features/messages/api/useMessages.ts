@@ -24,7 +24,11 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
       const variables: Record<string, unknown> = {
         serverId: workspaceId!,
         conversationId: conversationId!,
-        dir: "BEFORE",
+        // `messages` is a DESC endpoint (newest-first sort key). Per docs/pagination.md,
+        // `AFTER` means "older than the cursor" there, and a cursorless request returns the
+        // newest page. Infinite scroll-up is therefore AFTER + `next` (the page's oldest row).
+        // `BEFORE` walks toward newer messages and dead-ends after the first page (A-H1).
+        dir: "AFTER",
         limit: 50,
         includeDeleted: false,
       };
@@ -37,8 +41,8 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
       return res.messages;
     },
     getNextPageParam: (lastPage) => {
-      // "Next page" in infinite query terms = older messages (scrolling up)
-      // Backend BEFORE dir returns items in display order (oldest-first); next cursor continues in same direction (older)
+      // "Next page" in infinite query terms = older messages (scrolling up). Items inside a
+      // page are in display order (oldest-first); `next` continues in the same direction (older).
       if (lastPage.pageInfo.hasNext && lastPage.next) {
         return lastPage.next;
       }

@@ -33,7 +33,8 @@ export function usePrefetchMessages(workspaceId: string | null, conversationIds:
           const res = await graphqlClient.request<MessagesResponse>(MESSAGES_QUERY, {
             serverId: workspaceId,
             conversationId: convId,
-            dir: "BEFORE",
+            // Must match useConversationMessages: AFTER is "older" on this DESC endpoint.
+            dir: "AFTER",
             limit: 50,
             includeDeleted: false,
           });
