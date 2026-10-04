@@ -1,0 +1,460 @@
+import { invoke } from "@tauri-apps/api/core";
+
+import type { CommandDefinition, CommandResult } from "../types";
+import { logger } from "../../../core/logger";
+import { toast } from "../../../shared/toast";
+import { useCommandStore } from "../state/useCommandStore";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useAgentStore } from "../../agent/state/useAgentStore";
+import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import { useLensStore } from "../../lenses/state/useLensStore";
+import { useIncidentStore } from "../../incidents/state/useIncidentStore";
+import { useOnCallStore } from "../../oncall/state/useOnCallStore";
+import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
+import { graphqlClient } from "../../../core/graphql/client";
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
+import { reloadCommands } from "../api/useCommands";
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { gql } from "graphql-request";
+
+interface ConversationItem {
+  id: string;
+  serverId: string;
+  conversationType: string;
+  title: string;
+  memberIds: string[];
+}
+
+interface ConversationPage {
+  items: ConversationItem[];
+  pageInfo: { hasNext: boolean; hasPrev: boolean };
+}
+
+/**
+ * Read the ordered list of conversations from the TanStack Query cache.
+ * Channels first, then inbox (DMs/groups) — same order as ConversationList.
+ */
+function getCachedConversationIds(): string[] {
+  const workspaceId = useWorkspaceStore.getState().workspaceId;
+  const channels = queryClient.getQueryData<ConversationPage>(
+    queryKeys.channels(workspaceId ?? undefined),
+  );
+  const inbox = queryClient.getQueryData<ConversationPage>(
+    queryKeys.conversations(workspaceId ?? undefined),
+  );
+  return [...(channels?.items ?? []), ...(inbox?.items ?? [])].map((c) => c.id);
+}
+
+/**
+ * Read unread conversation IDs from the unread store.
+ * Returns only conversations that have a non-zero unread count,
+ * in the same order as the conversation list.
+ */
+function getCachedUnreadConversationIds(): string[] {
+  const counts = useUnreadStore.getState().counts;
+  return getCachedConversationIds().filter((id) => (counts[id] ?? 0) > 0);
+}
+
+type ExecuteBackendCommand = (input: {
+  commandId: string;
+  args?: Record<string, unknown>;
+  commandContext?: Record<string, unknown>;
+  confirmedDangerous?: boolean;
+  isPipe?: boolean;
+}) => Promise<{ executeCommand: CommandResult }>;
+
+const RESOLVE_INCIDENT_GQL = gql`
+  mutation ResolveIncident($incidentId: ID!) {
+    resolveIncident(incidentId: $incidentId) {
+      id
+      status
+      resolvedAt
+    }
+  }
+`;
+
+function resolveIncidentFromCommand(
+  incidentId: string,
+  workspaceId: string,
+  conversationId: string,
+) {
+  graphqlClient
+    .request(RESOLVE_INCIDENT_GQL, { incidentId })
+    .then(() => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+      });
+      toast.success("Incident resolved");
+    })
+    .catch(() => {
+      toast.error("Failed to resolve incident");
+    });
+}
+
+/**
+ * Ack via the primary unified-dispatch path (Track C1c): `incident.ack` is
+ * `Mutating`/`dangerous:false`, and `requires_confirmation_for_initiator` only fires for the
+ * `Restricted` tier, the `dangerous` flag, or agentic+>=Mutating dispatch — every C1 human ack
+ * surface (palette/keybind/context-menu/banner button/paged-toast) is non-agentic, so this is
+ * single-action with no confirmation prompt. There is deliberately no direct-mutation
+ * fallback — this keeps ack consistent with the other three C1 builtins and pre-fits C2.
+ */
+function ackIncidentFromCommand(
+  incidentId: string,
+  workspaceId: string,
+  conversationId: string,
+  executeBackend: ExecuteBackendCommand,
+) {
+  executeBackend({ commandId: "incident.ack", args: { incidentId } })
+    .then((res) => {
+      if (res.executeCommand.status === "ERROR") {
+        toast.error(res.executeCommand.message || "Failed to acknowledge incident");
+        return;
+      }
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incidentId) });
+      toast.success("Incident acknowledged");
+    })
+    .catch(() => {
+      toast.error("Failed to acknowledge incident");
+    });
+}
+
+/** Reads the viewer's cached server role (no extra round-trip) to gate `oncall.take_shift`. */
+function canManageOnCall(workspaceId: string): boolean {
+  const server = queryClient.getQueryData<{ viewerRole: ServerMemberRoleGql }>(
+    queryKeys.server(workspaceId),
+  );
+  return (
+    server?.viewerRole === ServerMemberRoleGql.OWNER ||
+    server?.viewerRole === ServerMemberRoleGql.MODERATOR
+  );
+}
+
+// Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
+// every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
+// args, and the handler supplies FE-computed args — see `incident.start`/`incident.resolve`
+// above and the four Track C1 builtins below for the pattern.
+const localHandlers: Record<
+  string,
+  (args: Record<string, unknown> | undefined, executeBackend: ExecuteBackendCommand) => void
+> = {
+  "workspace.open_command_palette": () => {
+    useCommandStore.getState().toggleCommandPalette();
+  },
+  "workspace.open_settings": () => {
+    useShellStore.getState().setMainSurface({ kind: "settings" });
+  },
+  "workspace.open_search": () => {
+    useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+  },
+  "workspace.search_in_channel": () => {
+    const convId = useShellStore.getState().selectedConversationId;
+    if (convId) {
+      useSearchOverlayStore
+        .getState()
+        .openWithScope({ kind: "conversation", conversationId: convId });
+    } else {
+      useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+    }
+  },
+  "workspace.open_marketplace": () => {
+    useShellStore.getState().setMainSurface({ kind: "marketplace" });
+  },
+  "workspace.toggle_sidebar": () => {
+    useShellStore.getState().toggleSidebar();
+  },
+  "workspace.focus_composer": () => {
+    document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
+  },
+  "workspace.focus_message_list": () => {
+    document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
+  },
+  "workspace.navigate_to_channel": (args) => {
+    if (args?.conversationId) {
+      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
+    } else {
+      // No specific channel — open command palette so the user can pick one
+      useCommandStore.getState().openCommandPalette();
+    }
+  },
+  "workspace.navigate_to_dm": (args) => {
+    if (args?.conversationId) {
+      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
+    }
+  },
+  "workspace.switch_workspace": (args) => {
+    if (args?.workspaceId) {
+      useWorkspaceStore.getState().setWorkspaceId(args.workspaceId as string);
+    }
+  },
+  "workspace.previous_channel": () => {
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const prev = idx > 0 ? ids[idx - 1] : ids[ids.length - 1];
+    useShellStore.getState().setSelectedConversationId(prev);
+  },
+  "workspace.next_channel": () => {
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
+    useShellStore.getState().setSelectedConversationId(next);
+  },
+  "workspace.next_unread_channel": () => {
+    const unread = getCachedUnreadConversationIds();
+    if (unread.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const allIds = getCachedConversationIds();
+    const currentIdx = current ? allIds.indexOf(current) : -1;
+    // Find the first unread channel after the current position
+    const after = unread.find((id) => allIds.indexOf(id) > currentIdx);
+    useShellStore.getState().setSelectedConversationId(after ?? unread[0]);
+  },
+  "workspace.open_agent": () => {
+    useAgentStore.getState().open();
+  },
+  "workspace.close_panel": () => {
+    const shell = useShellStore.getState();
+    if (shell.isThreadOpen) {
+      shell.closeThread();
+    } else if (shell.mainSurface.kind !== "conversation") {
+      shell.setMainSurface({ kind: "conversation" });
+    }
+  },
+  "workspace.reopen_last_thread": () => {
+    const lastThread = useShellStore.getState().lastClosedThreadId;
+    if (lastThread) useShellStore.getState().openThreadForMessage(lastThread);
+  },
+  "workspace.cycle_recent_activity": () => {
+    // Cycle to the next conversation in the list (wrapping), same as next_channel.
+    // A dedicated recent-activity stack can be added later when the backend tracks it.
+    const ids = getCachedConversationIds();
+    if (ids.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const idx = current ? ids.indexOf(current) : -1;
+    const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
+    useShellStore.getState().setSelectedConversationId(next);
+  },
+  "chat.create_channel": () => {
+    // Ensure we're on the conversation surface, then open the channel dialog
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    useShellStore.getState().setShowNewChannelDialog(true);
+  },
+  "chat.create_group": () => {
+    // Ensure we're on the conversation surface, then open the new message picker
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    useShellStore.getState().setShowNewMessagePicker(true);
+  },
+  "chat.scroll_to_bottom": () => {
+    document.querySelector("[data-message-list]")?.scrollTo({ top: 999999, behavior: "smooth" });
+  },
+  "chat.scroll_to_top": () => {
+    document.querySelector("[data-message-list]")?.scrollTo({ top: 0, behavior: "smooth" });
+  },
+  "chat.copy_message_text": () => {
+    logger.debug("[RIM] copy_message_text: handled at context menu level");
+  },
+  "chat.open_thread": () => {
+    logger.debug("[RIM] open_thread: handled at context menu level");
+  },
+  "chat.mark_all_as_read": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    if (workspaceId) {
+      useUnreadStore.getState().markAllRead();
+      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
+        toast.error("Failed to mark all as read");
+      });
+    }
+  },
+  "workspace.reload_commands": () => {
+    reloadCommands();
+  },
+  "admin.invite_member": () => {
+    useShellStore.getState().setShowInviteDialog(true);
+  },
+  "workspace.toggle_lens_picker": () => {
+    const store = useLensStore.getState();
+    store.setLensPickerOpen(!store.lensPickerOpen);
+  },
+  "incident.start": () => {
+    useIncidentStore.getState().setShowStartDialog(true);
+  },
+  "incident.advance_phase": () => {
+    // Handled via the banner UI — this is a fallback entry point
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+    }
+    // The banner dropdown handles the actual phase advance
+  },
+  "incident.resolve": () => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    resolveIncidentFromCommand(incident.id, workspaceId, conversationId);
+  },
+  "incident.generate_postmortem": () => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    useIncidentStore.getState().setShowPostmortem(true);
+  },
+  // ── Track C1 builtins (oncall.who / oncall.take_shift / incident.ack / incident.escalate)
+  "incident.ack": (_args, executeBackend) => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    ackIncidentFromCommand(incident.id, workspaceId, conversationId, executeBackend);
+  },
+  "incident.escalate": (_args, executeBackend) => {
+    const incident = useIncidentStore.getState().activeIncident;
+    if (!incident) {
+      toast.error("No active incident");
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    const conversationId = useShellStore.getState().selectedConversationId;
+    if (!workspaceId || !conversationId) return;
+    executeBackend({ commandId: "incident.escalate", args: { incidentId: incident.id } })
+      .then((res) => {
+        if (res.executeCommand.status === "ERROR") {
+          toast.error(res.executeCommand.message || "Failed to escalate incident");
+          return;
+        }
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.activeIncident(workspaceId, conversationId),
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incident.id) });
+        toast.success("Incident escalated");
+      })
+      .catch(() => toast.error("Failed to escalate incident"));
+  },
+  "oncall.who": () => {
+    useShellStore.getState().setMainSurface({ kind: "incidents", tab: "oncall" });
+  },
+  "oncall.take_shift": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    if (!workspaceId) return;
+    if (!canManageOnCall(workspaceId)) {
+      toast.error("Managing on-call requires Moderator");
+      return;
+    }
+    // The backend command stays a general primitive requiring explicit args — correct for
+    // macro/pipeline/agent use. The interactive FE supplies them via this modal on confirm
+    // (createOnCallOverride), not by re-dispatching this command with args.
+    useOnCallStore.getState().openOverrideModal();
+  },
+  "workspace.toggle_zen_mode": () => {
+    const shell = useShellStore.getState();
+    shell.toggleZenMode();
+    const nowZen = useShellStore.getState().zenMode;
+    toast.info(nowZen ? "Zen Mode on" : "Zen Mode off", { duration: 1500 });
+  },
+  "workspace.cycle_display_density": () => {
+    const shell = useShellStore.getState();
+    shell.cycleDisplayDensity();
+    const density = useShellStore.getState().displayDensity;
+    const labels: Record<string, string> = {
+      comfortable: "Comfortable",
+      compact: "Compact",
+      "ultra-compact": "Ultra Compact",
+    };
+    toast.info(labels[density] ?? density, { duration: 1500 });
+  },
+};
+
+export async function dispatchCommand(
+  command: CommandDefinition,
+  executeBackend: ExecuteBackendCommand,
+  context?: {
+    args?: Record<string, unknown>;
+    commandContext?: Record<string, unknown>;
+    confirmedDangerous?: boolean;
+    isPipe?: boolean;
+  },
+): Promise<CommandResult | null> {
+  // Local handlers always take precedence — even if the backend marks a
+  // command as "Backend", the frontend may have a local handler that opens
+  // a dialog or performs a client-side action instead.
+  const localHandler = localHandlers[command.id];
+  if (localHandler) {
+    localHandler(context?.args, executeBackend);
+    return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
+  }
+
+  // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
+  const pluginCmd = parsePluginCommandId(command.id);
+  if (pluginCmd) {
+    return dispatchPluginCommand(pluginCmd.pluginId, pluginCmd.command, context?.args);
+  }
+
+  if (command.executionTarget === "DESKTOP_LOCAL") {
+    logger.warn(`[RIM] No local handler for command: ${command.id}`);
+    return {
+      status: "ERROR",
+      message: `No local handler for ${command.id}`,
+      payload: null,
+      followUpCommands: [],
+    };
+  }
+
+  // Backend command
+  const result = await executeBackend({
+    commandId: command.id,
+    args: context?.args,
+    commandContext: context?.commandContext,
+    confirmedDangerous: context?.confirmedDangerous,
+    isPipe: context?.isPipe,
+  });
+
+  return result.executeCommand;
+}
+
+async function dispatchPluginCommand(
+  pluginId: string,
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<CommandResult> {
+  try {
+    const result = await invoke<{ status: string; payload: unknown }>("plugin_execute_command", {
+      ...{ pluginId, command, args: args ?? {} },
+    });
+    return {
+      status: result.status === "ok" ? "SUCCESS" : "ERROR",
+      message: result.status === "ok" ? "Plugin command executed" : "Plugin command failed",
+      payload: result.payload,
+      followUpCommands: [],
+    };
+  } catch {
+    // Wire protocol not yet available — surface as error so callers don't assume success
+    logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`);
+    return {
+      status: "ERROR",
+      message: `Plugin command ${pluginId}.${command} failed: wire protocol not available`,
+      payload: null,
+      followUpCommands: [],
+    };
+  }
+}

@@ -1,0 +1,17 @@
+export const FEATURE_IDS = {
+  COMMAND_PALETTE: "command_palette",
+  THREADS: "threads",
+  KEYBINDS: "keybinds",
+  MACROS: "macros",
+  PLUGINS: "plugins",
+  ZEN_MODE: "zen_mode",
+  COMPACT_MODE: "compact_mode",
+  LAYOUT_PRESETS: "layout_presets",
+  SPATIAL_NAV: "spatial_nav",
+  SEARCH: "search",
+  AGENT: "agent",
+  FORWARD: "forward",
+  PIN: "pin",
+  REACTIONS: "reactions",
+  NAVIGATE_MODE: "navigate_mode",
+} as const;

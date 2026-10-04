@@ -1,0 +1,6 @@
+mutation Bootstrap($input: BootstrapInput!) {
+  bootstrap(input: $input) {
+    userId
+    serverId
+  }
+}

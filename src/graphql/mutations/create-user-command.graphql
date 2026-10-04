@@ -1,0 +1,10 @@
+mutation CreateUserCommand($input: CreateUserCommandInput!) {
+  createUserCommand(input: $input) {
+    id
+    title
+    description
+    category
+    sourceKind
+    keybindCapable
+  }
+}

@@ -1,0 +1,122 @@
+export const queryKeys = {
+  healthCheck: ["healthCheck"] as const,
+  me: ["me"] as const,
+  myServers: () => ["myServers"] as const,
+  serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
+  server: (serverId?: string) => ["server", serverId] as const,
+  conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
+  messages: (workspaceId?: string, conversationId?: string) =>
+    ["messages", workspaceId, conversationId] as const,
+  threadByRoot: (workspaceId?: string, conversationId?: string, rootMessageId?: string) =>
+    ["threadByRoot", workspaceId, conversationId, rootMessageId] as const,
+  threadMessages: (workspaceId?: string, conversationId?: string, threadId?: string) =>
+    ["threadMessages", workspaceId, conversationId, threadId] as const,
+  channels: (workspaceId?: string) => ["channels", workspaceId] as const,
+  commands: (surface?: string) => ["commands", surface] as const,
+  resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
+  searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
+    ["searchMessages", workspaceId, conversationId, query] as const,
+  pinnedMessages: (workspaceId?: string, conversationId?: string) =>
+    ["pinnedMessages", workspaceId, conversationId] as const,
+  customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
+  plugins: () => ["plugins"] as const,
+  macros: (serverId?: string) => ["macros", serverId] as const,
+  lenses: (workspaceId?: string, conversationId?: string) =>
+    ["lenses", workspaceId, conversationId] as const,
+  lensMessages: (workspaceId?: string, conversationId?: string, lensId?: string) =>
+    ["lensMessages", workspaceId, conversationId, lensId] as const,
+  activeIncident: (serverId?: string, conversationId?: string) =>
+    ["activeIncident", serverId, conversationId] as const,
+  incidentTimeline: (incidentId?: string) => ["incidentTimeline", incidentId] as const,
+  listIncidents: (
+    serverId?: string,
+    statusFilter?: readonly string[] | null,
+    severityFilter?: readonly string[] | null,
+  ) =>
+    [
+      "listIncidents",
+      serverId,
+      statusFilter ? [...statusFilter].sort().join(",") : null,
+      severityFilter ? [...severityFilter].sort().join(",") : null,
+    ] as const,
+  keybinds: (scope?: string, workspaceId?: string) => ["keybinds", scope, workspaceId] as const,
+  unreadCounts: (workspaceId?: string) => ["unreadCounts", workspaceId] as const,
+  mutedConversations: (workspaceId?: string) => ["mutedConversations", workspaceId] as const,
+  workspaceState: (serverId?: string, scope?: string, key?: string) =>
+    ["workspaceState", serverId, scope ?? "SERVER", key] as const,
+  workspaceStateList: (serverId?: string, scope?: string, prefix?: string) =>
+    ["workspaceStateList", serverId, scope ?? "SERVER", prefix] as const,
+  pipelines: (serverId?: string) => ["pipelines", serverId] as const,
+  listAuditLog: (typedVerb?: string, after?: string) =>
+    ["listAuditLog", typedVerb ?? null, after ?? null] as const,
+  serverConfig: () => ["serverConfig"] as const,
+  previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
+  workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
+  ingestTokens: (serverId?: string) => ["ingestTokens", serverId] as const,
+  // Track C1 — on-call schedules + escalation (schedule/rotation CRUD landed at C1a/C1c;
+  // escalation-policy keys are added once the backend GraphQL surface lands — see
+  // docs/oncall-ui.md for the current contract gap).
+  onCallSchedules: (serverId?: string) => ["onCallSchedules", serverId] as const,
+  serverOnCall: (serverId?: string) => ["serverOnCall", serverId] as const,
+  // Keyed by scheduleId, not serverId/workspaceId — see VOLATILE_GLOBAL_KEY_ROOTS below.
+  whoIsOnCall: (scheduleId?: string, at?: string) =>
+    ["whoIsOnCall", scheduleId, at ?? null] as const,
+  onCallShifts: (scheduleId?: string, from?: string, to?: string) =>
+    ["onCallShifts", scheduleId, from, to] as const,
+  escalationPolicies: (serverId?: string) => ["escalationPolicies", serverId] as const,
+};
+
+/**
+ * Query-key roots holding volatile server state scoped to one workspace (server).
+ * On WS reconnect we invalidate only these for the active workspace instead of the
+ * whole cache. Each root keys the workspace/server id at position [1], so the prefix
+ * [root, workspaceId] matches every query for that workspace.
+ */
+export const VOLATILE_WORKSPACE_KEY_ROOTS = [
+  "messages",
+  "conversations",
+  "channels",
+  "threadByRoot",
+  "threadMessages",
+  "pinnedMessages",
+  "searchMessages",
+  "lenses",
+  "lensMessages",
+  "unreadCounts",
+  "mutedConversations",
+  "workspacePresence",
+  "serverMembers",
+  "server",
+  "customEmojis",
+  "workspaceState",
+  "workspaceStateList",
+  "pipelines",
+  "macros",
+  "resolvedKeybinds",
+  "activeIncident",
+  "listIncidents",
+  // Ingest tokens (Track B2 §2a management UI) aren't built yet — this root
+  // is added ahead of that feature landing so reconnect scoping already
+  // covers it once `useIngestTokens` exists; harmless no-op until then.
+  "ingestTokens",
+  // Track C1: schedule list + the serverOnCall batch resolver are both keyed by
+  // serverId/workspaceId at position [1], so they fit the same prefix-match scheme.
+  "onCallSchedules",
+  "serverOnCall",
+  "escalationPolicies",
+] as const;
+
+/**
+ * Volatile roots NOT scoped by workspace id in their key (e.g. incident timelines are
+ * keyed by incidentId). Invalidated by root prefix on reconnect. Safe because a user
+ * views one active workspace at a time; worst case is one redundant refetch.
+ */
+export const VOLATILE_GLOBAL_KEY_ROOTS = [
+  "incidentTimeline",
+  // Track C1: keyed by scheduleId, not workspaceId — a `[root, workspaceId]` prefix
+  // would never match these (scheduleId !== workspaceId), so they can't share
+  // VOLATILE_WORKSPACE_KEY_ROOTS; invalidate by root name alone on reconnect instead,
+  // same as incidentTimeline above.
+  "whoIsOnCall",
+  "onCallShifts",
+] as const;

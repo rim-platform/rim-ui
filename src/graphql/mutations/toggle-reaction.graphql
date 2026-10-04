@@ -1,0 +1,7 @@
+mutation ToggleReaction($input: ToggleReactionInput!) {
+  toggleReaction(input: $input) {
+    emoji
+    count
+    reactedByMe
+  }
+}

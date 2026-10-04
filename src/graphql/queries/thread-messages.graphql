@@ -1,0 +1,47 @@
+query ThreadMessages(
+  $serverId: ID!
+  $conversationId: ID!
+  $threadId: ID!
+  $dir: PageDir!
+  $limit: Int!
+  $includeDeleted: Boolean!
+) {
+  threadMessages(
+    serverId: $serverId
+    conversationId: $conversationId
+    threadId: $threadId
+    dir: $dir
+    limit: $limit
+    includeDeleted: $includeDeleted
+  ) {
+    items {
+      id
+      serverId
+      conversationId
+      threadId
+      rootThreadId
+      authorId
+      author {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+      text
+      hasAttachments
+      parentMessageId
+      isDeleted
+      sentAt
+      reactions {
+        emoji
+        count
+        reactedByMe
+        userIds
+      }
+    }
+    pageInfo {
+      hasNext
+      hasPrev
+    }
+  }
+}

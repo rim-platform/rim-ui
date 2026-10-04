@@ -1,0 +1,174 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+
+// ─── Module mocks ─────────────────────────────────────────────────────────────
+
+vi.mock("../api/useKeybinds", () => ({
+  useResolvedKeybinds: vi.fn(),
+}));
+
+vi.mock("../api/useCommands", () => ({
+  useCommands: vi.fn(),
+}));
+
+vi.mock("../../plugins/api/usePluginCommands", () => ({
+  usePluginCommands: vi.fn(() => []),
+}));
+
+vi.mock("../../plugins/api/usePluginKeybinds", () => ({
+  usePluginSuggestedKeybinds: vi.fn(() => []),
+}));
+
+vi.mock("../api/useKeybindSettings", () => ({
+  useCreateKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false })),
+  useUpdateKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn() })),
+}));
+
+vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
+  useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({ workspaceId: "ws-1" }),
+}));
+
+import { useResolvedKeybinds } from "../api/useKeybinds";
+import { useCommands } from "../api/useCommands";
+import { KeybindSettings } from "./KeybindSettings";
+import type { ResolvedKeybind } from "../types";
+import type { CommandDefinition } from "../types";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeKeybind(overrides: Partial<ResolvedKeybind> = {}): ResolvedKeybind {
+  return {
+    id: "kb-1",
+    keystroke: "Ctrl+K",
+    commandId: "workspace.open_command_palette",
+    context: "GLOBAL",
+    source: "DEFAULT",
+    scope: "USER",
+    isEnabled: true,
+    presetArgs: null,
+    ...overrides,
+  };
+}
+
+function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
+  return {
+    id: "workspace.open_command_palette",
+    title: "Open Command Palette",
+    description: "Opens the command palette",
+    category: "workspace",
+    sourceKind: "BUILT_IN",
+    executionTarget: "BACKEND",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: false, // intentionally excluded from PALETTE surface
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+    ...overrides,
+  };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("KeybindSettings", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders a loading state when keybinds are loading", () => {
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+    expect(screen.getByText(/loading keybinds/i)).toBeInTheDocument();
+  });
+
+  /**
+   * Regression guard: the title map must be built from the KEYBIND_PICKER
+   * surface so that commands excluded from PALETTE (like
+   * `workspace.open_command_palette`) still resolve to a human-readable title.
+   *
+   * Before the fix: useCommands() defaulted to "PALETTE" which filters out
+   * commands with `visible_in_palette: false`, causing the title to fall back
+   * to the raw command ID.
+   */
+  it("calls useCommands with the KEYBIND_PICKER surface", () => {
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+
+    expect(useCommands).toHaveBeenCalledWith("KEYBIND_PICKER");
+  });
+
+  it("displays the human-readable title for a command that is not in the PALETTE surface", () => {
+    const keybind = makeKeybind();
+    const command = makeCommand(); // visibleInPalette: false
+
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [keybind],
+      isLoading: false,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [command],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+
+    // Title from the command definition must appear, not the raw ID
+    expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
+    expect(screen.queryByText("workspace.open_command_palette")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the raw command ID when a command is absent from the title map", () => {
+    const keybind = makeKeybind({ commandId: "unknown.command" });
+
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [keybind],
+      isLoading: false,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [], // no entry for "unknown.command"
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+
+    // Fallback: raw ID shown when command is truly missing
+    expect(screen.getByText("unknown.command")).toBeInTheDocument();
+  });
+
+  it("renders the keybind list with keystroke and title", () => {
+    const keybind = makeKeybind({ keystroke: "Ctrl+K" });
+    const command = makeCommand({ title: "Open Command Palette" });
+
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [keybind],
+      isLoading: false,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [command],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+
+    expect(screen.getByText("Ctrl+K")).toBeInTheDocument();
+    expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
+  });
+});

@@ -1,0 +1,119 @@
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { getRuntimeCapabilities, detectPlatform, detectOs } from "./runtime";
+
+describe("getRuntimeCapabilities", () => {
+  it("returns all capabilities enabled for desktop", () => {
+    const caps = getRuntimeCapabilities("desktop");
+    expect(caps.multiPaneShell).toBe(true);
+    expect(caps.dockedThreadPane).toBe(true);
+    expect(caps.pluginHost).toBe(true);
+    expect(caps.agent).toBe(true);
+    expect(caps.globalShortcuts).toBe(true);
+    expect(caps.localProcess).toBe(true);
+    expect(caps.filesystemAccess).toBe(true);
+    expect(caps.nativeNotifications).toBe(true);
+    expect(caps.customTitleBar).toBe(true);
+  });
+
+  it("returns limited capabilities for web", () => {
+    const caps = getRuntimeCapabilities("web");
+    expect(caps.multiPaneShell).toBe(true);
+    expect(caps.dockedThreadPane).toBe(true);
+    expect(caps.pluginHost).toBe(false);
+    expect(caps.agent).toBe(false);
+    expect(caps.globalShortcuts).toBe(false);
+    expect(caps.localProcess).toBe(false);
+    expect(caps.filesystemAccess).toBe(false);
+    expect(caps.nativeNotifications).toBe(false);
+    expect(caps.customTitleBar).toBe(false);
+  });
+
+  it("returns all capabilities disabled for mobile", () => {
+    const caps = getRuntimeCapabilities("mobile");
+    expect(caps.multiPaneShell).toBe(false);
+    expect(caps.dockedThreadPane).toBe(false);
+    expect(caps.pluginHost).toBe(false);
+    expect(caps.agent).toBe(false);
+    expect(caps.deviceLocalKeybinds).toBe(false);
+    expect(caps.globalShortcuts).toBe(false);
+    expect(caps.localProcess).toBe(false);
+    expect(caps.filesystemAccess).toBe(false);
+    expect(caps.nativeNotifications).toBe(false);
+    expect(caps.customTitleBar).toBe(false);
+  });
+
+  it("web still allows device-local keybinds", () => {
+    const caps = getRuntimeCapabilities("web");
+    expect(caps.deviceLocalKeybinds).toBe(true);
+  });
+
+  it("desktop enables device-local keybinds", () => {
+    const caps = getRuntimeCapabilities("desktop");
+    expect(caps.deviceLocalKeybinds).toBe(true);
+  });
+});
+
+describe("detectPlatform", () => {
+  afterEach(() => {
+    // Clean up __TAURI_INTERNALS__ if set
+    if ("__TAURI_INTERNALS__" in window) {
+      delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
+  it("returns 'web' when no Tauri internals and desktop user agent", () => {
+    // jsdom default UA is not mobile, and __TAURI_INTERNALS__ is not present
+    expect(detectPlatform()).toBe("web");
+  });
+
+  it("returns 'desktop' when __TAURI_INTERNALS__ is present", () => {
+    (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    expect(detectPlatform()).toBe("desktop");
+  });
+
+  it("returns 'mobile' when user agent matches mobile pattern", () => {
+    const originalUA = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36",
+      configurable: true,
+    });
+    expect(detectPlatform()).toBe("mobile");
+    Object.defineProperty(navigator, "userAgent", {
+      value: originalUA,
+      configurable: true,
+    });
+  });
+});
+
+describe("detectOs", () => {
+  function withUserAgent(ua: string, fn: () => void) {
+    const original = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", { value: ua, configurable: true });
+    fn();
+    Object.defineProperty(navigator, "userAgent", { value: original, configurable: true });
+  }
+
+  it("detects macOS from user agent", () => {
+    withUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", () => {
+      expect(detectOs()).toBe("macos");
+    });
+  });
+
+  it("detects Windows from user agent", () => {
+    withUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", () => {
+      expect(detectOs()).toBe("windows");
+    });
+  });
+
+  it("detects Linux from user agent", () => {
+    withUserAgent("Mozilla/5.0 (X11; Linux x86_64)", () => {
+      expect(detectOs()).toBe("linux");
+    });
+  });
+
+  it("returns 'unknown' for unrecognized user agent", () => {
+    withUserAgent("Mozilla/5.0 (FancyOS 1.0)", () => {
+      expect(detectOs()).toBe("unknown");
+    });
+  });
+});

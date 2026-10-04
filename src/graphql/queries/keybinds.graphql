@@ -1,0 +1,12 @@
+query Keybinds($scope: KeybindScope!, $workspaceId: ID) {
+  keybinds(scope: $scope, workspaceId: $workspaceId) {
+    id
+    keystroke
+    commandId
+    context
+    source
+    scope
+    isEnabled
+    presetArgs
+  }
+}

@@ -1,0 +1,6 @@
+query MyServers {
+  myServers {
+    id
+    name
+  }
+}

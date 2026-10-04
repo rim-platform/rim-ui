@@ -1,0 +1,10 @@
+mutation UpdateKeybind($input: UpdateKeybindInput!) {
+  updateKeybind(input: $input) {
+    id
+    keystroke
+    commandId
+    context
+    scope
+    isEnabled
+  }
+}

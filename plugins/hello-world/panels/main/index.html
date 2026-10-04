@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hello World</title>
+    <style>
+      /* Minimal dark-theme styles matching the RIM design token palette. */
+      body {
+        margin: 0;
+        padding: 1rem;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        font-size: 13px;
+        background: #0d0d0f;
+        color: #e0e0e6;
+      }
+
+      h1 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 0.75rem;
+        color: #e0e0e6;
+      }
+
+      button {
+        padding: 0.4rem 0.9rem;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: #1a1a2e;
+        color: #8b8bff;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      button:hover {
+        background: #222240;
+      }
+
+      #output {
+        margin-top: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        background: #111118;
+        color: #a0a0b0;
+        font-size: 12px;
+        min-height: 2rem;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hello World Plugin</h1>
+    <button id="greet-btn" type="button">Say Hello</button>
+    <div id="output">Click the button to send a notification.</div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
