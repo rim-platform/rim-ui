@@ -185,6 +185,12 @@ export type Command = {
   dangerous: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
   executionTarget: CommandExecutionTarget;
+  /**
+   * The optional workspace module this command belongs to (Track 0.4), or null when the
+   * command is always available. The server already omits commands whose feature is off
+   * from `commands`; this lets clients group or explain gated commands.
+   */
+  feature?: Maybe<WorkspaceFeature>;
   id: Scalars['String']['output'];
   /**
    * Example phrases a user might speak/type to invoke this command.
@@ -1299,6 +1305,11 @@ export type Mutation = {
    * shift. Owner-only.
    */
   setRotationParticipants: RotationLayerGql;
+  /**
+   * Turn an optional workspace module on or off. Owner-only. No data is deleted when a
+   * feature is turned off; turning it back on restores everything. Audited.
+   */
+  setWorkspaceFeature: WorkspaceFeatureState;
   setWorkspaceState: WorkspaceStateEntryGql;
   /**
    * Unified signup mutation for all token-based and open-mode registration paths.
@@ -1673,6 +1684,13 @@ export type MutationSetChannelEscalationPolicyArgs = {
 export type MutationSetRotationParticipantsArgs = {
   layerId: Scalars['ID']['input'];
   userIds: Array<Scalars['ID']['input']>;
+};
+
+
+export type MutationSetWorkspaceFeatureArgs = {
+  enabled: Scalars['Boolean']['input'];
+  feature: WorkspaceFeature;
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -2073,6 +2091,11 @@ export type Query = {
    * member may read.
    */
   whoIsOnCall: OnCallNowGql;
+  /**
+   * Per-workspace optional modules and whether each is on (Track 0.4). Any member; one
+   * entry per known feature, defaults filled in.
+   */
+  workspaceFeatures: Array<WorkspaceFeatureState>;
   workspacePresence: Array<UserPresenceGql>;
   workspaceState?: Maybe<WorkspaceStateEntryGql>;
   workspaceStateList: Array<WorkspaceStateEntryGql>;
@@ -2361,6 +2384,11 @@ export type QueryWhoIsOnCallArgs = {
 };
 
 
+export type QueryWorkspaceFeaturesArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type QueryWorkspacePresenceArgs = {
   workspaceId: Scalars['ID']['input'];
 };
@@ -2511,6 +2539,12 @@ export type SendMessageInput = {
 };
 
 export type Server = {
+  /**
+   * Per-workspace optional modules and whether each is on (Track 0.4). One entry per known
+   * feature, defaults filled in. Resolved with one service call per server, like
+   * `viewerRole`; `myServers` lists few servers per user, so no DataLoader.
+   */
+  features: Array<WorkspaceFeatureState>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   /**
@@ -2814,6 +2848,24 @@ export type UserPresenceGql = {
   lastSeenAt: Scalars['DateTime']['output'];
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
+};
+
+/**
+ * An optional workspace module (Track 0.4). `INCIDENTS` covers incidents, on-call schedules,
+ * escalation policies and alert ingestion together.
+ */
+export enum WorkspaceFeature {
+  INCIDENTS = 'INCIDENTS'
+}
+
+/**
+ * Whether one optional module is on for one workspace. `updatedAt` is null when the value is
+ * the feature's default (never explicitly set for this workspace).
+ */
+export type WorkspaceFeatureState = {
+  enabled: Scalars['Boolean']['output'];
+  feature: WorkspaceFeature;
+  updatedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 /**
