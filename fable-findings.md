@@ -7,6 +7,16 @@
 
 > **Note:** this review is complete — security, per-feature correctness, and the app-level cross-cutting architecture pass (see the **Cross-cutting architecture** section).
 
+## Status (re-checked against code 2026-10-04)
+
+| Finding | Status |
+|---|---|
+| S-H1 unguarded `terminal_create` | **Fixed** (`src-tauri/src/terminal/policy.rs`). `shell` is accepted only if it exactly matches an `/etc/shells` entry (Windows: `pwsh.exe`/`powershell.exe`/`cmd.exe` only); the default is `$SHELL` when listed there, else `/bin/sh`. `cwd` must be an existing directory inside the home directory after canonicalisation (the UI never passes one). The first `terminal_create` of each app run shows a native OS dialog (`tauri-plugin-dialog`, called from Rust; the renderer gets no `dialog:*` permission) and the approval is kept in `TerminalState` until exit. Gaps: once approved, any renderer JS can still open and type into terminals for the rest of the run; a declined prompt is not remembered, so a hostile renderer can keep re-showing it. `rim-plugin://` panels have no IPC: the only capability is `windows: ["main"]` with no `remote` URLs, and panels run in `sandbox="allow-scripts"` iframes (opaque origin) under `default-src 'none'`. C-M1 (web can toggle the terminal) is not addressed |
+| S-H2 `git clone` URL injection | **Fixed** (`src-tauri/src/plugin_host/git_source.rs`). URL must be `https://`, `ssh://` or `user@host:owner/repo` (scp-like); `::` (`ext::`, `fd::`), `file://`, `git://`, a leading `-`, a host starting with `-`, and whitespace/control/non-ASCII characters are rejected before git runs (`INVALID_GIT_URL`). Branch is checked against a ref-name allowlist (`INVALID_GIT_BRANCH`). Every git argv puts `--` before positionals; every git child runs with `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0` and a null stdin. `update` (`fetch` / `ls-tree` / `merge --ff-only`) uses the same hardened env, so a remote URL stored by an older install can't use another transport either. The install UI shows the error message |
+| S-H3 npm/pip before any trust prompt | **Fixed** (`src-tauri/src/plugin_host/post_install.rs`). Install and update work out the steps (`package.json` → `npm install --production`, `requirements.txt` → `pip install -r requirements.txt --user`) and run them only when the call passes `allowPostInstall: true`. Without it, install deletes the staging clone and returns `POST_INSTALL_CONSENT_REQUIRED` with the exact commands and directories. Update checks the fetched upstream tree *before* fast-forwarding, so the installed copy is left unchanged. The settings page lists the commands in a dangerous-action dialog and retries with consent only after an explicit confirm. Gaps: there is no update button in the UI yet (`plugin_update` enforces the same rule for when one is added); the consent retry clones again, so if the repo gains a trigger file between the prompt and the retry (say a `requirements.txt` appears), that extra step runs without having been shown. Consent is one yes/no flag, not per step |
+
+Everything not listed has not been re-checked. Update this table when fixing a finding.
+
 ---
 
 ## Overall assessment
