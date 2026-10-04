@@ -8,7 +8,8 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# .npmrc carries legacy-peer-deps (see its comment); without it npm ci fails on ERESOLVE.
+COPY package.json package-lock.json* .npmrc ./
 RUN npm ci --ignore-scripts
 
 # ---------- Stage 2: Builder -------------------------------------------------
