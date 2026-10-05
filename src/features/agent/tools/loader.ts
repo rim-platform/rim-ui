@@ -48,9 +48,12 @@ const EXECUTE_COMMAND_MUTATION = gql`
   }
 `;
 
+// Sent with the active workspace as context (Track 0.4): the server drops commands whose
+// workspace feature is off and hides feature-gated commands entirely when no workspace is
+// given, so the AI surface is per workspace just like the palette.
 const AI_COMMANDS_QUERY = gql`
-  query AgentListAiCommands {
-    commands(surface: AI) {
+  query AgentListAiCommands($commandContext: CommandContextInput) {
+    commands(surface: AI, commandContext: $commandContext) {
       id
       title
       description
@@ -218,7 +221,13 @@ export function commandsToBackendTools(commands: ReadonlyArray<Command>): Backen
 }
 
 async function fetchAiCommands(): Promise<Command[]> {
-  const res = await graphqlClient.request<{ commands: Command[] }>(AI_COMMANDS_QUERY);
+  // Only the workspace matters for the registry; conversation/thread context would just
+  // churn the tool list on every navigation.
+  const workspaceId = getCurrentCommandContext()?.workspaceId;
+  const res = await graphqlClient.request<{ commands: Command[] }>(
+    AI_COMMANDS_QUERY,
+    workspaceId ? { commandContext: { workspaceId } } : {},
+  );
   return res.commands;
 }
 

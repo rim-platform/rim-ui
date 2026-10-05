@@ -557,6 +557,30 @@ describe("C2 — four agent-callable commands are registered with no allowlist d
     clearRegistry();
   });
 
+  // Track 0.4: the AI surface is per workspace. Without a workspace the server hides
+  // feature-gated commands entirely, so the loader must send the active workspace.
+  it("sends the active workspace as commandContext when loading the AI surface", async () => {
+    vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {});
+    useWorkspaceStore.setState({ workspaceId: "ws-feature" });
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({ commands: [] });
+
+    await loadAgentTools();
+
+    expect(vi.mocked(graphqlClient.request).mock.calls[0][1]).toEqual({
+      commandContext: { workspaceId: "ws-feature" },
+    });
+  });
+
+  it("sends no commandContext when no workspace is active", async () => {
+    vi.mocked(registerGetCurrentContextTool).mockImplementation(() => {});
+    useWorkspaceStore.setState({ workspaceId: null });
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({ commands: [] });
+
+    await loadAgentTools();
+
+    expect(vi.mocked(graphqlClient.request).mock.calls[0][1]).toEqual({});
+  });
+
   // FE mirror of the backend's §5 inventory test (track-c2-agent-operator.md).
   // Delta 3 is VERIFIED-NO-CHANGE per vision's spec — this is a regression
   // pin proving `commands(surface: AI)` with no client-side filtering
