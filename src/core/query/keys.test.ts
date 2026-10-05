@@ -103,6 +103,16 @@ describe("queryKeys", () => {
   it("escalationPolicies includes serverId", () => {
     expect(queryKeys.escalationPolicies("srv-1")).toEqual(["escalationPolicies", "srv-1"]);
   });
+
+  it("notification keys are scoped by serverId, the inbox also by the unread filter", () => {
+    expect(queryKeys.notificationSettings("srv-1")).toEqual(["notificationSettings", "srv-1"]);
+    expect(queryKeys.notifications("srv-1")).toEqual(["notifications", "srv-1", false]);
+    expect(queryKeys.notifications("srv-1", true)).toEqual(["notifications", "srv-1", true]);
+    expect(queryKeys.unreadNotificationCount("srv-1")).toEqual([
+      "unreadNotificationCount",
+      "srv-1",
+    ]);
+  });
 });
 
 describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
@@ -137,6 +147,9 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "onCallSchedules",
     "serverOnCall",
     "escalationPolicies",
+    "notificationSettings",
+    "notifications",
+    "unreadNotificationCount",
   ];
 
   it("contains exactly the expected workspace-scoped volatile roots", () => {

@@ -78,6 +78,12 @@ export const queryKeys = {
   onCallShifts: (scheduleId?: string, from?: string, to?: string) =>
     ["onCallShifts", scheduleId, from, to] as const,
   escalationPolicies: (serverId?: string) => ["escalationPolicies", serverId] as const,
+  // Track 1.3 notification rules: the viewer's settings, inbox (keyed by the unread-only filter;
+  // the `["notifications", serverId]` prefix covers both lists) and the bell's unread count.
+  notificationSettings: (serverId?: string) => ["notificationSettings", serverId] as const,
+  notifications: (serverId?: string, unreadOnly?: boolean) =>
+    ["notifications", serverId, unreadOnly ?? false] as const,
+  unreadNotificationCount: (serverId?: string) => ["unreadNotificationCount", serverId] as const,
 };
 
 /**
@@ -122,6 +128,9 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "onCallSchedules",
   "serverOnCall",
   "escalationPolicies",
+  "notificationSettings",
+  "notifications",
+  "unreadNotificationCount",
 ] as const;
 
 /**
