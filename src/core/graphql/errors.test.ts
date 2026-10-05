@@ -5,6 +5,12 @@ import {
   FeatureDisabledError,
   graphqlErrorCode,
   graphqlErrorMessage,
+  RATE_LIMITED,
+  TIMED_OUT,
+  graphqlErrorExtension,
+  retryAfterSeconds,
+  timedOutMessage,
+  timedOutUntil,
 } from "./errors";
 
 const featureDisabled = Object.assign(new Error('Feature disabled: {"response":{}}'), {
@@ -45,5 +51,42 @@ describe("graphqlErrorMessage", () => {
   it("falls back to Error.message, then to the fallback", () => {
     expect(graphqlErrorMessage(new Error("network down"), "fallback")).toBe("network down");
     expect(graphqlErrorMessage(undefined, "fallback")).toBe("fallback");
+  });
+});
+
+function withExtensions(message: string, extensions: Record<string, unknown>) {
+  return Object.assign(new Error(`${message} (serialized)`), {
+    response: { errors: [{ message, extensions }] },
+  });
+}
+
+describe("Track 1.2 error extensions", () => {
+  const until = "2026-10-05T12:30:00Z";
+  const timedOut = withExtensions(`timed out until ${until}`, { code: TIMED_OUT, until });
+  const slowMode = withExtensions("rate limit exceeded", {
+    code: RATE_LIMITED,
+    retryAfterSeconds: 12,
+  });
+
+  it("reads `until` off a TIMED_OUT error only", () => {
+    expect(timedOutUntil(timedOut)).toBe(until);
+    expect(timedOutUntil(slowMode)).toBeUndefined();
+    expect(timedOutUntil(withExtensions("x", { code: TIMED_OUT }))).toBeUndefined();
+  });
+
+  it("reads `retryAfterSeconds` off a RATE_LIMITED error only", () => {
+    expect(retryAfterSeconds(slowMode)).toBe(12);
+    expect(retryAfterSeconds(timedOut)).toBeUndefined();
+    expect(retryAfterSeconds(withExtensions("x", { code: RATE_LIMITED }))).toBeUndefined();
+  });
+
+  it("exposes any extension value", () => {
+    expect(graphqlErrorExtension(slowMode, "retryAfterSeconds")).toBe(12);
+    expect(graphqlErrorExtension(new Error("plain"), "until")).toBeUndefined();
+  });
+
+  it("words a TIMED_OUT failure as the timed-out message everywhere", () => {
+    expect(graphqlErrorMessage(timedOut, "fallback")).toBe(timedOutMessage(until));
+    expect(timedOutMessage(until)).toMatch(/^You are timed out until /);
   });
 });

@@ -1,6 +1,9 @@
 import type { Mock } from "vitest";
 
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../types";
 
 /** A conversation as the `ConversationFields` fragment returns it; defaults to a public channel. */
@@ -20,6 +23,7 @@ export function makeConversation(
     memberCount: 1,
     isMember: true,
     createdBy: null,
+    slowModeSeconds: 0,
     ...overrides,
   };
 }
@@ -28,7 +32,8 @@ export const workspaceMembers = [
   {
     userId: "me",
     username: "me",
-    memberRole: "MEMBER",
+    memberRole: ServerMemberRoleGql.MEMBER,
+    timeoutUntil: null,
     joinedAt: "2026-01-01T00:00:00Z",
     avatarUrl: null,
     statusText: null,
@@ -38,7 +43,8 @@ export const workspaceMembers = [
   {
     userId: "u-alice",
     username: "alice",
-    memberRole: "MEMBER",
+    memberRole: ServerMemberRoleGql.MEMBER,
+    timeoutUntil: null,
     joinedAt: "2026-01-01T00:00:00Z",
     avatarUrl: null,
     statusText: null,
@@ -48,7 +54,8 @@ export const workspaceMembers = [
   {
     userId: "u-bob",
     username: "bob",
-    memberRole: "MEMBER",
+    memberRole: ServerMemberRoleGql.MEMBER,
+    timeoutUntil: null,
     joinedAt: "2026-01-01T00:00:00Z",
     avatarUrl: null,
     statusText: null,

@@ -5,6 +5,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import type {
   CommandSurface,
   CommandContextInput,
@@ -91,6 +92,14 @@ export function useExecuteCommandMutation() {
           isPipe: input.isPipe,
         },
       }),
+    // A `TIMED_OUT` answer (Mutating commands while timed out, Track 1.2) switches the
+    // composer to its timed-out banner, whichever surface ran the command.
+    onError: (err, input) => {
+      noteTimedOutError(
+        input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,
+        err,
+      );
+    },
   });
 }
 

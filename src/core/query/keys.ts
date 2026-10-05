@@ -5,6 +5,10 @@ export const queryKeys = {
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
   server: (serverId?: string) => ["server", serverId] as const,
   workspaceFeatures: (serverId?: string) => ["workspaceFeatures", serverId] as const,
+  // Track 1.2 moderation: active bans, and message reports filtered by status (null = all).
+  serverBans: (serverId?: string) => ["serverBans", serverId] as const,
+  messageReports: (serverId?: string, status?: string | null) =>
+    ["messageReports", serverId, status ?? null] as const,
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,
@@ -99,6 +103,8 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "serverMembers",
   "server",
   "workspaceFeatures",
+  "serverBans",
+  "messageReports",
   "customEmojis",
   "workspaceState",
   "workspaceStateList",

@@ -18,12 +18,14 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
-import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { canModerate } from "../../workspaces/role";
 import {
   FEATURE_DISABLED,
   FeatureDisabledError,
   graphqlErrorCode,
   graphqlErrorMessage,
+  TIMED_OUT,
 } from "../../../core/graphql/errors";
 import { getCachedFeatureEnabled } from "../../workspaces/api/useWorkspaceFeatures";
 import { FEATURE_OFF_MESSAGE, featureForCommandId } from "../../workspaces/featureCatalog";
@@ -80,7 +82,10 @@ type ExecuteBackendCommand = (input: {
  * workspace feature is off (`FEATURE_DISABLED`), otherwise the handler's generic fallback.
  */
 function commandFailureMessage(err: unknown, fallback: string): string {
-  return graphqlErrorCode(err) === FEATURE_DISABLED ? graphqlErrorMessage(err, fallback) : fallback;
+  const code = graphqlErrorCode(err);
+  return code === FEATURE_DISABLED || code === TIMED_OUT
+    ? graphqlErrorMessage(err, fallback)
+    : fallback;
 }
 
 /**
@@ -163,10 +168,7 @@ function canManageOnCall(workspaceId: string): boolean {
   const server = queryClient.getQueryData<{ viewerRole: ServerMemberRoleGql }>(
     queryKeys.server(workspaceId),
   );
-  return (
-    server?.viewerRole === ServerMemberRoleGql.OWNER ||
-    server?.viewerRole === ServerMemberRoleGql.MODERATOR
-  );
+  return canModerate(server?.viewerRole);
 }
 
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for

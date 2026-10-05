@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+
 vi.mock("../api/useCurrentUser", () => ({
   useCurrentUser: vi.fn(),
 }));
@@ -78,7 +80,7 @@ describe("useMemberLookup", () => {
         {
           userId: "user-1",
           username: "alice",
-          memberRole: "admin",
+          memberRole: ServerMemberRoleGql.MODERATOR,
           joinedAt: "2025-01-01T00:00:00Z",
           avatarUrl: null,
           statusText: null,
@@ -92,7 +94,7 @@ describe("useMemberLookup", () => {
     const info = result.current.resolve("user-1");
     expect(info.displayName).toBe("Alice");
     expect(info.username).toBe("alice");
-    expect(info.role).toBe("admin");
+    expect(info.role).toBe(ServerMemberRoleGql.MODERATOR);
     expect(info.isCurrentUser).toBe(false);
   });
 
@@ -112,7 +114,7 @@ describe("useMemberLookup", () => {
         {
           userId: "me-id",
           username: "me",
-          memberRole: "owner",
+          memberRole: ServerMemberRoleGql.OWNER,
           joinedAt: "2024-01-01T00:00:00Z",
           avatarUrl: "https://avatar.com/new.jpg",
           statusText: "Updated status",
@@ -125,7 +127,7 @@ describe("useMemberLookup", () => {
     const { result } = renderHook(() => useMemberLookup("ws-1"));
     const info = result.current.resolve("me-id");
     expect(info.isCurrentUser).toBe(true);
-    expect(info.role).toBe("owner");
+    expect(info.role).toBe(ServerMemberRoleGql.OWNER);
     expect(info.avatarUrl).toBe("https://avatar.com/new.jpg");
     expect(info.statusText).toBe("Updated status");
     expect(info.displayName).toBe("New Display");
@@ -140,7 +142,7 @@ describe("useMemberLookup", () => {
         {
           userId: "user-1",
           username: "bob",
-          memberRole: "member",
+          memberRole: ServerMemberRoleGql.MEMBER,
           joinedAt: "2025-01-01T00:00:00Z",
           avatarUrl: null,
           statusText: null,
@@ -164,7 +166,7 @@ describe("useMemberLookup", () => {
         {
           userId: "user-1",
           username: "alice",
-          memberRole: "admin",
+          memberRole: ServerMemberRoleGql.MODERATOR,
           joinedAt: "2025-01-01T00:00:00Z",
           avatarUrl: null,
           statusText: null,
@@ -174,7 +176,7 @@ describe("useMemberLookup", () => {
         {
           userId: "user-2",
           username: "bob",
-          memberRole: "member",
+          memberRole: ServerMemberRoleGql.MEMBER,
           joinedAt: "2025-01-01T00:00:00Z",
           avatarUrl: null,
           statusText: null,

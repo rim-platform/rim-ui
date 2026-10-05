@@ -14,5 +14,6 @@ export const CONVERSATION_FIELDS = gql`
     memberCount
     isMember
     createdBy
+    slowModeSeconds
   }
 `;

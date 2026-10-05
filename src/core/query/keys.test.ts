@@ -123,6 +123,8 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "serverMembers",
     "server",
     "workspaceFeatures",
+    "serverBans",
+    "messageReports",
     "customEmojis",
     "workspaceState",
     "workspaceStateList",

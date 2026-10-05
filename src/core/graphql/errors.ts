@@ -7,12 +7,20 @@
  * importing `ClientError`, so plain test doubles of the same shape work too.
  */
 
+import { formatTime } from "../../shared/utils/formatTime";
+
 /** GraphQL extension code for a command or call that belongs to a workspace feature that is off. */
 export const FEATURE_DISABLED = "FEATURE_DISABLED";
 
+/** A write by a member who is timed out in the workspace; extension `until` (RFC 3339). */
+export const TIMED_OUT = "TIMED_OUT";
+
+/** Too many requests (also slow mode); extension `retryAfterSeconds`. */
+export const RATE_LIMITED = "RATE_LIMITED";
+
 interface GraphQLErrorLike {
   message?: unknown;
-  extensions?: { code?: unknown };
+  extensions?: { code?: unknown; [key: string]: unknown };
 }
 
 function firstGraphQLError(err: unknown): GraphQLErrorLike | undefined {
@@ -44,8 +52,37 @@ export function graphqlErrorCode(err: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** The server's human-readable message for a failed request, else `err.message`, else `fallback`. */
+/** One extension value (`extensions[key]`) of a failed request's first error, if any. */
+export function graphqlErrorExtension(err: unknown, key: string): unknown {
+  return firstGraphQLError(err)?.extensions?.[key];
+}
+
+/** The end of the viewer's timeout carried by a `TIMED_OUT` error, else `undefined`. */
+export function timedOutUntil(err: unknown): string | undefined {
+  if (graphqlErrorCode(err) !== TIMED_OUT) return undefined;
+  const until = graphqlErrorExtension(err, "until");
+  return typeof until === "string" && until ? until : undefined;
+}
+
+/** Seconds to wait carried by a `RATE_LIMITED` error, else `undefined`. */
+export function retryAfterSeconds(err: unknown): number | undefined {
+  if (graphqlErrorCode(err) !== RATE_LIMITED) return undefined;
+  const seconds = graphqlErrorExtension(err, "retryAfterSeconds");
+  return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
+}
+
+/** The one wording for a timeout, shared by the composer banner and every error toast. */
+export function timedOutMessage(until: string): string {
+  return `You are timed out until ${formatTime(until)}`;
+}
+
+/**
+ * The server's human-readable message for a failed request, else `err.message`, else
+ * `fallback`. A `TIMED_OUT` error reads "You are timed out until …" wherever it surfaces.
+ */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
+  const until = timedOutUntil(err);
+  if (until) return timedOutMessage(until);
   const message = firstGraphQLError(err)?.message;
   if (typeof message === "string" && message.trim()) return message;
   if (err instanceof Error && err.message) return err.message;
