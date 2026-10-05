@@ -21,7 +21,10 @@ import { useDraftStore } from "../../messages/state/useDraftStore";
 import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  NotificationLevel,
+} from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../types";
 import { ChannelIcon } from "./ChannelIcon";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
@@ -362,6 +365,10 @@ const ConversationItem = memo(function ConversationItem({
 }) {
   const active = conv.id === selectedId;
   const focused = globalIndex === focusedIndex;
+  // Conversations that notify about nothing (level NONE or a mute in effect, Track 1.3) are
+  // dimmed, and their unread count no longer calls for attention.
+  const dimmed = isMuted || conv.effectiveNotificationLevel === NotificationLevel.NONE;
+  const emphasizeUnread = unreadCount > 0 && !active && !dimmed;
 
   // For DMs, show the other user's name instead of "Untitled"
   let displayTitle = conv.title;
@@ -446,13 +453,13 @@ const ConversationItem = memo(function ConversationItem({
           <span
             className={cn(
               "block truncate",
-              unreadCount > 0 && !active && "font-semibold text-rim-text",
-              isMuted && "text-rim-text-faint",
+              emphasizeUnread && "font-semibold text-rim-text",
+              dimmed && "text-rim-text-faint",
             )}
           >
             {displayTitle ?? "Untitled"}
           </span>
-          {isMuted && <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />}
+          {dimmed && <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />}
           {hasDraft && !active && (
             <span className="shrink-0 text-[10px] italic text-rim-warm">Draft</span>
           )}
@@ -464,7 +471,12 @@ const ConversationItem = memo(function ConversationItem({
         )}
       </span>
       {unreadCount > 0 && !active ? (
-        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rim-accent px-1.5 text-[10px] font-bold text-rim-void">
+        <span
+          className={cn(
+            "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px]",
+            dimmed ? "bg-rim-line text-rim-text-muted" : "bg-rim-accent font-bold text-rim-void",
+          )}
+        >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       ) : (

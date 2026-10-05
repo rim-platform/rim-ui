@@ -80,7 +80,7 @@ describe("ConversationActionsMenu — role gating", () => {
   it("a guest member of a channel gets Members and Leave, but no Archive", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await openMenu(makeConversation(), ServerMemberRoleGql.GUEST);
-    expect(menuLabels()).toEqual(["Members", "Leave channel"]);
+    expect(menuLabels()).toEqual(["Members", "Notifications: All messages", "Leave channel"]);
   });
 
   it.each([ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR])(
@@ -88,7 +88,13 @@ describe("ConversationActionsMenu — role gating", () => {
     async (role) => {
       serve(role);
       await openMenu(makeConversation(), role);
-      expect(menuLabels()).toEqual(["Members", "Slow mode", "Archive channel", "Leave channel"]);
+      expect(menuLabels()).toEqual([
+        "Members",
+        "Notifications: All messages",
+        "Slow mode",
+        "Archive channel",
+        "Leave channel",
+      ]);
     },
   );
 
@@ -111,7 +117,7 @@ describe("ConversationActionsMenu — role gating", () => {
       makeConversation({ conversationType: ConversationTypeEnum.DIRECT, title: null }),
       ServerMemberRoleGql.OWNER,
     );
-    expect(menuLabels()).toEqual(["Members"]);
+    expect(menuLabels()).toEqual(["Members", "Notifications: All messages"]);
   });
 
   it("offers Leave conversation for a group", async () => {
@@ -120,7 +126,7 @@ describe("ConversationActionsMenu — role gating", () => {
       makeConversation({ conversationType: ConversationTypeEnum.GROUP, title: "crew" }),
       ServerMemberRoleGql.GUEST,
     );
-    expect(menuLabels()).toEqual(["Members", "Leave conversation"]);
+    expect(menuLabels()).toEqual(["Members", "Notifications: All messages", "Leave conversation"]);
   });
 
   it("Members toggles the members panel", async () => {

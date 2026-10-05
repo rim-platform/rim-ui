@@ -6,6 +6,8 @@
  * higher-level, post-processed events ready for feature consumption.
  */
 
+import type { NotificationDueReason } from "./types";
+
 export interface UnreadIncrementEvent {
   conversationId: string;
   authorId: string;
@@ -26,10 +28,14 @@ export interface TypingStartedEvent {
   username: string;
 }
 
-export interface NewMessageNotificationEvent {
+/** A server-decided notification for the viewer (`NotificationDue`), ready to render. */
+export interface NotificationDueBusEvent {
+  workspaceId: string;
+  notificationId: string;
   conversationId: string;
-  authorId: string;
-  messageText: string;
+  messageId: string;
+  reason: NotificationDueReason;
+  quiet: boolean;
 }
 
 export interface WorkspaceStateChangedEvent {
@@ -65,7 +71,7 @@ export const BUS_EVENTS = {
   UNREAD_MARK_READ: "unread:markRead",
   PRESENCE_CHANGED: "presence:changed",
   TYPING_STARTED: "typing:started",
-  NEW_MESSAGE_NOTIFICATION: "notification:newMessage",
+  NOTIFICATION_DUE: "notification:due",
   WORKSPACE_STATE_CHANGED: "workspaceState:changed",
   WORKSPACE_STATE_DELETED: "workspaceState:deleted",
   PIPELINE_FIRED: "pipeline:fired",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, ArchiveRestore, LogOut, MoreHorizontal, Timer, Users } from "lucide-react";
+import { Archive, ArchiveRestore, Bell, LogOut, MoreHorizontal, Timer, Users } from "lucide-react";
 
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
@@ -7,6 +7,7 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useConversationNotificationMenu } from "../../notifications/hooks/useConversationNotificationMenu";
 import { useSetConversationArchivedMutation } from "../api/useChannelMembership";
 import { useLeaveConversation } from "../hooks/useLeaveConversation";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
@@ -24,19 +25,33 @@ interface ConversationActionsMenuProps {
 type PendingConfirm = "archive" | "leave" | "slow-mode" | null;
 
 /**
- * The conversation header's menu: Members, Leave (channels and groups), and for channels,
- * Owner/Moderator only, Slow mode and Archive/Unarchive (the server re-checks the role).
+ * The conversation header's menu: Members, the Notifications submenu (the viewer's level and
+ * timed mutes), Leave (channels and groups), and for channels, Owner/Moderator only, Slow mode
+ * and Archive/Unarchive (the server re-checks the role).
  */
 export function ConversationActionsMenu({
   workspaceId,
   conversation,
 }: ConversationActionsMenuProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [menuView, setMenuView] = useState<"main" | "notifications">("main");
   const [confirm, setConfirm] = useState<PendingConfirm>(null);
   const canModerate = useCanModerate(workspaceId);
   const toggleMembers = useMembersPanelStore((s) => s.toggle);
   const setArchived = useSetConversationArchivedMutation();
   const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
+
+  const closeMenu = () => {
+    setMenuPosition(null);
+    setMenuView("main");
+  };
+  const notificationMenu = useConversationNotificationMenu({
+    workspaceId,
+    conversation,
+    open: menuPosition !== null,
+    onBack: () => setMenuView("main"),
+    onDone: closeMenu,
+  });
 
   const label = conversationLabel(conversation);
   const isChannel = conversation.conversationType === ConversationTypeEnum.CHANNEL;
@@ -73,6 +88,14 @@ export function ConversationActionsMenu({
       },
     },
   ];
+  if (conversation.isMember) {
+    items.push({
+      id: "notifications",
+      label: `Notifications: ${notificationMenu.summary}`,
+      icon: <Bell className="h-4 w-4" />,
+      onSelect: () => setMenuView("notifications"),
+    });
+  }
   if (isChannel && canModerate && !conversation.isArchived) {
     items.push({
       id: "slow-mode",
@@ -147,7 +170,12 @@ export function ConversationActionsMenu({
       </HoverTooltip>
 
       {menuPosition && (
-        <DropdownMenu items={items} position={menuPosition} onClose={() => setMenuPosition(null)} />
+        <DropdownMenu
+          key={menuView}
+          items={menuView === "notifications" ? notificationMenu.items : items}
+          position={menuPosition}
+          onClose={closeMenu}
+        />
       )}
 
       {confirm === "archive" && (

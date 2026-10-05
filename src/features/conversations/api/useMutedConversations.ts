@@ -14,9 +14,14 @@ const MUTED_CONVERSATIONS_QUERY = gql`
   }
 `;
 
-interface MutedConversationItem {
+export interface MutedConversationItem {
   conversationId: string;
   mutedUntil: string | null;
+}
+
+/** Level `NONE` (no end) or a timed mute that has not ended yet. */
+export function isMuteActive(item: MutedConversationItem, now = Date.now()): boolean {
+  return item.mutedUntil === null || Date.parse(item.mutedUntil) > now;
 }
 
 export function useMutedConversations(workspaceId?: string) {
@@ -30,7 +35,8 @@ export function useMutedConversations(workspaceId?: string) {
         mutedConversations: MutedConversationItem[];
       }>(MUTED_CONVERSATIONS_QUERY, { serverId: workspaceId! });
 
-      const ids = res.mutedConversations.map((m) => m.conversationId);
+      // The list also carries timed mutes that have already ended; only live ones count.
+      const ids = res.mutedConversations.filter(isMuteActive).map((m) => m.conversationId);
       useMutedStore.getState().setMutedIds(ids);
 
       return res.mutedConversations;

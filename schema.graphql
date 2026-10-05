@@ -447,6 +447,32 @@ type Conversation {
 	Whether the viewer is a member (for channels: has joined it).
 	"""
 	isMember: Boolean!
+	"""
+	The viewer's own notification level for this conversation (Track 1.3); null inherits
+	the workspace default.
+	"""
+	notificationLevel: NotificationLevel
+	"""
+	The level that applies to the viewer now: `NONE` while muted, else `notificationLevel`,
+	else the workspace default.
+	"""
+	effectiveNotificationLevel: NotificationLevel!
+}
+
+"""
+The viewer's level for one conversation, as returned by `setConversationNotificationLevel`.
+"""
+type ConversationNotificationLevel {
+	conversationId: ID!
+	"""
+	The conversation's own level; null inherits the workspace default.
+	"""
+	level: NotificationLevel
+	"""
+	What applies now: `NONE` while muted, else `level`, else the workspace default.
+	"""
+	effectiveLevel: NotificationLevel!
+	mutedUntil: DateTime
 }
 
 type ConversationPage {
@@ -660,6 +686,40 @@ input DeleteWorkspaceStateInput {
 	serverId: ID!
 	key: String!
 	scope: WorkspaceStateScopeGql!
+}
+
+"""
+How often unread notifications are emailed.
+"""
+enum DigestFrequency {
+	OFF
+	HOURLY
+	DAILY
+}
+
+"""
+A daily do-not-disturb window. `start`/`end` are `"HH:MM"` wall-clock times in `timezone`
+(an IANA name); the window crosses midnight when `end` is before `start`.
+"""
+type DndWindow {
+	start: String!
+	end: String!
+	timezone: String!
+}
+
+input DndWindowInput {
+	"""
+	`"HH:MM"` (or `"HH:MM:SS"`).
+	"""
+	start: String!
+	"""
+	`"HH:MM"` (or `"HH:MM:SS"`); must differ from `start`.
+	"""
+	end: String!
+	"""
+	IANA timezone name, e.g. `Europe/Prague`.
+	"""
+	timezone: String!
 }
 
 input EditMessageInput {
@@ -1608,6 +1668,26 @@ type Mutation {
 	(`admin.resolve_report`).
 	"""
 	resolveReport(serverId: ID!, reportId: ID!, outcome: ReportOutcome!): MessageReport!
+	"""
+	Replace the viewer's notification settings in the workspace (default level, keywords,
+	daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
+	"""
+	updateNotificationSettings(serverId: ID!, input: UpdateNotificationSettingsInput!): NotificationSettings!
+	"""
+	Set the viewer's level for one conversation they can read; `level: null` goes back to
+	the workspace default. `muteConversation`/`unmuteConversation` keep working alongside.
+	"""
+	setConversationNotificationLevel(serverId: ID!, conversationId: ID!, level: NotificationLevel): ConversationNotificationLevel!
+	"""
+	Mark the viewer's notifications read: the given `ids`, or every notification created at
+	or before `allBefore` (exactly one of the two). Returns how many changed.
+	"""
+	markNotificationsRead(serverId: ID!, ids: [ID!], allBefore: DateTime): Int!
+	"""
+	Turn the viewer's manual do-not-disturb pause on (until turned off, or until `until`)
+	or off. While paused, notifications are still recorded but arrive `quiet`.
+	"""
+	setDoNotDisturb(serverId: ID!, paused: Boolean!, until: DateTime): NotificationSettings!
 }
 
 input MuteConversationInput {
@@ -1619,6 +1699,104 @@ input MuteConversationInput {
 type MutedConversation {
 	conversationId: ID!
 	mutedUntil: DateTime
+}
+
+"""
+One entry of the viewer's notification inbox.
+"""
+type Notification {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	reason: NotificationReason!
+	createdAt: DateTime!
+	readAt: DateTime
+	"""
+	Null when the viewer can no longer read the conversation.
+	"""
+	conversation: Conversation
+	"""
+	The message (timeline or thread reply); null when the viewer can no longer read the
+	conversation or the message is gone.
+	"""
+	message: Message
+}
+
+input NotificationCursorInput {
+	createdAt: DateTime!
+	notificationId: ID!
+}
+
+type NotificationCursorOutput {
+	createdAt: DateTime!
+	notificationId: ID!
+}
+
+"""
+Which messages of a conversation notify the viewer.
+"""
+enum NotificationLevel {
+	"""
+	Every message.
+	"""
+	ALL
+	"""
+	Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits and replies in
+	the viewer's threads.
+	"""
+	MENTIONS
+	"""
+	Nothing, mentions included.
+	"""
+	NONE
+}
+
+"""
+Notifications ordered `createdAt DESC, id DESC` (newest first), standard cursor semantics
+(`docs/pagination.md`): `AFTER` pages go to older notifications.
+"""
+type NotificationPage {
+	items: [Notification!]!
+	next: NotificationCursorOutput
+	prev: NotificationCursorOutput
+	pageInfo: PageInfo!
+}
+
+"""
+Why the viewer was notified (the strongest reason that applied).
+"""
+enum NotificationReason {
+	DIRECT
+	MENTION
+	KEYWORD
+	THREAD_REPLY
+	ALL
+}
+
+"""
+The viewer's notification settings in one workspace (defaults until first saved).
+"""
+type NotificationSettings {
+	serverId: ID!
+	"""
+	Applies to every conversation without its own level.
+	"""
+	defaultLevel: NotificationLevel!
+	"""
+	Lower-cased; a whole-word, case-insensitive hit notifies (level `MENTIONS` or `ALL`).
+	"""
+	keywords: [String!]!
+	dnd: DndWindow
+	"""
+	The manual do-not-disturb pause (`setDoNotDisturb`, `notifications.dnd`).
+	"""
+	dndPaused: Boolean!
+	"""
+	When the manual pause ends; null while `dndPaused` is false or the pause has no end.
+	"""
+	dndPausedUntil: DateTime
+	digest: DigestFrequency!
 }
 
 """
@@ -1924,6 +2102,20 @@ type Query {
 	the moderator can read the conversation.
 	"""
 	messageReports(serverId: ID!, status: MessageReportStatus, dir: PageDir!, cursor: MessageReportCursorInput, limit: Int!): MessageReportPage!
+	"""
+	The viewer's notification settings in the workspace (defaults until first saved).
+	"""
+	myNotificationSettings(serverId: ID!): NotificationSettings!
+	"""
+	The viewer's notifications in the workspace, newest first (`createdAt DESC, id DESC`).
+	`AFTER` pages go to older notifications. Defaults: `unreadOnly` false, `dir` `AFTER`,
+	`limit` 50 (clamped to 1..=100).
+	"""
+	myNotifications(serverId: ID!, unreadOnly: Boolean, dir: PageDir, cursor: NotificationCursorInput, limit: Int): NotificationPage!
+	"""
+	Unread notifications of the viewer in the workspace (the bell badge).
+	"""
+	myUnreadNotificationCount(serverId: ID!): Int!
 }
 
 type ReactionGroup {
@@ -2372,6 +2564,22 @@ input UpdateMyProfileInput {
 	avatarUrl: String
 	statusText: String
 	bio: String
+}
+
+"""
+Replaces the editable settings (the manual pause is separate: `setDoNotDisturb`).
+"""
+input UpdateNotificationSettingsInput {
+	defaultLevel: NotificationLevel!
+	"""
+	At most 20, each 2 to 40 characters; stored lower-cased and deduplicated.
+	"""
+	keywords: [String!]!
+	"""
+	Null turns the daily window off.
+	"""
+	dnd: DndWindowInput
+	digest: DigestFrequency!
 }
 
 input UpdatePipelineInput {

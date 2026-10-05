@@ -2,6 +2,7 @@ import type { Mock } from "vitest";
 
 import {
   ConversationTypeEnum,
+  NotificationLevel,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../types";
@@ -24,6 +25,8 @@ export function makeConversation(
     isMember: true,
     createdBy: null,
     slowModeSeconds: 0,
+    notificationLevel: null,
+    effectiveNotificationLevel: NotificationLevel.ALL,
     ...overrides,
   };
 }

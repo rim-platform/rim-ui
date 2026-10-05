@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Hash, Pin, Search, BellOff, Bell, UserPlus, AlertTriangle } from "lucide-react";
+import { Hash, Pin, Search, UserPlus, AlertTriangle } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
@@ -26,11 +26,6 @@ import {
   IncidentPhaseNameGql,
   WorkspaceFeature,
 } from "../../core/graphql/generated/schema-types";
-import { useMutedStore } from "../../features/conversations/state/useMutedStore";
-import {
-  useMuteConversationMutation,
-  useUnmuteConversationMutation,
-} from "../../features/conversations/api/useMuteConversation";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { IncidentBanner } from "../../features/incidents/components/IncidentBanner";
 import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
@@ -238,7 +233,6 @@ export function ConversationHeader() {
               </HoverTooltip>
             )}
             {!isGuest && <InviteButton onClick={() => setInviteOpen(true)} />}
-            <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
             {isChannel && workspaceId && (
               <LensPicker serverId={workspaceId} conversationId={conversationId} />
             )}
@@ -304,41 +298,6 @@ function PinnedMessagesButton() {
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
         <Pin className="h-4 w-4" />
-      </button>
-    </HoverTooltip>
-  );
-}
-
-function MuteToggleButton({
-  conversationId,
-  workspaceId,
-}: {
-  conversationId: string;
-  workspaceId: string;
-}) {
-  const isMuted = useMutedStore((s) => s.mutedIds.has(conversationId));
-  const muteConversation = useMuteConversationMutation();
-  const unmuteConversation = useUnmuteConversationMutation();
-
-  const label = isMuted ? "Unmute conversation" : "Mute conversation";
-
-  return (
-    <HoverTooltip
-      content={<span className="text-xs text-rim-text whitespace-nowrap">{label}</span>}
-    >
-      <button
-        type="button"
-        onClick={() => {
-          if (isMuted) {
-            unmuteConversation.mutate({ serverId: workspaceId, conversationId });
-          } else {
-            muteConversation.mutate({ serverId: workspaceId, conversationId });
-          }
-        }}
-        aria-label={label}
-        className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-      >
-        {isMuted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
       </button>
     </HoverTooltip>
   );
