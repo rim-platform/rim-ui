@@ -36,7 +36,14 @@ vi.mock("../../features/plugins/components/PluginToolPanel", () => ({
   PluginToolPanel: () => <div data-testid="plugin-tool-panel">PluginToolPanel</div>,
 }));
 
+vi.mock("../../features/notifications/components/NotificationsPanel", () => ({
+  NotificationsPanel: ({ workspaceId }: { workspaceId: string }) => (
+    <div data-testid="notifications-panel">{workspaceId}</div>
+  ),
+}));
+
 import { useShellStore } from "../state/useShellStore";
+import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
@@ -47,8 +54,19 @@ describe("ToolPanel", () => {
     useShellStore.getState().reset();
     useMembersPanelStore.setState({ open: false });
     useMemberDirectoryStore.setState({ open: false });
+    useNotificationsPanelStore.setState({ open: false });
     useWorkspaceStore.setState({ workspaceId: null });
     roleGate.isGuest = false;
+  });
+
+  it("shows the notification inbox over the members panel while it is open", () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox", selectedConversationId: "c-1" });
+    useMembersPanelStore.setState({ open: true });
+    useNotificationsPanelStore.setState({ open: true });
+    render(<ToolPanel />);
+    expect(screen.getByTestId("notifications-panel")).toHaveTextContent("ws-1");
+    expect(screen.queryByTestId("members-panel")).not.toBeInTheDocument();
   });
 
   it("renders with 'Conversations' heading when inbox panel is active", () => {

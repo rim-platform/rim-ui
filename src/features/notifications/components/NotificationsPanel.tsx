@@ -1,0 +1,266 @@
+import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  AtSign,
+  Bell,
+  CheckCheck,
+  Loader2,
+  MessageCircle,
+  MessagesSquare,
+  Tag,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+
+import { cn } from "../../../shared/ui/cn";
+import { toast } from "../../../shared/toast";
+import { formatRelativeTime } from "../../../shared/utils/formatTime";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { NotificationReason } from "../../../core/graphql/generated/schema-types";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import {
+  useMarkNotificationsRead,
+  useNotifications,
+  type NotificationItem,
+} from "../api/useNotifications";
+import { authorDisplayName, notificationConversationLabel } from "../labels";
+import { jumpToNotification } from "../runtime/jumpToNotification";
+import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
+
+const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> = {
+  [NotificationReason.DIRECT]: { label: "Direct message", icon: MessageCircle },
+  [NotificationReason.MENTION]: { label: "Mention", icon: AtSign },
+  [NotificationReason.KEYWORD]: { label: "Keyword", icon: Tag },
+  [NotificationReason.THREAD_REPLY]: { label: "Thread reply", icon: MessagesSquare },
+  [NotificationReason.ALL]: { label: "New message", icon: Bell },
+};
+
+const SNIPPET_LENGTH = 140;
+
+function snippet(item: NotificationItem): string {
+  const message = item.message;
+  if (!message) return "";
+  if (message.isDeleted) return "Message deleted";
+  const text = (message.text ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "Attachment";
+  return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
+}
+
+interface NotificationsPanelProps {
+  workspaceId: string;
+  onClose: () => void;
+}
+
+/**
+ * The notification inbox in the tool panel (Track 1.3): newest first, unread entries dotted.
+ * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
+ * can no longer read say so and can still be marked read.
+ */
+export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelProps) {
+  const qc = useQueryClient();
+  const unreadOnly = useNotificationsPanelStore((s) => s.unreadOnly);
+  const setUnreadOnly = useNotificationsPanelStore((s) => s.setUnreadOnly);
+  const { data, isPending, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useNotifications(workspaceId, unreadOnly);
+  const markRead = useMarkNotificationsRead();
+  const memberLookup = useMemberLookup(workspaceId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
+
+  const items = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
+
+  function handleMarkAllRead() {
+    markRead.mutate(
+      { serverId: workspaceId, allBefore: new Date().toISOString() },
+      {
+        onError: (err) =>
+          toast.error(graphqlErrorMessage(err, "Could not mark notifications read")),
+      },
+    );
+  }
+
+  function handleOpen(item: NotificationItem) {
+    if (!item.readAt) {
+      markRead.mutate({ serverId: workspaceId, ids: [item.id] });
+    }
+    if (!item.conversation) return;
+    void jumpToNotification(qc, {
+      serverId: workspaceId,
+      conversationId: item.conversationId,
+      messageId: item.messageId,
+      threadId: item.message?.threadId ?? null,
+    });
+  }
+
+  const resolveName = (userId: string) => memberLookup.resolve(userId).displayName;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
+        <h2 className="text-sm font-medium text-rim-text">Notifications</h2>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={handleMarkAllRead}
+            disabled={markRead.isPending}
+            title="Mark all read"
+            aria-label="Mark all read"
+            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text disabled:opacity-50"
+          >
+            <CheckCheck className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close notifications"
+            aria-label="Close notifications"
+            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 border-b border-rim-line px-3 py-2 text-xs">
+        <button
+          type="button"
+          aria-pressed={!unreadOnly}
+          onClick={() => setUnreadOnly(false)}
+          className={cn(
+            "rounded px-2 py-0.5 transition",
+            !unreadOnly
+              ? "bg-rim-accent/15 text-rim-accent"
+              : "text-rim-text-muted hover:text-rim-text",
+          )}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          aria-pressed={unreadOnly}
+          onClick={() => setUnreadOnly(true)}
+          className={cn(
+            "rounded px-2 py-0.5 transition",
+            unreadOnly
+              ? "bg-rim-accent/15 text-rim-accent"
+              : "text-rim-text-muted hover:text-rim-text",
+          )}
+        >
+          Unread only
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2">
+        {isPending && <p className="px-2 py-4 text-sm text-rim-text-muted">Loading…</p>}
+        {isError && (
+          <p role="alert" className="px-2 py-4 text-sm text-rim-danger">
+            {graphqlErrorMessage(error, "Failed to load notifications.")}
+          </p>
+        )}
+        {!isPending && !isError && items.length === 0 && (
+          <p className="px-2 py-4 text-sm text-rim-text-muted">
+            {unreadOnly ? "No unread notifications." : "No notifications yet."}
+          </p>
+        )}
+        {items.length > 0 && (
+          <ul className="space-y-0.5" aria-label="Notifications">
+            {items.map((item) => (
+              <NotificationRow
+                key={item.id}
+                item={item}
+                resolveName={resolveName}
+                currentUserId={currentUserId}
+                onOpen={() => handleOpen(item)}
+              />
+            ))}
+          </ul>
+        )}
+        {hasNextPage && (
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text disabled:opacity-50"
+          >
+            {isFetchingNextPage && <Loader2 className="h-3 w-3 animate-spin" />}
+            Load more
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NotificationRow({
+  item,
+  resolveName,
+  currentUserId,
+  onOpen,
+}: {
+  item: NotificationItem;
+  resolveName: (userId: string) => string;
+  currentUserId: string | undefined;
+  onOpen: () => void;
+}) {
+  const reason = REASONS[item.reason];
+  const Icon = reason.icon;
+  const unread = !item.readAt;
+  const available = item.conversation !== null;
+  const conversation = item.conversation
+    ? notificationConversationLabel(item.conversation, resolveName, currentUserId)
+    : "No longer available";
+  const author = item.message
+    ? (authorDisplayName(item.message.author) ?? resolveName(item.message.authorId))
+    : null;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        data-notification-id={item.id}
+        className={cn(
+          "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-white/5",
+          !available && "opacity-70",
+        )}
+      >
+        <Icon
+          className={cn(
+            "mt-0.5 h-4 w-4 shrink-0",
+            unread ? "text-rim-accent" : "text-rim-text-faint",
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 text-[11px] text-rim-text-faint">
+            <span>{reason.label}</span>
+            <span aria-hidden>·</span>
+            <span className={cn("truncate", available ? "text-rim-text-muted" : "italic")}>
+              {conversation}
+            </span>
+            <span className="ml-auto shrink-0">{formatRelativeTime(item.createdAt)}</span>
+          </span>
+          {available && author && (
+            <span
+              className={cn(
+                "mt-0.5 block truncate text-sm",
+                unread ? "font-medium text-rim-text" : "text-rim-text-muted",
+              )}
+            >
+              <span>{author}</span>
+              <span className="text-rim-text-faint">: </span>
+              <span className={unread ? "text-rim-text-muted" : "text-rim-text-faint"}>
+                {snippet(item)}
+              </span>
+            </span>
+          )}
+        </span>
+        {unread && (
+          <>
+            <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rim-accent" />
+            <span className="sr-only">Unread</span>
+          </>
+        )}
+      </button>
+    </li>
+  );
+}

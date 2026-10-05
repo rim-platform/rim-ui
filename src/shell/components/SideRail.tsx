@@ -19,6 +19,8 @@ import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
+import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
+import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { cn } from "../../shared/ui/cn";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
@@ -60,9 +62,12 @@ export function SideRail() {
 
   const openSearch = useSearchOverlayStore((s) => s.openWithScope);
 
+  const notificationsOpen = useNotificationsPanelStore((s) => s.open);
+
   function handleRailItemClick(key: "inbox" | "plugins") {
     setMainSurface({ kind: "conversation" });
     setActivePanel(key);
+    useNotificationsPanelStore.getState().setOpen(false);
   }
 
   return (
@@ -75,7 +80,8 @@ export function SideRail() {
       <nav className="flex flex-1 flex-col items-center gap-1">
         {railItems.map((item) => {
           const Icon = item.icon;
-          const active = mainSurface.kind === "conversation" && activePanel === item.key;
+          const active =
+            mainSurface.kind === "conversation" && activePanel === item.key && !notificationsOpen;
           const badge = item.key === "inbox" && totalUnread > 0 ? totalUnread : 0;
           return (
             <button
@@ -100,6 +106,8 @@ export function SideRail() {
             </button>
           );
         })}
+
+        <NotificationBellButton />
 
         <SearchButton openSearch={openSearch} />
 
