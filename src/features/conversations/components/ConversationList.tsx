@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef, memo } from "react";
-import { Hash, MessageCircle, Plus, Users, BellOff } from "lucide-react";
+import { Archive, BellOff, ChevronDown, ChevronRight, Compass, Plus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { useChannels } from "../api/useChannels";
+import { useJoinedChannels } from "../api/useChannels";
 import { useInboxConversations } from "../api/useInboxConversations";
 import { useUnreadStore } from "../state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -20,13 +20,10 @@ import { useDraftStore } from "../../messages/state/useDraftStore";
 import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
-type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
-
-const typeIcon: Record<ConversationTypeEnum, typeof Hash> = {
-  CHANNEL: Hash,
-  DIRECT: MessageCircle,
-  GROUP: Users,
-};
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import type { ConversationSummary } from "../types";
+import { ChannelIcon } from "./ChannelIcon";
+import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 
 interface ConversationListProps {
   onNewChannel: () => void;
@@ -76,7 +73,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
     data: channelsData,
     isPending: channelsPending,
     isError: channelsError,
-  } = useChannels(workspaceId ?? undefined);
+  } = useJoinedChannels(workspaceId ?? undefined);
 
   const {
     data: inboxData,
@@ -84,10 +81,27 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
     isError: inboxError,
   } = useInboxConversations(workspaceId ?? undefined);
 
-  const channels = channelsData?.items ?? [];
-  const messages = inboxData?.items ?? [];
+  // The sidebar lists joined channels; archived ones sit in a collapsed "Archived" group that
+  // only renders when there is something in it.
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const { channels, archivedChannels } = useMemo(() => {
+    const items = channelsData?.items ?? [];
+    return {
+      channels: items.filter((c) => !c.isArchived),
+      archivedChannels: items.filter((c) => c.isArchived),
+    };
+  }, [channelsData]);
+  const messages = useMemo(() => inboxData?.items ?? [], [inboxData]);
+  const visibleArchived = useMemo(
+    () => (archivedOpen ? archivedChannels : []),
+    [archivedOpen, archivedChannels],
+  );
 
-  const allItems = useMemo(() => [...channels, ...messages], [channels, messages]);
+  const allItems = useMemo(
+    () => [...channels, ...visibleArchived, ...messages],
+    [channels, visibleArchived, messages],
+  );
 
   const allConversationIds = useMemo(() => allItems.map((c) => c.id), [allItems]);
   usePrefetchMessages(workspaceId, allConversationIds);
@@ -169,12 +183,9 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
     return <p className="px-2 py-4 text-sm text-rim-danger">Failed to load conversations.</p>;
   }
 
-  if (channels.length === 0 && messages.length === 0) {
-    return <p className="px-2 py-4 text-sm text-rim-text-muted">No conversations yet.</p>;
-  }
-
-  // Compute the global index offset for messages section
-  const channelCount = channels.length;
+  // Global index offsets for the archived and messages sections (keyboard navigation)
+  const archivedOffset = channels.length;
+  const messagesOffset = channels.length + visibleArchived.length;
 
   return (
     <div
@@ -192,12 +203,21 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
         setFocusedIndex(-1);
       }}
     >
-      {channels.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between px-2 pb-1">
-            <h3 className="text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
-              Channels
-            </h3>
+      <div>
+        <div className="flex items-center justify-between px-2 pb-1">
+          <h3 className="text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
+            Channels
+          </h3>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setBrowseOpen(true)}
+              title="Browse channels"
+              aria-label="Browse channels"
+              className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+            >
+              <Compass className="h-3 w-3" />
+            </button>
             <button
               type="button"
               onClick={() => onNewChannel()}
@@ -208,6 +228,16 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
               <Plus className="h-3 w-3" />
             </button>
           </div>
+        </div>
+        {channels.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setBrowseOpen(true)}
+            className="w-full rounded-lg px-2 py-2 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+          >
+            No channels joined yet. Browse channels
+          </button>
+        ) : (
           <ul className="space-y-0.5">
             {channels.map((conv, i) => (
               <ConversationItem
@@ -225,6 +255,44 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
               />
             ))}
           </ul>
+        )}
+      </div>
+
+      {archivedChannels.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setArchivedOpen((v) => !v)}
+            aria-expanded={archivedOpen}
+            className="flex w-full items-center gap-1 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint transition hover:text-rim-text"
+          >
+            {archivedOpen ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            <Archive className="h-3 w-3" />
+            Archived ({archivedChannels.length})
+          </button>
+          {archivedOpen && (
+            <ul className="space-y-0.5" aria-label="Archived channels">
+              {visibleArchived.map((conv, i) => (
+                <ConversationItem
+                  key={conv.id}
+                  conv={conv}
+                  globalIndex={archivedOffset + i}
+                  selectedId={selectedId}
+                  focusedIndex={focusedIndex}
+                  isKeyboardNavigating={isKeyboardNavigating}
+                  currentUserId={currentUserId}
+                  memberLookup={memberLookup}
+                  select={select}
+                  unreadCount={unreadCounts[conv.id] ?? 0}
+                  isMuted={mutedIds.has(conv.id)}
+                />
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -238,7 +306,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
               <ConversationItem
                 key={conv.id}
                 conv={conv}
-                globalIndex={channelCount + i}
+                globalIndex={messagesOffset + i}
                 selectedId={selectedId}
                 focusedIndex={focusedIndex}
                 isKeyboardNavigating={isKeyboardNavigating}
@@ -251,6 +319,10 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
             ))}
           </ul>
         </div>
+      )}
+
+      {browseOpen && workspaceId && (
+        <BrowseChannelsDialog workspaceId={workspaceId} onClose={() => setBrowseOpen(false)} />
       )}
     </div>
   );
@@ -268,13 +340,7 @@ const ConversationItem = memo(function ConversationItem({
   unreadCount,
   isMuted,
 }: {
-  conv: {
-    id: string;
-    serverId: string;
-    conversationType: string;
-    title: string;
-    memberIds: string[];
-  };
+  conv: ConversationSummary;
   globalIndex: number;
   selectedId: string | null;
   focusedIndex: number;
@@ -285,7 +351,6 @@ const ConversationItem = memo(function ConversationItem({
   unreadCount: number;
   isMuted: boolean;
 }) {
-  const Icon = typeIcon[conv.conversationType as ConversationTypeEnum] ?? Hash;
   const active = conv.id === selectedId;
   const focused = globalIndex === focusedIndex;
 
@@ -294,7 +359,7 @@ const ConversationItem = memo(function ConversationItem({
   let otherMemberId: string | undefined;
   let otherMemberAvatarUrl: string | null | undefined;
   let otherMemberStatusText: string | null | undefined;
-  if (conv.conversationType === "DIRECT" && conv.memberIds.length > 0) {
+  if (conv.conversationType === ConversationTypeEnum.DIRECT && conv.memberIds.length > 0) {
     otherMemberId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
     const otherMember = memberLookup.resolve(otherMemberId);
     otherMemberAvatarUrl = otherMember.avatarUrl;
@@ -310,7 +375,8 @@ const ConversationItem = memo(function ConversationItem({
 
   const hasDraft = useDraftStore((s) => !!s.drafts[conv.id]);
 
-  const hoverKind = conv.conversationType === "DIRECT" ? ("dm" as const) : ("channel" as const);
+  const hoverKind =
+    conv.conversationType === ConversationTypeEnum.DIRECT ? ("dm" as const) : ("channel" as const);
 
   // Look up quick-access keybind for this specific channel
   const keystroke = useKeybindLabel("workspace.navigate_to_channel", { conversationId: conv.id });
@@ -351,7 +417,7 @@ const ConversationItem = memo(function ConversationItem({
           "ring-1 ring-rim-accent ring-offset-1 ring-offset-rim-panel",
       )}
     >
-      {conv.conversationType === "DIRECT" ? (
+      {conv.conversationType === ConversationTypeEnum.DIRECT ? (
         <Avatar
           url={otherMemberAvatarUrl}
           name={displayTitle ?? "?"}
@@ -364,7 +430,7 @@ const ConversationItem = memo(function ConversationItem({
           }
         />
       ) : (
-        <Icon className="h-4 w-4 shrink-0" />
+        <ChannelIcon conversation={conv} className="h-4 w-4 shrink-0" />
       )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1">
@@ -382,7 +448,7 @@ const ConversationItem = memo(function ConversationItem({
             <span className="shrink-0 text-[10px] italic text-rim-warm">Draft</span>
           )}
         </span>
-        {conv.conversationType === "DIRECT" && otherMemberStatusText && (
+        {conv.conversationType === ConversationTypeEnum.DIRECT && otherMemberStatusText && (
           <span className="block truncate text-[10px] text-rim-text-faint">
             {otherMemberStatusText}
           </span>
@@ -393,7 +459,7 @@ const ConversationItem = memo(function ConversationItem({
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       ) : (
-        <span className="ml-auto text-xs text-rim-text-faint">{conv.memberIds.length}</span>
+        <span className="ml-auto text-xs text-rim-text-faint">{conv.memberCount}</span>
       )}
     </button>
   );

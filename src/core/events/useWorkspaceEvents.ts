@@ -9,6 +9,11 @@ import type { MessageItem, MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
 import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
+import {
+  handleConversationUpdated,
+  handleMemberAddedToConversation,
+  handleMemberRemovedFromConversation,
+} from "../../features/conversations/state/membershipEvents";
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
@@ -355,9 +360,15 @@ function handleEvent(
     }
 
     case "MemberAddedToConversation":
+      handleMemberAddedToConversation(qc, workspaceId, event.conversation_id);
+      break;
+
     case "MemberRemovedFromConversation":
-      qc.invalidateQueries({ queryKey: queryKeys.conversations(workspaceId) });
-      qc.invalidateQueries({ queryKey: queryKeys.channels(workspaceId) });
+      handleMemberRemovedFromConversation(qc, workspaceId, event.conversation_id, event.user_id);
+      break;
+
+    case "ConversationUpdated":
+      handleConversationUpdated(qc, workspaceId, event.conversation_id);
       break;
 
     case "TypingStarted": {

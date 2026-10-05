@@ -140,6 +140,21 @@ type ChannelLens {
 	updatedAt: DateTime!
 }
 
+"""
+Narrows the `channels` query. By default it lists every channel the viewer can see (public
+channels plus private channels they belong to) that is not archived.
+"""
+input ChannelListFilter {
+	"""
+	Only channels the viewer has joined (the sidebar list).
+	"""
+	joinedOnly: Boolean! = false
+	"""
+	Include archived channels.
+	"""
+	includeArchived: Boolean! = false
+}
+
 type ChannelPage {
 	items: [Conversation!]!
 	next: ChannelCursorOutput
@@ -414,7 +429,19 @@ type Conversation {
 	title: String
 	topic: String
 	memberIds: [ID!]!
+	"""
+	Channels only: visible to its members alone. Fixed at creation.
+	"""
+	isPrivate: Boolean!
+	isArchived: Boolean!
+	archivedAt: DateTime
+	memberCount: Int!
+	createdBy: ID
 	isMuted: Boolean!
+	"""
+	Whether the viewer is a member (for channels: has joined it).
+	"""
+	isMember: Boolean!
 }
 
 type ConversationPage {
@@ -462,6 +489,10 @@ input CreateConversationInput {
 	"""
 	isChannel: Boolean
 	title: String
+	"""
+	Channels only: visible to invited members alone. Cannot be changed later.
+	"""
+	isPrivate: Boolean! = false
 }
 
 input CreateCustomEmojiInput {
@@ -1283,6 +1314,27 @@ type Mutation {
 	replyToMessage(input: ReplyToMessageInput!): Message!
 	createConversation(input: CreateConversationInput!): Conversation!
 	updateConversationTopic(input: UpdateConversationTopicInput!): Conversation!
+	"""
+	Join a public, unarchived channel. Idempotent.
+	"""
+	joinChannel(serverId: ID!, conversationId: ID!): Conversation!
+	"""
+	Leave a channel or group (not a DM).
+	"""
+	leaveConversation(serverId: ID!, conversationId: ID!): Boolean!
+	"""
+	Add (invite) workspace members to a channel or group the caller belongs to.
+	"""
+	addConversationMembers(serverId: ID!, conversationId: ID!, userIds: [ID!]!): Conversation!
+	"""
+	Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
+	themselves.
+	"""
+	removeConversationMember(serverId: ID!, conversationId: ID!, userId: ID!): Boolean!
+	"""
+	Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only.
+	"""
+	setConversationArchived(serverId: ID!, conversationId: ID!, archived: Boolean!): Conversation!
 	editMessage(input: EditMessageInput!): Message!
 	forwardMessage(input: ForwardMessageInput!): Message!
 	deleteMessage(input: DeleteMessageInput!): Boolean!
@@ -1636,7 +1688,7 @@ type Query {
 	keybindLayers(keystroke: String!, context: KeybindContext!, workspaceId: ID): KeybindLayers!
 	conversation(serverId: ID!, conversationId: ID!): Conversation!
 	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
-	channels(serverId: ID!, dir: PageDir!, cursor: ChannelCursorInput, limit: Int!): ChannelPage!
+	channels(serverId: ID!, dir: PageDir!, cursor: ChannelCursorInput, limit: Int!, filter: ChannelListFilter): ChannelPage!
 	messages(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: MessageCursorInput, limit: Int!, includeDeleted: Boolean!): MessagePage!
 	"""
 	Full-text search over messages. Supports the `from:`/`in:`/`has:`/`before:`/`after:`

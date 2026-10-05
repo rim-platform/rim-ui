@@ -12,7 +12,14 @@ export const queryKeys = {
     ["threadByRoot", workspaceId, conversationId, rootMessageId] as const,
   threadMessages: (workspaceId?: string, conversationId?: string, threadId?: string) =>
     ["threadMessages", workspaceId, conversationId, threadId] as const,
+  // Every channel the viewer can see that is not archived (the browse list). Also the prefix of
+  // `joinedChannels`, so invalidating it refreshes both lists.
   channels: (workspaceId?: string) => ["channels", workspaceId] as const,
+  // Channels the viewer has joined, archived ones included (the sidebar list).
+  joinedChannels: (workspaceId?: string) => ["channels", workspaceId, "joined"] as const,
+  // One conversation by id: the open conversation's header, composer gate and members panel.
+  conversation: (workspaceId?: string, conversationId?: string) =>
+    ["conversation", workspaceId, conversationId] as const,
   // Keyed by workspace too: the server filters out commands whose workspace feature is off
   // (Track 0.4), so the list differs per workspace.
   commands: (surface?: string, workspaceId?: string) => ["commands", surface, workspaceId] as const,
@@ -78,6 +85,7 @@ export const queryKeys = {
 export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "messages",
   "conversations",
+  "conversation",
   "channels",
   "threadByRoot",
   "threadMessages",

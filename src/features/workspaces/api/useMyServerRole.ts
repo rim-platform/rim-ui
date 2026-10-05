@@ -17,10 +17,22 @@ export function useMyServerRole(serverId?: string): ServerMemberRoleGql | undefi
   return data?.viewerRole;
 }
 
+/** `true` for the roles that moderate a workspace: Owner and Moderator. */
+export function isModeratorRole(role: ServerMemberRoleGql | undefined): boolean {
+  return role === ServerMemberRoleGql.OWNER || role === ServerMemberRoleGql.MODERATOR;
+}
+
+/**
+ * `true` when the viewer is Owner or Moderator — the gate for moderation affordances such as
+ * archiving channels and removing other members from a conversation.
+ */
+export function useCanModerate(serverId?: string): boolean {
+  return isModeratorRole(useMyServerRole(serverId));
+}
+
 /** `true` when the viewer is Owner or Moderator — the gate for schedule/policy/override editing. */
 export function useCanManageOnCall(serverId?: string): boolean {
-  const role = useMyServerRole(serverId);
-  return role === ServerMemberRoleGql.OWNER || role === ServerMemberRoleGql.MODERATOR;
+  return useCanModerate(serverId);
 }
 
 /** `true` when the viewer is Owner — the gate for owner-only affordances (ingest tokens, B2). */

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../test/utils";
@@ -33,6 +33,9 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
 }));
 
 import { ConversationHeader } from "./ConversationHeader";
+import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
+import type { ConversationSummary } from "../../features/conversations/types";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 
 const openIncident = {
   id: "inc-1",
@@ -140,5 +143,49 @@ describe("ConversationHeader — incidents module gate", () => {
     renderHeader();
     expect(await screen.findByRole("button", { name: "Start incident" })).toBeInTheDocument();
     expect(screen.queryByTestId("incident-banner")).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationHeader — channel privacy, members and menu", () => {
+  function serveConversation(conversation: ConversationSummary) {
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("workspaceFeatures")) {
+        return Promise.resolve({ workspaceFeatures: [] });
+      }
+      if (document.includes("query Conversation(")) {
+        return Promise.resolve({ conversation });
+      }
+      return new Promise(() => {});
+    });
+  }
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useMembersPanelStore.setState({ open: false });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("shows a lock and the member count for a private channel; the count opens the members panel", async () => {
+    serveConversation(makeConversation({ title: "secret", isPrivate: true, memberCount: 3 }));
+    renderHeader();
+
+    expect(await screen.findByRole("img", { name: "Private channel" })).toBeInTheDocument();
+    const count = screen.getByRole("button", { name: "3 members" });
+    fireEvent.click(count);
+    expect(useMembersPanelStore.getState().open).toBe(true);
+    expect(screen.getByRole("button", { name: "Conversation menu" })).toBeInTheDocument();
+  });
+
+  it("marks an archived channel", async () => {
+    serveConversation(makeConversation({ isArchived: true }));
+    renderHeader();
+    expect(await screen.findByText("Archived")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Private channel" })).not.toBeInTheDocument();
   });
 });

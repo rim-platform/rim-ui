@@ -160,6 +160,17 @@ export type ChannelLens = {
   updatedAt: Scalars['DateTime']['output'];
 };
 
+/**
+ * Narrows the `channels` query. By default it lists every channel the viewer can see (public
+ * channels plus private channels they belong to) that is not archived.
+ */
+export type ChannelListFilter = {
+  /** Include archived channels. */
+  includeArchived?: Scalars['Boolean']['input'];
+  /** Only channels the viewer has joined (the sidebar list). */
+  joinedOnly?: Scalars['Boolean']['input'];
+};
+
 export type ChannelPage = {
   items: Array<Conversation>;
   next?: Maybe<ChannelCursorOutput>;
@@ -404,9 +415,17 @@ export type ConfirmationProofInput = {
 };
 
 export type Conversation = {
+  archivedAt?: Maybe<Scalars['DateTime']['output']>;
   conversationType: ConversationTypeEnum;
+  createdBy?: Maybe<Scalars['ID']['output']>;
   id: Scalars['ID']['output'];
+  isArchived: Scalars['Boolean']['output'];
+  /** Whether the viewer is a member (for channels: has joined it). */
+  isMember: Scalars['Boolean']['output'];
   isMuted: Scalars['Boolean']['output'];
+  /** Channels only: visible to its members alone. Fixed at creation. */
+  isPrivate: Scalars['Boolean']['output'];
+  memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
   serverId: Scalars['ID']['output'];
   title?: Maybe<Scalars['String']['output']>;
@@ -446,6 +465,8 @@ export type CreateChannelLensInput = {
 export type CreateConversationInput = {
   /** For Channel conversations. */
   isChannel?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Channels only: visible to invited members alone. Cannot be changed later. */
+  isPrivate?: Scalars['Boolean']['input'];
   /** For Group conversations. */
   memberIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** For DM conversations. */
@@ -1204,6 +1225,8 @@ export type Mutation = {
    * Cancels the incident's active escalation run, if any.
    */
   acknowledgeIncident: IncidentGql;
+  /** Add (invite) workspace members to a channel or group the caller belongs to. */
+  addConversationMembers: Conversation;
   /** Add a rotation layer to a schedule. Owner-only. */
   addRotationLayer: RotationLayerGql;
   advanceIncidentPhase: IncidentPhaseGql;
@@ -1268,7 +1291,11 @@ export type Mutation = {
   generatePostmortem: IncidentGql;
   heartbeat: Scalars['Boolean']['output'];
   incrementWorkspaceState: WorkspaceStateEntryGql;
+  /** Join a public, unarchived channel. Idempotent. */
+  joinChannel: Conversation;
   joinServerByInvite: JoinServerByInvitePayload;
+  /** Leave a channel or group (not a DM). */
+  leaveConversation: Scalars['Boolean']['output'];
   login: LoginPayload;
   logout: Scalars['Boolean']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
@@ -1277,6 +1304,11 @@ export type Mutation = {
   overrideSkillTier: SkillProfileGql;
   pinMessage: Scalars['Boolean']['output'];
   recordFeatureUsage: SkillProfileGql;
+  /**
+   * Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
+   * themselves.
+   */
+  removeConversationMember: Scalars['Boolean']['output'];
   /** Remove a rotation layer (cascades to its participants). Owner-only. */
   removeRotationLayer: Scalars['Boolean']['output'];
   replyToMessage: Message;
@@ -1300,6 +1332,8 @@ export type Mutation = {
    * Owner+Moderator.
    */
   setChannelEscalationPolicy: Scalars['Boolean']['output'];
+  /** Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only. */
+  setConversationArchived: Conversation;
   /**
    * Replace a rotation layer's full ordered participant list. `userIds[0]` becomes the first
    * shift. Owner-only.
@@ -1383,6 +1417,13 @@ export type MutationAcceptInviteArgs = {
 
 export type MutationAcknowledgeIncidentArgs = {
   incidentId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddConversationMembersArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+  userIds: Array<Scalars['ID']['input']>;
 };
 
 
@@ -1588,8 +1629,20 @@ export type MutationIncrementWorkspaceStateArgs = {
 };
 
 
+export type MutationJoinChannelArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationJoinServerByInviteArgs = {
   input: JoinServerByInviteInput;
+};
+
+
+export type MutationLeaveConversationArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -1625,6 +1678,13 @@ export type MutationPinMessageArgs = {
 
 export type MutationRecordFeatureUsageArgs = {
   featureId: Scalars['String']['input'];
+};
+
+
+export type MutationRemoveConversationMemberArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -1677,6 +1737,13 @@ export type MutationSendMessageArgs = {
 export type MutationSetChannelEscalationPolicyArgs = {
   conversationId: Scalars['ID']['input'];
   policyId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetConversationArchivedArgs = {
+  archived: Scalars['Boolean']['input'];
+  conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
 };
 
@@ -2131,6 +2198,7 @@ export type QueryChannelLensesArgs = {
 export type QueryChannelsArgs = {
   cursor?: InputMaybe<ChannelCursorInput>;
   dir: PageDir;
+  filter?: InputMaybe<ChannelListFilter>;
   limit: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
 };

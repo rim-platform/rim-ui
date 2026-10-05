@@ -26,6 +26,15 @@ describe("queryKeys", () => {
     expect(queryKeys.conversations("ws-1")).toEqual(["conversations", "ws-1"]);
   });
 
+  it("joinedChannels extends the channels prefix so channel invalidations reach it", () => {
+    expect(queryKeys.joinedChannels("ws-1")).toEqual(["channels", "ws-1", "joined"]);
+    expect(queryKeys.joinedChannels("ws-1").slice(0, 2)).toEqual([...queryKeys.channels("ws-1")]);
+  });
+
+  it("conversation includes workspace and conversation ids", () => {
+    expect(queryKeys.conversation("ws-1", "conv-1")).toEqual(["conversation", "ws-1", "conv-1"]);
+  });
+
   it("messages includes both ids", () => {
     expect(queryKeys.messages("ws-1", "conv-1")).toEqual(["messages", "ws-1", "conv-1"]);
   });
@@ -100,6 +109,7 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
   const expectedRoots = [
     "messages",
     "conversations",
+    "conversation",
     "channels",
     "threadByRoot",
     "threadMessages",

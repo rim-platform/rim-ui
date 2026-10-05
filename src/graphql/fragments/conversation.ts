@@ -8,5 +8,11 @@ export const CONVERSATION_FIELDS = gql`
     conversationType
     memberIds
     topic
+    isPrivate
+    isArchived
+    archivedAt
+    memberCount
+    isMember
+    createdBy
   }
 `;

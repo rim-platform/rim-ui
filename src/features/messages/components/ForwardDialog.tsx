@@ -109,7 +109,7 @@ export function ForwardDialog({
   }
 
   function resolveTitle(conv: {
-    title: string;
+    title?: string | null;
     conversationType: string;
     memberIds: string[];
   }): string {
