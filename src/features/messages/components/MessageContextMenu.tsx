@@ -12,6 +12,9 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useIncidentStore } from "../../incidents/state/useIncidentStore";
 import { TagMessageMenu } from "../../incidents/components/TagMessageMenu";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
+import { ReportMessageDialog } from "./ReportMessageDialog";
 
 interface MessageContextMenuProps {
   x: number;
@@ -46,6 +49,10 @@ export function MessageContextMenu({
   const unpinMessage = useUnpinMessageMutation();
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
   const [pendingDelete, setPendingDelete] = useState(false);
+  // Track 1.2: anyone can report someone else's message; Owner/Moderator can delete it.
+  const [pendingReport, setPendingReport] = useState(false);
+  const [pendingModeratorDelete, setPendingModeratorDelete] = useState(false);
+  const canModerate = useCanModerate(workspaceId);
   const [tagMenuPos, setTagMenuPos] = useState<{ x: number; y: number } | null>(null);
   const activeIncident = useIncidentStore((s) => s.activeIncident);
 
@@ -106,6 +113,23 @@ export function MessageContextMenu({
       });
     }
 
+    if (!isOwnMessage) {
+      result.push({
+        id: "report-message",
+        label: "Report Message",
+        onSelect: () => setPendingReport(true),
+      });
+    }
+
+    if (!isOwnMessage && canModerate) {
+      result.push({
+        id: "moderator-delete-message",
+        label: "Delete Message",
+        danger: true,
+        onSelect: () => setPendingModeratorDelete(true),
+      });
+    }
+
     result.push({
       id: "pin-message",
       label: isPinned ? "Unpin Message" : "Pin Message",
@@ -160,13 +184,47 @@ export function MessageContextMenu({
     workspaceId,
     conversationId,
     activeIncident,
+    canModerate,
     x,
     y,
   ]);
 
   return (
     <>
-      {!pendingDelete && <DropdownMenu items={items} position={{ x, y }} onClose={onClose} />}
+      {!pendingDelete && !pendingReport && !pendingModeratorDelete && (
+        <DropdownMenu items={items} position={{ x, y }} onClose={onClose} />
+      )}
+      {pendingReport && (
+        <ReportMessageDialog
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          messageId={messageId}
+          onClose={() => {
+            setPendingReport(false);
+            onClose();
+          }}
+        />
+      )}
+      {pendingModeratorDelete && (
+        <ModerationDialog
+          title="Delete this message?"
+          description="You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log."
+          tone="danger"
+          chips={["DANGEROUS", "MODERATOR"]}
+          confirmLabel="Delete"
+          errorFallback="Failed to delete message"
+          onConfirm={() => deleteMessageFn(messageId, { throwOnError: true })}
+          onDone={() => {
+            setPendingModeratorDelete(false);
+            toast.success("Message deleted");
+            onClose();
+          }}
+          onClose={() => {
+            setPendingModeratorDelete(false);
+            onClose();
+          }}
+        />
+      )}
       {tagMenuPos && (
         <TagMessageMenu
           messageId={messageId}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, ArchiveRestore, LogOut, MoreHorizontal, Users } from "lucide-react";
+import { Archive, ArchiveRestore, LogOut, MoreHorizontal, Timer, Users } from "lucide-react";
 
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
@@ -12,18 +12,20 @@ import { useLeaveConversation } from "../hooks/useLeaveConversation";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import type { ConversationSummary } from "../types";
 import { canLeaveConversation, conversationLabel, leaveNeedsConfirmation } from "../utils";
+import { formatSlowModeInterval } from "../api/useSlowMode";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
+import { SlowModeDialog } from "./SlowModeDialog";
 
 interface ConversationActionsMenuProps {
   workspaceId: string;
   conversation: ConversationSummary;
 }
 
-type PendingConfirm = "archive" | "leave" | null;
+type PendingConfirm = "archive" | "leave" | "slow-mode" | null;
 
 /**
- * The conversation header's menu: Members, Leave (channels and groups), and Archive/Unarchive
- * (channels, Owner/Moderator only — the server re-checks the role).
+ * The conversation header's menu: Members, Leave (channels and groups), and for channels,
+ * Owner/Moderator only, Slow mode and Archive/Unarchive (the server re-checks the role).
  */
 export function ConversationActionsMenu({
   workspaceId,
@@ -71,6 +73,20 @@ export function ConversationActionsMenu({
       },
     },
   ];
+  if (isChannel && canModerate && !conversation.isArchived) {
+    items.push({
+      id: "slow-mode",
+      label:
+        conversation.slowModeSeconds > 0
+          ? `Slow mode (${formatSlowModeInterval(conversation.slowModeSeconds)})`
+          : "Slow mode",
+      icon: <Timer className="h-4 w-4" />,
+      onSelect: () => {
+        setMenuPosition(null);
+        setConfirm("slow-mode");
+      },
+    });
+  }
   if (isChannel && canModerate) {
     items.push(
       conversation.isArchived
@@ -142,6 +158,14 @@ export function ConversationActionsMenu({
           danger
           isPending={setArchived.isPending}
           onConfirm={() => runSetArchived(true)}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+
+      {confirm === "slow-mode" && (
+        <SlowModeDialog
+          workspaceId={workspaceId}
+          conversation={conversation}
           onClose={() => setConfirm(null)}
         />
       )}
