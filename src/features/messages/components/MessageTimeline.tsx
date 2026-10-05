@@ -11,6 +11,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
+import type { MessageItemHandlers, MessageMembers } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { Composer } from "./Composer";
@@ -420,6 +421,30 @@ export function MessageTimeline() {
     [],
   );
 
+  const handlers = useMemo<MessageItemHandlers>(
+    () => ({
+      onOpenThread: openThread,
+      onToggleReaction: handleToggleReaction,
+      onContextMenu: handleContextMenu,
+      onSaveEdit: handleSaveEdit,
+      onCancelEdit: handleCancelEdit,
+      onNavigateToForwardedSource: handleNavigateToForwardedSource,
+    }),
+    [
+      openThread,
+      handleToggleReaction,
+      handleContextMenu,
+      handleSaveEdit,
+      handleCancelEdit,
+      handleNavigateToForwardedSource,
+    ],
+  );
+
+  const members = useMemo<MessageMembers>(
+    () => ({ resolve: memberLookup.resolve, displayMap: memberDisplayMap }),
+    [memberLookup.resolve, memberDisplayMap],
+  );
+
   if (!conversationId) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-rim-text-muted">
@@ -521,33 +546,28 @@ export function MessageTimeline() {
                   </div>
                 )}
                 <MessageItem
-                  message={msg}
-                  authorName={name}
-                  authorInitial={name.charAt(0).toUpperCase()}
-                  authorAvatarUrl={member.avatarUrl ?? msg.author?.avatarUrl}
-                  authorUsername={member.username ?? msg.author?.username}
-                  authorStatusText={member.statusText}
-                  authorRole={member.role}
-                  authorJoinedAt={member.joinedAt}
-                  authorBio={member.bio}
-                  isCurrentUser={msg.author?.id === currentUserId}
-                  reactions={msg.reactions}
-                  isSelected={index === selectedMessageIndex}
-                  isDeleteConfirming={msg.id === deleteConfirmMessageId}
-                  isEditing={msg.id === editingMessageId}
-                  editError={msg.id === editingMessageId && editMessage.isError}
-                  isGrouped={group.isGrouped}
-                  isFirstInGroup={group.isFirstInGroup}
-                  displayDensity={displayDensity}
-                  onOpenThread={openThread}
-                  onToggleReaction={handleToggleReaction}
-                  onContextMenu={handleContextMenu}
-                  onSaveEdit={handleSaveEdit}
-                  onCancelEdit={handleCancelEdit}
-                  onNavigateToForwardedSource={handleNavigateToForwardedSource}
-                  resolveMember={memberLookup.resolve}
-                  memberDisplayMap={memberDisplayMap}
-                  linkPreviews={msg.linkPreviews}
+                  view={{
+                    message: msg,
+                    author: {
+                      name,
+                      avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
+                      username: member.username ?? msg.author?.username,
+                      statusText: member.statusText,
+                      role: member.role,
+                      joinedAt: member.joinedAt,
+                      bio: member.bio,
+                      isCurrentUser: msg.author?.id === currentUserId,
+                    },
+                    isSelected: index === selectedMessageIndex,
+                    isDeleteConfirming: msg.id === deleteConfirmMessageId,
+                    isEditing: msg.id === editingMessageId,
+                    editError: msg.id === editingMessageId && editMessage.isError,
+                    isGrouped: group.isGrouped,
+                    isFirstInGroup: group.isFirstInGroup,
+                    displayDensity,
+                  }}
+                  handlers={handlers}
+                  members={members}
                 />
               </div>
             );

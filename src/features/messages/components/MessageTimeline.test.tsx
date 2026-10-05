@@ -78,27 +78,28 @@ const seenHandlers: unknown[] = [];
 
 vi.mock("./MessageItem", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./MessageItem")>();
+  const { areMessageItemPropsEqual } = await import("./message-item/areMessageItemPropsEqual");
   const React = await import("react");
   type Props = React.ComponentProps<typeof actual.MessageItem>;
   function CountingMessageItem(props: Props) {
-    const id = props.message.id;
+    const id = props.view.message.id;
     renderCounts.set(id, (renderCounts.get(id) ?? 0) + 1);
-    seenHandlers.push(props.onToggleReaction, props.onContextMenu, props.onSaveEdit);
+    seenHandlers.push(props.handlers);
     return (
       <div
         data-message-id={id}
         id={`message-${id}`}
         role="option"
-        aria-selected={props.isSelected ?? false}
-        data-editing={props.isEditing ? "true" : undefined}
+        aria-selected={props.view.isSelected ?? false}
+        data-editing={props.view.isEditing ? "true" : undefined}
       >
-        {props.message.text}
+        {props.view.message.text}
       </div>
     );
   }
   return {
     ...actual,
-    MessageItem: React.memo(CountingMessageItem, actual.areMessageItemPropsEqual),
+    MessageItem: React.memo(CountingMessageItem, areMessageItemPropsEqual),
   };
 });
 
@@ -214,17 +215,16 @@ describe("MessageTimeline handler stability", () => {
   it("passes the same handler references across parent re-renders", () => {
     setMessages([0, 1].map((i) => makeMessage(i)));
     const { rerender } = render(<MessageTimeline />);
-    const first = seenHandlers.slice(0, 3);
+    const first = seenHandlers[0];
     resetCounts();
 
     act(() => useShellStore.setState({ editingMessageId: "m-001" }));
     rerender(<MessageTimeline />);
 
-    // m-001 re-rendered because it is now being edited; its handlers must be
-    // the very same function objects the first render handed out.
+    // m-001 re-rendered because it is now being edited; it must receive the
+    // very same handlers object the first render handed out.
     expect(seenHandlers.length).toBeGreaterThan(0);
-    expect(seenHandlers.slice(0, 3)).toEqual(first);
-    for (let i = 0; i < 3; i++) expect(seenHandlers[i]).toBe(first[i]);
+    for (const handlers of seenHandlers) expect(handlers).toBe(first);
   });
 
   it("keeps rows memoized when a new message is appended", () => {
