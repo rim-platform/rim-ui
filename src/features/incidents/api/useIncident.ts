@@ -181,10 +181,18 @@ const RESOLVE_INCIDENT = gql`
 
 // --- Query Hooks ---
 
-export function useActiveIncident(serverId: string | null, conversationId: string | null) {
+/**
+ * The open incident in a conversation, or `null`. Pass `enabled: false` to skip the request
+ * entirely — e.g. when the workspace's incidents feature is off (Track 0.4).
+ */
+export function useActiveIncident(
+  serverId: string | null,
+  conversationId: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.activeIncident(serverId ?? undefined, conversationId ?? undefined),
-    enabled: Boolean(serverId && conversationId),
+    enabled: (options?.enabled ?? true) && Boolean(serverId && conversationId),
     staleTime: 10_000,
     queryFn: async () => {
       const res = await graphqlClient.request<{ activeIncident: Incident | null }>(

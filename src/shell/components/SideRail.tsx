@@ -24,6 +24,8 @@ import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
 import { StatusDropdown } from "../../features/settings/components/StatusDropdown";
+import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
+import { WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 
 const railItems = [
   { key: "inbox" as const, label: "Inbox", icon: Inbox },
@@ -37,6 +39,7 @@ export function SideRail() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const activePluginPanel = useShellStore((s) => s.activePluginPanel);
   const openPluginPanel = useShellStore((s) => s.openPluginPanel);
+  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
   const { data: user } = useCurrentUser();
   const { data: plugins } = usePluginList();
   const unreadCounts = useUnreadStore((s) => s.counts);
@@ -131,7 +134,9 @@ export function SideRail() {
 
       <div className="flex flex-col items-center gap-1 pb-2">
         <AuditLogButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
-        <IncidentHistoryButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
+        {incidentsEnabled && (
+          <IncidentHistoryButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
+        )}
         <SettingsButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
       </div>
 

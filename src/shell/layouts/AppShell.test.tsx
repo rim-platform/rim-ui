@@ -52,6 +52,14 @@ vi.mock("../hooks/useZenModeTransition", () => ({
 }));
 vi.mock("../hooks/useAutoFocusComposer", () => ({ useAutoFocusComposer: () => {} }));
 vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {} }));
+// Workspace feature flags (Track 0.4) — mutable so tests can turn the incidents module off.
+let incidentsStatus: "loading" | "enabled" | "disabled" = "enabled";
+vi.mock("../../features/workspaces/hooks/useFeatureEnabled", () => ({
+  useFeatureStatus: () => incidentsStatus,
+}));
+vi.mock("../../features/incidents/components/IncidentsHub", () => ({
+  IncidentsHub: () => <div data-testid="incidents-hub" />,
+}));
 
 // ── Heavy/unrelated child components — trivial stubs ──
 vi.mock("../../features/workspaces/components/WorkspaceSelector", () => ({
@@ -150,6 +158,7 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     pinnedShouldThrow = false;
     timelineShouldThrow = false;
     postmortemShouldThrow = false;
+    incidentsStatus = "enabled";
 
     useAuthStore.setState({ session: { userId: "u1" } });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
@@ -210,5 +219,63 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
     expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
+  });
+});
+
+describe("AppShell — incidents module gate (Track 0.4)", () => {
+  beforeEach(() => {
+    incidentsStatus = "enabled";
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({
+      mainSurface: { kind: "conversation" },
+      selectedConversationId: "conv-1",
+      pinnedPanelOpen: false,
+    });
+    useIncidentStore.setState({ showTimeline: true, showPostmortem: true });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useIncidentStore.setState({
+      activeIncident: null,
+      showStartDialog: false,
+      showTimeline: false,
+      showPostmortem: false,
+    });
+  });
+
+  it("mounts no incident panels and clears incident state when the feature is off", () => {
+    incidentsStatus = "disabled";
+    renderShell();
+    expect(screen.queryByTestId("timeline-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("postmortem-panel")).not.toBeInTheDocument();
+    expect(useIncidentStore.getState().showTimeline).toBe(false);
+    expect(useIncidentStore.getState().showPostmortem).toBe(false);
+  });
+
+  it("mounts no incident panels while the flag is still loading", () => {
+    incidentsStatus = "loading";
+    renderShell();
+    expect(screen.queryByTestId("timeline-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("postmortem-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows a notice instead of the Incidents hub when the feature is off", () => {
+    incidentsStatus = "disabled";
+    useShellStore.setState({ mainSurface: { kind: "incidents" } });
+    renderShell();
+    expect(screen.queryByTestId("incidents-hub")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Incidents and on-call are turned off for this workspace."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the Incidents hub when the feature is on", () => {
+    useShellStore.setState({ mainSurface: { kind: "incidents" } });
+    renderShell();
+    expect(screen.getByTestId("incidents-hub")).toBeInTheDocument();
   });
 });

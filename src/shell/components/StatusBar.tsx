@@ -4,10 +4,11 @@ import { useShellStore } from "../state/useShellStore";
 import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
 import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
-import { SkillTier } from "../../core/graphql/generated/schema-types";
+import { SkillTier, WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { OnCallIndicator } from "../../features/oncall/components/OnCallIndicator";
+import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 
 /** Map internal keybind context strings to user-friendly labels. */
 function humanizeContext(ctx: string | null): string | null {
@@ -69,6 +70,7 @@ export function StatusBar() {
 
   const activePresetId = useLayoutPresetStore((s) => s.activePresetId);
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
+  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const rawContext = surfaceToContext(focusedSurface);
@@ -96,7 +98,7 @@ export function StatusBar() {
 
       {/* Right: density + mode + keybind context + layout preset + on-call */}
       <div className="flex items-center gap-2">
-        <OnCallIndicator serverId={workspaceId} />
+        {incidentsEnabled && <OnCallIndicator serverId={workspaceId} />}
         {displayDensity !== "comfortable" && (
           <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-faint">
             {displayDensity === "compact" ? "Compact" : "Ultra Compact"}
