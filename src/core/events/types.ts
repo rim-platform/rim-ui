@@ -20,6 +20,9 @@ export interface ReactionGroupData {
   user_ids: string[];
 }
 
+/** Why a `NotificationDue` was sent; lowercase on the wire (`NotificationReason` in GraphQL). */
+export type NotificationDueReason = "direct" | "mention" | "keyword" | "thread_reply" | "all";
+
 export type WorkspaceEvent =
   | {
       type: "NewMessage";
@@ -142,6 +145,22 @@ export type WorkspaceEvent =
       conversation_id: string;
       message_id: string;
       mentioned_by: string;
+    }
+  /**
+   * The server decided the viewer should be told about a message (Track 1.3, verified against
+   * `rim-server/docs/messaging.md`). Delivered only to `user_id`. `quiet` is true inside the
+   * viewer's do-not-disturb window or pause: the notification is stored (inbox, digest) but the
+   * client must neither toast nor play a sound.
+   */
+  | {
+      type: "NotificationDue";
+      workspace_id: string;
+      user_id: string;
+      notification_id: string;
+      conversation_id: string;
+      message_id: string;
+      reason: NotificationDueReason;
+      quiet: boolean;
     }
   | {
       type: "LinkPreviewReady";

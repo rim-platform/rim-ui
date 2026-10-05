@@ -1,7 +1,8 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { invalidateUnreadNotificationCount } from "../../notifications/api/useNotifications";
 import { useUnreadStore } from "../state/useUnreadStore";
 
 const MARK_AS_READ = gql`
@@ -23,6 +24,7 @@ interface MarkAsReadInput {
 }
 
 export function useMarkAsRead() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: MarkAsReadInput) => {
       return graphqlClient.request<{ markAsRead: boolean }>(MARK_AS_READ, {
@@ -31,6 +33,10 @@ export function useMarkAsRead() {
     },
     onMutate: (input) => {
       useUnreadStore.getState().markRead(input.conversationId);
+    },
+    // Reading a conversation also marks its notifications read on the server (Track 1.3).
+    onSuccess: (_data, input) => {
+      invalidateUnreadNotificationCount(qc, input.workspaceId);
     },
   });
 }

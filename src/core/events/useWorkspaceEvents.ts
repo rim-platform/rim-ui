@@ -18,12 +18,16 @@ import {
   handleMemberLeft,
   handleMemberRoleChanged,
 } from "../../features/workspaces/state/memberEvents";
+import {
+  handleNotificationDue,
+  handleReadStateUpdated,
+  handleViewerMembershipChange,
+} from "../../features/notifications/state/notificationEvents";
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
   PresenceChangedEvent,
   TypingStartedEvent,
-  NewMessageNotificationEvent,
   WorkspaceStateChangedEvent,
   WorkspaceStateDeletedEvent,
   PipelineFiredEvent,
@@ -205,17 +209,11 @@ function handleEvent(
         );
       }
 
-      // Unread tracking + desktop notifications via event bus
-      // Features decide filtering (own message, active conversation, muted, etc.)
+      // Unread tracking via event bus; the feature filters (own message, active conversation).
+      // Desktop notifications are decided by the server and arrive as `NotificationDue`.
       eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
         conversationId: event.conversation_id,
         authorId: event.message.author_id,
-      });
-
-      eventBus.emit<NewMessageNotificationEvent>(BUS_EVENTS.NEW_MESSAGE_NOTIFICATION, {
-        conversationId: event.conversation_id,
-        authorId: event.message.author_id,
-        messageText: event.message.text ?? "",
       });
       break;
     }
@@ -338,6 +336,7 @@ function handleEvent(
       break;
 
     case "MemberLeft":
+      handleViewerMembershipChange(qc, workspaceId, event.user_id);
       handleMemberLeft(qc, workspaceId, event.user_id);
       break;
 
@@ -361,6 +360,7 @@ function handleEvent(
       eventBus.emit<UnreadMarkReadEvent>(BUS_EVENTS.UNREAD_MARK_READ, {
         conversationId: event.conversation_id,
       });
+      handleReadStateUpdated(qc, workspaceId);
       break;
 
     case "PresenceChanged": {
@@ -377,6 +377,7 @@ function handleEvent(
 
     case "MemberRemovedFromConversation":
       handleMemberRemovedFromConversation(qc, workspaceId, event.conversation_id, event.user_id);
+      handleViewerMembershipChange(qc, workspaceId, event.user_id);
       break;
 
     case "ConversationUpdated":
@@ -392,11 +393,14 @@ function handleEvent(
       break;
     }
 
-    case "UserMentioned": {
-      const channelName = resolveConversationName(qc, workspaceId, event.conversation_id);
-      toast.info(`You were mentioned in #${channelName}`);
+    // Mentions are announced by the `NotificationDue` the server sends for them, which honours
+    // the viewer's levels and do-not-disturb; `UserMentioned` needs no rendering of its own.
+    case "UserMentioned":
       break;
-    }
+
+    case "NotificationDue":
+      handleNotificationDue(qc, workspaceId, event);
+      break;
 
     case "LinkPreviewReady":
       // Backend finished fetching link preview metadata — refresh the message
@@ -595,20 +599,4 @@ function handleEvent(
       break;
     }
   }
-}
-
-interface ConversationCachePage {
-  items: { id: string; title: string; conversationType: string }[];
-}
-
-function resolveConversationName(
-  qc: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-  conversationId: string,
-): string {
-  const channels = qc.getQueryData<ConversationCachePage>(queryKeys.channels(workspaceId));
-  const inbox = qc.getQueryData<ConversationCachePage>(queryKeys.conversations(workspaceId));
-  const all = [...(channels?.items ?? []), ...(inbox?.items ?? [])];
-  const conv = all.find((c) => c.id === conversationId);
-  return conv?.title || "New message";
 }

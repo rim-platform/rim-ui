@@ -1,27 +1,19 @@
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+
 import { eventBus } from "../../../core/events/eventBus";
-import { BUS_EVENTS } from "../../../core/events/busEvents";
-import type { NewMessageNotificationEvent } from "../../../core/events/busEvents";
-import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useMutedStore } from "../../conversations/state/useMutedStore";
-import { useNotificationSettingsStore } from "../state/useNotificationSettingsStore";
+import { BUS_EVENTS, type NotificationDueBusEvent } from "../../../core/events/busEvents";
+import { detectPlatform } from "../../../core/runtime/runtime";
+import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { showMessageNotification } from "./desktopNotification";
-import { queryKeys } from "../../../core/query/keys";
-
-interface ConversationCachePage {
-  items: { id: string; title: string; conversationType: string }[];
-}
-
-interface ServerMemberCache {
-  userId: string;
-  username: string;
-}
+import { useNotificationSettingsStore } from "../state/useNotificationSettingsStore";
+import { notificationBody, showMessageNotification } from "./desktopNotification";
+import { resolveNotificationContent } from "./resolveNotificationContent";
 
 /**
- * Registers event bus handler for desktop notification events.
- * Call once at app startup (e.g. in WorkspaceShell).
+ * Renders the notifications the server decided on (`NotificationDue`, Track 1.3). The server
+ * applies levels, mutes, keywords and do-not-disturb; this only honours `quiet` and the
+ * device-local toggles (enabled, sound, preview). Call once at app startup (AppShell).
  */
 export function useNotificationEventHandler(workspaceId: string | null) {
   const qc = useQueryClient();
@@ -29,56 +21,53 @@ export function useNotificationEventHandler(workspaceId: string | null) {
   useEffect(() => {
     if (!workspaceId) return;
 
-    const unsub = eventBus.on<NewMessageNotificationEvent>(
-      BUS_EVENTS.NEW_MESSAGE_NOTIFICATION,
-      (payload) => {
-        const currentUserId = useAuthStore.getState().session?.userId;
-        const isOwnMessage = payload.authorId === currentUserId;
-        const isActiveConversation =
-          payload.conversationId === useShellStore.getState().selectedConversationId;
-
-        if (isOwnMessage || isActiveConversation) return;
-
-        const isMuted = useMutedStore.getState().isMuted(payload.conversationId);
-        const notifSettings = useNotificationSettingsStore.getState();
-        if (!notifSettings.enabled || isMuted) return;
-
-        const channelName = resolveConversationName(qc, workspaceId, payload.conversationId);
-        const authorName = resolveMemberName(qc, workspaceId, payload.authorId);
-
-        showMessageNotification({
-          channelName,
-          authorName,
-          messageText: payload.messageText,
-          showPreview: notifSettings.showPreview,
-        }).catch(() => {
-          // Notification API may not be available (web mode)
-        });
-      },
-    );
-
-    return unsub;
+    return eventBus.on<NotificationDueBusEvent>(BUS_EVENTS.NOTIFICATION_DUE, (payload) => {
+      if (payload.workspaceId !== workspaceId) return;
+      void renderNotificationDue(qc, payload);
+    });
   }, [workspaceId, qc]);
 }
 
-function resolveConversationName(
-  qc: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-  conversationId: string,
-): string {
-  const channels = qc.getQueryData<ConversationCachePage>(queryKeys.channels(workspaceId));
-  const inbox = qc.getQueryData<ConversationCachePage>(queryKeys.conversations(workspaceId));
-  const all = [...(channels?.items ?? []), ...(inbox?.items ?? [])];
-  const conv = all.find((c) => c.id === conversationId);
-  return conv?.title || "New message";
+/** Whether the viewer is looking at the conversation right now (no toast needed). */
+function isWatching(conversationId: string): boolean {
+  const shell = useShellStore.getState();
+  return (
+    shell.mainSurface.kind === "conversation" &&
+    shell.selectedConversationId === conversationId &&
+    document.hasFocus()
+  );
 }
 
-function resolveMemberName(
-  qc: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-  userId: string,
-): string {
-  const members = qc.getQueryData<ServerMemberCache[]>(queryKeys.serverMembers(workspaceId));
-  const member = members?.find((m) => m.userId === userId);
-  return member?.username ?? userId.slice(0, 8);
+export async function renderNotificationDue(
+  qc: QueryClient,
+  payload: NotificationDueBusEvent,
+): Promise<void> {
+  // Inside do-not-disturb the notification is stored (inbox, digest) but not announced.
+  if (payload.quiet) return;
+  const device = useNotificationSettingsStore.getState();
+  if (!device.enabled || isWatching(payload.conversationId)) return;
+
+  const content = await resolveNotificationContent(
+    qc,
+    payload.workspaceId,
+    payload.conversationId,
+    payload.messageId,
+  );
+  const message = {
+    channelName: content.title,
+    authorName: content.authorName,
+    messageText: content.text,
+    showPreview: device.showPreview,
+  };
+
+  if (detectPlatform() === "desktop") {
+    try {
+      await showMessageNotification({ ...message, sound: device.soundEnabled });
+    } catch {
+      // The notification plugin can be unavailable; the inbox still has the entry.
+    }
+    return;
+  }
+  // No native notifications outside the desktop app: show an in-app toast instead.
+  toast.info(content.title, { description: notificationBody(message) });
 }
