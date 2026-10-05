@@ -17,6 +17,12 @@ import { useDraftStore } from "../state/useDraftStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useConversation } from "../../conversations/api/useConversation";
+import { JoinChannelBar } from "../../conversations/components/JoinChannelBar";
+import { ArchivedConversationBar } from "../../conversations/components/ArchivedConversationBar";
+import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
+import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { ComposerInput } from "./ComposerInput";
 import { FilePreviewBar } from "./FilePreviewBar";
 
@@ -25,13 +31,32 @@ interface PendingFile {
   previewUrl: string | null;
 }
 
-export function Composer({
-  workspaceId,
-  conversationId,
-}: {
+interface ComposerProps {
   workspaceId: string;
   conversationId: string;
-}) {
+}
+
+/**
+ * The composer, or the bar that replaces it: an archived conversation is read-only, and a
+ * public channel the viewer has not joined offers Join instead.
+ */
+export function Composer({ workspaceId, conversationId }: ComposerProps) {
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+
+  if (conversation?.isArchived) {
+    return <ArchivedConversationBar workspaceId={workspaceId} conversation={conversation} />;
+  }
+  if (
+    conversation &&
+    conversation.conversationType === ConversationTypeEnum.CHANNEL &&
+    !conversation.isMember
+  ) {
+    return <JoinChannelBar workspaceId={workspaceId} conversation={conversation} />;
+  }
+  return <MessageComposer workspaceId={workspaceId} conversationId={conversationId} />;
+}
+
+function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef(pendingFiles);
@@ -84,6 +109,22 @@ export function Composer({
     // draftStore is a stable module-level reference and does not need to be a dependency.
     [conversationId],
   );
+
+  /**
+   * Shows the server's message for a failed send. An archived (or no longer visible)
+   * conversation also refetches, so the composer flips to the archived bar.
+   */
+  function handleSendError(err: unknown, fallback: string) {
+    const code = graphqlErrorCode(err);
+    toast.error(code ? graphqlErrorMessage(err, fallback) : fallback);
+    if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {
+      refetchConversation();
+    }
+  }
+
+  function refetchConversation() {
+    qc.invalidateQueries({ queryKey: queryKeys.conversation(workspaceId, conversationId) });
+  }
 
   async function handleSubmit() {
     const trimmed = text.trim();
@@ -158,7 +199,10 @@ export function Composer({
       // No files — simple send
       send.mutate(
         { workspaceId, conversationId, text: processed },
-        { onSuccess: () => textareaRef.current?.focus() },
+        {
+          onSuccess: () => textareaRef.current?.focus(),
+          onError: (err) => handleSendError(err, "Failed to send message"),
+        },
       );
       return;
     }
@@ -197,8 +241,11 @@ export function Composer({
       }
       // Refresh messages to update attachment status from PENDING -> READY
       qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
-    } catch {
-      toast.error("Failed to upload attachment");
+    } catch (err) {
+      handleSendError(err, "Failed to upload attachment");
+      // The REST upload answers 409 (no GraphQL code) when the conversation was archived
+      // in the meantime; refetching lets the archived bar take over if so.
+      refetchConversation();
     } finally {
       setIsUploading(false);
       textareaRef.current?.focus();
