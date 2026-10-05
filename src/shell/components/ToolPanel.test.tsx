@@ -15,16 +15,26 @@ vi.mock("../../features/conversations/components/NewMessagePicker", () => ({
     open ? <div data-testid="new-message-picker">NewMessagePicker</div> : null,
 }));
 
+vi.mock("../../features/conversations/components/ConversationMembersPanel", () => ({
+  ConversationMembersPanel: ({ conversationId }: { conversationId: string }) => (
+    <div data-testid="members-panel">{conversationId}</div>
+  ),
+}));
+
 vi.mock("../../features/plugins/components/PluginToolPanel", () => ({
   PluginToolPanel: () => <div data-testid="plugin-tool-panel">PluginToolPanel</div>,
 }));
 
 import { useShellStore } from "../state/useShellStore";
+import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { ToolPanel } from "./ToolPanel";
 
 describe("ToolPanel", () => {
   beforeEach(() => {
     useShellStore.getState().reset();
+    useMembersPanelStore.setState({ open: false });
+    useWorkspaceStore.setState({ workspaceId: null });
   });
 
   it("renders with 'Conversations' heading when inbox panel is active", () => {
@@ -61,5 +71,22 @@ describe("ToolPanel", () => {
     useShellStore.setState({ activePanel: "plugins" });
     render(<ToolPanel />);
     expect(screen.queryByLabelText("New message")).not.toBeInTheDocument();
+  });
+
+  it("shows the open conversation's members panel instead of the list when toggled", () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox", selectedConversationId: "conv-1" });
+    useMembersPanelStore.setState({ open: true });
+    render(<ToolPanel />);
+    expect(screen.getByTestId("members-panel")).toHaveTextContent("conv-1");
+    expect(screen.queryByTestId("conversation-list")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the list when no conversation is open", () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox", selectedConversationId: null });
+    useMembersPanelStore.setState({ open: true });
+    render(<ToolPanel />);
+    expect(screen.getByTestId("conversation-list")).toBeInTheDocument();
   });
 });

@@ -1,22 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Hash,
-  MessageCircle,
-  Pin,
-  Search,
-  Users,
-  BellOff,
-  Bell,
-  UserPlus,
-  AlertTriangle,
-} from "lucide-react";
+import { Hash, Pin, Search, BellOff, Bell, UserPlus, AlertTriangle } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
-import { useInboxConversations } from "../../features/conversations/api/useInboxConversations";
-import { useChannels } from "../../features/conversations/api/useChannels";
+import { useConversation } from "../../features/conversations/api/useConversation";
+import { ChannelIcon } from "../../features/conversations/components/ChannelIcon";
+import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useShellStore } from "../state/useShellStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useMemberLookup } from "../../features/workspaces/hooks/useMemberLookup";
@@ -29,6 +21,7 @@ import {
   type PresenceStatus,
 } from "../../features/presence/state/usePresenceStore";
 import {
+  ConversationTypeEnum,
   IncidentSeverityGql,
   IncidentPhaseNameGql,
   WorkspaceFeature,
@@ -44,14 +37,6 @@ import { useIncidentStore } from "../../features/incidents/state/useIncidentStor
 import { useActiveIncident } from "../../features/incidents/api/useIncident";
 import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 
-type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
-
-const typeIcon: Record<ConversationTypeEnum, typeof Hash> = {
-  CHANNEL: Hash,
-  DIRECT: MessageCircle,
-  GROUP: Users,
-};
-
 export function ConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
@@ -59,22 +44,16 @@ export function ConversationHeader() {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const { data: workspace } = useWorkspace(workspaceId ?? undefined);
-  const { data: convPage } = useInboxConversations(workspaceId ?? undefined);
-  const { data: channelsPage } = useChannels(workspaceId ?? undefined);
-
-  const conversation =
-    convPage?.items.find((c) => c.id === conversationId) ??
-    channelsPage?.items.find((c) => c.id === conversationId);
-  const Icon = conversation
-    ? (typeIcon[conversation.conversationType as ConversationTypeEnum] ?? Hash)
-    : Hash;
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
+  const toggleMembers = useMembersPanelStore((s) => s.toggle);
 
   // For DMs, show the other user's name instead of "Untitled"
   let displayTitle = conversation?.title ?? undefined;
   let dmOtherUserId: string | undefined;
   if (
     conversation &&
-    conversation.conversationType === "DIRECT" &&
+    conversation.conversationType === ConversationTypeEnum.DIRECT &&
     conversation.memberIds.length > 0
   ) {
     dmOtherUserId =
@@ -150,11 +129,11 @@ export function ConversationHeader() {
   }, [isEditingTopic]);
 
   const handleTopicClick = useCallback(() => {
-    if (conversation?.conversationType === "CHANNEL") {
+    if (isChannel && !conversation?.isArchived) {
       setTopicDraft(topic ?? "");
       setIsEditingTopic(true);
     }
-  }, [conversation?.conversationType, topic]);
+  }, [isChannel, conversation?.isArchived, topic]);
 
   const handleTopicKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -182,14 +161,33 @@ export function ConversationHeader() {
               size="sm"
               presenceStatus={presenceStatus ?? null}
             />
+          ) : conversation ? (
+            <ChannelIcon conversation={conversation} className="h-5 w-5 text-rim-text-muted" />
           ) : (
-            <Icon className="h-5 w-5 text-rim-text-muted" />
+            <Hash className="h-5 w-5 text-rim-text-muted" />
           )}
           <div className="min-w-0">
-            <h2 className="text-sm font-medium text-rim-text">
-              {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
-            </h2>
-            {conversation?.conversationType === "CHANNEL" &&
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-rim-text">
+                {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
+              </h2>
+              {isChannel && conversation && (
+                <button
+                  type="button"
+                  onClick={toggleMembers}
+                  aria-label={`${conversation.memberCount} members`}
+                  className="text-xs text-rim-text-faint transition hover:text-rim-text"
+                >
+                  {conversation.memberCount} {conversation.memberCount === 1 ? "member" : "members"}
+                </button>
+              )}
+              {conversation?.isArchived && (
+                <span className="rounded border border-rim-line px-1 text-[10px] uppercase tracking-wider text-rim-text-faint">
+                  Archived
+                </span>
+              )}
+            </div>
+            {isChannel &&
               (isEditingTopic ? (
                 <input
                   ref={topicInputRef}
@@ -210,10 +208,10 @@ export function ConversationHeader() {
                   {topic || "Set a topic..."}
                 </button>
               ))}
-            {conversation?.conversationType !== "CHANNEL" && (
+            {!isChannel && (
               <p className="text-xs text-rim-text-faint">
                 {workspace?.name ?? ""}
-                {conversation && ` \u00b7 ${conversation.memberIds.length} members`}
+                {conversation && ` \u00b7 ${conversation.memberCount} members`}
               </p>
             )}
           </div>
@@ -238,15 +236,18 @@ export function ConversationHeader() {
             )}
             <InviteButton onClick={() => setInviteOpen(true)} />
             <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
-            {conversation?.conversationType === "CHANNEL" && workspaceId && (
+            {isChannel && workspaceId && (
               <LensPicker serverId={workspaceId} conversationId={conversationId} />
             )}
-            {conversation?.conversationType === "CHANNEL" && <PinnedMessagesButton />}
+            {isChannel && <PinnedMessagesButton />}
             <ChannelSearchButton
               conversationId={conversationId}
               displayTitle={displayTitle}
               openSearch={openSearch}
             />
+            {conversation && workspaceId && (
+              <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
+            )}
           </div>
         )}
         <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
