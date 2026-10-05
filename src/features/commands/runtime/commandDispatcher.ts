@@ -19,6 +19,14 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  FEATURE_DISABLED,
+  FeatureDisabledError,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+} from "../../../core/graphql/errors";
+import { getCachedFeatureEnabled } from "../../workspaces/api/useWorkspaceFeatures";
+import { FEATURE_OFF_MESSAGE, featureForCommandId } from "../../workspaces/featureCatalog";
 import { gql } from "graphql-request";
 
 interface ConversationItem {
@@ -67,6 +75,30 @@ type ExecuteBackendCommand = (input: {
   isPipe?: boolean;
 }) => Promise<{ executeCommand: CommandResult }>;
 
+/**
+ * Toast text for a failed incident/on-call call: the server's own message when the
+ * workspace feature is off (`FEATURE_DISABLED`), otherwise the handler's generic fallback.
+ */
+function commandFailureMessage(err: unknown, fallback: string): string {
+  return graphqlErrorCode(err) === FEATURE_DISABLED ? graphqlErrorMessage(err, fallback) : fallback;
+}
+
+/**
+ * Refuse a command up front when the active workspace's cached flags say its feature is off
+ * (Track 0.4). Covers the desktop-local `incident.*` / `oncall.*` handlers, which never reach
+ * the server's own `FEATURE_DISABLED` gate, and keybinds that fire before the (already
+ * server-filtered) command list loads. When the flags are not cached yet the command goes
+ * ahead and the server decides.
+ */
+function assertFeatureEnabled(command: CommandDefinition): void {
+  const feature = command.feature ?? featureForCommandId(command.id);
+  if (!feature) return;
+  const workspaceId = useWorkspaceStore.getState().workspaceId;
+  if (workspaceId && getCachedFeatureEnabled(workspaceId, feature) === false) {
+    throw new FeatureDisabledError(FEATURE_OFF_MESSAGE[feature]);
+  }
+}
+
 const RESOLVE_INCIDENT_GQL = gql`
   mutation ResolveIncident($incidentId: ID!) {
     resolveIncident(incidentId: $incidentId) {
@@ -90,8 +122,8 @@ function resolveIncidentFromCommand(
       });
       toast.success("Incident resolved");
     })
-    .catch(() => {
-      toast.error("Failed to resolve incident");
+    .catch((err: unknown) => {
+      toast.error(commandFailureMessage(err, "Failed to resolve incident"));
     });
 }
 
@@ -121,8 +153,8 @@ function ackIncidentFromCommand(
       queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incidentId) });
       toast.success("Incident acknowledged");
     })
-    .catch(() => {
-      toast.error("Failed to acknowledge incident");
+    .catch((err: unknown) => {
+      toast.error(commandFailureMessage(err, "Failed to acknowledge incident"));
     });
 }
 
@@ -349,7 +381,9 @@ const localHandlers: Record<
         queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incident.id) });
         toast.success("Incident escalated");
       })
-      .catch(() => toast.error("Failed to escalate incident"));
+      .catch((err: unknown) =>
+        toast.error(commandFailureMessage(err, "Failed to escalate incident")),
+      );
   },
   "oncall.who": () => {
     useShellStore.getState().setMainSurface({ kind: "incidents", tab: "oncall" });
@@ -395,6 +429,10 @@ export async function dispatchCommand(
     isPipe?: boolean;
   },
 ): Promise<CommandResult | null> {
+  // Feature-gated commands (Track 0.4) are refused before any handler runs. Throws
+  // `FeatureDisabledError`, which callers surface like the server's `FEATURE_DISABLED`.
+  assertFeatureEnabled(command);
+
   // Local handlers always take precedence — even if the backend marks a
   // command as "Backend", the frontend may have a local handler that opens
   // a dialog or performs a client-side action instead.

@@ -1,6 +1,12 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
+import {
+  FEATURE_DISABLED,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+} from "../../../core/graphql/errors";
+import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useResolvedKeybinds } from "../api/useKeybinds";
@@ -299,6 +305,14 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       commandContext: {
         workspaceId: workspaceId ?? undefined,
       },
+    }).catch((err: unknown) => {
+      // A keybind for a command whose workspace feature is off (Track 0.4) says why instead
+      // of doing nothing; other keybind failures stay in the log as before.
+      if (graphqlErrorCode(err) === FEATURE_DISABLED) {
+        toast.error(graphqlErrorMessage(err, "This command is turned off for this workspace."));
+        return;
+      }
+      logger.warn(`[RIM:Keybind] ${match!.commandId} failed`, err);
     });
   };
 

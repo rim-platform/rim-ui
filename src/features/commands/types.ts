@@ -2,6 +2,8 @@
 // When codegen runs, the generated SDK will provide the canonical types.
 // These local types allow development without a running backend.
 
+import type { WorkspaceFeature } from "../../core/graphql/generated/schema-types";
+
 export type CommandSurface = "PALETTE" | "CONTEXT_MENU" | "KEYBIND_PICKER";
 
 export type CommandSourceKind = "BUILT_IN" | "PLUGIN" | "INTEGRATION" | "USER";
@@ -37,6 +39,11 @@ export interface CommandDefinition {
   visibleInContextMenus: boolean;
   keybindCapable: boolean;
   dangerous: boolean;
+  /**
+   * Optional workspace module the command belongs to (Track 0.4), or null/absent when it is
+   * always available. The server already omits commands whose feature is off.
+   */
+  feature?: WorkspaceFeature | null;
 }
 
 export interface ResolvedKeybind {

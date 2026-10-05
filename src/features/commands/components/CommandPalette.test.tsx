@@ -45,6 +45,7 @@ vi.mock("../../../shared/toast", () => ({
 import { useCallback } from "react";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { toast } from "../../../shared/toast";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { CommandDefinition, CommandResult } from "../types";
 
 // ─── Minimal hook that mirrors executeSelected's dispatch+toast logic ─────────
@@ -80,7 +81,7 @@ function useExecuteSelected(
           toast.success(`${command.title}${payloadPreview}`);
         }
       } catch (err) {
-        toast.error(`${command.title}: ${err instanceof Error ? err.message : "Command failed"}`);
+        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
       }
     },
     [closeCommandPalette, executeBackend, workspaceId],
@@ -220,6 +221,31 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     expect(msg).toContain("Run Test Command");
     expect(msg).toContain("Network timeout");
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's message for a FEATURE_DISABLED rejection, not the raw response dump", async () => {
+    // Shape of graphql-request's ClientError: the message embeds the serialized response.
+    const clientError = Object.assign(new Error('Feature disabled: {"response":{...}}'), {
+      response: {
+        errors: [
+          {
+            message: "The incidents feature is disabled for this workspace",
+            extensions: { code: "FEATURE_DISABLED", feature: "incidents" },
+          },
+        ],
+      },
+    });
+    vi.mocked(dispatchCommand).mockRejectedValue(clientError);
+
+    const { executeSelected } = setup();
+
+    await act(async () => {
+      await executeSelected(makeCommand());
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Run Test Command: The incidents feature is disabled for this workspace",
+    );
   });
 
   it("calls toast.error with a fallback message when dispatchCommand returns null", async () => {

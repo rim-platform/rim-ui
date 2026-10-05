@@ -16,6 +16,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { toast } from "../../../shared/toast";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { CommandDefinition } from "../../commands/types";
 
 interface MentionSuggestion {
@@ -281,7 +282,7 @@ export function ComposerInput({
             toast.error(result.message || "Command failed");
           }
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Command execution failed");
+          toast.error(graphqlErrorMessage(err, "Command execution failed"));
         }
       })();
     }
