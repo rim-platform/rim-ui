@@ -20,6 +20,7 @@ import { useCommands } from "../api/useCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useIsCommandAvailable } from "../../workspaces/hooks/useFeatureEnabled";
 import { cn } from "../../../shared/ui/cn";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
@@ -96,6 +97,7 @@ export function KeybindSettings() {
   // that are keybind-capable regardless of palette visibility, so we use it
   // here exclusively to build the title lookup map.
   const { data: commands } = useCommands("KEYBIND_PICKER");
+  const isCommandAvailable = useIsCommandAvailable();
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
@@ -142,12 +144,14 @@ export function KeybindSettings() {
     return pluginSuggestions.filter((s) => !boundCommands.has(s.commandId));
   }, [pluginSuggestions, keybinds]);
 
-  // Filter keybinds by search query
+  // Filter keybinds by search query. Bindings to commands of a workspace feature that is off
+  // (Track 0.4) are hidden, not deleted — they come back when the feature is turned on.
   const filteredKeybinds = useMemo(() => {
     if (!keybinds) return [];
-    if (!searchQuery.trim()) return keybinds;
+    const available = keybinds.filter((kb) => isCommandAvailable(kb.commandId));
+    if (!searchQuery.trim()) return available;
     const q = searchQuery.toLowerCase();
-    return keybinds.filter((kb) => {
+    return available.filter((kb) => {
       const title = commandTitleMap.get(kb.commandId) ?? kb.commandId;
       return (
         title.toLowerCase().includes(q) ||
@@ -155,7 +159,7 @@ export function KeybindSettings() {
         kb.commandId.toLowerCase().includes(q)
       );
     });
-  }, [keybinds, searchQuery, commandTitleMap]);
+  }, [keybinds, searchQuery, commandTitleMap, isCommandAvailable]);
 
   // Group keybinds by category
   const categorizedKeybinds = useMemo(() => {

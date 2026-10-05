@@ -13,16 +13,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { registerProvider } from "../providers/registry";
 import { loadApiKey, ProviderKeyMissingError } from "../runtime/keyStore";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
-// Register tools once (dual-mode: hardcoded builtins + backend AI surface, backend-wins)
-let toolsRegistered = false;
+// Register tools once per workspace (dual-mode: hardcoded builtins + backend AI surface,
+// backend-wins). The backend AI surface is per workspace (Track 0.4: feature-gated commands
+// are only offered where the feature is on), so switching workspace reloads the registry.
+let toolsRegisteredFor: string | null | undefined;
 let toolsLoading: Promise<void> | null = null;
+let toolsLoadingFor: string | null | undefined;
 function ensureToolsRegistered(): Promise<void> {
-  if (toolsRegistered) return Promise.resolve();
-  if (toolsLoading) return toolsLoading;
+  const workspaceId = useWorkspaceStore.getState().workspaceId;
+  if (toolsRegisteredFor !== undefined && toolsRegisteredFor === workspaceId) {
+    return Promise.resolve();
+  }
+  if (toolsLoading && toolsLoadingFor === workspaceId) return toolsLoading;
+  toolsLoadingFor = workspaceId;
   toolsLoading = loadAgentTools()
     .then(() => {
-      toolsRegistered = true;
+      toolsRegisteredFor = workspaceId;
     })
     .finally(() => {
       toolsLoading = null;

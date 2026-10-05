@@ -69,6 +69,25 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+// Owner role and workspace feature flags (Track 0.4) — mutable per test.
+const mockGate = { isOwner: false, incidentsEnabled: true };
+
+vi.mock("../../workspaces/api/useMyServerRole", () => ({
+  useIsOwner: () => mockGate.isOwner,
+}));
+
+vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
+  useFeatureEnabled: () => mockGate.incidentsEnabled,
+}));
+
+vi.mock("./WorkspaceFeatureSettings", () => ({
+  WorkspaceFeatureSettings: () => <div data-testid="workspace-feature-settings">Workspace</div>,
+}));
+
+vi.mock("../../integrations/components/IngestTokenSettings", () => ({
+  IngestTokenSettings: () => <div data-testid="ingest-token-settings">Integrations</div>,
+}));
+
 import { SettingsPage } from "./SettingsPage";
 
 describe("SettingsPage", () => {
@@ -76,6 +95,8 @@ describe("SettingsPage", () => {
     vi.clearAllMocks();
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
+    mockGate.isOwner = false;
+    mockGate.incidentsEnabled = true;
   });
 
   it("renders with header and tabs", () => {
@@ -207,5 +228,49 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
+  });
+
+  describe("Workspace tab (Track 0.4)", () => {
+    it("is hidden for a non-owner, even when deep-linked", () => {
+      mockShellState.mainSurface = { kind: "settings", tab: "workspace" };
+      render(<SettingsPage />);
+      expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("workspace-feature-settings")).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    });
+
+    it("is offered to the owner and opens the feature settings", async () => {
+      mockGate.isOwner = true;
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await user.click(screen.getByRole("button", { name: "Workspace" }));
+      expect(await screen.findByTestId("workspace-feature-settings")).toBeInTheDocument();
+    });
+  });
+
+  describe("incidents module gate (Track 0.4)", () => {
+    it("hides the Integrations (alert ingest) tab when incidents are off", () => {
+      mockGate.incidentsEnabled = false;
+      render(<SettingsPage />);
+      expect(screen.queryByRole("button", { name: "Integrations" })).not.toBeInTheDocument();
+    });
+
+    it("shows the Integrations tab when incidents are on", async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.click(screen.getByRole("button", { name: "Integrations" }));
+      expect(await screen.findByTestId("ingest-token-settings")).toBeInTheDocument();
+    });
+
+    it("drops the incident line from About when incidents are off", async () => {
+      mockGate.incidentsEnabled = false;
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.click(screen.getByRole("button", { name: "About" }));
+      expect(
+        screen.queryByText("Incident management with timeline and postmortem"),
+      ).not.toBeInTheDocument();
+    });
   });
 });

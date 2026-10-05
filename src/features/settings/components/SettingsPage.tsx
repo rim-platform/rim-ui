@@ -10,8 +10,12 @@ import { MacroSettings } from "../../macros/components/MacroSettings";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
+import { ToggleSwitch } from "./ToggleSwitch";
 import { cn } from "../../../shared/ui/cn";
 import { useTerminalStore } from "../../terminal/state/useTerminalStore";
+import { useIsOwner } from "../../workspaces/api/useMyServerRole";
+import { useFeatureEnabled } from "../../workspaces/hooks/useFeatureEnabled";
+import { WorkspaceFeature } from "../../../core/graphql/generated/schema-types";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -35,6 +39,11 @@ const EmojiManagement = lazy(() =>
 const WorkspaceStateSettings = lazy(() =>
   import("../../workspace-state/components/WorkspaceStateSettings").then((m) => ({
     default: m.WorkspaceStateSettings,
+  })),
+);
+const WorkspaceFeatureSettings = lazy(() =>
+  import("./WorkspaceFeatureSettings").then((m) => ({
+    default: m.WorkspaceFeatureSettings,
   })),
 );
 const IngestTokenSettings = lazy(() =>
@@ -76,23 +85,7 @@ function TerminalSettings() {
             hidden.
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          onClick={() => setEnabled(!enabled)}
-          className={cn(
-            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
-            enabled ? "bg-rim-accent" : "bg-rim-panel-soft",
-          )}
-        >
-          <span
-            className={cn(
-              "pointer-events-none inline-block h-5 w-5 rounded-full bg-rim-text shadow-sm ring-0 transition-transform duration-200",
-              enabled ? "translate-x-5" : "translate-x-0",
-            )}
-          />
-        </button>
+        <ToggleSwitch checked={enabled} onChange={setEnabled} label="Enable Terminal" />
       </div>
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-4">
@@ -176,6 +169,8 @@ function SettingsLoadingSpinner() {
 }
 
 function AboutRim() {
+  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
+
   return (
     <div className="space-y-6">
       <div>
@@ -243,10 +238,12 @@ function AboutRim() {
             <span className="h-1 w-1 rounded-full bg-rim-accent" />
             AI agent with tool-calling and multi-provider support
           </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Incident management with timeline and postmortem
-          </li>
+          {incidentsEnabled && (
+            <li className="flex items-center gap-2">
+              <span className="h-1 w-1 rounded-full bg-rim-accent" />
+              Incident management with timeline and postmortem
+            </li>
+          )}
           <li className="flex items-center gap-2">
             <span className="h-1 w-1 rounded-full bg-rim-accent" />
             Channel lenses &mdash; filtered message views
@@ -278,6 +275,7 @@ type SettingsTab =
   | "agent"
   | "notifications"
   | "terminal"
+  | "workspace"
   | "integrations"
   | "account"
   | "about";
@@ -295,6 +293,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "agent", label: "AI Agent" },
   { key: "notifications", label: "Notifications" },
   { key: "terminal", label: "Terminal" },
+  { key: "workspace", label: "Workspace" },
   { key: "integrations", label: "Integrations" },
   { key: "account", label: "Account" },
   { key: "about", label: "About" },
@@ -317,6 +316,20 @@ export function SettingsPage() {
   };
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(mainSurface));
+
+  // Workspace (feature flags) is Owner-only; Integrations holds only the alert-ingest tokens,
+  // which belong to the optional incidents module (Track 0.4). Both stay hidden until the
+  // role / flag is known. A requested tab that is hidden falls back to Profile without
+  // forgetting the request, so a deep link lands once the role / flag loads.
+  const isOwner = useIsOwner(workspaceId ?? undefined);
+  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
+  const visibleTabs = tabs.filter(
+    (tab) =>
+      (tab.key !== "workspace" || isOwner) && (tab.key !== "integrations" || incidentsEnabled),
+  );
+  const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
+    ? activeTab
+    : "profile";
 
   // When the caller navigates to settings again (e.g. "Manage plugins" while
   // settings is already open), the surface updates but the component stays
@@ -346,14 +359,14 @@ export function SettingsPage() {
 
       {/* Tab bar */}
       <div className="flex border-b border-rim-line px-8">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
             className={cn(
               "px-4 py-2.5 text-sm font-medium transition-colors",
-              activeTab === tab.key
+              shownTab === tab.key
                 ? "border-b-2 border-rim-accent text-rim-text"
                 : "text-rim-text-muted hover:text-rim-text",
             )}
@@ -367,25 +380,24 @@ export function SettingsPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-8 py-6">
           <Suspense fallback={<SettingsLoadingSpinner />}>
-            {activeTab === "profile" && <ProfileSettings />}
-            {activeTab === "keybinds" && <KeybindSettings />}
-            {activeTab === "commands" && <UserCommandSettings />}
-            {activeTab === "macros" && <MacroSettings />}
-            {activeTab === "pipelines" && <PipelineSettings />}
-            {activeTab === "plugins" && <PluginSettingsPage />}
-            {activeTab === "plugin-ai" && <PluginAiConsentPanel />}
-            {activeTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
-            {activeTab === "state" && (
-              <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
-            )}
-            {activeTab === "agent" && <AgentSettingsPanel />}
-            {activeTab === "notifications" && <NotificationSettings />}
-            {activeTab === "terminal" && <TerminalSettings />}
-            {activeTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
-            {activeTab === "account" && (
+            {shownTab === "profile" && <ProfileSettings />}
+            {shownTab === "keybinds" && <KeybindSettings />}
+            {shownTab === "commands" && <UserCommandSettings />}
+            {shownTab === "macros" && <MacroSettings />}
+            {shownTab === "pipelines" && <PipelineSettings />}
+            {shownTab === "plugins" && <PluginSettingsPage />}
+            {shownTab === "plugin-ai" && <PluginAiConsentPanel />}
+            {shownTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
+            {shownTab === "state" && <WorkspaceStateSettings serverId={workspaceId ?? undefined} />}
+            {shownTab === "agent" && <AgentSettingsPanel />}
+            {shownTab === "notifications" && <NotificationSettings />}
+            {shownTab === "terminal" && <TerminalSettings />}
+            {shownTab === "workspace" && <WorkspaceFeatureSettings serverId={workspaceId} />}
+            {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
+            {shownTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
             )}
-            {activeTab === "about" && <AboutRim />}
+            {shownTab === "about" && <AboutRim />}
           </Suspense>
         </div>
       </div>

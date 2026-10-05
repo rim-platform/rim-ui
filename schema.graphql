@@ -189,6 +189,12 @@ type Command {
 	the UX confirm-modal placement.
 	"""
 	sensitivity: CommandSensitivity!
+	"""
+	The optional workspace module this command belongs to (Track 0.4), or null when the
+	command is always available. The server already omits commands whose feature is off
+	from `commands`; this lets clients group or explain gated commands.
+	"""
+	feature: WorkspaceFeature
 }
 
 """
@@ -1358,6 +1364,11 @@ type Mutation {
 	Revoke an ingest token. Owner-only, permanent (no un-revoke).
 	"""
 	revokeIngestToken(tokenId: ID!): Boolean!
+	"""
+	Turn an optional workspace module on or off. Owner-only. No data is deleted when a
+	feature is turned off; turning it back on restores everything. Audited.
+	"""
+	setWorkspaceFeature(serverId: ID!, feature: WorkspaceFeature!, enabled: Boolean!): WorkspaceFeatureState!
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
 	incrementWorkspaceState(input: IncrementWorkspaceStateInput!): WorkspaceStateEntryGql!
@@ -1675,6 +1686,11 @@ type Query {
 	List every alert-ingest token for a server (including revoked). Owner-only.
 	"""
 	ingestTokens(serverId: ID!): [IngestTokenGql!]!
+	"""
+	Per-workspace optional modules and whether each is on (Track 0.4). Any member; one
+	entry per known feature, defaults filled in.
+	"""
+	workspaceFeatures(serverId: ID!): [WorkspaceFeatureState!]!
 	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
 	workspaceStateList(serverId: ID!, prefix: String!, scope: WorkspaceStateScopeGql!, limit: Int): [WorkspaceStateEntryGql!]!
 	pipeline(pipelineId: ID!): PipelineGql!
@@ -1898,6 +1914,12 @@ type Server {
 	there is no "not a member" variant to represent here.
 	"""
 	viewerRole: ServerMemberRoleGql!
+	"""
+	Per-workspace optional modules and whether each is on (Track 0.4). One entry per known
+	feature, defaults filled in. Resolved with one service call per server, like
+	`viewerRole`; `myServers` lists few servers per user, so no DataLoader.
+	"""
+	features: [WorkspaceFeatureState!]!
 }
 
 type ServerMember {
@@ -2185,6 +2207,24 @@ type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
+}
+
+"""
+An optional workspace module (Track 0.4). `INCIDENTS` covers incidents, on-call schedules,
+escalation policies and alert ingestion together.
+"""
+enum WorkspaceFeature {
+	INCIDENTS
+}
+
+"""
+Whether one optional module is on for one workspace. `updatedAt` is null when the value is
+the feature's default (never explicitly set for this workspace).
+"""
+type WorkspaceFeatureState {
+	feature: WorkspaceFeature!
+	enabled: Boolean!
+	updatedAt: DateTime
 }
 
 """

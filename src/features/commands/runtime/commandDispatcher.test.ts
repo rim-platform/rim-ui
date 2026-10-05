@@ -11,6 +11,8 @@ const {
   getQueryDataMock,
   activeIncidentState,
   onCallStoreState,
+  featuresCache,
+  toastErrorMock,
 } = vi.hoisted(() => ({
   setMainSurfaceMock: vi.fn(),
   shellStateMock: { selectedConversationId: null as string | null },
@@ -18,6 +20,13 @@ const {
   getQueryDataMock: vi.fn(() => null as unknown),
   activeIncidentState: { getState: vi.fn() },
   onCallStoreState: { getState: vi.fn() },
+  // Cached `workspaceFeatures` entries for ws-1 (Track 0.4); `undefined` = not cached yet.
+  featuresCache: { value: undefined as unknown },
+  toastErrorMock: vi.fn(),
+}));
+
+vi.mock("../../../shared/toast", () => ({
+  toast: { error: toastErrorMock, success: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -110,7 +119,8 @@ vi.mock("../../../core/graphql/client", () => ({
 
 vi.mock("../../../core/query/queryClient", () => ({
   queryClient: {
-    getQueryData: (...args: unknown[]) => getQueryDataMock(...args),
+    getQueryData: (key: unknown[]) =>
+      key[0] === "workspaceFeatures" ? featuresCache.value : getQueryDataMock(key),
     invalidateQueries: (...args: unknown[]) => invalidateQueriesMock(...args),
   },
 }));
@@ -126,6 +136,7 @@ vi.mock("../../../core/query/keys", () => ({
     ],
     incidentTimeline: (incidentId: string) => ["incidentTimeline", incidentId],
     server: (serverId: string) => ["server", serverId],
+    workspaceFeatures: (serverId: string) => ["workspaceFeatures", serverId],
   },
 }));
 
@@ -139,7 +150,11 @@ vi.mock("../../oncall/state/useOnCallStore", () => ({
 
 import { dispatchCommand } from "./commandDispatcher";
 import type { CommandDefinition } from "../types";
-import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  ServerMemberRoleGql,
+  WorkspaceFeature,
+} from "../../../core/graphql/generated/schema-types";
+import { FeatureDisabledError } from "../../../core/graphql/errors";
 
 function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -317,5 +332,101 @@ describe("Track C1 builtins", () => {
       commandId: "incident.escalate",
       args: { incidentId: "inc-1" },
     });
+  });
+});
+
+describe("workspace feature gate (Track 0.4)", () => {
+  const mockExecuteBackend = vi.fn();
+  const incidentsOff = [{ feature: WorkspaceFeature.INCIDENTS, enabled: false, updatedAt: null }];
+  const incidentsOn = [{ feature: WorkspaceFeature.INCIDENTS, enabled: true, updatedAt: null }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    shellStateMock.selectedConversationId = "conv-1";
+    activeIncidentState.getState.mockReturnValue({ activeIncident: { id: "inc-1" } });
+    onCallStoreState.getState.mockReturnValue({ openOverrideModal: vi.fn() });
+    getQueryDataMock.mockReturnValue(null);
+    featuresCache.value = undefined;
+  });
+
+  it("refuses a desktop-local incident command when the cached flag is off", async () => {
+    featuresCache.value = incidentsOff;
+    const command = makeCommand({ id: "oncall.who", executionTarget: "BACKEND" });
+
+    await expect(dispatchCommand(command, mockExecuteBackend)).rejects.toBeInstanceOf(
+      FeatureDisabledError,
+    );
+    expect(setMainSurfaceMock).not.toHaveBeenCalled();
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("refuses a backend command tagged with a disabled feature before calling the server", async () => {
+    featuresCache.value = incidentsOff;
+    const command = makeCommand({
+      id: "custom.page_oncall",
+      executionTarget: "BACKEND",
+      feature: WorkspaceFeature.INCIDENTS,
+    });
+
+    await expect(dispatchCommand(command, mockExecuteBackend)).rejects.toThrow(
+      "Incidents and on-call are turned off for this workspace.",
+    );
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("runs the command when the flag is on", async () => {
+    featuresCache.value = incidentsOn;
+    const command = makeCommand({ id: "oncall.who", executionTarget: "BACKEND" });
+    await dispatchCommand(command, mockExecuteBackend);
+    expect(setMainSurfaceMock).toHaveBeenCalledWith({ kind: "incidents", tab: "oncall" });
+  });
+
+  it("defers to the server when the flags are not cached yet", async () => {
+    const command = makeCommand({ id: "oncall.who", executionTarget: "BACKEND" });
+    await dispatchCommand(command, mockExecuteBackend);
+    expect(setMainSurfaceMock).toHaveBeenCalledWith({ kind: "incidents", tab: "oncall" });
+  });
+
+  it("never gates commands outside a feature", async () => {
+    featuresCache.value = incidentsOff;
+    const command = makeCommand({
+      id: "workspace.open_settings",
+      executionTarget: "DESKTOP_LOCAL",
+    });
+    const result = await dispatchCommand(command, mockExecuteBackend);
+    expect(result?.status).toBe("SUCCESS");
+  });
+
+  it("shows the server's FEATURE_DISABLED message when incident.ack is rejected", async () => {
+    mockExecuteBackend.mockRejectedValueOnce({
+      response: {
+        errors: [
+          {
+            message: "The incidents feature is disabled for this workspace",
+            extensions: { code: "FEATURE_DISABLED", feature: "incidents" },
+          },
+        ],
+      },
+    });
+    const command = makeCommand({ id: "incident.ack", executionTarget: "BACKEND" });
+
+    await dispatchCommand(command, mockExecuteBackend);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "The incidents feature is disabled for this workspace",
+    );
+  });
+
+  it("keeps the generic message for other incident.ack failures", async () => {
+    mockExecuteBackend.mockRejectedValueOnce(new Error("network down"));
+    const command = makeCommand({ id: "incident.ack", executionTarget: "BACKEND" });
+
+    await dispatchCommand(command, mockExecuteBackend);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(toastErrorMock).toHaveBeenCalledWith("Failed to acknowledge incident");
   });
 });

@@ -12,6 +12,7 @@ import { dispatchCommand } from "../runtime/commandDispatcher";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
@@ -195,7 +196,7 @@ export function CommandPalette() {
         }
       } catch (err) {
         toast.dismiss(toastId);
-        toast.error(err instanceof Error ? err.message : "Pipe execution failed");
+        toast.error(graphqlErrorMessage(err, "Pipe execution failed"));
         closeCommandPalette();
       } finally {
         setPipeExecuting(false);
@@ -234,7 +235,9 @@ export function CommandPalette() {
           toast.success(`${command.title}${payloadPreview}`);
         }
       } catch (err) {
-        toast.error(`${command.title}: ${err instanceof Error ? err.message : "Command failed"}`);
+        // Show the server's own message (e.g. FEATURE_DISABLED, FORBIDDEN, RATE_LIMITED)
+        // rather than graphql-request's serialized response dump.
+        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
       }
     },
     [closeCommandPalette, executeCommandMutation, workspaceId, pipeSegments, executePipeChain],

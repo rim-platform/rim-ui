@@ -52,8 +52,12 @@ describe("queryKeys", () => {
     expect(queryKeys.plugins()).toEqual(["plugins"]);
   });
 
-  it("commands includes surface", () => {
-    expect(queryKeys.commands("PALETTE")).toEqual(["commands", "PALETTE"]);
+  it("commands includes surface and workspace", () => {
+    expect(queryKeys.commands("PALETTE", "ws-1")).toEqual(["commands", "PALETTE", "ws-1"]);
+  });
+
+  it("workspaceFeatures includes serverId", () => {
+    expect(queryKeys.workspaceFeatures("srv-1")).toEqual(["workspaceFeatures", "srv-1"]);
   });
 
   it("workspacePresence includes workspaceId", () => {
@@ -108,6 +112,7 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "workspacePresence",
     "serverMembers",
     "server",
+    "workspaceFeatures",
     "customEmojis",
     "workspaceState",
     "workspaceStateList",

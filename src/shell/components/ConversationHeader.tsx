@@ -31,6 +31,7 @@ import {
 import {
   IncidentSeverityGql,
   IncidentPhaseNameGql,
+  WorkspaceFeature,
 } from "../../core/graphql/generated/schema-types";
 import { useMutedStore } from "../../features/conversations/state/useMutedStore";
 import {
@@ -41,6 +42,7 @@ import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { IncidentBanner } from "../../features/incidents/components/IncidentBanner";
 import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
 import { useActiveIncident } from "../../features/incidents/api/useIncident";
+import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 
 type ConversationTypeEnum = "CHANNEL" | "DIRECT" | "GROUP";
 
@@ -92,8 +94,14 @@ export function ConversationHeader() {
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
 
-  // Incident mode
-  const { data: activeIncidentData } = useActiveIncident(workspaceId, conversationId);
+  // Incident mode — only when the workspace has the incidents module on (Track 0.4). The
+  // query is skipped when off, and any cached incident is ignored so turning the feature off
+  // mid-session clears the banner immediately.
+  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
+  const { data: fetchedActiveIncident } = useActiveIncident(workspaceId, conversationId, {
+    enabled: incidentsEnabled,
+  });
+  const activeIncidentData = incidentsEnabled ? fetchedActiveIncident : undefined;
   const setActiveIncident = useIncidentStore((s) => s.setActiveIncident);
   const activeIncident = useIncidentStore((s) => s.activeIncident);
   const setShowStartDialog = useIncidentStore((s) => s.setShowStartDialog);
@@ -212,7 +220,7 @@ export function ConversationHeader() {
         </div>
         {conversationId && (
           <div className="flex items-center gap-1">
-            {!activeIncident && (
+            {incidentsEnabled && !activeIncident && (
               <HoverTooltip
                 content={
                   <span className="text-xs text-rim-text whitespace-nowrap">Start incident</span>
@@ -243,7 +251,7 @@ export function ConversationHeader() {
         )}
         <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
       </div>
-      {activeIncident && workspaceId && conversationId && (
+      {incidentsEnabled && activeIncident && workspaceId && conversationId && (
         <IncidentBanner serverId={workspaceId} conversationId={conversationId} />
       )}
     </div>
