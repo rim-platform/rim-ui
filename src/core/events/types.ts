@@ -60,6 +60,25 @@ export type WorkspaceEvent =
       user_id: string;
       username: string;
     }
+  /**
+   * A member was kicked or banned (Track 1.2). Delivered to the workspace (a guest only hears
+   * about themselves), including the removed user, whose subscription then ends.
+   */
+  | {
+      type: "MemberLeft";
+      workspace_id: string;
+      user_id: string;
+    }
+  /**
+   * A member's role changed (Track 1.2). `role` is the lowercase name: `owner`, `moderator`,
+   * `member` or `guest`. Same visibility as `MemberLeft`.
+   */
+  | {
+      type: "MemberRoleChanged";
+      workspace_id: string;
+      user_id: string;
+      role: string;
+    }
   | {
       type: "ThreadCreated";
       workspace_id: string;

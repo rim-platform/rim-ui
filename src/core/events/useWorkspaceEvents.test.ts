@@ -52,6 +52,9 @@ import { useMembersPanelStore } from "../../features/conversations/state/useMemb
 import { markLeaving, clearLeaving } from "../../features/conversations/state/pendingLeaves";
 import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummaryPage } from "../../features/conversations/types";
+import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
+import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
@@ -434,5 +437,99 @@ describe("useWorkspaceEvents conversation membership and archive", () => {
     });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversation("ws-1", "c-general") });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.channels("ws-1") });
+  });
+});
+
+describe("useWorkspaceEvents workspace roles and removal (Track 1.2)", () => {
+  function setup() {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.server("ws-1"), {
+      id: "ws-1",
+      name: "Acme",
+      viewerRole: ServerMemberRoleGql.MEMBER,
+    });
+    qc.setQueryData(queryKeys.myServers(), [
+      { id: "ws-1", name: "Acme" },
+      { id: "ws-2", name: "Beta" },
+    ]);
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    return { qc, spy };
+  }
+
+  beforeEach(() => {
+    connectedHandler = null;
+    subscribeObserver = null;
+    vi.clearAllMocks();
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "me" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useMembersPanelStore.setState({ open: false });
+    useMemberDirectoryStore.setState({ open: false });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("MemberRoleChanged for someone else refetches the member directory only", () => {
+    const { qc, spy } = setup();
+    emitWorkspaceEvent({
+      type: "MemberRoleChanged",
+      workspace_id: "ws-1",
+      user_id: "u-alice",
+      role: "moderator",
+    });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-1") });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: queryKeys.server("ws-1") });
+    expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
+      ServerMemberRoleGql.MEMBER,
+    );
+  });
+
+  it("MemberRoleChanged for the viewer patches and refetches their role and role-shaped lists", () => {
+    const { qc, spy } = setup();
+    emitWorkspaceEvent({
+      type: "MemberRoleChanged",
+      workspace_id: "ws-1",
+      user_id: "me",
+      role: "guest",
+    });
+    // The guest UI re-evaluates at once from the patched cache.
+    expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
+      ServerMemberRoleGql.GUEST,
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.server("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.channels("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversations("ws-1") });
+  });
+
+  it("MemberLeft for someone else refetches the member directory and stays put", () => {
+    const { spy } = setup();
+    emitWorkspaceEvent({ type: "MemberLeft", workspace_id: "ws-1", user_id: "u-alice" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-1") });
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("MemberLeft for the viewer leaves the workspace with a toast and refetches myServers", () => {
+    useShellStore.setState({ selectedConversationId: "c-general" });
+    useMembersPanelStore.setState({ open: true });
+    useMemberDirectoryStore.setState({ open: true });
+    const { qc, spy } = setup();
+    emitWorkspaceEvent({ type: "MemberLeft", workspace_id: "ws-1", user_id: "me" });
+
+    expect(useWorkspaceStore.getState().workspaceId).toBeNull();
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+    expect(useMembersPanelStore.getState().open).toBe(false);
+    expect(useMemberDirectoryStore.getState().open).toBe(false);
+    expect(qc.getQueryData<{ id: string }[]>(queryKeys.myServers())?.map((s) => s.id)).toEqual([
+      "ws-2",
+    ]);
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
+    expect(toast.info).toHaveBeenCalledWith("You were removed from this workspace");
   });
 });
