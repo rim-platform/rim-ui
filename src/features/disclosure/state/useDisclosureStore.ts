@@ -19,14 +19,35 @@ const RECORD_FEATURE_USAGE_MUTATION = gql`
   }
 `;
 
+const MY_SKILL_PROFILE_QUERY = gql`
+  query MySkillProfile {
+    mySkillProfile {
+      userId
+      skillTier
+      featuresUsed {
+        featureId
+        firstUsedAt
+      }
+    }
+  }
+`;
+
 interface DisclosureState {
   skillTier: SkillTier;
   featuresUsed: Set<string>;
   isLoaded: boolean;
 
   setProfile: (tier: SkillTier, features: string[]) => void;
+  /**
+   * Fetch the user's skill profile once. Until it settles every
+   * DisclosureGate renders nothing; a failed fetch falls back to BEGINNER so
+   * gated surfaces stay hidden rather than the gate staying shut forever.
+   */
+  loadProfile: () => Promise<void>;
   recordUsage: (featureId: string) => void;
 }
+
+let profileRequest: Promise<void> | null = null;
 
 export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
   skillTier: SkillTier.BEGINNER,
@@ -39,6 +60,29 @@ export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
       featuresUsed: new Set(features),
       isLoaded: true,
     });
+  },
+
+  loadProfile: () => {
+    if (get().isLoaded) return Promise.resolve();
+    if (profileRequest) return profileRequest;
+    profileRequest = graphqlClient
+      .request<{
+        mySkillProfile: { skillTier: SkillTier; featuresUsed: { featureId: string }[] };
+      }>(MY_SKILL_PROFILE_QUERY)
+      .then((data) => {
+        const profile = data.mySkillProfile;
+        get().setProfile(
+          profile.skillTier,
+          profile.featuresUsed.map((f) => f.featureId),
+        );
+      })
+      .catch(() => {
+        get().setProfile(SkillTier.BEGINNER, []);
+      })
+      .finally(() => {
+        profileRequest = null;
+      });
+    return profileRequest;
   },
 
   recordUsage: (featureId) => {

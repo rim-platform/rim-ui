@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { useDisclosureStore, type SkillTier } from "../state/useDisclosureStore";
@@ -17,6 +18,11 @@ interface DisclosureGateProps {
 export function DisclosureGate({ minTier, children, fallback = null }: DisclosureGateProps) {
   const skillTier = useDisclosureStore((s) => s.skillTier);
   const isLoaded = useDisclosureStore((s) => s.isLoaded);
+  const loadProfile = useDisclosureStore((s) => s.loadProfile);
+
+  useEffect(() => {
+    if (!isLoaded) void loadProfile();
+  }, [isLoaded, loadProfile]);
 
   // While the profile is loading, render nothing to prevent flash
   if (!isLoaded) return null;
