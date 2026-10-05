@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useSetDoNotDisturb, type NotificationSettingsData } from "../api/useNotificationSettings";
-import { inOneHour, parseLocalDateTime, tomorrowMorning } from "../rules";
+import { inOneHour, isPauseActive, parseLocalDateTime, tomorrowMorning } from "../rules";
 
 interface PauseNotificationsControlProps {
   serverId: string;
@@ -46,10 +46,7 @@ export function PauseNotificationsControl({ serverId, settings }: PauseNotificat
     pause(true, until);
   }
 
-  // The server keeps reporting a timed pause as on after it ends; only a live one counts.
-  const paused =
-    settings.dndPaused &&
-    (settings.dndPausedUntil === null || Date.parse(settings.dndPausedUntil) > Date.now());
+  const paused = isPauseActive(settings);
   const status = paused
     ? settings.dndPausedUntil
       ? `Paused until ${formatTime(settings.dndPausedUntil)}`

@@ -97,3 +97,15 @@ export function parseLocalDateTime(value: string): Date | null {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
+
+/**
+ * Whether the manual do-not-disturb pause is in effect. The server keeps reporting a timed
+ * pause as on after its end, so only a pause without an end or with a future end counts.
+ */
+export function isPauseActive(
+  settings: { dndPaused: boolean; dndPausedUntil: string | null },
+  now: number = Date.now(),
+): boolean {
+  if (!settings.dndPaused) return false;
+  return settings.dndPausedUntil === null || Date.parse(settings.dndPausedUntil) > now;
+}
