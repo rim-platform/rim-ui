@@ -418,6 +418,11 @@ export type Conversation = {
   archivedAt?: Maybe<Scalars['DateTime']['output']>;
   conversationType: ConversationTypeEnum;
   createdBy?: Maybe<Scalars['ID']['output']>;
+  /**
+   * The level that applies to the viewer now: `NONE` while muted, else `notificationLevel`,
+   * else the workspace default.
+   */
+  effectiveNotificationLevel: NotificationLevel;
   id: Scalars['ID']['output'];
   isArchived: Scalars['Boolean']['output'];
   /** Whether the viewer is a member (for channels: has joined it). */
@@ -427,6 +432,11 @@ export type Conversation = {
   isPrivate: Scalars['Boolean']['output'];
   memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
+  /**
+   * The viewer's own notification level for this conversation (Track 1.3); null inherits
+   * the workspace default.
+   */
+  notificationLevel?: Maybe<NotificationLevel>;
   serverId: Scalars['ID']['output'];
   /**
    * Slow mode (Track 1.2): minimum seconds between two messages of the same non-moderator
@@ -435,6 +445,16 @@ export type Conversation = {
   slowModeSeconds: Scalars['Int']['output'];
   title?: Maybe<Scalars['String']['output']>;
   topic?: Maybe<Scalars['String']['output']>;
+};
+
+/** The viewer's level for one conversation, as returned by `setConversationNotificationLevel`. */
+export type ConversationNotificationLevel = {
+  conversationId: Scalars['ID']['output'];
+  /** What applies now: `NONE` while muted, else `level`, else the workspace default. */
+  effectiveLevel: NotificationLevel;
+  /** The conversation's own level; null inherits the workspace default. */
+  level?: Maybe<NotificationLevel>;
+  mutedUntil?: Maybe<Scalars['DateTime']['output']>;
 };
 
 export type ConversationPage = {
@@ -631,6 +651,32 @@ export type DeleteWorkspaceStateInput = {
   key: Scalars['String']['input'];
   scope: WorkspaceStateScopeGql;
   serverId: Scalars['ID']['input'];
+};
+
+/** How often unread notifications are emailed. */
+export enum DigestFrequency {
+  DAILY = 'DAILY',
+  HOURLY = 'HOURLY',
+  OFF = 'OFF'
+}
+
+/**
+ * A daily do-not-disturb window. `start`/`end` are `"HH:MM"` wall-clock times in `timezone`
+ * (an IANA name); the window crosses midnight when `end` is before `start`.
+ */
+export type DndWindow = {
+  end: Scalars['String']['output'];
+  start: Scalars['String']['output'];
+  timezone: Scalars['String']['output'];
+};
+
+export type DndWindowInput = {
+  /** `"HH:MM"` (or `"HH:MM:SS"`); must differ from `start`. */
+  end: Scalars['String']['input'];
+  /** `"HH:MM"` (or `"HH:MM:SS"`). */
+  start: Scalars['String']['input'];
+  /** IANA timezone name, e.g. `Europe/Prague`. */
+  timezone: Scalars['String']['input'];
 };
 
 export type EditMessageInput = {
@@ -1379,6 +1425,11 @@ export type Mutation = {
   logout: Scalars['Boolean']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
   markAsRead: Scalars['Boolean']['output'];
+  /**
+   * Mark the viewer's notifications read: the given `ids`, or every notification created at
+   * or before `allBefore` (exactly one of the two). Returns how many changed.
+   */
+  markNotificationsRead: Scalars['Int']['output'];
   muteConversation: Scalars['Boolean']['output'];
   overrideSkillTier: SkillProfileGql;
   pinMessage: Scalars['Boolean']['output'];
@@ -1423,6 +1474,16 @@ export type Mutation = {
   setChannelEscalationPolicy: Scalars['Boolean']['output'];
   /** Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only. */
   setConversationArchived: Conversation;
+  /**
+   * Set the viewer's level for one conversation they can read; `level: null` goes back to
+   * the workspace default. `muteConversation`/`unmuteConversation` keep working alongside.
+   */
+  setConversationNotificationLevel: ConversationNotificationLevel;
+  /**
+   * Turn the viewer's manual do-not-disturb pause on (until turned off, or until `until`)
+   * or off. While paused, notifications are still recorded but arrive `quiet`.
+   */
+  setDoNotDisturb: NotificationSettings;
   /**
    * Change a member's role. Owner: any role but `OWNER`, never their own. Moderator:
    * `MEMBER` <-> `GUEST` only. Audited (`admin.set_member_role`).
@@ -1504,6 +1565,11 @@ export type Mutation = {
    * ```
    */
   updateMyProfile: User;
+  /**
+   * Replace the viewer's notification settings in the workspace (default level, keywords,
+   * daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
+   */
+  updateNotificationSettings: NotificationSettings;
   /** Update an on-call schedule's `name`/`timezone`. Owner-only. */
   updateOnCallSchedule: OnCallScheduleGql;
   updatePipeline: PipelineGql;
@@ -1788,6 +1854,13 @@ export type MutationMarkAsReadArgs = {
 };
 
 
+export type MutationMarkNotificationsReadArgs = {
+  allBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  ids?: InputMaybe<Array<Scalars['ID']['input']>>;
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationMuteConversationArgs = {
   input: MuteConversationInput;
 };
@@ -1887,6 +1960,20 @@ export type MutationSetConversationArchivedArgs = {
   archived: Scalars['Boolean']['input'];
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetConversationNotificationLevelArgs = {
+  conversationId: Scalars['ID']['input'];
+  level?: InputMaybe<NotificationLevel>;
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetDoNotDisturbArgs = {
+  paused: Scalars['Boolean']['input'];
+  serverId: Scalars['ID']['input'];
+  until?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 
@@ -2015,6 +2102,12 @@ export type MutationUpdateMyProfileArgs = {
 };
 
 
+export type MutationUpdateNotificationSettingsArgs = {
+  input: UpdateNotificationSettingsInput;
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationUpdateOnCallScheduleArgs = {
   name?: InputMaybe<Scalars['String']['input']>;
   scheduleId: Scalars['ID']['input'];
@@ -2049,6 +2142,82 @@ export type MuteConversationInput = {
 export type MutedConversation = {
   conversationId: Scalars['ID']['output'];
   mutedUntil?: Maybe<Scalars['DateTime']['output']>;
+};
+
+/** One entry of the viewer's notification inbox. */
+export type Notification = {
+  /** Null when the viewer can no longer read the conversation. */
+  conversation?: Maybe<Conversation>;
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /**
+   * The message (timeline or thread reply); null when the viewer can no longer read the
+   * conversation or the message is gone.
+   */
+  message?: Maybe<Message>;
+  messageId: Scalars['ID']['output'];
+  readAt?: Maybe<Scalars['DateTime']['output']>;
+  reason: NotificationReason;
+  serverId: Scalars['ID']['output'];
+};
+
+export type NotificationCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  notificationId: Scalars['ID']['input'];
+};
+
+export type NotificationCursorOutput = {
+  createdAt: Scalars['DateTime']['output'];
+  notificationId: Scalars['ID']['output'];
+};
+
+/** Which messages of a conversation notify the viewer. */
+export enum NotificationLevel {
+  /** Every message. */
+  ALL = 'ALL',
+  /**
+   * Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits and replies in
+   * the viewer's threads.
+   */
+  MENTIONS = 'MENTIONS',
+  /** Nothing, mentions included. */
+  NONE = 'NONE'
+}
+
+/**
+ * Notifications ordered `createdAt DESC, id DESC` (newest first), standard cursor semantics
+ * (`docs/pagination.md`): `AFTER` pages go to older notifications.
+ */
+export type NotificationPage = {
+  items: Array<Notification>;
+  next?: Maybe<NotificationCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<NotificationCursorOutput>;
+};
+
+/** Why the viewer was notified (the strongest reason that applied). */
+export enum NotificationReason {
+  ALL = 'ALL',
+  DIRECT = 'DIRECT',
+  KEYWORD = 'KEYWORD',
+  MENTION = 'MENTION',
+  THREAD_REPLY = 'THREAD_REPLY'
+}
+
+/** The viewer's notification settings in one workspace (defaults until first saved). */
+export type NotificationSettings = {
+  /** Applies to every conversation without its own level. */
+  defaultLevel: NotificationLevel;
+  digest: DigestFrequency;
+  dnd?: Maybe<DndWindow>;
+  /** The manual do-not-disturb pause (`setDoNotDisturb`, `notifications.dnd`). */
+  dndPaused: Scalars['Boolean']['output'];
+  /** When the manual pause ends; null while `dndPaused` is false or the pause has no end. */
+  dndPausedUntil?: Maybe<Scalars['DateTime']['output']>;
+  /** Lower-cased; a whole-word, case-insensitive hit notifies (level `MENTIONS` or `ALL`). */
+  keywords: Array<Scalars['String']['output']>;
+  serverId: Scalars['ID']['output'];
 };
 
 /**
@@ -2267,8 +2436,18 @@ export type Query = {
   myInvites: Array<Invite>;
   myMacros: Array<MacroDef>;
   myMentions: Array<Message>;
+  /** The viewer's notification settings in the workspace (defaults until first saved). */
+  myNotificationSettings: NotificationSettings;
+  /**
+   * The viewer's notifications in the workspace, newest first (`createdAt DESC, id DESC`).
+   * `AFTER` pages go to older notifications. Defaults: `unreadOnly` false, `dir` `AFTER`,
+   * `limit` 50 (clamped to 1..=100).
+   */
+  myNotifications: NotificationPage;
   myServers: Array<Server>;
   mySkillProfile: SkillProfileGql;
+  /** Unread notifications of the viewer in the workspace (the bell badge). */
+  myUnreadNotificationCount: Scalars['Int']['output'];
   /** List a server's on-call schedules. Any workspace member may read. */
   onCallSchedules: Array<OnCallScheduleGql>;
   /**
@@ -2519,6 +2698,25 @@ export type QueryMyMacrosArgs = {
 
 export type QueryMyMentionsArgs = {
   limit?: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMyNotificationSettingsArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMyNotificationsArgs = {
+  cursor?: InputMaybe<NotificationCursorInput>;
+  dir?: InputMaybe<PageDir>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  serverId: Scalars['ID']['input'];
+  unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type QueryMyUnreadNotificationCountArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3085,6 +3283,16 @@ export type UpdateMyProfileInput = {
   bio?: InputMaybe<Scalars['String']['input']>;
   displayName?: InputMaybe<Scalars['String']['input']>;
   statusText?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Replaces the editable settings (the manual pause is separate: `setDoNotDisturb`). */
+export type UpdateNotificationSettingsInput = {
+  defaultLevel: NotificationLevel;
+  digest: DigestFrequency;
+  /** Null turns the daily window off. */
+  dnd?: InputMaybe<DndWindowInput>;
+  /** At most 20, each 2 to 40 characters; stored lower-cased and deduplicated. */
+  keywords: Array<Scalars['String']['input']>;
 };
 
 export type UpdatePipelineInput = {
