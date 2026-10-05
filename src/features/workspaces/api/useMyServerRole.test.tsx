@@ -13,7 +13,13 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
-import { useMyServerRole, useCanManageOnCall, useIsOwner } from "./useMyServerRole";
+import {
+  isModeratorRole,
+  useCanManageOnCall,
+  useCanModerate,
+  useIsOwner,
+  useMyServerRole,
+} from "./useMyServerRole";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -69,5 +75,36 @@ describe("useIsOwner", () => {
     requestMock.mockResolvedValue({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
     const { result } = renderHook(() => useIsOwner("srv-1"), { wrapper });
     await waitFor(() => expect(result.current).toBe(expected));
+  });
+});
+
+describe("useCanModerate", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it.each([
+    [ServerMemberRoleGql.OWNER, true],
+    [ServerMemberRoleGql.MODERATOR, true],
+  ])("role %s -> canModerate %s", async (role, expected) => {
+    requestMock.mockResolvedValue({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
+    const { result } = renderHook(() => useCanModerate("srv-1"), { wrapper });
+    await waitFor(() => expect(result.current).toBe(expected));
+  });
+
+  it("is false for a guest once the role has loaded", async () => {
+    requestMock.mockResolvedValue({
+      server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.GUEST },
+    });
+    const { result } = renderHook(
+      () => ({ role: useMyServerRole("srv-1"), canModerate: useCanModerate("srv-1") }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.role).toBe(ServerMemberRoleGql.GUEST));
+    expect(result.current.canModerate).toBe(false);
+  });
+
+  it("isModeratorRole is false while the role is unknown", () => {
+    expect(isModeratorRole(undefined)).toBe(false);
   });
 });

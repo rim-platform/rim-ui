@@ -70,7 +70,7 @@ export function ConversationHeader() {
     : Hash;
 
   // For DMs, show the other user's name instead of "Untitled"
-  let displayTitle = conversation?.title;
+  let displayTitle = conversation?.title ?? undefined;
   let dmOtherUserId: string | undefined;
   if (
     conversation &&

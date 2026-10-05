@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
+import type { ConversationSummaryPage } from "../types";
 
 const INBOX_CONVERSATIONS_QUERY = gql`
   query InboxConversations($serverId: ID!, $dir: PageDir!, $limit: Int!) {
@@ -20,20 +21,8 @@ const INBOX_CONVERSATIONS_QUERY = gql`
   ${CONVERSATION_FIELDS}
 `;
 
-interface ConversationItem {
-  id: string;
-  serverId: string;
-  conversationType: string;
-  title: string;
-  memberIds: string[];
-  topic: string | null;
-}
-
 interface InboxConversationsResponse {
-  inboxConversations: {
-    items: ConversationItem[];
-    pageInfo: { hasNext: boolean; hasPrev: boolean };
-  };
+  inboxConversations: ConversationSummaryPage;
 }
 
 export function useInboxConversations(workspaceId?: string) {

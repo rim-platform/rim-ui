@@ -272,7 +272,7 @@ const ConversationItem = memo(function ConversationItem({
     id: string;
     serverId: string;
     conversationType: string;
-    title: string;
+    title?: string | null;
     memberIds: string[];
   };
   globalIndex: number;
