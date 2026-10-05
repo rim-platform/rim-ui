@@ -5,6 +5,23 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { useCreateInviteMutation } from "../api/useInviteMutations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast";
+import { cn } from "../../../shared/ui/cn";
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+
+type InviteRole = ServerMemberRoleGql.MEMBER | ServerMemberRoleGql.GUEST;
+
+const INVITE_ROLES: { role: InviteRole; label: string; hint: string }[] = [
+  {
+    role: ServerMemberRoleGql.MEMBER,
+    label: "Member",
+    hint: "Can browse and join channels, create channels and invite people.",
+  },
+  {
+    role: ServerMemberRoleGql.GUEST,
+    label: "Guest",
+    hint: "Only sees the conversations someone adds them to.",
+  },
+];
 
 interface InviteDialogProps {
   open: boolean;
@@ -42,6 +59,7 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
   const [copied, setCopied] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [role, setRole] = useState<InviteRole>(ServerMemberRoleGql.MEMBER);
 
   function handleGenerate() {
     if (!workspaceId) return;
@@ -52,7 +70,7 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
     }
     setEmailError(null);
     createInvite.mutate(
-      { serverId: workspaceId, ...(trimmed ? { recipientEmail: trimmed } : {}) },
+      { serverId: workspaceId, role, ...(trimmed ? { recipientEmail: trimmed } : {}) },
       {
         onSuccess: (data) => {
           const link = `${window.location.origin}/join/${data.createInvite.inviteToken}`;
@@ -84,6 +102,7 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
     setCopied(false);
     setRecipientEmail("");
     setEmailError(null);
+    setRole(ServerMemberRoleGql.MEMBER);
     createInvite.reset();
     onClose();
   }
@@ -101,6 +120,29 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
               Generate a one-time invite link to share with someone you want to add to this
               workspace.
             </p>
+            <div>
+              <p className="mb-1 text-xs font-medium text-rim-text">Joins as</p>
+              <div role="radiogroup" aria-label="Joins as" className="grid grid-cols-2 gap-2">
+                {INVITE_ROLES.map((option) => (
+                  <button
+                    key={option.role}
+                    type="button"
+                    role="radio"
+                    aria-checked={role === option.role}
+                    onClick={() => setRole(option.role)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition",
+                      role === option.role
+                        ? "border-rim-accent bg-rim-accent/10"
+                        : "border-rim-line hover:bg-white/5",
+                    )}
+                  >
+                    <span className="block text-sm text-rim-text">{option.label}</span>
+                    <span className="block text-xs text-rim-text-muted">{option.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div>
               <label
                 htmlFor="invite-recipient-email"

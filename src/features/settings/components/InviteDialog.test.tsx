@@ -50,7 +50,7 @@ describe("InviteDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
 
-    expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1" }, expect.anything());
+    expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
     expect(screen.getByText(`${window.location.origin}/join/tok-1`)).toBeInTheDocument();
   });
 
@@ -67,10 +67,23 @@ describe("InviteDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
 
     expect(mutate).toHaveBeenCalledWith(
-      { serverId: "ws-1", recipientEmail: "teammate@example.com" },
+      { serverId: "ws-1", role: "MEMBER", recipientEmail: "teammate@example.com" },
       expect.anything(),
     );
     expect(screen.getByText(`${window.location.origin}/join/tok-1`)).toBeInTheDocument();
+  });
+
+  it("defaults to Member and can mint a Guest invite", () => {
+    const mutate = vi.fn();
+    mockCreateInvite({ mutate });
+    render(<InviteDialog open onClose={() => {}} />);
+
+    expect(screen.getByRole("radio", { name: /member/i })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("radio", { name: /guest/i }));
+    expect(screen.getByRole("radio", { name: /guest/i })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "GUEST" }, expect.anything());
   });
 
   it("invalid email: shows an inline error and does not call the mutation", () => {
