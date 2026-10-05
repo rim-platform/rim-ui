@@ -9,6 +9,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { cn } from "../../../shared/ui/cn";
@@ -37,6 +38,8 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const unreadCounts = useUnreadStore((s) => s.counts);
   const mutedIds = useMutedStore((s) => s.mutedIds);
+  // Guests cannot browse, join or create channels; the server refuses anyway.
+  const isGuest = useIsGuest(workspaceId ?? undefined);
   const qc = useQueryClient();
 
   // Track the previous conversation so we can snapshot it before switching
@@ -208,28 +211,34 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
           <h3 className="text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
             Channels
           </h3>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => setBrowseOpen(true)}
-              title="Browse channels"
-              aria-label="Browse channels"
-              className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
-            >
-              <Compass className="h-3 w-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onNewChannel()}
-              title="New channel"
-              aria-label="New channel"
-              className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
-            >
-              <Plus className="h-3 w-3" />
-            </button>
-          </div>
+          {!isGuest && (
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => setBrowseOpen(true)}
+                title="Browse channels"
+                aria-label="Browse channels"
+                className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+              >
+                <Compass className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onNewChannel()}
+                title="New channel"
+                aria-label="New channel"
+                className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </div>
-        {channels.length === 0 ? (
+        {channels.length === 0 && isGuest ? (
+          <p className="px-2 py-2 text-sm text-rim-text-muted">
+            No channels yet. A member can add you to one.
+          </p>
+        ) : channels.length === 0 ? (
           <button
             type="button"
             onClick={() => setBrowseOpen(true)}
@@ -321,7 +330,7 @@ export function ConversationList({ onNewChannel }: ConversationListProps) {
         </div>
       )}
 
-      {browseOpen && workspaceId && (
+      {browseOpen && workspaceId && !isGuest && (
         <BrowseChannelsDialog workspaceId={workspaceId} onClose={() => setBrowseOpen(false)} />
       )}
     </div>

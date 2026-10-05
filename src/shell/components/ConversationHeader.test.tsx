@@ -8,6 +8,7 @@ import {
   IncidentPhaseNameGql,
   IncidentSeverityGql,
   IncidentStatusGql,
+  ServerMemberRoleGql,
   WorkspaceFeature,
 } from "../../core/graphql/generated/schema-types";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -187,5 +188,37 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     renderHeader();
     expect(await screen.findByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Private channel" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationHeader — guest gate (Track 1.2)", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it.each([
+    [ServerMemberRoleGql.GUEST, false],
+    [ServerMemberRoleGql.MEMBER, true],
+  ])("viewer %s: Invite member shown = %s", async (role, shown) => {
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Server(")) {
+        return Promise.resolve({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
+      }
+      return new Promise(() => {});
+    });
+    const qc = renderHeader();
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("srv-1"))).toBeDefined());
+    if (shown) {
+      expect(screen.getByRole("button", { name: "Invite member" })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole("button", { name: "Invite member" })).not.toBeInTheDocument();
+    }
   });
 });
