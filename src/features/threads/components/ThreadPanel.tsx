@@ -168,20 +168,27 @@ export function ThreadPanel() {
     return () => clearTimeout(timer);
   }, [highlightedMessageId, setHighlightedMessageId, items]);
 
-  function handleToggleReaction(messageId: string, emoji: string) {
-    if (!workspaceId || !conversationId) return;
-    toggleReaction.mutate({
-      serverId: workspaceId,
-      conversationId,
-      messageId,
-      emoji,
-    });
-  }
+  const toggleReactionMutate = toggleReaction.mutate;
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!workspaceId || !conversationId) return;
+      toggleReactionMutate({
+        serverId: workspaceId,
+        conversationId,
+        messageId,
+        emoji,
+      });
+    },
+    [workspaceId, conversationId, toggleReactionMutate],
+  );
 
   // No-op context menu for thread messages (simplified)
-  function handleContextMenu(_event: React.MouseEvent, _messageId: string, _messageText: string) {
-    // Context menu not supported in thread panel
-  }
+  const handleContextMenu = useCallback(
+    (_event: React.MouseEvent, _messageId: string, _messageText: string) => {
+      // Context menu not supported in thread panel
+    },
+    [],
+  );
 
   if (!rootMessageId) return null;
 

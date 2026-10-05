@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useConversationMessages } from "../api/useMessages";
 import { useEditMessageMutation } from "../api/useEditMessage";
@@ -349,47 +349,67 @@ export function MessageTimeline() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  function handleContextMenu(event: React.MouseEvent, messageId: string, messageText: string) {
-    const msg = items.find((m) => m.id === messageId);
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      messageId,
-      messageText,
-      isOwnMessage: msg?.author?.id === currentUserId,
-      isPinned: msg?.isPinned === true,
-      hasThread: !!(msg?.threadId || msg?.rootThreadId),
-    });
-  }
+  // Handlers passed to every MessageItem must be referentially stable, or the
+  // memo on MessageItem is defeated and every parent render re-renders every row.
+  // `items` changes on each new message, so the context-menu handler reads it
+  // through a ref instead of closing over it.
+  const itemsRef = useRef(items);
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
-  async function handleSaveEdit(messageId: string, newText: string) {
-    if (!workspaceId || !conversationId) return;
-    try {
-      await editMessage.mutateAsync({
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, messageId: string, messageText: string) => {
+      const msg = itemsRef.current.find((m) => m.id === messageId);
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        messageId,
+        messageText,
+        isOwnMessage: msg?.author?.id === currentUserId,
+        isPinned: msg?.isPinned === true,
+        hasThread: !!(msg?.threadId || msg?.rootThreadId),
+      });
+    },
+    [currentUserId],
+  );
+
+  const editMessageAsync = editMessage.mutateAsync;
+  const handleSaveEdit = useCallback(
+    async (messageId: string, newText: string) => {
+      if (!workspaceId || !conversationId) return;
+      try {
+        await editMessageAsync({
+          serverId: workspaceId,
+          conversationId,
+          messageId,
+          text: newText,
+        });
+        setEditingMessageId(null);
+      } catch {
+        // Keep edit mode open — user can retry or cancel
+      }
+    },
+    [workspaceId, conversationId, editMessageAsync, setEditingMessageId],
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+  }, [setEditingMessageId]);
+
+  const toggleReactionMutate = toggleReaction.mutate;
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!workspaceId || !conversationId) return;
+      toggleReactionMutate({
         serverId: workspaceId,
         conversationId,
         messageId,
-        text: newText,
+        emoji,
       });
-      setEditingMessageId(null);
-    } catch {
-      // Keep edit mode open — user can retry or cancel
-    }
-  }
-
-  function handleCancelEdit() {
-    setEditingMessageId(null);
-  }
-
-  function handleToggleReaction(messageId: string, emoji: string) {
-    if (!workspaceId || !conversationId) return;
-    toggleReaction.mutate({
-      serverId: workspaceId,
-      conversationId,
-      messageId,
-      emoji,
-    });
-  }
+    },
+    [workspaceId, conversationId, toggleReactionMutate],
+  );
 
   const handleNavigateToForwardedSource = useCallback(
     (targetConversationId: string, targetMessageId: string) => {
