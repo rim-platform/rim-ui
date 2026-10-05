@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 
 import { renderWithProviders as render } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import type { MessageItem as MessageItemData, MessagesPage } from "../../../core/types/messages";
 
 // --- Controlled data sources ---------------------------------------------
@@ -92,6 +93,7 @@ vi.mock("./MessageItem", async (importOriginal) => {
         role="option"
         aria-selected={props.view.isSelected ?? false}
         data-editing={props.view.isEditing ? "true" : undefined}
+        data-highlighted={props.view.isHighlighted ? "true" : undefined}
       >
         {props.view.message.text}
       </div>
@@ -104,6 +106,143 @@ vi.mock("./MessageItem", async (importOriginal) => {
 });
 
 import { MessageTimeline } from "./MessageTimeline";
+
+// --- Layout harness -------------------------------------------------------
+// jsdom does no layout, and the timeline is virtualized: with a zero-height
+// viewport nothing renders. Give the scroll container a fixed viewport and
+// every measured row a fixed height, and make scrolling behave like a browser:
+// scrollTop clamps and fires "scroll" asynchronously, and a ResizeObserver
+// reports each observed row's size in the next frame.
+
+const VIEWPORT = 300;
+const ROW = 50;
+const PADDING = 12;
+
+const patched = ["offsetHeight", "offsetWidth", "clientHeight", "scrollHeight", "scrollTop"];
+const originalDescriptors = new Map<string, PropertyDescriptor | undefined>();
+const scrollTops = new WeakMap<HTMLElement, number>();
+
+function contentHeight(el: HTMLElement): number {
+  const list = el.querySelector<HTMLElement>("[data-virtual-list]");
+  return list ? parseFloat(list.style.height) || 0 : 0;
+}
+
+function isList(el: HTMLElement): boolean {
+  return el.hasAttribute("data-message-list");
+}
+
+class SyncResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+  observe(target: Element) {
+    // Browsers deliver resize observations after layout, i.e. after the
+    // frame's scroll events; a frame callback keeps that order.
+    requestAnimationFrame(() => {
+      if (!target.isConnected) return;
+      const size = (target as HTMLElement).offsetHeight;
+      const entry = {
+        target,
+        borderBoxSize: [{ blockSize: size, inlineSize: 800 }],
+      } as unknown as ResizeObserverEntry;
+      this.callback([entry], this as unknown as ResizeObserver);
+    });
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
+function installLayout() {
+  for (const prop of patched) {
+    originalDescriptors.set(prop, Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop));
+  }
+  Object.defineProperties(HTMLElement.prototype, {
+    offsetHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (isList(this)) return VIEWPORT;
+        if (this.hasAttribute("data-index")) return ROW;
+        return 0;
+      },
+    },
+    offsetWidth: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isList(this) ? 800 : 0;
+      },
+    },
+    clientHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isList(this) ? VIEWPORT : 0;
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isList(this) ? Math.max(VIEWPORT, contentHeight(this)) : 0;
+      },
+    },
+    scrollTop: {
+      configurable: true,
+      get(this: HTMLElement) {
+        // Shrinking content clamps the offset, as in a browser.
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        return Math.min(scrollTops.get(this) ?? 0, max);
+      },
+      set(this: HTMLElement, value: number) {
+        const max = Math.max(0, this.scrollHeight - this.clientHeight);
+        const next = Math.min(Math.max(0, value), max);
+        if (next === this.scrollTop) return;
+        scrollTops.set(this, next);
+        queueMicrotask(() => this.dispatchEvent(new Event("scroll")));
+      },
+    },
+  });
+  HTMLElement.prototype.scrollTo = function scrollTo(
+    this: HTMLElement,
+    arg?: ScrollToOptions | number,
+  ) {
+    if (typeof arg === "object" && arg.top !== undefined) this.scrollTop = arg.top;
+  } as typeof HTMLElement.prototype.scrollTo;
+  vi.stubGlobal("ResizeObserver", SyncResizeObserver);
+}
+
+function uninstallLayout() {
+  for (const prop of patched) {
+    const descriptor = originalDescriptors.get(prop);
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, prop, descriptor);
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
+  }
+  delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo;
+  vi.unstubAllGlobals();
+}
+
+/** Let queued scroll events and the virtualizer's re-render settle. */
+async function settle() {
+  for (let i = 0; i < 3; i++) {
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+  }
+}
+
+function messageList(): HTMLElement {
+  return screen.getByRole("listbox", { name: "Messages" });
+}
+
+function maxScrollTop(): number {
+  const list = messageList();
+  return list.scrollHeight - list.clientHeight;
+}
+
+/** Distance from the top of the viewport to the row holding `id`, or null if unmounted. */
+function rowViewportOffset(id: string): number | null {
+  const row = document
+    .querySelector(`[data-message-id="${id}"]`)
+    ?.closest<HTMLElement>("[data-index]");
+  if (!row) return null;
+  const match = /translateY\((-?[\d.]+)px\)/.exec(row.style.transform);
+  return match ? parseFloat(match[1]) - messageList().scrollTop : null;
+}
 
 // --- Fixtures -------------------------------------------------------------
 
@@ -152,12 +291,17 @@ function setMessages(items: MessageItemData[]) {
   dataState.current = { ...dataState.current, pages: [page(items)] };
 }
 
+function range(from: number, to: number): MessageItemData[] {
+  return Array.from({ length: to - from }, (_, i) => makeMessage(from + i));
+}
+
 function resetCounts() {
   renderCounts.clear();
   seenHandlers.length = 0;
 }
 
 beforeEach(() => {
+  installLayout();
   resetCounts();
   dataState.current = { pages: [], hasNextPage: false, isFetchingNextPage: false };
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
@@ -172,6 +316,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  uninstallLayout();
   vi.clearAllMocks();
 });
 
@@ -239,5 +385,210 @@ describe("MessageTimeline handler stability", () => {
     for (const id of ["m-000", "m-001", "m-002"]) {
       expect(renderCounts.get(id) ?? 0).toBe(0);
     }
+  });
+});
+
+describe("MessageTimeline virtualization", () => {
+  it("mounts only the rows near the viewport", async () => {
+    setMessages(range(0, 200));
+    render(<MessageTimeline />);
+    await settle();
+
+    const mounted = document.querySelectorAll("[data-index]").length;
+    expect(mounted).toBeGreaterThan(0);
+    expect(mounted).toBeLessThan(40);
+    // Lands on the newest message.
+    expect(screen.getByText("message 199")).toBeInTheDocument();
+    expect(screen.queryByText("message 0")).not.toBeInTheDocument();
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+  });
+
+  it("keeps the viewport anchored when an older page is prepended", async () => {
+    setMessages(range(10, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+
+    // Scroll to the very top, where the sentinel would request the next page.
+    act(() => messageList().scrollTo({ top: 0 }));
+    await settle();
+    const before = rowViewportOffset("m-010");
+    expect(before).toBe(PADDING);
+
+    // Pages are in load order (newest first); the older page goes last.
+    dataState.current = {
+      ...dataState.current,
+      pages: [page(range(10, 30)), page(range(0, 10))],
+    };
+    rerender(<MessageTimeline />);
+    await settle();
+
+    // The previously-first message is exactly where it was on screen, because
+    // the scroll offset grew by the (still estimated) height of the new rows.
+    expect(rowViewportOffset("m-010")).toBe(before);
+    expect(messageList().scrollTop).toBeGreaterThanOrEqual(10 * ROW);
+
+    // Scrolling up mounts and measures the prepended rows; their real heights
+    // differ from the estimate, and the correction must not move the anchor.
+    const top = messageList().scrollTop;
+    act(() => messageList().scrollTo({ top: top - 2 * ROW }));
+    await settle();
+    expect(screen.getByText("message 9")).toBeInTheDocument();
+    expect(rowViewportOffset("m-010")).toBe(before! + 2 * ROW);
+  });
+
+  it("follows a new message when the user is at the bottom", async () => {
+    setMessages(range(0, 20));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    const oldMax = maxScrollTop();
+
+    setMessages(range(0, 21));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(maxScrollTop()).toBeGreaterThan(oldMax);
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    expect(screen.getByText("message 20")).toBeInTheDocument();
+  });
+
+  it("does not move the viewport for a new message when scrolled up", async () => {
+    setMessages(range(0, 20));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+
+    act(() => messageList().scrollTo({ top: 100 }));
+    await settle();
+
+    setMessages(range(0, 21));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(messageList().scrollTop).toBe(100);
+    expect(screen.queryByText("message 20")).not.toBeInTheDocument();
+  });
+
+  it("scrolls to the bottom for the user's own new message even when scrolled up", async () => {
+    setMessages(range(0, 20));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+
+    act(() => messageList().scrollTo({ top: 100 }));
+    await settle();
+
+    const own = makeMessage(20, {
+      authorId: "me",
+      author: { id: "me", username: "me", displayName: null, avatarUrl: null },
+    });
+    setMessages([...range(0, 20), own]);
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    expect(screen.getByText("message 20")).toBeInTheDocument();
+  });
+
+  it("k from the first visible row scrolls the off-screen row above into view", async () => {
+    setMessages(range(0, 30));
+    render(<MessageTimeline />);
+    await settle();
+    const list = messageList();
+
+    act(() => useShellStore.setState({ navigationMode: true }));
+    await settle();
+    expect(screen.getByText("message 29").getAttribute("aria-selected")).toBe("true");
+
+    // Walk up until the selection is the first fully visible row.
+    for (let i = 0; i < 5; i++) {
+      fireEvent.keyDown(list, { key: "k" });
+      await settle();
+    }
+    expect(screen.getByText("message 24").getAttribute("aria-selected")).toBe("true");
+    expect(rowViewportOffset("m-024")).toBe(0);
+    const offsetAbove = rowViewportOffset("m-023");
+    expect(offsetAbove).toBe(-ROW); // fully above the viewport
+
+    const scrollTopBefore = list.scrollTop;
+
+    fireEvent.keyDown(list, { key: "k" });
+    await settle();
+
+    expect(screen.getByText("message 23").getAttribute("aria-selected")).toBe("true");
+    expect(rowViewportOffset("m-023")).toBe(0);
+    expect(list.scrollTop).toBeLessThan(scrollTopBefore);
+    expect(list.getAttribute("aria-activedescendant")).toBe("message-m-023");
+  });
+
+  it("jumps to and highlights an unmounted message requested by search", async () => {
+    setMessages(range(0, 60));
+    render(<MessageTimeline />);
+    await settle();
+    expect(screen.queryByText("message 5")).not.toBeInTheDocument();
+
+    act(() => useShellStore.setState({ highlightedMessageId: "m-005" }));
+    await settle();
+
+    const row = screen.getByText("message 5");
+    expect(row.getAttribute("data-highlighted")).toBe("true");
+    // Centred: row start minus half the viewport (less half a row).
+    expect(messageList().scrollTop).toBe(PADDING + 5 * ROW - (VIEWPORT - ROW) / 2);
+  });
+
+  it("opens a conversation with unread messages on the New messages divider", async () => {
+    const items = range(0, 60);
+    useUnreadStore.setState({ watermarks: { "conv-1": items[39].sentAt } });
+    setMessages(items);
+    render(<MessageTimeline />);
+    await settle();
+
+    expect(screen.getByRole("separator", { name: "New messages" })).toBeInTheDocument();
+    // The divider sits inside the first unread row, which is aligned to the top.
+    expect(rowViewportOffset("m-040")).toBe(0);
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("requests the next older page when the top sentinel becomes visible", async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    dataState.current = {
+      pages: [page(range(0, 20))],
+      hasNextPage: true,
+      isFetchingNextPage: false,
+    };
+    render(<MessageTimeline />);
+    await settle();
+    expect(callbacks.length).toBeGreaterThan(0);
+
+    const latest = callbacks[callbacks.length - 1];
+    act(() =>
+      latest([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver),
+    );
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands on the newest message after switching to an already-loaded conversation", async () => {
+    setMessages(range(0, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 0 }));
+    await settle();
+
+    const other = range(100, 140).map((m) => ({ ...m, conversationId: "conv-2" }));
+    setMessages(other);
+    act(() => useShellStore.setState({ selectedConversationId: "conv-2" }));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    expect(screen.getByText("message 139")).toBeInTheDocument();
   });
 });

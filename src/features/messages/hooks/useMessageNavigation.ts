@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { toast } from "../../../shared/toast";
@@ -23,6 +23,11 @@ interface UseMessageNavigationOptions {
   onForwardMessage: (msg: { id: string; text: string }) => void;
   /** Index of the first new message after the watermark, or -1 if no divider. */
   firstNewIndex?: number;
+  /**
+   * Bring a row into view. The list is virtualized, so the selected row may
+   * not be mounted; the caller scrolls by index rather than by DOM node.
+   */
+  scrollToIndex: (index: number) => void;
 }
 
 export function useMessageNavigation({
@@ -36,8 +41,15 @@ export function useMessageNavigation({
   onDeleteMessage,
   onForwardMessage,
   firstNewIndex = -1,
+  scrollToIndex,
 }: UseMessageNavigationOptions) {
-  const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
+  // Selection is tracked by message id so it stays on the same message when
+  // older pages are prepended (which shifts every index).
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const selectedMessageIndex = useMemo(
+    () => (selectedMessageId ? items.findIndex((m) => m.id === selectedMessageId) : -1),
+    [items, selectedMessageId],
+  );
   const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null);
   const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -51,9 +63,20 @@ export function useMessageNavigation({
   const unpinMessageRef = useRef(unpinMessage.mutate);
   unpinMessageRef.current = unpinMessage.mutate;
 
+  /** Select a row and scroll it into view. */
+  const selectIndex = useCallback(
+    (index: number) => {
+      const msg = items[index];
+      if (!msg) return;
+      setSelectedMessageId(msg.id);
+      scrollToIndex(index);
+    },
+    [items, scrollToIndex],
+  );
+
   // Reset selected message and editing state when conversation changes
   useEffect(() => {
-    setSelectedMessageIndex(-1);
+    setSelectedMessageId(null);
     setEditingMessageId(null);
     setDeleteConfirmMessageId(null);
     if (deleteConfirmTimerRef.current) {
@@ -66,12 +89,12 @@ export function useMessageNavigation({
     const unsub = useShellStore.subscribe((state, prev) => {
       if (state.navigationMode && !prev.navigationMode) {
         if (selectedMessageIndex === -1 && items.length > 0) {
-          setSelectedMessageIndex(items.length - 1);
+          selectIndex(items.length - 1);
         }
       }
     });
     return unsub;
-  }, [selectedMessageIndex, items.length]);
+  }, [selectedMessageIndex, items.length, selectIndex]);
 
   // Clean up delete confirmation timer on unmount
   useEffect(() => {
@@ -81,17 +104,6 @@ export function useMessageNavigation({
       }
     };
   }, []);
-
-  // Scroll selected message into view
-  useEffect(() => {
-    if (selectedMessageIndex < 0) return;
-    const msg = items[selectedMessageIndex];
-    if (!msg) return;
-    const el = document.querySelector(`[data-message-id="${msg.id}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [selectedMessageIndex, items]);
 
   const handleMessageListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -106,7 +118,7 @@ export function useMessageNavigation({
       // Escape always works: exit navigation mode and return to composer
       if (e.key === "Escape") {
         e.preventDefault();
-        setSelectedMessageIndex(-1);
+        setSelectedMessageId(null);
         setDeleteConfirmMessageId(null);
         useShellStore.getState().setNavigationMode(false);
         document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
@@ -129,7 +141,7 @@ export function useMessageNavigation({
       if (e.key === "N" && e.shiftKey) {
         if (firstNewIndex >= 0 && firstNewIndex < items.length) {
           e.preventDefault();
-          setSelectedMessageIndex(firstNewIndex);
+          selectIndex(firstNewIndex);
         }
         return;
       }
@@ -138,13 +150,13 @@ export function useMessageNavigation({
       if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
         setDeleteConfirmMessageId(null);
-        setSelectedMessageIndex((i) => Math.min(i + 1, items.length - 1));
+        selectIndex(Math.min(selectedMessageIndex + 1, items.length - 1));
         return;
       }
       if (e.key === "ArrowUp" || e.key === "k") {
         e.preventDefault();
         setDeleteConfirmMessageId(null);
-        setSelectedMessageIndex((i) => (i <= 0 ? 0 : i - 1));
+        selectIndex(selectedMessageIndex <= 0 ? 0 : selectedMessageIndex - 1);
         return;
       }
 
@@ -249,6 +261,7 @@ export function useMessageNavigation({
       workspaceId,
       conversationId,
       firstNewIndex,
+      selectIndex,
     ],
   );
 
