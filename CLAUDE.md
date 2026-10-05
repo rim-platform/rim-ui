@@ -113,8 +113,9 @@ silent bugs when enum casing or field names differ from the backend (e.g., `SEV2
 - `src/core/graphql/generated/sdk.ts` — DEAD CODE, do not use (legacy, pending removal)
 
 **ALSO CRITICAL:** Before adding new fields to GraphQL queries, verify they exist in the
-backend schema. Check `schema.graphql` or `rim_api/src/types.rs`. Frontend requesting
-non-existent fields causes silent query failures.
+backend schema. Check `schema.graphql` or the per-domain modules under `rim_api/src/types/`
+(e.g. `rim_api/src/types/conversation.rs`). Frontend requesting non-existent fields causes
+silent query failures.
 
 ## Code Review (MANDATORY)
 
