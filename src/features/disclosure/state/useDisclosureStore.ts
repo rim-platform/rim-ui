@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { graphqlClient } from "../../../core/graphql/client";
 import { gql } from "graphql-request";
 import { SkillTier } from "../../../core/graphql/generated/schema-types";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 
 export { SkillTier };
 
@@ -39,15 +40,20 @@ interface DisclosureState {
 
   setProfile: (tier: SkillTier, features: string[]) => void;
   /**
-   * Fetch the user's skill profile once. Until it settles every
-   * DisclosureGate renders nothing; a failed fetch falls back to BEGINNER so
-   * gated surfaces stay hidden rather than the gate staying shut forever.
+   * Fetch the signed-in user's skill profile (one request at a time). Until
+   * it succeeds every DisclosureGate renders nothing, i.e. gated surfaces
+   * stay hidden; a failed fetch leaves the profile unloaded so the next gate
+   * mount retries instead of pinning the user to BEGINNER.
    */
   loadProfile: () => Promise<void>;
   recordUsage: (featureId: string) => void;
+  /** Forget the profile (e.g. on sign-out or account switch). */
+  reset: () => void;
 }
 
 let profileRequest: Promise<void> | null = null;
+// Bumped by reset() so a response for a previous session is ignored.
+let profileGeneration = 0;
 
 export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
   skillTier: SkillTier.BEGINNER,
@@ -65,11 +71,13 @@ export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
   loadProfile: () => {
     if (get().isLoaded) return Promise.resolve();
     if (profileRequest) return profileRequest;
-    profileRequest = graphqlClient
+    const generation = profileGeneration;
+    const request = graphqlClient
       .request<{
         mySkillProfile: { skillTier: SkillTier; featuresUsed: { featureId: string }[] };
       }>(MY_SKILL_PROFILE_QUERY)
       .then((data) => {
+        if (generation !== profileGeneration) return;
         const profile = data.mySkillProfile;
         get().setProfile(
           profile.skillTier,
@@ -77,12 +85,19 @@ export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
         );
       })
       .catch(() => {
-        get().setProfile(SkillTier.BEGINNER, []);
+        // Stay unloaded (gates closed); a later loadProfile() retries.
       })
       .finally(() => {
-        profileRequest = null;
+        if (profileRequest === request) profileRequest = null;
       });
-    return profileRequest;
+    profileRequest = request;
+    return request;
+  },
+
+  reset: () => {
+    profileGeneration++;
+    profileRequest = null;
+    set({ skillTier: SkillTier.BEGINNER, featuresUsed: new Set<string>(), isLoaded: false });
   },
 
   recordUsage: (featureId) => {
@@ -120,3 +135,10 @@ export const useDisclosureStore = create<DisclosureState>()((set, get) => ({
       });
   },
 }));
+
+// The profile belongs to the signed-in user: drop it when the user changes.
+useAuthStore.subscribe((state, prev) => {
+  if (state.session?.userId !== prev.session?.userId) {
+    useDisclosureStore.getState().reset();
+  }
+});

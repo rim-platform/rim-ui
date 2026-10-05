@@ -8,6 +8,7 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import { SkillTier, useDisclosureStore } from "./useDisclosureStore";
 
 function profile(tier: SkillTier, features: string[]) {
@@ -58,13 +59,42 @@ describe("useDisclosureStore profile loading", () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to a loaded BEGINNER profile when the fetch fails", async () => {
-    requestMock.mockRejectedValue(new Error("offline"));
+  it("stays unloaded when the fetch fails, and retries on the next load", async () => {
+    requestMock.mockRejectedValueOnce(new Error("offline"));
     await useDisclosureStore.getState().loadProfile();
+    expect(useDisclosureStore.getState().isLoaded).toBe(false);
+
+    requestMock.mockResolvedValueOnce({ mySkillProfile: profile(SkillTier.ADVANCED, []) });
+    await useDisclosureStore.getState().loadProfile();
+    expect(requestMock).toHaveBeenCalledTimes(2);
+    expect(useDisclosureStore.getState().isLoaded).toBe(true);
+    expect(useDisclosureStore.getState().skillTier).toBe(SkillTier.ADVANCED);
+  });
+
+  it("forgets the profile when the signed-in user changes", () => {
+    useAuthStore.setState({ session: { userId: "alice" } });
+    useDisclosureStore.getState().setProfile(SkillTier.ADVANCED, ["macros"]);
+
+    useAuthStore.setState({ session: { userId: "bob" } });
 
     const state = useDisclosureStore.getState();
-    expect(state.isLoaded).toBe(true);
+    expect(state.isLoaded).toBe(false);
     expect(state.skillTier).toBe(SkillTier.BEGINNER);
+    expect(state.featuresUsed.size).toBe(0);
+  });
+
+  it("ignores a profile response that arrives after the user changed", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    requestMock.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    useAuthStore.setState({ session: { userId: "alice" } });
+    const pending = useDisclosureStore.getState().loadProfile();
+
+    useAuthStore.setState({ session: { userId: "bob" } });
+    resolve({ mySkillProfile: profile(SkillTier.ADVANCED, []) });
+    await pending;
+
+    expect(useDisclosureStore.getState().isLoaded).toBe(false);
+    expect(useDisclosureStore.getState().skillTier).toBe(SkillTier.BEGINNER);
   });
 });
 
