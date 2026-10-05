@@ -119,7 +119,10 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
     const trimmedName = name.trim();
     if (!trimmedName) return;
     const validActions = actions.filter((a) => a.commandId.trim() !== "");
-    if (validActions.length === 0) return;
+    if (validActions.length === 0) {
+      toast.error("Add at least one action with a command");
+      return;
+    }
 
     const trigger = {
       kind: triggerKind,
@@ -138,17 +141,20 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
           }
         : undefined;
 
-    const mappedActions = validActions.map((a) => {
+    const mappedActions: { commandId: string; args: unknown }[] = [];
+    for (const a of validActions) {
       let args: unknown = undefined;
       if (a.args.trim()) {
         try {
           args = JSON.parse(a.args);
         } catch {
+          // Do not save with the args silently dropped.
           toast.error(`Invalid JSON in args for action "${a.commandId}"`);
+          return;
         }
       }
-      return { commandId: a.commandId.trim(), args };
-    });
+      mappedActions.push({ commandId: a.commandId.trim(), args });
+    }
 
     const parsedCd = cooldownSecs.trim() ? parseInt(cooldownSecs, 10) : undefined;
     const cd =
@@ -424,7 +430,7 @@ function triggerLabel(kind: PipelineTriggerKindGql): string {
 
 export function PipelineSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const { data: pipelines, isLoading } = usePipelines(workspaceId ?? undefined);
+  const { data: pipelines, isLoading, isError } = usePipelines(workspaceId ?? undefined);
   const deletePipeline = useDeletePipelineMutation();
   const togglePipeline = useTogglePipelineMutation();
 
@@ -488,7 +494,9 @@ export function PipelineSettings() {
 
       {isLoading && <p className="text-sm text-rim-text-muted">Loading pipelines...</p>}
 
-      {!isLoading && (!pipelines || pipelines.length === 0) && (
+      {isError && <p className="text-sm text-rim-danger">Failed to load pipelines.</p>}
+
+      {!isLoading && !isError && (!pipelines || pipelines.length === 0) && (
         <p className="text-sm text-rim-text-muted">
           No pipelines yet. Create one to react to workspace events automatically.
         </p>

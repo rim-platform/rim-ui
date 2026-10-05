@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { SkillTier, type SkillProfileGql } from "../../../core/graphql/generated/schema-types";
+import { useDisclosureStore } from "../state/useDisclosureStore";
 
 // --- Re-exports for backward compatibility ---
 
@@ -80,7 +81,13 @@ export function useOverrideSkillTier() {
       graphqlClient.request<{ overrideSkillTier: SkillProfile }>(OVERRIDE_SKILL_TIER_MUTATION, {
         tier,
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Gates read the disclosure store, so apply the new tier there right away.
+      const profile = data.overrideSkillTier;
+      useDisclosureStore.getState().setProfile(
+        profile.skillTier,
+        profile.featuresUsed.map((f) => f.featureId),
+      );
       qc.invalidateQueries({ queryKey: skillProfileQueryKey });
     },
   });

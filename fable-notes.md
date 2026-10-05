@@ -24,7 +24,7 @@ The concerns are about resilience under real-world conditions (flaky networks, f
 
 ### 4. `MessageItem.tsx` is the frontend's god file
 
-938 lines for a single message row — rendering, reactions, pins, attachments, editing, context menus. It is also the hottest render path in a chat app. Split it into focused subcomponents and memoize the pieces. Other large components worth watching: `KeybindSettings.tsx` (673), `MessageTimeline.tsx` (611), `ComposerInput.tsx` (589), `WorkspaceStateSettings.tsx` (592).
+938 lines for a single message row — rendering, reactions, pins, attachments, editing, context menus. It is also the hottest render path in a chat app. Split it into focused subcomponents and memoize the pieces. *(Done 2026-10-05: see C-M3 in `fable-findings.md`; `MessageTimeline.tsx` was split the same way.)* Other large components worth watching: `KeybindSettings.tsx` (673), `MessageTimeline.tsx` (611), `ComposerInput.tsx` (589), `WorkspaceStateSettings.tsx` (592).
 
 ### 5. AppShell as a growing hub
 
@@ -33,6 +33,8 @@ The concerns are about resilience under real-world conditions (flaky networks, f
 ### 6. Lopsided test coverage and no lint gate
 
 126 test files (~16.6k test LOC) with strong coverage on agent/auth/commands/core — but `pipelines/` (709 LOC), `lenses/` (923 LOC), and `disclosure/` have **zero** tests, and there is no ESLint/Prettier at all; `npm run build` is the only frontend CI gate. The backend enforces clippy `-D warnings` and a 95% coverage gate — the asymmetry is stark. Adding a linter is cheap; do that first, then backfill tests for the three untested features.
+
+*Update 2026-10-05:* ESLint and Prettier gates exist now (`npm run lint`, `npm run format:check`). The three untested features have behaviour tests: `pipelines/` 24, `lenses/` 30, `disclosure/` 26 (hooks with query variables and cache invalidation, component loading/empty/error/list states, create/edit/delete flows with validation, and the skill-tier gating matrix). Bugs found on the way were fixed: see F-H3 and F-L7 in `fable-findings.md`.
 
 ## Strengths to preserve
 

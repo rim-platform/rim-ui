@@ -10,6 +10,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { replaceShortcodes } from "../../messages/utils/emojiShortcodes";
 import { MessageItem } from "../../messages/components/MessageItem";
+import type { MessageItemHandlers } from "../../messages/components/MessageItem";
 import { logger } from "../../../core/logger";
 
 export function ThreadPanel() {
@@ -168,20 +169,36 @@ export function ThreadPanel() {
     return () => clearTimeout(timer);
   }, [highlightedMessageId, setHighlightedMessageId, items]);
 
-  function handleToggleReaction(messageId: string, emoji: string) {
-    if (!workspaceId || !conversationId) return;
-    toggleReaction.mutate({
-      serverId: workspaceId,
-      conversationId,
-      messageId,
-      emoji,
-    });
-  }
+  const toggleReactionMutate = toggleReaction.mutate;
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!workspaceId || !conversationId) return;
+      toggleReactionMutate({
+        serverId: workspaceId,
+        conversationId,
+        messageId,
+        emoji,
+      });
+    },
+    [workspaceId, conversationId, toggleReactionMutate],
+  );
 
   // No-op context menu for thread messages (simplified)
-  function handleContextMenu(_event: React.MouseEvent, _messageId: string, _messageText: string) {
-    // Context menu not supported in thread panel
-  }
+  const handleContextMenu = useCallback(
+    (_event: React.MouseEvent, _messageId: string, _messageText: string) => {
+      // Context menu not supported in thread panel
+    },
+    [],
+  );
+
+  const handlers = useMemo<MessageItemHandlers>(
+    () => ({
+      onOpenThread: openThread,
+      onToggleReaction: handleToggleReaction,
+      onContextMenu: handleContextMenu,
+    }),
+    [openThread, handleToggleReaction, handleContextMenu],
+  );
 
   if (!rootMessageId) return null;
 
@@ -221,16 +238,15 @@ export function ThreadPanel() {
           return (
             <div className="border-b border-rim-line px-4 py-3">
               <MessageItem
-                message={rootMessage}
-                authorName={name}
-                authorInitial={name.charAt(0).toUpperCase()}
-                authorAvatarUrl={rootMessage.author?.avatarUrl}
-                isCurrentUser={rootMessage.author?.id === currentUserId}
-                reactions={rootMessage.reactions}
-                onOpenThread={openThread}
-                onToggleReaction={handleToggleReaction}
-                onContextMenu={handleContextMenu}
-                linkPreviews={rootMessage.linkPreviews}
+                view={{
+                  message: rootMessage,
+                  author: {
+                    name,
+                    avatarUrl: rootMessage.author?.avatarUrl,
+                    isCurrentUser: rootMessage.author?.id === currentUserId,
+                  },
+                }}
+                handlers={handlers}
               />
             </div>
           );
@@ -253,16 +269,15 @@ export function ThreadPanel() {
             return (
               <MessageItem
                 key={msg.id}
-                message={msg}
-                authorName={name}
-                authorInitial={name.charAt(0).toUpperCase()}
-                authorAvatarUrl={msg.author?.avatarUrl}
-                isCurrentUser={msg.author?.id === currentUserId}
-                reactions={msg.reactions}
-                onOpenThread={openThread}
-                onToggleReaction={handleToggleReaction}
-                onContextMenu={handleContextMenu}
-                linkPreviews={msg.linkPreviews}
+                view={{
+                  message: msg,
+                  author: {
+                    name,
+                    avatarUrl: msg.author?.avatarUrl,
+                    isCurrentUser: msg.author?.id === currentUserId,
+                  },
+                }}
+                handlers={handlers}
               />
             );
           })
