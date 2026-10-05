@@ -88,7 +88,7 @@ function LensPickerDropdown({
   onClose,
   triggerRef,
 }: LensPickerDropdownProps) {
-  const { data: lenses, isPending } = useLenses(serverId, conversationId);
+  const { data: lenses, isPending, isError } = useLenses(serverId, conversationId);
   const deleteLens = useDeleteLensMutation();
   const currentUserId = useAuthStore((s) => s.session?.userId);
 
@@ -223,6 +223,8 @@ function LensPickerDropdown({
         {/* Lens list */}
         {isPending ? (
           <div className="px-3 py-2 text-xs text-rim-text-muted">Loading...</div>
+        ) : isError ? (
+          <div className="px-3 py-2 text-xs text-rim-danger">Failed to load lenses</div>
         ) : lenses && lenses.length > 0 ? (
           lenses.map((lens) => {
             const currentIndex = activeLensId ? itemIndex + 1 : itemIndex;
