@@ -157,7 +157,7 @@ function ReportsList({ serverId }: { serverId: string }) {
           </select>
         </label>
       </div>
-      <p className="mt-1 text-xs text-rim-text-faint">Oldest first.</p>
+      <p className="mt-1 text-xs text-rim-text-faint">Newest first.</p>
       {isPending && <p className="mt-2 text-sm text-rim-text-muted">Loading reports…</p>}
       {isError && (
         <p role="alert" className={`mt-2 ${ERROR_BOX}`}>
