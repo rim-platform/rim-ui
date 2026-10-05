@@ -428,6 +428,11 @@ export type Conversation = {
   memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
   serverId: Scalars['ID']['output'];
+  /**
+   * Slow mode (Track 1.2): minimum seconds between two messages of the same non-moderator
+   * member; `0` when off.
+   */
+  slowModeSeconds: Scalars['Int']['output'];
   title?: Maybe<Scalars['String']['output']>;
   topic?: Maybe<Scalars['String']['output']>;
 };
@@ -532,6 +537,11 @@ export type CreateInviteInput = {
    * malformed addresses return a validation error.
    */
   recipientEmail?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Role granted on join (Track 1.2): `MEMBER` (default) or `GUEST`. Any other value is a
+   * `VALIDATION` error.
+   */
+  role?: InputMaybe<ServerMemberRoleGql>;
   serverId: Scalars['ID']['input'];
 };
 
@@ -1021,6 +1031,8 @@ export type Invite = {
   id: Scalars['ID']['output'];
   maxUses: Scalars['Int']['output'];
   revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** Role granted on join: `MEMBER` or `GUEST` (Track 1.2). */
+  role: ServerMemberRoleGql;
   serverId: Scalars['ID']['output'];
   useCount: Scalars['Int']['output'];
 };
@@ -1161,6 +1173,16 @@ export type MarkAsReadInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+/** A member's timeout: until `until` they can read but not write in the workspace. */
+export type MemberTimeout = {
+  createdAt: Scalars['DateTime']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  serverId: Scalars['ID']['output'];
+  setBy?: Maybe<Scalars['ID']['output']>;
+  until: Scalars['DateTime']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 export type Message = {
   attachments: Array<Attachment>;
   author?: Maybe<User>;
@@ -1210,6 +1232,51 @@ export type MessageReference = {
   threadId?: Maybe<Scalars['ID']['output']>;
 };
 
+/**
+ * A member's report of a message. `messageText` and `messageAuthorId` are present only when
+ * the viewing moderator can read the conversation (`messageReadable`); otherwise only the ids
+ * and the reporter's reason are shown. `messageText` is also null for a deleted message.
+ */
+export type MessageReport = {
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  messageAuthorId?: Maybe<Scalars['ID']['output']>;
+  messageId: Scalars['ID']['output'];
+  messageReadable: Scalars['Boolean']['output'];
+  messageText?: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  reporterUserId: Scalars['ID']['output'];
+  resolvedAt?: Maybe<Scalars['DateTime']['output']>;
+  resolvedBy?: Maybe<Scalars['ID']['output']>;
+  serverId: Scalars['ID']['output'];
+  status: MessageReportStatus;
+};
+
+export type MessageReportCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  reportId: Scalars['ID']['input'];
+};
+
+export type MessageReportCursorOutput = {
+  createdAt: Scalars['DateTime']['output'];
+  reportId: Scalars['ID']['output'];
+};
+
+/** Reports ordered `createdAt ASC, id ASC`, standard cursor semantics (`docs/pagination.md`). */
+export type MessageReportPage = {
+  items: Array<MessageReport>;
+  next?: Maybe<MessageReportCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<MessageReportCursorOutput>;
+};
+
+export enum MessageReportStatus {
+  DISMISSED = 'DISMISSED',
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED'
+}
+
 export enum MessageTagTypeGql {
   ACTION_ITEM = 'ACTION_ITEM',
   DECISION = 'DECISION',
@@ -1230,8 +1297,15 @@ export type Mutation = {
   /** Add a rotation layer to a schedule. Owner-only. */
   addRotationLayer: RotationLayerGql;
   advanceIncidentPhase: IncidentPhaseGql;
+  /**
+   * Remove a member and block them from re-joining until `expiresAt` (or until unbanned
+   * when omitted). Same targeting rules as `kickMember`. Audited.
+   */
+  banMember: ServerBan;
   /** @deprecated Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release. */
   bootstrap: BootstrapPayload;
+  /** End a member's timeout early. Returns whether one was in force. Audited. */
+  clearTimeout: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
   createChannelLens: ChannelLens;
   createConversation: Conversation;
@@ -1294,6 +1368,11 @@ export type Mutation = {
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   joinServerByInvite: JoinServerByInvitePayload;
+  /**
+   * Remove a member from the workspace (Owner/Moderator; nobody can kick the owner, and a
+   * moderator cannot kick a moderator). They may re-join with a new invite. Audited.
+   */
+  kickMember: Scalars['Boolean']['output'];
   /** Leave a channel or group (not a DM). */
   leaveConversation: Scalars['Boolean']['output'];
   login: LoginPayload;
@@ -1312,9 +1391,19 @@ export type Mutation = {
   /** Remove a rotation layer (cascades to its participants). Owner-only. */
   removeRotationLayer: Scalars['Boolean']['output'];
   replyToMessage: Message;
+  /**
+   * Report a message to the workspace moderators. Any member who can read it, once per
+   * message (`CONFLICT` on a second report). Audited (`chat.report_message`).
+   */
+  reportMessage: MessageReport;
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   resolveIncident: IncidentGql;
+  /**
+   * Close an open report as resolved or dismissed (Owner/Moderator). Audited
+   * (`admin.resolve_report`).
+   */
+  resolveReport: MessageReport;
   /** Revoke an ingest token. Owner-only, permanent (no un-revoke). */
   revokeIngestToken: Scalars['Boolean']['output'];
   /**
@@ -1335,10 +1424,20 @@ export type Mutation = {
   /** Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only. */
   setConversationArchived: Conversation;
   /**
+   * Change a member's role. Owner: any role but `OWNER`, never their own. Moderator:
+   * `MEMBER` <-> `GUEST` only. Audited (`admin.set_member_role`).
+   */
+  setMemberRole: ServerMember;
+  /**
    * Replace a rotation layer's full ordered participant list. `userIds[0]` becomes the first
    * shift. Owner-only.
    */
   setRotationParticipants: RotationLayerGql;
+  /**
+   * Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
+   * Audited (`chat.set_slow_mode`).
+   */
+  setSlowMode: Conversation;
   /**
    * Turn an optional workspace module on or off. Owner-only. No data is deleted when a
    * feature is turned off; turning it back on restores everything. Audited.
@@ -1358,8 +1457,15 @@ export type Mutation = {
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
   tagIncidentMessage: IncidentMessageTagGql;
+  /**
+   * Time a member out until `until` (at most 30 days ahead): they keep reading but every
+   * write fails with `TIMED_OUT`. Same targeting rules as `kickMember`. Audited.
+   */
+  timeoutMember: MemberTimeout;
   togglePipeline: PipelineGql;
   toggleReaction: Array<ReactionGroup>;
+  /** Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited. */
+  unbanMember: Scalars['Boolean']['output'];
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
   updateChannelLens: ChannelLens;
@@ -1441,8 +1547,22 @@ export type MutationAdvanceIncidentPhaseArgs = {
 };
 
 
+export type MutationBanMemberArgs = {
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationBootstrapArgs = {
   input: BootstrapInput;
+};
+
+
+export type MutationClearTimeoutArgs = {
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -1640,6 +1760,13 @@ export type MutationJoinServerByInviteArgs = {
 };
 
 
+export type MutationKickMemberArgs = {
+  reason?: InputMaybe<Scalars['String']['input']>;
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationLeaveConversationArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -1698,6 +1825,14 @@ export type MutationReplyToMessageArgs = {
 };
 
 
+export type MutationReportMessageArgs = {
+  conversationId: Scalars['ID']['input'];
+  messageId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationRequestPasswordResetArgs = {
   username: Scalars['String']['input'];
 };
@@ -1711,6 +1846,13 @@ export type MutationResetPasswordArgs = {
 
 export type MutationResolveIncidentArgs = {
   incidentId: Scalars['ID']['input'];
+};
+
+
+export type MutationResolveReportArgs = {
+  outcome: ReportOutcome;
+  reportId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -1748,9 +1890,23 @@ export type MutationSetConversationArchivedArgs = {
 };
 
 
+export type MutationSetMemberRoleArgs = {
+  role: ServerMemberRoleGql;
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationSetRotationParticipantsArgs = {
   layerId: Scalars['ID']['input'];
   userIds: Array<Scalars['ID']['input']>;
+};
+
+
+export type MutationSetSlowModeArgs = {
+  conversationId: Scalars['ID']['input'];
+  seconds: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -1787,6 +1943,14 @@ export type MutationTagIncidentMessageArgs = {
 };
 
 
+export type MutationTimeoutMemberArgs = {
+  reason?: InputMaybe<Scalars['String']['input']>;
+  serverId: Scalars['ID']['input'];
+  until: Scalars['DateTime']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationTogglePipelineArgs = {
   enabled: Scalars['Boolean']['input'];
   pipelineId: Scalars['ID']['input'];
@@ -1795,6 +1959,12 @@ export type MutationTogglePipelineArgs = {
 
 export type MutationToggleReactionArgs = {
   input: ToggleReactionInput;
+};
+
+
+export type MutationUnbanMemberArgs = {
+  serverId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -2086,6 +2256,12 @@ export type Query = {
   me: User;
   message: Message;
   messageReference: MessageReference;
+  /**
+   * Message reports of the workspace (all statuses when `status` is omitted), ordered
+   * `createdAt ASC, id ASC`. Owner/Moderator only. The message body is included only when
+   * the moderator can read the conversation.
+   */
+  messageReports: MessageReportPage;
   messages: MessagePage;
   mutedConversations: Array<MutedConversation>;
   myInvites: Array<Invite>;
@@ -2140,6 +2316,8 @@ export type Query = {
    */
   searchMessages: SearchResultPage;
   server: Server;
+  /** Active bans of the workspace, newest first. Owner/Moderator only. */
+  serverBans: Array<ServerBan>;
   serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
   /**
@@ -2305,6 +2483,15 @@ export type QueryMessageReferenceArgs = {
 };
 
 
+export type QueryMessageReportsArgs = {
+  cursor?: InputMaybe<MessageReportCursorInput>;
+  dir: PageDir;
+  limit: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+  status?: InputMaybe<MessageReportStatus>;
+};
+
+
 export type QueryMessagesArgs = {
   conversationId: Scalars['ID']['input'];
   cursor?: InputMaybe<MessageCursorInput>;
@@ -2388,6 +2575,11 @@ export type QuerySearchMessagesArgs = {
 
 
 export type QueryServerArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryServerBansArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -2503,6 +2695,12 @@ export type ReplyToMessageInput = {
   serverId: Scalars['ID']['input'];
   text: Scalars['String']['input'];
 };
+
+/** How a moderator closes a report. */
+export enum ReportOutcome {
+  DISMISSED = 'DISMISSED',
+  RESOLVED = 'RESOLVED'
+}
 
 /**
  * Discriminator for [`RotationLayerGql::kind`] / [`RotationKindInputGql::kind`]. See
@@ -2626,25 +2824,41 @@ export type Server = {
   viewerRole: ServerMemberRoleGql;
 };
 
+/** A workspace ban. Active bans block every way of joining the workspace. */
+export type ServerBan = {
+  bannedBy?: Maybe<Scalars['ID']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  /** Null for a ban that lasts until it is lifted. */
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  reason?: Maybe<Scalars['String']['output']>;
+  serverId: Scalars['ID']['output'];
+  /** The banned user (null if the account no longer exists). */
+  user?: Maybe<User>;
+  userId: Scalars['ID']['output'];
+};
+
 export type ServerMember = {
   avatarUrl?: Maybe<Scalars['String']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   joinedAt: Scalars['DateTime']['output'];
-  memberRole: Scalars['String']['output'];
+  memberRole: ServerMemberRoleGql;
   serverId: Scalars['ID']['output'];
   statusText?: Maybe<Scalars['String']['output']>;
+  /** End of the member's timeout while one is in force (Track 1.2), else null. */
+  timeoutUntil?: Maybe<Scalars['DateTime']['output']>;
   userId: Scalars['ID']['output'];
   username: Scalars['String']['output'];
 };
 
 /**
  * GraphQL exposure of `rim_core::server_member::model::ServerMemberRole`. Reused (not
- * duplicated) across every place a member's role needs to cross the wire — currently
- * `Server.viewerRole`.
+ * duplicated) across every place a member's role needs to cross the wire — `Server.viewerRole`,
+ * `ServerMember.memberRole`, `CreateInviteInput.role`, `setMemberRole`.
  */
 export enum ServerMemberRoleGql {
   GUEST = 'GUEST',
+  MEMBER = 'MEMBER',
   MODERATOR = 'MODERATOR',
   OWNER = 'OWNER'
 }
