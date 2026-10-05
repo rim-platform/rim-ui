@@ -93,6 +93,12 @@ export type WorkspaceEvent =
       user_id: string;
     }
   | {
+      /** Topic or archive state changed; the payload carries ids only, so refetch. */
+      type: "ConversationUpdated";
+      workspace_id: string;
+      conversation_id: string;
+    }
+  | {
       type: "TypingStarted";
       workspace_id: string;
       conversation_id: string;

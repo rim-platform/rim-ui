@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, type ReactNode } from "react";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -46,6 +46,12 @@ vi.mock("../../features/commands/api/useCommands", () => ({
 }));
 
 import { toast } from "../../shared/toast";
+import { useShellStore } from "../../shell/state/useShellStore";
+import { useAuthStore } from "../../features/auth/state/useAuthStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { markLeaving, clearLeaving } from "../../features/conversations/state/pendingLeaves";
+import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
+import type { ConversationSummaryPage } from "../../features/conversations/types";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
@@ -297,5 +303,136 @@ describe("useWorkspaceEvents incident event handling", () => {
       }),
     ).not.toThrow();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkspaceEvents conversation membership and archive", () => {
+  const secret = makeConversation({ id: "c-secret", title: "secret", isPrivate: true });
+  const general = makeConversation({ id: "c-general", title: "general" });
+
+  function pageOf(...items: ReturnType<typeof makeConversation>[]): ConversationSummaryPage {
+    return { items, pageInfo: { hasNext: false, hasPrev: false } };
+  }
+
+  function setup() {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.joinedChannels("ws-1"), pageOf(general, secret));
+    qc.setQueryData(queryKeys.conversations("ws-1"), pageOf());
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    return { qc, spy };
+  }
+
+  function joinedIds(qc: QueryClient) {
+    return qc
+      .getQueryData<ConversationSummaryPage>(queryKeys.joinedChannels("ws-1"))
+      ?.items.map((c) => c.id);
+  }
+
+  beforeEach(() => {
+    connectedHandler = null;
+    subscribeObserver = null;
+    vi.clearAllMocks();
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "me" } });
+    useMembersPanelStore.setState({ open: false });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    useShellStore.getState().reset();
+  });
+
+  it("removal of the viewer drops the conversation and leaves it when open, with a toast", () => {
+    const { qc } = setup();
+    useShellStore.setState({ selectedConversationId: "c-secret" });
+    useMembersPanelStore.setState({ open: true });
+
+    emitWorkspaceEvent({
+      type: "MemberRemovedFromConversation",
+      workspace_id: "ws-1",
+      conversation_id: "c-secret",
+      user_id: "me",
+    });
+
+    expect(joinedIds(qc)).toEqual(["c-general"]);
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+    expect(useMembersPanelStore.getState().open).toBe(false);
+    expect(toast.info).toHaveBeenCalledWith("You are no longer a member of #secret");
+  });
+
+  it("removal of the viewer from a conversation that is not open only drops it", () => {
+    const { qc } = setup();
+    useShellStore.setState({ selectedConversationId: "c-general" });
+
+    emitWorkspaceEvent({
+      type: "MemberRemovedFromConversation",
+      workspace_id: "ws-1",
+      conversation_id: "c-secret",
+      user_id: "me",
+    });
+
+    expect(joinedIds(qc)).toEqual(["c-general"]);
+    expect(useShellStore.getState().selectedConversationId).toBe("c-general");
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("a voluntary leave does not also show the removal toast", () => {
+    setup();
+    useShellStore.setState({ selectedConversationId: "c-secret" });
+    markLeaving("c-secret");
+    try {
+      emitWorkspaceEvent({
+        type: "MemberRemovedFromConversation",
+        workspace_id: "ws-1",
+        conversation_id: "c-secret",
+        user_id: "me",
+      });
+    } finally {
+      clearLeaving("c-secret");
+    }
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("removal of someone else refreshes the members and lists but keeps the conversation", () => {
+    const { qc, spy } = setup();
+    useShellStore.setState({ selectedConversationId: "c-secret" });
+
+    emitWorkspaceEvent({
+      type: "MemberRemovedFromConversation",
+      workspace_id: "ws-1",
+      conversation_id: "c-secret",
+      user_id: "u-alice",
+    });
+
+    expect(joinedIds(qc)).toEqual(["c-general", "c-secret"]);
+    expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversation("ws-1", "c-secret") });
+  });
+
+  it("the viewer being added refetches the joined channel list", () => {
+    const { spy } = setup();
+    emitWorkspaceEvent({
+      type: "MemberAddedToConversation",
+      workspace_id: "ws-1",
+      conversation_id: "c-new",
+      user_id: "me",
+    });
+    // The `channels` prefix covers the joined list.
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.channels("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversations("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversation("ws-1", "c-new") });
+  });
+
+  it("ConversationUpdated refetches the conversation and the channel lists", () => {
+    const { spy } = setup();
+    emitWorkspaceEvent({
+      type: "ConversationUpdated",
+      workspace_id: "ws-1",
+      conversation_id: "c-general",
+    });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversation("ws-1", "c-general") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.channels("ws-1") });
   });
 });
