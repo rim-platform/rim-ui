@@ -591,4 +591,22 @@ describe("MessageTimeline virtualization", () => {
     expect(messageList().scrollTop).toBe(maxScrollTop());
     expect(screen.getByText("message 139")).toBeInTheDocument();
   });
+
+  it("keeps the row being edited mounted while it is scrolled out of view", async () => {
+    setMessages(range(0, 60));
+    render(<MessageTimeline />);
+    await settle();
+
+    act(() => useShellStore.setState({ editingMessageId: "m-059" }));
+    await settle();
+    expect(screen.getByText("message 59").getAttribute("data-editing")).toBe("true");
+
+    act(() => messageList().scrollTo({ top: 0 }));
+    await settle();
+
+    expect(screen.getByText("message 0")).toBeInTheDocument();
+    // Far outside the window, but still mounted so an unsaved draft survives.
+    expect(screen.getByText("message 59").getAttribute("data-editing")).toBe("true");
+    expect(screen.queryByText("message 40")).not.toBeInTheDocument();
+  });
 });

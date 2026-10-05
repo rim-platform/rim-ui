@@ -63,6 +63,10 @@ export function MessageTimeline() {
     isAtBottomRef,
   });
 
+  const editingIndex = useMemo(
+    () => (editingMessageId ? items.findIndex((m) => m.id === editingMessageId) : -1),
+    [items, editingMessageId],
+  );
   const { virtualizer, scrollContainerRef, topSentinelRef, handleScroll, scrollToIndex } =
     useTimelineScroll({
       listKey: conversationId,
@@ -75,6 +79,7 @@ export function MessageTimeline() {
       fetchNextPage: timeline.fetchNextPage,
       onScrollPosition,
       isAtBottomRef,
+      pinnedIndex: editingIndex,
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import type { Range } from "@tanstack/react-virtual";
 
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 
@@ -33,6 +34,11 @@ interface UseTimelineScrollOptions {
   onScrollPosition?: (atBottom: boolean) => void;
   /** Shared with the divider hook; kept current by scroll events. */
   isAtBottomRef: React.RefObject<boolean>;
+  /**
+   * A row kept mounted even when scrolled out of view (the message being
+   * edited), so its unsaved draft and focus survive scrolling away.
+   */
+  pinnedIndex: number;
 }
 
 /**
@@ -59,18 +65,30 @@ export function useTimelineScroll({
   fetchNextPage,
   onScrollPosition,
   isAtBottomRef,
+  pinnedIndex,
 }: UseTimelineScrollOptions) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
 
   const getItemKey = useCallback((index: number) => items[index]?.id ?? index, [items]);
   const estimateSize = useCallback(() => ESTIMATED_ROW_HEIGHT[displayDensity], [displayDensity]);
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range);
+      if (pinnedIndex < 0 || pinnedIndex >= range.count || indexes.includes(pinnedIndex)) {
+        return indexes;
+      }
+      return [...indexes, pinnedIndex].sort((a, b) => a - b);
+    },
+    [pinnedIndex],
+  );
 
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize,
     getItemKey,
+    rangeExtractor,
     overscan: 8,
     paddingStart: LIST_PADDING_Y,
     paddingEnd: LIST_PADDING_Y,
