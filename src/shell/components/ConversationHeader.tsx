@@ -36,6 +36,7 @@ import { IncidentBanner } from "../../features/incidents/components/IncidentBann
 import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
 import { useActiveIncident } from "../../features/incidents/api/useIncident";
 import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
+import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 
 export function ConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -72,6 +73,8 @@ export function ConversationHeader() {
 
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
+  // Guests cannot invite (Track 1.2); the server refuses anyway.
+  const isGuest = useIsGuest(workspaceId ?? undefined);
 
   // Incident mode — only when the workspace has the incidents module on (Track 0.4). The
   // query is skipped when off, and any cached incident is ignored so turning the feature off
@@ -234,7 +237,7 @@ export function ConversationHeader() {
                 </button>
               </HoverTooltip>
             )}
-            <InviteButton onClick={() => setInviteOpen(true)} />
+            {!isGuest && <InviteButton onClick={() => setInviteOpen(true)} />}
             <MuteToggleButton conversationId={conversationId} workspaceId={workspaceId ?? ""} />
             {isChannel && workspaceId && (
               <LensPicker serverId={workspaceId} conversationId={conversationId} />
@@ -250,7 +253,7 @@ export function ConversationHeader() {
             )}
           </div>
         )}
-        <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
+        <InviteDialog open={inviteOpen && !isGuest} onClose={() => setInviteOpen(false)} />
       </div>
       {incidentsEnabled && activeIncident && workspaceId && conversationId && (
         <IncidentBanner serverId={workspaceId} conversationId={conversationId} />

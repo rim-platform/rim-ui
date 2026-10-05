@@ -15,6 +15,7 @@ export type ConversationSummary = Pick<
   | "memberCount"
   | "isMember"
   | "createdBy"
+  | "slowModeSeconds"
 >;
 
 /** A page of conversations, as returned by `channels` and `inboxConversations`. */

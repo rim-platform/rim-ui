@@ -7,8 +7,10 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useCanModerate, useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
+import { MemberActionsMenu } from "../../workspaces/components/MemberActionsMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { useConversation } from "../api/useConversation";
 import {
@@ -33,8 +35,9 @@ interface ConversationMembersPanelProps {
 }
 
 /**
- * The open conversation's members, shown in the tool panel. Any member can invite (channels
- * and groups); Owner/Moderator can remove others; the viewer's own row offers Leave.
+ * The open conversation's members, shown in the tool panel. Any member but a guest can invite
+ * (channels and groups); Owner/Moderator can remove others and open the per-member moderation
+ * menu; the viewer's own row offers Leave. Rows show the workspace role and any timeout.
  */
 export function ConversationMembersPanel({
   workspaceId,
@@ -85,6 +88,7 @@ function MembersList({
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId);
   const canModerate = useCanModerate(workspaceId);
+  const isGuest = useIsGuest(workspaceId);
   const [inviting, setInviting] = useState(false);
   const [inviteIds, setInviteIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -94,7 +98,7 @@ function MembersList({
   const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
 
   const isDm = conversation.conversationType === ConversationTypeEnum.DIRECT;
-  const canInvite = canInviteToConversation(conversation);
+  const canInvite = canInviteToConversation(conversation) && !isGuest;
   const canLeave = canLeaveConversation(conversation);
   const canRemoveOthers = canModerate && !isDm;
 
@@ -208,9 +212,13 @@ function MembersList({
                 name={member.displayName}
                 avatarUrl={member.avatarUrl ?? null}
               />
-              <span className="min-w-0 flex-1 truncate text-sm text-rim-text">
-                {member.displayName}
-                {isSelf && <span className="ml-1 text-xs text-rim-text-faint">(you)</span>}
+              <span className="min-w-0 flex-1">
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className="truncate text-sm text-rim-text">{member.displayName}</span>
+                  {isSelf && <span className="text-xs text-rim-text-faint">(you)</span>}
+                  <RoleBadge role={member.role} />
+                </span>
+                <TimeoutMarker until={member.timeoutUntil} />
               </span>
               {isSelf && canLeave && (
                 <Button
@@ -238,6 +246,13 @@ function MembersList({
                 >
                   Remove
                 </Button>
+              )}
+              {confirmRemoveId !== member.userId && (
+                <MemberActionsMenu
+                  workspaceId={workspaceId}
+                  member={member}
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                />
               )}
               {!isSelf && confirmRemoveId === member.userId && (
                 <span className="flex shrink-0 gap-1">

@@ -21,9 +21,20 @@ import { useConversation } from "../../conversations/api/useConversation";
 import { JoinChannelBar } from "../../conversations/components/JoinChannelBar";
 import { ArchivedConversationBar } from "../../conversations/components/ArchivedConversationBar";
 import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
-import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
+import {
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  retryAfterSeconds,
+  TIMED_OUT,
+} from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { slowModeWaitMessage } from "../../conversations/api/useSlowMode";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useMyTimeout } from "../../workspaces/hooks/useMyTimeout";
+import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
+import { useSlowModeStore } from "../state/useSlowModeStore";
 import { ComposerInput } from "./ComposerInput";
+import { SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
 
 interface PendingFile {
@@ -78,6 +89,13 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  // Track 1.2: a timed-out viewer reads but cannot write; slow mode spaces out members'
+  // messages (Owner/Moderator are exempt). The server enforces both.
+  const timedOutUntil = useMyTimeout(workspaceId);
+  const isModerator = useCanModerate(workspaceId);
+  const slowModeSeconds = conversation?.slowModeSeconds ?? 0;
+  const slowModeBlockedUntil = useSlowModeStore((s) => s.blockedUntil[conversationId]);
 
   // Load draft on mount and when conversationId changes
   useEffect(() => {
@@ -112,13 +130,37 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
 
   /**
    * Shows the server's message for a failed send. An archived (or no longer visible)
-   * conversation also refetches, so the composer flips to the archived bar.
+   * conversation also refetches, so the composer flips to the archived bar. Slow mode and
+   * timeouts give the text back, since the message never left.
    */
-  function handleSendError(err: unknown, fallback: string) {
+  function handleSendError(err: unknown, fallback: string, unsentText?: string) {
     const code = graphqlErrorCode(err);
-    toast.error(code ? graphqlErrorMessage(err, fallback) : fallback);
+    const waitSeconds = retryAfterSeconds(err);
+    if (waitSeconds !== undefined) {
+      useSlowModeStore.getState().markRateLimited(conversationId, waitSeconds);
+      toast.error(slowModeWaitMessage(waitSeconds));
+    } else {
+      toast.error(code ? graphqlErrorMessage(err, fallback) : fallback);
+    }
+    if (noteTimedOutError(workspaceId, err)) {
+      qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+    }
+    if (unsentText !== undefined && (waitSeconds !== undefined || code === TIMED_OUT)) {
+      restoreText(unsentText);
+    }
     if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {
       refetchConversation();
+    }
+  }
+
+  function restoreText(value: string) {
+    setText((current) => (current ? current : value));
+    draftStore.getState().setDraft(conversationId, value);
+  }
+
+  function noteSent() {
+    if (slowModeSeconds > 0 && !isModerator) {
+      useSlowModeStore.getState().markSent(conversationId, slowModeSeconds);
     }
   }
 
@@ -127,6 +169,8 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   }
 
   async function handleSubmit() {
+    if (timedOutUntil) return;
+    const unsentText = text;
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
 
@@ -200,8 +244,11 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
       send.mutate(
         { workspaceId, conversationId, text: processed },
         {
-          onSuccess: () => textareaRef.current?.focus(),
-          onError: (err) => handleSendError(err, "Failed to send message"),
+          onSuccess: () => {
+            noteSent();
+            textareaRef.current?.focus();
+          },
+          onError: (err) => handleSendError(err, "Failed to send message", unsentText),
         },
       );
       return;
@@ -216,6 +263,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
         text: processed,
       });
       const messageId = sendResult.sendMessage.id;
+      noteSent();
 
       // Upload each file
       for (const file of filesToUpload) {
@@ -309,6 +357,12 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
         isDragOver && "bg-rim-accent/5 ring-2 ring-inset ring-rim-accent/30",
       )}
     >
+      {timedOutUntil && <TimedOutBanner until={timedOutUntil} />}
+      <SlowModeIndicator
+        seconds={slowModeSeconds}
+        blockedUntil={slowModeBlockedUntil}
+        exempt={isModerator}
+      />
       <FilePreviewBar pendingFiles={pendingFiles} onRemove={removeFile} />
 
       <input
@@ -322,20 +376,26 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
         }}
       />
 
-      <ComposerInput
-        text={text}
-        onTextChange={setText}
-        onSubmit={() => void handleSubmit()}
-        onKeystroke={handleKeystroke}
-        saveDraftDebounced={saveDraftDebounced}
-        isSubmitting={send.isPending}
-        isUploading={isUploading}
-        canSubmit={!!(text.trim() || pendingFiles.length > 0)}
-        textareaRef={textareaRef}
-        mentionMapRef={mentionMapRef}
-        serverMembers={serverMembers}
-        onFilePickerOpen={() => fileInputRef.current?.click()}
-      />
+      <fieldset
+        disabled={Boolean(timedOutUntil)}
+        aria-label={timedOutUntil ? "Composer (disabled while timed out)" : undefined}
+        className="m-0 min-w-0 border-0 p-0 disabled:opacity-50"
+      >
+        <ComposerInput
+          text={text}
+          onTextChange={setText}
+          onSubmit={() => void handleSubmit()}
+          onKeystroke={handleKeystroke}
+          saveDraftDebounced={saveDraftDebounced}
+          isSubmitting={send.isPending}
+          isUploading={isUploading}
+          canSubmit={!!(text.trim() || pendingFiles.length > 0)}
+          textareaRef={textareaRef}
+          mentionMapRef={mentionMapRef}
+          serverMembers={serverMembers}
+          onFilePickerOpen={() => fileInputRef.current?.click()}
+        />
+      </fieldset>
     </form>
   );
 }

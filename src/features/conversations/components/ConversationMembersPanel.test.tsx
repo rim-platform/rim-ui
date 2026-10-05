@@ -11,8 +11,10 @@ import type { ConversationSummary } from "../types";
 import {
   baseReadHandlers,
   callsTo,
+  currentUser,
   makeConversation,
   routeRequests,
+  workspaceMembers,
 } from "../__fixtures__/conversations";
 
 const requestMock = vi.fn();
@@ -81,8 +83,8 @@ describe("ConversationMembersPanel", () => {
   });
 
   it("invites workspace members who are not in the conversation yet", async () => {
-    serve(ServerMemberRoleGql.GUEST);
-    await renderPanel(ServerMemberRoleGql.GUEST);
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderPanel(ServerMemberRoleGql.MEMBER);
     fireEvent.click(screen.getByRole("button", { name: /invite/i }));
 
     // Only Bob is offered: the viewer and Alice are already members.
@@ -97,6 +99,12 @@ describe("ConversationMembersPanel", () => {
         { serverId: "ws-1", conversationId: "conv-1", userIds: ["u-bob"] },
       ]),
     );
+  });
+
+  it("offers no Invite to a guest (Track 1.2)", async () => {
+    serve(ServerMemberRoleGql.GUEST);
+    await renderPanel(ServerMemberRoleGql.GUEST);
+    expect(screen.queryByRole("button", { name: /invite/i })).not.toBeInTheDocument();
   });
 
   it("does not offer Remove to a guest", async () => {
@@ -141,5 +149,41 @@ describe("ConversationMembersPanel", () => {
     serve(ServerMemberRoleGql.GUEST, makeConversation({ memberIds: ["u-alice"], isMember: false }));
     await renderPanel(ServerMemberRoleGql.GUEST);
     expect(screen.queryByRole("button", { name: /invite/i })).not.toBeInTheDocument();
+  });
+
+  it("shows role badges and a timeout marker, and the moderation menu to a moderator", async () => {
+    routeRequests(requestMock, {
+      "query Me": () => ({ me: currentUser }),
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "u-alice"
+            ? { ...m, memberRole: ServerMemberRoleGql.GUEST, timeoutUntil: "2999-01-01T00:00:00Z" }
+            : m.userId === "me"
+              ? { ...m, memberRole: ServerMemberRoleGql.MODERATOR }
+              : m,
+        ),
+      }),
+      "query Server(": () => ({
+        server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MODERATOR },
+      }),
+      "query Conversation(": () => ({ conversation: channel }),
+    });
+    await renderPanel(ServerMemberRoleGql.MODERATOR);
+
+    const alice = screen.getByTestId("member-row-u-alice");
+    await waitFor(() => expect(within(alice).getByTestId("role-badge")).toHaveTextContent("Guest"));
+    expect(within(alice).getByTestId("timeout-marker")).toHaveTextContent("Timed out until");
+    expect(within(alice).getByRole("button", { name: "Moderate Alice" })).toBeInTheDocument();
+
+    const me = screen.getByTestId("member-row-me");
+    expect(within(me).getByTestId("role-badge")).toHaveTextContent("Moderator");
+    expect(within(me).queryByRole("button", { name: /moderate/i })).not.toBeInTheDocument();
+  });
+
+  it("gives ordinary members no badge and no moderation menu", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /moderate/i })).not.toBeInTheDocument();
   });
 });

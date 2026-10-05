@@ -3,6 +3,8 @@ import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+
 const requestMock = vi.fn();
 
 vi.mock("../../../core/graphql/client", () => ({
@@ -34,7 +36,7 @@ describe("useCreateInviteMutation", () => {
     });
 
     expect(requestMock.mock.calls[0][1]).toEqual({
-      input: { serverId: "ws-1", maxUses: 10 },
+      input: { serverId: "ws-1", maxUses: 10, role: "MEMBER" },
     });
   });
 
@@ -47,7 +49,20 @@ describe("useCreateInviteMutation", () => {
     });
 
     expect(requestMock.mock.calls[0][1]).toEqual({
-      input: { serverId: "ws-1", maxUses: 10 },
+      input: { serverId: "ws-1", maxUses: 10, role: "MEMBER" },
+    });
+  });
+
+  it("sends a guest role when asked", async () => {
+    requestMock.mockResolvedValue({ createInvite: { inviteToken: "t", inviteId: "i" } });
+    const { result } = renderHook(() => useCreateInviteMutation(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ serverId: "ws-1", role: ServerMemberRoleGql.GUEST });
+    });
+
+    expect(requestMock.mock.calls[0][1]).toEqual({
+      input: { serverId: "ws-1", maxUses: 10, role: "GUEST" },
     });
   });
 
@@ -63,7 +78,12 @@ describe("useCreateInviteMutation", () => {
     });
 
     expect(requestMock.mock.calls[0][1]).toEqual({
-      input: { serverId: "ws-1", maxUses: 10, recipientEmail: "teammate@example.com" },
+      input: {
+        serverId: "ws-1",
+        maxUses: 10,
+        role: "MEMBER",
+        recipientEmail: "teammate@example.com",
+      },
     });
   });
 });

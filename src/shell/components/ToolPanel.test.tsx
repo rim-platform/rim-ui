@@ -21,6 +21,17 @@ vi.mock("../../features/conversations/components/ConversationMembersPanel", () =
   ),
 }));
 
+const roleGate = { isGuest: false };
+vi.mock("../../features/workspaces/api/useMyServerRole", () => ({
+  useIsGuest: () => roleGate.isGuest,
+}));
+
+vi.mock("../../features/workspaces/components/WorkspaceMemberDirectory", () => ({
+  WorkspaceMemberDirectory: ({ workspaceId }: { workspaceId: string }) => (
+    <div data-testid="member-directory">{workspaceId}</div>
+  ),
+}));
+
 vi.mock("../../features/plugins/components/PluginToolPanel", () => ({
   PluginToolPanel: () => <div data-testid="plugin-tool-panel">PluginToolPanel</div>,
 }));
@@ -28,13 +39,16 @@ vi.mock("../../features/plugins/components/PluginToolPanel", () => ({
 import { useShellStore } from "../state/useShellStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { ToolPanel } from "./ToolPanel";
 
 describe("ToolPanel", () => {
   beforeEach(() => {
     useShellStore.getState().reset();
     useMembersPanelStore.setState({ open: false });
+    useMemberDirectoryStore.setState({ open: false });
     useWorkspaceStore.setState({ workspaceId: null });
+    roleGate.isGuest = false;
   });
 
   it("renders with 'Conversations' heading when inbox panel is active", () => {
@@ -87,6 +101,26 @@ describe("ToolPanel", () => {
     useShellStore.setState({ activePanel: "inbox", selectedConversationId: null });
     useMembersPanelStore.setState({ open: true });
     render(<ToolPanel />);
+    expect(screen.getByTestId("conversation-list")).toBeInTheDocument();
+  });
+
+  it("opens the workspace member directory from the header", () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox" });
+    render(<ToolPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Workspace members" }));
+    expect(screen.getByTestId("member-directory")).toHaveTextContent("ws-1");
+    expect(screen.queryByTestId("conversation-list")).not.toBeInTheDocument();
+  });
+
+  it("offers no member directory to a guest", () => {
+    roleGate.isGuest = true;
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox" });
+    useMemberDirectoryStore.setState({ open: true });
+    render(<ToolPanel />);
+    expect(screen.queryByRole("button", { name: "Workspace members" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("member-directory")).not.toBeInTheDocument();
     expect(screen.getByTestId("conversation-list")).toBeInTheDocument();
   });
 });

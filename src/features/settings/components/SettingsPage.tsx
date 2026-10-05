@@ -13,7 +13,7 @@ import { AccountSettings } from "./AccountSettings";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { cn } from "../../../shared/ui/cn";
 import { useTerminalStore } from "../../terminal/state/useTerminalStore";
-import { useIsOwner } from "../../workspaces/api/useMyServerRole";
+import { useCanModerate, useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { useFeatureEnabled } from "../../workspaces/hooks/useFeatureEnabled";
 import { WorkspaceFeature } from "../../../core/graphql/generated/schema-types";
 
@@ -44,6 +44,11 @@ const WorkspaceStateSettings = lazy(() =>
 const WorkspaceFeatureSettings = lazy(() =>
   import("./WorkspaceFeatureSettings").then((m) => ({
     default: m.WorkspaceFeatureSettings,
+  })),
+);
+const ModerationSettings = lazy(() =>
+  import("./ModerationSettings").then((m) => ({
+    default: m.ModerationSettings,
   })),
 );
 const IngestTokenSettings = lazy(() =>
@@ -317,15 +322,17 @@ export function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(mainSurface));
 
-  // Workspace (feature flags) is Owner-only; Integrations holds only the alert-ingest tokens,
-  // which belong to the optional incidents module (Track 0.4). Both stay hidden until the
-  // role / flag is known. A requested tab that is hidden falls back to Profile without
-  // forgetting the request, so a deep link lands once the role / flag loads.
+  // Workspace holds the Owner-only feature flags (Track 0.4) and the Owner/Moderator
+  // Moderation section (Track 1.2); Integrations holds only the alert-ingest tokens, which
+  // belong to the optional incidents module. Both stay hidden until the role / flag is known.
+  // A requested tab that is hidden falls back to Profile without forgetting the request, so a
+  // deep link lands once the role / flag loads.
   const isOwner = useIsOwner(workspaceId ?? undefined);
+  const canModerate = useCanModerate(workspaceId ?? undefined);
   const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
   const visibleTabs = tabs.filter(
     (tab) =>
-      (tab.key !== "workspace" || isOwner) && (tab.key !== "integrations" || incidentsEnabled),
+      (tab.key !== "workspace" || canModerate) && (tab.key !== "integrations" || incidentsEnabled),
   );
   const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
     ? activeTab
@@ -392,7 +399,12 @@ export function SettingsPage() {
             {shownTab === "agent" && <AgentSettingsPanel />}
             {shownTab === "notifications" && <NotificationSettings />}
             {shownTab === "terminal" && <TerminalSettings />}
-            {shownTab === "workspace" && <WorkspaceFeatureSettings serverId={workspaceId} />}
+            {shownTab === "workspace" && (
+              <div className="space-y-10">
+                {isOwner && <WorkspaceFeatureSettings serverId={workspaceId} />}
+                <ModerationSettings serverId={workspaceId} />
+              </div>
+            )}
             {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
             {shownTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />

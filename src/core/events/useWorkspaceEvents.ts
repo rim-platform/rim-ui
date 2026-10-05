@@ -14,6 +14,10 @@ import {
   handleMemberAddedToConversation,
   handleMemberRemovedFromConversation,
 } from "../../features/conversations/state/membershipEvents";
+import {
+  handleMemberLeft,
+  handleMemberRoleChanged,
+} from "../../features/workspaces/state/memberEvents";
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
@@ -331,6 +335,14 @@ function handleEvent(
     case "MemberJoined":
       // Invalidate member list
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+      break;
+
+    case "MemberLeft":
+      handleMemberLeft(qc, workspaceId, event.user_id);
+      break;
+
+    case "MemberRoleChanged":
+      handleMemberRoleChanged(qc, workspaceId, event.user_id, event.role);
       break;
 
     case "ThreadCreated":

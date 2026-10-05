@@ -88,7 +88,7 @@ describe("ConversationActionsMenu — role gating", () => {
     async (role) => {
       serve(role);
       await openMenu(makeConversation(), role);
-      expect(menuLabels()).toEqual(["Members", "Archive channel", "Leave channel"]);
+      expect(menuLabels()).toEqual(["Members", "Slow mode", "Archive channel", "Leave channel"]);
     },
   );
 
@@ -204,5 +204,95 @@ describe("ConversationActionsMenu — actions", () => {
     expect(callsTo(requestMock, "mutation LeaveConversation")).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Leave" }));
     await waitFor(() => expect(callsTo(requestMock, "mutation LeaveConversation")).toHaveLength(1));
+  });
+});
+
+describe("ConversationActionsMenu — slow mode", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+    useShellStore.getState().reset();
+  });
+
+  it.each([
+    ["an ordinary member", ServerMemberRoleGql.MEMBER, makeConversation()],
+    ["a guest", ServerMemberRoleGql.GUEST, makeConversation()],
+    ["an archived channel", ServerMemberRoleGql.OWNER, makeConversation({ isArchived: true })],
+    [
+      "a group",
+      ServerMemberRoleGql.OWNER,
+      makeConversation({ conversationType: ConversationTypeEnum.GROUP, title: "crew" }),
+    ],
+  ])("is not offered for %s", async (_label, role, conversation) => {
+    serve(role);
+    await openMenu(conversation, role);
+    expect(menuLabels().some((l) => l.startsWith("Slow mode"))).toBe(false);
+  });
+
+  it("shows the current interval in the menu label", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openMenu(makeConversation({ slowModeSeconds: 300 }), ServerMemberRoleGql.MODERATOR);
+    expect(menuLabels()).toContain("Slow mode (5 min)");
+  });
+
+  it("a moderator picks an interval and saves it", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, {
+      "mutation SetSlowMode": () => ({ setSlowMode: makeConversation({ slowModeSeconds: 30 }) }),
+    });
+    await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Slow mode in #general" });
+    const options = screen.getAllByRole("radio").map((r) => r.parentElement?.textContent);
+    expect(options).toEqual([
+      "Off",
+      "5 seconds",
+      "10 seconds",
+      "30 seconds",
+      "1 minute",
+      "5 minutes",
+      "15 minutes",
+      "1 hour",
+    ]);
+    // Saving the current value is pointless.
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("radio", { name: "30 seconds" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation SetSlowMode")).toEqual([
+        { serverId: "ws-1", conversationId: "conv-1", seconds: 30 },
+      ]),
+    );
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith("Slow mode in #general: 30 seconds");
+  });
+
+  it("turns slow mode off", async () => {
+    serve(ServerMemberRoleGql.OWNER, {
+      "mutation SetSlowMode": () => ({ setSlowMode: makeConversation() }),
+    });
+    await openMenu(makeConversation({ slowModeSeconds: 60 }), ServerMemberRoleGql.OWNER);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode (1 min)" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Off" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation SetSlowMode")).toEqual([
+        { serverId: "ws-1", conversationId: "conv-1", seconds: 0 },
+      ]),
+    );
+  });
+
+  it("keeps the dialog open with the server's message on failure", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, {
+      "mutation SetSlowMode": () => {
+        throw graphqlError("VALIDATION", "slow mode is for channels only");
+      },
+    });
+    await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "10 seconds" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("slow mode is for channels only");
   });
 });

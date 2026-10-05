@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { detectOs } from "../../../core/runtime/runtime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { MemberPicker } from "./MemberPicker";
 
 interface NewMessagePickerProps {
@@ -20,6 +21,13 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
   const createMutation = useCreateConversationMutation();
+  // Guests may open DMs but not create groups (the server refuses with FORBIDDEN), so their
+  // picker keeps a single selection.
+  const isGuest = useIsGuest(workspaceId ?? undefined);
+  const handleSelectionChange = useCallback(
+    (ids: string[]) => setSelectedUserIds(isGuest ? ids.slice(-1) : ids),
+    [isGuest],
+  );
 
   useEffect(() => {
     setFocusedSurface(open ? "newMessagePicker" : null);
@@ -60,7 +68,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         <MemberPicker
           workspaceId={workspaceId ?? undefined}
           selectedUserIds={selectedUserIds}
-          onChange={setSelectedUserIds}
+          onChange={handleSelectionChange}
           onConfirm={handleConfirm}
           onEscape={onClose}
           autoFocus

@@ -437,6 +437,11 @@ type Conversation {
 	archivedAt: DateTime
 	memberCount: Int!
 	createdBy: ID
+	"""
+	Slow mode (Track 1.2): minimum seconds between two messages of the same non-moderator
+	member; `0` when off.
+	"""
+	slowModeSeconds: Int!
 	isMuted: Boolean!
 	"""
 	Whether the viewer is a member (for channels: has joined it).
@@ -555,6 +560,11 @@ input CreateInviteInput {
 	malformed addresses return a validation error.
 	"""
 	recipientEmail: String
+	"""
+	Role granted on join (Track 1.2): `MEMBER` (default) or `GUEST`. Any other value is a
+	`VALIDATION` error.
+	"""
+	role: ServerMemberRoleGql
 }
 
 type CreateInvitePayload {
@@ -1070,6 +1080,10 @@ type Invite {
 	maxUses: Int!
 	useCount: Int!
 	revokedAt: DateTime
+	"""
+	Role granted on join: `MEMBER` or `GUEST` (Track 1.2).
+	"""
+	role: ServerMemberRoleGql!
 }
 
 """
@@ -1223,6 +1237,18 @@ input MarkAsReadInput {
 	readAt: DateTime!
 }
 
+"""
+A member's timeout: until `until` they can read but not write in the workspace.
+"""
+type MemberTimeout {
+	serverId: ID!
+	userId: ID!
+	until: DateTime!
+	reason: String
+	setBy: ID
+	createdAt: DateTime!
+}
+
 type Message {
 	id: ID!
 	serverId: ID!
@@ -1270,6 +1296,53 @@ type MessageReference {
 	threadId: ID
 	permalinkPath: String!
 	anchor: String!
+}
+
+"""
+A member's report of a message. `messageText` and `messageAuthorId` are present only when
+the viewing moderator can read the conversation (`messageReadable`); otherwise only the ids
+and the reporter's reason are shown. `messageText` is also null for a deleted message.
+"""
+type MessageReport {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	reporterUserId: ID!
+	reason: String!
+	status: MessageReportStatus!
+	resolvedBy: ID
+	resolvedAt: DateTime
+	createdAt: DateTime!
+	messageReadable: Boolean!
+	messageText: String
+	messageAuthorId: ID
+}
+
+input MessageReportCursorInput {
+	createdAt: DateTime!
+	reportId: ID!
+}
+
+type MessageReportCursorOutput {
+	createdAt: DateTime!
+	reportId: ID!
+}
+
+"""
+Reports ordered `createdAt ASC, id ASC`, standard cursor semantics (`docs/pagination.md`).
+"""
+type MessageReportPage {
+	items: [MessageReport!]!
+	next: MessageReportCursorOutput
+	prev: MessageReportCursorOutput
+	pageInfo: PageInfo!
+}
+
+enum MessageReportStatus {
+	OPEN
+	RESOLVED
+	DISMISSED
 }
 
 enum MessageTagTypeGql {
@@ -1492,6 +1565,49 @@ type Mutation {
 	Delete an on-call override. Owner-only (resolved via the override's owning schedule).
 	"""
 	deleteOnCallOverride(overrideId: ID!): Boolean!
+	"""
+	Change a member's role. Owner: any role but `OWNER`, never their own. Moderator:
+	`MEMBER` <-> `GUEST` only. Audited (`admin.set_member_role`).
+	"""
+	setMemberRole(serverId: ID!, userId: ID!, role: ServerMemberRoleGql!): ServerMember!
+	"""
+	Remove a member from the workspace (Owner/Moderator; nobody can kick the owner, and a
+	moderator cannot kick a moderator). They may re-join with a new invite. Audited.
+	"""
+	kickMember(serverId: ID!, userId: ID!, reason: String): Boolean!
+	"""
+	Remove a member and block them from re-joining until `expiresAt` (or until unbanned
+	when omitted). Same targeting rules as `kickMember`. Audited.
+	"""
+	banMember(serverId: ID!, userId: ID!, reason: String, expiresAt: DateTime): ServerBan!
+	"""
+	Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited.
+	"""
+	unbanMember(serverId: ID!, userId: ID!): Boolean!
+	"""
+	Time a member out until `until` (at most 30 days ahead): they keep reading but every
+	write fails with `TIMED_OUT`. Same targeting rules as `kickMember`. Audited.
+	"""
+	timeoutMember(serverId: ID!, userId: ID!, until: DateTime!, reason: String): MemberTimeout!
+	"""
+	End a member's timeout early. Returns whether one was in force. Audited.
+	"""
+	clearTimeout(serverId: ID!, userId: ID!): Boolean!
+	"""
+	Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
+	Audited (`chat.set_slow_mode`).
+	"""
+	setSlowMode(serverId: ID!, conversationId: ID!, seconds: Int!): Conversation!
+	"""
+	Report a message to the workspace moderators. Any member who can read it, once per
+	message (`CONFLICT` on a second report). Audited (`chat.report_message`).
+	"""
+	reportMessage(serverId: ID!, conversationId: ID!, messageId: ID!, reason: String!): MessageReport!
+	"""
+	Close an open report as resolved or dismissed (Owner/Moderator). Audited
+	(`admin.resolve_report`).
+	"""
+	resolveReport(serverId: ID!, reportId: ID!, outcome: ReportOutcome!): MessageReport!
 }
 
 input MuteConversationInput {
@@ -1798,6 +1914,16 @@ type Query {
 	List a server's escalation policies. Any workspace member may read.
 	"""
 	escalationPolicies(serverId: ID!): [EscalationPolicyGql!]!
+	"""
+	Active bans of the workspace, newest first. Owner/Moderator only.
+	"""
+	serverBans(serverId: ID!): [ServerBan!]!
+	"""
+	Message reports of the workspace (all statuses when `status` is omitted), ordered
+	`createdAt ASC, id ASC`. Owner/Moderator only. The message body is included only when
+	the moderator can read the conversation.
+	"""
+	messageReports(serverId: ID!, status: MessageReportStatus, dir: PageDir!, cursor: MessageReportCursorInput, limit: Int!): MessageReportPage!
 }
 
 type ReactionGroup {
@@ -1830,6 +1956,14 @@ input ReplyToMessageInput {
 	rootMessageId: ID!
 	text: String!
 	parentMessageId: ID
+}
+
+"""
+How a moderator closes a report.
+"""
+enum ReportOutcome {
+	RESOLVED
+	DISMISSED
 }
 
 """
@@ -1974,6 +2108,25 @@ type Server {
 	features: [WorkspaceFeatureState!]!
 }
 
+"""
+A workspace ban. Active bans block every way of joining the workspace.
+"""
+type ServerBan {
+	serverId: ID!
+	userId: ID!
+	reason: String
+	bannedBy: ID
+	createdAt: DateTime!
+	"""
+	Null for a ban that lasts until it is lifted.
+	"""
+	expiresAt: DateTime
+	"""
+	The banned user (null if the account no longer exists).
+	"""
+	user: User
+}
+
 type ServerMember {
 	serverId: ID!
 	userId: ID!
@@ -1982,18 +2135,23 @@ type ServerMember {
 	avatarUrl: String
 	statusText: String
 	bio: String
-	memberRole: String!
+	memberRole: ServerMemberRoleGql!
 	joinedAt: DateTime!
+	"""
+	End of the member's timeout while one is in force (Track 1.2), else null.
+	"""
+	timeoutUntil: DateTime
 }
 
 """
 GraphQL exposure of `rim_core::server_member::model::ServerMemberRole`. Reused (not
-duplicated) across every place a member's role needs to cross the wire — currently
-`Server.viewerRole`.
+duplicated) across every place a member's role needs to cross the wire — `Server.viewerRole`,
+`ServerMember.memberRole`, `CreateInviteInput.role`, `setMemberRole`.
 """
 enum ServerMemberRoleGql {
 	OWNER
 	MODERATOR
+	MEMBER
 	GUEST
 }
 

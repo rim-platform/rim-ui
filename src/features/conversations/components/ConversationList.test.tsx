@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -63,11 +67,13 @@ function serve(joined = [general, secret, oldNews], browse = [general, secret, r
 }
 
 function renderList() {
+  const qc = createTestQueryClient();
   render(
-    <QueryClientProvider client={createTestQueryClient()}>
+    <QueryClientProvider client={qc}>
       <ConversationList onNewChannel={vi.fn()} />
     </QueryClientProvider>,
   );
+  return qc;
 }
 
 describe("ConversationList — channels sidebar", () => {
@@ -171,5 +177,59 @@ describe("ConversationList — channels sidebar", () => {
 
     expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
     expect(callsTo(requestMock, "mutation JoinChannel")).toHaveLength(0);
+  });
+});
+
+describe("ConversationList — guest gate (Track 1.2)", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useShellStore.setState({ selectedConversationId: "c-general" });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  function serveAs(role: ServerMemberRoleGql, joined = [general]) {
+    routeRequests(requestMock, {
+      ...baseReadHandlers,
+      "query Server(": () => ({ server: { id: "ws-1", name: "Acme", viewerRole: role } }),
+      "query Channels": () => page(joined),
+      "query InboxConversations": () => ({
+        inboxConversations: { items: [], pageInfo: { hasNext: false, hasPrev: false } },
+      }),
+    });
+  }
+
+  it("hides Browse channels and New channel from a guest", async () => {
+    serveAs(ServerMemberRoleGql.GUEST);
+    const qc = renderList();
+    await screen.findByText("general");
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined());
+    expect(screen.queryByRole("button", { name: "Browse channels" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New channel" })).not.toBeInTheDocument();
+  });
+
+  it("tells a guest with no channels that a member can add them, without a browse link", async () => {
+    serveAs(ServerMemberRoleGql.GUEST, []);
+    const qc = renderList();
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined());
+    expect(
+      await screen.findByText("No channels yet. A member can add you to one."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Browse channels/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Browse channels and New channel for a member", async () => {
+    serveAs(ServerMemberRoleGql.MEMBER);
+    const qc = renderList();
+    await screen.findByText("general");
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined());
+    expect(screen.getByRole("button", { name: "Browse channels" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New channel" })).toBeInTheDocument();
   });
 });

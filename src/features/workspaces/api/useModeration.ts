@@ -1,0 +1,336 @@
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { gql } from "graphql-request";
+
+import { graphqlClient } from "../../../core/graphql/client";
+import {
+  PageDir,
+  type MessageReportStatus,
+  type MutationBanMemberArgs,
+  type MutationClearTimeoutArgs,
+  type MutationKickMemberArgs,
+  type MutationReportMessageArgs,
+  type MutationResolveReportArgs,
+  type MutationSetMemberRoleArgs,
+  type MutationTimeoutMemberArgs,
+  type MutationUnbanMemberArgs,
+  type ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
+
+/**
+ * Track 1.2 moderation calls: member role changes, kick, ban, timeout, reports. Every
+ * mutation is re-checked server-side (role ladder, targeting rules); the UI gates are only
+ * there to avoid offering what would fail.
+ */
+
+const SET_MEMBER_ROLE = gql`
+  mutation SetMemberRole($serverId: ID!, $userId: ID!, $role: ServerMemberRoleGql!) {
+    setMemberRole(serverId: $serverId, userId: $userId, role: $role) {
+      userId
+      memberRole
+    }
+  }
+`;
+
+const KICK_MEMBER = gql`
+  mutation KickMember($serverId: ID!, $userId: ID!, $reason: String) {
+    kickMember(serverId: $serverId, userId: $userId, reason: $reason)
+  }
+`;
+
+const BAN_MEMBER = gql`
+  mutation BanMember($serverId: ID!, $userId: ID!, $reason: String, $expiresAt: DateTime) {
+    banMember(serverId: $serverId, userId: $userId, reason: $reason, expiresAt: $expiresAt) {
+      userId
+      expiresAt
+    }
+  }
+`;
+
+const UNBAN_MEMBER = gql`
+  mutation UnbanMember($serverId: ID!, $userId: ID!) {
+    unbanMember(serverId: $serverId, userId: $userId)
+  }
+`;
+
+const TIMEOUT_MEMBER = gql`
+  mutation TimeoutMember($serverId: ID!, $userId: ID!, $until: DateTime!, $reason: String) {
+    timeoutMember(serverId: $serverId, userId: $userId, until: $until, reason: $reason) {
+      userId
+      until
+    }
+  }
+`;
+
+const CLEAR_TIMEOUT = gql`
+  mutation ClearTimeout($serverId: ID!, $userId: ID!) {
+    clearTimeout(serverId: $serverId, userId: $userId)
+  }
+`;
+
+const SERVER_BANS = gql`
+  query ServerBans($serverId: ID!) {
+    serverBans(serverId: $serverId) {
+      userId
+      reason
+      bannedBy
+      createdAt
+      expiresAt
+      user {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+    }
+  }
+`;
+
+const REPORT_MESSAGE = gql`
+  mutation ReportMessage($serverId: ID!, $conversationId: ID!, $messageId: ID!, $reason: String!) {
+    reportMessage(
+      serverId: $serverId
+      conversationId: $conversationId
+      messageId: $messageId
+      reason: $reason
+    ) {
+      id
+    }
+  }
+`;
+
+const MESSAGE_REPORTS = gql`
+  query MessageReports(
+    $serverId: ID!
+    $status: MessageReportStatus
+    $dir: PageDir!
+    $cursor: MessageReportCursorInput
+    $limit: Int!
+  ) {
+    messageReports(
+      serverId: $serverId
+      status: $status
+      dir: $dir
+      cursor: $cursor
+      limit: $limit
+    ) {
+      items {
+        id
+        conversationId
+        messageId
+        reporterUserId
+        reason
+        status
+        resolvedBy
+        resolvedAt
+        createdAt
+        messageReadable
+        messageText
+        messageAuthorId
+      }
+      next {
+        createdAt
+        reportId
+      }
+      pageInfo {
+        hasNext
+        hasPrev
+      }
+    }
+  }
+`;
+
+const RESOLVE_REPORT = gql`
+  mutation ResolveReport($serverId: ID!, $reportId: ID!, $outcome: ReportOutcome!) {
+    resolveReport(serverId: $serverId, reportId: $reportId, outcome: $outcome) {
+      id
+      status
+    }
+  }
+`;
+
+export interface ServerBanRow {
+  userId: string;
+  reason: string | null;
+  bannedBy: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  user: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  } | null;
+}
+
+export interface MessageReportRow {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  reporterUserId: string;
+  reason: string;
+  status: MessageReportStatus;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  messageReadable: boolean;
+  messageText: string | null;
+  messageAuthorId: string | null;
+}
+
+export interface MessageReportPage {
+  items: MessageReportRow[];
+  next: { createdAt: string; reportId: string } | null;
+  pageInfo: { hasNext: boolean; hasPrev: boolean };
+}
+
+export const REPORTS_PAGE_SIZE = 20;
+
+/** Refreshes the member directory: roles, timeouts and membership all live there. */
+function useInvalidateMembers() {
+  const qc = useQueryClient();
+  return (serverId: string) =>
+    qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
+}
+
+export function useSetMemberRoleMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: (vars: MutationSetMemberRoleArgs) =>
+      graphqlClient.request<{ setMemberRole: { userId: string; memberRole: ServerMemberRoleGql } }>(
+        SET_MEMBER_ROLE,
+        vars,
+      ),
+    onSuccess: (_data, vars) => invalidate(vars.serverId),
+  });
+}
+
+export function useKickMemberMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: (vars: MutationKickMemberArgs) =>
+      graphqlClient.request<{ kickMember: boolean }>(KICK_MEMBER, vars),
+    onSuccess: (_data, vars) => invalidate(vars.serverId),
+  });
+}
+
+export function useBanMemberMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationBanMemberArgs) =>
+      graphqlClient.request<{ banMember: { userId: string; expiresAt: string | null } }>(
+        BAN_MEMBER,
+        vars,
+      ),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: queryKeys.serverMembers(vars.serverId) });
+      qc.invalidateQueries({ queryKey: queryKeys.serverBans(vars.serverId) });
+    },
+  });
+}
+
+export function useUnbanMemberMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationUnbanMemberArgs) =>
+      graphqlClient.request<{ unbanMember: boolean }>(UNBAN_MEMBER, vars),
+    onSuccess: (_data, vars) => {
+      qc.setQueryData<ServerBanRow[]>(queryKeys.serverBans(vars.serverId), (old) =>
+        old?.filter((ban) => ban.userId !== vars.userId),
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.serverBans(vars.serverId) });
+    },
+  });
+}
+
+export function useTimeoutMemberMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: (vars: MutationTimeoutMemberArgs) =>
+      graphqlClient.request<{ timeoutMember: { userId: string; until: string } }>(
+        TIMEOUT_MEMBER,
+        vars,
+      ),
+    onSuccess: (_data, vars) => invalidate(vars.serverId),
+  });
+}
+
+export function useClearTimeoutMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: (vars: MutationClearTimeoutArgs) =>
+      graphqlClient.request<{ clearTimeout: boolean }>(CLEAR_TIMEOUT, vars),
+    onSuccess: (_data, vars) => invalidate(vars.serverId),
+  });
+}
+
+/** Active bans of the workspace, newest first (Owner/Moderator only). */
+export function useServerBans(serverId: string | null | undefined, enabled = true) {
+  const id = serverId ?? undefined;
+  return useQuery({
+    queryKey: queryKeys.serverBans(id),
+    enabled: Boolean(id) && enabled,
+    queryFn: async () => {
+      const res = await graphqlClient.request<{ serverBans: ServerBanRow[] }>(SERVER_BANS, {
+        serverId: id!,
+      });
+      return res.serverBans;
+    },
+  });
+}
+
+/** Any member reports a message they can read to the workspace moderators. */
+export function useReportMessageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationReportMessageArgs) =>
+      graphqlClient.request<{ reportMessage: { id: string } }>(REPORT_MESSAGE, vars),
+    onSuccess: (_data, vars) =>
+      qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
+  });
+}
+
+/**
+ * Message reports of the workspace, filtered by status (`null` = all). The server orders
+ * reports oldest first and has no "newest page" entry point (an uncursored `BEFORE` also
+ * starts at the oldest), so the list reads as a queue: oldest first, Load more for newer.
+ */
+export function useMessageReports(
+  serverId: string | null | undefined,
+  status: MessageReportStatus | null,
+  enabled = true,
+) {
+  const id = serverId ?? undefined;
+  return useInfiniteQuery({
+    queryKey: queryKeys.messageReports(id, status),
+    enabled: Boolean(id) && enabled,
+    initialPageParam: null as MessageReportPage["next"],
+    queryFn: async ({ pageParam }) => {
+      const res = await graphqlClient.request<{ messageReports: MessageReportPage }>(
+        MESSAGE_REPORTS,
+        {
+          serverId: id!,
+          status,
+          dir: PageDir.AFTER,
+          cursor: pageParam,
+          limit: REPORTS_PAGE_SIZE,
+        },
+      );
+      return res.messageReports;
+    },
+    getNextPageParam: (lastPage) => (lastPage.pageInfo.hasNext ? lastPage.next : null),
+  });
+}
+
+export function useResolveReportMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationResolveReportArgs) =>
+      graphqlClient.request<{ resolveReport: { id: string; status: MessageReportStatus } }>(
+        RESOLVE_REPORT,
+        vars,
+      ),
+    onSuccess: (_data, vars) =>
+      qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
+  });
+}

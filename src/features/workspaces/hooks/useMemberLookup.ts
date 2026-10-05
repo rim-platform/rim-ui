@@ -1,12 +1,14 @@
 import { useMemo } from "react";
 
+import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
 
 type MemberInfo = {
   displayName: string;
   username?: string;
-  role?: string;
+  role?: ServerMemberRoleGql;
+  timeoutUntil?: string | null;
   isCurrentUser: boolean;
   avatarUrl?: string | null;
   statusText?: string | null;
@@ -39,6 +41,7 @@ export function useMemberLookup(serverId?: string) {
             displayName: member.displayName || member.username || member.userId.slice(0, 8),
             username: member.username,
             role: member.memberRole,
+            timeoutUntil: member.timeoutUntil ?? null,
             isCurrentUser: false,
             avatarUrl: member.avatarUrl,
             statusText: member.statusText,
@@ -48,6 +51,7 @@ export function useMemberLookup(serverId?: string) {
         } else {
           const existing = map.get(member.userId)!;
           existing.role = member.memberRole;
+          existing.timeoutUntil = member.timeoutUntil ?? null;
           existing.joinedAt = member.joinedAt;
           if (member.avatarUrl) {
             existing.avatarUrl = member.avatarUrl;

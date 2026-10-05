@@ -70,10 +70,11 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 }));
 
 // Owner role and workspace feature flags (Track 0.4) — mutable per test.
-const mockGate = { isOwner: false, incidentsEnabled: true };
+const mockGate = { isOwner: false, canModerate: false, incidentsEnabled: true };
 
 vi.mock("../../workspaces/api/useMyServerRole", () => ({
   useIsOwner: () => mockGate.isOwner,
+  useCanModerate: () => mockGate.canModerate,
 }));
 
 vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
@@ -82,6 +83,10 @@ vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
 
 vi.mock("./WorkspaceFeatureSettings", () => ({
   WorkspaceFeatureSettings: () => <div data-testid="workspace-feature-settings">Workspace</div>,
+}));
+
+vi.mock("./ModerationSettings", () => ({
+  ModerationSettings: () => <div data-testid="moderation-settings">Moderation</div>,
 }));
 
 vi.mock("../../integrations/components/IngestTokenSettings", () => ({
@@ -96,6 +101,7 @@ describe("SettingsPage", () => {
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
     mockGate.isOwner = false;
+    mockGate.canModerate = false;
     mockGate.incidentsEnabled = true;
   });
 
@@ -230,8 +236,8 @@ describe("SettingsPage", () => {
     expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
   });
 
-  describe("Workspace tab (Track 0.4)", () => {
-    it("is hidden for a non-owner, even when deep-linked", () => {
+  describe("Workspace tab (Track 0.4, Track 1.2)", () => {
+    it("is hidden for an ordinary member, even when deep-linked", () => {
       mockShellState.mainSurface = { kind: "settings", tab: "workspace" };
       render(<SettingsPage />);
       expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
@@ -239,13 +245,25 @@ describe("SettingsPage", () => {
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
 
-    it("is offered to the owner and opens the feature settings", async () => {
+    it("is offered to the owner with the feature settings and moderation", async () => {
       mockGate.isOwner = true;
+      mockGate.canModerate = true;
       const user = userEvent.setup();
       render(<SettingsPage />);
 
       await user.click(screen.getByRole("button", { name: "Workspace" }));
       expect(await screen.findByTestId("workspace-feature-settings")).toBeInTheDocument();
+      expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+    });
+
+    it("is offered to a moderator with moderation only (feature flags stay Owner-only)", async () => {
+      mockGate.canModerate = true;
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await user.click(screen.getByRole("button", { name: "Workspace" }));
+      expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+      expect(screen.queryByTestId("workspace-feature-settings")).not.toBeInTheDocument();
     });
   });
 

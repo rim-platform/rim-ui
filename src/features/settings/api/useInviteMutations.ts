@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 
 const CREATE_INVITE_MUTATION = gql`
   mutation CreateInvite($input: CreateInviteInput!) {
@@ -39,14 +40,25 @@ interface JoinServerByInviteResponse {
  * `inviteToken`/link is always returned and shown regardless of whether the
  * email send succeeds (Track B3, `track-b3-email.md` §5). Omit it (or pass
  * an empty string) for the link-only path, unchanged from before B3.
+ *
+ * `role` is what the invite grants on join (Track 1.2): `MEMBER` (the default) or `GUEST`.
  */
 export function useCreateInviteMutation() {
   return useMutation({
-    mutationFn: ({ serverId, recipientEmail }: { serverId: string; recipientEmail?: string }) =>
+    mutationFn: ({
+      serverId,
+      recipientEmail,
+      role = ServerMemberRoleGql.MEMBER,
+    }: {
+      serverId: string;
+      recipientEmail?: string;
+      role?: ServerMemberRoleGql.MEMBER | ServerMemberRoleGql.GUEST;
+    }) =>
       graphqlClient.request<CreateInviteResponse>(CREATE_INVITE_MUTATION, {
         input: {
           serverId,
           maxUses: 10,
+          role,
           ...(recipientEmail ? { recipientEmail } : {}),
         },
       }),
