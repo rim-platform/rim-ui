@@ -12,16 +12,17 @@
 use crate::plugin_host::broker::{PluginClient, RequestError};
 use crate::plugin_host::lifecycle::LifecycleError;
 use crate::plugin_host::manifest::{ManifestCommand, PluginManifest};
+use crate::plugin_host::protocol::{method, CommandExecuteParams, CommandResult, Initiator};
 use crate::plugin_host::PluginHostState;
 use std::collections::HashMap;
 use std::time::Duration;
 
 /// JSON-RPC method the host sends to run one of the plugin's manifest commands.
 ///
-/// Params: `{ "command_id": <manifest command id>, "args": <object> }`.
-/// The plugin's JSON-RPC `result` is the command's payload; a JSON-RPC `error`
-/// fails the command with the plugin's code and message.
-pub const EXECUTE_METHOD: &str = "rim.command.execute";
+/// Params are [`CommandExecuteParams`]; the plugin answers with a
+/// [`CommandResult`], or a JSON-RPC `error` that fails the command with the
+/// plugin's code and message.
+pub const EXECUTE_METHOD: &str = method::COMMAND_EXECUTE;
 
 /// How long a plugin may take to answer a command before the host gives up.
 pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -49,6 +50,10 @@ pub enum PluginCommandError {
     PluginNotRunning(String),
     #[error("plugin {plugin_id} did not answer within {seconds}s")]
     TimedOut { plugin_id: String, seconds: u64 },
+    #[error("command arguments must be a JSON object, got {0}")]
+    InvalidArgs(&'static str),
+    #[error("plugin {plugin_id} answered with an invalid command result: {reason}")]
+    InvalidResult { plugin_id: String, reason: String },
     #[error("plugin error: {message}")]
     PluginError {
         code: i32,
@@ -72,6 +77,8 @@ impl PluginCommandError {
             Self::OutOfScope { .. } => "OUT_OF_SCOPE",
             Self::PluginNotRunning(_) => "PLUGIN_NOT_RUNNING",
             Self::TimedOut { .. } => "TIMED_OUT",
+            Self::InvalidArgs(_) => "INVALID_ARGS",
+            Self::InvalidResult { .. } => "INVALID_RESULT",
             Self::PluginError { .. } => "PLUGIN_ERROR",
             Self::LockPoisoned => "INTERNAL_ERROR",
             Self::Lifecycle(_) => "LIFECYCLE_ERROR",
@@ -100,6 +107,18 @@ impl serde::Serialize for PluginCommandError {
 pub struct PluginCommandResult {
     pub status: &'static str,
     pub payload: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+impl From<CommandResult> for PluginCommandResult {
+    fn from(result: CommandResult) -> Self {
+        Self {
+            status: "ok",
+            payload: result.payload,
+            message: result.message,
+        }
+    }
 }
 
 /// A command resolved against an installed manifest.
@@ -248,14 +267,14 @@ pub fn prepare(
 pub async fn dispatch(
     client: &PluginClient,
     resolved: &ResolvedCommand,
-    args: serde_json::Value,
+    params: &CommandExecuteParams,
     wait: Duration,
-) -> Result<serde_json::Value, PluginCommandError> {
-    let params = serde_json::json!({
-        "command_id": resolved.command.id,
-        "args": args,
-    });
-    client
+) -> Result<CommandResult, PluginCommandError> {
+    let params = serde_json::to_value(params).map_err(|e| PluginCommandError::InvalidResult {
+        plugin_id: resolved.plugin_id.clone(),
+        reason: e.to_string(),
+    })?;
+    let result = client
         .request(EXECUTE_METHOD, Some(params), wait)
         .await
         .map_err(|e| match e {
@@ -271,7 +290,29 @@ pub async fn dispatch(
                 message: error.message,
                 data: error.data,
             },
-        })
+        })?;
+    if !result.is_object() {
+        return Err(PluginCommandError::InvalidResult {
+            plugin_id: resolved.plugin_id.clone(),
+            reason: "expected an object with a `payload` field".into(),
+        });
+    }
+    serde_json::from_value(result).map_err(|e| PluginCommandError::InvalidResult {
+        plugin_id: resolved.plugin_id.clone(),
+        reason: e.to_string(),
+    })
+}
+
+/// Command arguments as v1 sends them: an object, with `null` meaning none.
+fn normalize_args(args: serde_json::Value) -> Result<serde_json::Value, PluginCommandError> {
+    match args {
+        serde_json::Value::Null => Ok(serde_json::json!({})),
+        serde_json::Value::Object(_) => Ok(args),
+        serde_json::Value::Bool(_) => Err(PluginCommandError::InvalidArgs("a boolean")),
+        serde_json::Value::Number(_) => Err(PluginCommandError::InvalidArgs("a number")),
+        serde_json::Value::String(_) => Err(PluginCommandError::InvalidArgs("a string")),
+        serde_json::Value::Array(_) => Err(PluginCommandError::InvalidArgs("an array")),
+    }
 }
 
 /// Run a plugin command end to end: resolve, gate, dispatch, audit.
@@ -282,14 +323,19 @@ pub async fn execute(
     args: serde_json::Value,
     confirmed_dangerous: bool,
     caller_plugin_id: Option<&str>,
-) -> Result<serde_json::Value, PluginCommandError> {
-    let (resolved, client) = match prepare(
-        state,
-        plugin_id,
-        command_id,
-        confirmed_dangerous,
-        caller_plugin_id,
-    ) {
+    initiator: Initiator,
+) -> Result<CommandResult, PluginCommandError> {
+    let prepared = normalize_args(args).and_then(|args| {
+        prepare(
+            state,
+            plugin_id,
+            command_id,
+            confirmed_dangerous,
+            caller_plugin_id,
+        )
+        .map(|(resolved, client)| (resolved, client, args))
+    });
+    let (resolved, client, args) = match prepared {
         Ok(prepared) => prepared,
         Err(e) => {
             log::warn!(
@@ -302,11 +348,25 @@ pub async fn execute(
         }
     };
 
-    let result = dispatch(&client, &resolved, args, COMMAND_TIMEOUT).await;
+    let invoker = state
+        .principal
+        .lock()
+        .map_err(|_| PluginCommandError::LockPoisoned)?
+        .clone();
+    let params = CommandExecuteParams {
+        command_id: resolved.command.id.clone(),
+        args,
+        invoker,
+        initiator,
+        // `prepare` refused an unconfirmed dangerous command, so this is the confirmation.
+        confirmed: resolved.command.dangerous && confirmed_dangerous,
+    };
+    let result = dispatch(&client, &resolved, &params, COMMAND_TIMEOUT).await;
     log::warn!(
-        "[AUDIT] event=plugin_command_invocation plugin_id={} command_id={} dangerous={} outcome={}",
+        "[AUDIT] event=plugin_command_invocation plugin_id={} command_id={} initiator={:?} dangerous={} outcome={}",
         resolved.plugin_id,
         resolved.command.id,
+        initiator,
         resolved.command.dangerous,
         match &result {
             Ok(_) => "ok",
@@ -325,11 +385,13 @@ mod tests {
     use crate::plugin_host::manifest::RuntimeKind;
     use crate::plugin_host::panel_registry::PanelRegistry;
     use crate::plugin_host::panel_relay::PanelRelay;
+    use crate::plugin_host::protocol::Principal;
     use crate::plugin_host::state::PluginStateStore;
     use crate::plugin_host::wire::{self, JsonRpcResponse};
     use std::sync::{Arc, Mutex};
 
     const PLUGIN: &str = "dev.example.tool";
+    const USER_ID: &str = "0192b3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b";
 
     fn command(id: &str) -> ManifestCommand {
         ManifestCommand {
@@ -382,6 +444,8 @@ mod tests {
             panel_relay: Arc::new(PanelRelay::new()),
             panel_registry: PanelRegistry::new(),
             pending_ui_events: Mutex::new(Vec::new()),
+            principal: Arc::new(Mutex::new(None)),
+            pids: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -505,26 +569,107 @@ mod tests {
         let state = installed_state(manifest(PLUGIN, vec![command("greet")]));
         let fake = connect_fake_plugin(&state, |request| {
             assert_eq!(request["method"], EXECUTE_METHOD);
-            assert_eq!(request["params"]["command_id"], "greet");
+            assert_eq!(request["params"]["commandId"], "greet");
+            assert_eq!(request["params"]["initiator"], "user");
+            assert_eq!(request["params"]["confirmed"], false);
+            assert_eq!(
+                request["params"]["invoker"]["displayName"], "Jakub",
+                "the signed-in principal rides along: {request}"
+            );
             let name = request["params"]["args"]["name"].as_str().unwrap_or("?");
             JsonRpcResponse::success(
                 request["id"].clone(),
-                serde_json::json!(format!("Hello, {name}!")),
+                serde_json::json!({"payload": format!("Hello, {name}!"), "message": "greeted"}),
             )
         });
+        *state.principal.lock().unwrap() = Some(Principal::provisional(USER_ID, "Jakub"));
 
-        let payload = execute(
+        let result = execute(
             &state,
             "dev",
             "example.tool.greet",
             serde_json::json!({"name": "Jakub"}),
             false,
             None,
+            Initiator::User,
         )
         .await
         .unwrap();
-        assert_eq!(payload, serde_json::json!("Hello, Jakub!"));
+        assert_eq!(result.payload, serde_json::json!("Hello, Jakub!"));
+        assert_eq!(result.message.as_deref(), Some("greeted"));
         fake.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn confirmed_dangerous_command_carries_the_confirmation() {
+        let mut cmd = command("restart_pod");
+        cmd.dangerous = true;
+        let state = installed_state(manifest(PLUGIN, vec![cmd]));
+        let fake = connect_fake_plugin(&state, |request| {
+            assert_eq!(request["params"]["confirmed"], true);
+            assert_eq!(request["params"]["invoker"], serde_json::Value::Null);
+            JsonRpcResponse::success(request["id"].clone(), serde_json::json!({"payload": null}))
+        });
+
+        let result = execute(
+            &state,
+            PLUGIN,
+            "restart_pod",
+            serde_json::Value::Null,
+            true,
+            None,
+            Initiator::User,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.payload, serde_json::Value::Null);
+        fake.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn non_object_result_is_rejected() {
+        let state = installed_state(manifest(PLUGIN, vec![command("greet")]));
+        let fake = connect_fake_plugin(&state, |request| {
+            JsonRpcResponse::success(request["id"].clone(), serde_json::json!("bare string"))
+        });
+
+        let err = execute(
+            &state,
+            PLUGIN,
+            "greet",
+            serde_json::json!({}),
+            false,
+            None,
+            Initiator::User,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, PluginCommandError::InvalidResult { .. }),
+            "{err:?}"
+        );
+        fake.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn non_object_args_never_reach_the_plugin() {
+        let state = installed_state(manifest(PLUGIN, vec![command("greet")]));
+        let (client, mut outbound_rx) = PluginClient::channel();
+        state.clients.lock().unwrap().insert(PLUGIN.into(), client);
+
+        let err = execute(
+            &state,
+            PLUGIN,
+            "greet",
+            serde_json::json!("free text"),
+            false,
+            None,
+            Initiator::Agent,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, PluginCommandError::InvalidArgs(_)), "{err:?}");
+        assert!(outbound_rx.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -534,9 +679,17 @@ mod tests {
             JsonRpcResponse::error(request["id"].clone(), wire::PLUGIN_ERROR, "boom")
         });
 
-        let err = execute(&state, PLUGIN, "greet", serde_json::json!({}), false, None)
-            .await
-            .unwrap_err();
+        let err = execute(
+            &state,
+            PLUGIN,
+            "greet",
+            serde_json::json!({}),
+            false,
+            None,
+            Initiator::User,
+        )
+        .await
+        .unwrap_err();
         match &err {
             PluginCommandError::PluginError { code, message, .. } => {
                 assert_eq!(*code, wire::PLUGIN_ERROR);
@@ -566,6 +719,7 @@ mod tests {
             serde_json::json!({}),
             false,
             None,
+            Initiator::User,
         )
         .await
         .unwrap_err();

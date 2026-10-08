@@ -16,6 +16,7 @@ pub mod panel_relay;
 pub mod plugin_protocol;
 pub mod post_install;
 pub mod process;
+pub mod protocol;
 pub mod runtime;
 pub mod simple_manifest;
 pub mod state;
@@ -47,6 +48,12 @@ pub struct PluginHostState {
     #[allow(dead_code)]
     pub panel_registry: PanelRegistry,
     pub pending_ui_events: Mutex<Vec<PendingUiEvent>>,
+    /// The signed-in user as plugins see it; the UI sets it on sign-in and sign-out.
+    /// Arc so a broker task can read it when its plugin finishes the handshake.
+    pub principal: Arc<Mutex<Option<protocol::Principal>>>,
+    /// OS process ids of running plugin processes, keyed by plugin_id, so app quit
+    /// can kill any process that outlives its graceful shutdown.
+    pub pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
@@ -82,6 +89,8 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         panel_relay: Arc::new(PanelRelay::new()),
         panel_registry: PanelRegistry::new(),
         pending_ui_events: Mutex::new(Vec::new()),
+        principal: Arc::new(Mutex::new(None)),
+        pids: Arc::new(Mutex::new(HashMap::new())),
     };
 
     // Re-spawn any plugins that were Enabled on last shutdown.
@@ -113,4 +122,33 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     }
 
     plugin_host_state
+}
+
+#[cfg(test)]
+impl PluginHostState {
+    /// Empty host state with the given manifests installed, for tests.
+    pub(crate) fn with_installed(manifests: Vec<PluginManifest>) -> Self {
+        let mut store = PluginStateStore::default();
+        for manifest in &manifests {
+            lifecycle::install(&mut store, manifest).expect("install test manifest");
+        }
+        Self {
+            store: Mutex::new(store),
+            manifests: Mutex::new(
+                manifests
+                    .into_iter()
+                    .map(|m| (m.plugin_id.clone(), m))
+                    .collect(),
+            ),
+            state_path: PathBuf::from("/nonexistent/plugins.json"),
+            plugin_dirs: Mutex::new(HashMap::new()),
+            shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
+            clients: Arc::new(Mutex::new(HashMap::new())),
+            panel_relay: Arc::new(PanelRelay::new()),
+            panel_registry: PanelRegistry::new(),
+            pending_ui_events: Mutex::new(Vec::new()),
+            principal: Arc::new(Mutex::new(None)),
+            pids: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
 }

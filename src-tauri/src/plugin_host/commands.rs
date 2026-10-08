@@ -5,6 +5,7 @@ use crate::plugin_host::git_install::{
 use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
 use crate::plugin_host::manifest::{ContextAction, KeybindSuggestion, PanelDef};
+use crate::plugin_host::protocol::{Initiator, Principal};
 use crate::plugin_host::runtime;
 use crate::plugin_host::state::{PluginRecord, PluginStatus};
 use crate::plugin_host::PluginHostState;
@@ -621,19 +622,17 @@ pub async fn plugin_execute_command(
     caller_plugin_id: Option<String>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginCommandResult, PluginCommandError> {
-    let payload = command_exec::execute(
+    let result = command_exec::execute(
         &state,
         &plugin_id,
         &command,
         args.unwrap_or_else(|| serde_json::json!({})),
         confirmed_dangerous.unwrap_or(false),
         caller_plugin_id.as_deref(),
+        Initiator::User,
     )
     .await?;
-    Ok(PluginCommandResult {
-        status: "ok",
-        payload,
-    })
+    Ok(result.into())
 }
 
 /// Invoke a plugin AI command on behalf of the LLM agent.
@@ -665,15 +664,41 @@ pub async fn plugin_run_ai_command(
 
     // Consent was checked for `plugin_id`, so the command must resolve to that
     // same plugin; the id re-split in `resolve_command` may not move it elsewhere.
-    command_exec::execute(
+    let result = command_exec::execute(
         &state,
         &plugin_id,
         &command_id,
         input,
         false,
         Some(&plugin_id),
+        Initiator::Agent,
     )
-    .await
+    .await?;
+    Ok(result.payload)
+}
+
+/// The signed-in user, as the UI reports it to the plugin host.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedInUser {
+    pub user_id: String,
+    pub display_name: String,
+}
+
+/// Tell the plugin host who is signed in (`None` after sign-out).
+///
+/// The account id never leaves the host: plugins get the derived
+/// [`Principal`] in the handshake, in every `rim.command.execute`, and in a
+/// `rim.principal.changed` notification sent to each running plugin whenever
+/// the principal changes.
+#[tauri::command]
+pub async fn plugin_set_principal(
+    user: Option<SignedInUser>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), String> {
+    let principal = user.map(|u| Principal::provisional(&u.user_id, &u.display_name));
+    runtime::set_principal(&state, principal).await;
+    Ok(())
 }
 
 /// AI consent gates for [`plugin_run_ai_command`].

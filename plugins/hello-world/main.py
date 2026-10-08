@@ -1,33 +1,36 @@
 #!/usr/bin/env python3
 """
-Hello World plugin — reference implementation for the RIM plugin host.
+Hello World plugin — reference implementation of RIM plugin protocol v1.
 
-This script speaks the RIM wire protocol: 4-byte little-endian length-prefixed
-JSON-RPC 2.0 frames over stdin/stdout.
+The protocol is frozen in protocol/plugin-protocol-v1.schema.json at the root of
+rim-ui; the host's conformance tests drive this script through it.
 
-Observable side-effect:
-  1. The host sends `rim.handshake` → plugin replies with `accepted: true`.
-  2. The broker loop starts; heartbeats are exchanged every 30 s.
-  3. When the plugin sends `rim.log`, the host prints it to its log.
-  4. Running the `greet` command sends `rim.command.execute` with
-     `{"command_id": "greet", "args": {"name": ...}}`; the plugin answers with
-     `"Hello, <name>!"`.
+  - Frame: [4-byte little-endian length][UTF-8 JSON], one JSON-RPC 2.0 message.
+  - The host writes to our stdin and reads our stdout.
+  - Field names in params and results are camelCase.
 
-Wire protocol:
-  - Frame: [4-byte little-endian length][UTF-8 JSON]
-  - All messages are JSON-RPC 2.0 objects.
-  - The plugin reads host requests from stdin and writes responses to stdout.
-    Frames without a `method` are the host's responses to the plugin's own
-    requests and are ignored here.
+What happens:
+  1. The host sends `rim.handshake`; we accept if it speaks protocol v1.
+  2. The host sends `rim.heartbeat` every 30 s; we answer `{"pong": true}`.
+  3. Running the `greet` command sends `rim.command.execute` with
+     `{"commandId": "greet", "args": {"name": ...}, ...}`; we answer
+     `{"payload": "Hello, <name>!"}`.
+  4. `rim.shutdown`, or our stdin closing, makes us exit.
+
+Requests we do not know get METHOD_NOT_FOUND; notifications we do not know
+(such as `rim.principal.changed`, which we do not use) are ignored.
 """
 
 import json
+import os
 import struct
 import sys
-import threading
 
 PLUGIN_ID = "dev.example.hello-world"
 PROTOCOL_VERSION = 1
+
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
 
 
 def read_frame() -> dict:
@@ -69,45 +72,45 @@ def send_log(level: str, message: str) -> None:
 
 
 def handle_handshake(request: dict) -> dict:
-    params = request.get("params", {})
-    plugin_id = params.get("plugin_id", "")
-    protocol_version = params.get("protocol_version", 0)
+    params = request.get("params") or {}
+    plugin_id = params.get("pluginId", "")
+    supported = params.get("supportedVersions") or []
 
-    if plugin_id != PLUGIN_ID:
+    def refuse(reason: str) -> dict:
         return make_response(request["id"], result={
             "accepted": False,
-            "protocol_version": PROTOCOL_VERSION,
-            "plugin_id": PLUGIN_ID,
-            "error": f"plugin_id mismatch: expected {PLUGIN_ID}, got {plugin_id}",
+            "protocolVersion": PROTOCOL_VERSION,
+            "pluginId": PLUGIN_ID,
+            "error": reason,
         })
+
+    if plugin_id != PLUGIN_ID:
+        return refuse(f"pluginId mismatch: expected {PLUGIN_ID}, got {plugin_id}")
+    if PROTOCOL_VERSION not in supported:
+        return refuse(f"host speaks protocol {supported}, this plugin speaks {PROTOCOL_VERSION}")
 
     return make_response(request["id"], result={
         "accepted": True,
-        "protocol_version": protocol_version,
-        "plugin_id": PLUGIN_ID,
-        "error": None,
+        "protocolVersion": PROTOCOL_VERSION,
+        "pluginId": PLUGIN_ID,
     })
-
-
-def handle_heartbeat(request: dict) -> dict:
-    return make_response(request["id"], result={"pong": True})
 
 
 def handle_execute(request: dict) -> dict:
     params = request.get("params") or {}
-    command_id = params.get("command_id")
+    command_id = params.get("commandId")
     args = params.get("args") or {}
     if command_id == "greet":
         name = args.get("name") or "world"
-        return make_response(request["id"], result=f"Hello, {name}!")
+        return make_response(request["id"], result={"payload": f"Hello, {name}!"})
     return make_response(request["id"], error={
-        "code": -32601,
+        "code": INVALID_PARAMS,
         "message": f"unknown command: {command_id}",
     })
 
 
 def main() -> None:
-    send_log("info", f"[hello-world] plugin process started (pid={__import__('os').getpid()})")
+    send_log("info", f"[hello-world] plugin process started (pid={os.getpid()})")
 
     while True:
         try:
@@ -124,8 +127,7 @@ def main() -> None:
             continue
 
         if method == "rim.handshake":
-            response = handle_handshake(request)
-            write_frame(response)
+            write_frame(handle_handshake(request))
             send_log("info", "[hello-world] handshake complete — broker loop active")
 
         elif method == "rim.heartbeat":
@@ -134,13 +136,15 @@ def main() -> None:
         elif method == "rim.command.execute":
             write_frame(handle_execute(request))
 
+        elif method == "rim.shutdown":
+            break
+
         elif req_id is not None:
-            # Unknown method — return method-not-found error
             write_frame(make_response(req_id, error={
-                "code": -32601,
+                "code": METHOD_NOT_FOUND,
                 "message": f"method not found: {method}",
             }))
-        # Notifications (no id) are silently dropped.
+        # Other notifications are ignored.
 
 
 if __name__ == "__main__":

@@ -200,6 +200,8 @@ export interface PluginContextAction {
 export interface PluginCommandResult {
   status: "ok" | "error";
   payload: unknown;
+  /** One-line summary the plugin may return with a successful command. */
+  message?: string;
 }
 
 export type PluginEventKind =

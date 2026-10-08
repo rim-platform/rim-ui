@@ -28,6 +28,9 @@ vi.mock("../../features/presence/api/useWorkspacePresence", () => ({
 }));
 vi.mock("../../features/presence/runtime/useHeartbeat", () => ({ useHeartbeat: () => {} }));
 vi.mock("../../features/plugins/runtime/pluginEventBus", () => ({ usePluginEvents: () => {} }));
+vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
+  usePluginPrincipalSync: () => {},
+}));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
   usePluginList: () => ({ data: [] }),
 }));
