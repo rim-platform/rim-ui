@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   CommandArgumentType,
+  CommandExecutionTarget,
   CommandSensitivity,
 } from "../../../core/graphql/generated/schema-types";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -12,6 +13,7 @@ import {
   executeCommandWithProof,
   loadAgentTools,
   makeBackendToolHandler,
+  makeDesktopLocalToolHandler,
   mergeBackendWins,
 } from "./loader";
 import { getAllTools, getTool, registerTool, unregisterTool } from "./registry";
@@ -653,6 +655,62 @@ describe("C2 — four agent-callable commands are registered with no allowlist d
       "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
     );
     expect(escalate!.description).toBe("Escalate an incident to the next on-call tier.");
+  });
+});
+
+describe("Track 4.1: desktop-local agent tools run in the client", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    useShellStore.getState().reset();
+  });
+
+  it("routes a DESKTOP_LOCAL command to its local handler, not executeCommand", async () => {
+    const [tool] = commandsToBackendTools([
+      makeCommand({
+        id: "workspace.navigate_to_channel",
+        executionTarget: CommandExecutionTarget.DESKTOP_LOCAL,
+      }),
+    ]);
+
+    const result = await tool!.handler({ conversation_id: "conv-9" });
+
+    expect(graphqlClient.request).not.toHaveBeenCalled();
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-9");
+    expect(JSON.parse(result)).toEqual({
+      status: "done",
+      commandId: "workspace.navigate_to_channel",
+    });
+  });
+
+  it("keeps BACKEND commands on executeCommand", async () => {
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "ok", payload: null },
+    });
+    const [tool] = commandsToBackendTools([makeCommand({ id: "state.get" })]);
+
+    await tool!.handler({ key: "deploy.lock" });
+
+    const variables = vi.mocked(graphqlClient.request).mock.calls[0]![1] as {
+      input: Record<string, unknown>;
+    };
+    expect(variables.input.commandId).toBe("state.get");
+  });
+
+  it("opens a thread from chat.open_thread's root_message_id", async () => {
+    await makeDesktopLocalToolHandler("chat.open_thread")({ root_message_id: "msg-4" });
+
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    expect(useShellStore.getState().selectedRootMessageId).toBe("msg-4");
+  });
+
+  it("throws for a desktop-local command this client has no handler for", async () => {
+    await expect(makeDesktopLocalToolHandler("workspace.not_a_command")({})).rejects.toThrow(
+      "workspace.not_a_command is not available in this client",
+    );
+    expect(graphqlClient.request).not.toHaveBeenCalled();
   });
 });
 

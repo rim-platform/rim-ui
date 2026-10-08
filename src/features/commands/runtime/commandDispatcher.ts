@@ -298,8 +298,13 @@ const localHandlers: Record<
   "chat.copy_message_text": () => {
     logger.debug("[RIM] copy_message_text: handled at context menu level");
   },
-  "chat.open_thread": () => {
-    logger.debug("[RIM] open_thread: handled at context menu level");
+  "chat.open_thread": (args) => {
+    // The context menu opens threads itself; the agent (Track 4.1) passes the root message id.
+    if (typeof args?.rootMessageId === "string") {
+      useShellStore.getState().openThreadForMessage(args.rootMessageId);
+    } else {
+      logger.debug("[RIM] open_thread: handled at context menu level");
+    }
   },
   "chat.mark_all_as_read": () => {
     const workspaceId = useWorkspaceStore.getState().workspaceId;
@@ -420,6 +425,23 @@ const localHandlers: Record<
     toast.info(labels[density] ?? density, { duration: 1500 });
   },
 };
+
+const noBackend: ExecuteBackendCommand = () =>
+  Promise.reject(new Error("desktop-local commands do not reach the backend"));
+
+/**
+ * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent (Track 4.1). The
+ * server refuses to execute desktop-local commands, so agent tool calls for them land here
+ * instead of `executeCommand`. Returns `false` when no local handler exists. Only meant for
+ * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
+ * dialog for a human, which is not what an agent call should do.
+ */
+export function runDesktopLocalCommand(commandId: string, args?: Record<string, unknown>): boolean {
+  const handler = localHandlers[commandId];
+  if (!handler) return false;
+  handler(args, noBackend);
+  return true;
+}
 
 export async function dispatchCommand(
   command: CommandDefinition,
