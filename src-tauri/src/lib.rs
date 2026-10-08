@@ -145,6 +145,7 @@ pub fn run() {
             plugin_host::commands::plugin_approve_ai_commands,
             plugin_host::commands::plugin_revoke_ai_consent,
             plugin_host::commands::plugin_run_ai_command,
+            plugin_host::commands::plugin_execute_command,
             plugin_host::commands::plugin_suggested_keybinds,
             plugin_host::commands::plugin_context_actions,
             plugin_host::commands::plugin_install_from_git,

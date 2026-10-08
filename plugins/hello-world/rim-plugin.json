@@ -7,7 +7,7 @@
   "author": "RIM team",
   "runtime_kind": "DesktopLocalProcess",
   "entrypoint": "main.py",
-  "capabilities": ["plugin.dev.example.hello-world.greet"],
+  "capabilities": [],
   "commands": [
     {
       "id": "greet",
@@ -23,7 +23,9 @@
     }
   ],
   "keybind_suggestions": [],
-  "context_actions": [],
+  "context_actions": [
+    { "id": "greet", "title": "Hello: Greet", "command_id": "greet", "context_types": [] }
+  ],
   "panels": [
     {
       "id": "main",

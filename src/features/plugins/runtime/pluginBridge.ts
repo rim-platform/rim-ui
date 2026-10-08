@@ -102,7 +102,7 @@ export function createPluginBridge(config: BridgeConfig) {
           async () => ({
             executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
           }),
-          { args: msg.args },
+          { args: msg.args, callerPluginId: pluginId },
         );
         break;
       }

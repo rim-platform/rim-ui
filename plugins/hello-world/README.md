@@ -34,7 +34,7 @@ hello-world/
 2. In the RIM app open **Settings → Plugins**.
 3. The "Hello World" plugin appears in the list.
 4. Click the toggle to enable it.  No capability prompt appears because the
-   `greet` capability requires explicit approval and the UI prompt is Phase 2 work.
+   plugin declares no capabilities.
 
 ## What you should observe
 
@@ -51,6 +51,12 @@ These three lines confirm:
 - The broker loop is running.
 - The plugin process successfully completed the handshake.
 
+### After running "Hello: Greet" from the command palette
+
+The palette sends the command to the plugin process as `rim.command.execute`
+and the plugin answers `"Hello, world!"`, shown in the success
+toast.
+
 ### After clicking "Say Hello" in the panel
 
 The panel sends `rim.ui.notification.show` via `window.parent.postMessage`.
@@ -62,16 +68,10 @@ To see the log, open the Tauri devtools console and filter for
 
 ## Capability model
 
-The manifest declares one capability:
-
-```
-plugin.dev.example.hello-world.greet
-```
-
-This capability must follow the `plugin.<plugin_id>.<verb>` naming rule
-(validated at install time by `validation.rs`).  Currently this capability
-does not map to any broker method — it exists to demonstrate the validation
-and approval flow.
+The manifest declares no capabilities. Capability keys must start with
+`plugin.<plugin_id>.` and match `[a-z0-9_.]+` (validated at install time by
+`validation.rs`), so a plugin id containing a hyphen, like this one, cannot
+declare any. `greet` needs none: it only answers the host.
 
 The `ui.notify` capability gate is exercised by the panel's postMessage
 handler in `pluginBridge.ts` (front-end side only in Phase 1).
@@ -103,8 +103,11 @@ Run this after building and starting `npm run tauri dev`:
    **Say Hello** and observe the browser devtools console for:
    `[RIM:PluginBridge] dev.example.hello-world notification: Hello World`
 
-8. Toggle the plugin **OFF**.
+8. Open the command palette, run **Hello: Greet**, and observe a success
+   toast containing `Hello, world!`.
 
-9. Observe: `[plugin_host] plugin dev.example.hello-world stopped`
+9. Toggle the plugin **OFF**.
 
-All nine steps passing = Phase 1 proof-of-life confirmed.
+10. Observe: `[plugin_host] plugin dev.example.hello-world stopped`
+
+All ten steps passing = Phase 1 proof-of-life confirmed.

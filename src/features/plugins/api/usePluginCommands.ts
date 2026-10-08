@@ -4,10 +4,6 @@ import { usePluginList } from "./usePluginList";
 import type { CommandDefinition } from "../../commands/types";
 import type { PluginContextType } from "../types";
 
-function pluginCommandId(pluginId: string, commandId: string): string {
-  return `plugin.${pluginId}.${commandId}`;
-}
-
 // Extended command definition that carries context_types metadata
 export interface PluginCommandDefinition extends CommandDefinition {
   contextTypes: PluginContextType[];
@@ -22,10 +18,11 @@ export function usePluginCommands() {
     const commands: PluginCommandDefinition[] = [];
     for (const plugin of plugins) {
       if (!plugin.enabled || plugin.health !== "running") continue;
-      // context_actions from the Rust flat shape — qualified IDs already applied.
+      // context_actions from the Rust flat shape — `command_id` is already
+      // qualified as `plugin.<plugin_id>.<command>`.
       for (const action of plugin.context_actions ?? []) {
         commands.push({
-          id: pluginCommandId(plugin.plugin_id, action.command_id),
+          id: action.command_id,
           title: action.title,
           description: action.title,
           category: plugin.display_name,

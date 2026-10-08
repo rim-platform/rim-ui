@@ -1,6 +1,7 @@
 pub mod backend_client;
 pub mod broker;
 pub mod capability;
+pub mod command_exec;
 pub mod commands;
 pub mod discovery;
 pub mod event_forwarder;
@@ -36,7 +37,11 @@ pub struct PluginHostState {
     pub state_path: PathBuf,
     pub plugin_dirs: Mutex<HashMap<String, PathBuf>>,
     /// Shutdown senders for running plugin broker loops, keyed by plugin_id.
-    pub shutdown_txs: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
+    /// Arc so a broker task can deregister itself when its plugin exits.
+    pub shutdown_txs: Arc<Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+    /// Request handles for plugins whose handshake succeeded, keyed by plugin_id.
+    /// Arc so the broker task can deregister its own handle when the plugin exits.
+    pub clients: Arc<Mutex<HashMap<String, broker::PluginClient>>>,
     /// Arc so the broker loop tasks can hold a shared reference after `start_plugin` returns.
     pub panel_relay: Arc<PanelRelay>,
     #[allow(dead_code)]
@@ -72,7 +77,8 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         manifests: Mutex::new(manifests),
         state_path,
         plugin_dirs: Mutex::new(plugin_dirs),
-        shutdown_txs: Mutex::new(HashMap::new()),
+        shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
+        clients: Arc::new(Mutex::new(HashMap::new())),
         panel_relay: Arc::new(PanelRelay::new()),
         panel_registry: PanelRegistry::new(),
         pending_ui_events: Mutex::new(Vec::new()),

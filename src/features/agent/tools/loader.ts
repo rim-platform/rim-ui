@@ -301,7 +301,12 @@ function makePluginToolHandler(pluginId: string, commandId: string): AiToolHandl
       const result = await invoke<unknown>("plugin_run_ai_command", { pluginId, commandId, input });
       return payloadToString(result);
     } catch (err) {
-      throw new Error(`Plugin command ${pluginId}/${commandId} failed: ${String(err)}`, {
+      // The host rejects with `{ kind, message }`; String() would print "[object Object]".
+      const reason =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message: unknown }).message)
+          : String(err);
+      throw new Error(`Plugin command ${pluginId}/${commandId} failed: ${reason}`, {
         cause: err,
       });
     }
