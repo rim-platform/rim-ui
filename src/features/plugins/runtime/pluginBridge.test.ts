@@ -163,6 +163,34 @@ describe("createPluginBridge", () => {
     bridge.destroy();
   });
 
+  it("never forwards a confirmation a panel claims for itself", () => {
+    vi.mocked(dispatchCommand).mockClear();
+    const bridge = createPluginBridge({
+      pluginId: "my-plugin",
+      approvedCapabilities: [],
+      iframe,
+    });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "null",
+        source: iframe.contentWindow,
+        data: {
+          type: "rim.command.execute",
+          commandId: "plugin.my-plugin.delete_everything",
+          args: { target: "all" },
+          confirmedDangerous: true,
+          confirmed: true,
+        },
+      }),
+    );
+
+    expect(dispatchCommand).toHaveBeenCalledTimes(1);
+    const context = vi.mocked(dispatchCommand).mock.calls[0][2];
+    expect(context).toEqual({ args: { target: "all" }, callerPluginId: "my-plugin" });
+    bridge.destroy();
+  });
+
   it("destroy removes the message event listener", () => {
     const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
 
