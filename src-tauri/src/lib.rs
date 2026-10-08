@@ -1,4 +1,5 @@
 mod agent_proxy;
+mod message_cache;
 mod plugin_host;
 mod terminal;
 
@@ -128,6 +129,8 @@ pub fn run() {
             let plugin_state = plugin_host::init(&app_data_dir);
             app.manage(plugin_state);
 
+            app.manage(message_cache::init(&app_data_dir));
+
             let terminal_state = terminal::init();
             app.manage(terminal_state);
             Ok(())
@@ -168,6 +171,10 @@ pub fn run() {
             agent_proxy::clear_provider_key,
             agent_proxy::is_provider_key_configured,
             agent_proxy::migrate_provider_keys,
+            message_cache::commands::message_cache_track,
+            message_cache::commands::message_cache_sync_begin,
+            message_cache::commands::message_cache_sync_apply,
+            message_cache::commands::message_cache_timeline,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

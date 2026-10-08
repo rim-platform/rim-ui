@@ -460,6 +460,43 @@ type Conversation {
 }
 
 """
+How one conversation of a `messageChanges` request was answered.
+"""
+enum ConversationChangesStatus {
+	"""
+	The changes after the requested cursor.
+	"""
+	OK
+	"""
+	The caller cannot read this conversation (removed from it, not a member of a private one,
+	or it does not exist). No changes; the cursor is echoed. Stop syncing it.
+	"""
+	NO_ACCESS
+	"""
+	The stored cursor is ahead of the server (its counters were reset). The changes start
+	from the beginning: drop the cached copy of this conversation, then apply them.
+	"""
+	RESET
+}
+
+"""
+The changes of one conversation after the requested cursor, oldest first.
+"""
+type ConversationMessageChanges {
+	conversationId: ID!
+	status: ConversationChangesStatus!
+	changes: [MessageChange!]!
+	"""
+	Store this and pass it as `after` next time. Opaque.
+	"""
+	cursor: String!
+	"""
+	More changes follow `cursor`; ask again with it right away.
+	"""
+	hasMore: Boolean!
+}
+
+"""
 The viewer's level for one conversation, as returned by `setConversationNotificationLevel`.
 """
 type ConversationNotificationLevel {
@@ -1332,6 +1369,63 @@ type Message {
 	mentions: [User!]!
 }
 
+"""
+A message as it is now, at its newest change. A message appears at most once per page.
+"""
+type MessageChange {
+	kind: MessageChangeKind!
+	"""
+	The message's position in its conversation's change sequence, as a decimal string.
+	Increases with every change; compare it to a cached copy to keep the newer one.
+	"""
+	version: String!
+	"""
+	When the text last changed; null for a never-edited message.
+	"""
+	editedAt: DateTime
+	"""
+	The message. Deleted messages come back with `isDeleted: true` and null `text`.
+	"""
+	message: Message!
+}
+
+"""
+One conversation to read in `messageChanges`, with the cursor the client stored for it.
+"""
+input MessageChangeCursorInput {
+	conversationId: ID!
+	"""
+	The `cursor` a previous `messageChanges` call returned for this conversation. Opaque.
+	Omit (or pass null) to read the conversation's whole history from the beginning.
+	"""
+	after: String
+}
+
+"""
+What happened to a message, judged from its state at its newest change. `DELETED` wins over
+`EDITED`; a message whose text never changed is `CREATED`.
+"""
+enum MessageChangeKind {
+	CREATED
+	EDITED
+	DELETED
+}
+
+"""
+Input for `messageChanges`.
+"""
+input MessageChangesInput {
+	serverId: ID!
+	"""
+	At most 100 conversations. One the caller cannot read comes back with status `NO_ACCESS`.
+	"""
+	conversations: [MessageChangeCursorInput!]!
+	"""
+	Maximum changes per conversation. Clamped to 1..=200; defaults to 100.
+	"""
+	limit: Int
+}
+
 input MessageCursorInput {
 	sentAt: DateTime!
 	messageId: ID!
@@ -2003,6 +2097,13 @@ type Query {
 	searchMessages(input: SearchMessagesInput!): SearchResultPage!
 	message(serverId: ID!, conversationId: ID!, messageId: ID!): Message!
 	messageReference(serverId: ID!, conversationId: ID!, messageId: ID!): MessageReference!
+	"""
+	The message change feed: for each conversation, the messages created, edited or deleted
+	after its cursor (timeline and thread replies alike), oldest change first. A client cache
+	stores each returned `cursor` and passes it back as `after`. Contract (frozen):
+	`docs/message-change-feed.md`.
+	"""
+	messageChanges(input: MessageChangesInput!): [ConversationMessageChanges!]!
 	thread(serverId: ID!, conversationId: ID!, threadId: ID!): Thread!
 	threadByRootMessage(serverId: ID!, conversationId: ID!, rootMessageId: ID!): Thread
 	threads(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: ThreadCursorInput, limit: Int!): ThreadPage!

@@ -9,6 +9,7 @@ import type { MessageItem, MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
 import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
+import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
@@ -166,6 +167,16 @@ function handleEvent(
   workspaceId: string,
   ackIncident: AckMutate,
 ) {
+  // Real-time message events carry no change-feed version; for the local message cache they
+  // are only a signal to ask the feed for that conversation (no-op outside the desktop app).
+  if (
+    event.type === "NewMessage" ||
+    event.type === "MessageUpdated" ||
+    event.type === "MessageDeleted"
+  ) {
+    requestCacheSync(workspaceId, [event.conversation_id]);
+  }
+
   switch (event.type) {
     case "NewMessage": {
       const cacheMessage = eventMessageToCache(event.message);
