@@ -155,6 +155,22 @@ describe("mergeSearchResults", () => {
     expect(merged.map((m) => m.id)).toEqual(["l4", "s3", "s2"]);
   });
 
+  it("keeps the server's order, which is by microsecond", () => {
+    // Same millisecond: the server put "a" first by its microseconds, though "b" sorts after
+    // "a" by id.
+    const sameMs = [
+      item("a", "2026-10-08T10:03:00.123900Z"),
+      item("b", "2026-10-08T10:03:00.123100Z"),
+    ];
+    const merged = mergeSearchResults(
+      [page(sameMs)],
+      false,
+      [item("l", "2026-10-08T10:03:00.123500Z")],
+      directory,
+    );
+    expect(merged.map((m) => m.id)).toEqual(["a", "l", "b"]);
+  });
+
   it("drops local hits from conversations the user cannot see now", () => {
     const hits = [item("l4", "2026-10-08T10:04:00Z", "c-left")];
     expect(mergeSearchResults([page(server)], false, hits, directory).map((m) => m.id)).toEqual([

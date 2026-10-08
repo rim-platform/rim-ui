@@ -165,10 +165,19 @@ export function localPageToSearchPage(
   };
 }
 
+/**
+ * Microseconds since the epoch: the precision the server and the cache order by. `Date.parse`
+ * keeps only milliseconds, which would tie messages the server tells apart.
+ */
+function sentAtMicros(sentAt: string): number {
+  const fraction = /\.(\d+)/.exec(sentAt)?.[1] ?? "";
+  return Date.parse(sentAt) * 1000 + Number(fraction.slice(3, 6).padEnd(3, "0"));
+}
+
 /** Newest first, the id breaking ties: the order of every search page. */
 function newestFirst(a: SearchMessageItem, b: SearchMessageItem): number {
-  const at = Date.parse(a.sentAt);
-  const bt = Date.parse(b.sentAt);
+  const at = sentAtMicros(a.sentAt);
+  const bt = sentAtMicros(b.sentAt);
   if (at !== bt) return bt - at;
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
@@ -204,7 +213,18 @@ export function mergeSearchResults(
       (!hasMore || !oldest || newestFirst(hit, oldest) <= 0),
   );
   if (extra.length === 0) return results;
-  return [...results, ...extra].sort(newestFirst);
+
+  // Slot the local hits in between the server's results without sorting those: the server's
+  // order stands as given.
+  extra.sort(newestFirst);
+  const merged: SearchMessageItem[] = [];
+  let next = 0;
+  for (const result of results) {
+    while (next < extra.length && newestFirst(extra[next], result) < 0) merged.push(extra[next++]);
+    merged.push(result);
+  }
+  merged.push(...extra.slice(next));
+  return merged;
 }
 
 /** Conversations of local hits that {@link mergeSearchResults} kept out as not visible. */
