@@ -6,16 +6,31 @@ import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import type { SearchMessageItem } from "../api/useSearchMessages";
 
+const requestCacheSyncMock = vi.fn();
+
 vi.mock("../../conversations/api/useChannels", () => ({
-  useChannels: () => ({ data: { items: [] } }),
+  useChannels: () => ({
+    data: {
+      items: [{ id: "conv-1", title: "general", conversationType: "CHANNEL" }],
+    },
+  }),
+  useJoinedChannels: () => ({ data: undefined }),
+}));
+
+vi.mock("../../conversations/api/useInboxConversations", () => ({
+  useInboxConversations: () => ({ data: undefined }),
+}));
+
+vi.mock("../runtime/messageCacheSync", () => ({
+  requestCacheSync: (...args: unknown[]) => requestCacheSyncMock(...args),
 }));
 
 vi.mock("../api/useSearchMessages", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/useSearchMessages")>();
-  return { ...actual, useSearchMessages: vi.fn() };
+  return { ...actual, useSearchMessages: vi.fn(), useLocalSearchHits: vi.fn() };
 });
 
-import { useSearchMessages } from "../api/useSearchMessages";
+import { useLocalSearchHits, useSearchMessages } from "../api/useSearchMessages";
 import { SearchOverlay } from "./SearchOverlay";
 
 function makeItem(overrides: Partial<SearchMessageItem> = {}): SearchMessageItem {
@@ -45,11 +60,20 @@ function mockSearchResult(
     isPending?: boolean;
     isError?: boolean;
     fetchNextPage?: () => void;
+    source?: "local";
   } = {},
 ) {
   vi.mocked(useSearchMessages).mockReturnValue({
     data: {
-      pages: [{ items, next: null, prev: null, pageInfo: { hasNext: false, hasPrev: false } }],
+      pages: [
+        {
+          items,
+          next: null,
+          prev: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+          source: opts.source,
+        },
+      ],
       pageParams: [undefined],
     },
     isPending: opts.isPending ?? false,
@@ -62,10 +86,19 @@ function mockSearchResult(
   } as any);
 }
 
+function mockLocalHits(items: SearchMessageItem[]) {
+  vi.mocked(useLocalSearchHits).mockReturnValue({
+    data: items,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock of a TanStack Query result
+  } as any);
+}
+
 describe("SearchOverlay", () => {
   beforeEach(() => {
     vi.mocked(useSearchMessages).mockReset();
     mockSearchResult([]);
+    mockLocalHits([]);
+    requestCacheSyncMock.mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useSearchOverlayStore.setState({
       isOpen: true,
@@ -144,6 +177,43 @@ describe("SearchOverlay", () => {
     mockSearchResult([]);
     render(<SearchOverlay />);
     expect(screen.getByPlaceholderText(/from:@user.*in:#channel.*has:link/)).toBeInTheDocument();
+  });
+
+  describe("local search", () => {
+    it("adds local hits the server did not return, without duplicates", () => {
+      mockSearchResult([makeItem({ id: "m1", sentAt: "2026-07-01T00:00:00Z" })]);
+      mockLocalHits([
+        makeItem({ id: "m1", sentAt: "2026-07-01T00:00:00Z" }),
+        makeItem({
+          id: "local-1",
+          sentAt: "2026-07-02T00:00:00Z",
+          author: { id: "u2", username: "bob", displayName: "Bob", avatarUrl: null },
+        }),
+      ]);
+      render(<SearchOverlay />);
+
+      const rows = screen.getAllByRole("button", { name: /alice|bob/i });
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent("Bob");
+      expect(screen.queryByText(/offline/i)).not.toBeInTheDocument();
+    });
+
+    it("keeps out local hits from conversations the lists no longer show, and re-syncs them", () => {
+      mockSearchResult([]);
+      mockLocalHits([makeItem({ id: "gone", conversationId: "conv-left" })]);
+      render(<SearchOverlay />);
+
+      expect(screen.queryByRole("button", { name: /alice/i })).not.toBeInTheDocument();
+      expect(requestCacheSyncMock).toHaveBeenCalledWith("ws-1", ["conv-left"]);
+    });
+
+    it("says so when the results come from this device", () => {
+      mockSearchResult([makeItem()], { source: "local" });
+      render(<SearchOverlay />);
+
+      expect(screen.getByText(/offline: showing matches from messages saved/i)).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /alice/i })).toHaveLength(1);
+    });
   });
 
   describe("keyboard navigation over the flat list", () => {

@@ -175,6 +175,7 @@ pub fn run() {
             message_cache::commands::message_cache_sync_begin,
             message_cache::commands::message_cache_sync_apply,
             message_cache::commands::message_cache_timeline,
+            message_cache::commands::message_cache_search,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

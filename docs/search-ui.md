@@ -72,11 +72,35 @@ operator-based query with no free-text component, e.g. `from:@alice`), `SearchSn
 falls back to the plain `text`, rendered as ordinary React children (auto-escaped, no
 highlight — there's nothing server-side to highlight).
 
+## Local search (desktop app, PR 10)
+
+The desktop app also searches its encrypted local message cache (`docs/local-message-cache.md`,
+"Local search"). The behaviour, kept deliberately simple:
+
+- **Server unreachable** (a network failure or a 5xx, the same rule the timeline uses): each
+  results page comes from the local index, with the same recency order and cursor, so paging
+  works the same. The overlay says it is showing matches saved on this device. An answer the
+  server gave (a GraphQL error, a 401) is never replaced with local results.
+- **Online**: the server's results as before, plus local matches the server did not return
+  (`mergeSearchResults` in `api/localSearch.ts`). A local match is added only if no loaded page
+  has the same message id, its conversation is in the channel or DM lists the server returned
+  now, and, while more server pages remain, it is no older than the oldest loaded result, so the
+  list stays in recency order as pages load. Up to the 100 newest local matches are considered.
+  In practice this adds prefix matches (`depl` finds `deploy`) the server's stemmed search misses.
+- A local match from a conversation the lists no longer show is left out and that conversation is
+  synced again, which drops it from the cache if access was lost.
+- Local snippets are escaped by the cache before the `<mark>` tags are added, then go through
+  the same `SearchSnippet` sanitization.
+- The operators are parsed in the client for local search only (`parseLocalSearchQuery`), with
+  the server's grammar; `in:#name` resolves against the channel lists, and an unknown channel
+  matches nothing, as on the server. Server queries still pass the text through unchanged.
+- The web app has no cache and behaves as before.
+
 ## Operator discovery
 
 The `from:`/`in:`/`has:link`/`has:attachment`/`before:`/`after:` operators are parsed
-entirely **server-side**; the frontend passes `query` through unchanged (no client
-parser, deliberately conservative — see `../rim-server/docs/search.md` for the exact
+**server-side** for server search; the frontend passes `query` through unchanged (the
+only client parser is the local-search one above, deliberately conservative — see `../rim-server/docs/search.md` for the exact
 grammar). Discoverability is handled two ways:
 
 - The search input's placeholder hints at the syntax directly:

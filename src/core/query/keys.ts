@@ -34,6 +34,14 @@ export const queryKeys = {
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
+  // Hits from the desktop app's local search index (PR 10). Keyed by the signed-in user, as the
+  // cache is per account.
+  localSearchMessages: (
+    workspaceId?: string,
+    userId?: string,
+    conversationId?: string,
+    query?: string,
+  ) => ["localSearchMessages", workspaceId, userId, conversationId, query] as const,
   pinnedMessages: (workspaceId?: string, conversationId?: string) =>
     ["pinnedMessages", workspaceId, conversationId] as const,
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,

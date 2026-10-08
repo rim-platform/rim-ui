@@ -10,6 +10,7 @@ use serde_json::json;
 
 use super::feed::{ChangesRequest, ChangesStatus, ConversationChanges, MessageChange};
 use super::key::{CacheKey, KeySource};
+use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::store::{CacheStore, TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
 
@@ -726,4 +727,481 @@ fn malformed_changes_are_skipped_without_failing_the_page() {
     store.apply_changes(WS, vec![entry]).unwrap();
     assert_eq!(cached_ids(&store, "c1"), vec!["good"]);
     assert!(cached_ids(&store, "c2").is_empty());
+}
+
+// ─── Local search (PR 10) ───────────────────────────────────────────────────
+
+fn text_query(text: &str) -> LocalSearchQuery {
+    LocalSearchQuery {
+        text: text.into(),
+        ..Default::default()
+    }
+}
+
+fn search(store: &CacheStore, text: &str) -> LocalSearchPage {
+    store.search(WS, &text_query(text), None, 50).unwrap()
+}
+
+fn hit_ids(page: &LocalSearchPage) -> Vec<String> {
+    page.items.iter().map(|h| h.id.clone()).collect()
+}
+
+/// FTS5's own checks: the index is sound, and it holds exactly what the `message` rows it
+/// covers would produce (tombstones included, as entries without words).
+fn assert_index_consistent(store: &CacheStore) {
+    store
+        .conn
+        .execute_batch(
+            "INSERT INTO message_fts (message_fts) VALUES ('integrity-check');
+             INSERT INTO message_fts (message_fts, rank) VALUES ('integrity-check', 1);",
+        )
+        .unwrap();
+}
+
+#[test]
+fn search_finds_created_messages_with_a_highlighted_snippet() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "m1", "the deploy failed on <b>staging</b>", None);
+    feed.send("c1", "m2", "lunch?", None);
+    feed.send("c1", "m3", "Déploiement prévu", None);
+    feed.send(
+        "c1",
+        "m4",
+        "redeploy tomorrow, deployment notes attached",
+        None,
+    );
+    store.track(WS, "c1", 1).unwrap();
+    sync(&mut store, &mut feed, None);
+
+    let page = search(&store, "deploy");
+    assert_eq!(
+        hit_ids(&page),
+        vec!["m4", "m1"],
+        "newest first; words match as prefixes, not infixes"
+    );
+    let hit = &page.items[1];
+    assert_eq!(hit.conversation_id, "c1");
+    assert_eq!(hit.server_id, WS);
+    assert_eq!(hit.author_id, "user-1");
+    assert_eq!(hit.author["username"], "ada");
+    assert_eq!(hit.sent_at, "2026-10-08T10:00:00.5Z");
+    assert_eq!(hit.text, "the deploy failed on <b>staging</b>");
+    assert_eq!(
+        hit.headline.as_deref(),
+        Some("the <mark>deploy</mark> failed on &lt;b&gt;staging&lt;/b&gt;"),
+        "the snippet is escaped HTML with only the marks as tags"
+    );
+    assert!(hit.rank > 0.0);
+
+    assert_eq!(hit_ids(&search(&store, "DEPLOY")), vec!["m4", "m1"]);
+    assert_eq!(
+        hit_ids(&search(&store, "depl")),
+        vec!["m4", "m3", "m1"],
+        "a prefix matches across diacritics"
+    );
+    assert_eq!(
+        hit_ids(&search(&store, "deploiement")),
+        vec!["m3"],
+        "diacritics fold"
+    );
+    assert_eq!(hit_ids(&search(&store, "deploy staging")), vec!["m1"]);
+    assert_eq!(hit_ids(&search(&store, "\"deploy failed\"")), vec!["m1"]);
+    assert!(search(&store, "\"failed deploy\"").items.is_empty());
+    assert!(search(&store, "nothing-like-this").items.is_empty());
+    // FTS5 syntax typed by a user is text, never an error.
+    assert!(search(&store, "deploy OR NEAR( * ^ \"").items.is_empty());
+    assert!(search(&store, "!!!").items.is_empty());
+    assert!(search(&store, "").items.is_empty());
+    assert_index_consistent(&store);
+}
+
+#[test]
+fn an_edit_reindexes_and_a_delete_removes_the_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "m1", "original wording", None);
+    feed.send("c1", "m2", "soon to be removed", None);
+    store.track(WS, "c1", 1).unwrap();
+    sync(&mut store, &mut feed, None);
+    assert_eq!(hit_ids(&search(&store, "original")), vec!["m1"]);
+    assert_eq!(hit_ids(&search(&store, "removed")), vec!["m2"]);
+
+    feed.edit("c1", "m1", "revised wording");
+    feed.delete("c1", "m2");
+    sync(&mut store, &mut feed, Some(&["c1".to_string()]));
+
+    assert!(search(&store, "original").items.is_empty());
+    assert_eq!(hit_ids(&search(&store, "revised")), vec!["m1"]);
+    assert_eq!(hit_ids(&search(&store, "wording")), vec!["m1"]);
+    assert!(
+        search(&store, "removed").items.is_empty(),
+        "a tombstone is not searchable"
+    );
+    // Nor by operators alone: a tombstone is no hit of any kind.
+    let all = store
+        .search(
+            WS,
+            &LocalSearchQuery {
+                conversation_id: Some("c1".into()),
+                ..Default::default()
+            },
+            None,
+            50,
+        )
+        .unwrap();
+    assert_eq!(hit_ids(&all), vec!["m1"]);
+    assert_index_consistent(&store);
+
+    // A stale lower version of the edit changes nothing, in the index either.
+    store
+        .apply_changes(
+            WS,
+            vec![ConversationChanges {
+                conversation_id: "c1".into(),
+                status: ChangesStatus::Ok,
+                changes: vec![MessageChange {
+                    version: "1".into(),
+                    edited_at: None,
+                    message: message_json(
+                        "c1",
+                        "m1",
+                        Some("original wording".into()),
+                        None,
+                        false,
+                        "2026-10-08T10:00:00.5Z",
+                    ),
+                }],
+                cursor: "4".into(),
+                has_more: false,
+            }],
+        )
+        .unwrap();
+    assert!(search(&store, "original").items.is_empty());
+    assert_index_consistent(&store);
+}
+
+#[test]
+fn lost_access_and_reset_take_messages_out_of_the_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "c1-a", "quarterly numbers", None);
+    feed.send("c2", "c2-a", "quarterly plan", None);
+    feed.send("c2", "c2-b", "quarterly draft", None);
+    store.track(WS, "c1", 1).unwrap();
+    store.track(WS, "c2", 2).unwrap();
+    sync(&mut store, &mut feed, None);
+    assert_eq!(search(&store, "quarterly").items.len(), 3);
+
+    feed.conversation("c1").no_access = true;
+    feed.restore_backup_without("c2", "c2-b");
+    sync(&mut store, &mut feed, None);
+
+    assert_eq!(
+        hit_ids(&search(&store, "quarterly")),
+        vec!["c2-a"],
+        "c1 is gone with the access to it; c2 was rebuilt without c2-b"
+    );
+    assert_index_consistent(&store);
+}
+
+#[test]
+fn search_is_scoped_to_the_workspace_and_its_filters() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "m1", "release notes https://example.org/r1", None);
+    feed.send("c1", "m2", "release party", Some("thread-1"));
+    feed.send("c2", "m3", "release checklist", None);
+    store.track(WS, "c1", 1).unwrap();
+    store.track(WS, "c2", 2).unwrap();
+    sync(&mut store, &mut feed, None);
+
+    let query = |f: &dyn Fn(&mut LocalSearchQuery)| {
+        let mut q = text_query("release");
+        f(&mut q);
+        hit_ids(&store.search(WS, &q, None, 50).unwrap())
+    };
+    // The mock spaces messages a second apart per conversation: m1 and m3 at 10:00:00.5
+    // (the id breaks the tie), m2 at 10:00:01.5.
+    assert_eq!(query(&|_| {}), vec!["m2", "m3", "m1"]);
+    assert_eq!(
+        query(&|q| q.conversation_id = Some("c1".into())),
+        vec!["m2", "m1"]
+    );
+    assert_eq!(query(&|q| q.has_link = true), vec!["m1"]);
+    assert_eq!(
+        query(&|q| q.from = Some("@ADA".into())),
+        vec!["m2", "m3", "m1"]
+    );
+    assert_eq!(query(&|q| q.from = Some("user-1".into())).len(), 3);
+    assert!(query(&|q| q.from = Some("@bob".into())).is_empty());
+    assert_eq!(
+        query(&|q| q.before = Some("2026-10-08T10:00:01Z".into())),
+        vec!["m3", "m1"]
+    );
+    assert_eq!(
+        query(&|q| q.after = Some("2026-10-08T10:00:01Z".into())),
+        vec!["m2"]
+    );
+    // The mock's messages all carry an attachment.
+    assert_eq!(query(&|q| q.has_attachment = true).len(), 3);
+
+    // Another workspace on the same account sees none of it.
+    assert!(store
+        .search("ws-2", &text_query("release"), None, 50)
+        .unwrap()
+        .items
+        .is_empty());
+}
+
+#[test]
+fn search_pages_with_the_timeline_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send_many("c1", 7);
+    store.track(WS, "c1", 1).unwrap();
+    sync(&mut store, &mut feed, None);
+
+    let mut seen = Vec::new();
+    let mut after: Option<TimelineCursor> = None;
+    loop {
+        let page = store
+            .search(WS, &text_query("hello"), after.as_ref(), 3)
+            .unwrap();
+        seen.extend(hit_ids(&page));
+        if !page.has_more {
+            break;
+        }
+        let last = page.items.last().unwrap();
+        after = Some(TimelineCursor {
+            sent_at: last.sent_at.clone(),
+            message_id: last.id.clone(),
+        });
+    }
+    let expected: Vec<String> = (0..7).rev().map(|i| format!("c1-m{i:03}")).collect();
+    assert_eq!(seen, expected);
+}
+
+#[test]
+fn a_thread_reply_hit_names_its_cached_root_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    store.track(WS, "c1", 1).unwrap();
+    let mut root = message_json(
+        "c1",
+        "root",
+        Some("kickoff".into()),
+        None,
+        false,
+        "2026-10-08T10:00:00Z",
+    );
+    root["rootThreadId"] = json!("thread-1");
+    let reply = message_json(
+        "c1",
+        "reply",
+        Some("agenda attached".into()),
+        Some("thread-1"),
+        false,
+        "2026-10-08T10:00:01Z",
+    );
+    let changes = [root, reply]
+        .into_iter()
+        .enumerate()
+        .map(|(i, message)| MessageChange {
+            version: (i + 1).to_string(),
+            edited_at: None,
+            message,
+        })
+        .collect();
+    store
+        .apply_changes(
+            WS,
+            vec![ConversationChanges {
+                conversation_id: "c1".into(),
+                status: ChangesStatus::Ok,
+                changes,
+                cursor: "2".into(),
+                has_more: false,
+            }],
+        )
+        .unwrap();
+
+    let hit = &search(&store, "agenda").items[0];
+    assert_eq!(hit.thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(hit.root_message_id.as_deref(), Some("root"));
+    assert_eq!(search(&store, "kickoff").items[0].root_message_id, None);
+}
+
+#[test]
+fn accounts_never_see_each_others_search_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "m1", "alice's private plans", None);
+    {
+        let store = open(&state, "alice");
+        let mut store = store.lock().unwrap();
+        store.track(WS, "c1", 1).unwrap();
+        sync(&mut store, &mut feed, None);
+        assert_eq!(hit_ids(&search(&store, "private")), vec!["m1"]);
+    }
+
+    let bob = open(&state, "bob");
+    let bob = bob.lock().unwrap();
+    assert!(search(&bob, "private").items.is_empty());
+    let all = bob
+        .search(
+            WS,
+            &LocalSearchQuery {
+                conversation_id: Some("c1".into()),
+                ..Default::default()
+            },
+            None,
+            50,
+        )
+        .unwrap();
+    assert!(all.items.is_empty());
+}
+
+#[test]
+fn an_existing_cache_is_backfilled_once_on_upgrade() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = CacheKey::from_bytes([1; 32]);
+    let alice = account("alice");
+    let path = dir.path().join(alice.file_name());
+
+    // A schema v1 cache as PR 9 left it: two live messages and a tombstone.
+    {
+        let conn = super::store::open_keyed(&path, &key).unwrap();
+        conn.execute_batch(super::store::SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('account', ?1)",
+            [alice.label()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO conversation_sync (workspace_id, conversation_id, complete)
+             VALUES (?1, 'c1', 1)",
+            [WS],
+        )
+        .unwrap();
+        for (id, text, deleted) in [
+            ("m1", Some("backfilled before upgrade"), false),
+            ("m2", Some("also before"), false),
+            ("m3", None, true),
+        ] {
+            let payload = message_json("c1", id, None, None, deleted, "2026-10-08T10:00:00Z");
+            conn.execute(
+                "INSERT INTO message (id, workspace_id, conversation_id, author_id, version,
+                                      sent_at_us, is_deleted, text, payload)
+                 VALUES (?1, ?2, 'c1', 'user-1', 1, 0, ?3, ?4, ?5)",
+                rusqlite::params![id, WS, deleted, text, payload.to_string()],
+            )
+            .unwrap();
+        }
+    }
+
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let store = store.lock().unwrap();
+    let version: i32 = store
+        .conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 2);
+    assert_eq!(hit_ids(&search(&store, "before")), vec!["m2", "m1"]);
+    assert_index_consistent(&store);
+
+    // Reopening does not backfill a second time.
+    drop(store);
+    let again = CacheStore::open(&path, &key, &alice).unwrap();
+    assert_eq!(hit_ids(&search(&again, "before")), vec!["m2", "m1"]);
+    assert_index_consistent(&again);
+}
+
+#[test]
+fn the_index_survives_vacuum() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let mut store = store.lock().unwrap();
+    let mut feed = MockFeed::new(1000);
+    feed.send_many("c1", 20);
+    for i in 0..15 {
+        feed.delete("c1", &format!("c1-m{i:03}"));
+    }
+    store.track(WS, "c1", 1).unwrap();
+    sync(&mut store, &mut feed, None);
+    store.conn.execute_batch("VACUUM").unwrap();
+
+    let page = search(&store, "hello");
+    assert_eq!(page.items.len(), 5);
+    for hit in &page.items {
+        assert!(hit.headline.as_deref().unwrap().contains(&hit.text[6..]));
+    }
+    assert_index_consistent(&store);
+}
+
+#[test]
+fn the_search_index_holds_no_plaintext_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let mut feed = MockFeed::new(1000);
+    feed.send("c1", "m1", "zanzibarquokka rendezvous", None);
+    let store = open(&state, "alice");
+    {
+        let mut store = store.lock().unwrap();
+        store.track(WS, "c1", 1).unwrap();
+        sync(&mut store, &mut feed, None);
+        assert_eq!(hit_ids(&search(&store, "zanzibar")), vec!["m1"]);
+        // Push everything out of the WAL into the main file too.
+        store
+            .conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+    }
+
+    let mut files = 0;
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let path = entry.unwrap().path();
+        let bytes = std::fs::read(&path).unwrap();
+        files += 1;
+        for needle in ["zanzibarquokka", "zanzibar", "rendezvous", "message_fts"] {
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains(needle),
+                "{needle} in plain text in {}",
+                path.display()
+            );
+        }
+    }
+    assert!(files >= 1);
+    // The index is in the database itself, not in a file next to it.
+    let names: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        names
+            .iter()
+            .all(|n| n.ends_with(".db") || n.ends_with(".db-wal") || n.ends_with(".db-shm")),
+        "{names:?}"
+    );
 }

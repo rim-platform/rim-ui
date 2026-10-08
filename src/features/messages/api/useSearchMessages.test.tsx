@@ -3,9 +3,15 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { ClientError } from "graphql-request";
+
 import { PageDir } from "../../../core/graphql/generated/schema-types";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 
 const requestMock = vi.fn();
+const searchCachedMessagesMock = vi.fn();
+/** The cache account; null (no cache, as in the web app) unless a test sets it. */
+let cacheAccount: { endpoint: string; userId: string } | null = null;
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
@@ -13,7 +19,15 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
-import { useSearchMessages, flattenSearchPages } from "./useSearchMessages";
+vi.mock("./messageCache", async (importOriginal) => ({
+  isServerUnreachable: (await importOriginal<typeof import("./messageCache")>())
+    .isServerUnreachable,
+  currentCacheAccount: () => cacheAccount,
+  searchCachedMessages: (...args: unknown[]) => searchCachedMessagesMock(...args),
+}));
+
+import { buildConversationDirectory } from "./localSearch";
+import { useSearchMessages, useLocalSearchHits, flattenSearchPages } from "./useSearchMessages";
 import type { SearchResultPage } from "./useSearchMessages";
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -67,6 +81,8 @@ const item2 = {
 describe("useSearchMessages", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    searchCachedMessagesMock.mockReset();
+    cacheAccount = null;
   });
 
   it("is disabled until the debounced query is non-empty", () => {
@@ -177,6 +193,105 @@ describe("useSearchMessages", () => {
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
     const [, secondVariables] = requestMock.mock.calls[1];
     expect((secondVariables as { input: { cursor: unknown } }).input.cursor).toEqual(cursor);
+  });
+});
+
+const localHit = {
+  id: "local-1",
+  serverId: "ws-1",
+  conversationId: "conv-1",
+  threadId: null,
+  rootMessageId: null,
+  authorId: "u1",
+  author: { id: "u1", username: "alice", displayName: "Alice", avatarUrl: null },
+  text: "deploy notes",
+  sentAt: "2026-07-02T00:00:00Z",
+  rank: 2,
+  headline: "<mark>deploy</mark> notes",
+};
+
+const directory = buildConversationDirectory([
+  [{ id: "conv-1", title: "general", conversationType: "CHANNEL" }] as never,
+]);
+
+describe("useSearchMessages offline", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    searchCachedMessagesMock.mockReset();
+    cacheAccount = { endpoint: "http://localhost:8080/api", userId: "u1" };
+  });
+
+  it("serves the page from the local index when the server cannot be reached", async () => {
+    requestMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    searchCachedMessagesMock.mockResolvedValue({ items: [localHit], hasMore: true });
+    const { result } = renderHook(
+      () => useSearchMessages("ws-1", undefined, "deploy in:#general", directory),
+      { wrapper },
+    );
+
+    await waitForDebounce();
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    const first = result.current.data!.pages[0];
+    expect(first.source).toBe("local");
+    expect(first.items[0]).toMatchObject({ id: "local-1", conversationTitle: "general" });
+    expect(searchCachedMessagesMock).toHaveBeenCalledWith(
+      cacheAccount,
+      "ws-1",
+      { text: "deploy", conversationId: "conv-1" },
+      null,
+      25,
+    );
+    expect(result.current.hasNextPage).toBe(true);
+  });
+
+  it("does not stand in for an answer the server gave", async () => {
+    requestMock.mockRejectedValue(
+      new ClientError({ status: 200, errors: [{ message: "bad query" }] } as never, {
+        query: "",
+      }),
+    );
+    const { result } = renderHook(() => useSearchMessages("ws-1", undefined, "deploy"), {
+      wrapper,
+    });
+
+    await waitForDebounce();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(searchCachedMessagesMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useLocalSearchHits", () => {
+  beforeEach(() => {
+    searchCachedMessagesMock.mockReset();
+    cacheAccount = { endpoint: "http://localhost:8080/api", userId: "u1" };
+    useAuthStore.setState({ session: { userId: "u1" } } as never);
+  });
+
+  it("returns the newest local hits as search items", async () => {
+    searchCachedMessagesMock.mockResolvedValue({ items: [localHit], hasMore: false });
+    const { result } = renderHook(
+      () => useLocalSearchHits("ws-1", undefined, "deploy", directory),
+      { wrapper },
+    );
+
+    await waitForDebounce();
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data![0]).toMatchObject({ id: "local-1", conversationTitle: "general" });
+    expect(searchCachedMessagesMock).toHaveBeenCalledWith(
+      cacheAccount,
+      "ws-1",
+      { text: "deploy" },
+      null,
+      100,
+    );
+  });
+
+  it("stays idle without a cache", async () => {
+    cacheAccount = null;
+    renderHook(() => useLocalSearchHits("ws-1", undefined, "deploy", directory), { wrapper });
+    await waitForDebounce();
+    expect(searchCachedMessagesMock).not.toHaveBeenCalled();
   });
 });
 

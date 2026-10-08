@@ -6,12 +6,19 @@ import { cn } from "../../../shared/ui/cn";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import {
   useSearchMessages,
-  flattenSearchPages,
+  useLocalSearchHits,
   type SearchMessageItem,
 } from "../api/useSearchMessages";
+import {
+  buildConversationDirectory,
+  hiddenLocalConversations,
+  mergeSearchResults,
+} from "../api/localSearch";
+import { requestCacheSync } from "../runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { useChannels } from "../../conversations/api/useChannels";
+import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
+import { useInboxConversations } from "../../conversations/api/useInboxConversations";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { SearchSnippet } from "./SearchSnippet";
 
@@ -46,6 +53,14 @@ export function SearchOverlay() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const openThreadForMessage = useShellStore((s) => s.openThreadForMessage);
   const { data: channelsData } = useChannels(workspaceId ?? undefined);
+  const { data: joinedData } = useJoinedChannels(workspaceId ?? undefined);
+  const { data: inboxData } = useInboxConversations(workspaceId ?? undefined);
+  // The conversations the user can see now: titles for local hits, `in:#name` for local
+  // search, and the visibility check before a local hit joins the server's results.
+  const directory = useMemo(
+    () => buildConversationDirectory([channelsData?.items, joinedData?.items, inboxData?.items]),
+    [channelsData, joinedData, inboxData],
+  );
 
   // The scope chip (All / current channel) sets `conversationId` as an explicit
   // query-input field. It coexists with an in-query `in:#x` operator — the
@@ -54,9 +69,28 @@ export function SearchOverlay() {
   // the operator, or both.
   const conversationId = scope.kind === "conversation" ? scope.conversationId : undefined;
   const { data, isPending, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useSearchMessages(workspaceId ?? undefined, conversationId, query);
+    useSearchMessages(workspaceId ?? undefined, conversationId, query, directory);
+  // Desktop app: matches from the local search index (PR 10), added to the server's results.
+  const { data: localHits } = useLocalSearchHits(
+    workspaceId ?? undefined,
+    conversationId,
+    query,
+    directory,
+  );
 
-  const flatResults = useMemo(() => flattenSearchPages(data), [data]);
+  const flatResults = useMemo(
+    () => mergeSearchResults(data?.pages ?? [], hasNextPage, localHits ?? [], directory),
+    [data, hasNextPage, localHits, directory],
+  );
+  const isOffline = data?.pages.some((page) => page.source === "local") ?? false;
+
+  // Local hits from a conversation the lists no longer show are kept out of the results; ask
+  // the cache to re-check those conversations, which drops them if access was lost.
+  useEffect(() => {
+    if (!workspaceId || !localHits || directory.byId.size === 0) return;
+    const hidden = hiddenLocalConversations(localHits, directory);
+    if (hidden.length > 0) requestCacheSync(workspaceId, hidden);
+  }, [workspaceId, localHits, directory]);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -310,6 +344,12 @@ export function SearchOverlay() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-rim-text-muted" />
             </div>
+          )}
+
+          {hasQuery && isOffline && !isPending && (
+            <p className="px-3 pb-1 pt-2 text-[10px] text-rim-text-faint">
+              Offline: showing matches from messages saved on this device.
+            </p>
           )}
 
           {showResults && (
