@@ -12,6 +12,10 @@ export const queryKeys = {
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,
+  // The newest timeline page from the desktop app's local message cache (PR 9). Its own root,
+  // so invalidating `messages` (a server refetch) does not re-read the cache.
+  cachedTimeline: (workspaceId?: string, conversationId?: string) =>
+    ["cachedTimeline", workspaceId, conversationId] as const,
   threadByRoot: (workspaceId?: string, conversationId?: string, rootMessageId?: string) =>
     ["threadByRoot", workspaceId, conversationId, rootMessageId] as const,
   threadMessages: (workspaceId?: string, conversationId?: string, threadId?: string) =>

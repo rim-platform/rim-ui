@@ -16,6 +16,7 @@ import { ConfirmCommandModal } from "../../features/agent/components/ConfirmComm
 import { useUnreadCounts } from "../../features/conversations/api/useUnreadCounts";
 import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
 import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePresence";
+import { useMessageCacheSync } from "../../features/messages/runtime/messageCacheSync";
 import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
@@ -121,6 +122,7 @@ export function AppShell() {
 function WorkspaceShell() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   useWorkspaceEvents(workspaceId);
+  useMessageCacheSync(workspaceId);
   useUnreadCounts(workspaceId ?? undefined);
   useMutedConversations(workspaceId ?? undefined);
   useWorkspacePresence(workspaceId);
