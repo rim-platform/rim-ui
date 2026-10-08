@@ -665,6 +665,7 @@ describe("Track 4.1: desktop-local agent tools run in the client", () => {
 
   afterEach(() => {
     useShellStore.getState().reset();
+    useWorkspaceStore.getState().clearWorkspaceId();
   });
 
   it("routes a DESKTOP_LOCAL command to its local handler, not executeCommand", async () => {
@@ -683,6 +684,32 @@ describe("Track 4.1: desktop-local agent tools run in the client", () => {
       status: "done",
       commandId: "workspace.navigate_to_channel",
     });
+  });
+
+  it("converts workspace_id for workspace.switch_workspace", async () => {
+    await makeDesktopLocalToolHandler("workspace.switch_workspace")({ workspace_id: "ws-2" });
+
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-2");
+  });
+
+  it("sends a non-Safe DESKTOP_LOCAL command to the server gate instead of running it", async () => {
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "ok", payload: null },
+    });
+    const [tool] = commandsToBackendTools([
+      makeCommand({
+        id: "workspace.toggle_sidebar",
+        executionTarget: CommandExecutionTarget.DESKTOP_LOCAL,
+        sensitivity: CommandSensitivity.MUTATING,
+      }),
+    ]);
+
+    await tool!.handler({});
+
+    const variables = vi.mocked(graphqlClient.request).mock.calls[0]![1] as {
+      input: Record<string, unknown>;
+    };
+    expect(variables.input.commandId).toBe("workspace.toggle_sidebar");
   });
 
   it("keeps BACKEND commands on executeCommand", async () => {

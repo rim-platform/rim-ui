@@ -6,6 +6,7 @@ import {
   CommandExecutionTarget,
   CommandInitiator,
   CommandResultStatus,
+  CommandSensitivity,
   CommandSurface,
   type Command,
   type CommandResult,
@@ -237,13 +238,25 @@ export function makeDesktopLocalToolHandler(commandId: string): AiToolHandler {
   };
 }
 
+/**
+ * Desktop-local commands never reach the server's confirmation gate, so only Safe,
+ * non-dangerous ones run locally. Anything stricter goes to `executeCommand`, where the
+ * server refuses it rather than letting the agent skip a confirmation.
+ */
+function isUnconfirmedLocalCommand(cmd: Command): boolean {
+  return (
+    cmd.executionTarget === CommandExecutionTarget.DESKTOP_LOCAL &&
+    cmd.sensitivity === CommandSensitivity.SAFE &&
+    !cmd.dangerous
+  );
+}
+
 export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
   return commands.map((cmd) => ({
     definition: buildAiToolFromCommand(cmd),
-    handler:
-      cmd.executionTarget === CommandExecutionTarget.DESKTOP_LOCAL
-        ? makeDesktopLocalToolHandler(cmd.id)
-        : makeBackendToolHandler(cmd.id),
+    handler: isUnconfirmedLocalCommand(cmd)
+      ? makeDesktopLocalToolHandler(cmd.id)
+      : makeBackendToolHandler(cmd.id),
     options: buildAiToolRegistrationOptions(cmd),
   }));
 }
