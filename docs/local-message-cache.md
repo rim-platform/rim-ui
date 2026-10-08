@@ -12,9 +12,14 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   database is never served to another account.
 - One random 256-bit key per installation, stored in the OS keyring (`message-cache-key-v1`).
   All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the key is
-  lost, the unreadable files are deleted and the cache refills from the server.
-- `message.text` is its own column of a rowid table, so local search (PR 10) can add an
-  external-content FTS5 index over it. Deleted messages stay as tombstones with no text,
+  lost, the unreadable files are deleted and the cache refills from the server. If the keyring
+  cannot be reached, every cache call fails softly and the timeline reads from the server.
+- Signing out keeps the account's database on the device (it is encrypted, and history on the
+  user's own device is the point of Stage 2); signing back in to the same account reuses it. A
+  sync still in flight when the signed-in account changes is discarded before it is applied.
+- `message.text` is its own column, and `message.seq` is an `INTEGER PRIMARY KEY` that upserts
+  never change, so local search (PR 10) can add an external-content FTS5 index over it
+  (`content_rowid='seq'`) that survives a `VACUUM`. Deleted messages stay as tombstones with no text,
   attachments, link previews or reactions.
 
 ## Sync
@@ -45,4 +50,8 @@ while input: input = message_cache_sync_apply(await messageChanges(input))
   from the server, so offline reading works once the app is open, not from a cold start.
 - Thread panes, pins, reactions and link previews still read from the server; the feed does not
   version reactions, pins or previews, so cached copies of those are as of the last sync.
+- On Linux the app's keyring backend is the kernel keyring (`keyring`'s `linux-native`), which
+  does not survive a reboot, so the cache key is new after every reboot and the cache refills
+  from the server. Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
+  that for this key and the agent provider keys alike, and needs libdbus at build time.
 - Local search (PR 10) and the drive archive come later.

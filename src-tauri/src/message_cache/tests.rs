@@ -271,6 +271,17 @@ fn cached_ids(store: &CacheStore, conversation: &str) -> Vec<String> {
         .unwrap()
 }
 
+fn seqs(store: &CacheStore, conversation: &str) -> Vec<(String, i64)> {
+    let mut stmt = store
+        .conn
+        .prepare("SELECT id, seq FROM message WHERE conversation_id = ?1 ORDER BY id")
+        .unwrap();
+    stmt.query_map([conversation], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
 fn open(state: &MessageCacheState, user: &str) -> Arc<Mutex<CacheStore>> {
     state.store(&account(user)).unwrap()
 }
@@ -356,6 +367,7 @@ fn edits_apply_and_deletes_become_tombstones() {
     feed.send_many("c1", 3);
     store.track(WS, "c1", 1).unwrap();
     sync(&mut store, &mut feed, None);
+    let seqs_before = seqs(&store, "c1");
 
     feed.edit("c1", "c1-m001", "edited");
     feed.delete("c1", "c1-m002");
@@ -364,6 +376,8 @@ fn edits_apply_and_deletes_become_tombstones() {
 
     let page = store.timeline(WS, "c1", None, 10).unwrap().unwrap();
     assert_eq!(texts(&page), vec!["hello 0", "edited"]);
+    // Upserts keep each row's `seq`, the rowid PR 10's FTS5 index points at.
+    assert_eq!(seqs(&store, "c1"), seqs_before);
 
     let (text, payload, deleted): (Option<String>, String, bool) = store
         .conn

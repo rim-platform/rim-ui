@@ -14,9 +14,11 @@ const SCHEMA_VERSION: i32 = 1;
 
 /// Schema v1.
 ///
-/// `message` is a rowid table with the body in its own `text` column, so PR 10 can add an
-/// external-content FTS5 index (`content='message', content_rowid='rowid'`) without moving
-/// data. Writes upsert by `id` and never `REPLACE`, which keeps each message's rowid stable.
+/// `message` has the body in its own `text` column and an explicit `INTEGER PRIMARY KEY`
+/// (`seq`, an alias of the rowid), so PR 10 can add an external-content FTS5 index
+/// (`content='message', content_rowid='seq'`) without moving data. The alias matters: `VACUUM`
+/// may renumber the rowids of a table without one, which would leave the index pointing at the
+/// wrong rows. Writes upsert by `id` and never `REPLACE`, which keeps each message's `seq`.
 const SCHEMA_V1: &str = "
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
@@ -39,7 +41,8 @@ CREATE TABLE conversation_sync (
 );
 
 CREATE TABLE message (
-    id              TEXT NOT NULL PRIMARY KEY,
+    seq             INTEGER PRIMARY KEY,
+    id              TEXT NOT NULL UNIQUE,
     workspace_id    TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     thread_id       TEXT,
