@@ -663,7 +663,17 @@ pub async fn plugin_run_ai_command(
         command_id
     );
 
-    command_exec::execute(&state, &plugin_id, &command_id, input, false, None).await
+    // Consent was checked for `plugin_id`, so the command must resolve to that
+    // same plugin; the id re-split in `resolve_command` may not move it elsewhere.
+    command_exec::execute(
+        &state,
+        &plugin_id,
+        &command_id,
+        input,
+        false,
+        Some(&plugin_id),
+    )
+    .await
 }
 
 /// AI consent gates for [`plugin_run_ai_command`].
