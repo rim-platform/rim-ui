@@ -14,7 +14,7 @@
 //! - **Evolution**: a v1 shape never changes. New methods may be added to v1, so
 //!   both sides ignore notifications they do not know and answer unknown requests
 //!   with `METHOD_NOT_FOUND`. Anything else is a new protocol version, negotiated
-//!   in the handshake.
+//!   in the handshake. The schema's `x-versioning` lists both sides of that line.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};

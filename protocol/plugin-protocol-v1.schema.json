@@ -9,7 +9,24 @@
     "maxFrameBytes": 4194304,
     "lifecycle": "The host's first request is rim.handshake; the plugin sends nothing but rim.log before answering it. The plugin must exit when it receives rim.shutdown or when its stdin closes. The host closes stdin right after rim.shutdown, sends SIGTERM to a plugin still running one second later, and kills it two seconds after that."
   },
-  "x-ids": "Request ids are integers or strings, never null, and the answering side echoes them unchanged. The host numbers its requests 1, 2, 3, ... and its heartbeats -1, -2, -3, ... per connection. A plugin may number its own requests however it likes.",
+  "x-ids": "Request ids are integers or strings, never null, and the answering side echoes them unchanged. The host numbers its requests 1, 2, 3, ... and its heartbeats -1, -2, -3, ... per connection. A plugin may number its own requests however it likes. A frame that is not valid JSON or not a valid JSON-RPC message is logged and dropped; the host never answers with a null id, so neither side has to handle one.",
+  "x-versioning": {
+    "version": "protocolVersion is a single integer. There are no minor versions: v1 is everything in this file plus any methods added under the rules below.",
+    "allowedInV1": [
+      "A new method or notification in either direction. A receiver that does not know it answers a request with METHOD_NOT_FOUND and ignores a notification, so old plugins and old hosts keep working.",
+      "Freezing a method listed in x-notFrozen, as a new $defs entry. Until then its shape may change without notice.",
+      "A new capability name in grantedCapabilities.",
+      "A new error code that is not one of x-errorCodes, documented here before the host sends it."
+    ],
+    "requiresV2": [
+      "Adding, removing, renaming or retyping a field in any frozen frame, including an optional field.",
+      "A new value in a closed set, such as initiator or the rim.log levels.",
+      "A different meaning for an existing method, field, value or error code, including the handshake, which keeps the same shape in every version.",
+      "A change to framing, the frame size limit, the id rules or the confirmation gate."
+    ],
+    "receivers": "Senders emit exactly the frozen shapes. Receivers should still ignore fields they do not know rather than fail, so a sender bug does not break the connection; the host does.",
+    "negotiation": "The host lists every version it speaks in supportedVersions. The plugin answers with the version it chose from that list. A plugin that speaks none of them answers accepted: false, with protocolVersion set to the version it speaks and error saying why, and the host stops it. A plugin that picks a version the host did not offer is stopped as well."
+  },
   "x-errorCodes": {
     "-32700": "PARSE_ERROR: the frame is not valid JSON.",
     "-32600": "INVALID_REQUEST: the JSON is not a valid JSON-RPC 2.0 message.",
@@ -21,7 +38,7 @@
     "-32002": "PLUGIN_ERROR: the plugin ran the command and it failed; message says why."
   },
   "x-confirmationGate": "A command whose manifest entry is dangerous runs only after the user confirmed that run. The host refuses an unconfirmed dangerous command before anything reaches the plugin, sends confirmed: true with a confirmed one, and never lets the AI agent confirm. A plugin should still refuse a dangerous command that arrives with confirmed: false.",
-  "x-principals": "Plugins see people only as Principal objects. principalId is opaque and stable: plugins may store and compare it but must not parse it. It is never the user's account UUID and never a name@domain, and it does not change when the user's keys change. Until key identity ships, ids are provisional (prefix rimp0_); the host announces the switch to key-based ids with rim.principal.changed.",
+  "x-principals": "Plugins see people only as Principal objects. principalId is opaque and stable: plugins may store and compare it but must not parse it. It is never the user's account UUID and never a name@domain, and it does not change when the user's keys change. Until key identity ships, ids are provisional (prefix rimp0_): a one-way hash of the account id, the same for one account on every device and in every session. When key identity ships, each person's id becomes a hash of their inception key, which survives key rotation. That switch happens once: every rimp0_ id maps to exactly one key-based id, the new ids never start with rimp0_, and the host tells running plugins with rim.principal.changed. It will also send the old-to-new mapping through a new notification, which the rules in x-versioning allow within v1, so a plugin that stored rimp0_ ids can rewrite them. Plugins should keep stored principal ids somewhere they can rewrite.",
   "x-notFrozen": {
     "description": "Methods the host already routes whose shapes are not part of v1 yet. They will be frozen, camelCase and with Principal for every person, when the host wires them end to end.",
     "methods": [
@@ -189,7 +206,7 @@
       }
     },
     "HandshakeResponse": {
-      "description": "Plugin to host. A refusal is accepted: false with error set; the host then stops the plugin.",
+      "description": "Plugin to host. A refusal is accepted: false with error set; the host then stops the plugin. See x-versioning.negotiation for a plugin that speaks none of the offered versions.",
       "type": "object",
       "required": ["jsonrpc", "id", "result"],
       "additionalProperties": false,
