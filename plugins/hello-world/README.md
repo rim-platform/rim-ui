@@ -75,8 +75,7 @@ To see the log, open the Tauri devtools console and filter for
 ## Capability model
 
 The manifest declares no capabilities. A manifest may declare the built-in
-names `chat.read`, `chat.write`, `events.read`, `ui.panel` and `ui.notify`, and
-its own keys of the form `plugin.<plugin_id>.<verb>` with the verb in
+names `ui.panel` and `ui.notify`, and its own keys of the form `plugin.<plugin_id>.<verb>` with the verb in
 `[a-z0-9_.]` (validated at install time by `validation.rs`). `greet` needs
 none: it only answers the host.
 

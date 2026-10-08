@@ -35,19 +35,18 @@ static METHOD_CAPABILITY_MAP: LazyLock<HashMap<&'static str, &'static str>> = La
 /// Built-in capability names a manifest may request next to its own
 /// `plugin.<plugin_id>.<verb>` keys (see `validation.rs`).
 ///
-/// Each one guards something the host does today: a method the broker
-/// dispatches (`chat.*`, `events.read`, `ui.panel`), or, for `ui.notify`, the
-/// notifications a panel sends through the frontend bridge (`pluginBridge.ts`).
-/// Names in [`METHOD_CAPABILITY_MAP`] that guard nothing yet (`local.process`,
-/// `network`, `fs.*`) stay out, so the approval prompt never asks for a
-/// permission that does nothing.
-pub const BUILTIN_CAPABILITIES: &[&str] = &[
-    "chat.read",
-    "chat.write",
-    "events.read",
-    "ui.panel",
-    "ui.notify",
-];
+/// Each one guards something the running host does today: `rim.ui.update_panel`
+/// (`ui.panel`), and the notifications a panel sends through the frontend
+/// bridge, `pluginBridge.ts` (`ui.notify`).
+///
+/// The other names in [`METHOD_CAPABILITY_MAP`] stay out. `local.process`,
+/// `network` and `fs.*` guard methods nothing implements. `chat.*` and
+/// `events.read` guard methods the broker routes, but `runtime::start_plugin`
+/// gives it no backend client or event forwarder, and protocol v1 does not
+/// include them; a grant approved now would silently start working the day they
+/// are wired. Add them here when they are frozen and wired, so the approval
+/// prompt never asks for a permission that does nothing.
+pub const BUILTIN_CAPABILITIES: &[&str] = &["ui.panel", "ui.notify"];
 
 /// Methods that are always allowed without capability approval.
 const ALWAYS_ALLOWED: &[&str] = &["rim.log", "rim.heartbeat_response"];

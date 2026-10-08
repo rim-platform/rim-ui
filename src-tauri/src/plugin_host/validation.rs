@@ -446,6 +446,9 @@ mod tests {
             "network",
             "fs.read",
             "fs.write",
+            "chat.read",
+            "chat.write",
+            "events.read",
             "chat.admin",
             "ui",
         ] {
