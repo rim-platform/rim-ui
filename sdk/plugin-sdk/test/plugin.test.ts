@@ -287,20 +287,33 @@ describe("panels", () => {
     await testHost.shutdown();
   });
 
+  it("reject with CAPABILITY_DENIED when ui.panel is not granted", async () => {
+    const onRequest = vi.fn();
+    let host: Host | undefined;
+    const testHost = start({ onReady: (h) => void (host = h) }, { onRequest });
+    await testHost.handshake();
+    const error = await host?.panels.set("main", {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HostRequestError);
+    expect((error as HostRequestError).code).toBe(ErrorCode.CAPABILITY_DENIED);
+    expect(onRequest).not.toHaveBeenCalled();
+    await testHost.shutdown();
+  });
+
   it("reject with the host's error code", async () => {
     let host: Host | undefined;
     const testHost = start(
       { onReady: (h) => void (host = h) },
       {
+        grantedCapabilities: ["ui.panel"],
         onRequest: () => {
-          throw { code: ErrorCode.CAPABILITY_DENIED, message: "capability not approved: ui.panel" };
+          throw { code: ErrorCode.INVALID_PARAMS, message: "missing required param: state" };
         },
       },
     );
     await testHost.handshake();
     const error = await host?.panels.set("main", {}).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(HostRequestError);
-    expect((error as HostRequestError).code).toBe(ErrorCode.CAPABILITY_DENIED);
+    expect((error as HostRequestError).code).toBe(ErrorCode.INVALID_PARAMS);
     await testHost.shutdown();
   });
 
@@ -338,7 +351,7 @@ describe("shutdown", () => {
     let host: Host | undefined;
     const testHost = start(
       { onReady: (h) => void (host = h) },
-      { onRequest: () => new Promise(() => {}) },
+      { onRequest: () => new Promise(() => {}), grantedCapabilities: ["ui.panel"] },
     );
     await testHost.handshake();
     const pending = host?.panels.set("main", {});

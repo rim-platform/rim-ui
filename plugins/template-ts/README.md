@@ -25,7 +25,9 @@ template-ts/
 1. Copy the folder and change `plugin_id` in `rim-plugin.json` and `PLUGIN_ID` in
    `plugin.ts` to your own reverse-domain id.
 2. Outside rim-ui, depend on the SDK and import from `@rim/plugin-sdk` instead of the
-   relative path in `plugin.ts` and `plugin.test.ts`.
+   relative path in `plugin.ts` and `plugin.test.ts`. Node will not run TypeScript
+   from `node_modules`, so run it bundled (`npx rim-plugin-bundle .`) rather than
+   from `main.ts`.
 3. Add each command to the manifest and to `commands` in `plugin.ts`. Mark anything
    that changes or deletes something `dangerous` in both places.
 

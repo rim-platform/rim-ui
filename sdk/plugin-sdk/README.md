@@ -12,7 +12,9 @@ Start from [`plugins/template-ts`](../../plugins/template-ts), which uses it.
 ## Requirements
 
 - Node 22.18 or newer. It runs `.ts` files as they are, so a plugin needs no build step
-  while you work on it.
+  while you work on it inside rim-ui. Node does not do this for files under
+  `node_modules`, so a plugin that depends on `@rim/plugin-sdk` from outside rim-ui runs
+  only once bundled (see below); its tests still run with Vitest.
 - esbuild, only to bundle a plugin for installing (see below).
 
 ## A plugin in one file
@@ -111,7 +113,9 @@ frozen, and the SDK does not expose them.
 
 ## Testing without the app
 
-`@rim/plugin-sdk/testing` runs a plugin against an in-memory host:
+`@rim/plugin-sdk/testing` runs a plugin against an in-memory host. Like the app, it
+refuses `host.panels` calls with `CAPABILITY_DENIED` unless `grantedCapabilities`
+includes `"ui.panel"`, and `onRequest` answers the rest:
 
 ```ts
 import { startTestHost } from "@rim/plugin-sdk/testing";
@@ -134,7 +138,8 @@ npm run plugin:bundle -- plugins/template-ts          # in rim-ui
 cp -r plugins/template-ts/dist/dev.example.template-ts ~/.rim/plugins/
 ```
 
-The bundle directory holds `rim-plugin.json` (with `entrypoint` set to `main.mjs`),
+The output folder is emptied first, so the bundler refuses a folder that holds the
+plugin or has other files in it. The bundle directory holds `rim-plugin.json` (with `entrypoint` set to `main.mjs`),
 `main.mjs` with the SDK inside, and the plugin's `panels/` folder. Then enable the
 plugin in **Settings → Plugins**.
 

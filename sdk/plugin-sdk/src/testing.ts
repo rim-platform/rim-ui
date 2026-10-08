@@ -11,6 +11,7 @@ export interface TestHostOptions {
   readonly manifestPath?: string | false;
   /** The signed-in user. Defaults to a provisional principal named "Test User". */
   readonly principal?: wire.Principal | null;
+  /** Capabilities the user approved. Gated requests without one get `CAPABILITY_DENIED`. */
   readonly grantedCapabilities?: string[];
   /** Answers the plugin's own requests. Throw a `wire.Error`-shaped object to fail one. */
   readonly onRequest?: (method: string, params: unknown) => unknown;
@@ -61,6 +62,14 @@ export interface TestHost {
   /** Close the plugin's input, as the host does after `rim.shutdown`. */
   close(): void;
 }
+
+/**
+ * Methods a plugin may send that the host refuses with `CAPABILITY_DENIED`
+ * unless the capability is in `grantedCapabilities`, as the host's broker does.
+ */
+const GATED_METHODS: Readonly<Record<string, string>> = Object.freeze({
+  "rim.ui.update_panel": "ui.panel",
+});
 
 /** The principal the test host signs in as, unless told otherwise. */
 export const TEST_PRINCIPAL: wire.Principal = Object.freeze({
@@ -120,6 +129,16 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
     const id = frame.id;
     if (frame.method === Method.log) {
       send({ jsonrpc: "2.0", id, result: { ok: true } });
+      return;
+    }
+    // The real host checks a method's capability before anything else.
+    const capability = GATED_METHODS[String(frame.method)];
+    if (capability && !(options.grantedCapabilities ?? []).includes(capability)) {
+      send({
+        jsonrpc: "2.0",
+        id,
+        error: { code: ErrorCode.CAPABILITY_DENIED, message: `capability denied: ${capability}` },
+      });
       return;
     }
     if (!options.onRequest) {
