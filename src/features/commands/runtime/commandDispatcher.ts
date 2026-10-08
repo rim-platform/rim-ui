@@ -532,7 +532,7 @@ async function dispatchPluginCommand(
   }
   return {
     status: "SUCCESS",
-    message: "Plugin command executed",
+    message: result.value.message ?? "Plugin command executed",
     payload: result.value.payload,
     followUpCommands: [],
   };

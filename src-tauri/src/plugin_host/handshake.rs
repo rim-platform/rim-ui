@@ -1,28 +1,13 @@
 #![allow(dead_code)]
 
+use crate::plugin_host::protocol::{
+    method, HandshakeParams, HandshakeResult, Principal, PROTOCOL_VERSION, SUPPORTED_VERSIONS,
+};
 use crate::plugin_host::wire::{self, JsonRpcRequest, JsonRpcResponse, WireError};
-use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-const PROTOCOL_VERSION: i32 = 1;
 const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const HANDSHAKE_METHOD: &str = "rim.handshake";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandshakeParams {
-    pub protocol_version: i32,
-    pub plugin_id: String,
-    pub host_version: String,
-    pub granted_capabilities: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandshakeResult {
-    pub accepted: bool,
-    pub protocol_version: i32,
-    pub plugin_id: String,
-    pub error: Option<String>,
-}
+pub const HANDSHAKE_METHOD: &str = method::HANDSHAKE;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HandshakeError {
@@ -30,8 +15,10 @@ pub enum HandshakeError {
     Wire(#[from] WireError),
     #[error("handshake rejected by plugin: {0}")]
     Rejected(String),
-    #[error("protocol version mismatch: host={PROTOCOL_VERSION}, plugin={0}")]
-    VersionMismatch(i32),
+    #[error(
+        "protocol version not supported by the host: {0} (host speaks {SUPPORTED_VERSIONS:?})"
+    )]
+    VersionMismatch(u32),
     #[error("plugin_id mismatch: expected={expected}, got={got}")]
     PluginIdMismatch { expected: String, got: String },
     #[error("invalid handshake response: {0}")]
@@ -42,17 +29,23 @@ pub enum HandshakeError {
 pub fn handshake_params(
     plugin_id: &str,
     granted_capabilities: &[String],
+    principal: Option<Principal>,
 ) -> Result<serde_json::Value, HandshakeError> {
     let params = HandshakeParams {
         protocol_version: PROTOCOL_VERSION,
+        supported_versions: SUPPORTED_VERSIONS.to_vec(),
         plugin_id: plugin_id.to_string(),
         host_version: HOST_VERSION.to_string(),
         granted_capabilities: granted_capabilities.to_vec(),
+        principal,
     };
     Ok(serde_json::to_value(&params).map_err(WireError::Json)?)
 }
 
 /// Validate the `result` of a `rim.handshake` response.
+///
+/// The plugin picks the version: any entry of [`SUPPORTED_VERSIONS`] is accepted,
+/// so a host that later speaks v1 and v2 keeps serving v1 plugins.
 pub fn validate_handshake_result(
     result: serde_json::Value,
     plugin_id: &str,
@@ -62,11 +55,14 @@ pub fn validate_handshake_result(
 
     if !result.accepted {
         return Err(HandshakeError::Rejected(
-            result.error.unwrap_or_else(|| "unknown reason".into()),
+            result
+                .error
+                .clone()
+                .unwrap_or_else(|| "unknown reason".into()),
         ));
     }
 
-    if result.protocol_version != PROTOCOL_VERSION {
+    if !SUPPORTED_VERSIONS.contains(&result.protocol_version) {
         return Err(HandshakeError::VersionMismatch(result.protocol_version));
     }
 
@@ -98,7 +94,7 @@ where
 {
     let request = JsonRpcRequest::new(
         HANDSHAKE_METHOD,
-        Some(handshake_params(plugin_id, granted_capabilities)?),
+        Some(handshake_params(plugin_id, granted_capabilities, None)?),
         0,
     );
 
@@ -129,8 +125,8 @@ mod tests {
             serde_json::json!(0),
             serde_json::json!({
                 "accepted": true,
-                "protocol_version": 1,
-                "plugin_id": "dev.example.test",
+                "protocolVersion": 1,
+                "pluginId": "dev.example.test",
                 "error": null
             }),
         );
@@ -166,8 +162,8 @@ mod tests {
             serde_json::json!(0),
             serde_json::json!({
                 "accepted": false,
-                "protocol_version": 1,
-                "plugin_id": "dev.example.test",
+                "protocolVersion": 1,
+                "pluginId": "dev.example.test",
                 "error": "incompatible host"
             }),
         );
@@ -192,8 +188,8 @@ mod tests {
             serde_json::json!(0),
             serde_json::json!({
                 "accepted": true,
-                "protocol_version": 99,
-                "plugin_id": "dev.example.test",
+                "protocolVersion": 99,
+                "pluginId": "dev.example.test",
                 "error": null
             }),
         );
@@ -218,8 +214,8 @@ mod tests {
             serde_json::json!(0),
             serde_json::json!({
                 "accepted": true,
-                "protocol_version": 1,
-                "plugin_id": "dev.example.wrong",
+                "protocolVersion": 1,
+                "pluginId": "dev.example.wrong",
                 "error": null
             }),
         );

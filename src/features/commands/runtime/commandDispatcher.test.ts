@@ -481,6 +481,19 @@ describe("plugin commands", () => {
     expect(mockExecuteBackend).not.toHaveBeenCalled();
   });
 
+  it("shows the plugin's own summary when it returns one", async () => {
+    safeInvokeMock.mockResolvedValueOnce({
+      ok: true,
+      value: { status: "ok", payload: { restarted: 1 }, message: "Restarted 1 pod" },
+    });
+
+    const result = await dispatchCommand(command, mockExecuteBackend, { args: {} });
+
+    expect(result?.status).toBe("SUCCESS");
+    expect(result?.message).toBe("Restarted 1 pod");
+    expect(result?.payload).toEqual({ restarted: 1 });
+  });
+
   it("surfaces the host's error message", async () => {
     safeInvokeMock.mockResolvedValueOnce({
       ok: false,

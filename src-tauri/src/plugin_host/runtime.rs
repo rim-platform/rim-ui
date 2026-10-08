@@ -11,23 +11,36 @@
 //!   startup sweep in `mod.rs::init` (re-spawns plugins that were Enabled on
 //!   last shutdown).
 //! - `stop_plugin` is called by `plugin_disable` and `plugin_uninstall`.
+//! - `stop_all` is called when the app exits.
 //! - The broker loop runs in a `tokio::spawn`ed task.  A `watch::Sender<bool>`
-//!   is stored in `PluginHostState.shutdown_txs`; sending `true` signals the
-//!   loop to exit.  The process itself is `kill_on_drop`, so if the task exits
-//!   for any reason the OS process is also cleaned up.
+//!   is stored in `PluginHostState.shutdown_txs`; sending `true` makes the loop
+//!   send `rim.shutdown` and close the plugin's stdin, after which the task
+//!   waits for the process, then terminates and finally kills it
+//!   ([`PluginProcess::shutdown`]).  The process is also `kill_on_drop`, so if
+//!   the task is dropped the OS process is cleaned up.  App exit skips
+//!   destructors, which is why `stop_all` kills by pid whatever is still
+//!   running when its deadline passes.
 
-use crate::plugin_host::broker::{run_broker_loop, BrokerConfig, PluginBroker, PluginClient};
+use crate::plugin_host::broker::{
+    run_broker_loop, BrokerConfig, PluginBroker, PluginClient, RequestError,
+};
 use crate::plugin_host::capability::CapabilityGate;
 use crate::plugin_host::handshake::{self, HandshakeError};
 use crate::plugin_host::manifest::PluginManifest;
-use crate::plugin_host::process::PluginProcess;
+use crate::plugin_host::process::{self, PluginProcess};
+use crate::plugin_host::protocol::{method, Principal, PrincipalChangedParams};
 use crate::plugin_host::PluginHostState;
 use std::path::PathBuf;
 use tokio::sync::watch;
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, Instant};
 
 const STOP_TIMEOUT: Duration = Duration::from_millis(500);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long app exit waits for plugin processes before killing them.
+/// Covers the full graceful sequence in [`PluginProcess::shutdown`].
+const QUIT_TIMEOUT: Duration = Duration::from_secs(4);
+/// How long one plugin's full outbound queue may hold up a principal change.
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Error type for runtime spawn / stop operations.
 #[derive(Debug, thiserror::Error)]
@@ -120,6 +133,8 @@ pub fn start_plugin(
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let clients = state.clients.clone();
     let shutdown_txs = state.shutdown_txs.clone();
+    let principal = state.principal.clone();
+    let pids = state.pids.clone();
     let own_shutdown_tx = shutdown_tx.clone();
     let pid_str = plugin_id.to_string();
 
@@ -132,6 +147,11 @@ pub fn start_plugin(
             .map_err(|_| RuntimeError::LockPoisoned)?;
         txs.insert(plugin_id.to_string(), shutdown_tx);
     }
+    // Recorded last, so no early return can leave a pid behind for `stop_all` to kill.
+    let pid = process.pid();
+    if let (Some(pid), Ok(mut pids)) = (pid, state.pids.lock()) {
+        pids.insert(plugin_id.to_string(), pid);
+    }
 
     tokio::spawn(async move {
         log::info!("[plugin_host] broker loop starting for {}", pid_str);
@@ -141,7 +161,9 @@ pub fn start_plugin(
 
         // The handshake travels through the running loop, so log lines or calls the
         // plugin sends before answering are brokered rather than misread as the reply.
-        let handshake = handshake_through(&client, &pid_str, &approved_caps);
+        let sent_principal = principal.lock().ok().and_then(|p| p.clone());
+        let handshake =
+            handshake_through(&client, &pid_str, &approved_caps, sent_principal.clone());
         let handshake_ok = tokio::select! {
             _ = &mut broker_loop => {
                 log::warn!("[plugin_host] plugin {} exited before the handshake", pid_str);
@@ -159,6 +181,11 @@ pub fn start_plugin(
         if handshake_ok {
             if let Ok(mut map) = clients.lock() {
                 map.insert(pid_str.clone(), client.clone());
+            }
+            // A sign-in or sign-out during the handshake reached every client but this one.
+            let current = principal.lock().ok().and_then(|p| p.clone());
+            if current != sent_principal {
+                let _ = notify_principal(&client, current).await;
             }
             broker_loop.await;
             if let Ok(mut map) = clients.lock() {
@@ -186,6 +213,12 @@ pub fn start_plugin(
         log::info!("[plugin_host] broker loop exited for {}", pid_str);
         if let Err(e) = process.shutdown().await {
             log::warn!("[plugin_host] shutdown of {} failed: {}", pid_str, e);
+        }
+        if let Ok(mut pids) = pids.lock() {
+            // A restart may already have registered a newer process.
+            if pid.is_some() && pids.get(&pid_str) == pid.as_ref() {
+                pids.remove(&pid_str);
+            }
         }
     });
 
@@ -239,13 +272,98 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
     Ok(())
 }
 
+/// Stop every running plugin, for app exit.
+///
+/// Each plugin gets `rim.shutdown` and a closed stdin at once, then
+/// [`PluginProcess::shutdown`] terminates the stragglers. Whatever is still
+/// running after [`QUIT_TIMEOUT`] is killed by pid, because the process exits
+/// right after this returns and runs no destructors.
+pub async fn stop_all(state: &PluginHostState) {
+    stop_all_within(state, QUIT_TIMEOUT).await
+}
+
+async fn stop_all_within(state: &PluginHostState, wait: Duration) {
+    let txs: Vec<(String, watch::Sender<bool>)> = match state.shutdown_txs.lock() {
+        Ok(mut txs) => txs.drain().collect(),
+        Err(_) => Vec::new(),
+    };
+    if let Ok(mut clients) = state.clients.lock() {
+        clients.clear();
+    }
+    for (plugin_id, tx) in &txs {
+        log::info!("[plugin_host] stopping plugin {} for app exit", plugin_id);
+        let _ = tx.send(true);
+    }
+
+    let deadline = Instant::now() + wait;
+    loop {
+        let running = state.pids.lock().map(|p| p.len()).unwrap_or(0);
+        if running == 0 || Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let stragglers: Vec<(String, u32)> = match state.pids.lock() {
+        Ok(mut pids) => pids.drain().collect(),
+        Err(_) => Vec::new(),
+    };
+    for (plugin_id, pid) in stragglers {
+        log::warn!(
+            "[plugin_host] plugin {} (pid {}) outlived app exit, killing it",
+            plugin_id,
+            pid
+        );
+        process::force_kill(pid);
+    }
+}
+
+/// Record who is signed in and tell every running plugin when that changes.
+pub async fn set_principal(state: &PluginHostState, principal: Option<Principal>) {
+    let changed = match state.principal.lock() {
+        Ok(mut current) => {
+            let changed = *current != principal;
+            *current = principal.clone();
+            changed
+        }
+        Err(_) => false,
+    };
+    if !changed {
+        return;
+    }
+    let clients: Vec<PluginClient> = match state.clients.lock() {
+        Ok(clients) => clients.values().cloned().collect(),
+        Err(_) => Vec::new(),
+    };
+    for client in clients {
+        // A plugin that just exited has nothing left to tell.
+        let _ = notify_principal(&client, principal.clone()).await;
+    }
+}
+
+/// Send `rim.principal.changed` to one plugin.
+async fn notify_principal(
+    client: &PluginClient,
+    principal: Option<Principal>,
+) -> Result<(), RequestError> {
+    let params = serde_json::to_value(PrincipalChangedParams { principal })
+        .unwrap_or(serde_json::Value::Null);
+    timeout(
+        NOTIFY_TIMEOUT,
+        client.notify(method::PRINCIPAL_CHANGED, Some(params)),
+    )
+    .await
+    .unwrap_or(Err(RequestError::TimedOut(NOTIFY_TIMEOUT)))
+}
+
 /// Send `rim.handshake` through the broker loop and validate the plugin's answer.
 async fn handshake_through(
     client: &PluginClient,
     plugin_id: &str,
     granted_capabilities: &[String],
+    principal: Option<Principal>,
 ) -> Result<(), HandshakeError> {
-    let params = handshake::handshake_params(plugin_id, granted_capabilities)?;
+    let params = handshake::handshake_params(plugin_id, granted_capabilities, principal)?;
     let result = client
         .request(handshake::HANDSHAKE_METHOD, Some(params), HANDSHAKE_TIMEOUT)
         .await
@@ -338,6 +456,8 @@ mod tests {
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
+            principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -444,6 +564,8 @@ mod tests {
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
+            principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");
         let err = start_plugin("dev.example.test", &manifest, &state).unwrap_err();
@@ -512,20 +634,60 @@ mod tests {
         );
 
         // The palette's naive split of `plugin.dev.example.hello-world.greet`.
-        let payload = crate::plugin_host::command_exec::execute(
+        let result = crate::plugin_host::command_exec::execute(
             &state,
             "dev",
             "example.hello-world.greet",
             serde_json::json!({"name": "RIM"}),
             false,
             None,
+            crate::plugin_host::protocol::Initiator::User,
         )
         .await
         .unwrap();
-        assert_eq!(payload, serde_json::json!("Hello, RIM!"));
+        assert_eq!(result.payload, serde_json::json!("Hello, RIM!"));
 
         stop_plugin(&plugin_id, &state).await.unwrap();
         assert!(!state.clients.lock().unwrap().contains_key(&plugin_id));
+    }
+
+    #[tokio::test]
+    async fn stop_all_stops_running_plugins_for_app_exit() {
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("dev.example.test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        // Exits once its stdin closes, as a v1 plugin must.
+        write_script(&plugin_dir, "main.sh", "#!/bin/sh\ncat >/dev/null\n");
+
+        let state = make_state(&tmp, "dev.example.test", &plugin_dir);
+        let manifest = test_manifest("dev.example.test", "main.sh");
+        start_plugin("dev.example.test", &manifest, &state).unwrap();
+        assert!(state.pids.lock().unwrap().contains_key("dev.example.test"));
+
+        stop_all(&state).await;
+        assert!(state.pids.lock().unwrap().is_empty());
+        assert!(state.shutdown_txs.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stop_all_kills_a_plugin_that_outlives_the_deadline() {
+        let tmp = TempDir::new().unwrap();
+        let state = make_state(&tmp, "dev.example.test", tmp.path());
+        // A process no broker task will stop: only the pid fallback can.
+        let mut stubborn = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; while true; do sleep 1; done"])
+            .spawn()
+            .unwrap();
+        state
+            .pids
+            .lock()
+            .unwrap()
+            .insert("dev.example.test".into(), stubborn.id());
+
+        stop_all_within(&state, Duration::from_millis(50)).await;
+        let status = stubborn.wait().unwrap();
+        assert!(!status.success(), "killed, not exited: {status:?}");
+        assert!(state.pids.lock().unwrap().is_empty());
     }
 
     /// `plugin_enable` is a sync Tauri command and the startup sweep runs in the

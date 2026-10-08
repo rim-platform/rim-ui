@@ -3,12 +3,18 @@
 Reference in-tree plugin for the RIM plugin host. Exercises the full
 Phase 1 spawn → broker → capability-gate cycle.
 
+It speaks plugin protocol v1, frozen in
+[`protocol/plugin-protocol-v1.schema.json`](../../protocol/plugin-protocol-v1.schema.json).
+The host's conformance tests (`src-tauri/src/plugin_host/protocol/conformance.rs`)
+drive this script through every v1 message, so keep it conforming when you
+change it.
+
 ## File layout
 
 ```
 hello-world/
   rim-plugin.json          # Full manifest (v1)
-  main.py                  # Plugin process — speaks length-prefixed JSON-RPC 2.0
+  main.py                  # Plugin process — speaks plugin protocol v1
   panels/
     main/
       index.html           # Panel UI loaded in sandboxed iframe

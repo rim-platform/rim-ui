@@ -157,6 +157,7 @@ pub fn run() {
             plugin_host::commands::plugin_update,
             plugin_host::commands::plugin_panel_state,
             plugin_host::commands::plugin_relay_ui_event,
+            plugin_host::commands::plugin_set_principal,
             terminal::commands::terminal_create,
             terminal::commands::terminal_write,
             terminal::commands::terminal_resize,
@@ -175,8 +176,17 @@ pub fn run() {
             message_cache::commands::message_cache_sync_apply,
             message_cache::commands::message_cache_timeline,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // `run` ends the process without running destructors, so plugin
+            // processes are stopped here or they outlive the app.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<plugin_host::PluginHostState>() {
+                    tauri::async_runtime::block_on(plugin_host::runtime::stop_all(&state));
+                }
+            }
+        });
 }
 
 /// Guess a MIME type from a file extension.

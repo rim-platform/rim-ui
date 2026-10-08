@@ -6,7 +6,10 @@ use tokio::io::{BufReader, BufWriter};
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
 
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a plugin has to exit on its own once its stdin is closed.
+const EXIT_GRACE: Duration = Duration::from_secs(1);
+/// How long a plugin has to exit after SIGTERM before it is killed.
+const TERM_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
@@ -75,8 +78,26 @@ impl PluginProcess {
         &self.plugin_id
     }
 
-    /// Attempt graceful shutdown: send SIGTERM, wait up to 5s, then SIGKILL.
+    /// OS process id, while the process has not been reaped.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+
+    /// Stop the process once the broker loop is done with it.
+    ///
+    /// By then the host has sent `rim.shutdown` and closed the plugin's stdin,
+    /// which a v1 plugin answers by exiting. One that has not exited after
+    /// [`EXIT_GRACE`] gets SIGTERM, and after [`TERM_GRACE`] more it is killed.
     pub async fn shutdown(&mut self) -> Result<(), ProcessError> {
+        if timeout(EXIT_GRACE, self.child.wait()).await.is_ok() {
+            log::info!("plugin {} exited", self.plugin_id);
+            return Ok(());
+        }
+        self.terminate().await
+    }
+
+    /// SIGTERM, wait up to [`TERM_GRACE`], then SIGKILL.
+    async fn terminate(&mut self) -> Result<(), ProcessError> {
         // Try to get the process id for signal sending
         let pid = self.child.id();
 
@@ -96,7 +117,7 @@ impl PluginProcess {
             }
 
             // Wait for graceful exit with timeout
-            match timeout(SHUTDOWN_TIMEOUT, self.child.wait()).await {
+            match timeout(TERM_GRACE, self.child.wait()).await {
                 Ok(Ok(_status)) => {
                     log::info!("plugin {} exited gracefully", self.plugin_id);
                 }
@@ -108,7 +129,7 @@ impl PluginProcess {
                     log::warn!(
                         "plugin {} did not exit within {:?}, sending SIGKILL",
                         self.plugin_id,
-                        SHUTDOWN_TIMEOUT
+                        TERM_GRACE
                     );
                     let _ = self.child.kill().await;
                 }
@@ -124,6 +145,23 @@ impl PluginProcess {
     /// Check if the process is still running.
     pub fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>, ProcessError> {
         Ok(self.child.try_wait()?)
+    }
+}
+
+/// Kill a process by pid, for app exit, where no destructor runs.
+pub fn force_kill(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: kill(2) takes no pointers; a stale pid fails with ESRCH.
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .status();
     }
 }
 
@@ -156,6 +194,42 @@ mod tests {
         // After shutdown, process should be gone
         let status = proc.try_wait().unwrap();
         assert!(status.is_some());
+    }
+
+    #[tokio::test]
+    async fn plugin_that_exits_on_stdin_eof_is_not_signalled() {
+        let tmp = TempDir::new().unwrap();
+        // Exits with 3 on EOF; SIGTERM would end it with a signal instead.
+        create_test_script(
+            tmp.path(),
+            "plugin.sh",
+            "#!/bin/sh\ncat >/dev/null\nexit 3\n",
+        );
+
+        let (mut proc, pipes) =
+            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+        drop(pipes); // the host closes stdin
+        proc.shutdown().await.unwrap();
+        let status = proc.try_wait().unwrap().expect("process exited");
+        assert_eq!(status.code(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn force_kill_ends_a_process_that_ignores_sigterm() {
+        let tmp = TempDir::new().unwrap();
+        create_test_script(
+            tmp.path(),
+            "plugin.sh",
+            "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 1; done\n",
+        );
+        let (mut proc, _pipes) =
+            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+        force_kill(proc.pid().unwrap());
+        let status = timeout(Duration::from_secs(5), proc.child.wait())
+            .await
+            .expect("killed process is reaped")
+            .unwrap();
+        assert!(!status.success());
     }
 
     #[tokio::test]
