@@ -101,6 +101,15 @@ pub fn start_plugin(
 
     let panel_ids: Vec<String> = manifest.panels.iter().map(|p| p.id.clone()).collect();
 
+    // Tauri runs sync commands (`plugin_enable`) and the setup hook (the startup
+    // sweep in `mod.rs::init`) on the main thread, outside any Tokio runtime.
+    // `tokio::process` and `tokio::spawn` below both panic there, so enter
+    // Tauri's runtime when the caller is not already on one.
+    let tauri_runtime = tokio::runtime::Handle::try_current()
+        .is_err()
+        .then(tauri::async_runtime::handle);
+    let _runtime_guard = tauri_runtime.as_ref().map(|rt| rt.inner().enter());
+
     let (mut process, pipes) = PluginProcess::spawn(plugin_id, &plugin_dir, &manifest.entrypoint)?;
 
     let gate = CapabilityGate::new(approved_caps.clone());
@@ -517,6 +526,21 @@ mod tests {
 
         stop_plugin(&plugin_id, &state).await.unwrap();
         assert!(!state.clients.lock().unwrap().contains_key(&plugin_id));
+    }
+
+    /// `plugin_enable` is a sync Tauri command and the startup sweep runs in the
+    /// setup hook: both call `start_plugin` on the main thread, with no Tokio
+    /// runtime entered.
+    #[test]
+    fn start_plugin_works_outside_a_tokio_runtime() {
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("dev.example.test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        write_script(&plugin_dir, "main.sh", "#!/bin/sh\nexit 0\n");
+
+        let state = make_state(&tmp, "dev.example.test", &plugin_dir);
+        let manifest = test_manifest("dev.example.test", "main.sh");
+        start_plugin("dev.example.test", &manifest, &state).unwrap();
     }
 
     #[tokio::test]
