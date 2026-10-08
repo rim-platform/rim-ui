@@ -74,10 +74,11 @@ To see the log, open the Tauri devtools console and filter for
 
 ## Capability model
 
-The manifest declares no capabilities. Capability keys must start with
-`plugin.<plugin_id>.` and match `[a-z0-9_.]+` (validated at install time by
-`validation.rs`), so a plugin id containing a hyphen, like this one, cannot
-declare any. `greet` needs none: it only answers the host.
+The manifest declares no capabilities. A manifest may declare the built-in
+names `chat.read`, `chat.write`, `events.read`, `ui.panel` and `ui.notify`, and
+its own keys of the form `plugin.<plugin_id>.<verb>` with the verb in
+`[a-z0-9_.]` (validated at install time by `validation.rs`). `greet` needs
+none: it only answers the host.
 
 The `ui.notify` capability gate is exercised by the panel's postMessage
 handler in `pluginBridge.ts` (front-end side only in Phase 1).

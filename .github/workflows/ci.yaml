@@ -26,6 +26,8 @@ jobs:
         run: npm run format:check
       - name: TypeScript Check
         run: npx tsc --noEmit
+      - name: Plugin SDK Type Check
+        run: npm run sdk:typecheck
       - name: Unit Tests
         run: npm test
 

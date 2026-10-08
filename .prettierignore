@@ -4,6 +4,7 @@ node_modules
 src-tauri/target
 src-tauri/gen
 src/core/graphql/generated
+sdk/plugin-sdk/src/generated
 package-lock.json
 schema.graphql
 *.md

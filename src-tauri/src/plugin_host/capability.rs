@@ -32,6 +32,23 @@ static METHOD_CAPABILITY_MAP: LazyLock<HashMap<&'static str, &'static str>> = La
     m
 });
 
+/// Built-in capability names a manifest may request next to its own
+/// `plugin.<plugin_id>.<verb>` keys (see `validation.rs`).
+///
+/// Each one guards something the host does today: a method the broker
+/// dispatches (`chat.*`, `events.read`, `ui.panel`), or, for `ui.notify`, the
+/// notifications a panel sends through the frontend bridge (`pluginBridge.ts`).
+/// Names in [`METHOD_CAPABILITY_MAP`] that guard nothing yet (`local.process`,
+/// `network`, `fs.*`) stay out, so the approval prompt never asks for a
+/// permission that does nothing.
+pub const BUILTIN_CAPABILITIES: &[&str] = &[
+    "chat.read",
+    "chat.write",
+    "events.read",
+    "ui.panel",
+    "ui.notify",
+];
+
 /// Methods that are always allowed without capability approval.
 const ALWAYS_ALLOWED: &[&str] = &["rim.log", "rim.heartbeat_response"];
 
@@ -84,6 +101,16 @@ pub fn capability_for_method(method: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_builtin_capability_guards_a_method() {
+        for cap in BUILTIN_CAPABILITIES {
+            assert!(
+                METHOD_CAPABILITY_MAP.values().any(|c| c == cap),
+                "{cap} is in no capability table entry"
+            );
+        }
+    }
 
     #[test]
     fn log_always_allowed() {

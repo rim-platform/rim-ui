@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "plugin_id": "dev.example.template-ts",
+  "display_name": "TypeScript Template",
+  "version": "0.1.0",
+  "description": "Starting point for a plugin written with the TypeScript SDK: one safe command and one dangerous one.",
+  "author": "RIM team",
+  "runtime_kind": "DesktopLocalProcess",
+  "entrypoint": "main.ts",
+  "capabilities": [],
+  "commands": [
+    {
+      "id": "greet",
+      "title": "Template: Greet",
+      "description": "Greets someone and counts the greetings.",
+      "keybind_capable": true,
+      "dangerous": false,
+      "required_context": [],
+      "required_capabilities": [],
+      "arguments": [{ "name": "name", "type": "string", "required": false }],
+      "ai_callable": false,
+      "output_schema": null
+    },
+    {
+      "id": "reset_greetings",
+      "title": "Template: Reset greeting count",
+      "description": "Sets the greeting count back to zero. Asks for confirmation first.",
+      "keybind_capable": false,
+      "dangerous": true,
+      "required_context": [],
+      "required_capabilities": [],
+      "arguments": [],
+      "ai_callable": false,
+      "output_schema": null
+    }
+  ],
+  "keybind_suggestions": [],
+  "context_actions": [],
+  "panels": [],
+  "settings_schema": []
+}
