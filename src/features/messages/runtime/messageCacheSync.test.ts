@@ -188,6 +188,29 @@ describe("createCacheSyncScheduler", () => {
     expect(backend.begin).toHaveBeenCalledTimes(2);
   });
 
+  it("discards a feed answer that arrives after the account changed", async () => {
+    const backend = pagingBackend(2);
+    let current: typeof account | null = account;
+    const feed = vi.fn(async () => {
+      // Signed out and in as someone else while the request was in flight.
+      current = { ...account, userId: "u2" };
+      return [answer("c1", false)];
+    });
+    const scheduler = createCacheSyncScheduler({
+      getAccount: () => current,
+      backendFor: () => backend,
+      feed,
+      debounceMs: 100,
+      resumeDelayMs: 1_000,
+    });
+
+    scheduler.request("ws-1");
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(feed).toHaveBeenCalledTimes(1);
+    expect(backend.apply).not.toHaveBeenCalled();
+  });
+
   it("does nothing without a cache account (web app, signed out)", async () => {
     const backend = pagingBackend(1);
     const scheduler = createCacheSyncScheduler({

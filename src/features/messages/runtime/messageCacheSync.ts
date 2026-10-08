@@ -80,6 +80,10 @@ interface Pending {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+function accountKey(account: CacheAccount | null): string | null {
+  return account ? `${account.endpoint}\n${account.userId}` : null;
+}
+
 export function createCacheSyncScheduler(deps: SchedulerDeps) {
   const pending = new Map<string, Pending>();
 
@@ -89,6 +93,16 @@ export function createCacheSyncScheduler(deps: SchedulerDeps) {
     entry.timer = null;
     entry.running = true;
     const backend = deps.backendFor(account);
+    // The feed call carries whichever session the webview holds now. If the user signed out
+    // or switched accounts while it was in flight, its answer is about someone else (a
+    // NO_ACCESS for every conversation, say) and must not reach this account's cache.
+    const feed: ChangeFeed = async (input) => {
+      const changes = await deps.feed(input);
+      if (accountKey(deps.getAccount()) !== accountKey(account)) {
+        throw new Error("the signed-in account changed during the sync");
+      }
+      return changes;
+    };
     try {
       while (entry.all || entry.resume || entry.ids.size > 0) {
         // Marking no conversations still continues every pending one.
@@ -96,7 +110,7 @@ export function createCacheSyncScheduler(deps: SchedulerDeps) {
         entry.all = false;
         entry.resume = false;
         entry.ids.clear();
-        const { finished } = await runCacheSync(backend, deps.feed, workspaceId, ids);
+        const { finished } = await runCacheSync(backend, feed, workspaceId, ids);
         if (!finished) {
           setTimeout(() => request(workspaceId, []), deps.resumeDelayMs);
         }
@@ -119,7 +133,7 @@ export function createCacheSyncScheduler(deps: SchedulerDeps) {
   function request(workspaceId: string, conversationIds?: string[]) {
     const account = deps.getAccount();
     if (!account) return;
-    const key = `${account.endpoint}\n${account.userId}\n${workspaceId}`;
+    const key = `${accountKey(account)}\n${workspaceId}`;
     let entry = pending.get(key);
     if (!entry) {
       entry = { all: false, ids: new Set(), resume: false, running: false, timer: null };
