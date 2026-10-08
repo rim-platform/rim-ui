@@ -24,8 +24,6 @@ pub enum LifecycleError {
     UnknownAiCommand(String),
     #[error("manifest changed — re-consent required for AI commands")]
     AiConsentRequired,
-    #[error("plugin process is not running: {0}")]
-    PluginNotRunning(String),
     /// Bundle fingerprint changed since TOFU install — user must trust new version.
     #[error("plugin bundle fingerprint changed since install: {0}")]
     FingerprintChanged(String),

@@ -5,19 +5,21 @@ use crate::plugin_host::capability::{self, CapabilityGate};
 use crate::plugin_host::event_forwarder::EventForwarder;
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::wire::{
-    self, JsonRpcRequest, JsonRpcResponse, WireError, CAPABILITY_DENIED, INTERNAL_ERROR,
-    METHOD_NOT_FOUND, RATE_LIMITED,
+    self, JsonRpcError, JsonRpcRequest, JsonRpcResponse, WireError, CAPABILITY_DENIED,
+    INTERNAL_ERROR, METHOD_NOT_FOUND, RATE_LIMITED,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::Mutex;
-use tokio::time::timeout;
+use tokio::sync::{mpsc, oneshot};
+use tokio::time::{sleep_until, timeout, Instant};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_RATE_LIMIT: u32 = 120; // calls per minute per capability
+const OUTBOUND_QUEUE: usize = 32;
+const INCOMING_QUEUE: usize = 32;
 
 #[derive(Debug)]
 struct RateLimitBucket {
@@ -442,82 +444,241 @@ impl PluginBroker {
     }
 }
 
-/// Run the broker read loop.
+/// A host → plugin request waiting for the broker loop to send it.
+pub struct OutboundRequest {
+    method: String,
+    params: Option<serde_json::Value>,
+    reply: oneshot::Sender<JsonRpcResponse>,
+}
+
+/// Why a host → plugin request did not produce a result.
+#[derive(Debug, thiserror::Error)]
+pub enum RequestError {
+    /// The broker loop is gone: the plugin exited, was stopped, or broke the framing.
+    #[error("plugin connection closed")]
+    Closed,
+    #[error("plugin did not answer within {0:?}")]
+    TimedOut(Duration),
+    /// The plugin answered with a JSON-RPC error.
+    #[error("plugin error {}: {}", .0.code, .0.message)]
+    Plugin(JsonRpcError),
+}
+
+/// Cloneable handle for sending requests to one running plugin process.
+///
+/// Requests are written by the broker loop that owns the plugin's stdio, and the
+/// plugin's response is matched back by JSON-RPC id, so a plugin may call the
+/// broker (e.g. `rim.chat.get_messages`) while it is still working on a host request.
+#[derive(Debug, Clone)]
+pub struct PluginClient {
+    tx: mpsc::Sender<OutboundRequest>,
+}
+
+impl PluginClient {
+    /// Create a client and the receiver to pass to [`run_broker_loop`].
+    pub fn channel() -> (Self, mpsc::Receiver<OutboundRequest>) {
+        let (tx, rx) = mpsc::channel(OUTBOUND_QUEUE);
+        (Self { tx }, rx)
+    }
+
+    /// Send `method` to the plugin and wait up to `wait` for its result.
+    ///
+    /// Dropping the returned future (or timing out) abandons the request; the
+    /// broker loop discards the plugin's late response.
+    pub async fn request(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+        wait: Duration,
+    ) -> Result<serde_json::Value, RequestError> {
+        let (reply, response) = oneshot::channel();
+        let outbound = OutboundRequest {
+            method: method.to_string(),
+            params,
+            reply,
+        };
+        let exchange = async {
+            self.tx
+                .send(outbound)
+                .await
+                .map_err(|_| RequestError::Closed)?;
+            response.await.map_err(|_| RequestError::Closed)
+        };
+        let response = timeout(wait, exchange)
+            .await
+            .map_err(|_| RequestError::TimedOut(wait))??;
+        match (response.error, response.result) {
+            (Some(error), _) => Err(RequestError::Plugin(error)),
+            (None, result) => Ok(result.unwrap_or(serde_json::Value::Null)),
+        }
+    }
+
+    /// True when both handles talk to the same broker loop.
+    pub fn same_connection(&self, other: &PluginClient) -> bool {
+        self.tx.same_channel(&other.tx)
+    }
+}
+
+/// One frame from the plugin, sorted by JSON-RPC shape.
+enum Incoming {
+    Request(JsonRpcRequest),
+    Notification(JsonRpcRequest),
+    Response(JsonRpcResponse),
+    Invalid(String),
+}
+
+fn classify(frame: serde_json::Value) -> Incoming {
+    let has_method = frame.get("method").is_some();
+    let has_id = frame.get("id").is_some_and(|id| !id.is_null());
+    match (has_method, has_id) {
+        (true, true) => serde_json::from_value(frame)
+            .map(Incoming::Request)
+            .unwrap_or_else(|e| Incoming::Invalid(e.to_string())),
+        (true, false) => {
+            let mut frame = frame;
+            frame["id"] = serde_json::Value::Null;
+            serde_json::from_value(frame)
+                .map(Incoming::Notification)
+                .unwrap_or_else(|e| Incoming::Invalid(e.to_string()))
+        }
+        (false, true) => serde_json::from_value(frame)
+            .map(Incoming::Response)
+            .unwrap_or_else(|e| Incoming::Invalid(e.to_string())),
+        (false, false) => Incoming::Invalid("frame has neither method nor id".into()),
+    }
+}
+
+/// Map key for a JSON-RPC id. Plugins echo ids back verbatim, so the JSON text is stable.
+fn id_key(id: &serde_json::Value) -> String {
+    id.to_string()
+}
+
+/// Aborts the stdout reader task when the broker loop ends or is dropped.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Run the broker loop for one plugin connection until shutdown or disconnect.
+///
+/// The loop owns the plugin's stdin and is the only writer. A separate task reads
+/// stdout frame by frame (a partially read frame is never cancelled), and the loop
+/// routes each frame by shape: plugin requests go to the [`PluginBroker`], responses
+/// complete the matching [`PluginClient::request`] or heartbeat. When the loop ends,
+/// every pending request fails with [`RequestError::Closed`].
 pub async fn run_broker_loop<R, W>(
-    broker: &Mutex<PluginBroker>,
-    reader: &Mutex<R>,
-    writer: &Mutex<W>,
+    mut broker: PluginBroker,
+    reader: R,
+    mut writer: W,
+    mut outbound_rx: mpsc::Receiver<OutboundRequest>,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) where
-    R: AsyncRead + Unpin + Send,
+    R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send,
 {
+    let (frame_tx, mut frame_rx) = mpsc::channel(INCOMING_QUEUE);
+    let _reader_task = AbortOnDrop(tokio::spawn(async move {
+        let mut reader = reader;
+        loop {
+            let frame = wire::read_raw_frame(&mut reader).await;
+            let stop = frame.is_err();
+            if frame_tx.send(frame).await.is_err() || stop {
+                break;
+            }
+        }
+    }));
+
+    let mut pending: HashMap<String, oneshot::Sender<JsonRpcResponse>> = HashMap::new();
+    let mut next_request_id: i64 = 1;
+    let mut heartbeat: Option<(String, Instant)> = None;
     let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
     heartbeat_interval.tick().await; // skip first immediate tick
 
     loop {
+        let heartbeat_deadline = heartbeat.as_ref().map(|(_, deadline)| *deadline);
         tokio::select! {
-            _ = shutdown_rx.changed() => {
-                if *shutdown_rx.borrow() {
-                    log::info!("broker loop shutting down for plugin");
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    log::info!("broker loop shutting down for plugin {}", broker.plugin_id());
                     break;
                 }
             }
             _ = heartbeat_interval.tick() => {
-                let ping = {
-                    let mut b = broker.lock().await;
-                    b.create_heartbeat_ping()
-                };
-                let mut w = writer.lock().await;
-                if wire::write_frame(&mut *w, &ping).await.is_err() {
+                let ping = broker.create_heartbeat_ping();
+                if wire::write_frame(&mut writer, &ping).await.is_err() {
                     log::warn!("failed to send heartbeat, plugin may have exited");
                     break;
                 }
-                let result = {
-                    let mut r = reader.lock().await;
-                    timeout(HEARTBEAT_TIMEOUT, wire::read_raw_frame(&mut *r)).await
-                };
-                match result {
-                    Ok(Ok(_)) => {
-                        broker.lock().await.responsive = true;
-                    }
-                    Ok(Err(WireError::ConnectionClosed)) => {
-                        log::warn!("plugin connection closed during heartbeat");
-                        break;
-                    }
-                    Ok(Err(e)) => {
-                        log::warn!("heartbeat read error: {}", e);
-                        broker.lock().await.responsive = false;
-                    }
-                    Err(_) => {
-                        log::warn!("heartbeat timeout — plugin unresponsive");
-                        broker.lock().await.responsive = false;
-                    }
+                heartbeat = Some((id_key(&ping.id), Instant::now() + HEARTBEAT_TIMEOUT));
+            }
+            _ = sleep_until(heartbeat_deadline.unwrap_or_else(Instant::now)),
+                if heartbeat_deadline.is_some() =>
+            {
+                log::warn!("heartbeat timeout — plugin {} unresponsive", broker.plugin_id());
+                broker.responsive = false;
+                heartbeat = None;
+            }
+            Some(outbound) = outbound_rx.recv() => {
+                // Forget requests whose callers gave up (timeout or cancellation).
+                pending.retain(|_, reply| !reply.is_closed());
+                let id = next_request_id;
+                next_request_id += 1;
+                let request = JsonRpcRequest::new(outbound.method, outbound.params, id);
+                pending.insert(id_key(&request.id), outbound.reply);
+                if wire::write_frame(&mut writer, &request).await.is_err() {
+                    log::warn!("failed to send request to plugin {}", broker.plugin_id());
+                    break;
                 }
             }
-            frame = async {
-                let mut r = reader.lock().await;
-                wire::read_frame::<_, JsonRpcRequest>(&mut *r).await
-            } => {
-                match frame {
-                    Ok(request) => {
-                        let response = {
-                            let mut b = broker.lock().await;
-                            b.handle_request(&request).await
-                        };
-                        let mut w = writer.lock().await;
-                        if wire::write_frame(&mut *w, &response).await.is_err() {
+            frame = frame_rx.recv() => {
+                let frame = match frame {
+                    Some(Ok(frame)) => frame,
+                    Some(Err(WireError::Json(e))) => {
+                        // The length prefix was read in full, so framing is intact.
+                        log::warn!("plugin {} sent invalid JSON: {}", broker.plugin_id(), e);
+                        continue;
+                    }
+                    Some(Err(WireError::ConnectionClosed)) | None => {
+                        log::info!("plugin {} connection closed", broker.plugin_id());
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        log::warn!("error reading from plugin {}: {}", broker.plugin_id(), e);
+                        break;
+                    }
+                };
+                match classify(frame) {
+                    Incoming::Request(request) => {
+                        let response = broker.handle_request(&request).await;
+                        if wire::write_frame(&mut writer, &response).await.is_err() {
                             log::warn!("failed to write response to plugin");
                             break;
                         }
                     }
-                    Err(WireError::ConnectionClosed) => {
-                        log::info!("plugin connection closed");
-                        break;
+                    Incoming::Notification(notification) => {
+                        // Same gates as a request; a notification gets no response.
+                        broker.handle_request(&notification).await;
                     }
-                    Err(e) => {
-                        log::warn!("error reading from plugin: {}", e);
-                        break;
+                    Incoming::Response(response) => {
+                        let key = id_key(&response.id);
+                        if heartbeat.as_ref().is_some_and(|(id, _)| *id == key) {
+                            broker.responsive = true;
+                            heartbeat = None;
+                        } else if let Some(reply) = pending.remove(&key) {
+                            let _ = reply.send(response);
+                        } else {
+                            log::debug!(
+                                "plugin {} sent a response to unknown id {}",
+                                broker.plugin_id(),
+                                key
+                            );
+                        }
+                    }
+                    Incoming::Invalid(reason) => {
+                        log::warn!("plugin {} sent an invalid frame: {}", broker.plugin_id(), reason);
                     }
                 }
             }
@@ -722,5 +883,206 @@ mod tests {
         // Call 3 — should be rate limited
         let resp3 = broker.handle_request(&req).await;
         assert_eq!(resp3.error.as_ref().unwrap().code, RATE_LIMITED);
+    }
+
+    // ── Host → plugin requests through the broker loop ──
+
+    type PluginSide = tokio::io::DuplexStream;
+
+    /// Start a broker loop on one end of an in-memory pipe; the other end plays the plugin.
+    fn spawn_loop() -> (PluginClient, PluginSide, tokio::sync::watch::Sender<bool>) {
+        let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
+        let (reader, writer) = tokio::io::split(host_end);
+        let (client, outbound_rx) = PluginClient::channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        tokio::spawn(run_broker_loop(
+            test_broker(),
+            reader,
+            writer,
+            outbound_rx,
+            shutdown_rx,
+        ));
+        (client, plugin_end, shutdown_tx)
+    }
+
+    async fn read_json(plugin: &mut PluginSide) -> serde_json::Value {
+        wire::read_raw_frame(plugin).await.unwrap()
+    }
+
+    const WAIT: Duration = Duration::from_secs(5);
+
+    #[tokio::test]
+    async fn client_request_round_trip() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            let request = read_json(&mut plugin).await;
+            assert_eq!(request["method"], "rim.command.execute");
+            assert_eq!(request["params"]["command_id"], "greet");
+            let response = JsonRpcResponse::success(request["id"].clone(), serde_json::json!("hi"));
+            wire::write_frame(&mut plugin, &response).await.unwrap();
+            plugin
+        });
+
+        let result = client
+            .request(
+                "rim.command.execute",
+                Some(serde_json::json!({"command_id": "greet", "args": {}})),
+                WAIT,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result, serde_json::json!("hi"));
+        fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_can_call_broker_while_host_request_pending() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            let host_request = read_json(&mut plugin).await;
+            // Before answering, the plugin makes its own call to the host.
+            let log = JsonRpcRequest::new(
+                "rim.log",
+                Some(serde_json::json!({"level": "info", "message": "working"})),
+                7,
+            );
+            wire::write_frame(&mut plugin, &log).await.unwrap();
+            let log_response = read_json(&mut plugin).await;
+            assert_eq!(log_response["id"], 7);
+            assert_eq!(log_response["result"]["ok"], true);
+
+            let response =
+                JsonRpcResponse::success(host_request["id"].clone(), serde_json::json!({"n": 1}));
+            wire::write_frame(&mut plugin, &response).await.unwrap();
+            plugin
+        });
+
+        let result = client
+            .request("rim.command.execute", None, WAIT)
+            .await
+            .unwrap();
+        assert_eq!(result, serde_json::json!({"n": 1}));
+        fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_requests_are_matched_by_id() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            let first = read_json(&mut plugin).await;
+            let second = read_json(&mut plugin).await;
+            // Answer out of order, echoing each request's own params.
+            for request in [second, first] {
+                let response =
+                    JsonRpcResponse::success(request["id"].clone(), request["params"].clone());
+                wire::write_frame(&mut plugin, &response).await.unwrap();
+            }
+            plugin
+        });
+
+        let (a, b) = tokio::join!(
+            client.request("m", Some(serde_json::json!("a")), WAIT),
+            client.request("m", Some(serde_json::json!("b")), WAIT),
+        );
+        assert_eq!(a.unwrap(), serde_json::json!("a"));
+        assert_eq!(b.unwrap(), serde_json::json!("b"));
+        fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_error_response_maps_to_request_error() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            let request = read_json(&mut plugin).await;
+            let response =
+                JsonRpcResponse::error(request["id"].clone(), wire::PLUGIN_ERROR, "kubectl failed");
+            wire::write_frame(&mut plugin, &response).await.unwrap();
+            plugin
+        });
+
+        let err = client.request("m", None, WAIT).await.unwrap_err();
+        match err {
+            RequestError::Plugin(e) => {
+                assert_eq!(e.code, wire::PLUGIN_ERROR);
+                assert_eq!(e.message, "kubectl failed");
+            }
+            other => panic!("expected plugin error, got {other:?}"),
+        }
+        fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_times_out_when_plugin_never_answers() {
+        let (client, _plugin, _shutdown) = spawn_loop();
+        let err = client
+            .request("m", None, Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, RequestError::TimedOut(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn pending_request_fails_when_plugin_disconnects() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            read_json(&mut plugin).await;
+            drop(plugin); // the plugin process exits mid-command
+        });
+
+        let err = client.request("m", None, WAIT).await.unwrap_err();
+        assert!(matches!(err, RequestError::Closed), "got {err:?}");
+        fake_plugin.await.unwrap();
+
+        // The loop is gone, so later requests fail fast too.
+        let err = client.request("m", None, WAIT).await.unwrap_err();
+        assert!(matches!(err, RequestError::Closed), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn notifications_and_stray_frames_do_not_stop_the_loop() {
+        let (client, mut plugin, _shutdown) = spawn_loop();
+        let fake_plugin = tokio::spawn(async move {
+            let request = read_json(&mut plugin).await;
+            let notification = wire::JsonRpcNotification::new(
+                "rim.log",
+                Some(serde_json::json!({"level": "info", "message": "no id"})),
+            );
+            wire::write_frame(&mut plugin, &notification).await.unwrap();
+            wire::write_frame(&mut plugin, &serde_json::json!({"jsonrpc": "2.0"}))
+                .await
+                .unwrap();
+            let unknown = JsonRpcResponse::success(serde_json::json!(999), serde_json::json!(1));
+            wire::write_frame(&mut plugin, &unknown).await.unwrap();
+
+            let response = JsonRpcResponse::success(request["id"].clone(), serde_json::json!(true));
+            wire::write_frame(&mut plugin, &response).await.unwrap();
+            plugin
+        });
+
+        let result = client.request("m", None, WAIT).await.unwrap();
+        assert_eq!(result, serde_json::json!(true));
+        fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_signal_ends_loop_and_fails_pending_requests() {
+        let (client, _plugin, shutdown) = spawn_loop();
+        let pending = tokio::spawn({
+            let client = client.clone();
+            async move { client.request("m", None, WAIT).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        shutdown.send(true).unwrap();
+
+        let err = pending.await.unwrap().unwrap_err();
+        assert!(matches!(err, RequestError::Closed), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn same_connection_distinguishes_clients() {
+        let (a, _rx_a) = PluginClient::channel();
+        let (b, _rx_b) = PluginClient::channel();
+        assert!(a.same_connection(&a.clone()));
+        assert!(!a.same_connection(&b));
     }
 }

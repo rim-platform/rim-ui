@@ -16,17 +16,18 @@
 //!   loop to exit.  The process itself is `kill_on_drop`, so if the task exits
 //!   for any reason the OS process is also cleaned up.
 
-use crate::plugin_host::broker::{BrokerConfig, PluginBroker};
+use crate::plugin_host::broker::{run_broker_loop, BrokerConfig, PluginBroker, PluginClient};
 use crate::plugin_host::capability::CapabilityGate;
+use crate::plugin_host::handshake::{self, HandshakeError};
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::process::PluginProcess;
 use crate::plugin_host::PluginHostState;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::watch;
 use tokio::time::{timeout, Duration};
 
 const STOP_TIMEOUT: Duration = Duration::from_millis(500);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Error type for runtime spawn / stop operations.
 #[derive(Debug, thiserror::Error)]
@@ -100,35 +101,21 @@ pub fn start_plugin(
 
     let panel_ids: Vec<String> = manifest.panels.iter().map(|p| p.id.clone()).collect();
 
-    let (_process, pipes) = PluginProcess::spawn(plugin_id, &plugin_dir, &manifest.entrypoint)?;
+    let (mut process, pipes) = PluginProcess::spawn(plugin_id, &plugin_dir, &manifest.entrypoint)?;
 
-    let gate = CapabilityGate::new(approved_caps);
+    let gate = CapabilityGate::new(approved_caps.clone());
     let broker = PluginBroker::new(plugin_id.to_string(), gate, BrokerConfig::default())
         .with_panel_relay(state.panel_relay.clone(), panel_ids);
 
-    let broker_mutex = Arc::new(Mutex::new(broker));
-    let reader_mutex = Arc::new(Mutex::new(pipes.stdout));
-    let writer_mutex = Arc::new(Mutex::new(pipes.stdin));
-
+    let (client, outbound_rx) = PluginClient::channel();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-
-    let broker_clone = broker_mutex.clone();
-    let reader_clone = reader_mutex.clone();
-    let writer_clone = writer_mutex.clone();
+    let clients = state.clients.clone();
+    let shutdown_txs = state.shutdown_txs.clone();
+    let own_shutdown_tx = shutdown_tx.clone();
     let pid_str = plugin_id.to_string();
 
-    tokio::spawn(async move {
-        log::info!("[plugin_host] broker loop starting for {}", pid_str);
-        crate::plugin_host::broker::run_broker_loop(
-            &broker_clone,
-            &reader_clone,
-            &writer_clone,
-            shutdown_rx,
-        )
-        .await;
-        log::info!("[plugin_host] broker loop exited for {}", pid_str);
-    });
-
+    // Registered before the task starts so a plugin that exits at once still
+    // finds its own entry to remove below.
     {
         let mut txs = state
             .shutdown_txs
@@ -136,6 +123,62 @@ pub fn start_plugin(
             .map_err(|_| RuntimeError::LockPoisoned)?;
         txs.insert(plugin_id.to_string(), shutdown_tx);
     }
+
+    tokio::spawn(async move {
+        log::info!("[plugin_host] broker loop starting for {}", pid_str);
+        let broker_loop =
+            run_broker_loop(broker, pipes.stdout, pipes.stdin, outbound_rx, shutdown_rx);
+        tokio::pin!(broker_loop);
+
+        // The handshake travels through the running loop, so log lines or calls the
+        // plugin sends before answering are brokered rather than misread as the reply.
+        let handshake = handshake_through(&client, &pid_str, &approved_caps);
+        let handshake_ok = tokio::select! {
+            _ = &mut broker_loop => {
+                log::warn!("[plugin_host] plugin {} exited before the handshake", pid_str);
+                false
+            }
+            result = handshake => match result {
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("[plugin_host] handshake failed for {}: {}", pid_str, e);
+                    false
+                }
+            },
+        };
+
+        if handshake_ok {
+            if let Ok(mut map) = clients.lock() {
+                map.insert(pid_str.clone(), client.clone());
+            }
+            broker_loop.await;
+            if let Ok(mut map) = clients.lock() {
+                // A restart may already have registered a newer connection.
+                if map
+                    .get(&pid_str)
+                    .is_some_and(|c| c.same_connection(&client))
+                {
+                    map.remove(&pid_str);
+                }
+            }
+        }
+
+        // Deregister so a crashed plugin (or one that failed the handshake) can be
+        // started again; stop_plugin or a restart may already have replaced the entry.
+        if let Ok(mut txs) = shutdown_txs.lock() {
+            if txs
+                .get(&pid_str)
+                .is_some_and(|tx| tx.same_channel(&own_shutdown_tx))
+            {
+                txs.remove(&pid_str);
+            }
+        }
+
+        log::info!("[plugin_host] broker loop exited for {}", pid_str);
+        if let Err(e) = process.shutdown().await {
+            log::warn!("[plugin_host] shutdown of {} failed: {}", pid_str, e);
+        }
+    });
 
     log::info!("[plugin_host] plugin {} started", plugin_id);
     Ok(())
@@ -164,6 +207,11 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
         txs.remove(plugin_id)
     };
 
+    // Commands fail fast from here on instead of queueing on a closing connection.
+    if let Ok(mut clients) = state.clients.lock() {
+        clients.remove(plugin_id);
+    }
+
     if let Some(tx) = maybe_tx {
         // Signal shutdown — the broker loop will observe the watch channel.
         let _ = tx.send(true);
@@ -179,6 +227,21 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
         log::debug!("[plugin_host] stop_plugin: {} was not running", plugin_id);
     }
 
+    Ok(())
+}
+
+/// Send `rim.handshake` through the broker loop and validate the plugin's answer.
+async fn handshake_through(
+    client: &PluginClient,
+    plugin_id: &str,
+    granted_capabilities: &[String],
+) -> Result<(), HandshakeError> {
+    let params = handshake::handshake_params(plugin_id, granted_capabilities)?;
+    let result = client
+        .request(handshake::HANDSHAKE_METHOD, Some(params), HANDSHAKE_TIMEOUT)
+        .await
+        .map_err(|e| HandshakeError::Rejected(e.to_string()))?;
+    handshake::validate_handshake_result(result, plugin_id)?;
     Ok(())
 }
 
@@ -261,7 +324,8 @@ mod tests {
             manifests: std::sync::Mutex::new(HashMap::new()),
             state_path,
             plugin_dirs: std::sync::Mutex::new(dirs),
-            shutdown_txs: std::sync::Mutex::new(HashMap::new()),
+            shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            clients: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
@@ -366,7 +430,8 @@ mod tests {
             manifests: std::sync::Mutex::new(HashMap::new()),
             state_path,
             plugin_dirs: std::sync::Mutex::new(HashMap::new()),
-            shutdown_txs: std::sync::Mutex::new(HashMap::new()),
+            shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            clients: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
@@ -394,5 +459,82 @@ mod tests {
             matches!(err, RuntimeError::Process(_)),
             "missing entrypoint must yield Process error: {err:?}"
         );
+    }
+
+    async fn wait_for_client(state: &PluginHostState, plugin_id: &str) -> bool {
+        for _ in 0..250 {
+            if state.clients.lock().unwrap().contains_key(plugin_id) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        false
+    }
+
+    #[tokio::test]
+    async fn hello_world_greet_runs_end_to_end() {
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipping: python3 is not installed");
+            return;
+        }
+        let plugin_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugins/hello-world");
+        let manifest = PluginManifest::load(&plugin_dir.join("rim-plugin.json")).unwrap();
+        let plugin_id = manifest.plugin_id.clone();
+
+        let tmp = TempDir::new().unwrap();
+        let state = make_state(&tmp, &plugin_id, &plugin_dir);
+        crate::plugin_host::lifecycle::install(&mut state.store.lock().unwrap(), &manifest)
+            .unwrap();
+        state
+            .manifests
+            .lock()
+            .unwrap()
+            .insert(plugin_id.clone(), manifest.clone());
+
+        start_plugin(&plugin_id, &manifest, &state).unwrap();
+        assert!(
+            wait_for_client(&state, &plugin_id).await,
+            "hello-world must complete the handshake and stay running"
+        );
+
+        // The palette's naive split of `plugin.dev.example.hello-world.greet`.
+        let payload = crate::plugin_host::command_exec::execute(
+            &state,
+            "dev",
+            "example.hello-world.greet",
+            serde_json::json!({"name": "RIM"}),
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(payload, serde_json::json!("Hello, RIM!"));
+
+        stop_plugin(&plugin_id, &state).await.unwrap();
+        assert!(!state.clients.lock().unwrap().contains_key(&plugin_id));
+    }
+
+    #[tokio::test]
+    async fn plugin_without_handshake_never_accepts_commands() {
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("dev.example.test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        write_script(&plugin_dir, "main.sh", "#!/bin/sh\nexit 0\n");
+
+        let state = make_state(&tmp, "dev.example.test", &plugin_dir);
+        let manifest = test_manifest("dev.example.test", "main.sh");
+        start_plugin("dev.example.test", &manifest, &state).unwrap();
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!state
+            .clients
+            .lock()
+            .unwrap()
+            .contains_key("dev.example.test"));
     }
 }

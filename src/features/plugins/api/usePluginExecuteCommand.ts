@@ -7,6 +7,8 @@ interface ExecuteCommandArgs {
   pluginId: string;
   command: string;
   args?: Record<string, unknown>;
+  /** Set only after the user confirmed a command the manifest marks dangerous. */
+  confirmedDangerous?: boolean;
 }
 
 async function safeExecute(args: ExecuteCommandArgs): Promise<PluginCommandResult> {

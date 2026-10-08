@@ -13,6 +13,7 @@ const {
   onCallStoreState,
   featuresCache,
   toastErrorMock,
+  safeInvokeMock,
 } = vi.hoisted(() => ({
   setMainSurfaceMock: vi.fn(),
   shellStateMock: { selectedConversationId: null as string | null },
@@ -23,6 +24,7 @@ const {
   // Cached `workspaceFeatures` entries for ws-1 (Track 0.4); `undefined` = not cached yet.
   featuresCache: { value: undefined as unknown },
   toastErrorMock: vi.fn(),
+  safeInvokeMock: vi.fn(),
 }));
 
 vi.mock("../../../shared/toast", () => ({
@@ -31,6 +33,10 @@ vi.mock("../../../shared/toast", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock("../../../core/tauri/safeInvoke", () => ({
+  safeInvoke: safeInvokeMock,
 }));
 
 vi.mock("../../plugins/api/usePluginCommands", () => ({
@@ -155,6 +161,7 @@ import {
   WorkspaceFeature,
 } from "../../../core/graphql/generated/schema-types";
 import { FeatureDisabledError } from "../../../core/graphql/errors";
+import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 
 function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -428,5 +435,69 @@ describe("workspace feature gate (Track 0.4)", () => {
     await Promise.resolve();
 
     expect(toastErrorMock).toHaveBeenCalledWith("Failed to acknowledge incident");
+  });
+});
+
+describe("plugin commands", () => {
+  const mockExecuteBackend = vi.fn();
+  const command = makeCommand({
+    id: "plugin.dev.example.hello-world.greet",
+    sourceKind: "PLUGIN",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(parsePluginCommandId).mockReturnValueOnce({
+      pluginId: "dev",
+      command: "example.hello-world.greet",
+    });
+  });
+
+  it("sends the command to the plugin host and returns its payload", async () => {
+    safeInvokeMock.mockResolvedValueOnce({
+      ok: true,
+      value: { status: "ok", payload: "Hello, world!" },
+    });
+
+    const result = await dispatchCommand(command, mockExecuteBackend, {
+      args: { name: "world" },
+      confirmedDangerous: true,
+      callerPluginId: null,
+    });
+
+    expect(safeInvokeMock).toHaveBeenCalledWith("plugin_execute_command", {
+      pluginId: "dev",
+      command: "example.hello-world.greet",
+      args: { name: "world" },
+      confirmedDangerous: true,
+      callerPluginId: null,
+    });
+    expect(result).toEqual({
+      status: "SUCCESS",
+      message: "Plugin command executed",
+      payload: "Hello, world!",
+      followUpCommands: [],
+    });
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the host's error message", async () => {
+    safeInvokeMock.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend_error",
+        code: "CONFIRMATION_REQUIRED",
+        message: "command `restart_pod` is marked dangerous and needs confirmation",
+      },
+    });
+
+    const result = await dispatchCommand(command, mockExecuteBackend);
+
+    expect(safeInvokeMock).toHaveBeenCalledWith(
+      "plugin_execute_command",
+      expect.objectContaining({ confirmedDangerous: false }),
+    );
+    expect(result?.status).toBe("ERROR");
+    expect(result?.message).toContain("needs confirmation");
   });
 });

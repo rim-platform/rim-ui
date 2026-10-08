@@ -2,24 +2,23 @@
 """
 Hello World plugin — reference implementation for the RIM plugin host.
 
-This script speaks the RIM wire protocol: 4-byte big-endian length-prefixed
+This script speaks the RIM wire protocol: 4-byte little-endian length-prefixed
 JSON-RPC 2.0 frames over stdin/stdout.
 
 Observable side-effect:
   1. The host sends `rim.handshake` → plugin replies with `accepted: true`.
   2. The broker loop starts; heartbeats are exchanged every 30 s.
   3. When the plugin sends `rim.log`, the host prints it to its log.
-
-The `greet` command is registered in the manifest.  Because the full
-command-dispatch path (host → plugin IPC) is not yet wired in Phase 1,
-`greet` is exercised via the broker's capability gate:  enabling the plugin
-and observing the handshake + first heartbeat in the host log is the
-proof-of-life for this phase.
+  4. Running the `greet` command sends `rim.command.execute` with
+     `{"command_id": "greet", "args": {"name": ...}}`; the plugin answers with
+     `"Hello, <name>!"`.
 
 Wire protocol:
-  - Frame: [4-byte big-endian length][UTF-8 JSON]
+  - Frame: [4-byte little-endian length][UTF-8 JSON]
   - All messages are JSON-RPC 2.0 objects.
-  - The plugin reads requests from stdin and writes responses to stdout.
+  - The plugin reads host requests from stdin and writes responses to stdout.
+    Frames without a `method` are the host's responses to the plugin's own
+    requests and are ignored here.
 """
 
 import json
@@ -36,7 +35,7 @@ def read_frame() -> dict:
     header = sys.stdin.buffer.read(4)
     if len(header) < 4:
         raise EOFError("stdin closed")
-    (length,) = struct.unpack(">I", header)
+    (length,) = struct.unpack("<I", header)
     body = sys.stdin.buffer.read(length)
     if len(body) < length:
         raise EOFError("truncated frame")
@@ -46,7 +45,7 @@ def read_frame() -> dict:
 def write_frame(obj: dict) -> None:
     """Write one length-prefixed JSON-RPC frame to stdout."""
     body = json.dumps(obj).encode("utf-8")
-    header = struct.pack(">I", len(body))
+    header = struct.pack("<I", len(body))
     sys.stdout.buffer.write(header + body)
     sys.stdout.buffer.flush()
 
@@ -64,7 +63,6 @@ def send_log(level: str, message: str) -> None:
     """Send a rim.log notification to the host (always allowed, no capability needed)."""
     write_frame({
         "jsonrpc": "2.0",
-        "id": 1000,
         "method": "rim.log",
         "params": {"level": level, "message": message},
     })
@@ -95,6 +93,19 @@ def handle_heartbeat(request: dict) -> dict:
     return make_response(request["id"], result={"pong": True})
 
 
+def handle_execute(request: dict) -> dict:
+    params = request.get("params") or {}
+    command_id = params.get("command_id")
+    args = params.get("args") or {}
+    if command_id == "greet":
+        name = args.get("name") or "world"
+        return make_response(request["id"], result=f"Hello, {name}!")
+    return make_response(request["id"], error={
+        "code": -32601,
+        "message": f"unknown command: {command_id}",
+    })
+
+
 def main() -> None:
     send_log("info", f"[hello-world] plugin process started (pid={__import__('os').getpid()})")
 
@@ -105,8 +116,12 @@ def main() -> None:
             # Host closed stdin — time to exit.
             break
 
-        method = request.get("method", "")
+        method = request.get("method")
         req_id = request.get("id")
+
+        if method is None:
+            # A response to one of our own requests — nothing to do.
+            continue
 
         if method == "rim.handshake":
             response = handle_handshake(request)
@@ -116,9 +131,8 @@ def main() -> None:
         elif method == "rim.heartbeat":
             write_frame(make_response(req_id, result={"pong": True}))
 
-        elif method == "rim.log":
-            # Echo back acknowledgement (rim.log is always allowed by the gate)
-            write_frame(make_response(req_id, result={"ok": True}))
+        elif method == "rim.command.execute":
+            write_frame(handle_execute(request))
 
         elif req_id is not None:
             # Unknown method — return method-not-found error

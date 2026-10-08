@@ -6,6 +6,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 const PROTOCOL_VERSION: i32 = 1;
 const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const HANDSHAKE_METHOD: &str = "rim.handshake";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandshakeParams {
@@ -37,44 +38,27 @@ pub enum HandshakeError {
     InvalidResponse(String),
 }
 
-/// Perform the host-side handshake: send request, read response, validate.
-pub async fn perform_handshake<R, W>(
-    reader: &mut R,
-    writer: &mut W,
+/// Params for the `rim.handshake` request the host sends first on a new connection.
+pub fn handshake_params(
     plugin_id: &str,
     granted_capabilities: &[String],
-) -> Result<HandshakeResult, HandshakeError>
-where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+) -> Result<serde_json::Value, HandshakeError> {
     let params = HandshakeParams {
         protocol_version: PROTOCOL_VERSION,
         plugin_id: plugin_id.to_string(),
         host_version: HOST_VERSION.to_string(),
         granted_capabilities: granted_capabilities.to_vec(),
     };
+    Ok(serde_json::to_value(&params).map_err(WireError::Json)?)
+}
 
-    let request = JsonRpcRequest::new(
-        "rim.handshake",
-        Some(serde_json::to_value(&params).map_err(WireError::Json)?),
-        0,
-    );
-
-    wire::write_frame(writer, &request).await?;
-
-    let response: JsonRpcResponse = wire::read_frame(reader).await?;
-
-    if let Some(err) = &response.error {
-        return Err(HandshakeError::Rejected(err.message.clone()));
-    }
-
-    let result: HandshakeResult = response
-        .result
-        .ok_or_else(|| HandshakeError::InvalidResponse("missing result field".into()))
-        .and_then(|v| {
-            serde_json::from_value(v).map_err(|e| HandshakeError::InvalidResponse(e.to_string()))
-        })?;
+/// Validate the `result` of a `rim.handshake` response.
+pub fn validate_handshake_result(
+    result: serde_json::Value,
+    plugin_id: &str,
+) -> Result<HandshakeResult, HandshakeError> {
+    let result: HandshakeResult = serde_json::from_value(result)
+        .map_err(|e| HandshakeError::InvalidResponse(e.to_string()))?;
 
     if !result.accepted {
         return Err(HandshakeError::Rejected(
@@ -94,6 +78,42 @@ where
     }
 
     Ok(result)
+}
+
+/// Perform the host-side handshake: send request, read response, validate.
+///
+/// Reads the very next frame as the response, so it only suits a connection
+/// nothing else is reading yet. The runtime handshakes through
+/// [`crate::plugin_host::broker::PluginClient`] instead, which tolerates a
+/// plugin that logs before it answers.
+pub async fn perform_handshake<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    plugin_id: &str,
+    granted_capabilities: &[String],
+) -> Result<HandshakeResult, HandshakeError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let request = JsonRpcRequest::new(
+        HANDSHAKE_METHOD,
+        Some(handshake_params(plugin_id, granted_capabilities)?),
+        0,
+    );
+
+    wire::write_frame(writer, &request).await?;
+
+    let response: JsonRpcResponse = wire::read_frame(reader).await?;
+
+    if let Some(err) = &response.error {
+        return Err(HandshakeError::Rejected(err.message.clone()));
+    }
+
+    let result = response
+        .result
+        .ok_or_else(|| HandshakeError::InvalidResponse("missing result field".into()))?;
+    validate_handshake_result(result, plugin_id)
 }
 
 #[cfg(test)]

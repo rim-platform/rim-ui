@@ -1,3 +1,4 @@
+use crate::plugin_host::command_exec::{self, PluginCommandError, PluginCommandResult};
 use crate::plugin_host::git_install::{
     self, GitInstallError, PluginInstallResult, PluginUpdateResult,
 };
@@ -598,6 +599,43 @@ pub fn plugin_revoke_ai_consent(
     Ok(())
 }
 
+/// Run a plugin command from the palette, a keybind, a context menu or a panel.
+///
+/// The UI splits `plugin.<plugin_id>.<command>` ids naively; the host resolves
+/// the pair against installed manifests (see [`command_exec::resolve_command`]).
+/// A command whose manifest marks it `dangerous` only runs when the caller passes
+/// `confirmed_dangerous: true` after the user confirmed it. A plugin panel's
+/// request carries `caller_plugin_id`, and may only run that plugin's commands.
+///
+/// # Errors
+///
+/// [`PluginCommandError`] serialized as `{ kind, message, data? }`, e.g.
+/// `PLUGIN_NOT_RUNNING`, `CONFIRMATION_REQUIRED`, `TIMED_OUT`, or `PLUGIN_ERROR`
+/// when the plugin itself answered with a JSON-RPC error.
+#[tauri::command]
+pub async fn plugin_execute_command(
+    plugin_id: String,
+    command: String,
+    args: Option<serde_json::Value>,
+    confirmed_dangerous: Option<bool>,
+    caller_plugin_id: Option<String>,
+    state: State<'_, PluginHostState>,
+) -> Result<PluginCommandResult, PluginCommandError> {
+    let payload = command_exec::execute(
+        &state,
+        &plugin_id,
+        &command,
+        args.unwrap_or_else(|| serde_json::json!({})),
+        confirmed_dangerous.unwrap_or(false),
+        caller_plugin_id.as_deref(),
+    )
+    .await?;
+    Ok(PluginCommandResult {
+        status: "ok",
+        payload,
+    })
+}
+
 /// Invoke a plugin AI command on behalf of the LLM agent.
 ///
 /// This is the **server-side security boundary** — the JS-side consent filter in
@@ -606,26 +644,41 @@ pub fn plugin_revoke_ai_consent(
 /// 2. The manifest has not drifted since consent was granted (`check_ai_consent_required`).
 ///
 /// If either check fails the invocation is rejected with a typed `LifecycleError`
-/// before any message reaches the plugin process.
-///
-/// NOTE: actual IPC dispatch to the plugin process is not yet implemented — the
-/// plugin process broker loop wiring is tracked separately. Until that lands this
-/// command passes the consent gate and returns a `PluginNotRunning` error so the
-/// agent can surface a human-readable failure rather than a generic "command not found".
+/// before any message reaches the plugin process. Past the consent gates the
+/// command takes the same path as [`plugin_execute_command`]. The agent cannot
+/// confirm a `dangerous` command, so those are refused with `CONFIRMATION_REQUIRED`.
+/// Returns the plugin's result payload.
 #[tauri::command]
-pub fn plugin_run_ai_command(
+pub async fn plugin_run_ai_command(
     plugin_id: String,
     command_id: String,
-    _input: serde_json::Value,
+    input: serde_json::Value,
     state: State<'_, PluginHostState>,
-) -> Result<serde_json::Value, LifecycleError> {
+) -> Result<serde_json::Value, PluginCommandError> {
+    check_ai_consent(&state, &plugin_id, &command_id)?;
+
+    log::warn!(
+        "[AUDIT] event=plugin_ai_invocation plugin_id={} command_id={}",
+        plugin_id,
+        command_id
+    );
+
+    command_exec::execute(&state, &plugin_id, &command_id, input, false, None).await
+}
+
+/// AI consent gates for [`plugin_run_ai_command`].
+fn check_ai_consent(
+    state: &PluginHostState,
+    plugin_id: &str,
+    command_id: &str,
+) -> Result<(), LifecycleError> {
     let manifests = state
         .manifests
         .lock()
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
     let manifest = manifests
-        .get(&plugin_id)
-        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?
+        .get(plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?
         .clone();
     drop(manifests);
 
@@ -639,28 +692,17 @@ pub fn plugin_run_ai_command(
 
     // Gate 2: the specific command must be in the approved set.
     let record = store
-        .get(&plugin_id)
-        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
-    if !record.approved_ai_commands.contains(&command_id) {
+        .get(plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?;
+    if !record.approved_ai_commands.iter().any(|c| c == command_id) {
         log::warn!(
             "[AUDIT] event=plugin_ai_invocation_denied plugin_id={} command_id={} reason=not_approved",
             plugin_id,
             command_id
         );
-        return Err(LifecycleError::UnknownAiCommand(command_id));
+        return Err(LifecycleError::UnknownAiCommand(command_id.to_string()));
     }
-    drop(store);
-
-    log::warn!(
-        "[AUDIT] event=plugin_ai_invocation plugin_id={} command_id={}",
-        plugin_id,
-        command_id
-    );
-
-    // Plugin process IPC dispatch is not yet wired — broker loop integration is
-    // tracked separately. Return a typed error so the agent runtime surfaces a
-    // clear message instead of "command not found".
-    Err(LifecycleError::PluginNotRunning(plugin_id))
+    Ok(())
 }
 
 /// Install a plugin from a local folder on disk.

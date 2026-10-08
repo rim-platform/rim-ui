@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import type { CommandDefinition, CommandResult } from "../types";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
@@ -9,6 +7,8 @@ import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStor
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import type { PluginCommandResult } from "../../plugins/types";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { useIncidentStore } from "../../incidents/state/useIncidentStore";
@@ -429,6 +429,8 @@ export async function dispatchCommand(
     commandContext?: Record<string, unknown>;
     confirmedDangerous?: boolean;
     isPipe?: boolean;
+    /** Set when a plugin panel asks to run a command; the host then refuses other plugins' commands. */
+    callerPluginId?: string;
   },
 ): Promise<CommandResult | null> {
   // Feature-gated commands (Track 0.4) are refused before any handler runs. Throws
@@ -447,7 +449,13 @@ export async function dispatchCommand(
   // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
   const pluginCmd = parsePluginCommandId(command.id);
   if (pluginCmd) {
-    return dispatchPluginCommand(pluginCmd.pluginId, pluginCmd.command, context?.args);
+    return dispatchPluginCommand(
+      pluginCmd.pluginId,
+      pluginCmd.command,
+      context?.args,
+      context?.confirmedDangerous,
+      context?.callerPluginId,
+    );
   }
 
   if (command.executionTarget === "DESKTOP_LOCAL") {
@@ -476,25 +484,34 @@ async function dispatchPluginCommand(
   pluginId: string,
   command: string,
   args?: Record<string, unknown>,
+  confirmedDangerous?: boolean,
+  callerPluginId?: string,
 ): Promise<CommandResult> {
-  try {
-    const result = await invoke<{ status: string; payload: unknown }>("plugin_execute_command", {
-      ...{ pluginId, command, args: args ?? {} },
-    });
-    return {
-      status: result.status === "ok" ? "SUCCESS" : "ERROR",
-      message: result.status === "ok" ? "Plugin command executed" : "Plugin command failed",
-      payload: result.payload,
-      followUpCommands: [],
-    };
-  } catch {
-    // Wire protocol not yet available — surface as error so callers don't assume success
-    logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`);
+  // The host resolves the id against installed manifests, gates `dangerous`
+  // commands on `confirmedDangerous`, and sends the command to the plugin process.
+  const result = await safeInvoke<PluginCommandResult>("plugin_execute_command", {
+    pluginId,
+    command,
+    args: args ?? {},
+    confirmedDangerous: confirmedDangerous ?? false,
+    callerPluginId: callerPluginId ?? null,
+  });
+  if (!result.ok) {
+    logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`, result.error);
     return {
       status: "ERROR",
-      message: `Plugin command ${pluginId}.${command} failed: wire protocol not available`,
+      message:
+        result.error.kind === "ipc_unavailable"
+          ? "Plugin commands need the desktop app"
+          : result.error.message,
       payload: null,
       followUpCommands: [],
     };
   }
+  return {
+    status: "SUCCESS",
+    message: "Plugin command executed",
+    payload: result.value.payload,
+    followUpCommands: [],
+  };
 }
