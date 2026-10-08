@@ -19,6 +19,7 @@ import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePr
 import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
+import { usePluginPrincipalSync } from "../../features/plugins/api/usePluginPrincipalSync";
 import { useStatusExpiration } from "../../features/settings/hooks/useStatusExpiration";
 import { useUnreadEventHandler } from "../../features/conversations/state/useUnreadEventHandler";
 import { usePresenceEventHandler } from "../../features/presence/state/usePresenceEventHandler";
@@ -66,6 +67,7 @@ const TerminalPane = lazy(() =>
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
   const { isHydrating } = useSessionHydration();
+  usePluginPrincipalSync();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { capabilities } = useRuntime();
   const navigate = useNavigate();

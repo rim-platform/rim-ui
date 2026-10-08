@@ -14,7 +14,8 @@ pub const CAPABILITY_DENIED: i32 = -32000;
 pub const RATE_LIMITED: i32 = -32001;
 pub const PLUGIN_ERROR: i32 = -32002;
 
-const MAX_FRAME_SIZE: u32 = 4 * 1024 * 1024; // 4 MiB
+/// Largest frame payload either side may send, in bytes (4 MiB).
+pub const MAX_FRAME_SIZE: u32 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

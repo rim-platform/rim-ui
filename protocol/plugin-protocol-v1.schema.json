@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dvorakj31/rim-ui/blob/master/protocol/plugin-protocol-v1.schema.json",
+  "title": "RIM plugin protocol v1",
+  "description": "The frozen wire contract between the RIM desktop host and a plugin process. Each $defs entry ending in Request, Response or Notification is one complete frame, with an example. Shapes in this file never change within v1; new methods may be added, which is why both sides ignore unknown notifications and answer unknown requests with METHOD_NOT_FOUND. The host implementation is src-tauri/src/plugin_host/protocol.rs, and its conformance tests check every example here against the frames the host builds.",
+  "x-framing": {
+    "transport": "The host spawns the plugin's entrypoint and talks to it over the plugin's stdin (host to plugin) and stdout (plugin to host). stderr is free-form logging.",
+    "frame": "A 4-byte unsigned length in little-endian byte order, then exactly that many bytes of UTF-8 JSON holding one JSON-RPC 2.0 message.",
+    "maxFrameBytes": 4194304,
+    "lifecycle": "The host's first request is rim.handshake; the plugin sends nothing but rim.log before answering it. The plugin must exit when it receives rim.shutdown or when its stdin closes. The host closes stdin right after rim.shutdown, sends SIGTERM to a plugin still running one second later, and kills it two seconds after that."
+  },
+  "x-ids": "Request ids are integers or strings, never null, and the answering side echoes them unchanged. The host numbers its requests 1, 2, 3, ... and its heartbeats -1, -2, -3, ... per connection. A plugin may number its own requests however it likes.",
+  "x-errorCodes": {
+    "-32700": "PARSE_ERROR: the frame is not valid JSON.",
+    "-32600": "INVALID_REQUEST: the JSON is not a valid JSON-RPC 2.0 message.",
+    "-32601": "METHOD_NOT_FOUND: the receiver does not implement the method.",
+    "-32602": "INVALID_PARAMS: params are missing or have the wrong shape, including an unknown commandId.",
+    "-32603": "INTERNAL_ERROR: the receiver failed while handling a valid request.",
+    "-32000": "CAPABILITY_DENIED: the user has not approved the capability the method needs.",
+    "-32001": "RATE_LIMITED: the plugin called a capability more often than its per-minute limit.",
+    "-32002": "PLUGIN_ERROR: the plugin ran the command and it failed; message says why."
+  },
+  "x-confirmationGate": "A command whose manifest entry is dangerous runs only after the user confirmed that run. The host refuses an unconfirmed dangerous command before anything reaches the plugin, sends confirmed: true with a confirmed one, and never lets the AI agent confirm. A plugin should still refuse a dangerous command that arrives with confirmed: false.",
+  "x-principals": "Plugins see people only as Principal objects. principalId is opaque and stable: plugins may store and compare it but must not parse it. It is never the user's account UUID and never a name@domain, and it does not change when the user's keys change. Until key identity ships, ids are provisional (prefix rimp0_); the host announces the switch to key-based ids with rim.principal.changed.",
+  "x-notFrozen": {
+    "description": "Methods the host already routes whose shapes are not part of v1 yet. They will be frozen, camelCase and with Principal for every person, when the host wires them end to end.",
+    "methods": [
+      "rim.chat.send_message",
+      "rim.chat.get_messages",
+      "rim.chat.search_messages",
+      "rim.events.subscribe",
+      "rim.event.<type>",
+      "rim.ui.update_panel"
+    ]
+  },
+  "$defs": {
+    "JsonRpcVersion": {
+      "description": "Always the string 2.0.",
+      "const": "2.0"
+    },
+    "Id": {
+      "description": "Request id, echoed unchanged in the response.",
+      "type": ["integer", "string"]
+    },
+    "Principal": {
+      "description": "How a plugin sees a person.",
+      "type": "object",
+      "required": ["principalId", "displayName"],
+      "additionalProperties": false,
+      "properties": {
+        "principalId": {
+          "description": "Opaque, stable id of the person. Never a UUID and never a name@domain.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "not": {
+            "pattern": "[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}"
+          }
+        },
+        "displayName": {
+          "description": "Label to show for the person. Not unique and may change.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "NullablePrincipal": {
+      "description": "A Principal, or null when nobody is signed in.",
+      "anyOf": [{ "$ref": "#/$defs/Principal" }, { "type": "null" }]
+    },
+    "Error": {
+      "description": "JSON-RPC error object. code is one of x-errorCodes or another integer the plugin documents.",
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "description": "Error code, see x-errorCodes.", "type": "integer" },
+        "message": { "description": "One-line, human-readable reason.", "type": "string" },
+        "data": { "description": "Optional machine-readable details." }
+      }
+    },
+    "ErrorResponse": {
+      "description": "Answer to any request that failed.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "error": { "$ref": "#/$defs/Error" }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "error": { "code": -32002, "message": "kubectl failed: context not found" }
+        }
+      ]
+    },
+    "HandshakeParams": {
+      "type": "object",
+      "required": [
+        "protocolVersion",
+        "supportedVersions",
+        "pluginId",
+        "hostVersion",
+        "grantedCapabilities",
+        "principal"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "description": "The version the host prefers, the first entry of supportedVersions.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "supportedVersions": {
+          "description": "Every protocol version the host speaks, newest first.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 },
+          "minItems": 1
+        },
+        "pluginId": {
+          "description": "The plugin id from the manifest the host loaded for this process.",
+          "type": "string"
+        },
+        "hostVersion": { "description": "The host application's version.", "type": "string" },
+        "grantedCapabilities": {
+          "description": "Capabilities the user approved for this plugin.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "principal": {
+          "description": "The signed-in user the plugin acts for, or null when nobody is signed in yet.",
+          "$ref": "#/$defs/NullablePrincipal"
+        }
+      }
+    },
+    "HandshakeRequest": {
+      "description": "Host to plugin, the first request on every connection. Its shape is the same in every protocol version, so any host can negotiate with any plugin.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "method": { "const": "rim.handshake" },
+        "params": { "$ref": "#/$defs/HandshakeParams" }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "rim.handshake",
+          "params": {
+            "protocolVersion": 1,
+            "supportedVersions": [1],
+            "pluginId": "dev.example.hello-world",
+            "hostVersion": "0.1.0",
+            "grantedCapabilities": [],
+            "principal": {
+              "principalId": "rimp0_PWcag22GowE59KogGTaUReeoF_q4E5EVi28q83uaGBU",
+              "displayName": "Jakub"
+            }
+          }
+        }
+      ]
+    },
+    "HandshakeResult": {
+      "type": "object",
+      "required": ["accepted", "protocolVersion", "pluginId"],
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "description": "Whether the plugin accepts the connection.",
+          "type": "boolean"
+        },
+        "protocolVersion": {
+          "description": "The version the plugin chose; must be one of supportedVersions.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "pluginId": {
+          "description": "The plugin's own id; must equal params.pluginId.",
+          "type": "string"
+        },
+        "error": {
+          "description": "Why the plugin refused, when accepted is false.",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "HandshakeResponse": {
+      "description": "Plugin to host. A refusal is accepted: false with error set; the host then stops the plugin.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "result": { "$ref": "#/$defs/HandshakeResult" }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "accepted": true,
+            "protocolVersion": 1,
+            "pluginId": "dev.example.hello-world"
+          }
+        }
+      ]
+    },
+    "HeartbeatRequest": {
+      "description": "Host to plugin every 30 seconds. A plugin that has not answered within 5 seconds is marked unresponsive.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "description": "Negative integer.", "type": "integer", "maximum": -1 },
+        "method": { "const": "rim.heartbeat" }
+      },
+      "examples": [{ "jsonrpc": "2.0", "id": -1, "method": "rim.heartbeat" }]
+    },
+    "HeartbeatResponse": {
+      "description": "Plugin to host. Any object result counts as alive.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "result": { "type": "object" }
+      },
+      "examples": [{ "jsonrpc": "2.0", "id": -1, "result": { "pong": true } }]
+    },
+    "ShutdownNotification": {
+      "description": "Host to plugin: exit now. The host closes stdin right after it.",
+      "type": "object",
+      "required": ["jsonrpc", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "method": { "const": "rim.shutdown" }
+      },
+      "examples": [{ "jsonrpc": "2.0", "method": "rim.shutdown" }]
+    },
+    "PrincipalChangedNotification": {
+      "description": "Host to plugin: the signed-in user changed (sign-in, sign-out, another account, or a new principal id scheme).",
+      "type": "object",
+      "required": ["jsonrpc", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "method": { "const": "rim.principal.changed" },
+        "params": {
+          "type": "object",
+          "required": ["principal"],
+          "additionalProperties": false,
+          "properties": {
+            "principal": {
+              "description": "The signed-in user from now on, or null after sign-out.",
+              "$ref": "#/$defs/NullablePrincipal"
+            }
+          }
+        }
+      },
+      "examples": [
+        { "jsonrpc": "2.0", "method": "rim.principal.changed", "params": { "principal": null } }
+      ]
+    },
+    "CommandExecuteParams": {
+      "type": "object",
+      "required": ["commandId", "args", "invoker", "initiator", "confirmed"],
+      "additionalProperties": false,
+      "properties": {
+        "commandId": {
+          "description": "The id of a command in the plugin's manifest.",
+          "type": "string"
+        },
+        "args": {
+          "description": "The command's arguments, keyed by argument name. Empty when there are none.",
+          "type": "object"
+        },
+        "invoker": {
+          "description": "The signed-in user on whose behalf the command runs, or null.",
+          "$ref": "#/$defs/NullablePrincipal"
+        },
+        "initiator": {
+          "description": "user: a person ran it (palette, keybind, panel, context action). agent: the AI agent ran it after the user consented to this plugin's AI commands.",
+          "enum": ["user", "agent"]
+        },
+        "confirmed": {
+          "description": "True only for a dangerous command the user confirmed for this run. See x-confirmationGate.",
+          "type": "boolean"
+        }
+      }
+    },
+    "CommandExecuteRequest": {
+      "description": "Host to plugin: run one of the plugin's manifest commands. The host gives up after 30 seconds.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "method": { "const": "rim.command.execute" },
+        "params": { "$ref": "#/$defs/CommandExecuteParams" }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "rim.command.execute",
+          "params": {
+            "commandId": "greet",
+            "args": { "name": "RIM" },
+            "invoker": {
+              "principalId": "rimp0_PWcag22GowE59KogGTaUReeoF_q4E5EVi28q83uaGBU",
+              "displayName": "Jakub"
+            },
+            "initiator": "user",
+            "confirmed": false
+          }
+        }
+      ]
+    },
+    "CommandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "payload": { "description": "The command's output, any JSON value. Missing means null." },
+        "message": {
+          "description": "Optional one-line summary the host may show to the user.",
+          "type": "string"
+        }
+      }
+    },
+    "CommandExecuteResponse": {
+      "description": "Plugin to host. A failed command is an ErrorResponse instead, usually with PLUGIN_ERROR.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "result": { "$ref": "#/$defs/CommandResult" }
+      },
+      "examples": [{ "jsonrpc": "2.0", "id": 2, "result": { "payload": "Hello, RIM!" } }]
+    },
+    "LogParams": {
+      "type": "object",
+      "required": ["level", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "description": "Severity.", "enum": ["debug", "info", "warn", "error"] },
+        "message": { "description": "The line to log.", "type": "string" }
+      }
+    },
+    "LogRequest": {
+      "description": "Plugin to host: write a line to the host log. Needs no capability. Without an id it is a notification and gets no answer.",
+      "type": "object",
+      "required": ["jsonrpc", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "method": { "const": "rim.log" },
+        "params": { "$ref": "#/$defs/LogParams" }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "method": "rim.log",
+          "params": { "level": "info", "message": "handshake complete" }
+        }
+      ]
+    },
+    "LogResponse": {
+      "description": "Host to plugin, only when rim.log was sent with an id.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/Id" },
+        "result": {
+          "type": "object",
+          "required": ["ok"],
+          "additionalProperties": false,
+          "properties": { "ok": { "const": true } }
+        }
+      },
+      "examples": [{ "jsonrpc": "2.0", "id": "log-1", "result": { "ok": true } }]
+    }
+  }
+}

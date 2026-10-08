@@ -62,8 +62,9 @@ impl CapabilityGate {
                     Err(required_cap.to_string())
                 }
             }
-            // Unknown methods are denied by default
-            None => Err(format!("unknown method: {method}")),
+            // No capability guards an unknown method; the broker answers it with
+            // METHOD_NOT_FOUND, so it never reaches a handler.
+            None => Ok(()),
         }
     }
 
@@ -110,10 +111,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_method_denied() {
+    fn unknown_method_is_left_to_the_dispatcher() {
         let gate = CapabilityGate::new(vec!["chat.read".into()]);
-        let err = gate.check("rim.unknown.method").unwrap_err();
-        assert!(err.contains("unknown method"));
+        assert!(gate.check("rim.unknown.method").is_ok());
+        assert_eq!(capability_for_method("rim.unknown.method"), None);
     }
 
     #[test]
