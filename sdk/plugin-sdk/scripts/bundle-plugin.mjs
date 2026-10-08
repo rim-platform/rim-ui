@@ -11,11 +11,12 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
 
 const [pluginArg, outArg] = process.argv.slice(2);
@@ -30,6 +31,19 @@ const outDir = resolve(outArg ?? join(pluginDir, "dist", manifest.plugin_id));
 const entry = join(pluginDir, manifest.entrypoint);
 const outFile = join(outDir, "main.mjs");
 
+// out-dir is wiped first, so refuse anything that is not a previous bundle:
+// the plugin's own folder, a folder holding it, or one with other files in it.
+const fromOut = relative(outDir, pluginDir);
+const holdsPlugin =
+  fromOut === "" || !(fromOut === ".." || fromOut.startsWith(`..${sep}`) || isAbsolute(fromOut));
+if (holdsPlugin) {
+  console.error(`refusing to bundle into ${outDir}: it holds the plugin itself`);
+  process.exit(2);
+}
+if (existsSync(outDir) && readdirSync(outDir).length > 0 && !isBundle(outDir)) {
+  console.error(`refusing to bundle into ${outDir}: it is not empty and not a previous bundle`);
+  process.exit(2);
+}
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
@@ -56,3 +70,13 @@ if (existsSync(join(pluginDir, "panels"))) {
 }
 
 console.log(`bundled ${manifest.plugin_id} into ${outDir}`);
+
+/** True when `dir` looks like this script's output: a manifest pointing at main.mjs. */
+function isBundle(dir) {
+  try {
+    const previous = JSON.parse(readFileSync(join(dir, "rim-plugin.json"), "utf8"));
+    return previous.entrypoint === "main.mjs" && existsSync(join(dir, "main.mjs"));
+  } catch {
+    return false;
+  }
+}
