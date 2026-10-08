@@ -335,18 +335,39 @@ pub fn plugin_approve_capabilities(
 }
 
 #[tauri::command]
-pub fn plugin_revoke_capability(
+pub async fn plugin_revoke_capability(
     plugin_id: String,
     capability: String,
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
+    revoke_capability_and_stop(&state, &plugin_id, &capability).await?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Revoke a capability, stopping the plugin first if it is running.
+///
+/// Revoking disables the plugin (`lifecycle::revoke_capability`). The process
+/// has to stop as well: its broker checks the plugin's own calls against the
+/// capabilities approved when it started, so a process left running would keep
+/// using the revoked capability until it restarted.
+pub(crate) async fn revoke_capability_and_stop(
+    state: &PluginHostState,
+    plugin_id: &str,
+    capability: &str,
+) -> Result<(), LifecycleError> {
+    runtime::stop_plugin(plugin_id, state)
+        .await
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
     let mut store = state
         .store
         .lock()
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-    lifecycle::revoke_capability(&mut store, &plugin_id, &capability)?;
-    store.save(&state.state_path)?;
-    Ok(())
+    lifecycle::revoke_capability(&mut store, plugin_id, capability)
 }
 
 /// Install a plugin from a git repository.

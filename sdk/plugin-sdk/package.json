@@ -1,0 +1,25 @@
+{
+  "name": "@rim/plugin-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for RIM plugin protocol v1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "bin": {
+    "rim-plugin-bundle": "./scripts/bundle-plugin.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "peerDependencies": {
+    "esbuild": ">=0.25"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    }
+  }
+}

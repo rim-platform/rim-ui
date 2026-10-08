@@ -10,7 +10,8 @@
 //! - `start_plugin` is called by `plugin_enable` (user action) and by the
 //!   startup sweep in `mod.rs::init` (re-spawns plugins that were Enabled on
 //!   last shutdown).
-//! - `stop_plugin` is called by `plugin_disable` and `plugin_uninstall`.
+//! - `stop_plugin` is called by `plugin_disable`, `plugin_uninstall` and
+//!   `plugin_revoke_capability`.
 //! - `stop_all` is called when the app exits.
 //! - The broker loop runs in a `tokio::spawn`ed task.  A `watch::Sender<bool>`
 //!   is stored in `PluginHostState.shutdown_txs`; sending `true` makes the loop
@@ -535,6 +536,49 @@ mod tests {
             !txs.contains_key("dev.example.test"),
             "shutdown_tx must be removed after stop_plugin"
         );
+    }
+
+    #[tokio::test]
+    async fn revoking_a_capability_stops_the_running_plugin() {
+        use crate::plugin_host::commands::revoke_capability_and_stop;
+        use crate::plugin_host::lifecycle;
+        use crate::plugin_host::state::PluginStatus;
+
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("dev.example.test");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        write_script(
+            &plugin_dir,
+            "main.sh",
+            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
+        );
+        let state = make_state(&tmp, "dev.example.test", &plugin_dir);
+        let mut manifest = test_manifest("dev.example.test", "main.sh");
+        manifest.capabilities = vec!["ui.panel".into()];
+        {
+            let mut store = state.store.lock().unwrap();
+            lifecycle::install(&mut store, &manifest).unwrap();
+            lifecycle::approve_capabilities(&mut store, &manifest, &["ui.panel".into()]).unwrap();
+            lifecycle::enable(&mut store, "dev.example.test").unwrap();
+        }
+        start_plugin("dev.example.test", &manifest, &state).unwrap();
+
+        revoke_capability_and_stop(&state, "dev.example.test", "ui.panel")
+            .await
+            .unwrap();
+
+        assert!(
+            !state
+                .shutdown_txs
+                .lock()
+                .unwrap()
+                .contains_key("dev.example.test"),
+            "the plugin must be stopped, not left running with the old capabilities"
+        );
+        let store = state.store.lock().unwrap();
+        let record = store.get("dev.example.test").unwrap();
+        assert_eq!(record.status, PluginStatus::Disabled);
+        assert!(record.approved_capabilities.is_empty());
     }
 
     #[tokio::test]

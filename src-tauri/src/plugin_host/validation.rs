@@ -2,6 +2,7 @@
 //! server-side mirror (`rim_services::plugin_host::validation`) was removed on
 //! 2026-10-04 as dead code, so there is nothing to keep in sync any more.
 
+use crate::plugin_host::capability::BUILTIN_CAPABILITIES;
 use crate::plugin_host::manifest::{ManifestCommand, PluginManifest};
 
 const RESERVED_PREFIXES: &[&str] = &["system.", "internal.", "admin.", "audit."];
@@ -64,6 +65,11 @@ impl std::fmt::Display for ValidationError {
 impl std::error::Error for ValidationError {}
 
 /// N1 closure: validates a single capability key declared by plugin_id.
+///
+/// A manifest may declare the built-in names in [`BUILTIN_CAPABILITIES`] and
+/// its own keys of the form `plugin.<plugin_id>.<verb>`, with the verb in
+/// `[a-z0-9_.]`. Hyphens are fine in the plugin id part, since manifests allow
+/// them there.
 pub fn validate_plugin_capability(
     plugin_id: &str,
     capability_key: &str,
@@ -87,20 +93,8 @@ pub fn validate_plugin_capability(
         ));
     }
 
-    if !capability_key
-        .bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
-    {
-        return reject(
-            "capability key must match [a-z0-9_.]+ (lowercase ASCII alnum, underscore, dot)",
-        );
-    }
-
-    if capability_key.starts_with('.') || capability_key.ends_with('.') {
-        return reject("capability key may not start or end with `.`");
-    }
-    if capability_key.contains("..") {
-        return reject("capability key may not contain `..` (empty segment)");
+    if BUILTIN_CAPABILITIES.contains(&capability_key) {
+        return Ok(());
     }
 
     for reserved in RESERVED_PREFIXES {
@@ -112,17 +106,33 @@ pub fn validate_plugin_capability(
         }
     }
 
+    // The plugin id is checked by the manifest loader (alphanumeric and `-`
+    // segments), so only the verb after it needs a character check here.
     let required_prefix = format!("plugin.{plugin_id}.");
-    if !capability_key.starts_with(&required_prefix) {
+    let Some(verb) = capability_key.strip_prefix(&required_prefix) else {
         return reject(&format!(
-            "capability key must start with `{required_prefix}` so the gate \
-             can attribute the cap back to its declaring plugin"
+            "capability key must be one of {BUILTIN_CAPABILITIES:?} or start with \
+             `{required_prefix}` so the gate can attribute the cap back to its \
+             declaring plugin"
         ));
-    }
-
-    let verb = &capability_key[required_prefix.len()..];
+    };
     if verb.is_empty() {
         return reject("capability key must declare a verb after `plugin.<id>.`");
+    }
+
+    if !verb
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
+    {
+        return reject(
+            "capability verb must match [a-z0-9_.]+ (lowercase ASCII alnum, underscore, dot)",
+        );
+    }
+    if verb.starts_with('.') || verb.ends_with('.') {
+        return reject("capability key may not start or end with `.`");
+    }
+    if verb.contains("..") {
+        return reject("capability key may not contain `..` (empty segment)");
     }
 
     for segment in capability_key.split('.') {
@@ -419,6 +429,67 @@ mod tests {
                 "N1 should accept `{good}` but rejected: {result:?}"
             );
         }
+    }
+
+    #[test]
+    fn n1_accepts_builtin_capabilities() {
+        for cap in BUILTIN_CAPABILITIES {
+            let result = validate_plugin_capability("dev.example.hello-world", cap);
+            assert!(result.is_ok(), "`{cap}` should be accepted: {result:?}");
+        }
+    }
+
+    #[test]
+    fn n1_rejects_builtin_names_that_guard_nothing() {
+        for bad in [
+            "local.process",
+            "network",
+            "fs.read",
+            "fs.write",
+            "chat.read",
+            "chat.write",
+            "events.read",
+            "chat.admin",
+            "ui",
+        ] {
+            assert!(
+                validate_plugin_capability("dev.example.tool", bad).is_err(),
+                "`{bad}` must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn n1_accepts_keys_of_a_hyphenated_plugin_id() {
+        let plugin_id = "dev.example.hello-world";
+        assert!(
+            validate_plugin_capability(plugin_id, "plugin.dev.example.hello-world.greet").is_ok()
+        );
+        for bad in [
+            "plugin.dev.example.hello-world.do-thing",
+            "plugin.dev.example.hello-world.",
+            "plugin.dev.example.hello-world..x",
+            "plugin.dev.example.hello.world.greet",
+            "plugin.dev.example.hello-world.audit",
+        ] {
+            assert!(
+                validate_plugin_capability(plugin_id, bad).is_err(),
+                "`{bad}` must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_with_builtin_and_own_capabilities_validates() {
+        let manifest = manifest_with_commands(
+            "dev.example.k8s-pods",
+            vec![
+                "ui.panel".into(),
+                "plugin.dev.example.k8s-pods.restart_pod".into(),
+            ],
+            vec![],
+        );
+        assert_eq!(validate_plugin_manifest(&manifest), Ok(()));
     }
 
     #[test]

@@ -14,7 +14,10 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "sdk:generate": "node sdk/plugin-sdk/scripts/generate-protocol.ts",
+    "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts",
+    "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

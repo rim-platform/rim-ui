@@ -7,13 +7,17 @@
 //! - no host frame carries anything shaped like a UUID, so a raw account id
 //!   cannot reach a plugin;
 //! - the in-tree hello-world plugin answers every host request with a valid frame
-//!   and exits on `rim.shutdown`.
+//!   and exits on `rim.shutdown`;
+//! - so does the TypeScript template plugin built on `sdk/plugin-sdk`, which
+//!   also refuses an unconfirmed dangerous command on its own, and runs through
+//!   the host's real start-up and command path.
 
 use super::{method, Initiator, Principal};
 use crate::plugin_host::broker::{run_broker_loop, BrokerConfig, PluginBroker, PluginClient};
 use crate::plugin_host::capability::CapabilityGate;
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::process::PluginProcess;
+use crate::plugin_host::validation::validate_plugin_manifest;
 use crate::plugin_host::wire::{self, JsonRpcRequest, JsonRpcResponse};
 use crate::plugin_host::{command_exec, handshake, runtime, PluginHostState};
 use serde_json::{json, Value};
@@ -28,6 +32,7 @@ const SCHEMA_JSON: &str = include_str!("../../../../protocol/plugin-protocol-v1.
 const USER_ID: &str = "0192b3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b";
 const DISPLAY_NAME: &str = "Jakub";
 const HELLO_WORLD: &str = "dev.example.hello-world";
+const TEMPLATE_TS: &str = "dev.example.template-ts";
 const WAIT: Duration = Duration::from_secs(5);
 
 static SCHEMA: LazyLock<Value> =
@@ -430,6 +435,17 @@ async fn ask(
     response
 }
 
+/// Wait for a plugin that was told to exit, failing after two seconds.
+async fn wait_for_exit(process: &mut PluginProcess) -> std::process::ExitStatus {
+    for _ in 0..100 {
+        if let Some(status) = process.try_wait().unwrap() {
+            return status;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("plugin {} did not exit", process.plugin_id());
+}
+
 #[tokio::test]
 async fn hello_world_speaks_v1() {
     if std::process::Command::new("python3")
@@ -494,15 +510,7 @@ async fn hello_world_speaks_v1() {
     wire::write_frame(&mut stdin, &example("ShutdownNotification"))
         .await
         .unwrap();
-    let mut exited = None;
-    for _ in 0..100 {
-        exited = process.try_wait().unwrap();
-        if exited.is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    let status = exited.expect("hello-world exits on rim.shutdown");
+    let status = wait_for_exit(&mut process).await;
     assert!(status.success(), "clean exit: {status:?}");
     drop(stdin);
 }
@@ -529,4 +537,198 @@ async fn hello_world_refuses_a_host_without_v1() {
     assert_valid("HandshakeResponse", &response);
     assert_eq!(response["result"]["accepted"], false);
     assert!(response["result"]["error"].is_string());
+}
+
+// ── The TypeScript SDK template ──
+
+fn template_ts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugins/template-ts")
+}
+
+fn template_ts_manifest() -> PluginManifest {
+    PluginManifest::load(&template_ts_dir().join("rim-plugin.json")).expect("template-ts manifest")
+}
+
+/// The template's entrypoint is TypeScript that Node 22.18+ runs as is.
+fn node_runs_typescript() -> bool {
+    let runs = std::process::Command::new("node")
+        .args(["-e", "process.exit(process.features.typescript ? 0 : 1)"])
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !runs {
+        eprintln!("skipping: needs Node 22.18 or newer on PATH");
+    }
+    runs
+}
+
+fn execute_frame(id: i64, command_id: &str, initiator: &str, confirmed: bool) -> Value {
+    let mut frame = example("CommandExecuteRequest");
+    frame["id"] = json!(id);
+    frame["params"]["commandId"] = json!(command_id);
+    frame["params"]["args"] = json!({});
+    frame["params"]["initiator"] = json!(initiator);
+    frame["params"]["confirmed"] = json!(confirmed);
+    frame
+}
+
+#[test]
+fn template_ts_manifest_installs() {
+    let manifest = template_ts_manifest();
+    validate_plugin_manifest(&manifest).expect("the template passes install validation");
+    let dangerous: Vec<_> = manifest.commands.iter().map(|c| c.dangerous).collect();
+    assert_eq!(
+        dangerous,
+        [false, true],
+        "one safe and one dangerous command"
+    );
+}
+
+#[tokio::test]
+async fn template_ts_speaks_v1() {
+    if !node_runs_typescript() {
+        return;
+    }
+    let manifest = template_ts_manifest();
+    let (mut process, pipes) =
+        PluginProcess::spawn(TEMPLATE_TS, &template_ts_dir(), &manifest.entrypoint).unwrap();
+    let (mut stdin, mut stdout) = (pipes.stdin, pipes.stdout);
+
+    // Unknown fields anywhere are ignored, and the plugin picks v1 from the list.
+    let mut handshake = example("HandshakeRequest");
+    handshake["params"]["pluginId"] = json!(TEMPLATE_TS);
+    handshake["params"]["supportedVersions"] = json!([2, 1]);
+    handshake["params"]["protocolVersion"] = json!(2);
+    handshake["params"]["futureField"] = json!({"nested": true});
+    handshake["params"]["principal"]["futureField"] = json!(1);
+    let response = ask(&mut stdin, &mut stdout, &handshake).await;
+    assert_valid("HandshakeResponse", &response);
+    assert_eq!(
+        response["result"],
+        json!({"accepted": true, "protocolVersion": 1, "pluginId": TEMPLATE_TS})
+    );
+
+    let response = ask(&mut stdin, &mut stdout, &example("HeartbeatRequest")).await;
+    assert_valid("HeartbeatResponse", &response);
+
+    let mut greet = example("CommandExecuteRequest");
+    greet["params"]["futureField"] = json!(true);
+    let response = ask(&mut stdin, &mut stdout, &greet).await;
+    assert_valid("CommandExecuteResponse", &response);
+    assert_eq!(response["result"]["payload"], "Hello, RIM!");
+
+    let response = ask(
+        &mut stdin,
+        &mut stdout,
+        &execute_frame(3, "rm_rf", "user", false),
+    )
+    .await;
+    assert_valid("ErrorResponse", &response);
+    assert_eq!(response["error"]["code"], wire::INVALID_PARAMS);
+
+    // The SDK refuses a dangerous command that arrives unconfirmed or from the
+    // agent, even though the host never sends one.
+    for (id, initiator, confirmed) in [(4, "user", false), (5, "agent", true)] {
+        let frame = execute_frame(id, "reset_greetings", initiator, confirmed);
+        let response = ask(&mut stdin, &mut stdout, &frame).await;
+        assert_valid("ErrorResponse", &response);
+        assert_eq!(response["error"]["code"], wire::PLUGIN_ERROR);
+    }
+    let frame = execute_frame(6, "reset_greetings", "user", true);
+    let response = ask(&mut stdin, &mut stdout, &frame).await;
+    assert_valid("CommandExecuteResponse", &response);
+    assert_eq!(response["result"]["payload"], json!({"cleared": 1}));
+
+    let mut unknown_method = example("HeartbeatRequest");
+    unknown_method["id"] = json!(7);
+    unknown_method["method"] = json!("rim.future.method");
+    let response = ask(&mut stdin, &mut stdout, &unknown_method).await;
+    assert_valid("ErrorResponse", &response);
+    assert_eq!(response["error"]["code"], wire::METHOD_NOT_FOUND);
+
+    let unknown_notice = json!({"jsonrpc": "2.0", "method": "rim.future.notice"});
+    wire::write_frame(&mut stdin, &unknown_notice)
+        .await
+        .unwrap();
+    wire::write_frame(&mut stdin, &example("PrincipalChangedNotification"))
+        .await
+        .unwrap();
+    let mut heartbeat = example("HeartbeatRequest");
+    heartbeat["id"] = json!(-2);
+    let response = ask(&mut stdin, &mut stdout, &heartbeat).await;
+    assert_valid("HeartbeatResponse", &response);
+
+    wire::write_frame(&mut stdin, &example("ShutdownNotification"))
+        .await
+        .unwrap();
+    let status = wait_for_exit(&mut process).await;
+    assert!(status.success(), "clean exit: {status:?}");
+    drop(stdin);
+}
+
+#[tokio::test]
+async fn template_ts_refuses_a_host_without_v1() {
+    if !node_runs_typescript() {
+        return;
+    }
+    let manifest = template_ts_manifest();
+    let (_process, pipes) =
+        PluginProcess::spawn(TEMPLATE_TS, &template_ts_dir(), &manifest.entrypoint).unwrap();
+    let (mut stdin, mut stdout) = (pipes.stdin, pipes.stdout);
+
+    let mut handshake = example("HandshakeRequest");
+    handshake["params"]["pluginId"] = json!(TEMPLATE_TS);
+    handshake["params"]["supportedVersions"] = json!([2]);
+    handshake["params"]["protocolVersion"] = json!(2);
+    let response = ask(&mut stdin, &mut stdout, &handshake).await;
+    assert_valid("HandshakeResponse", &response);
+    assert_eq!(response["result"]["accepted"], false);
+    assert_eq!(response["result"]["protocolVersion"], 1);
+    assert!(response["result"]["error"].is_string());
+}
+
+#[tokio::test]
+async fn template_ts_runs_through_the_host() {
+    if !node_runs_typescript() {
+        return;
+    }
+    let manifest = template_ts_manifest();
+    let state = PluginHostState::with_installed(vec![manifest.clone()]);
+    *state.principal.lock().unwrap() = Some(principal());
+    state
+        .plugin_dirs
+        .lock()
+        .unwrap()
+        .insert(TEMPLATE_TS.into(), template_ts_dir());
+    runtime::start_plugin(TEMPLATE_TS, &manifest, &state).unwrap();
+    // The host registers the plugin's client once the handshake is accepted.
+    for _ in 0..250 {
+        if state.clients.lock().unwrap().contains_key(TEMPLATE_TS) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let run = |command: &'static str, confirmed: bool| {
+        command_exec::execute(
+            &state,
+            TEMPLATE_TS,
+            command,
+            json!({}),
+            confirmed,
+            None,
+            Initiator::User,
+        )
+    };
+    let greeting = run("greet", false).await.expect("greet runs");
+    assert_eq!(greeting.payload, json!("Hello, Jakub!"));
+    assert!(
+        run("reset_greetings", false).await.is_err(),
+        "the host refuses an unconfirmed dangerous command"
+    );
+    let reset = run("reset_greetings", true)
+        .await
+        .expect("confirmed reset runs");
+    assert_eq!(reset.payload, json!({"cleared": 1}));
+
+    runtime::stop_plugin(TEMPLATE_TS, &state).await.unwrap();
 }
