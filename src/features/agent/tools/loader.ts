@@ -3,13 +3,16 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import {
+  CommandExecutionTarget,
   CommandInitiator,
   CommandResultStatus,
+  CommandSensitivity,
   CommandSurface,
   type Command,
   type CommandResult,
   type ConfirmationProofInput,
 } from "../../../core/graphql/generated/schema-types";
+import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
 import type { PluginInfo } from "../../plugins/types";
 import type { AiToolDefinition } from "../providers/types";
@@ -212,10 +215,48 @@ export function makeBackendToolHandler(commandId: string): AiToolHandler {
   };
 }
 
+function snakeToCamel(key: string): string {
+  return key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+/**
+ * Handler for a `DESKTOP_LOCAL` command (Track 4.1). The server rejects desktop-local
+ * commands, so the agent runs them through the same local handlers the palette and keybinds
+ * use. Tool input follows the server's snake_case argument names (`conversation_id`), while
+ * the local handlers read camelCase (`conversationId`), so keys are converted here. These
+ * commands only move the user's view, which is why no confirmation applies.
+ */
+export function makeDesktopLocalToolHandler(commandId: string): AiToolHandler {
+  return async (input) => {
+    const args = Object.fromEntries(
+      Object.entries(input).map(([key, value]) => [snakeToCamel(key), value]),
+    );
+    if (!runDesktopLocalCommand(commandId, args)) {
+      throw new Error(`${commandId} is not available in this client`);
+    }
+    return JSON.stringify({ status: "done", commandId });
+  };
+}
+
+/**
+ * Desktop-local commands never reach the server's confirmation gate, so only Safe,
+ * non-dangerous ones run locally. Anything stricter goes to `executeCommand`, where the
+ * server refuses it rather than letting the agent skip a confirmation.
+ */
+function isUnconfirmedLocalCommand(cmd: Command): boolean {
+  return (
+    cmd.executionTarget === CommandExecutionTarget.DESKTOP_LOCAL &&
+    cmd.sensitivity === CommandSensitivity.SAFE &&
+    !cmd.dangerous
+  );
+}
+
 export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
   return commands.map((cmd) => ({
     definition: buildAiToolFromCommand(cmd),
-    handler: makeBackendToolHandler(cmd.id),
+    handler: isUnconfirmedLocalCommand(cmd)
+      ? makeDesktopLocalToolHandler(cmd.id)
+      : makeBackendToolHandler(cmd.id),
     options: buildAiToolRegistrationOptions(cmd),
   }));
 }
