@@ -67,10 +67,31 @@ while input: input = message_cache_sync_apply(await messageChanges(input))
 - A conversation is served from the cache only once a sync reached its end: a partial initial
   sync holds the oldest messages, which must not pass for the latest.
 
+## Offline start
+
+A user who signed in on this device before can open the app without a connection:
+
+- The session record (`src-tauri/src/offline_session.rs`) is kept in the OS keyring: which
+  account was signed in to which server, or that the user signed out. No token is stored; the
+  session stays in the webview's cookie. When the startup session check cannot reach the
+  server, the recorded account opens offline. When the server answers that the session is no
+  longer valid, the app goes to sign-in as before.
+- Snapshots (`message_cache/snapshot.rs`, schema v3) keep the last server answer of the
+  signed-in user, the workspace list, and each workspace's joined channels, DMs and members in
+  the same encrypted database. Each answer is saved; a query the server cannot be reached for
+  is answered from its snapshot (`src/features/offline/api/offlineSnapshot.ts`). Those queries
+  and the timeline run with TanStack Query's `offlineFirst` network mode, so they still try
+  (and fall back) while the OS reports no network.
+- While offline a banner says so and sending is off (typing still works). Writes fail at once
+  instead of waiting to be replayed: mutations run with the `always` network mode.
+- Offline mode re-checks the session every 15 seconds, when the OS reports the network back and
+  when the WebSocket connects; the first answer leaves offline mode and refetches everything,
+  or signs out if the session expired meanwhile.
+- An explicit sign-out records `signedOut`, so the next start lands on sign-in without asking
+  the server, even if the sign-out request never reached it. The encrypted cache stays.
+
 ## Not yet
 
-- A cold start with no connection still stops at the session check, and the sidebar lists come
-  from the server, so offline reading works once the app is open, not from a cold start.
 - Thread panes, pins, reactions and link previews still read from the server; the feed does not
   version reactions, pins or previews, so cached copies of those are as of the last sync.
 - On Linux the app's keyring backend is the kernel keyring (`keyring`'s `linux-native`), which

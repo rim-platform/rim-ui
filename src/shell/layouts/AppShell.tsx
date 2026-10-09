@@ -40,6 +40,8 @@ import { PinnedMessagesPanel } from "../../features/messages/components/PinnedMe
 import { SettingsPage } from "../../features/settings/components/SettingsPage";
 import { TitleBar } from "../components/TitleBar";
 import { ConnectionBanner } from "../../features/system/components/ConnectionBanner";
+import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
+import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
 import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
 import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
@@ -70,6 +72,7 @@ const TerminalPane = lazy(() =>
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
   const { isHydrating } = useSessionHydration();
+  useOfflineReconnect();
   usePluginPrincipalSync();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { capabilities } = useRuntime();
@@ -115,6 +118,7 @@ export function AppShell() {
   return (
     <div className="flex h-screen flex-col bg-rim-void text-rim-text">
       {capabilities.customTitleBar && <TitleBar />}
+      <OfflineBanner />
       <ConnectionBanner />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />

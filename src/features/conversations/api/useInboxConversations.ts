@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
+import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
 import type { ConversationSummaryPage } from "../types";
 
 const INBOX_CONVERSATIONS_QUERY = gql`
@@ -25,21 +26,24 @@ interface InboxConversationsResponse {
   inboxConversations: ConversationSummaryPage;
 }
 
+/** The sidebar's DMs. The desktop app keeps a copy for offline starts (offlineSnapshot.ts). */
 export function useInboxConversations(workspaceId?: string) {
   return useQuery({
     queryKey: queryKeys.conversations(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
-    queryFn: async () => {
-      const res = await graphqlClient.request<InboxConversationsResponse>(
-        INBOX_CONVERSATIONS_QUERY,
-        {
-          serverId: workspaceId!,
-          dir: "AFTER",
-          limit: 50,
-        },
-      );
-      return res.inboxConversations;
-    },
+    networkMode: "offlineFirst",
+    queryFn: () =>
+      withOfflineSnapshot("inbox", workspaceId!, async () => {
+        const res = await graphqlClient.request<InboxConversationsResponse>(
+          INBOX_CONVERSATIONS_QUERY,
+          {
+            serverId: workspaceId!,
+            dir: "AFTER",
+            limit: 50,
+          },
+        );
+        return res.inboxConversations;
+      }),
   });
 }

@@ -12,6 +12,8 @@
 //! - Deleted messages stay as tombstones without text or attachments.
 //! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
 //!   ([`search`], PR 10).
+//! - Last-known copies of the user, workspaces and sidebar lists let the app open offline
+//!   ([`snapshot`]).
 //!
 //! The webview performs the HTTP call (it holds the session cookie) and passes the answer
 //! in; see `sync.rs` for the loop and `commands.rs` for the Tauri surface.
@@ -20,6 +22,7 @@ pub(crate) mod commands;
 mod feed;
 mod key;
 mod search;
+mod snapshot;
 mod store;
 mod sync;
 

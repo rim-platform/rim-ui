@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { isServerUnreachable } from "../../messages/api/messageCache";
+import { loadSessionRecord } from "../../offline/api/offlineSession";
+import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useAuthStore } from "../state/useAuthStore";
 
 const ME_QUERY = gql`
@@ -23,6 +26,10 @@ interface MeResponse {
  * previously logged in and the cookie is still valid, this hook calls the
  * `me` query (which sends cookies automatically) to verify the session and
  * re-populate the auth store.
+ *
+ * On the desktop app the session record (`offlineSession.ts`) adds two cases: after an
+ * explicit sign-out the app stays on sign-in without asking the server, and when the server
+ * cannot be reached the recorded account opens offline from the local cache.
  */
 export function useSessionHydration() {
   const session = useAuthStore((s) => s.session);
@@ -41,12 +48,21 @@ export function useSessionHydration() {
 
     async function hydrate() {
       try {
-        const res = await graphqlClient.request<MeResponse>(ME_QUERY);
-        if (!cancelled && res.me?.id) {
-          setSession({ userId: res.me.id });
+        const record = await loadSessionRecord();
+        if (cancelled || record?.state === "signedOut") return;
+        try {
+          const res = await graphqlClient.request<MeResponse>(ME_QUERY);
+          if (!cancelled && res.me?.id) {
+            setSession({ userId: res.me.id });
+          }
+        } catch (err) {
+          // The server answered (401: cookie invalid or absent): stay logged out. It could not
+          // be reached: open the recorded account offline, if there is one.
+          if (!cancelled && record?.state === "signedIn" && isServerUnreachable(err)) {
+            useOfflineStore.getState().setOffline(true);
+            setSession({ userId: record.userId });
+          }
         }
-      } catch {
-        // 401 or network error — cookie invalid or absent, stay logged out.
       } finally {
         if (!cancelled) {
           setIsHydrating(false);

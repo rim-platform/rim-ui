@@ -1144,7 +1144,7 @@ fn an_existing_cache_is_backfilled_once_on_upgrade() {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     assert_eq!(hit_ids(&search(&store, "before")), vec!["m2", "m1"]);
     assert_index_consistent(&store);
 

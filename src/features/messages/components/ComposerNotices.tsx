@@ -1,4 +1,4 @@
-import { Clock, Timer } from "lucide-react";
+import { Clock, CloudOff, Timer } from "lucide-react";
 
 import { timedOutMessage } from "../../../core/graphql/errors";
 import { formatSlowModeInterval } from "../../conversations/api/useSlowMode";
@@ -14,6 +14,20 @@ export function TimedOutBanner({ until }: { until: string }) {
     >
       <Clock className="h-4 w-4 shrink-0" />
       <span>{timedOutMessage(until)}</span>
+    </div>
+  );
+}
+
+/** Above the composer while the app runs offline; typing works, sending waits for the server. */
+export function OfflineComposerNotice() {
+  return (
+    <div
+      role="status"
+      data-testid="offline-composer-notice"
+      className="mb-2 flex items-center gap-2 rounded-lg border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-sm text-rim-warm"
+    >
+      <CloudOff className="h-4 w-4 shrink-0" />
+      <span>You are offline. You can send again once the server is back.</span>
     </div>
   );
 }
