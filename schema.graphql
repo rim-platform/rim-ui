@@ -425,6 +425,12 @@ input ConfirmationProofInput {
 	outOfBand: OutOfBandProofInput
 }
 
+type Contact {
+	principalId: String!
+	relayUrls: [String!]!
+	addedAt: DateTime!
+}
+
 type Conversation {
 	id: ID!
 	serverId: ID!
@@ -469,6 +475,7 @@ type Conversation {
 	The conversation's current MLS group; null for plaintext and before the first Commit.
 	"""
 	mlsGroup: MlsGroup
+	predecessor: ConversationPredecessor
 }
 
 """
@@ -531,6 +538,11 @@ type ConversationPage {
 	pageInfo: PageInfo!
 }
 
+type ConversationPredecessor {
+	hostServerId: String!
+	conversationId: ID!
+}
+
 enum ConversationTypeEnum {
 	DIRECT
 	GROUP
@@ -582,6 +594,8 @@ input CreateConversationInput {
 	up for encryption. Defaults to false.
 	"""
 	encrypted: Boolean
+	remoteMembers: [RemoteMemberInput!]
+	predecessor: PredecessorInput
 }
 
 input CreateCustomEmojiInput {
@@ -794,6 +808,24 @@ enum DigestFrequency {
 	OFF
 	HOURLY
 	DAILY
+}
+
+type DmRequest {
+	id: ID!
+	fromPrincipalId: String!
+	card: SignedStatement!
+	hostServerId: String!
+	conversationId: ID!
+	heldItems: [RelayItem!]!
+	status: DmRequestStatus!
+	createdAt: DateTime!
+	expiresAt: DateTime!
+}
+
+enum DmRequestStatus {
+	PENDING
+	ACCEPTED
+	IGNORED
 }
 
 """
@@ -2151,6 +2183,15 @@ type Mutation {
 	them against its receipt before the moderators see them.
 	"""
 	reportEncryptedMessage(input: ReportEncryptedMessageInput!): Boolean!
+	addContact(principalId: String!, relayUrls: [String!]!): Contact!
+	removeContact(principalId: String!): Boolean!
+	acceptDmRequest(id: ID!): DmRequest!
+	ignoreDmRequest(id: ID!): DmRequest!
+	blockPrincipal(principalId: String!): Boolean!
+	unblockPrincipal(principalId: String!): Boolean!
+	reportDmRequest(id: ID!, reason: String!): Boolean!
+	ackRelayItems(upTo: ID!): Boolean!
+	leaveRelay: Boolean!
 }
 
 input MuteConversationInput {
@@ -2447,6 +2488,11 @@ enum PluginSourceKind {
 	GIT
 }
 
+input PredecessorInput {
+	hostServerId: String!
+	conversationId: ID!
+}
+
 enum PresenceStatus {
 	ONLINE
 	AWAY
@@ -2693,6 +2739,13 @@ type Query {
 	list for any other principal. At most 100 ids.
 	"""
 	principalDevices(principalIds: [String!]!): [PrincipalDevices!]!
+	relayInfo: RelayInfo!
+	remoteServer(origin: String!): RemoteServer!
+	remoteIdentity(principalId: String!, relayUrl: String): RemoteIdentity!
+	contacts: [Contact!]!
+	dmRequests(status: DmRequestStatus): [DmRequest!]!
+	relayItems(after: ID, limit: Int): RelayItemPage!
+	streamHeads(serverId: ID!, streams: [String!]!): [StreamHead!]!
 }
 
 type ReactionGroup {
@@ -2717,6 +2770,50 @@ enum RegistrationModeGql {
 	`RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited.
 	"""
 	OPEN
+}
+
+type RelayInfo {
+	serverId: String!
+	roles: [String!]!
+	directSpaceId: ID!
+}
+
+type RelayItem {
+	id: ID!
+	hostServerId: String!
+	workspaceId: ID!
+	envelope: SignedStatement!
+}
+
+type RelayItemPage {
+	items: [RelayItem!]!
+	hasMore: Boolean!
+}
+
+type RemoteIdentity {
+	principalId: String!
+	keyLog: [SignedStatement!]!
+	devices: [RemotePrincipalDevice!]!
+	card: SignedStatement
+	servedBy: String!
+}
+
+input RemoteMemberInput {
+	principalId: String!
+	relayUrls: [String!]!
+}
+
+type RemotePrincipalDevice {
+	deviceId: ID!
+	certificate: SignedStatement!
+	revocation: SignedStatement
+	mlsActive: Boolean!
+}
+
+type RemoteServer {
+	serverId: String!
+	origin: String!
+	discovery: String!
 }
 
 input ReplyToMessageInput {
@@ -3090,6 +3187,7 @@ input SignupWithKeyInput {
 	bootstrapToken: String
 	instanceInviteToken: String
 	workspaceInviteToken: String
+	proofOfWork: String
 }
 
 type SkillProfileGql {
@@ -3125,6 +3223,11 @@ type StartedDeviceLink {
 	expiresAt: DateTime!
 }
 
+type StreamHead {
+	stream: String!
+	seq: String!
+}
+
 input SubmitMlsCommitInput {
 	serverId: ID!
 	conversationId: ID!
@@ -3147,6 +3250,7 @@ type Subscription {
 	Returns events as JSON strings — the client parses the `type` field to determine the event kind.
 	"""
 	workspaceEvents(workspaceId: ID!): String!
+	relayStream(after: ID): String!
 }
 
 input TagIncidentMessageInput {
