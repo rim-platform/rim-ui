@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 const resume = vi.hoisted(() => vi.fn());
-const deviceKeys = vi.hoisted(() => ({ value: true }));
+const desktop = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../api/deviceLink", () => ({ resumePendingDeviceLinks: resume }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -19,7 +19,7 @@ function signIn(userId: string) {
 
 describe("useResumeDeviceLinks", () => {
   beforeEach(() => {
-    deviceKeys.value = true;
+    desktop.value = true;
     resume.mockReset();
     resume.mockResolvedValue(undefined);
     useAuthStore.getState().clearSession();
@@ -56,7 +56,7 @@ describe("useResumeDeviceLinks", () => {
   });
 
   it("does nothing without device keys", () => {
-    deviceKeys.value = false;
+    desktop.value = false;
     signIn("u-1");
     renderHook(() => useResumeDeviceLinks());
     expect(resume).not.toHaveBeenCalled();

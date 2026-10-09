@@ -81,9 +81,9 @@ export function KeyIdentitySettings() {
           identity={identity.data}
           principalId={identity.data.principalId}
           me={me}
-          canSign={capabilities.deviceKeys}
+          canSign={capabilities.identityKeys}
         />
-      ) : capabilities.deviceKeys ? (
+      ) : capabilities.identityKeys ? (
         <EnrollKeyIdentity me={me} />
       ) : (
         <p className="text-sm text-rim-text-muted">Key sign-in is set up from the desktop app.</p>

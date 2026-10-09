@@ -69,6 +69,7 @@ describe("PluginSettingsPage — web build (pluginHost: false)", () => {
         deviceLocalKeybinds: true,
         customTitleBar: false,
         deviceKeys: false,
+        identityKeys: false,
       },
     });
 
@@ -96,6 +97,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
         deviceLocalKeybinds: true,
         customTitleBar: true,
         deviceKeys: true,
+        identityKeys: true,
       },
     });
   });

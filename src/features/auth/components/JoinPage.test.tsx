@@ -80,10 +80,10 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
 }));
 
-const deviceKeys = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
@@ -409,12 +409,12 @@ describe("JoinPage — create account with a key (desktop)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;
-    deviceKeys.value = true;
+    desktop.value = true;
     mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
   });
 
   afterEach(() => {
-    deviceKeys.value = false;
+    desktop.value = false;
   });
 
   function renderAtPath(path: string) {

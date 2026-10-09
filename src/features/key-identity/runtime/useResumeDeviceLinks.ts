@@ -16,11 +16,11 @@ export function useResumeDeviceLinks() {
   const resumedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!capabilities.deviceKeys || !userId || offline || resumedFor.current === userId) return;
+    if (!capabilities.identityKeys || !userId || offline || resumedFor.current === userId) return;
     const controller = new AbortController();
     void resumePendingDeviceLinks({ signal: controller.signal }).then(() => {
       if (!controller.signal.aborted) resumedFor.current = userId;
     });
     return () => controller.abort();
-  }, [capabilities.deviceKeys, userId, offline]);
+  }, [capabilities.identityKeys, userId, offline]);
 }

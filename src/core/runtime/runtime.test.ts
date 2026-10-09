@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { getRuntimeCapabilities, detectPlatform, detectOs } from "./runtime";
+import { getRuntimeCapabilities, getDeviceKeyStore, detectPlatform, detectOs } from "./runtime";
 
 describe("getRuntimeCapabilities", () => {
   it("returns all capabilities enabled for desktop", () => {
@@ -9,6 +9,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.agent).toBe(true);
     expect(caps.customTitleBar).toBe(true);
     expect(caps.deviceKeys).toBe(true);
+    expect(caps.identityKeys).toBe(true);
   });
 
   it("returns limited capabilities for web", () => {
@@ -18,6 +19,14 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.agent).toBe(false);
     expect(caps.customTitleBar).toBe(false);
     expect(caps.deviceKeys).toBe(false);
+    expect(caps.identityKeys).toBe(false);
+  });
+
+  it("gives the web a device key only in a browser that can hold one", () => {
+    expect(getRuntimeCapabilities("web", "browser").deviceKeys).toBe(true);
+    expect(getRuntimeCapabilities("web", "browser").identityKeys).toBe(false);
+    expect(getRuntimeCapabilities("web", "checking").deviceKeys).toBe(false);
+    expect(getRuntimeCapabilities("web", "unsupported").deviceKeys).toBe(false);
   });
 
   it("returns all capabilities disabled for mobile", () => {
@@ -28,6 +37,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.deviceLocalKeybinds).toBe(false);
     expect(caps.customTitleBar).toBe(false);
     expect(caps.deviceKeys).toBe(false);
+    expect(caps.identityKeys).toBe(false);
   });
 
   it("web still allows device-local keybinds", () => {
@@ -38,6 +48,16 @@ describe("getRuntimeCapabilities", () => {
   it("desktop enables device-local keybinds", () => {
     const caps = getRuntimeCapabilities("desktop");
     expect(caps.deviceLocalKeybinds).toBe(true);
+  });
+});
+
+describe("getDeviceKeyStore", () => {
+  it("names where each platform keeps its device key", () => {
+    expect(getDeviceKeyStore("desktop")).toBe("keyring");
+    expect(getDeviceKeyStore("mobile")).toBe("none");
+    expect(getDeviceKeyStore("web")).toBe("checking");
+    expect(getDeviceKeyStore("web", true)).toBe("browser");
+    expect(getDeviceKeyStore("web", false)).toBe("unsupported");
   });
 });
 

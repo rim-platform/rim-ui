@@ -8,9 +8,24 @@ export type RuntimeCapabilities = {
   agent: boolean;
   deviceLocalKeybinds: boolean;
   customTitleBar: boolean;
-  /** Device keys in the OS keyring: key sign-in, enrollment and recovery (Stage 3). */
+  /**
+   * A device key of this app's own: key sign-in and linking this device with a code. On the
+   * web, only when the browser has WebCrypto Ed25519.
+   */
   deviceKeys: boolean;
+  /**
+   * The identity key in the OS keyring: enrollment, key-only signup, recovery and linking other
+   * devices. Desktop only.
+   */
+  identityKeys: boolean;
 };
+
+/**
+ * Where this app keeps its device key: the OS keyring (desktop), the browser (web, with
+ * WebCrypto Ed25519), or nowhere. `checking` while the browser is probed, `unsupported` when it
+ * lacks Ed25519 or IndexedDB.
+ */
+export type DeviceKeyStore = "keyring" | "browser" | "checking" | "unsupported" | "none";
 
 export function detectPlatform(): AppPlatform {
   if ("__TAURI_INTERNALS__" in window) return "desktop";
@@ -26,7 +41,18 @@ export function detectOs(): OsType {
   return "unknown";
 }
 
-export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabilities {
+/** Where `platform` keeps its device key; `browserKeys` is the web probe's answer, if known. */
+export function getDeviceKeyStore(platform: AppPlatform, browserKeys?: boolean): DeviceKeyStore {
+  if (platform === "desktop") return "keyring";
+  if (platform !== "web") return "none";
+  if (browserKeys === undefined) return "checking";
+  return browserKeys ? "browser" : "unsupported";
+}
+
+export function getRuntimeCapabilities(
+  platform: AppPlatform,
+  deviceKeyStore: DeviceKeyStore = getDeviceKeyStore(platform),
+): RuntimeCapabilities {
   if (platform === "desktop") {
     return {
       dockedThreadPane: true,
@@ -35,6 +61,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       deviceLocalKeybinds: true,
       customTitleBar: true,
       deviceKeys: true,
+      identityKeys: true,
     };
   }
 
@@ -45,7 +72,8 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       agent: false,
       deviceLocalKeybinds: true,
       customTitleBar: false,
-      deviceKeys: false,
+      deviceKeys: deviceKeyStore === "browser",
+      identityKeys: false,
     };
   }
 
@@ -56,5 +84,6 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
     deviceLocalKeybinds: false,
     customTitleBar: false,
     deviceKeys: false,
+    identityKeys: false,
   };
 }

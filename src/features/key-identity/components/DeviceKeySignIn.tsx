@@ -17,6 +17,7 @@ import {
   signInWithDeviceKey,
   type LocalKeyAccount,
 } from "../api/keyIdentity";
+import { BrowserKeyNotice } from "./BrowserKeyNotice";
 
 const inputClass =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
@@ -27,10 +28,12 @@ function accountLabel(account: LocalKeyAccount): string {
 
 /**
  * "Sign in with this device" on the sign-in screen, for each account on this server this
- * computer holds a key for. Renders nothing in the web app or without such keys.
+ * computer, or this browser once linked, holds a key for. Renders nothing without such keys.
  */
 export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => void }) {
-  const { capabilities } = useRuntime();
+  const { capabilities, platform } = useRuntime();
+  const inBrowser = platform === "web";
+  const here = inBrowser ? "this browser" : "this computer";
   const qc = useQueryClient();
   const endpoint = getGraphqlEndpoint();
   const accounts = useQuery({
@@ -58,7 +61,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
     } catch (err) {
       if (await forgetKeysTheServerNeverSaw(account).catch(() => false)) {
         setNotice(
-          `The sign-up of ${accountLabel(account)} never completed, so its keys were removed from this computer. Create the account again.`,
+          `The sign-up of ${accountLabel(account)} never completed, so its keys were removed from ${here}. Create the account again.`,
         );
         await qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(endpoint) });
         return;
@@ -117,13 +120,14 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
                   size="sm"
                   onClick={() => void forget(account.principalId)}
                 >
-                  Remove this device&apos;s keys from this computer
+                  Remove this device&apos;s keys from {here}
                 </Button>
               )}
             </div>
           )}
         </div>
       ))}
+      {inBrowser && <BrowserKeyNotice />}
     </div>
   );
 }
@@ -136,7 +140,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 export function RecoverAccount({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();
   const [open, setOpen] = useState(false);
-  if (!capabilities.deviceKeys) return null;
+  if (!capabilities.identityKeys) return null;
   return open ? (
     <RecoverAccountForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
   ) : (

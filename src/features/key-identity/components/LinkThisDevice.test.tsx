@@ -9,7 +9,11 @@ import type { LinkNewDeviceOptions } from "../api/deviceLink";
 
 const api = vi.hoisted(() => ({ linkNewDevice: vi.fn() }));
 const keys = vi.hoisted(() => ({ defaultDeviceName: vi.fn() }));
-const deviceKeys = vi.hoisted(() => ({ value: true }));
+const runtime = vi.hoisted(() => ({
+  platform: "desktop",
+  deviceKeyStore: "keyring",
+  capabilities: { deviceKeys: true },
+}));
 
 vi.mock("../api/deviceLink", async () => {
   const actual = await vi.importActual<typeof import("../api/deviceLink")>("../api/deviceLink");
@@ -20,7 +24,7 @@ vi.mock("../api/keyIdentity", async () => {
   return { ...actual, ...keys };
 });
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => runtime,
 }));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
@@ -46,7 +50,11 @@ async function openAndSubmit() {
 
 describe("LinkThisDevice", () => {
   beforeEach(() => {
-    deviceKeys.value = true;
+    Object.assign(runtime, {
+      platform: "desktop",
+      deviceKeyStore: "keyring",
+      capabilities: { deviceKeys: true },
+    });
     api.linkNewDevice.mockReset();
     keys.defaultDeviceName.mockResolvedValue("Laptop");
   });
@@ -110,9 +118,42 @@ describe("LinkThisDevice", () => {
     await waitFor(() => expect(screen.getByLabelText(/link code/i)).toHaveValue(""));
   });
 
-  it("renders nothing in the web app", () => {
-    deviceKeys.value = false;
+  it("renders nothing without device keys", () => {
+    Object.assign(runtime, { deviceKeyStore: "none", capabilities: { deviceKeys: false } });
     const { container } = wrap(<LinkThisDevice onSuccess={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("links a browser, saying its keys are weaker and that a reload abandons the link", async () => {
+    Object.assign(runtime, { platform: "web", deviceKeyStore: "browser" });
+    api.linkNewDevice.mockImplementation(
+      (_code: string, _name: string, options: LinkNewDeviceOptions) => {
+        options.onOffered?.({ linkId: "l", fingerprint: "QSFX-VHMA" });
+        return new Promise<string>(() => undefined);
+      },
+    );
+    wrap(<LinkThisDevice onSuccess={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /link this browser with its code/i }));
+    expect(screen.getByText(/keys kept in a browser are weaker/i)).toBeInTheDocument();
+    expect(screen.getByText(/this browser gets its own key/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await userEvent.click(screen.getByLabelText(/link code/i));
+    await userEvent.paste(CODE);
+    await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
+    expect(await screen.findByLabelText("Fingerprint")).toHaveTextContent("QSFX-VHMA");
+    expect(screen.getByText(/reloading the page abandons the link/i)).toBeInTheDocument();
+  });
+
+  it("says why a browser without Ed25519 cannot be linked", () => {
+    Object.assign(runtime, {
+      platform: "web",
+      deviceKeyStore: "unsupported",
+      capabilities: { deviceKeys: false },
+    });
+    wrap(<LinkThisDevice onSuccess={vi.fn()} />);
+    expect(screen.getByText(/this browser cannot be linked/i)).toHaveTextContent(/Ed25519/);
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });
