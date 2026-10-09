@@ -24,6 +24,24 @@ npm run tauri dev
 
 Requires the RIM backend running at `localhost:8080`. See `../rim-server/README.md`.
 
+### Linux build dependencies
+
+Tauri's WebKitGTK stack, OpenSSL for the encrypted message cache, and libdbus for the desktop
+keyring. On Debian or Ubuntu:
+
+```sh
+sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libdbus-1-dev pkg-config \
+  libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+```
+
+On Fedora: `webkit2gtk4.1-devel openssl-devel dbus-devel pkgconf-pkg-config libappindicator-gtk3-devel librsvg2-devel libxdo-devel`.
+
+At run time the app keeps its secrets (the message cache key, history archive keys, the offline
+session record, AI provider keys) in the desktop keyring service, the Secret Service provided by
+GNOME Keyring, KWallet or KeePassXC. Without one running in the session, saving an AI key fails
+and the local message cache stays off, each with an error that says so, and the app cannot open
+offline.
+
 ## Commands
 
 ```sh

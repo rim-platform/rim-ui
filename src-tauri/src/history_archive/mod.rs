@@ -132,11 +132,8 @@ struct KeyringKeyStore;
 
 impl KeyringKeyStore {
     fn entry(archive_id: &str) -> Result<keyring::Entry, ArchiveError> {
-        keyring::Entry::new(
-            crate::agent_proxy::KEYRING_SERVICE,
-            &format!("history-archive-key-v1:{archive_id}"),
-        )
-        .map_err(|e| ArchiveError::Key(format!("keyring init failed: {e}")))
+        crate::secret_store::entry(&format!("history-archive-key-v1:{archive_id}"))
+            .map_err(|e| ArchiveError::Key(format!("keyring init failed: {e}")))
     }
 }
 

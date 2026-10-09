@@ -7,8 +7,8 @@
 //! Any markdown-render escape, malicious browser extension, dev-tools-attached
 //! attacker, or XSS-via-plugin-panel had a clear path to exfiltrate the key.
 //!
-//! After (Option B): API keys live exclusively in the OS keyring under the
-//! `com.rim.rim-ui` service, namespaced as `provider:{provider}`. The webview
+//! After (Option B): API keys live exclusively in the OS keyring (see
+//! `secret_store`), namespaced as `provider:{provider}`. The webview
 //! never sees the raw key bytes — it calls `set_provider_key` to store and the
 //! proxy reads inline from keyring on every request. The CSP block + IPC
 //! channel close C2; keyring ownership closes the JS-heap exposure window.
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use zeroize::Zeroizing;
 
-pub(crate) const KEYRING_SERVICE: &str = "com.rim.rim-ui";
+use crate::secret_store;
 
 const ANTHROPIC_MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODELS_URL: &str = "https://api.anthropic.com/v1/models";
@@ -176,7 +176,7 @@ impl serde::Serialize for ProxyError {
 /// get an actionable error message.
 fn keyring_get(provider: Provider) -> Result<Zeroizing<String>, ProxyError> {
     let user = format!("provider:{}", provider.as_str());
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &user)
+    let entry = secret_store::entry(&user)
         .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
     let key = Zeroizing::new(entry.get_password().map_err(|e| match e {
         keyring::Error::NoEntry => {
@@ -195,10 +195,13 @@ fn keyring_get(provider: Provider) -> Result<Zeroizing<String>, ProxyError> {
 }
 
 /// Store or replace the API key for a provider in the OS keyring.
-#[tauri::command]
+///
+/// This and the other sync keyring commands run off the main thread (`async`): on Linux a
+/// keyring call is a D-Bus round trip and can wait on the keyring's unlock prompt.
+#[tauri::command(async)]
 pub fn set_provider_key(provider: Provider, api_key: Zeroizing<String>) -> Result<(), ProxyError> {
     let user = format!("provider:{}", provider.as_str());
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &user)
+    let entry = secret_store::entry(&user)
         .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
     entry
         .set_password(api_key.as_str())
@@ -209,10 +212,10 @@ pub fn set_provider_key(provider: Provider, api_key: Zeroizing<String>) -> Resul
 
 /// Remove the API key for a provider from the OS keyring. Idempotent — no
 /// error if the entry was already absent.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn clear_provider_key(provider: Provider) -> Result<(), ProxyError> {
     let user = format!("provider:{}", provider.as_str());
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &user)
+    let entry = secret_store::entry(&user)
         .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
     match entry.delete_credential() {
         Ok(()) => {}
@@ -225,10 +228,10 @@ pub fn clear_provider_key(provider: Provider) -> Result<(), ProxyError> {
 
 /// Check whether an API key is present in the OS keyring for a provider.
 /// Does NOT return the key.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn is_provider_key_configured(provider: Provider) -> Result<bool, ProxyError> {
     let user = format!("provider:{}", provider.as_str());
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &user)
+    let entry = secret_store::entry(&user)
         .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
     match entry.get_password() {
         Ok(_) => Ok(true),
@@ -252,7 +255,7 @@ pub async fn migrate_provider_keys(app: tauri::AppHandle) -> Result<(), ProxyErr
 
     for provider in &providers {
         let user = format!("provider:{}", provider.as_str());
-        match keyring::Entry::new(KEYRING_SERVICE, &user).and_then(|e| e.get_password()) {
+        match secret_store::entry(&user).and_then(|e| e.get_password()) {
             Ok(_) => {
                 // Key already in keyring — migration done for this provider.
             }

@@ -1,7 +1,9 @@
 mod agent_proxy;
 mod history_archive;
 mod message_cache;
+mod offline_session;
 mod plugin_host;
+mod secret_store;
 mod terminal;
 
 use tauri::Manager;
@@ -17,15 +19,15 @@ fn greet(name: &str) -> String {
 /// On first run a cryptographically random 32-byte key is generated, stored in
 /// the platform keystore (macOS Keychain / Windows Credential Manager / Linux
 /// Secret Service) and returned as a base64 string.  Subsequent calls retrieve
-/// the existing key.
-#[tauri::command]
+/// the existing key. Runs off the main thread, since a keyring call can block (see
+/// `secret_store`).
+#[tauri::command(async)]
 fn get_stronghold_password() -> Result<String, String> {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
     const USER: &str = "stronghold-master-key";
 
-    let entry = keyring::Entry::new(agent_proxy::KEYRING_SERVICE, USER)
-        .map_err(|e| format!("keyring init failed: {e}"))?;
+    let entry = secret_store::entry(USER).map_err(|e| format!("keyring init failed: {e}"))?;
 
     // Try to retrieve an existing password.
     match entry.get_password() {
@@ -133,6 +135,7 @@ pub fn run() {
 
             app.manage(message_cache::init(&app_data_dir));
             app.manage(history_archive::init(&app_data_dir));
+            app.manage(offline_session::init());
 
             let terminal_state = terminal::init();
             app.manage(terminal_state);
@@ -191,6 +194,10 @@ pub fn run() {
             history_archive::commands::history_archive_disconnect,
             history_archive::commands::history_archive_export,
             history_archive::commands::history_archive_restore,
+            message_cache::commands::message_cache_snapshot_put,
+            message_cache::commands::message_cache_snapshot_get,
+            offline_session::offline_session_load,
+            offline_session::offline_session_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

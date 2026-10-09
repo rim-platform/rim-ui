@@ -5,6 +5,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import type { ChannelListFilter } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
+import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
 import type { ConversationSummaryPage } from "../types";
 
 const ChannelsDocument = gql`
@@ -51,12 +52,19 @@ export function useChannels(workspaceId?: string) {
   });
 }
 
-/** Channels the viewer has joined, archived ones included. Backs the sidebar. */
+/**
+ * Channels the viewer has joined, archived ones included. Backs the sidebar, so the desktop app
+ * keeps a copy and shows it when the server cannot be reached (offlineSnapshot.ts).
+ */
 export function useJoinedChannels(workspaceId?: string) {
   return useQuery({
     queryKey: queryKeys.joinedChannels(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
-    queryFn: () => fetchChannels(workspaceId!, JOINED_FILTER),
+    networkMode: "offlineFirst",
+    queryFn: () =>
+      withOfflineSnapshot("joinedChannels", workspaceId!, () =>
+        fetchChannels(workspaceId!, JOINED_FILTER),
+      ),
   });
 }

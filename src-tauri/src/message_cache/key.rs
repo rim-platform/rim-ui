@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 
 use super::CacheError;
 
-/// Keyring user name of the cache key (service is the app's `KEYRING_SERVICE`).
+/// Keyring user name of the cache key (service is `secret_store::SERVICE`).
 const KEYRING_USER: &str = "message-cache-key-v1";
 
 /// A 256-bit SQLCipher key. Zeroed on drop.
@@ -38,7 +38,7 @@ pub(crate) struct KeyringKeySource;
 
 impl KeySource for KeyringKeySource {
     fn load_or_create(&self) -> Result<CacheKey, CacheError> {
-        let entry = keyring::Entry::new(crate::agent_proxy::KEYRING_SERVICE, KEYRING_USER)
+        let entry = crate::secret_store::entry(KEYRING_USER)
             .map_err(|e| CacheError::Key(format!("keyring init failed: {e}")))?;
 
         match entry.get_password() {

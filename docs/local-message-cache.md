@@ -10,10 +10,19 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   builds a vendored OpenSSL). Files live in `<app data>/message-cache/`, one per account, named
   after a hash of (GraphQL endpoint, user id). The account is also written inside the file, so a
   database is never served to another account.
-- One random 256-bit key per installation, stored in the OS keyring (`message-cache-key-v1`).
-  All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the key is
-  lost, the unreadable files are deleted and the cache refills from the server. If the keyring
-  cannot be reached, every cache call fails softly and the timeline reads from the server.
+- One random 256-bit key per installation, stored in the OS keyring (`message-cache-key-v1`,
+  through `src-tauri/src/secret_store.rs`; on Linux that is the desktop keyring service, see
+  below). All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the
+  key is lost, the unreadable files are deleted and the cache refills from the server. If the
+  keyring cannot be reached, every cache call fails softly, the timeline reads from the server,
+  and the app says once per run that the local cache is off and why. The failure is kept until
+  the app restarts, so a locked keyring's unlock prompt, once dismissed, is not shown again on
+  every cache call.
+- On Linux the keyring is the Secret Service (GNOME Keyring, KWallet, KeePassXC) over D-Bus.
+  With none running, or with the keyring locked, the cache stays off with an error that says
+  so; nothing falls back to a store that would not survive a reboot. Builds before this one used
+  the kernel keyring, which a reboot clears; a key still there (updated without a reboot in
+  between) moves to the Secret Service on first read.
 - Signing out keeps the account's database on the device (it is encrypted, and history on the
   user's own device is the point of Stage 2); signing back in to the same account reuses it. A
   sync still in flight when the signed-in account changes is discarded before it is applied.
@@ -80,16 +89,37 @@ while input: input = message_cache_sync_apply(await messageChanges(input))
 - A conversation is served from the cache only once a sync reached its end: a partial initial
   sync holds the oldest messages, which must not pass for the latest.
 
+## Offline start
+
+A user who signed in on this device before can open the app without a connection:
+
+- The session record (`src-tauri/src/offline_session.rs`) is kept in the OS keyring (through
+  `secret_store.rs`, like the cache key): which
+  account was signed in to which server, or that the user signed out. No token is stored; the
+  session stays in the webview's cookie. When the startup session check cannot reach the
+  server, the recorded account opens offline. When the server answers that the session is no
+  longer valid, the app goes to sign-in as before.
+- Snapshots (`message_cache/snapshot.rs`, schema v4) keep the last server answer of the
+  signed-in user, the workspace list, and each workspace's joined channels, DMs and members in
+  the same encrypted database. Each answer is saved; a query the server cannot be reached for
+  is answered from its snapshot (`src/features/offline/api/offlineSnapshot.ts`). Those queries
+  and the timeline run with TanStack Query's `offlineFirst` network mode, so they still try
+  (and fall back) while the OS reports no network.
+- While offline a banner says so and sending is off (typing still works). Writes fail at once
+  instead of waiting to be replayed: mutations run with the `always` network mode.
+- Offline mode re-checks the session on a timer that starts at 15 seconds and doubles after each
+  miss up to two minutes (skipped while the OS reports no network or the window is hidden), and
+  right away when the network, the window or the WebSocket comes back. The first answer leaves
+  offline mode and refetches everything, or signs out when the server refuses the session
+  (`UNAUTHENTICATED`, 401, 403); any other error keeps the app offline.
+- A list served from its snapshot while the app thought it was online (a 5xx, a dropped
+  network) switches the app to offline mode, so saved copies never pass for live ones.
+- An explicit sign-out records `signedOut`, so the next start lands on sign-in without asking
+  the server, even if the sign-out request never reached it. The encrypted cache stays.
+
 ## Not yet
 
-- A cold start with no connection still stops at the session check, and the sidebar lists come
-  from the server, so offline reading works once the app is open, not from a cold start.
 - Thread panes, pins, reactions and link previews still read from the server; the feed does not
   version reactions, pins or previews, so cached copies of those are as of the last sync.
-- On Linux the app's keyring backend is the kernel keyring (`keyring`'s `linux-native`), which
-  does not survive a reboot, so the cache key is new after every reboot and the cache refills
-  from the server (and the history archive, locked on this device, asks for its passphrase in
-  Settings > History). Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
-  that for this key and the agent provider keys alike, and needs libdbus at build time.
 - Local search covers the conversations the cache follows (opened on this device, or restored
   from the history archive), not every conversation of the workspace.

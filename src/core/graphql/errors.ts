@@ -57,6 +57,21 @@ export function graphqlErrorExtension(err: unknown, key: string): unknown {
   return firstGraphQLError(err)?.extensions?.[key];
 }
 
+/** The request carried no valid session (an absent, expired or revoked cookie). */
+export const UNAUTHENTICATED = "UNAUTHENTICATED";
+
+/**
+ * Whether the server answered that the session is not valid: an `UNAUTHENTICATED` error (the
+ * server sends it with HTTP 200) or a 401/403 from whatever sits in front of it. Other answers,
+ * such as an internal error while the database is down, say nothing about the session.
+ */
+export function isSessionRefused(err: unknown): boolean {
+  if (graphqlErrorCode(err) === UNAUTHENTICATED) return true;
+  if (typeof err !== "object" || err === null) return false;
+  const status = (err as { response?: { status?: unknown } }).response?.status;
+  return status === 401 || status === 403;
+}
+
 /** The end of the viewer's timeout carried by a `TIMED_OUT` error, else `undefined`. */
 export function timedOutUntil(err: unknown): string | undefined {
   if (graphqlErrorCode(err) !== TIMED_OUT) return undefined;
