@@ -16,6 +16,7 @@ import {
   exportArchive,
   getArchiveStatus,
   inspectArchiveFolder,
+  passphraseLength,
   pickArchiveFolder,
   restoreArchive,
   unlockArchive,
@@ -34,6 +35,8 @@ function errorText(error: SafeInvokeError): string {
         return "That passphrase does not open this archive.";
       case ArchiveErrorCode.UNAVAILABLE:
         return "The archive folder cannot be reached. Is the drive connected?";
+      case ArchiveErrorCode.NOT_WRITABLE:
+        return "RIM cannot write into this folder. Choose a folder you can write to.";
       case ArchiveErrorCode.MISMATCH:
         return "The folder now holds a different archive. Stop backing up here and choose it again.";
     }
@@ -61,6 +64,8 @@ export function HistoryArchiveSettings() {
     },
   });
   const setStatus = (next: ArchiveStatus) => qc.setQueryData(statusKey, next);
+  // What the restore after connecting found, shown once the panel switches to the archive.
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   return (
     <div className="space-y-6">
@@ -84,18 +89,30 @@ export function HistoryArchiveSettings() {
       ) : !status ? (
         <p className="text-sm text-rim-text-muted">Loading...</p>
       ) : !status.configured ? (
-        <SetupArchive account={account} onDone={setStatus} />
+        <SetupArchive
+          account={account}
+          onDone={(next, restored) => {
+            setNotice(restored);
+            setStatus(next);
+          }}
+        />
       ) : !status.unlocked ? (
         <UnlockArchive account={account} status={status} onChange={setStatus} />
       ) : (
         <ConnectedArchive
           account={account}
           status={status}
+          notice={notice}
           onDisconnected={() => void qc.invalidateQueries({ queryKey: statusKey })}
         />
       )}
     </div>
   );
+}
+
+interface Notice {
+  message: string | null;
+  error: string | null;
 }
 
 /** After a restore the cached timelines are re-read, and the server is asked what is newer. */
@@ -113,7 +130,7 @@ function SetupArchive({
   onDone,
 }: {
   account: CacheAccount;
-  onDone: (status: ArchiveStatus) => void;
+  onDone: (status: ArchiveStatus, restored: Notice | null) => void;
 }) {
   const [folder, setFolder] = useState<string | null>(null);
   const [info, setInfo] = useState<FolderInfo | null>(null);
@@ -137,7 +154,8 @@ function SetupArchive({
   }
 
   const joining = info?.hasArchive ?? false;
-  const tooShort = passphrase.length < MIN_PASSPHRASE_LENGTH;
+  const length = passphraseLength(passphrase);
+  const tooShort = length < MIN_PASSPHRASE_LENGTH;
   const mismatch = !joining && confirm !== passphrase;
   const canSubmit =
     folder !== null && passphrase.length > 0 && (joining || (!tooShort && !mismatch));
@@ -151,18 +169,20 @@ function SetupArchive({
       setBusy(false);
       return setError(errorText(connected.error));
     }
+    let restored: Notice | null = null;
     if (!connected.value.created) {
-      const restored = await restoreArchive(account);
-      if (restored.ok) {
+      const result = await restoreArchive(account);
+      if (result.ok) {
         afterRestore();
+        restored = { message: describeRestore(result.value), error: null };
       } else {
-        setError(errorText(restored.error));
+        restored = { message: null, error: errorText(result.error) };
       }
     }
     // The first backup of this device's history starts right away, not at the next sync.
     void exportArchive(account);
     setBusy(false);
-    onDone(connected.value.status);
+    onDone(connected.value.status, restored);
   }
 
   return (
@@ -219,7 +239,7 @@ function SetupArchive({
           )}
           {!joining && passphrase.length > 0 && tooShort && (
             <p className="text-xs text-rim-text-faint">
-              {MIN_PASSPHRASE_LENGTH - passphrase.length} more characters needed.
+              {MIN_PASSPHRASE_LENGTH - length} more characters needed.
             </p>
           )}
           {!joining && !tooShort && confirm.length > 0 && mismatch && (
@@ -300,15 +320,18 @@ function UnlockArchive({
 function ConnectedArchive({
   account,
   status,
+  notice,
   onDisconnected,
 }: {
   account: CacheAccount;
   status: ArchiveStatus;
+  /** The outcome of the restore that ran when this device joined the archive. */
+  notice: Notice | null;
   onDisconnected: () => void;
 }) {
   const [busy, setBusy] = useState<"export" | "restore" | "disconnect" | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(notice?.message ?? null);
+  const [error, setError] = useState<string | null>(notice?.error ?? null);
   const afterRestore = useAfterRestore();
 
   async function run(kind: "export" | "restore" | "disconnect") {

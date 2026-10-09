@@ -828,6 +828,61 @@ fn restore_is_idempotent() {
 }
 
 #[test]
+fn restored_history_moves_with_the_device_to_a_new_archive() {
+    let first = tempfile::tempdir().unwrap();
+    let old = Device::new("alice");
+    old.connect(first.path());
+    let mut feed = MockFeed::new(1000);
+    feed.send_many("c1", 4);
+    old.track("c1");
+    old.sync(&mut feed);
+    old.export();
+
+    let new = Device::new("alice");
+    new.connect(first.path());
+    new.restore();
+    // Not written back into the archive it came from.
+    assert_eq!(new.export(), super::ExportReport::default());
+
+    // The device moves to a new folder: its restored history goes there too.
+    let second = tempfile::tempdir().unwrap();
+    new.archive.disconnect(&account("alice")).unwrap();
+    assert!(new.connect(second.path()));
+    let moved = new.export();
+    assert_eq!(moved.messages, 4);
+    assert_eq!(moved.conversations, 1);
+
+    let third = Device::new("alice");
+    third.connect(second.path());
+    assert_eq!(third.restore().messages, 4);
+    assert_eq!(third.timeline("c1"), old.timeline("c1"));
+}
+
+#[test]
+fn a_folder_this_device_cannot_write_is_refused() {
+    let folder = tempfile::tempdir().unwrap();
+    let mut perms = std::fs::metadata(folder.path()).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(folder.path(), perms.clone()).unwrap();
+    // Root writes into read-only folders anyway; there is nothing to check then.
+    if std::fs::File::create(folder.path().join("probe")).is_err() {
+        let device = Device::new("alice");
+        let path = folder.path().to_str().unwrap();
+        assert!(matches!(
+            HistoryArchiveState::inspect_folder(path),
+            Err(ArchiveError::NotWritable(_))
+        ));
+        assert!(matches!(
+            device.archive.connect(&account("alice"), path, PASSPHRASE),
+            Err(ArchiveError::NotWritable(_))
+        ));
+    }
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    std::fs::set_permissions(folder.path(), perms).unwrap();
+}
+
+#[test]
 fn folders_are_per_account_and_device_ids_are_per_installation() {
     let device = Device::new("alice");
     let id = device.device_id();

@@ -48,12 +48,21 @@ export interface RestoreReport {
 /** Shortest passphrase the archive accepts (`MIN_PASSPHRASE_CHARS` on the Rust side). */
 export const MIN_PASSPHRASE_LENGTH = 12;
 
+/**
+ * A passphrase's length as the Rust side counts it: Unicode code points, not UTF-16 units, so
+ * an emoji counts once here too.
+ */
+export function passphraseLength(passphrase: string): number {
+  return [...passphrase].length;
+}
+
 /** Error codes the archive commands return in `backend_error.code`. */
 export const ArchiveErrorCode = {
   NOT_CONFIGURED: "ARCHIVE_NOT_CONFIGURED",
   LOCKED: "ARCHIVE_LOCKED",
   WRONG_PASSPHRASE: "ARCHIVE_WRONG_PASSPHRASE",
   UNAVAILABLE: "ARCHIVE_UNAVAILABLE",
+  NOT_WRITABLE: "ARCHIVE_NOT_WRITABLE",
   MISMATCH: "ARCHIVE_MISMATCH",
 } as const;
 

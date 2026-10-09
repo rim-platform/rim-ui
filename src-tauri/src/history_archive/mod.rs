@@ -45,6 +45,8 @@ pub(crate) enum ArchiveError {
     Unavailable(String),
     #[error("archive io error: {0}")]
     Io(String),
+    #[error("cannot write into the archive folder: {0}")]
+    NotWritable(String),
     #[error("archive format: {0}")]
     Format(String),
     #[error("archive file failed authentication: wrong key, or the file was changed")]
@@ -76,6 +78,7 @@ impl ArchiveError {
         match self {
             Self::Unavailable(_) => "ARCHIVE_UNAVAILABLE",
             Self::Io(_) => "ARCHIVE_IO",
+            Self::NotWritable(_) => "ARCHIVE_NOT_WRITABLE",
             Self::Format(_) | Self::Unauthentic | Self::Crypto(_) => "ARCHIVE_FORMAT",
             Self::WrongPassphrase => "ARCHIVE_WRONG_PASSPHRASE",
             Self::Exists => "ARCHIVE_EXISTS",
@@ -131,11 +134,9 @@ impl KeyStore for KeyringKeyStore {
                         .decode(stored)
                         .map_err(|_| ArchiveError::Key("stored key is not base64".into()))?,
                 );
-                let key: [u8; 32] = bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| ArchiveError::Key("stored key has the wrong length".into()))?;
-                Ok(Some(ArchiveKey::from_bytes(key)))
+                let key = ArchiveKey::from_slice(&bytes)
+                    .ok_or_else(|| ArchiveError::Key("stored key has the wrong length".into()))?;
+                Ok(Some(key))
             }
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(ArchiveError::Key(format!("keyring read failed: {e}"))),
@@ -323,9 +324,11 @@ impl HistoryArchiveState {
     }
 
     /// Whether a folder already holds an archive, so the UI can ask for a new passphrase or
-    /// for the existing one.
+    /// for the existing one. A folder this device cannot write into is refused here, before
+    /// the user types a passphrase for it.
     pub(crate) fn inspect_folder(folder: &str) -> Result<FolderInfo, ArchiveError> {
         let provider = LocalFolderProvider::new(folder)?;
+        provider.check_writable()?;
         let manifest = Archive::inspect(&provider)?;
         Ok(FolderInfo {
             has_archive: manifest.is_some(),
@@ -347,6 +350,7 @@ impl HistoryArchiveState {
             path: folder.to_string(),
         };
         let provider = provider_config.open()?;
+        provider.check_writable()?;
         let (archive, created) = if Archive::inspect(provider.as_ref())?.is_some() {
             (Archive::unlock(provider, passphrase)?, false)
         } else {
@@ -384,6 +388,7 @@ impl HistoryArchiveState {
         account: &AccountId,
         passphrase: &str,
     ) -> Result<ArchiveStatus, ArchiveError> {
+        account.validate()?;
         let config = self.config(account)?.ok_or(ArchiveError::NotConfigured)?;
         let archive = Archive::unlock(config.provider.open()?, passphrase)?;
         if archive.id() != config.archive_id {
@@ -492,7 +497,7 @@ impl HistoryArchiveState {
         let counts = store
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .restore_archive(&plan)?;
+            .restore_archive(archive.id(), &plan)?;
         Ok(RestoreReport {
             devices: contents.devices,
             segments_read: contents.segments.len(),

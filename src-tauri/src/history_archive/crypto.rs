@@ -34,8 +34,20 @@ impl ArchiveKey {
         Ok(Self(bytes))
     }
 
+    #[cfg(test)]
     pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(Zeroizing::new(bytes))
+    }
+
+    /// The key in `bytes`, copied straight into zeroed-on-drop memory (no stray copy on the
+    /// stack). `None` unless `bytes` is 32 bytes long.
+    pub(crate) fn from_slice(bytes: &[u8]) -> Option<Self> {
+        let mut key = Zeroizing::new([0u8; 32]);
+        if bytes.len() != key.len() {
+            return None;
+        }
+        key.copy_from_slice(bytes);
+        Some(Self(key))
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {

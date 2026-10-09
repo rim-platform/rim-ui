@@ -163,10 +163,9 @@ impl Manifest {
                 &b64(wrapped)?,
             ) {
                 Ok(bytes) => {
-                    let key: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
+                    return ArchiveKey::from_slice(&bytes).ok_or_else(|| {
                         ArchiveError::Format("wrapped key has the wrong length".into())
-                    })?;
-                    return Ok(ArchiveKey::from_bytes(key));
+                    });
                 }
                 Err(ArchiveError::Unauthentic) => continue,
                 Err(e) => return Err(e),

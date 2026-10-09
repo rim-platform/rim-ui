@@ -26,6 +26,11 @@ pub(crate) trait ArchiveProvider: Send + Sync {
     /// The names of the directories directly inside `dir`; empty when `dir` does not exist.
     fn list_dirs(&self, dir: &str) -> Result<Vec<String>, ArchiveError>;
 
+    /// Fail with [`ArchiveError::NotWritable`] unless this device can write here. Joining an
+    /// archive writes nothing, so without this check a read-only folder would take the
+    /// passphrase and then fail every backup.
+    fn check_writable(&self) -> Result<(), ArchiveError>;
+
     /// What to show the user as the archive's location.
     fn describe(&self) -> String;
 }
@@ -167,6 +172,18 @@ impl ArchiveProvider for LocalFolderProvider {
         Ok(names)
     }
 
+    fn check_writable(&self) -> Result<(), ArchiveError> {
+        let probe = self.root.join("rim-write-check");
+        let temp = Self::write_temp(&probe, b"").map_err(|e| match e {
+            ArchiveError::Io(reason) => {
+                ArchiveError::NotWritable(format!("{}: {reason}", self.root.display()))
+            }
+            other => other,
+        })?;
+        let _ = fs::remove_file(temp);
+        Ok(())
+    }
+
     fn describe(&self) -> String {
         self.root.display().to_string()
     }
@@ -219,6 +236,7 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec!["b.txt"]);
+        provider.check_writable().unwrap();
         assert!(provider.list_dirs("").is_err());
         assert_eq!(provider.list_dirs("a").unwrap(), Vec::<String>::new());
         assert_eq!(provider.list_dirs("missing").unwrap(), Vec::<String>::new());

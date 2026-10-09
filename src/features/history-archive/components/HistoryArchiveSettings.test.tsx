@@ -144,6 +144,64 @@ describe("HistoryArchiveSettings", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["cachedTimeline"] });
     expect(mockRequestCacheSync).toHaveBeenCalledWith("ws-1");
+    // What the restore found stays on screen after the panel switches.
+    expect(screen.getByText(/Restored 120 messages in 4 new conversations/)).toBeInTheDocument();
+  });
+
+  it("keeps a failed restore visible after joining", async () => {
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_pick_folder: "/mnt/usb/rim",
+      history_archive_inspect_folder: { hasArchive: true, version: 1 },
+      history_archive_connect: { status: connected, created: false },
+      history_archive_export: { segments: 0, messages: 0, conversations: 0 },
+      history_archive_restore: () => {
+        throw { kind: "ARCHIVE_UNAVAILABLE", message: "archive folder unavailable" };
+      },
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Choose folder/ }));
+    await screen.findByText(/already holds a RIM history archive/);
+    type("Passphrase", "any length");
+    fireEvent.click(screen.getByRole("button", { name: "Connect and restore" }));
+
+    expect(await screen.findByText("Backing up to")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("cannot be reached");
+  });
+
+  it("counts a passphrase in characters, as the archive does", async () => {
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_pick_folder: "/home/ada/RIM",
+      history_archive_inspect_folder: { hasArchive: false, version: null },
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Choose folder/ }));
+    await screen.findByText(/Set a passphrase/);
+    // Six emoji are twelve UTF-16 units but six characters: too short.
+    type("Passphrase", "🔑🔑🔑🔑🔑🔑");
+    type("Repeat passphrase", "🔑🔑🔑🔑🔑🔑");
+    expect(screen.getByText("6 more characters needed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create archive" })).toBeDisabled();
+  });
+
+  it("refuses a folder this device cannot write into", async () => {
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_pick_folder: "/media/cdrom",
+      history_archive_inspect_folder: () => {
+        throw { kind: "ARCHIVE_NOT_WRITABLE", message: "cannot write" };
+      },
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Choose folder/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "RIM cannot write into this folder.",
+    );
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
   });
 
   it("shows a wrong passphrase and stays on the form", async () => {

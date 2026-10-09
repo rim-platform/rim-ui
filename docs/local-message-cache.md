@@ -52,7 +52,9 @@ from `change_counter`, set by triggers), so the history archive exports exactly 
 since its last export; `archive_export` keeps how far each (archive, device) got.
 `conversation_sync.reset_at` records when the server last answered `RESET`. A restore from the
 archive writes through the sync's own upsert (higher version wins, a tie keeps the cached copy)
-and follows restored conversations from the archive's cursor. The format and the rules are in
+and follows restored conversations from the archive's cursor. Restored rows are marked with
+the archive they came from (`restored_from`), so they are not exported back into it but are
+exported to any other archive the device moves to. The format and the rules are in
 `docs/specs/history-archive-v1.md`; the code is `src-tauri/src/history_archive/` and
 `message_cache/archive.rs`.
 

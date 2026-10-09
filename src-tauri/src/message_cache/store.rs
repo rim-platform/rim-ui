@@ -115,15 +115,18 @@ INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 /// - `archive_export` is how far each (archive, device) has exported, per table.
 /// - `conversation_sync.reset_at` is when the server last answered `RESET` for a conversation:
 ///   the archive uses it to tell stale copies from current ones.
-/// - A restore writes rows with the `archive_restoring` flag set in `meta` (inside its own
-///   transaction), so restored rows are not numbered and are never exported again by the
-///   device that restored them.
+/// - `restored_from` names the archive a row was restored from. Export skips such a row for
+///   that archive (it is there already) but not for another one, so a device that switches
+///   to a new archive still carries its restored history over. Any later change of the row
+///   (a sync) renumbers it and clears the mark.
 ///
 /// Rows cached by an earlier build are numbered once, so the first export covers them.
 pub(super) const SCHEMA_V3: &str = "
 ALTER TABLE message ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversation_sync ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversation_sync ADD COLUMN reset_at INTEGER;
+ALTER TABLE message ADD COLUMN restored_from TEXT;
+ALTER TABLE conversation_sync ADD COLUMN restored_from TEXT;
 
 CREATE TABLE change_counter (
     id    INTEGER PRIMARY KEY CHECK (id = 1),
@@ -148,39 +151,39 @@ CREATE INDEX message_change ON message (change_seq);
 CREATE INDEX conversation_sync_change ON conversation_sync (change_seq);
 
 CREATE TRIGGER message_change_insert AFTER INSERT ON message
-WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
 BEGIN
     UPDATE change_counter SET value = value + 1 WHERE id = 1;
-    UPDATE message SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    UPDATE message
+    SET change_seq = (SELECT value FROM change_counter WHERE id = 1), restored_from = NULL
     WHERE seq = new.seq;
 END;
 
 CREATE TRIGGER message_change_update
 AFTER UPDATE OF version, is_deleted, text, payload, thread_id, edited_at ON message
-WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
 BEGIN
     UPDATE change_counter SET value = value + 1 WHERE id = 1;
-    UPDATE message SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    UPDATE message
+    SET change_seq = (SELECT value FROM change_counter WHERE id = 1), restored_from = NULL
     WHERE seq = new.seq;
 END;
 
 CREATE TRIGGER conversation_change_insert AFTER INSERT ON conversation_sync
-WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
 BEGIN
     UPDATE change_counter SET value = value + 1 WHERE id = 1;
-    UPDATE conversation_sync SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    UPDATE conversation_sync
+    SET change_seq = (SELECT value FROM change_counter WHERE id = 1), restored_from = NULL
     WHERE workspace_id = new.workspace_id AND conversation_id = new.conversation_id;
 END;
 
 CREATE TRIGGER conversation_change_update
 AFTER UPDATE OF cursor, complete, reset_at ON conversation_sync
-WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
-     AND (old.cursor IS NOT new.cursor
-          OR old.complete IS NOT new.complete
-          OR old.reset_at IS NOT new.reset_at)
+WHEN old.cursor IS NOT new.cursor
+     OR old.complete IS NOT new.complete
+     OR old.reset_at IS NOT new.reset_at
 BEGIN
     UPDATE change_counter SET value = value + 1 WHERE id = 1;
-    UPDATE conversation_sync SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    UPDATE conversation_sync
+    SET change_seq = (SELECT value FROM change_counter WHERE id = 1), restored_from = NULL
     WHERE workspace_id = new.workspace_id AND conversation_id = new.conversation_id;
 END;
 ";

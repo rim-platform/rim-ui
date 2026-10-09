@@ -46,6 +46,13 @@ This document is the format. Anyone may write a reader or writer from it. The im
 - **Head**: the device's list of its segments. Only that device ever writes its head, and it
   writes it whole (temporary file, then rename) after the segments it lists.
 
+**Why immutable per-device files.** The master plan sketched one file per conversation and
+month, appended in place. Version 1 deliberately departs from that: a sync client (Dropbox,
+Google Drive, OneDrive, Syncthing) that uploads a file while another device appends to it turns
+the race into a "conflicted copy" or a lost write, and the Google Drive and Dropbox APIs cannot
+append at all. Files that are written once, by one device, and never changed have neither
+problem. The cost is more, smaller files; compaction (below) is left to a later version.
+
 A device writes only inside `accounts/<tag>/devices/<its own id>/`. Readers ignore any name they
 do not expect: hidden temporary files (`.*.tmp`), a sync client's "conflicted copy" files, and
 directories whose name is not an id (lowercase hex and `-`, 8 to 64 characters).
@@ -188,7 +195,9 @@ exported. An export:
 A crash between steps repeats the batch next time, which the version rule makes harmless. The
 app exports a few minutes after the cache syncs and on demand from Settings > History.
 
-Rows a device restored from the archive are not exported again by that device.
+Rows a device restored from an archive are not exported back into that archive. If the device
+later moves to another archive, they are exported there like any other row, so the new archive
+holds the device's whole history.
 
 ## Reading and restoring
 

@@ -10,6 +10,9 @@
 //! - The last batch also holds the states of the conversations that changed, read in the same
 //!   transaction as its messages. So when a state reaches the archive, every message its cursor
 //!   covers is in the archive too: in this batch or an earlier one.
+//! - Rows restored from an archive are numbered like any change but carry `restored_from`, and
+//!   are skipped when exporting to that same archive: it holds them already. Another archive
+//!   (the user moved to a new folder) gets them like any other row.
 
 use rusqlite::{params, OptionalExtension};
 
@@ -74,13 +77,21 @@ impl CacheStore {
                 "SELECT id, workspace_id, conversation_id, thread_id, author_id, version,
                         sent_at_us, edited_at, is_deleted, text, payload, change_seq
                  FROM message
-                 WHERE change_seq > ?1 AND change_seq <= ?2
+                 WHERE change_seq > ?1 AND change_seq <= ?2 AND restored_from IS NOT ?4
                  ORDER BY change_seq
                  LIMIT ?3",
             )?;
-            let mut rows = stmt.query(params![messages_from, head, max_messages as i64 + 1])?;
+            let mut rows = stmt.query(params![
+                messages_from,
+                head,
+                max_messages as i64 + 1,
+                archive_id
+            ])?;
+            // Rows read, not events: a row skipped below must still count, or a full batch
+            // would end at `head` and leave the rows past the limit unexported for good.
+            let mut read = 0;
             while let Some(row) = rows.next()? {
-                if events.len() == max_messages {
+                if read == max_messages {
                     // There is one more: this batch stops at the previous message.
                     let messages = events.len();
                     return Ok(Some(ExportBatch {
@@ -91,6 +102,7 @@ impl CacheStore {
                         conversations_through: None,
                     }));
                 }
+                read += 1;
                 last_seq = row.get(11)?;
                 let payload: String = row.get(10)?;
                 let Ok(payload) = serde_json::from_str(&payload) else {
@@ -125,10 +137,10 @@ impl CacheStore {
                          WHERE m.workspace_id = c.workspace_id
                            AND m.conversation_id = c.conversation_id)
                  FROM conversation_sync c
-                 WHERE c.change_seq > ?1 AND c.change_seq <= ?2
+                 WHERE c.change_seq > ?1 AND c.change_seq <= ?2 AND c.restored_from IS NOT ?3
                  ORDER BY c.change_seq",
             )?;
-            let rows = stmt.query_map(params![conversations_from, head], |row| {
+            let rows = stmt.query_map(params![conversations_from, head, archive_id], |row| {
                 Ok(ArchivedConversation {
                     workspace_id: row.get(0)?,
                     conversation_id: row.get(1)?,
@@ -189,17 +201,14 @@ impl CacheStore {
     /// - A conversation the cache does not follow yet is followed from the archive's cursor, so
     ///   its history shows before the server is asked and the next sync asks only for what is
     ///   newer. A conversation the cache already follows keeps its own sync state.
-    /// - Restored rows are not numbered for export: they are in the archive already.
+    /// - Every row written is marked as restored from `archive_id`, so exports to that archive
+    ///   skip it (it is there already) and exports to another archive still carry it.
     pub(crate) fn restore_archive(
         &mut self,
+        archive_id: &str,
         plan: &RestorePlan,
     ) -> Result<RestoreCounts, CacheError> {
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "INSERT INTO meta (key, value) VALUES ('archive_restoring', '1')
-             ON CONFLICT (key) DO NOTHING",
-            [],
-        )?;
         let mut counts = RestoreCounts::default();
         for m in &plan.messages {
             // A tombstone keeps who and when, never what, whatever the archive says.
@@ -220,10 +229,16 @@ impl CacheStore {
                     payload: stored_payload(m.payload.clone(), m.deleted),
                 },
             )?;
-            counts.messages += usize::from(written);
+            if written {
+                tx.execute(
+                    "UPDATE message SET restored_from = ?1 WHERE id = ?2",
+                    params![archive_id, m.id],
+                )?;
+                counts.messages += 1;
+            }
         }
         for c in &plan.conversations {
-            counts.conversations += tx.execute(
+            let inserted = tx.execute(
                 "INSERT INTO conversation_sync
                      (workspace_id, conversation_id, cursor, pending, complete, last_viewed_at,
                       reset_at)
@@ -238,9 +253,77 @@ impl CacheStore {
                     c.reset_at
                 ],
             )?;
+            if inserted > 0 {
+                tx.execute(
+                    "UPDATE conversation_sync SET restored_from = ?1
+                     WHERE workspace_id = ?2 AND conversation_id = ?3",
+                    params![archive_id, c.workspace_id, c.conversation_id],
+                )?;
+                counts.conversations += 1;
+            }
         }
-        tx.execute("DELETE FROM meta WHERE key = 'archive_restoring'", [])?;
         tx.commit()?;
         Ok(counts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::params;
+
+    use super::super::tests::{open, state, sync, MockFeed};
+
+    #[test]
+    fn a_skipped_row_inside_a_full_batch_does_not_end_the_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = state(dir.path(), 1);
+        let store = open(&cache, "alice");
+        let mut store = store.lock().unwrap();
+        let mut feed = MockFeed::new(1000);
+        feed.send_many("c1", 6);
+        store.track(super::super::tests::WS, "c1", 1).unwrap();
+        sync(&mut store, &mut feed, None);
+
+        // The second message's payload cannot be read; its number stays where it was. (The
+        // thread index parses payloads, so it goes first.)
+        store
+            .conn
+            .execute("DROP INDEX message_thread_root", [])
+            .unwrap();
+        let seq: i64 = store
+            .conn
+            .query_row(
+                "SELECT change_seq FROM message WHERE id = 'c1-m001'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE message SET payload = 'not json' WHERE id = 'c1-m001'",
+                [],
+            )
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE message SET change_seq = ?1 WHERE id = 'c1-m001'",
+                params![seq],
+            )
+            .unwrap();
+
+        let mut ids = Vec::new();
+        while let Some(batch) = store.archive_batch("archive-1", "device-1", 4).unwrap() {
+            for event in &batch.events {
+                if let crate::history_archive::format::Event::Message(m) = event {
+                    ids.push(m.id.clone());
+                }
+            }
+            store
+                .mark_archived("archive-1", "device-1", &batch)
+                .unwrap();
+        }
+        assert_eq!(ids, ["c1-m000", "c1-m002", "c1-m003", "c1-m004", "c1-m005"]);
     }
 }
