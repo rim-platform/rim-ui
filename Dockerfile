@@ -65,8 +65,9 @@ server {
     # at docker build time — no wildcard localhost allowed in production.
     # style-src includes 'unsafe-inline' because Tailwind CSS v4 injects inline
     # styles at build time; tightening to a nonce requires build-pipeline changes
-    # beyond this scope (flagged per spec M2 review note).
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
+    # beyond this scope (flagged per spec M2 review note). 'wasm-unsafe-eval' lets the
+    # page compile the encrypted conversations' MLS module (WebAssembly), nothing else.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
 
     # Gzip compression
     gzip on;
@@ -81,6 +82,7 @@ server {
         application/javascript
         application/json
         application/xml
+        application/wasm
         image/svg+xml;
 
     # Cache hashed assets aggressively (Vite adds content hash)

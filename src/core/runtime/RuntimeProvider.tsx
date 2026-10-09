@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useE2eeStore } from "../../features/e2ee/state/useE2eeStore";
 import { browserDeviceKeysSupported } from "./ed25519";
 import {
   detectPlatform,
@@ -26,6 +27,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [platform] = useState(detectPlatform);
   const [osType] = useState(detectOs);
   const [browserKeys, setBrowserKeys] = useState<boolean | undefined>(undefined);
+  const webEncryption = useE2eeStore((s) => s.webEncryption);
 
   useEffect(() => {
     if (platform !== "web") return;
@@ -42,11 +44,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const deviceKeyStore = getDeviceKeyStore(platform, browserKeys);
     return {
       platform,
-      capabilities: getRuntimeCapabilities(platform, deviceKeyStore),
+      capabilities: getRuntimeCapabilities(platform, deviceKeyStore, webEncryption === "ready"),
       osType,
       deviceKeyStore,
     };
-  }, [platform, osType, browserKeys]);
+  }, [platform, osType, browserKeys, webEncryption]);
 
   return <RuntimeContext value={value}>{children}</RuntimeContext>;
 }

@@ -5,7 +5,7 @@ import type { MessageAttachment } from "../../../core/types/messages";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
-import { currentCacheAccount } from "../../messages/api/messageCache";
+import { encryptedStoreAccount } from "../../messages/api/messageCache";
 import { fetchMessageAttachments } from "../api/e2eeApi";
 import { decryptAttachment } from "../api/e2eeCommands";
 import { downloadBlob } from "../runtime/send";
@@ -44,7 +44,7 @@ async function openAttachment(
   props: EncryptedAttachmentsProps,
   attachment: MessageAttachment,
 ): Promise<string> {
-  const account = currentCacheAccount();
+  const account = encryptedStoreAccount();
   const id = await uploadedId(props, attachment);
   if (!account || !id || !attachment.blobSha256) throw new Error("The file is not uploaded yet");
   const blob = await downloadBlob(id);

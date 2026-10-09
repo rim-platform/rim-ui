@@ -3,7 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import { currentCacheAccount, readCachedThread } from "../../messages/api/messageCache";
+import { encryptedStoreAccount, readCachedThread } from "../../messages/api/messageCache";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
@@ -141,7 +141,8 @@ export function useThreadByRootMessage(
 
 /**
  * A thread's replies, oldest first. In an encrypted conversation (`fromCache`) they are read
- * from the desktop's cache, where this device decrypted them.
+ * from this device's store (the desktop's cache, or the web app's encrypted store), where it
+ * decrypted them.
  */
 export function useThreadMessages(
   workspaceId?: string,
@@ -155,7 +156,7 @@ export function useThreadMessages(
     staleTime: 10_000,
     queryFn: async () => {
       if (fromCache) {
-        const account = currentCacheAccount();
+        const account = encryptedStoreAccount();
         const items = account
           ? await readCachedThread(account, workspaceId!, conversationId!, threadId!, null)
           : null;

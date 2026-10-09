@@ -15,9 +15,11 @@ import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useConversation } from "../../conversations/api/useConversation";
+import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import {
   currentCacheAccount,
+  encryptedStoreAccount,
   isServerUnreachable,
   readCachedTimeline,
   trackConversation,
@@ -46,39 +48,55 @@ const EMPTY_PAGE: MessagesPage = {
  * answers; the cache only fills the gaps.
  *
  * An end-to-end encrypted conversation is read from the cache only: the server holds its
- * messages as ciphertext, which this device decrypted once, into the cache.
+ * messages as ciphertext, which this device decrypted once, into the cache. The web app keeps
+ * encrypted conversations (and only those) in its own encrypted store once the browser is set
+ * up as a linked device.
  */
 export function useConversationMessages(workspaceId?: string, conversationId?: string) {
+  const qc = useQueryClient();
   // Re-run the cache effects when the signed-in user changes.
   const userId = useAuthStore((s) => s.session?.userId);
+  // The web app's encrypted store opens once this browser is set up for encryption.
+  const webEncryption = useE2eeStore((s) => s.webEncryption);
   const hasConversation = Boolean(workspaceId && conversationId);
   const cacheAvailable = Boolean(userId && hasConversation && currentCacheAccount());
-  // Only the desktop app has a cache to read an encrypted conversation from.
+  const storeAvailable =
+    cacheAvailable ||
+    Boolean(userId && hasConversation && webEncryption === "ready" && encryptedStoreAccount());
+  // Only a device with a store can read an encrypted conversation from one.
   const { data: conversation } = useConversation(
-    cacheAvailable ? workspaceId : undefined,
+    storeAvailable ? workspaceId : undefined,
     conversationId,
   );
-  const cacheOnly = cacheAvailable && Boolean(conversation?.encryptedAt);
+  const cacheOnly = storeAvailable && Boolean(conversation?.encryptedAt);
+  // The web store follows encrypted conversations only.
+  const follows = cacheAvailable || cacheOnly;
 
   // Opening a conversation makes the cache follow it, then syncs it.
   useEffect(() => {
-    const account = currentCacheAccount();
+    const account = follows ? encryptedStoreAccount() : null;
     if (!account || !workspaceId || !conversationId) return;
     void trackConversation(account, workspaceId, conversationId).then(() =>
       requestCacheSync(workspaceId, [conversationId]),
     );
-  }, [userId, workspaceId, conversationId]);
+  }, [userId, workspaceId, conversationId, follows]);
+
+  // In the web app the store can open after the first read: the timeline is read again from it.
+  useEffect(() => {
+    if (!cacheOnly || cacheAvailable) return;
+    void qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
+  }, [qc, cacheOnly, cacheAvailable, workspaceId, conversationId]);
 
   const cached = useQuery({
     queryKey: queryKeys.cachedTimeline(workspaceId, conversationId),
-    enabled: cacheAvailable,
+    enabled: follows,
     staleTime: Infinity,
     gcTime: 60_000,
     retry: false,
     // A local read: it runs whatever the network state.
     networkMode: "always",
     queryFn: async () => {
-      const account = currentCacheAccount();
+      const account = encryptedStoreAccount();
       if (!account) return null;
       return readCachedTimeline(account, workspaceId!, conversationId!, null, PAGE_SIZE);
     },
@@ -100,7 +118,7 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
       : undefined,
     queryFn: async ({ pageParam }) => {
       if (cacheOnly) {
-        const account = currentCacheAccount();
+        const account = encryptedStoreAccount();
         const page = account
           ? await readCachedTimeline(account, workspaceId!, conversationId!, pageParam, PAGE_SIZE)
           : null;

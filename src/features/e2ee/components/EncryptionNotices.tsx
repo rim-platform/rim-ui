@@ -38,6 +38,14 @@ function Notice({
   );
 }
 
+/** Why this browser cannot read an encrypted conversation, by send block. */
+const BROWSER_NOTICES: Record<string, string> = {
+  noDeviceKey: "Set up this browser as a linked device to read encrypted conversations",
+  unsupported: "This browser cannot run encrypted conversations",
+  otherTab:
+    "Encrypted conversations are open in another tab of this browser. Close it to read them here.",
+};
+
 function joinNames(names: string[]): string {
   if (names.length <= 1) return names.join("");
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
@@ -63,11 +71,19 @@ export function EncryptionNotices({ workspaceId, e2ee }: EncryptionNoticesProps)
       </Notice>,
     );
   }
-  if (e2ee.sendBlock === "web") {
+  if (e2ee.upgradeOnDesktop) {
     notices.push(
-      <Notice key="web" tone="muted" icon={<Lock className="h-3.5 w-3.5" aria-hidden />}>
-        This conversation is end-to-end encrypted. Open it in the RIM desktop app to read and send
-        messages.
+      <Notice key="upgrade" tone="muted" icon={<Lock className="h-3.5 w-3.5" aria-hidden />}>
+        Not encrypted yet: everyone is ready, and a member&apos;s desktop app turns encryption on
+        here when it opens this conversation. A browser does not.
+      </Notice>,
+    );
+  }
+  const browser = BROWSER_NOTICES[e2ee.sendBlock ?? ""];
+  if (browser) {
+    notices.push(
+      <Notice key="browser" tone="muted" icon={<Lock className="h-3.5 w-3.5" aria-hidden />}>
+        {browser}
       </Notice>,
     );
   }
