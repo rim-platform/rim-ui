@@ -85,7 +85,7 @@ describe("PluginCapabilityPrompt chat lines", () => {
     capabilities: ["chat.read", "chat.read.encrypted", "chat.write", "chat.write.encrypted"],
   });
 
-  it("gives each chat capability its own line, the encrypted read in the spec's words", () => {
+  it("gives each chat capability its own line, the encrypted read in the agreed words", () => {
     render(<PluginCapabilityPrompt open onClose={() => {}} plugin={chat} />);
     const line = (start: RegExp) => screen.getByText(start).closest("p")?.textContent;
     expect(line(/^Read your encrypted DMs and groups:/)).toBe(

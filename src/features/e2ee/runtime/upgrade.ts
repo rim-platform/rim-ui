@@ -1,7 +1,7 @@
 /**
- * The upgrade of an existing DM or group to end-to-end encryption ("Migration"): an eligible
- * member's desktop creates the conversation's first group once every member is ready. In a DM
- * either member is eligible; in a group the creator, or any member when the creator is gone.
+ * The upgrade of an existing DM or group to end-to-end encryption: an eligible member's desktop
+ * creates the conversation's first group once every member is ready. In a DM either member is
+ * eligible; in a group the creator, or any member when the creator is gone.
  */
 
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
