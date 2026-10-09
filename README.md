@@ -120,3 +120,8 @@ The backend repository (`../rim-server`) is the source of truth for product cont
 - `../rim-server/docs/command_model.md` — command system contract
 - `../rim-server/docs/keybind_model.md` — keybind system contract
 - `../rim-server/docs/plugin_model.md` — plugin system contract
+
+## License
+
+Apache License 2.0, see `LICENSE`. The license does not cover the RIM name or logo; see
+`TRADEMARK.md`. To contribute, see `CONTRIBUTING.md` (commits need a DCO sign-off).
