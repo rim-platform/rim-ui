@@ -9,6 +9,7 @@ import type {
   AiMessage,
   AiToolDefinition,
 } from "./types";
+import { buildRequestToolNameMap, type ToolNameMap } from "./toolNames";
 
 /** Static fallback — used when API is unreachable. */
 const STATIC_MODELS: AiModelDef[] = [
@@ -81,7 +82,11 @@ interface OpenAiMessage {
   tool_call_id?: string;
 }
 
-function toOpenAiMessages(messages: AiMessage[], systemPrompt?: string): OpenAiMessage[] {
+function toOpenAiMessages(
+  messages: AiMessage[],
+  toolNames: ToolNameMap,
+  systemPrompt?: string,
+): OpenAiMessage[] {
   const result: OpenAiMessage[] = [];
 
   if (systemPrompt) {
@@ -109,7 +114,10 @@ function toOpenAiMessages(messages: AiMessage[], systemPrompt?: string): OpenAiM
             toolCalls.push({
               id: block.id,
               type: "function",
-              function: { name: block.name, arguments: JSON.stringify(block.input) },
+              function: {
+                name: toolNames.toApi(block.name),
+                arguments: JSON.stringify(block.input),
+              },
             });
           }
         }
@@ -138,11 +146,11 @@ function toOpenAiMessages(messages: AiMessage[], systemPrompt?: string): OpenAiM
   return result;
 }
 
-function toOpenAiTools(tools: AiToolDefinition[]) {
+function toOpenAiTools(tools: AiToolDefinition[], toolNames: ToolNameMap) {
   return tools.map((t) => ({
     type: "function" as const,
     function: {
-      name: t.name,
+      name: toolNames.toApi(t.name),
       description: t.description,
       parameters: t.input_schema,
     },
@@ -176,12 +184,15 @@ export function createOpenAiProvider(_loadKey: () => Promise<string>): AiProvide
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
       // The Rust proxy reads the API key from the OS keyring on every request.
       // Do NOT send api_key — ChatCompletionRequest uses deny_unknown_fields.
+      // Command ids contain dots, which the API refuses in function names;
+      // tool calls come back under the API name and are translated back below.
+      const toolNames = buildRequestToolNameMap(request.tools, request.messages);
       const proxyRequest = {
         provider: "openai" as const,
         model: request.model,
-        messages: toOpenAiMessages(request.messages, request.systemPrompt),
+        messages: toOpenAiMessages(request.messages, toolNames, request.systemPrompt),
         ...(request.tools && request.tools.length > 0
-          ? { tools: toOpenAiTools(request.tools) }
+          ? { tools: toOpenAiTools(request.tools, toolNames) }
           : {}),
         max_tokens: request.maxTokens ?? 4096,
       };
@@ -292,7 +303,7 @@ export function createOpenAiProvider(_loadKey: () => Promise<string>): AiProvide
             } catch {
               // malformed
             }
-            yield { kind: "tool_use", id: call.id, name: call.name, input };
+            yield { kind: "tool_use", id: call.id, name: toolNames.fromApi(call.name), input };
           }
           toolCalls.clear();
         }

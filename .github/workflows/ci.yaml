@@ -31,6 +31,38 @@ jobs:
       - name: Unit Tests
         run: npm test
 
+  rust:
+    name: Rust (src-tauri)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      # Tauri's Linux build dependencies (webkit2gtk 4.1 pulls in gtk3 and libsoup3);
+      # libssl-dev also serves the bundled SQLCipher in the message cache.
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Format Check
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test
+
   build:
     name: Build
     runs-on: ubuntu-latest

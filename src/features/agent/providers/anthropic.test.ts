@@ -281,4 +281,73 @@ describe("createAnthropicProvider", () => {
     });
     expect(chunks.at(-1)).toMatchObject({ kind: "done" });
   });
+
+  it("sends command ids as API-safe tool names and maps tool calls back to the id", async () => {
+    mockChatCompletion([
+      {
+        kind: "sse_event",
+        event_type: "content_block_start",
+        data: {
+          type: "content_block_start",
+          content_block: { type: "tool_use", id: "tool-8", name: "chat_send_message_2" },
+        },
+      },
+      {
+        kind: "sse_event",
+        event_type: "content_block_delta",
+        data: {
+          type: "content_block_delta",
+          delta: { type: "input_json_delta", partial_json: '{"text":"hi"}' },
+        },
+      },
+      {
+        kind: "sse_event",
+        event_type: "content_block_stop",
+        data: { type: "content_block_stop" },
+      },
+      { kind: "done" },
+    ]);
+
+    const provider = createAnthropicProvider(async () => "sk-test");
+    const schema = { type: "object", properties: {} };
+    const messages: AiMessage[] = [
+      { role: "user", content: "list channels" },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tool-1", name: "chat.list_channels", input: {} }],
+      },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-1", content: "[]" }] },
+    ];
+    const chunks = [];
+    for await (const c of provider.chat({
+      model: "claude-sonnet-4-20250514",
+      messages,
+      tools: [
+        { name: "chat.send_message", description: "Send", input_schema: schema },
+        { name: "chat_send_message", description: "Other", input_schema: schema },
+        { name: "chat.list_channels", description: "List", input_schema: schema },
+        { name: "plugin__chat_rim_k8s-pods__refresh", description: "Pods", input_schema: schema },
+      ],
+    })) {
+      chunks.push(c);
+    }
+
+    const req = (invokeMock.mock.calls[0]![1] as { request: Record<string, unknown> }).request;
+    expect((req.tools as { name: string }[]).map((t) => t.name)).toEqual([
+      "chat_send_message_2",
+      "chat_send_message",
+      "chat_list_channels",
+      "plugin__chat_rim_k8s-pods__refresh",
+    ]);
+    const history = req.messages as { content: { type: string; name?: string }[] | string }[];
+    expect(history[1]!.content).toEqual([
+      { type: "tool_use", id: "tool-1", name: "chat_list_channels", input: {} },
+    ]);
+    expect(chunks[0]).toEqual({
+      kind: "tool_use",
+      id: "tool-8",
+      name: "chat.send_message",
+      input: { text: "hi" },
+    });
+  });
 });
