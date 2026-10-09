@@ -6,9 +6,10 @@
 //! for signatures, never read a key.
 //!
 //! - **Enrollment** creates an identity key, a recovery key and a device key. The recovery key
-//!   is shown once, inside the recovery kit, and never stored. The identity and device keys are
-//!   written to the keyring before the server is asked to enroll them, so an enrolled account
-//!   never ends up without its keys; keys the server never accepted are cleaned up later.
+//!   is shown once, as the 12-word phrase of the recovery kit, and never stored. The identity
+//!   and device keys are written to the keyring before the server is asked to enroll them, so
+//!   an enrolled account never ends up without its keys; keys the server never accepted are
+//!   cleaned up later.
 //! - **Sign-in** signs a login proof over a server challenge with the device key.
 //! - **Rotation** stores the new identity key as pending until the server's log names it.
 //! - **Recovery** signs a rotation with the recovery key from a kit, for a new identity key and
@@ -94,7 +95,10 @@ pub(crate) struct LocalAccount {
 pub(crate) struct EnrollmentDraft {
     pub(crate) draft_id: String,
     pub(crate) principal_id: String,
+    /// The whole kit text, to copy.
     pub(crate) recovery_kit: Zeroizing<String>,
+    /// The kit's 12 words in order, to show as a numbered grid.
+    pub(crate) recovery_phrase: Zeroizing<Vec<String>>,
 }
 
 /// What `enrollIdentityKey` takes.
@@ -331,7 +335,8 @@ impl KeyIdentityState {
     pub(crate) fn begin_enrollment(&self, name: &str) -> Result<EnrollmentDraft> {
         let device_name = device_name(name)?;
         let identity_seed = SecretKey::generate()?;
-        let recovery_seed = SecretKey::generate()?;
+        let recovery_entropy = recovery_kit::generate_entropy()?;
+        let recovery_seed = recovery_kit::phrase_key(&recovery_entropy)?;
         let device_seed = SecretKey::generate()?;
         if identity_seed == recovery_seed || device_seed == identity_seed {
             return Err(KeyIdentityError::Crypto("random keys collided".into()));
@@ -351,8 +356,10 @@ impl KeyIdentityState {
                 issued_at: &now,
             },
         );
-        let recovery_kit = recovery_kit::format_kit(&principal_id, &recovery_seed);
+        let recovery_kit = recovery_kit::format_kit(&principal_id, &recovery_entropy)?;
+        let recovery_phrase = recovery_kit::phrase_words(&recovery_entropy)?;
         drop(recovery_seed);
+        drop(recovery_entropy);
 
         let draft_id = uuid::Uuid::new_v4().to_string();
         self.drafts
@@ -374,6 +381,7 @@ impl KeyIdentityState {
             draft_id,
             principal_id,
             recovery_kit,
+            recovery_phrase,
         })
     }
 
@@ -707,7 +715,8 @@ impl KeyIdentityState {
 
     /// Take an account back with its recovery kit: verify that the server's log ends at the
     /// kit's recovery key, create a new identity key and device key, store them, and sign the
-    /// recovery rotation and the new device's certificate.
+    /// recovery rotation and the new device's certificate. `kit` is a whole kit of either
+    /// version, a bare 12-word phrase or a bare `RK1-` key.
     pub(crate) fn begin_recovery(
         &self,
         endpoint: &str,
@@ -726,7 +735,7 @@ impl KeyIdentityState {
         let head = Self::head(&principal_id, log)?;
         if recovery_seed.public_key() != head.recovery_key {
             return Err(KeyIdentityError::Invalid(
-                "this recovery key does not belong to that account".into(),
+                "this recovery phrase or key does not belong to that account".into(),
             ));
         }
 

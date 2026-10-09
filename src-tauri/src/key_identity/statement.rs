@@ -42,8 +42,8 @@ pub(crate) struct Statement {
     pub(crate) signature: String,
 }
 
-/// An Ed25519 secret key seed, wiped on drop. Only this module and the v1 recovery kit see
-/// raw seeds; everything else holds a [`SecretKey`].
+/// An Ed25519 secret key seed, wiped on drop. Only this module and the recovery kit see raw
+/// seeds; everything else holds a [`SecretKey`].
 pub(crate) type Seed = Zeroizing<[u8; 32]>;
 
 /// The one algorithm implemented today.
@@ -71,6 +71,9 @@ impl SecretKey {
         Self { seed }
     }
 
+    /// The raw seed, for writing a version 1 recovery kit in tests; this device no longer
+    /// writes one.
+    #[cfg(test)]
     pub(crate) fn seed(&self) -> &[u8; 32] {
         &self.seed
     }

@@ -116,7 +116,9 @@ describe("RecoverAccount", () => {
     api.defaultDeviceName.mockResolvedValue("Laptop");
   });
 
-  it("recovers with a kit that names the account", async () => {
+  const ACCOUNT = `rimp1_${"a".repeat(43)}`;
+
+  it("recovers with a pasted v2 kit and fills in its account id", async () => {
     api.recoverAccount.mockResolvedValue("u-alice");
     const onSuccess = vi.fn();
     wrap(<RecoverAccount onSuccess={onSuccess} />);
@@ -125,19 +127,31 @@ describe("RecoverAccount", () => {
     await waitFor(() =>
       expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
     );
-    const kit = `RIM recovery kit (v1)\nAccount id: rimp1_${"a".repeat(43)}\nRecovery key: RK1-AAAA`;
-    await userEvent.type(screen.getByLabelText(/recovery kit/i), kit);
-    expect(screen.queryByLabelText(/^account id/i)).toBeNull();
+    const kit =
+      `RIM recovery kit (v2)\nAccount id: ${ACCOUNT}\n` +
+      "Recovery phrase: abandon amount liar amount expire adjust cage candy arch gather drum buyer\n";
+    await userEvent.click(screen.getByLabelText(/recovery kit/i));
+    await userEvent.paste(kit);
+    expect(screen.getByLabelText(/^account id/i)).toHaveValue(ACCOUNT);
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
 
-    expect(api.recoverAccount).toHaveBeenCalledWith(kit, null, "Laptop");
+    expect(api.recoverAccount).toHaveBeenCalledWith(kit, ACCOUNT, "Laptop");
     expect(onSuccess).toHaveBeenCalledWith("u-alice");
   });
 
-  it("asks for the account id when the kit lacks it", async () => {
+  it("lets a pasted kit's account id replace one typed before", async () => {
     wrap(<RecoverAccount onSuccess={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /recover an account/i }));
-    await userEvent.type(screen.getByLabelText(/recovery kit/i), "RK1-AAAA");
+    await userEvent.type(screen.getByLabelText(/^account id/i), "rimp1_typed");
+    await userEvent.click(screen.getByLabelText(/recovery kit/i));
+    await userEvent.paste(`RIM recovery kit (v1)\nAccount id: ${ACCOUNT}\nRecovery key: RK1-AAAA`);
+    expect(screen.getByLabelText(/^account id/i)).toHaveValue(ACCOUNT);
+  });
+
+  it("asks for the account id when only the phrase is typed", async () => {
+    wrap(<RecoverAccount onSuccess={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /recover an account/i }));
+    await userEvent.type(screen.getByLabelText(/recovery kit/i), "1. abandon 2. amount");
 
     const submit = screen.getByRole("button", { name: /^recover account$/i });
     expect(submit).toBeDisabled();
@@ -146,7 +160,9 @@ describe("RecoverAccount", () => {
   });
 
   it("shows why recovery failed", async () => {
-    api.recoverAccount.mockRejectedValue(new Error("The recovery key does not match"));
+    api.recoverAccount.mockRejectedValue(
+      new Error('word 5 of the recovery phrase, "zzzq", is not in the word list'),
+    );
     wrap(<RecoverAccount onSuccess={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /recover an account/i }));
     await userEvent.type(screen.getByLabelText(/recovery kit/i), "RK1-AAAA");
@@ -156,6 +172,6 @@ describe("RecoverAccount", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/does not match/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/word 5 .*not in the word list/i);
   });
 });
