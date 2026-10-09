@@ -5,7 +5,6 @@ mod message_cache;
 mod offline_session;
 mod plugin_host;
 mod secret_store;
-mod terminal;
 
 use tauri::Manager;
 
@@ -14,8 +13,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        // Native dialogs — used Rust-side only (terminal first-use confirmation,
-        // S-H1). No `dialog:*` permission is granted to the renderer.
+        // Native dialogs — used Rust-side only (the history archive folder picker).
+        // No `dialog:*` permission is granted to the renderer.
         .plugin(tauri_plugin_dialog::init())
         // Register the rim-plugin:// URI scheme for serving plugin panel assets.
         // The handler resolves rim-plugin://<plugin_id>/<panel_id>/<rest> to
@@ -91,9 +90,6 @@ pub fn run() {
             app.manage(history_archive::init(&app_data_dir));
             app.manage(offline_session::init());
             app.manage(key_identity::init());
-
-            let terminal_state = terminal::init();
-            app.manage(terminal_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -116,11 +112,6 @@ pub fn run() {
             plugin_host::commands::plugin_panel_state,
             plugin_host::commands::plugin_relay_ui_event,
             plugin_host::commands::plugin_set_principal,
-            terminal::commands::terminal_create,
-            terminal::commands::terminal_write,
-            terminal::commands::terminal_resize,
-            terminal::commands::terminal_close,
-            terminal::commands::terminal_list,
             agent_proxy::agent_chat_completion,
             agent_proxy::agent_validate_credentials,
             agent_proxy::agent_validate_provided_key,
