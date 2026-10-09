@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { Hash, MessageCircle, Users } from "lucide-react";
 
@@ -58,9 +58,10 @@ export function ForwardDialog({
   const { data: channelsData } = useChannels(workspaceId);
   const { data: inboxData } = useInboxConversations(workspaceId);
 
-  const channels = channelsData?.items ?? [];
-  const directs = inboxData?.items ?? [];
-  const allConversations = [...channels, ...directs];
+  const allConversations = useMemo(
+    () => [...(channelsData?.items ?? []), ...(inboxData?.items ?? [])],
+    [channelsData?.items, inboxData?.items],
+  );
 
   const filtered = allConversations.filter((c) => {
     let title = c.title;
