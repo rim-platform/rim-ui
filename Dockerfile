@@ -89,6 +89,17 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # The web plugin frame shell states its own content security policy in a
+    # <meta>. Policies intersect, so this location sends that same baseline
+    # (plus frame-ancestors) instead of the app's, whose script-src 'self' would
+    # block the blob: scripts plugins run from. The app's default-src 'self'
+    # already lets its pages frame these files.
+    location /plugin-frame/ {
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
+    }
+
     # SPA fallback — all routes serve index.html
     location / {
         try_files \$uri \$uri/ /index.html;
