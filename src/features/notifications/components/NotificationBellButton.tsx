@@ -4,6 +4,7 @@ import { cn } from "../../../shared/ui/cn";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { usePendingDmRequestCount } from "../../relay/api/useDmRequests";
 import { useUnreadNotificationCount } from "../api/useNotifications";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
 
@@ -13,7 +14,9 @@ export function NotificationBellButton() {
   const open = useNotificationsPanelStore((s) => s.open);
   const toggle = useNotificationsPanelStore((s) => s.toggle);
   const mainSurface = useShellStore((s) => s.mainSurface);
-  const { data: count = 0 } = useUnreadNotificationCount(workspaceId);
+  const { data: notifications = 0 } = useUnreadNotificationCount(workspaceId);
+  const requests = usePendingDmRequestCount();
+  const count = notifications + requests;
 
   const active = open && mainSurface.kind === "conversation";
   const label = count > 0 ? `Notifications (${count} unread)` : "Notifications";
