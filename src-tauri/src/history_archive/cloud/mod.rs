@@ -206,7 +206,7 @@ pub(crate) struct KeyringCredentials;
 
 impl KeyringCredentials {
     fn entry(name: &str) -> Result<keyring::Entry, ArchiveError> {
-        keyring::Entry::new(crate::agent_proxy::KEYRING_SERVICE, name)
+        crate::secret_store::entry(name)
             .map_err(|e| ArchiveError::Key(format!("keyring init failed: {e}")))
     }
 }
