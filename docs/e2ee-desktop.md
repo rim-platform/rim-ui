@@ -158,6 +158,10 @@ What this device holds the server to, whatever it answers later:
   device's own key). A verified revocation or a `revokedAt` is remembered with the head pin, so a
   server that stops listing it changes nothing here; one that does not verify keeps the device
   out this time only.
+- **Principals from another relay.** A principal this relay cannot answer for is fetched with
+  `remoteIdentity` from their own relay (`relay-client.md`) and goes through the same checks,
+  the head pin and the revocation memory; its profile card must also verify against the log's
+  head, or nothing served about it is used ("keyLogInvalid").
 - **Keys.** Ed25519 keys must be canonically encoded points that are not of small order, an
   inception's or rotation's identity key must differ from its recovery key, and key log entries
   with unknown fields are refused, as on the server.
