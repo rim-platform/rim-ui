@@ -287,6 +287,22 @@ describe("useLocalSearchHits", () => {
     );
   });
 
+  it("names conversations from the lists as they are now", async () => {
+    searchCachedMessagesMock.mockResolvedValue({ items: [localHit], hasMore: false });
+    const { result, rerender } = renderHook(
+      ({ dir }) => useLocalSearchHits("ws-1", undefined, "deploy", dir),
+      { wrapper, initialProps: { dir: buildConversationDirectory([]) } },
+    );
+
+    await waitForDebounce();
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data![0].conversationTitle).toBeNull();
+
+    rerender({ dir: directory });
+    await waitFor(() => expect(result.current.data![0].conversationTitle).toBe("general"));
+    expect(searchCachedMessagesMock).toHaveBeenCalledTimes(1);
+  });
+
   it("stays idle without a cache", async () => {
     cacheAccount = null;
     renderHook(() => useLocalSearchHits("ws-1", undefined, "deploy", directory), { wrapper });

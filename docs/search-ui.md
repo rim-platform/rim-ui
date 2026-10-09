@@ -88,7 +88,9 @@ The desktop app also searches its encrypted local message cache (`docs/local-mes
   list stays in recency order as pages load. Up to the 100 newest local matches are considered.
   In practice this adds prefix matches (`depl` finds `deploy`) the server's stemmed search misses.
 - A local match from a conversation the lists no longer show is left out and that conversation is
-  synced again, which drops it from the cache if access was lost.
+  synced again, which drops it from the cache if access was lost. The lists are the first pages
+  the sidebar loads (100 channels, 50 DMs), so online, a match in a DM older than the 50 most
+  recent is left out too (offline pages are not filtered by the lists).
 - Local snippets are escaped by the cache before the `<mark>` tags are added, then go through
   the same `SearchSnippet` sanitization.
 - The operators are parsed in the client for local search only (`parseLocalSearchQuery`), with

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useInfiniteQuery, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
@@ -17,7 +17,12 @@ import {
   parseLocalSearchQuery,
   type ConversationDirectory,
 } from "./localSearch";
-import { currentCacheAccount, isServerUnreachable, searchCachedMessages } from "./messageCache";
+import {
+  currentCacheAccount,
+  isServerUnreachable,
+  searchCachedMessages,
+  type LocalSearchHit,
+} from "./messageCache";
 
 const SEARCH_MESSAGES_QUERY = gql`
   query SearchMessages($input: SearchMessagesInput!) {
@@ -216,28 +221,35 @@ export function useLocalSearchHits(
   const parsed = workspaceId
     ? parseLocalSearchQuery(debouncedQuery, conversationId, directory)
     : null;
+  // Titles come from the lists as they are now, not as they were when the hits were fetched.
+  const toItems = useCallback(
+    (hits: LocalSearchHit[]) => hits.map((hit) => localHitToSearchItem(hit, directory)),
+    [directory],
+  );
 
   return useQuery({
+    // Keyed by the parsed query, so an `in:#name` the lists resolve differently fetches again.
     queryKey: queryKeys.localSearchMessages(
       workspaceId,
       userId,
       conversationId ?? "__all__",
-      debouncedQuery,
+      JSON.stringify(parsed),
     ),
     enabled: Boolean(parsed && userId && currentCacheAccount()),
     staleTime: 5_000,
     retry: false,
-    queryFn: async (): Promise<SearchMessageItem[]> => {
+    queryFn: async (): Promise<LocalSearchHit[]> => {
       const account = currentCacheAccount();
-      if (!account || !parsed) return [];
+      if (!account || !parsed || !workspaceId) return [];
       const page = await searchCachedMessages(
         account,
-        workspaceId!,
+        workspaceId,
         parsed,
         null,
         LOCAL_SUPPLEMENT_LIMIT,
       );
-      return (page?.items ?? []).map((hit) => localHitToSearchItem(hit, directory));
+      return page?.items ?? [];
     },
+    select: toItems,
   });
 }
