@@ -12,6 +12,12 @@ export interface MessageEventData {
   is_deleted: boolean;
   sent_at: string;
   reactions: ReactionGroupData[];
+  /** Set on an encrypted message, whose `text` is null. */
+  encryption?: {
+    incarnation: number;
+    epoch: number;
+    sender_device_id: string;
+  } | null;
 }
 
 export interface ReactionGroupData {
@@ -282,4 +288,26 @@ export type WorkspaceEvent =
       workspace_id: string;
       plugin_id: string;
       change: "added" | "updated" | "removed";
+    }
+  /** A Commit of an encrypted conversation's group was accepted; `epoch` is the Commit's. */
+  | {
+      type: "MlsCommitAccepted";
+      workspace_id: string;
+      conversation_id: string;
+      incarnation: number;
+      epoch: number;
+    }
+  /** An encrypted conversation's pending adds or removes changed. */
+  | {
+      type: "MlsMembershipChanged";
+      workspace_id: string;
+      conversation_id: string;
+    }
+  /** A Welcome waits for `device_id` of `user_id`; other devices ignore it. */
+  | {
+      type: "MlsWelcomeAvailable";
+      workspace_id: string;
+      conversation_id: string;
+      user_id: string;
+      device_id: string;
     };

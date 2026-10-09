@@ -18,6 +18,7 @@ export type ConversationSummary = Pick<
   | "slowModeSeconds"
   | "notificationLevel"
   | "effectiveNotificationLevel"
+  | "encryptedAt"
 >;
 
 /** A page of conversations, as returned by `channels` and `inboxConversations`. */

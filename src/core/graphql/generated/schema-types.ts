@@ -39,6 +39,7 @@ export type AdvanceIncidentPhaseInput = {
 };
 
 export type Attachment = {
+  blobSha256?: Maybe<Scalars['String']['output']>;
   contentType: Scalars['String']['output'];
   filename: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -156,6 +157,21 @@ export type ChannelPage = {
   next?: Maybe<ChannelCursorOutput>;
   pageInfo: PageInfo;
   prev?: Maybe<ChannelCursorOutput>;
+};
+
+export type ClaimMlsKeyPackagesInput = {
+  conversationId: Scalars['ID']['input'];
+  devices: Array<MlsDeviceRefInput>;
+  serverId: Scalars['ID']['input'];
+};
+
+export type ClaimedKeyPackage = {
+  deviceId: Scalars['ID']['output'];
+  keyPackage: Scalars['String']['output'];
+  keyPackageRef: Scalars['String']['output'];
+  lastResort: Scalars['Boolean']['output'];
+  principalId: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
 };
 
 export type Command = {
@@ -403,6 +419,7 @@ export type Conversation = {
    * else the workspace default.
    */
   effectiveNotificationLevel: NotificationLevel;
+  encryptedAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
   isArchived: Scalars['Boolean']['output'];
   /** Whether the viewer is a member (for channels: has joined it). */
@@ -412,6 +429,7 @@ export type Conversation = {
   isPrivate: Scalars['Boolean']['output'];
   memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
+  mlsGroup?: Maybe<MlsGroup>;
   /**
    * The viewer's own notification level for this conversation (Track 1.3); null inherits
    * the workspace default.
@@ -478,6 +496,7 @@ export enum ConversationTypeEnum {
 }
 
 export type CreateAttachmentInput = {
+  blobSha256?: InputMaybe<Scalars['String']['input']>;
   contentType: Scalars['String']['input'];
   conversationId: Scalars['ID']['input'];
   filename: Scalars['String']['input'];
@@ -495,6 +514,7 @@ export type CreateChannelLensInput = {
 };
 
 export type CreateConversationInput = {
+  encrypted?: InputMaybe<Scalars['Boolean']['input']>;
   /** For Channel conversations. */
   isChannel?: InputMaybe<Scalars['Boolean']['input']>;
   /** Channels only: visible to invited members alone. Cannot be changed later. */
@@ -715,6 +735,13 @@ export type DndWindowInput = {
   start: Scalars['String']['input'];
   /** IANA timezone name, e.g. `Europe/Prague`. */
   timezone: Scalars['String']['input'];
+};
+
+export type EditEncryptedMessageInput = {
+  conversationId: Scalars['ID']['input'];
+  envelope: Scalars['String']['input'];
+  messageId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 export type EditMessageInput = {
@@ -1296,6 +1323,7 @@ export type Message = {
   author?: Maybe<User>;
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
+  encryption?: Maybe<MessageEncryption>;
   forwardedFrom?: Maybe<Message>;
   forwardedFromMessageId?: Maybe<Scalars['ID']['output']>;
   hasAttachments: Scalars['Boolean']['output'];
@@ -1367,6 +1395,16 @@ export type MessageCursorOutput = {
   sentAt: Scalars['DateTime']['output'];
 };
 
+export type MessageEncryption = {
+  ciphertext?: Maybe<Scalars['String']['output']>;
+  epoch: Scalars['Int']['output'];
+  frankingKeyId: Scalars['Int']['output'];
+  frankingReceipt: Scalars['String']['output'];
+  incarnation: Scalars['Int']['output'];
+  senderDeviceId: Scalars['ID']['output'];
+  sentAtUs: Scalars['String']['output'];
+};
+
 export type MessagePage = {
   items: Array<Message>;
   next?: Maybe<MessageCursorOutput>;
@@ -1435,7 +1473,78 @@ export enum MessageTagTypeGql {
   TIMELINE_EVENT = 'TIMELINE_EVENT'
 }
 
+export type MlsCommit = {
+  createdAt: Scalars['DateTime']['output'];
+  epoch: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  incarnation: Scalars['Int']['output'];
+  message: Scalars['String']['output'];
+  senderDeviceId?: Maybe<Scalars['ID']['output']>;
+  senderPrincipalId?: Maybe<Scalars['String']['output']>;
+};
+
+export type MlsCommitPage = {
+  commits: Array<MlsCommit>;
+  hasMore: Scalars['Boolean']['output'];
+};
+
+export type MlsDevice = {
+  addedEpoch: Scalars['Int']['output'];
+  deviceId: Scalars['ID']['output'];
+  principalId: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type MlsDeviceRefInput = {
+  deviceId: Scalars['ID']['input'];
+  principalId: Scalars['String']['input'];
+};
+
+export type MlsGroup = {
+  cipherSuite: Scalars['Int']['output'];
+  devices: Array<MlsDevice>;
+  epoch: Scalars['Int']['output'];
+  groupId: Scalars['String']['output'];
+  incarnation: Scalars['Int']['output'];
+  pendingAdds: Array<MlsPendingDevice>;
+  pendingRemoves: Array<MlsDevice>;
+  readdRequests: Array<MlsReaddRequest>;
+};
+
+export type MlsKeyPackageStatus = {
+  available: Scalars['Int']['output'];
+  cipherSuite: Scalars['Int']['output'];
+  lastResortClaims: Scalars['Int']['output'];
+  lastResortNotAfter?: Maybe<Scalars['DateTime']['output']>;
+  oldestNotAfter?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type MlsPendingDevice = {
+  deviceId: Scalars['ID']['output'];
+  hasKeyPackage: Scalars['Boolean']['output'];
+  principalId: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type MlsReaddRequest = {
+  createdAt: Scalars['DateTime']['output'];
+  deviceId: Scalars['ID']['output'];
+  principalId: Scalars['String']['output'];
+  request: SignedStatement;
+};
+
+export type MlsWelcome = {
+  conversationId: Scalars['ID']['output'];
+  epoch: Scalars['Int']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  incarnation: Scalars['Int']['output'];
+  message: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+};
+
 export type Mutation = {
+  ackMlsWelcomes: Scalars['Int']['output'];
   /**
    * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
    * responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
@@ -1458,6 +1567,7 @@ export type Mutation = {
   banMember: ServerBan;
   /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
+  claimMlsKeyPackages: Array<ClaimedKeyPackage>;
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
   /** Called by the new device right after its first `loginWithKey`. */
@@ -1513,6 +1623,7 @@ export type Mutation = {
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
+  editEncryptedMessage: Message;
   editMessage: Message;
   /** Bind a key identity to the signed-in account. Afterwards the password no longer signs in. */
   enrollIdentityKey: KeyIdentity;
@@ -1567,11 +1678,13 @@ export type Mutation = {
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
   replyToMessage: Message;
+  reportEncryptedMessage: Scalars['Boolean']['output'];
   /**
    * Report a message to the workspace moderators. Any member who can read it, once per
    * message (`CONFLICT` on a second report). Audited (`chat.report_message`).
    */
   reportMessage: MessageReport;
+  requestMlsReadd: Scalars['Boolean']['output'];
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   resolveIncident: IncidentGql;
@@ -1603,6 +1716,7 @@ export type Mutation = {
   sendDeviceLinkAnswer: DeviceLink;
   /** The new device's sealed offer. No session needed: the link id is the capability. */
   sendDeviceLinkOffer: Scalars['Boolean']['output'];
+  sendEncryptedMessage: Message;
   sendMessage: Message;
   /**
    * Set a conversation's default escalation policy — the policy `ingestAlert`-declared
@@ -1668,6 +1782,7 @@ export type Mutation = {
   startDeviceLink: StartedDeviceLink;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
+  submitMlsCommit: MlsCommit;
   tagIncidentMessage: IncidentMessageTagGql;
   /**
    * Time a member out until `until` (at most 30 days ahead): they keep reading but every
@@ -1732,6 +1847,12 @@ export type Mutation = {
   updateUserCommand: Command;
   /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
   updateWorkspacePlugin: WorkspacePlugin;
+  uploadMlsKeyPackages: MlsKeyPackageStatus;
+};
+
+
+export type MutationAckMlsWelcomesArgs = {
+  ids: Array<Scalars['ID']['input']>;
 };
 
 
@@ -1781,6 +1902,11 @@ export type MutationBanMemberArgs = {
 
 export type MutationCancelDeviceLinkArgs = {
   linkId: Scalars['String']['input'];
+};
+
+
+export type MutationClaimMlsKeyPackagesArgs = {
+  input: ClaimMlsKeyPackagesInput;
 };
 
 
@@ -1938,6 +2064,11 @@ export type MutationDeleteWorkspaceStateArgs = {
 };
 
 
+export type MutationEditEncryptedMessageArgs = {
+  input: EditEncryptedMessageInput;
+};
+
+
 export type MutationEditMessageArgs = {
   input: EditMessageInput;
 };
@@ -2082,11 +2213,21 @@ export type MutationReplyToMessageArgs = {
 };
 
 
+export type MutationReportEncryptedMessageArgs = {
+  input: ReportEncryptedMessageInput;
+};
+
+
 export type MutationReportMessageArgs = {
   conversationId: Scalars['ID']['input'];
   messageId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationRequestMlsReaddArgs = {
+  input: RequestMlsReaddInput;
 };
 
 
@@ -2147,6 +2288,11 @@ export type MutationSendDeviceLinkAnswerArgs = {
 export type MutationSendDeviceLinkOfferArgs = {
   linkId: Scalars['String']['input'];
   offer: SealedMessageInput;
+};
+
+
+export type MutationSendEncryptedMessageArgs = {
+  input: SendEncryptedMessageInput;
 };
 
 
@@ -2233,6 +2379,11 @@ export type MutationStartIncidentArgs = {
 export type MutationStartTypingArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSubmitMlsCommitArgs = {
+  input: SubmitMlsCommitInput;
 };
 
 
@@ -2347,6 +2498,11 @@ export type MutationUpdateUserCommandArgs = {
 
 export type MutationUpdateWorkspacePluginArgs = {
   input: UpdateWorkspacePluginInput;
+};
+
+
+export type MutationUploadMlsKeyPackagesArgs = {
+  keyPackages: Array<Scalars['String']['input']>;
 };
 
 export type MuteConversationInput = {
@@ -2625,6 +2781,20 @@ export enum PresenceStatus {
   ONLINE = 'ONLINE'
 }
 
+export type PrincipalDevice = {
+  certificate: SignedStatement;
+  deviceId: Scalars['ID']['output'];
+  mlsActive: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  revocation?: Maybe<SignedStatement>;
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type PrincipalDevices = {
+  devices: Array<PrincipalDevice>;
+  principalId: Scalars['String']['output'];
+};
+
 export type ProfileCard = {
   statement: SignedStatement;
   updatedAt: Scalars['DateTime']['output'];
@@ -2708,12 +2878,15 @@ export type Query = {
    */
   messageReports: MessageReportPage;
   messages: MessagePage;
+  mlsCommits: MlsCommitPage;
   mutedConversations: Array<MutedConversation>;
   myInvites: Array<Invite>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
   myMacros: Array<MacroDef>;
   myMentions: Array<Message>;
+  myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
+  myMlsWelcomes: Array<MlsWelcome>;
   /** The viewer's notification settings in the workspace (defaults until first saved). */
   myNotificationSettings: NotificationSettings;
   /**
@@ -2746,6 +2919,7 @@ export type Query = {
    * See spec §4.7.
    */
   previewInviteToken: InviteTokenPreviewGql;
+  principalDevices: Array<PrincipalDevices>;
   /**
    * Return the deployment-wide registration mode.
    *
@@ -2980,6 +3154,15 @@ export type QueryMessagesArgs = {
 };
 
 
+export type QueryMlsCommitsArgs = {
+  afterEpoch?: InputMaybe<Scalars['Int']['input']>;
+  conversationId: Scalars['ID']['input'];
+  incarnation: Scalars['Int']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type QueryMutedConversationsArgs = {
   serverId: Scalars['ID']['input'];
 };
@@ -3051,6 +3234,11 @@ export type QueryPipelinesArgs = {
 
 export type QueryPreviewInviteTokenArgs = {
   token: Scalars['String']['input'];
+};
+
+
+export type QueryPrincipalDevicesArgs = {
+  principalIds: Array<Scalars['String']['input']>;
 };
 
 
@@ -3198,11 +3386,31 @@ export type ReplyToMessageInput = {
   text: Scalars['String']['input'];
 };
 
+export type ReportEncryptedMessageInput = {
+  content: Scalars['String']['input'];
+  conversationId: Scalars['ID']['input'];
+  frankingKey: Scalars['String']['input'];
+  messageId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  receipt: Scalars['String']['input'];
+  receiptKeyId: Scalars['Int']['input'];
+  senderDeviceId: Scalars['ID']['input'];
+  senderUserId: Scalars['ID']['input'];
+  sentAtUs: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
 /** How a moderator closes a report. */
 export enum ReportOutcome {
   DISMISSED = 'DISMISSED',
   RESOLVED = 'RESOLVED'
 }
+
+export type RequestMlsReaddInput = {
+  conversationId: Scalars['ID']['input'];
+  request: SignedStatementInput;
+  serverId: Scalars['ID']['input'];
+};
 
 export type RotateIdentityKeyInput = {
   /** Device certificate under the new identity key. Required for a recovery rotation. */
@@ -3320,8 +3528,18 @@ export type SearchResultPage = {
   prev?: Maybe<MessageCursorOutput>;
 };
 
+export type SendEncryptedMessageInput = {
+  conversationId: Scalars['ID']['input'];
+  envelope: Scalars['String']['input'];
+  forwardedFromMessageId?: InputMaybe<Scalars['ID']['input']>;
+  messageId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+  threadRootMessageId?: InputMaybe<Scalars['ID']['input']>;
+};
+
 export type SendMessageInput = {
   conversationId: Scalars['ID']['input'];
+  forwardedFromMessageId?: InputMaybe<Scalars['ID']['input']>;
   parentMessageId?: InputMaybe<Scalars['ID']['input']>;
   serverId: Scalars['ID']['input'];
   text: Scalars['String']['input'];
@@ -3501,6 +3719,16 @@ export type StartedDeviceLink = {
   expiresAt: Scalars['DateTime']['output'];
   /** 16 bytes, unpadded base64url. The server keeps only its hash, so it is shown once. */
   linkId: Scalars['String']['output'];
+};
+
+export type SubmitMlsCommitInput = {
+  cipherSuite?: InputMaybe<Scalars['Int']['input']>;
+  commit: Scalars['String']['input'];
+  conversationId: Scalars['ID']['input'];
+  epoch: Scalars['Int']['input'];
+  incarnation: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+  welcome?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type Subscription = {

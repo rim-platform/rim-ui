@@ -10,6 +10,7 @@ import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
 import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
 import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
+import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
@@ -175,6 +176,31 @@ function handleEvent(
     event.type === "MessageDeleted"
   ) {
     requestCacheSync(workspaceId, [event.conversation_id]);
+  }
+
+  // An encrypted message carries no text: the cache decrypts it and the timeline re-reads it.
+  if (
+    (event.type === "NewMessage" || event.type === "MessageUpdated") &&
+    event.message.encryption
+  ) {
+    if (event.type === "NewMessage") {
+      eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
+        conversationId: event.conversation_id,
+        authorId: event.message.author_id,
+      });
+    }
+    return;
+  }
+
+  switch (event.type) {
+    case "MlsCommitAccepted":
+    case "MlsMembershipChanged":
+    case "MlsWelcomeAvailable":
+    case "ConversationUpdated":
+      handleE2eeEvent(event, workspaceId);
+      break;
+    default:
+      break;
   }
 
   switch (event.type) {

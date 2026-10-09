@@ -15,6 +15,8 @@ export interface MessageAttachment {
   contentType: string;
   sizeBytes: number;
   status: AttachmentStatus;
+  /** SHA-256 of an encrypted attachment's blob (base64url). */
+  blobSha256?: string | null;
 }
 
 export interface MessageAuthor {
@@ -22,6 +24,7 @@ export interface MessageAuthor {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  principalId?: string | null;
 }
 
 export interface ForwardedFrom {
@@ -41,6 +44,37 @@ export interface MessageLinkPreview {
   description?: string | null;
   imageUrl?: string | null;
   siteName?: string | null;
+}
+
+/** The envelope facts the server keeps about an encrypted message. */
+export interface MessageEncryptionFacts {
+  incarnation: number;
+  epoch: number;
+  senderDeviceId: string;
+  frankingReceipt: string;
+  frankingKeyId: number;
+  sentAtUs: string;
+  ciphertext?: string | null;
+}
+
+/**
+ * What the desktop's message cache keeps about an encrypted message: whether this device could
+ * read it, and what a report or the archive needs (`content` is the exact decrypted content).
+ */
+export interface MessageE2ee {
+  /** `undecryptable`: sent before this device joined; `invalid`: decrypted but breaks a rule. */
+  status: "decrypted" | "undecryptable" | "invalid";
+  incarnation: number;
+  epoch: number;
+  senderDeviceId: string;
+  senderPrincipalId?: string;
+  receipt?: string | null;
+  receiptKeyId?: number | null;
+  sentAtUs?: string | null;
+  frankingKey?: string;
+  rev?: number;
+  content?: string;
+  reason?: string;
 }
 
 export interface MessageItem {
@@ -63,6 +97,10 @@ export interface MessageItem {
   reactions: MessageReaction[];
   attachments: MessageAttachment[];
   linkPreviews: MessageLinkPreview[];
+  /** Set on encrypted messages as the server returns them. */
+  encryption?: MessageEncryptionFacts | null;
+  /** Set on encrypted messages read from the desktop's cache. */
+  e2ee?: MessageE2ee | null;
 }
 
 export interface MessageCursor {

@@ -24,6 +24,7 @@ type Attachment {
 	filename: String!
 	contentType: String!
 	sizeBytes: Int!
+	blobSha256: String
 }
 
 enum AttachmentStatusEnum {
@@ -441,6 +442,8 @@ type Conversation {
 	else the workspace default.
 	"""
 	effectiveNotificationLevel: NotificationLevel!
+	encryptedAt: DateTime
+	mlsGroup: MlsGroup
 }
 
 """
@@ -516,6 +519,7 @@ input CreateAttachmentInput {
 	filename: String!
 	contentType: String!
 	sizeBytes: Int!
+	blobSha256: String
 }
 
 input CreateChannelLensInput {
@@ -545,6 +549,7 @@ input CreateConversationInput {
 	Channels only: visible to invited members alone. Cannot be changed later.
 	"""
 	isPrivate: Boolean! = false
+	encrypted: Boolean
 }
 
 input CreateCustomEmojiInput {
@@ -1426,6 +1431,7 @@ type Message {
 	mentionedUserIds: [ID!]!
 	linkPreviews: [LinkPreview!]!
 	mentions: [User!]!
+	encryption: MessageEncryption
 }
 
 """
@@ -1914,6 +1920,14 @@ type Mutation {
 	Remove an entry from the workspace's registry. Owner or Moderator.
 	"""
 	removeWorkspacePlugin(serverId: ID!, pluginId: String!): Boolean!
+	uploadMlsKeyPackages(keyPackages: [String!]!): MlsKeyPackageStatus!
+	claimMlsKeyPackages(input: ClaimMlsKeyPackagesInput!): [ClaimedKeyPackage!]!
+	submitMlsCommit(input: SubmitMlsCommitInput!): MlsCommit!
+	sendEncryptedMessage(input: SendEncryptedMessageInput!): Message!
+	editEncryptedMessage(input: EditEncryptedMessageInput!): Message!
+	ackMlsWelcomes(ids: [ID!]!): Int!
+	requestMlsReadd(input: RequestMlsReaddInput!): Boolean!
+	reportEncryptedMessage(input: ReportEncryptedMessageInput!): Boolean!
 }
 
 input MuteConversationInput {
@@ -2411,6 +2425,10 @@ type Query {
 	The workspace's plugin registry, ordered by plugin id. Any member, guests included.
 	"""
 	workspacePlugins(serverId: ID!): [WorkspacePlugin!]!
+	myMlsKeyPackageStatus: [MlsKeyPackageStatus!]!
+	myMlsWelcomes: [MlsWelcome!]!
+	mlsCommits(serverId: ID!, conversationId: ID!, incarnation: Int!, afterEpoch: Int, limit: Int): MlsCommitPage!
+	principalDevices(principalIds: [String!]!): [PrincipalDevices!]!
 }
 
 type ReactionGroup {
@@ -2598,6 +2616,7 @@ input SendMessageInput {
 	conversationId: ID!
 	text: String!
 	parentMessageId: ID
+	forwardedFromMessageId: ID
 }
 
 type Server {
@@ -3095,6 +3114,161 @@ type WorkspaceStateEntryGql {
 enum WorkspaceStateScopeGql {
 	SERVER
 	USER
+}
+
+type ClaimedKeyPackage {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	keyPackage: String!
+	keyPackageRef: String!
+	lastResort: Boolean!
+}
+
+input ClaimMlsKeyPackagesInput {
+	serverId: ID!
+	conversationId: ID!
+	devices: [MlsDeviceRefInput!]!
+}
+
+input EditEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	envelope: String!
+}
+
+type MessageEncryption {
+	incarnation: Int!
+	epoch: Int!
+	senderDeviceId: ID!
+	ciphertext: String
+	frankingReceipt: String!
+	frankingKeyId: Int!
+	sentAtUs: String!
+}
+
+type MlsCommit {
+	id: ID!
+	incarnation: Int!
+	epoch: Int!
+	senderPrincipalId: String
+	senderDeviceId: ID
+	message: String!
+	createdAt: DateTime!
+}
+
+type MlsCommitPage {
+	commits: [MlsCommit!]!
+	hasMore: Boolean!
+}
+
+type MlsDevice {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	addedEpoch: Int!
+}
+
+input MlsDeviceRefInput {
+	principalId: String!
+	deviceId: ID!
+}
+
+type MlsGroup {
+	groupId: String!
+	incarnation: Int!
+	cipherSuite: Int!
+	epoch: Int!
+	devices: [MlsDevice!]!
+	pendingAdds: [MlsPendingDevice!]!
+	pendingRemoves: [MlsDevice!]!
+	readdRequests: [MlsReaddRequest!]!
+}
+
+type MlsKeyPackageStatus {
+	cipherSuite: Int!
+	available: Int!
+	lastResortNotAfter: DateTime
+	lastResortClaims: Int!
+	oldestNotAfter: DateTime
+}
+
+type MlsPendingDevice {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	hasKeyPackage: Boolean!
+}
+
+type MlsReaddRequest {
+	principalId: String!
+	deviceId: ID!
+	request: SignedStatement!
+	createdAt: DateTime!
+}
+
+type MlsWelcome {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	incarnation: Int!
+	epoch: Int!
+	message: String!
+	expiresAt: DateTime!
+}
+
+type PrincipalDevice {
+	deviceId: ID!
+	name: String!
+	certificate: SignedStatement!
+	revokedAt: DateTime
+	revocation: SignedStatement
+	mlsActive: Boolean!
+}
+
+type PrincipalDevices {
+	principalId: String!
+	devices: [PrincipalDevice!]!
+}
+
+input ReportEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	reason: String!
+	content: String!
+	frankingKey: String!
+	receipt: String!
+	receiptKeyId: Int!
+	senderUserId: ID!
+	senderDeviceId: ID!
+	sentAtUs: String!
+}
+
+input RequestMlsReaddInput {
+	serverId: ID!
+	conversationId: ID!
+	request: SignedStatementInput!
+}
+
+input SendEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	envelope: String!
+	threadRootMessageId: ID
+	forwardedFromMessageId: ID
+}
+
+input SubmitMlsCommitInput {
+	serverId: ID!
+	conversationId: ID!
+	incarnation: Int!
+	epoch: Int!
+	cipherSuite: Int
+	commit: String!
+	welcome: String
 }
 
 """

@@ -63,6 +63,17 @@ export interface NotificationSettingsData {
   digest: DigestFrequency;
 }
 
+/** The viewer's server-side notification settings for the workspace. */
+export async function fetchNotificationSettings(
+  serverId: string,
+): Promise<NotificationSettingsData> {
+  const res = await graphqlClient.request<{ myNotificationSettings: NotificationSettingsData }>(
+    MY_NOTIFICATION_SETTINGS,
+    { serverId },
+  );
+  return res.myNotificationSettings;
+}
+
 /** The viewer's server-side notification settings for the workspace (defaults until saved). */
 export function useNotificationSettings(serverId?: string | null) {
   const ws = serverId ?? undefined;
@@ -70,13 +81,7 @@ export function useNotificationSettings(serverId?: string | null) {
     queryKey: queryKeys.notificationSettings(ws),
     enabled: Boolean(ws),
     staleTime: 60_000,
-    queryFn: async () => {
-      const res = await graphqlClient.request<{ myNotificationSettings: NotificationSettingsData }>(
-        MY_NOTIFICATION_SETTINGS,
-        { serverId: ws! },
-      );
-      return res.myNotificationSettings;
-    },
+    queryFn: () => fetchNotificationSettings(ws!),
   });
 }
 

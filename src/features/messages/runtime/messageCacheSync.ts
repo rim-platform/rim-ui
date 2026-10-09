@@ -20,6 +20,7 @@ import { onWsConnected } from "../../../core/graphql/wsClient";
 import { logger } from "../../../core/logger";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { requestArchiveExport } from "../../history-archive/runtime/archiveExport";
+import { mlsInputsFor } from "../../e2ee/runtime/feedInputs";
 import {
   applyCacheChanges,
   beginCacheSync,
@@ -28,6 +29,7 @@ import {
   type CacheAccount,
   type ChangeFeed,
   type FeedConversationChanges,
+  type MlsSyncNote,
 } from "../api/messageCache";
 
 export interface CacheSyncBackend {
@@ -160,11 +162,45 @@ export function createCacheSyncScheduler(deps: SchedulerDeps) {
   return { request };
 }
 
-function tauriBackend(account: CacheAccount): CacheSyncBackend {
+/** Receives what each feed page did in the encrypted conversations it carried. */
+export type E2eeNoteHandler = (
+  account: CacheAccount,
+  workspaceId: string,
+  notes: MlsSyncNote[],
+) => void;
+
+let e2eeNoteHandler: E2eeNoteHandler | null = null;
+
+/** Set by the encryption runtime, which resolves what a stopped conversation needs. */
+export function setE2eeNoteHandler(handler: E2eeNoteHandler | null) {
+  e2eeNoteHandler = handler;
+}
+
+/**
+ * The cache on the Tauri side. Encrypted conversations of a page get their Commits and thread
+ * roots fetched first; the cache decrypts their entries while storing the page.
+ */
+export function tauriBackend(account: CacheAccount): CacheSyncBackend {
   return {
     begin: (workspaceId, conversationIds) => beginCacheSync(account, workspaceId, conversationIds),
-    apply: (workspaceId, changes) => applyCacheChanges(account, workspaceId, changes),
+    apply: async (workspaceId, changes) => {
+      const mls = await mlsInputsFor(account, workspaceId, changes);
+      const step = await applyCacheChanges(account, workspaceId, changes, mls);
+      if (step && step.e2ee.length > 0) e2eeNoteHandler?.(account, workspaceId, step.e2ee);
+      return step?.next ?? null;
+    },
   };
+}
+
+/**
+ * Sync `conversationIds` now and wait for it, outside the scheduler: the client loop an
+ * encrypted send or Commit runs first. Returns false when there is no cache.
+ */
+export async function syncNow(workspaceId: string, conversationIds: string[]): Promise<boolean> {
+  const account = currentCacheAccount();
+  if (!account) return false;
+  await runCacheSync(tauriBackend(account), fetchMessageChanges, workspaceId, conversationIds);
+  return true;
 }
 
 const scheduler = createCacheSyncScheduler({

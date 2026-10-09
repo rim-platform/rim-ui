@@ -17,6 +17,7 @@ import { useUnreadCounts } from "../../features/conversations/api/useUnreadCount
 import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
 import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePresence";
 import { useMessageCacheSync } from "../../features/messages/runtime/messageCacheSync";
+import { useE2eeRuntime } from "../../features/e2ee/runtime/e2eeRuntime";
 import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
@@ -128,6 +129,7 @@ function WorkspaceShell() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   useWorkspaceEvents(workspaceId);
   useMessageCacheSync(workspaceId);
+  useE2eeRuntime(workspaceId);
   useUnreadCounts(workspaceId ?? undefined);
   useMutedConversations(workspaceId ?? undefined);
   useWorkspacePresence(workspaceId);
