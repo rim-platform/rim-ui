@@ -17,20 +17,23 @@ This document is the format. Anyone may write a reader or writer from it. The im
   a sync client never has a conflict to resolve and one device can never clobber another's data.
 - The folder holds ciphertext only. File names reveal neither the server, the user, nor the
   conversations.
-- The key that encrypts the files is not derived from the passphrase, so a later stage can add
-  another way to unlock it (Stage 3 identity keys) without re-encrypting anything.
+- The key that encrypts the files is not derived from the passphrase, so it can be unlocked
+  another way too (the identity key, "Identity key backup") without re-encrypting anything.
 
 ## Layout
 
 ```text
 <folder>/
   rim-archive.json                                  manifest
+  devices/<device id>/
+    key-wraps.json                                  the archive key under identity keys
   accounts/<account tag>/
     devices/<device id>/
       head.rimx                                     the device's segment list
       seg-0000000001.rimx                           segments, numbered from 1
       seg-0000000002.rimx
       ...
+      identity-backup.rimx                          the identity key, sealed under the backup key
 ```
 
 - **Manifest** (`rim-archive.json`): plain JSON, written once by the device that creates the
@@ -53,8 +56,8 @@ the race into a "conflicted copy" or a lost write, and the Google Drive and Drop
 append at all. Files that are written once, by one device, and never changed have neither
 problem. The cost is more, smaller files; compaction (below) is left to a later version.
 
-A device writes only inside `accounts/<tag>/devices/<its own id>/`. Readers ignore any name they
-do not expect: hidden temporary files (`.*.tmp`), a sync client's "conflicted copy" files, and
+A device writes only inside `accounts/<tag>/devices/<its own id>/` and `devices/<its own id>/`.
+Readers ignore any name they do not expect: hidden temporary files (`.*.tmp`), a sync client's "conflicted copy" files, and
 directories whose name is not an id (lowercase hex and `-`, 8 to 64 characters).
 
 ## Keys
@@ -65,6 +68,8 @@ directories whose name is not an id (lowercase hex and `-`, 8 to 64 characters).
 | Passphrase key | Argon2id(passphrase, salt), 32 bytes | Never stored |
 | File key | HKDF-SHA256(archive key, no salt, info `rim-history-archive v1 file key`) | Derived |
 | Name key | HKDF-SHA256(archive key, no salt, info `rim-history-archive v1 name key`) | Derived |
+| Identity wrap key | HKDF-SHA256(identity seed, salt `rim.history-archive.v1`, info `archive key wrap`) | Derived by a device holding the identity key |
+| Backup key | HKDF-SHA256(recovery phrase entropy, or a version 1 kit's seed, salt `rim.recovery-phrase.v1`, info `identity backup key`) | The keyring record of a device that holds the identity key |
 
 - The passphrase must be at least 12 characters. There is no recovery: losing the passphrase and
   every device that holds the key loses the archive, by design.
@@ -100,7 +105,9 @@ directories whose name is not an id (lowercase hex and `-`, 8 to 64 characters).
 ```
 
 A reader tries every `passphrase` wrap it understands and skips wraps of a `kind` it does not
-know. Creating an archive is an exclusive create of the manifest (a hard link of a fully written
+know. The manifest only ever holds `passphrase` wraps: the archive key's wraps under identity keys
+(`identity-v1`, "Identity key backup") have the same entry shape but live in per-device files,
+because they change with every identity rotation and the manifest is never rewritten. Creating an archive is an exclusive create of the manifest (a hard link of a fully written
 temporary file, or an exclusive open where the file system has no hard links): if two devices
 create one in the same folder at once, one wins and the other joins it.
 
@@ -112,11 +119,12 @@ Heads and segments share one envelope:
 |---|---|
 | 4 | `RIMX` |
 | 1 | envelope version, `1` |
-| 1 | kind: `1` segment, `2` head |
+| 1 | kind: `1` segment, `2` head, `3` identity backup |
 | 24 | XChaCha20-Poly1305 nonce, random |
 | rest | ciphertext with its 16-byte tag |
 
-The cipher key is the file key. The associated data is the 30-byte header followed by
+The cipher key is the file key, except for an identity backup, which is sealed under the backup
+key ("Identity key backup"). The associated data is the 30-byte header followed by
 `\0<archive id>\0<account tag>\0<device id>\0<file name>`. A file moved to another device's
 folder, renamed to another sequence number, or swapped between a head and a segment therefore
 fails to decrypt.
@@ -225,6 +233,172 @@ When the server is the authority (it answers `RESET` for a restored cursor, or `
 the cache does what it does for any cursor: drops the conversation and refetches it, or drops it
 and stops following it.
 
+## Identity key backup
+
+The identity key (rim-server `docs/specs/key-identity-v1.md`) adds devices, rotates and publishes
+the profile card. It lives in the keyring of the device that enrolled the account. The archive
+keeps two things for it, both written only by a device that holds the account's current
+identity key:
+
+- a **backup of the identity key**, sealed under a key that only the recovery phrase gives, so
+  another of the person's devices can take the identity key over when the first one is gone;
+- a **wrap of the archive key under the identity key**, a second way to unlock the archive
+  beside the passphrase.
+
+### Backup key
+
+`HKDF-SHA256(ikm = the 16 bytes of the recovery phrase, salt = "rim.recovery-phrase.v1",
+info = "identity backup key")`, 32 bytes. The recovery key uses the same salt with
+`info = "recovery key"`, so neither key can be derived from the other.
+
+An account enrolled with a version 1 kit (`RK1-`) has no phrase: its backup key is the same HKDF
+over the kit's 32-byte recovery seed. There, whoever holds the recovery seed can derive the
+backup key (but not the other way round), which gives them nothing they could not already do
+with a recovery.
+
+The entropy exists only while the kit is shown (enrollment, key-only signup) or typed
+(recovery). The device keeps the **backup key**, never the entropy, in its keyring record next
+to the identity key. A device that holds the identity key without a backup key (enrolled before
+the backup existed) gets one when the person types the phrase or `RK1-` key in Settings >
+Security; the app checks it against the key log's `recoveryKey` first.
+
+### The backup record
+
+`accounts/<account tag>/devices/<device id>/identity-backup.rimx`, a sealed file of kind `3`
+whose cipher key is the backup key (not the file key), with a fresh random nonce per write. Its
+associated data binds it, like every sealed file, to the archive, the account, the device and the
+file name. The plaintext is JSON:
+
+```json
+{
+  "v": 1,
+  "principalId": "rimp1_…",
+  "keySeq": 3,
+  "identitySeed": "ed25519:<base64url, 32 bytes>",
+  "pendingIdentitySeed": "ed25519:<base64url, 32 bytes>",
+  "pendingKeySeq": 4
+}
+```
+
+- `keySeq`: the key log `seq` whose head names `identitySeed`, as the writer verified it.
+- `identitySeed`: the identity key as the keyring stores it, algorithm tag and seed.
+- `pendingIdentitySeed`, `pendingKeySeq`: present while a rotation the writer sent has not been
+  confirmed: the new key and the `seq` its rotation creates.
+
+The file is not listed in the device's head; readers that do not know it never open it.
+
+### When it is written
+
+A device writes its backup and its wrap whenever it holds the head's identity key and the
+archive is unlocked on it: when the archive is set up or joined, when the identity key is
+enrolled, recovered or taken over, after a rotation, and whenever Settings > Security checks the
+key log. It writes only what changed: a backup that already opens to the same plaintext and a
+wrap that already opens to the archive key are left alone.
+
+### Taking the identity key over
+
+On a device that holds only a device key for the account, with the archive set up and unlocked:
+
+1. The person types the recovery phrase (or `RK1-` key). The app derives the recovery key and
+   checks it is the `recoveryKey` of the server's key log, replayed on the device.
+2. It derives the backup key, lists `accounts/<tag>/devices/`, and opens every
+   `identity-backup.rimx` it finds. A file that does not open, or names another `principalId`,
+   is skipped.
+3. It keeps the seed (current or pending) whose public key is the head's `identityKey`. If none
+   is, every backup predates the last rotation, and the takeover stops: the device that holds
+   the current key backs it up the next time it runs.
+4. It stores the identity key and the backup key in its keyring record and writes a backup and a
+   wrap of its own.
+
+The old device keeps its copy; nothing is revoked or signed. The new holder can add and revoke
+devices, rotate and publish the profile card from then on.
+
+### Wraps under the identity key (`identity-v1`)
+
+`devices/<device id>/key-wraps.json`, plain JSON, written whole by that device only:
+
+```json
+{
+  "format": "rim-history-archive-key-wraps",
+  "v": 1,
+  "archiveId": "6f1c8a52-…",
+  "deviceId": "0f0e0d0c-…",
+  "keyWraps": [
+    {
+      "kind": "identity-v1",
+      "account": "<account tag>",
+      "nonce": "<base64, 24 bytes>",
+      "wrapped": "<base64, 32-byte key + 16-byte tag>"
+    }
+  ]
+}
+```
+
+- The cipher key is the **identity wrap key**, `HKDF-SHA256(ikm = identity seed, salt =
+  "rim.history-archive.v1", info = "archive key wrap")`, the nonce is random, and the
+  associated data is `rim-history-archive v1 identity key wrap\0<archive id>\0<account tag>`.
+- A device keeps one `identity-v1` entry per account: writing a wrap under a new identity key
+  (after a rotation) replaces its entry for that account, so the old key's wrap is gone. Entries
+  of a kind it does not know are kept as they are.
+- **Unlocking** ("Unlock with this device's keys", beside the passphrase when this device holds
+  an identity key for the account): list `devices/`, read each `key-wraps.json` of this archive,
+  and try each `identity-v1` entry with the wrap key of every identity key the device holds
+  (current and pending). A wrap under a key it does not hold fails authentication and is
+  skipped. The unwrapped key is used only if its account tag for this account equals the
+  entry's `account`.
+
+The file sits outside `accounts/` because a device that needs it does not have the archive key
+yet, and the account tag is derived from that key.
+
+### What a drive provider learns
+
+It sees which devices hold an identity key for which account tag, how big the backup is (larger
+while a rotation is pending), and when each file is rewritten (after setup, enrollment, rotation
+or takeover). It learns neither the identity key, its public key, nor whose account it is. The
+backup key carries the phrase's 128 bits and the wrap key the identity key's 256: neither can be
+guessed offline. Someone with the archive's passphrase can read the history but not the backup.
+A provider can delete or roll back these files: a deleted backup stops a takeover, and a backup
+older than the last rotation is refused by the key log check; a forged one fails authentication.
+
+### Known-answer vectors
+
+Never use these for a real account.
+
+| Item | Value |
+|---|---|
+| Phrase entropy | `000102030405060708090a0b0c0d0e0f` |
+| Backup key from it | `2438cbcffe2da40ecca624572cc87e128658014f3c05c2431ba039b03a4035bf` |
+| Version 1 recovery seed | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` |
+| Backup key from it | `4262b4cecee03da62eaa49f56889412370a08500e57b11e3ac9a06f7b1a8c302` |
+| Identity seed | `202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f` (stored as `ed25519:ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8`) |
+| Identity wrap key from it | `4a91b2fbae43381b5dc85eb455dce1c22ed89ed182aeb4e6b31ff46cbf2f57c9` |
+
+A sealed backup under the phrase's backup key, archive id
+`6f1c8a52-1d7e-4f0a-9a43-1c2b8a1f0e55`, account tag `00112233445566778899aabbccddeeff`, device id
+`0f0e0d0c-0b0a-4908-8706-050403020100`, nonce `404142434445464748494a4b4c4d4e4f5051525354555657`,
+and the plaintext (no whitespace)
+
+```text
+{"v":1,"principalId":"rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo","keySeq":0,"identitySeed":"ed25519:ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"}
+```
+
+is these 199 bytes (SHA-256 `605e2cd7439fecc24fdcec24950a7ec63d700eb4d8660f1251385557053bc315`):
+
+```text
+52494d580103404142434445464748494a4b4c4d4e4f50515253545556572c99
+273079b132162a65eb3fedb5f5250ee55435c15895077b742fb1f2b709847ec9
+124e45c8d94a4ddeb6ac6930670ce9752afd0a96a0ccc85fc164349d35ac667e
+4848c3c32ebf0af8090fccd7e804aaae05cf481c4b177f185facaac4635db959
+0bcd6f6f08607adca293a305e98ed592aa712c602e443752ccf6eee733b92f05
+5243e1cd6e338f9fcf35f1f58d6076d4fabcf69c4133f0edf402da8c60a58807
+bd105bb3844de3
+```
+
+An `identity-v1` wrap of the archive key `606162…7f` (32 bytes counting up) under the identity
+seed's wrap key, for the same archive id and account tag, with nonce
+`gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaX` (bytes `80` to `97`), has `wrapped`
+`7V00oND8ZorkpfnJFKA1z3b3F5NjQ06pY20vPcfQuPMCMMGaNR231yQTWGP0EPFv`.
+
 ## Versioning
 
 - `version` in the manifest is the archive format version; the envelope byte and `v` in heads
@@ -326,6 +500,8 @@ same batch again under the same sequence numbers, replacing whatever the interru
   fewer (only that device may), listing the new ones in its head before deleting the old.
 - Signed messages and rollback detection (a drive restoring an older head) come with Stage 3
   identity keys.
+- Unlocking with the identity key when joining an archive on a new device: the wrap is offered
+  only to a device that already has the archive set up and lost its key.
 - Restore reads the whole account into memory before writing it to the cache.
 - Device clocks order resets (`resetAt` against `createdAtMs`); a device whose clock is far off
   can have its archived copies of a reset conversation skipped. They are the server's to resend.
