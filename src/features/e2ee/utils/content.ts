@@ -35,6 +35,17 @@ export function toUserMentions(
   });
 }
 
+/** The body with `<@principalId>` tokens as `@name`, for plain-text display. */
+export function withMentionNames(
+  body: string,
+  nameOf: (principalId: string) => string | null | undefined,
+): string {
+  return body.replace(MENTION_TOKEN, (token, id: string) => {
+    const name = nameOf(id);
+    return name ? `@${name}` : token;
+  });
+}
+
 /** The principal ids a body mentions, in order of first appearance. */
 export function mentionedPrincipals(body: string): string[] {
   const out: string[] = [];

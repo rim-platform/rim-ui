@@ -18,6 +18,10 @@ export const queryKeys = {
   serverBans: (serverId?: string) => ["serverBans", serverId] as const,
   messageReports: (serverId?: string, status?: string | null) =>
     ["messageReports", serverId, status ?? null] as const,
+  // One report with its verified encrypted content; under the reports root so a resolve
+  // invalidates it too.
+  messageReport: (serverId?: string, reportId?: string) =>
+    ["messageReports", serverId, "report", reportId] as const,
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,

@@ -187,6 +187,19 @@ export async function downloadBlob(attachmentId: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/** Download a reported message's attachment blob through the report (moderators only). */
+export async function downloadReportedBlob(
+  reportId: string,
+  blobSha256: string,
+): Promise<Uint8Array> {
+  const res = await fetch(
+    `${getApiOrigin()}/api/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(blobSha256)}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 /** The blobs of a forwarded encrypted message, to upload again under the new message. */
 async function forwardedBlobs(
   workspaceId: string,

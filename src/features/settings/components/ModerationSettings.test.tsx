@@ -8,6 +8,7 @@ import {
   baseReadHandlers,
   callsTo,
   routeRequests,
+  workspaceMembers,
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
@@ -20,8 +21,12 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
+vi.mock("../../e2ee/api/e2eeCommands", () => ({
+  decryptReportedAttachment: vi.fn(),
+}));
 
 import { toast } from "../../../shared/toast";
+import { decryptReportedAttachment } from "../../e2ee/api/e2eeCommands";
 import { ModerationSettings } from "./ModerationSettings";
 
 const bans = [
@@ -57,6 +62,10 @@ function report(id: string, overrides: Record<string, unknown> = {}) {
     messageReadable: true,
     messageText: `text of ${id}`,
     messageAuthorId: "u-bob",
+    messageSentAt: null,
+    frankingVerifiedAt: null,
+    frankedSenderDeviceId: null,
+    frankedContentExpiresAt: null,
     ...overrides,
   };
 }
@@ -227,5 +236,156 @@ describe("ModerationSettings", () => {
       "OPEN",
       "RESOLVED",
     ]);
+  });
+});
+
+/** The spec's known-answer content: a mention of Bob and one attachment. */
+const BOB_PRINCIPAL = "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo";
+const CONTENT = `{"v":1,"type":"message","id":"0199d1a0-0000-7000-8000-000000000002","rev":0,"threadRootId":null,"body":"hi <@${BOB_PRINCIPAL}>","mentions":["${BOB_PRINCIPAL}"],"mentionAll":false,"replyTo":null,"forwardedFrom":null,"attachments":[{"blobSha256":"EHFcZ6hUOIdDi32ptdrCXM2PTHQwKF46-0Ls56yQrac","secret":"oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8","name":"hello.txt","mime":"text/plain","size":18}],"linkPreviews":[]}`;
+const BLOB_HEX = "096d52fa9b833e37ef33d387fc5ecab34eabb410807b85e90c862a44614c7c9cb163";
+
+function base64Url(text: string): string {
+  return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function hexBytes(hex: string): Uint8Array {
+  return Uint8Array.from(hex.match(/../g)!.map((b) => parseInt(b, 16)));
+}
+
+const verified = {
+  conversationId: "conv-dm",
+  messageId: "0199d1a0-0000-7000-8000-000000000002",
+  messageReadable: false,
+  messageText: null,
+  messageAuthorId: "u-alice",
+  messageSentAt: "2026-10-09T00:00:00.123456Z",
+  frankingVerifiedAt: "2026-10-09T01:00:00Z",
+  frankedSenderDeviceId: "00000000-0000-0000-0000-000000000001",
+};
+
+describe("ModerationSettings — verified encrypted reports", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    fetchMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(decryptReportedAttachment).mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    URL.createObjectURL = vi.fn(() => "blob:report");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  function serveEncrypted(detail: Record<string, unknown> = {}) {
+    // "query MessageReport(" before "query Me", which is a prefix of it.
+    routeRequests(requestMock, {
+      "query MessageReport(": () => ({
+        messageReport: {
+          ...report("e1", verified),
+          frankedContentExpiresAt: null,
+          frankedContent: base64Url(CONTENT),
+          ...detail,
+        },
+      }),
+      "query MessageReports": () => ({
+        messageReports: {
+          items: [report("e1", verified)],
+          next: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      }),
+      "query Server(": () => ({
+        server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MODERATOR },
+      }),
+      "query ServerBans": () => ({ serverBans: [] }),
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "u-bob" ? { ...m, principalId: BOB_PRINCIPAL } : m,
+        ),
+      }),
+      "query PrincipalDevices": () => ({ principalDevices: [] }),
+      "mutation DeleteReportedMessage": () => ({ deleteMessage: true }),
+      "query Me": baseReadHandlers["query Me"],
+    });
+  }
+
+  it("shows the verified content only when the moderator opens it", async () => {
+    serveEncrypted();
+    renderSettings();
+    const row = await screen.findByTestId("report-row-e1");
+    expect(row).toHaveTextContent("Encrypted · verified");
+    expect(row).not.toHaveTextContent("message not visible to you");
+    expect(callsTo(requestMock, "query MessageReport(")).toHaveLength(0);
+
+    fireEvent.click(within(row).getByRole("button", { name: "Show reported message" }));
+    expect(await within(row).findByTestId("reported-body")).toHaveTextContent("hi @Bob");
+    expect(callsTo(requestMock, "query MessageReport(")).toEqual([
+      { serverId: "ws-1", reportId: "e1" },
+    ]);
+    expect(row).toHaveTextContent(
+      "Verified: this is the exact message Alice's device sent. Other messages in the conversation are not shown and are not verified.",
+    );
+    expect(row).toHaveTextContent("hello.txt");
+    expect(row).toHaveTextContent("18 B");
+    expect(row).toHaveTextContent("00000000-0000-0000-0000-000000000001");
+    expect(row).toHaveTextContent("An encrypted conversation you are not in");
+    expect(row).toHaveTextContent("kept until 90 days after this report is closed");
+  });
+
+  it("downloads a reported attachment through the report and decrypts it here", async () => {
+    serveEncrypted();
+    const blob = hexBytes(BLOB_HEX);
+    fetchMock.mockResolvedValue(new Response(blob));
+    vi.mocked(decryptReportedAttachment).mockResolvedValue(
+      new TextEncoder().encode("hello, attachment\n"),
+    );
+    renderSettings();
+    const row = await screen.findByTestId("report-row-e1");
+    fireEvent.click(within(row).getByRole("button", { name: "Show reported message" }));
+    fireEvent.click(await within(row).findByRole("button", { name: "Download hello.txt" }));
+
+    await waitFor(() => expect(decryptReportedAttachment).toHaveBeenCalledTimes(1));
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(
+      /\/api\/reports\/e1\/attachments\/EHFcZ6hUOIdDi32ptdrCXM2PTHQwKF46-0Ls56yQrac$/,
+    );
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: "include" });
+    const [content, hash, sent] = vi.mocked(decryptReportedAttachment).mock.calls[0];
+    expect(new TextDecoder().decode(content)).toBe(CONTENT);
+    expect(hash).toBe("EHFcZ6hUOIdDi32ptdrCXM2PTHQwKF46-0Ls56yQrac");
+    expect(Array.from(sent)).toEqual(Array.from(blob));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("says when the content was deleted, and deletes the message after a confirm", async () => {
+    serveEncrypted({
+      status: "RESOLVED",
+      frankedContent: null,
+      frankedContentExpiresAt: "2026-01-07T10:00:00Z",
+    });
+    renderSettings();
+    const row = await screen.findByTestId("report-row-e1");
+    fireEvent.click(within(row).getByRole("button", { name: "Show reported message" }));
+    expect(
+      await within(row).findByText("The reported content has been deleted from the server."),
+    ).toBeInTheDocument();
+    expect(row).toHaveTextContent("deleted from the server on");
+
+    fireEvent.click(within(row).getByRole("button", { name: "Delete message" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete this message?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation DeleteReportedMessage")).toEqual([
+        {
+          input: {
+            serverId: "ws-1",
+            conversationId: "conv-dm",
+            messageId: "0199d1a0-0000-7000-8000-000000000002",
+          },
+        },
+      ]),
+    );
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Message deleted"));
   });
 });

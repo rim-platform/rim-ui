@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
+import type { MessageItem } from "../../../core/types/messages";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -26,6 +27,8 @@ interface MessageContextMenuProps {
   isOwnMessage: boolean;
   isPinned: boolean;
   hasThread: boolean;
+  /** The message as this device holds it, for reporting an encrypted one. */
+  message?: MessageItem | null;
   onClose: () => void;
   onForward?: (messageId: string, messageText: string) => void;
 }
@@ -40,6 +43,7 @@ export function MessageContextMenu({
   isOwnMessage,
   isPinned,
   hasThread,
+  message,
   onClose,
   onForward,
 }: MessageContextMenuProps) {
@@ -199,6 +203,7 @@ export function MessageContextMenu({
           workspaceId={workspaceId}
           conversationId={conversationId}
           messageId={messageId}
+          message={message}
           onClose={() => {
             setPendingReport(false);
             onClose();

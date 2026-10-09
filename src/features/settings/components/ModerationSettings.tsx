@@ -16,6 +16,7 @@ import {
   type ServerBanRow,
 } from "../../workspaces/api/useModeration";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { EncryptedReportView } from "./EncryptedReportView";
 
 interface ModerationSettingsProps {
   serverId: string | null;
@@ -23,7 +24,8 @@ interface ModerationSettingsProps {
 
 /**
  * Settings → Workspace → Moderation (Owner/Moderator, Track 1.2): active bans with Unban, and
- * message reports with Resolve / Dismiss. The server answers `FORBIDDEN` to anyone else and
+ * message reports with Resolve / Dismiss, including the verified content of reported encrypted
+ * messages. The server answers `FORBIDDEN` to anyone else and
  * that message is shown here.
  */
 export function ModerationSettings({ serverId }: ModerationSettingsProps) {
@@ -199,6 +201,8 @@ function ReportRow({ serverId, report }: { serverId: string; report: MessageRepo
     ? memberLookup.resolve(report.messageAuthorId).displayName
     : null;
   const isOpen = report.status === MessageReportStatus.OPEN;
+  const verified = report.frankingVerifiedAt !== null && report.frankingVerifiedAt !== undefined;
+  const [showContent, setShowContent] = useState(false);
 
   function handleResolve(outcome: ReportOutcome) {
     resolve.mutate(
@@ -225,9 +229,22 @@ function ReportRow({ serverId, report }: { serverId: string; report: MessageRepo
             {STATUS_LABEL[report.status]}
           </span>
         )}
+        {verified && (
+          <span className="rounded border border-rim-success/40 px-1 text-[10px] uppercase tracking-wider text-rim-success">
+            Encrypted &middot; verified
+          </span>
+        )}
       </div>
       <p className="text-sm text-rim-text">{report.reason}</p>
-      {report.messageReadable ? (
+      {verified ? (
+        showContent ? (
+          <EncryptedReportView serverId={serverId} report={report} />
+        ) : (
+          <Button type="button" variant="secondary" size="sm" onClick={() => setShowContent(true)}>
+            Show reported message
+          </Button>
+        )
+      ) : report.messageReadable ? (
         <blockquote className="whitespace-pre-wrap break-words border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
           {report.messageText ?? <span className="italic">This message was deleted</span>}
         </blockquote>

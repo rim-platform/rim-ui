@@ -306,6 +306,7 @@ export function MessageTimeline() {
           isOwnMessage={contextMenu.isOwnMessage}
           isPinned={contextMenu.isPinned}
           hasThread={contextMenu.hasThread}
+          message={items.find((m) => m.id === contextMenu.messageId)}
           onClose={closeContextMenu}
           onForward={(msgId, msgText) => setForwardMessage({ id: msgId, text: msgText })}
         />
