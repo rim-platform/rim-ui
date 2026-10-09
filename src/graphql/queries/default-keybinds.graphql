@@ -1,7 +1,0 @@
-query DefaultKeybinds {
-  defaultKeybinds {
-    keystroke
-    commandId
-    context
-  }
-}

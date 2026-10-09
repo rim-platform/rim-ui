@@ -1,3 +1,0 @@
-mutation DeleteUserCommand($input: DeleteUserCommandInput!) {
-  deleteUserCommand(input: $input)
-}

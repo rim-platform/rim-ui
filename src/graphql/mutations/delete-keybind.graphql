@@ -1,3 +1,0 @@
-mutation DeleteKeybind($input: DeleteKeybindInput!) {
-  deleteKeybind(input: $input)
-}
