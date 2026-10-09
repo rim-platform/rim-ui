@@ -1,6 +1,6 @@
-//! Where the archive's files live. One trait, one provider in this PR: a local folder, which
-//! also covers folders that Dropbox, Google Drive, OneDrive, iCloud Drive or Syncthing keep in
-//! sync. Cloud API providers (Google Drive, Dropbox) come later behind the same trait.
+//! Where the archive's files live. One trait; this module holds the local folder provider,
+//! which also covers folders that Dropbox, Google Drive, OneDrive, iCloud Drive or Syncthing
+//! keep in sync. The Google Drive and Dropbox API providers are in `cloud/`.
 //!
 //! Paths are archive-relative and `/`-separated (`accounts/<tag>/devices/<id>/head.rimx`);
 //! [`check_path`] refuses anything that could leave the archive's root.
