@@ -47,6 +47,7 @@ import { ConnectionBanner } from "../../features/system/components/ConnectionBan
 import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
+import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
 import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
 import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
 import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
@@ -71,6 +72,7 @@ export function AppShell() {
   const { isHydrating } = useSessionHydration();
   useOfflineReconnect();
   useResumeDeviceLinks();
+  useRelayRuntime();
   usePluginPrincipalSync();
   usePluginChatRelay();
   useWebPluginRuntime();

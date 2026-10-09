@@ -227,6 +227,7 @@ pub fn run() {
             relay::commands::relay_host_response_key_seq,
             relay::commands::relay_verify_host_response,
             relay::commands::relay_read_host_event,
+            relay::commands::relay_verify_card,
             key_identity::commands::key_identity_sync_log,
             key_identity::commands::key_identity_sign_revocation,
             key_identity::commands::key_identity_begin_rotation,

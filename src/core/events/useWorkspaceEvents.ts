@@ -113,7 +113,7 @@ export function useWorkspaceEvents(workspaceId: string | null) {
 
           try {
             const event: WorkspaceEvent = JSON.parse(result.data.workspaceEvents);
-            handleEvent(event, qc, workspaceId, executeCommandRef.current.mutate);
+            applyWorkspaceEvent(event, qc, workspaceId, executeCommandRef.current.mutate);
           } catch (err) {
             logger.warn("[RIM:WS] Failed to parse event:", err);
           }
@@ -160,9 +160,13 @@ function eventMessageToCache(msg: MessageEventData): MessageItem {
   };
 }
 
-type AckMutate = ReturnType<typeof useExecuteCommandMutation>["mutate"];
+export type AckMutate = ReturnType<typeof useExecuteCommandMutation>["mutate"];
 
-function handleEvent(
+/**
+ * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
+ * this server hosts, or a verified host event from the relay for a space elsewhere.
+ */
+export function applyWorkspaceEvent(
   event: WorkspaceEvent,
   qc: ReturnType<typeof useQueryClient>,
   workspaceId: string,

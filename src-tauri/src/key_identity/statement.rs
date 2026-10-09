@@ -849,7 +849,8 @@ struct CardEntry {
 }
 
 /// What a verified profile card says.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct VerifiedCard {
     pub(crate) version: u32,
     pub(crate) display_name: String,

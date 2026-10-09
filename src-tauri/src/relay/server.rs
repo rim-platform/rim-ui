@@ -49,7 +49,6 @@ pub(crate) fn server_id(inception_payload: &str) -> String {
     format!("{SERVER_PREFIX}{}", b64(&hasher.finalize()))
 }
 
-
 // ─── Server key log ──────────────────────────────────────────────────────────
 
 /// Who signed a server key rotation.

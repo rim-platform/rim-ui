@@ -4,6 +4,8 @@ import { gql } from "graphql-request";
 import { graphqlClient, getCookie } from "../../../core/graphql/client";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { ATTACHMENT_FIELDS } from "../../../graphql/fragments/message";
+import { hostOf } from "../../relay/state/useRelayStore";
+import { remoteFetch } from "../../relay/transport/remoteFetch";
 
 const CREATE_ATTACHMENT_MUTATION = gql`
   mutation CreateAttachment($input: CreateAttachmentInput!) {
@@ -105,12 +107,15 @@ const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
 /**
- * Upload a file to the REST endpoint using the upload token from createAttachment.
+ * Upload a file to the REST endpoint using the upload token from createAttachment. A file for
+ * a space on another server goes through the relay to its host, as exact multipart bytes the
+ * device request hashes.
  */
 export async function uploadFileRest(
   file: File,
   uploadToken: string,
   attachmentId: string,
+  workspaceId?: string,
 ): Promise<void> {
   const uploadUrl = getApiOrigin() + "/api/files/upload";
 
@@ -118,6 +123,18 @@ export async function uploadFileRest(
   formData.append("file", file);
   formData.append("upload_token", uploadToken);
   formData.append("attachment_id", attachmentId);
+
+  const host = hostOf(workspaceId);
+  if (host) {
+    const encoded = new Request(uploadUrl, { method: "POST", body: formData });
+    const res = await remoteFetch(host, "/api/files/upload", {
+      method: "POST",
+      body: new Uint8Array(await encoded.arrayBuffer()),
+      contentType: encoded.headers.get("Content-Type") ?? undefined,
+    });
+    if (res.status < 200 || res.status >= 300) throw new Error(`Upload failed: ${res.status}`);
+    return;
+  }
 
   const headers: Record<string, string> = {};
   const csrf = getCookie(CSRF_COOKIE);

@@ -1,7 +1,7 @@
 //! Tauri commands that check server statements. They hold no state: the webview keeps the pins
 //! and passes in the key a statement must verify under.
 
-use crate::key_identity::statement::Statement;
+use crate::key_identity::statement::{replay, verified_card, Statement, VerifiedCard};
 use crate::key_identity::KeyIdentityError;
 
 use super::server::{self, HostEvent, HostResponse, ResponseExpectation, VerifiedDiscovery};
@@ -59,4 +59,21 @@ pub async fn relay_read_host_event(
         }
     }
     Ok(event)
+}
+
+/// Verify `principal_id`'s key log and the profile card against its head: what a person's relay
+/// served about them, before their name or relays are shown or used.
+#[tauri::command]
+pub async fn relay_verify_card(
+    principal_id: String,
+    key_log: Vec<Statement>,
+    card: Statement,
+) -> Result<VerifiedCard, KeyIdentityError> {
+    let head = replay(&key_log)?;
+    if head.principal_id != principal_id {
+        return Err(KeyIdentityError::Invalid(
+            "the key log belongs to another account".into(),
+        ));
+    }
+    verified_card(&card, &head)
 }
