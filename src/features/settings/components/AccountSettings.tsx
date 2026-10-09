@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useLogoutMutation } from "../../auth/api/useAuthMutations";
+import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
@@ -87,6 +88,9 @@ export function AccountSettings({ onNavigateToProfile }: AccountSettingsProps) {
               })}
             </span>
           </p>
+        </div>
+        <div className="mt-4">
+          <SignOutOtherSessions description="Ends every other session of your account, on other devices and browsers. This one stays signed in." />
         </div>
       </section>
 
