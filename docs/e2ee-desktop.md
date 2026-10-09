@@ -121,7 +121,8 @@ uploads 5 fresh one-time packages after the request.
 - "A message from <sender> could not be verified" for invalid messages.
 - Above the composer: "Not encrypted yet: <name> has not set up encryption on a desktop device";
   the unverified-device warning (sending stops); "This device can't read new messages until
-  another device re-adds it"; in the web app, a pointer to the desktop app.
+  another device re-adds it". The web app runs the same flows once the browser is a linked
+  device (`e2ee-web.md`).
 - Keyword notifications for encrypted groups at the "mentions" level are matched on this
   device after decrypting, as a desktop notification without an inbox entry.
 
