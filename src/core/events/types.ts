@@ -271,4 +271,15 @@ export type WorkspaceEvent =
       conversation_type: string;
       incident_id: string;
       acknowledged_by: string;
+    }
+  /**
+   * An entry of the workspace's plugin registry was added, updated or removed. Visible to
+   * every member, guests included; it carries no entry data, so clients refetch
+   * `workspacePlugins`.
+   */
+  | {
+      type: "WorkspacePluginChanged";
+      workspace_id: string;
+      plugin_id: string;
+      change: "added" | "updated" | "removed";
     };

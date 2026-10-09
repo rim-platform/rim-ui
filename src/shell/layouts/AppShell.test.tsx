@@ -97,6 +97,9 @@ vi.mock("../../features/agent/components/AgentOverlay", () => ({ AgentOverlay: (
 vi.mock("../../features/agent/components/ConfirmCommandModal", () => ({
   ConfirmCommandModal: () => null,
 }));
+vi.mock("../../features/plugins/registry/components/RegistryHost", () => ({
+  RegistryHost: () => null,
+}));
 vi.mock("../../features/plugins/components/PluginSlotContainer", () => ({
   PluginSlotContainer: () => null,
 }));

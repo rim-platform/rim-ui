@@ -6,6 +6,8 @@ import { useCommandStore } from "../state/useCommandStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
+import { useRegistryStore } from "../../plugins/registry/state";
 import { toastPluginCommandResult } from "../../plugins/runtime/pluginCommandInfo";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -40,6 +42,7 @@ export function CommandPalette() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
+  const registryItems = useRegistryPaletteItems();
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const executeCommandMutation = useExecuteCommandMutation();
@@ -57,8 +60,8 @@ export function CommandPalette() {
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
     const base = commands?.filter((cmd) => cmd.visibleInPalette) ?? [];
-    return [...base, ...pluginCommands.filter((cmd) => cmd.visibleInPalette)];
-  }, [commands, pluginCommands]);
+    return [...base, ...pluginCommands.filter((cmd) => cmd.visibleInPalette), ...registryItems];
+  }, [commands, pluginCommands, registryItems]);
 
   const getCommandText = useCallback(
     (cmd: CommandDefinition) => [cmd.title, cmd.description, cmd.category],
@@ -208,6 +211,15 @@ export function CommandPalette() {
 
   const executeSelected = useCallback(
     async (command: CommandDefinition) => {
+      // A registry entry opens its install dialog; one that cannot be installed here stays put.
+      if (isRegistryPaletteItem(command)) {
+        if (command.registry.refusal !== null) return;
+        closeCommandPalette();
+        useRegistryStore
+          .getState()
+          .openInstall(command.registry.serverId, command.registry.pluginId);
+        return;
+      }
       // If we have pipe segments, add this command to the chain and execute the whole pipe
       if (pipeSegments.length > 0) {
         await executePipeChain(pipeSegments, command.id);
@@ -377,7 +389,11 @@ export function CommandPalette() {
                       index === selectedIndex
                         ? "bg-rim-accent/10 text-rim-text"
                         : "text-rim-text-muted hover:bg-rim-void/50",
+                      isRegistryPaletteItem(cmd) && cmd.registry.refusal !== null && "opacity-60",
                     )}
+                    aria-disabled={
+                      isRegistryPaletteItem(cmd) && cmd.registry.refusal !== null ? true : undefined
+                    }
                     onClick={() => executeSelected(cmd)}
                     onMouseEnter={() => setSelectedIndex(index)}
                   >
