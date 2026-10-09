@@ -12,11 +12,16 @@ export interface MessageEventData {
   is_deleted: boolean;
   sent_at: string;
   reactions: ReactionGroupData[];
-  /** Set on an encrypted message, whose `text` is null. */
+  /** Set on an encrypted message, whose `text` is null. Binary values are base64url. */
   encryption?: {
     incarnation: number;
     epoch: number;
     sender_device_id: string;
+    ciphertext: string | null;
+    franking_receipt: string;
+    franking_key_id: number;
+    /** Decimal microseconds. */
+    sent_at_us: string;
   } | null;
 }
 

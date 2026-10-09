@@ -567,7 +567,15 @@ describe("useWorkspaceEvents encrypted conversations", () => {
         is_deleted: false,
         sent_at: "2026-10-09T10:00:00Z",
         reactions: [],
-        encryption: { incarnation: 1, epoch: 2, sender_device_id: "d-2" },
+        encryption: {
+          incarnation: 1,
+          epoch: 2,
+          sender_device_id: "d-2",
+          ciphertext: "AAEC",
+          franking_receipt: "cmVjZWlwdA",
+          franking_key_id: 1,
+          sent_at_us: "1791504000123456",
+        },
       },
     });
 

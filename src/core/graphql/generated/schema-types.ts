@@ -39,6 +39,7 @@ export type AdvanceIncidentPhaseInput = {
 };
 
 export type Attachment = {
+  /** Unpadded base64url SHA-256 of an encrypted conversation's blob. */
   blobSha256?: Maybe<Scalars['String']['output']>;
   contentType: Scalars['String']['output'];
   filename: Scalars['String']['output'];
@@ -419,6 +420,10 @@ export type Conversation = {
    * else the workspace default.
    */
   effectiveNotificationLevel: NotificationLevel;
+  /**
+   * When the conversation became end-to-end encrypted; null for plaintext. Messages from
+   * then on are encrypted.
+   */
   encryptedAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
   isArchived: Scalars['Boolean']['output'];
@@ -429,6 +434,7 @@ export type Conversation = {
   isPrivate: Scalars['Boolean']['output'];
   memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
+  /** The conversation's current MLS group; null for plaintext and before the first Commit. */
   mlsGroup?: Maybe<MlsGroup>;
   /**
    * The viewer's own notification level for this conversation (Track 1.3); null inherits
@@ -496,6 +502,7 @@ export enum ConversationTypeEnum {
 }
 
 export type CreateAttachmentInput = {
+  /** Required in an encrypted conversation: unpadded base64url SHA-256 of the blob. */
   blobSha256?: InputMaybe<Scalars['String']['input']>;
   contentType: Scalars['String']['input'];
   conversationId: Scalars['ID']['input'];
@@ -514,6 +521,10 @@ export type CreateChannelLensInput = {
 };
 
 export type CreateConversationInput = {
+  /**
+   * DMs and groups only: end-to-end encrypted from creation. Every member needs a device set
+   * up for encryption. Defaults to false.
+   */
   encrypted?: InputMaybe<Scalars['Boolean']['input']>;
   /** For Channel conversations. */
   isChannel?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1323,6 +1334,10 @@ export type Message = {
   author?: Maybe<User>;
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
+  /**
+   * The MLS envelope of an encrypted message, whose `text` is always null; null for
+   * plaintext messages.
+   */
   encryption?: Maybe<MessageEncryption>;
   forwardedFrom?: Maybe<Message>;
   forwardedFromMessageId?: Maybe<Scalars['ID']['output']>;
@@ -1395,13 +1410,17 @@ export type MessageCursorOutput = {
   sentAt: Scalars['DateTime']['output'];
 };
 
+/** The MLS envelope of an encrypted message. */
 export type MessageEncryption = {
+  /** The `MLSMessage`; null once the message is deleted. */
   ciphertext?: Maybe<Scalars['String']['output']>;
+  /** The epoch the message was sent in. */
   epoch: Scalars['Int']['output'];
   frankingKeyId: Scalars['Int']['output'];
   frankingReceipt: Scalars['String']['output'];
   incarnation: Scalars['Int']['output'];
   senderDeviceId: Scalars['ID']['output'];
+  /** `sentAt` in microseconds since the Unix epoch, as decimal text, as the receipt covers it. */
   sentAtUs: Scalars['String']['output'];
 };
 
@@ -1475,6 +1494,7 @@ export enum MessageTagTypeGql {
 
 export type MlsCommit = {
   createdAt: Scalars['DateTime']['output'];
+  /** The epoch the Commit was created in; the group moved to the next. */
   epoch: Scalars['Int']['output'];
   id: Scalars['ID']['output'];
   incarnation: Scalars['Int']['output'];
@@ -1500,22 +1520,33 @@ export type MlsDeviceRefInput = {
   principalId: Scalars['String']['input'];
 };
 
+/** A conversation's current MLS group and the changes it waits for. */
 export type MlsGroup = {
   cipherSuite: Scalars['Int']['output'];
   devices: Array<MlsDevice>;
+  /** The epoch the next Commit must be created in. */
   epoch: Scalars['Int']['output'];
   groupId: Scalars['String']['output'];
   incarnation: Scalars['Int']['output'];
+  /** MLS-active devices of members that are not in the group yet. */
   pendingAdds: Array<MlsPendingDevice>;
+  /**
+   * Devices in the group that no longer belong: their member left, they were revoked, or
+   * they uploaded no key package for 60 days.
+   */
   pendingRemoves: Array<MlsDevice>;
   readdRequests: Array<MlsReaddRequest>;
 };
 
+/** What the session's device has stored for one cipher suite. */
 export type MlsKeyPackageStatus = {
+  /** Unclaimed one-time key packages that can still be handed out (valid for 14 more days). */
   available: Scalars['Int']['output'];
   cipherSuite: Scalars['Int']['output'];
+  /** How often the last-resort key package was handed out; past 5 the device replaces it. */
   lastResortClaims: Scalars['Int']['output'];
   lastResortNotAfter?: Maybe<Scalars['DateTime']['output']>;
+  /** The earliest expiry among the available one-time key packages. */
   oldestNotAfter?: Maybe<Scalars['DateTime']['output']>;
 };
 
@@ -1530,11 +1561,13 @@ export type MlsReaddRequest = {
   createdAt: Scalars['DateTime']['output'];
   deviceId: Scalars['ID']['output'];
   principalId: Scalars['String']['output'];
+  /** The `mls-readd` statement as the device signed it. */
   request: SignedStatement;
 };
 
 export type MlsWelcome = {
   conversationId: Scalars['ID']['output'];
+  /** The epoch the device joins at. */
   epoch: Scalars['Int']['output'];
   expiresAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
@@ -1544,6 +1577,7 @@ export type MlsWelcome = {
 };
 
 export type Mutation = {
+  /** Acknowledge Welcomes of the session's device; answers how many were acknowledged now. */
   ackMlsWelcomes: Scalars['Int']['output'];
   /**
    * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
@@ -1567,6 +1601,7 @@ export type Mutation = {
   banMember: ServerBan;
   /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
+  /** One key package per device waiting to be added; devices with none usable are left out. */
   claimMlsKeyPackages: Array<ClaimedKeyPackage>;
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
@@ -1623,6 +1658,7 @@ export type Mutation = {
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
+  /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
   editMessage: Message;
   /** Bind a key identity to the signed-in account. Afterwards the password no longer signs in. */
@@ -1678,12 +1714,17 @@ export type Mutation = {
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
   replyToMessage: Message;
+  /**
+   * Report an encrypted message by revealing its content and franking key; the server checks
+   * them against its receipt before the moderators see them.
+   */
   reportEncryptedMessage: Scalars['Boolean']['output'];
   /**
    * Report a message to the workspace moderators. Any member who can read it, once per
    * message (`CONFLICT` on a second report). Audited (`chat.report_message`).
    */
   reportMessage: MessageReport;
+  /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
@@ -1716,6 +1757,10 @@ export type Mutation = {
   sendDeviceLinkAnswer: DeviceLink;
   /** The new device's sealed offer. No session needed: the link id is the capability. */
   sendDeviceLinkOffer: Scalars['Boolean']['output'];
+  /**
+   * An encrypted message under a client-chosen id, in the group's current epoch. Sending
+   * the same id and envelope again answers the stored message.
+   */
   sendEncryptedMessage: Message;
   sendMessage: Message;
   /**
@@ -1782,6 +1827,10 @@ export type Mutation = {
   startDeviceLink: StartedDeviceLink;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
+  /**
+   * A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
+   * `STALE_EPOCH` names the current incarnation and epoch when another Commit came first.
+   */
   submitMlsCommit: MlsCommit;
   tagIncidentMessage: IncidentMessageTagGql;
   /**
@@ -1847,6 +1896,10 @@ export type Mutation = {
   updateUserCommand: Command;
   /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
   updateWorkspacePlugin: WorkspacePlugin;
+  /**
+   * Store key packages of the session's device, all or none. A last-resort package replaces
+   * the device's previous one.
+   */
   uploadMlsKeyPackages: MlsKeyPackageStatus;
 };
 
@@ -2781,9 +2834,14 @@ export enum PresenceStatus {
   ONLINE = 'ONLINE'
 }
 
+/** A certified device of a principal, revoked or not. */
 export type PrincipalDevice = {
   certificate: SignedStatement;
   deviceId: Scalars['ID']['output'];
+  /**
+   * Not revoked and uploaded key packages in the last 60 days: the device is set up for
+   * encryption and belongs in its member's encrypted groups.
+   */
   mlsActive: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   revocation?: Maybe<SignedStatement>;
@@ -2878,6 +2936,10 @@ export type Query = {
    */
   messageReports: MessageReportPage;
   messages: MessagePage;
+  /**
+   * Accepted Commits of an incarnation after `afterEpoch` (exclusive; from 0 when null),
+   * oldest first. `limit` is 1 to 100, 50 by default.
+   */
   mlsCommits: MlsCommitPage;
   mutedConversations: Array<MutedConversation>;
   myInvites: Array<Invite>;
@@ -2885,7 +2947,9 @@ export type Query = {
   myKeyIdentity: KeyIdentity;
   myMacros: Array<MacroDef>;
   myMentions: Array<Message>;
+  /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
+  /** The session device's unacknowledged Welcomes, oldest first. */
   myMlsWelcomes: Array<MlsWelcome>;
   /** The viewer's notification settings in the workspace (defaults until first saved). */
   myNotificationSettings: NotificationSettings;
@@ -2919,6 +2983,10 @@ export type Query = {
    * See spec §4.7.
    */
   previewInviteToken: InviteTokenPreviewGql;
+  /**
+   * The certified devices of principals who share a workspace with the caller; an empty
+   * list for any other principal. At most 100 ids.
+   */
   principalDevices: Array<PrincipalDevices>;
   /**
    * Return the deployment-wide registration mode.
@@ -3387,6 +3455,7 @@ export type ReplyToMessageInput = {
 };
 
 export type ReportEncryptedMessageInput = {
+  /** The decrypted content, exactly as committed to. */
   content: Scalars['String']['input'];
   conversationId: Scalars['ID']['input'];
   frankingKey: Scalars['String']['input'];
@@ -3396,6 +3465,7 @@ export type ReportEncryptedMessageInput = {
   receiptKeyId: Scalars['Int']['input'];
   senderDeviceId: Scalars['ID']['input'];
   senderUserId: Scalars['ID']['input'];
+  /** Decimal microseconds. */
   sentAtUs: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
 };
@@ -3408,6 +3478,7 @@ export enum ReportOutcome {
 
 export type RequestMlsReaddInput = {
   conversationId: Scalars['ID']['input'];
+  /** The `mls-readd` statement, signed by the session's device key. */
   request: SignedStatementInput;
   serverId: Scalars['ID']['input'];
 };
@@ -3532,6 +3603,7 @@ export type SendEncryptedMessageInput = {
   conversationId: Scalars['ID']['input'];
   envelope: Scalars['String']['input'];
   forwardedFromMessageId?: InputMaybe<Scalars['ID']['input']>;
+  /** Chosen by the client (UUID v7). */
   messageId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
   threadRootMessageId?: InputMaybe<Scalars['ID']['input']>;
@@ -3539,6 +3611,11 @@ export type SendEncryptedMessageInput = {
 
 export type SendMessageInput = {
   conversationId: Scalars['ID']['input'];
+  /**
+   * The message this one forwards by sending its content again (an encrypted message's
+   * content, after the person confirmed it is posted unencrypted). The caller must be able
+   * to read it.
+   */
   forwardedFromMessageId?: InputMaybe<Scalars['ID']['input']>;
   parentMessageId?: InputMaybe<Scalars['ID']['input']>;
   serverId: Scalars['ID']['input'];
@@ -3722,12 +3799,14 @@ export type StartedDeviceLink = {
 };
 
 export type SubmitMlsCommitInput = {
+  /** Required for an incarnation's first Commit (epoch 0). */
   cipherSuite?: InputMaybe<Scalars['Int']['input']>;
   commit: Scalars['String']['input'];
   conversationId: Scalars['ID']['input'];
   epoch: Scalars['Int']['input'];
   incarnation: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
+  /** Required when the Commit adds devices. */
   welcome?: InputMaybe<Scalars['String']['input']>;
 };
 
