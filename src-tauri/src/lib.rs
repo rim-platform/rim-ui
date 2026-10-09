@@ -158,6 +158,15 @@ pub fn run() {
             key_identity::commands::key_identity_begin_recovery,
             key_identity::commands::key_identity_discard_recovery,
             key_identity::commands::key_identity_forget,
+            key_identity::commands::key_identity_link_begin,
+            key_identity::commands::key_identity_link_review_offer,
+            key_identity::commands::key_identity_link_confirm,
+            key_identity::commands::key_identity_link_pending,
+            key_identity::commands::key_identity_link_resume,
+            key_identity::commands::key_identity_link_end,
+            key_identity::commands::key_identity_link_offer,
+            key_identity::commands::key_identity_link_open_answer,
+            key_identity::commands::key_identity_link_accept,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -82,7 +82,10 @@ export interface KeyAccount {
 }
 
 /** A Tauri key command; a failure becomes an `Error` with the command's message. */
-async function keyCommand<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+export async function keyCommand<T>(
+  command: string,
+  args: Record<string, unknown> = {},
+): Promise<T> {
   const result = await safeInvoke<T>(command, args);
   if (result.ok) return result.value;
   throw new Error(result.error.message);
@@ -226,8 +229,22 @@ function statementInput(statement: StatementOnly["statement"]): SignedStatementI
   return { payload: statement.payload, signature: statement.signature };
 }
 
-function logStatements(log: StatementOnly[]): SignedStatementInput[] {
+export function logStatements(log: StatementOnly[]): SignedStatementInput[] {
   return log.map(({ statement }) => statementInput(statement));
+}
+
+/** The public key log of `principalId` on this server (no session needed). */
+export async function fetchKeyLog(principalId: string): Promise<SignedStatementInput[]> {
+  const { keyLog } = await graphqlClient.request<{ keyLog: StatementOnly[] }>(KEY_LOG_QUERY, {
+    principalId,
+  });
+  return logStatements(keyLog);
+}
+
+/** The signed-in account as key commands name it, with its display name. */
+export async function fetchKeyAccount(): Promise<KeyAccount & { displayName: string }> {
+  const { me } = await graphqlClient.request<{ me: MeAccount }>(ME_ACCOUNT_QUERY);
+  return { userId: me.id, username: me.username, displayName: me.displayName || me.username };
 }
 
 async function challenge(): Promise<Pick<KeyLoginChallenge, "challengeId" | "nonce">> {

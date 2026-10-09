@@ -715,6 +715,36 @@ type DeviceKey {
 	revokedAt: DateTime
 }
 
+type DeviceLink {
+	state: DeviceLinkState!
+	expiresAt: DateTime!
+	offer: SealedMessage
+}
+
+enum DeviceLinkState {
+	OPEN
+	OFFERED
+	ANSWERED
+	CONSUMED
+	CANCELLED
+	EXPIRED
+}
+
+type SealedMessage {
+	nonce: String!
+	ciphertext: String!
+}
+
+input SealedMessageInput {
+	nonce: String!
+	ciphertext: String!
+}
+
+type StartedDeviceLink {
+	linkId: String!
+	expiresAt: DateTime!
+}
+
 """
 How often unread notifications are emailed.
 """
@@ -1841,6 +1871,11 @@ type Mutation {
 	session and CSRF cookies as `signupWithInvite`.
 	"""
 	signupWithKey(input: SignupWithKeyInput!): SignupWithInvitePayloadGql!
+	startDeviceLink: StartedDeviceLink!
+	sendDeviceLinkOffer(linkId: String!, offer: SealedMessageInput!): Boolean!
+	sendDeviceLinkAnswer(linkId: String!, answer: SealedMessageInput!): DeviceLink!
+	completeDeviceLink(linkId: String!): Boolean!
+	cancelDeviceLink(linkId: String!): Boolean!
 }
 
 input MuteConversationInput {
@@ -2288,6 +2323,8 @@ type Query {
 	recovery rotation (`rotateIdentityKey`).
 	"""
 	keyLog(principalId: String!): [KeyLogEntry!]!
+	deviceLink(linkId: String!): DeviceLink!
+	deviceLinkAnswer(linkId: String!): SealedMessage
 }
 
 type ReactionGroup {

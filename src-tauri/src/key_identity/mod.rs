@@ -16,8 +16,11 @@
 //! - **Rotation** stores the new identity key as pending until the server's log names it.
 //! - **Recovery** signs a rotation with the recovery key from a kit, for a new identity key and
 //!   a new device.
+//! - **Device linking** (`device_link`) certifies another device's key through a code shown on
+//!   this one, or makes this computer such a device.
 
 pub(crate) mod commands;
+pub(crate) mod device_link;
 pub(crate) mod recovery_kit;
 pub(crate) mod statement;
 pub(crate) mod store;
@@ -45,6 +48,8 @@ pub(crate) enum KeyIdentityError {
     NoIdentityKey,
     #[error("the enrollment was cancelled or already finished; start again")]
     NoDraft,
+    #[error("this device link is no longer open on this computer; start again")]
+    NoLink,
 }
 
 impl KeyIdentityError {
@@ -56,6 +61,7 @@ impl KeyIdentityError {
             Self::NoKeys => "NO_KEYS",
             Self::NoIdentityKey => "NO_IDENTITY_KEY",
             Self::NoDraft => "NO_DRAFT",
+            Self::NoLink => "NO_LINK",
         }
     }
 }
@@ -285,6 +291,9 @@ struct Draft {
 pub(crate) struct KeyIdentityState {
     store: Arc<dyn SecretStore>,
     drafts: Arc<Mutex<HashMap<String, Draft>>>,
+    /// Device links this run takes part in, by link id: their secrets, and a new device's key
+    /// until its certificate verifies.
+    links: Arc<Mutex<HashMap<String, device_link::LiveLink>>>,
     /// Serializes read-modify-write of the keyring entries.
     lock: Arc<Mutex<()>>,
 }
@@ -298,6 +307,7 @@ impl KeyIdentityState {
         Self {
             store,
             drafts: Arc::new(Mutex::new(HashMap::new())),
+            links: Arc::new(Mutex::new(HashMap::new())),
             lock: Arc::new(Mutex::new(())),
         }
     }

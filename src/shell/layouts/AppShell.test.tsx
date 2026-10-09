@@ -31,6 +31,9 @@ vi.mock("../../features/presence/api/useWorkspacePresence", () => ({
 }));
 vi.mock("../../features/presence/runtime/useHeartbeat", () => ({ useHeartbeat: () => {} }));
 vi.mock("../../features/plugins/runtime/pluginEventBus", () => ({ usePluginEvents: () => {} }));
+vi.mock("../../features/key-identity/runtime/useResumeDeviceLinks", () => ({
+  useResumeDeviceLinks: () => {},
+}));
 vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
   usePluginPrincipalSync: () => {},
 }));

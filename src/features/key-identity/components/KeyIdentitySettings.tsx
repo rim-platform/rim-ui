@@ -25,6 +25,7 @@ import {
   type MyKeyIdentity,
 } from "../api/keyIdentity";
 import { SaveRecoveryKit } from "./SaveRecoveryKit";
+import { LinkDevicePanel } from "./LinkDevicePanel";
 
 const inputClass =
   "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
@@ -182,8 +183,8 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
             <ul className="list-disc space-y-1 pl-5">
               <li>Your password stops working, here and in the web app.</li>
               <li>
-                This computer signs in with its key. Adding other devices comes in a later version;
-                until then, other devices stay signed in only until their session ends.
+                This computer signs in with its key. Other desktops get keys of their own when you
+                link them from here; until then, they stay signed in only until their session ends.
               </li>
               <li>
                 You get a recovery kit, shown once. Without it, losing this computer means losing
@@ -385,6 +386,8 @@ function KeyIdentityOverview({
           </div>
         )}
       </section>
+
+      {holdsIdentityKey && <LinkDevicePanel identity={identity} displayName={me.displayName} />}
 
       {holdsIdentityKey && (
         <section className="space-y-2 rounded-lg border border-rim-line bg-rim-panel p-4">

@@ -664,6 +664,21 @@ export type DeviceKey = {
   revokedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
+export type DeviceLink = {
+  expiresAt: Scalars['DateTime']['output'];
+  offer?: Maybe<SealedMessage>;
+  state: DeviceLinkState;
+};
+
+export enum DeviceLinkState {
+  ANSWERED = 'ANSWERED',
+  CANCELLED = 'CANCELLED',
+  CONSUMED = 'CONSUMED',
+  EXPIRED = 'EXPIRED',
+  OFFERED = 'OFFERED',
+  OPEN = 'OPEN'
+}
+
 /** How often unread notifications are emailed. */
 export enum DigestFrequency {
   DAILY = 'DAILY',
@@ -1427,8 +1442,10 @@ export type Mutation = {
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
   banMember: ServerBan;
+  cancelDeviceLink: Scalars['Boolean']['output'];
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
+  completeDeviceLink: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
   createChannelLens: ChannelLens;
   createConversation: Conversation;
@@ -1559,6 +1576,8 @@ export type Mutation = {
    * session, revokes every device and session, and enrolls the device given with it.
    */
   rotateIdentityKey: KeyIdentity;
+  sendDeviceLinkAnswer: DeviceLink;
+  sendDeviceLinkOffer: Scalars['Boolean']['output'];
   sendMessage: Message;
   /**
    * Set a conversation's default escalation policy — the policy `ingestAlert`-declared
@@ -1617,6 +1636,7 @@ export type Mutation = {
    * session and CSRF cookies as `signupWithInvite`.
    */
   signupWithKey: SignupWithInvitePayloadGql;
+  startDeviceLink: StartedDeviceLink;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
   tagIncidentMessage: IncidentMessageTagGql;
@@ -1723,9 +1743,19 @@ export type MutationBanMemberArgs = {
 };
 
 
+export type MutationCancelDeviceLinkArgs = {
+  linkId: Scalars['String']['input'];
+};
+
+
 export type MutationClearTimeoutArgs = {
   serverId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
+};
+
+
+export type MutationCompleteDeviceLinkArgs = {
+  linkId: Scalars['String']['input'];
 };
 
 
@@ -2063,6 +2093,18 @@ export type MutationRevokeInviteArgs = {
 
 export type MutationRotateIdentityKeyArgs = {
   input: RotateIdentityKeyInput;
+};
+
+
+export type MutationSendDeviceLinkAnswerArgs = {
+  answer: SealedMessageInput;
+  linkId: Scalars['String']['input'];
+};
+
+
+export type MutationSendDeviceLinkOfferArgs = {
+  linkId: Scalars['String']['input'];
+  offer: SealedMessageInput;
 };
 
 
@@ -2533,6 +2575,8 @@ export type Query = {
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
   defaultKeybinds: Array<DefaultKeybind>;
+  deviceLink: DeviceLink;
+  deviceLinkAnswer?: Maybe<SealedMessage>;
   /** List a server's escalation policies. Any workspace member may read. */
   escalationPolicies: Array<EscalationPolicyGql>;
   inboxConversations: ConversationPage;
@@ -2731,6 +2775,16 @@ export type QueryConversationArgs = {
 
 export type QueryCustomEmojisArgs = {
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryDeviceLinkArgs = {
+  linkId: Scalars['String']['input'];
+};
+
+
+export type QueryDeviceLinkAnswerArgs = {
+  linkId: Scalars['String']['input'];
 };
 
 
@@ -3103,6 +3157,16 @@ export type RotationLayerGql = {
   scheduleId: Scalars['ID']['output'];
 };
 
+export type SealedMessage = {
+  ciphertext: Scalars['String']['output'];
+  nonce: Scalars['String']['output'];
+};
+
+export type SealedMessageInput = {
+  ciphertext: Scalars['String']['input'];
+  nonce: Scalars['String']['input'];
+};
+
 /**
  * Input for the `searchMessages` full-text-search query. See `docs/search.md` for the
  * `from:`/`in:`/`has:`/`before:`/`after:` operator syntax accepted in `query`.
@@ -3328,6 +3392,11 @@ export type StartIncidentInput = {
   serverId: Scalars['ID']['input'];
   severity?: InputMaybe<IncidentSeverityGql>;
   title: Scalars['String']['input'];
+};
+
+export type StartedDeviceLink = {
+  expiresAt: Scalars['DateTime']['output'];
+  linkId: Scalars['String']['output'];
 };
 
 export type Subscription = {
