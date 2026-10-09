@@ -38,7 +38,7 @@
   scope and `rim-marketplace` shape.
 - **Date:** 2026-04-29 (decisions locked same day)
 - **For:** nick-fury
-- **Builds on:** [`docs/research/plugin-system-status-2026-04-29.md`](../research/plugin-system-status-2026-04-29.md)
+- **Builds on:** the plugin-system status research memo of 2026-04-29 (`docs/research/plugin-system-status-2026-04-29.md`, since removed; see git history)
 - **Sister memo (strategic input):** [`rim-server/docs/research/competitive-landscape-2026-04-29.md`](../../../rim-server/docs/research/competitive-landscape-2026-04-29.md)
 - **Sister memo (MCP architecture sketch):** [`rim-server/docs/design/mcp-bridge-sketch-2026-04-22.md`](../../../rim-server/docs/design/mcp-bridge-sketch-2026-04-22.md) — falcon, 2026-04-22
 - **Iron-man's backend validation + marketplace discovery — landed
