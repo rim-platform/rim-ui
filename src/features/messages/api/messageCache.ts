@@ -99,7 +99,8 @@ export const fetchMessageChanges: ChangeFeed = async (input) => {
 // ─── Tauri commands ─────────────────────────────────────────────────────────
 
 // The cache key failing (on Linux: no desktop keyring service, or a locked one) turns the
-// cache off for the whole run, so it is said once rather than only logged.
+// cache off for the whole run (the backend keeps the failure, so a dismissed unlock prompt is
+// not shown again), so it is said once rather than only logged.
 let keyErrorShown = false;
 
 async function invokeCache<T>(command: string, args: Record<string, unknown>): Promise<T | null> {
@@ -114,7 +115,7 @@ async function invokeCache<T>(command: string, args: Record<string, unknown>): P
     !keyErrorShown
   ) {
     keyErrorShown = true;
-    toast.warning("Local message cache is off", { description: result.error.message });
+    toast.warning("Local message cache is off until RIM restarts", { description: result.error.message });
   }
   return null;
 }

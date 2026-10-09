@@ -15,7 +15,9 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   below). All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the
   key is lost, the unreadable files are deleted and the cache refills from the server. If the
   keyring cannot be reached, every cache call fails softly, the timeline reads from the server,
-  and the app says once per run that the local cache is off and why.
+  and the app says once per run that the local cache is off and why. The failure is kept until
+  the app restarts, so a locked keyring's unlock prompt, once dismissed, is not shown again on
+  every cache call.
 - On Linux the keyring is the Secret Service (GNOME Keyring, KWallet, KeePassXC) over D-Bus.
   With none running, or with the keyring locked, the cache stays off with an error that says
   so; nothing falls back to a store that would not survive a reboot. Builds before this one used

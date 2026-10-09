@@ -54,7 +54,7 @@ describe("cache key errors", () => {
     await trackConversation(account, "w1", "c2");
 
     expect(toast.warning).toHaveBeenCalledTimes(1);
-    expect(toast.warning).toHaveBeenCalledWith("Local message cache is off", {
+    expect(toast.warning).toHaveBeenCalledWith("Local message cache is off until RIM restarts", {
       description: "cache key unavailable: the desktop keyring service is not available",
     });
   });
