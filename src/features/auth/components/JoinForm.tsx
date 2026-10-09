@@ -28,6 +28,7 @@
  * - `variant` — token type discriminator; controls header copy and mutation input.
  * - `token` — raw token string (`null` for open registration).
  * - `workspaceName` — workspace name shown in the header when `variant === "WORKSPACE"`.
+ * - `workspaceId` — the invite's workspace, from its preview, when `variant === "WORKSPACE"`.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
  */
 
@@ -35,6 +36,7 @@ import { useState } from "react";
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
+import { checkDisplayName } from "../displayName";
 import { InviteTokenType } from "../types";
 import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
@@ -61,6 +63,8 @@ interface JoinFormProps {
   token: string | null;
   /** Workspace name shown in the header when `variant === "WORKSPACE"`. */
   workspaceName?: string;
+  /** The invite's workspace, from its preview, when `variant === "WORKSPACE"`. */
+  workspaceId?: string;
   /**
    * Called on successful signup.
    * @param userId - The new user's ID.
@@ -120,9 +124,11 @@ function mapSignupError(err: unknown): { field: "email" | "general"; message: st
 /**
  * Signup form for all registration paths (invite token + open registration).
  */
-export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormProps) {
+export function JoinForm({ variant, token, workspaceName, workspaceId, onSuccess }: JoinFormProps) {
   const { capabilities } = useRuntime();
   const [method, setMethod] = useState<"password" | "key">("password");
+  // A key signup in progress keeps its form mounted until it settles.
+  const [keySignupBusy, setKeySignupBusy] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -161,13 +167,9 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
    * 80 characters (matching the backend's 1–80 char constraint).
    */
   function validateDisplayName(value: string): boolean {
-    const trimmed = value.trim();
-    if (trimmed.length > 80) {
-      setDisplayNameError("Display name must be at most 80 characters.");
-      return false;
-    }
-    setDisplayNameError(null);
-    return true;
+    const error = checkDisplayName(value);
+    setDisplayNameError(error);
+    return error === null;
   }
 
   /**
@@ -233,7 +235,12 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
           {method === "key" ? (
-            <KeySignupForm tokens={tokenFields(variant, token)} onSuccess={onSuccess} />
+            <KeySignupForm
+              tokens={tokenFields(variant, token)}
+              workspaceId={variant === InviteTokenType.WORKSPACE ? workspaceId : undefined}
+              onSuccess={onSuccess}
+              onBusyChange={setKeySignupBusy}
+            />
           ) : (
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <JoinField
@@ -303,7 +310,8 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
             <button
               type="button"
               onClick={() => setMethod(method === "key" ? "password" : "key")}
-              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text"
+              disabled={keySignupBusy}
+              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text disabled:opacity-50"
             >
               {method === "key" ? "Create account with a password" : "Create account with a key"}
             </button>

@@ -11,6 +11,7 @@ import {
   accountIdInKit,
   defaultDeviceName,
   forgetDeviceKeys,
+  forgetKeysTheServerNeverSaw,
   listDeviceKeyAccounts,
   recoverAccount,
   signInWithDeviceKey,
@@ -43,15 +44,25 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
     text: string;
     revoked: boolean;
   } | null>(null);
+  // Said after keys the server never saw were removed, when their account is gone from the list.
+  const [notice, setNotice] = useState<string | null>(null);
 
-  if (!capabilities.deviceKeys || !accounts.data?.length) return null;
+  if (!capabilities.deviceKeys || (!accounts.data?.length && !notice)) return null;
 
   async function signIn(account: LocalKeyAccount) {
     setPendingId(account.principalId);
     setError(null);
+    setNotice(null);
     try {
       onSuccess(await signInWithDeviceKey(account.principalId));
     } catch (err) {
+      if (await forgetKeysTheServerNeverSaw(account).catch(() => false)) {
+        setNotice(
+          `The sign-up of ${accountLabel(account)} never completed, so its keys were removed from this computer. Create the account again.`,
+        );
+        await qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(endpoint) });
+        return;
+      }
       const revoked = graphqlErrorCode(err) === "FORBIDDEN";
       setError({
         principalId: account.principalId,
@@ -73,7 +84,15 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 
   return (
     <div className="space-y-3">
-      {accounts.data.map((account) => (
+      {notice && (
+        <p
+          role="status"
+          className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text-muted"
+        >
+          {notice}
+        </p>
+      )}
+      {accounts.data?.map((account) => (
         <div key={account.principalId} className="space-y-2">
           <Button
             className="w-full"

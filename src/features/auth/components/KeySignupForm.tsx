@@ -3,11 +3,15 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import {
+  CONFLICT,
+  EXPIRED_TOKEN,
   graphqlErrorCode,
   graphqlErrorMessage,
+  INVALID_TOKEN,
   RATE_LIMITED,
   retryAfterSeconds,
   UNAUTHENTICATED,
+  VALIDATION,
 } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { Button } from "../../../shared/ui/Button";
@@ -15,11 +19,15 @@ import {
   abandonKeySignup,
   beginEnrollment,
   defaultDeviceName,
+  discardKeySignup,
+  KeyChallengeFailed,
   signupWithKey,
   type EnrollmentDraft,
   type KeySignupFields,
+  type KeySignupResult,
 } from "../../key-identity/api/keyIdentity";
 import { SaveRecoveryKit } from "../../key-identity/components/SaveRecoveryKit";
+import { checkDisplayName } from "../displayName";
 import { JoinField } from "./JoinField";
 
 /** The token fields of `signupWithKey`: one for an invite or bootstrap link, none in open mode. */
@@ -30,54 +38,55 @@ export type KeySignupTokens = Pick<
 
 interface KeySignupFormProps {
   tokens: KeySignupTokens;
+  /** The invite's workspace, from its preview, for a workspace invite. */
+  workspaceId?: string;
   onSuccess: (userId: string, serverId: string | null) => void;
+  /** Told when a step that must not be interrupted starts and ends. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
-/** What a refused `signupWithKey` tells the person, and the field it belongs to. */
-function signupError(err: unknown): { field: "username" | "general"; message: string } {
+type SignupError = { field: "username" | "general"; message: string };
+
+function general(message: string): SignupError {
+  return { field: "general", message };
+}
+
+/** What a failed key signup tells the person, and the field it belongs to. */
+function signupError(err: unknown): SignupError {
+  if (err instanceof KeyChallengeFailed) {
+    return graphqlErrorCode(err.reason) === RATE_LIMITED
+      ? general("Too many attempts from this network. Wait a minute and try again.")
+      : general(err.message);
+  }
   switch (graphqlErrorCode(err)) {
-    case "CONFLICT":
-      if (/key identity/i.test(graphqlErrorMessage(err, ""))) {
-        return {
-          field: "general",
-          message:
+    case CONFLICT:
+      // Told apart by the server's message; a code of its own for a key identity in use would
+      // be sturdier.
+      return /key identity/i.test(graphqlErrorMessage(err, ""))
+        ? general(
             "An account on this server already uses these keys. Sign in with this device from the sign-in page.",
-        };
-      }
-      return { field: "username", message: "This username is taken. Choose another." };
-    case "VALIDATION":
-      return {
-        field: "general",
-        message: graphqlErrorMessage(err, "The server did not accept these details."),
-      };
+          )
+        : { field: "username", message: "This username is taken. Choose another." };
+    case VALIDATION:
+      return general(graphqlErrorMessage(err, "The server did not accept these details."));
     case RATE_LIMITED: {
       const seconds = retryAfterSeconds(err);
-      const minutes = seconds === undefined ? null : Math.max(1, Math.ceil(seconds / 60));
-      return {
-        field: "general",
-        message:
-          minutes === null
-            ? "Too many sign-ups from this network. Try again later."
-            : `Too many sign-ups from this network. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
-      };
+      if (seconds === undefined) {
+        return general("Too many sign-ups from this network. Try again later.");
+      }
+      const minutes = Math.max(1, Math.ceil(seconds / 60));
+      return general(
+        `Too many sign-ups from this network. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      );
     }
-    case "INVALID_TOKEN":
-      return {
-        field: "general",
-        message: "This invite link is no longer valid. Ask for a new one.",
-      };
-    case "EXPIRED_TOKEN":
-      return { field: "general", message: "This invite link has expired. Ask for a new one." };
+    case INVALID_TOKEN:
+      return general("This invite link is no longer valid. Ask for a new one.");
+    case EXPIRED_TOKEN:
+      return general("This invite link has expired. Ask for a new one.");
     case UNAUTHENTICATED:
-      return {
-        field: "general",
-        message: "The server did not accept this computer's signature. Try again.",
-      };
+      return general("The server did not accept this computer's signature. Try again.");
     default:
-      return {
-        field: "general",
-        message: graphqlErrorMessage(err, "Could not create the account. Try again."),
-      };
+      return general(graphqlErrorMessage(err, "Could not create the account. Try again."));
   }
 }
 
@@ -87,7 +96,12 @@ function signupError(err: unknown): { field: "username" | "general"; message: st
  * with them. After a refusal they can try again with the same keys, so the saved kit stays
  * valid, or discard the keys. Desktop only.
  */
-export function KeySignupForm({ tokens, onSuccess }: KeySignupFormProps) {
+export function KeySignupForm({
+  tokens,
+  workspaceId,
+  onSuccess,
+  onBusyChange,
+}: KeySignupFormProps) {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -112,12 +126,21 @@ export function KeySignupForm({ tokens, onSuccess }: KeySignupFormProps) {
     };
   }, []);
 
-  function validateDisplayName(): boolean {
-    if (displayName.trim().length > 80) {
-      setDisplayNameError("Display name must be at most 80 characters.");
-      return false;
-    }
-    return true;
+  function working(value: boolean) {
+    setBusy(value);
+    onBusyChange?.(value);
+  }
+
+  /** Open the new account the way the page opens a password signup's. */
+  function finish({ userId, serverId }: KeySignupResult) {
+    pending.current = null;
+    // The kit is saved and the account has its keys: the phrase leaves memory here.
+    setDraft(null);
+    void qc.invalidateQueries({ queryKey: queryKeys.me });
+    void qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(getGraphqlEndpoint()) });
+    // An account found only after its answer was lost has no server id; a workspace invite
+    // still joined the workspace its preview named.
+    onSuccess(userId, serverId ?? (tokens.workspaceInviteToken ? (workspaceId ?? null) : null));
   }
 
   async function createKeys() {
@@ -133,17 +156,13 @@ export function KeySignupForm({ tokens, onSuccess }: KeySignupFormProps) {
   async function createAccount(current: EnrollmentDraft) {
     const trimmedDisplayName = displayName.trim();
     try {
-      const { userId, serverId } = await signupWithKey(current, {
-        username: username.trim(),
-        ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
-        ...tokens,
-      });
-      pending.current = null;
-      // The kit is saved and the account has its keys: the phrase leaves memory here.
-      setDraft(null);
-      void qc.invalidateQueries({ queryKey: queryKeys.me });
-      void qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(getGraphqlEndpoint()) });
-      onSuccess(userId, serverId);
+      finish(
+        await signupWithKey(current, {
+          username: username.trim(),
+          ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
+          ...tokens,
+        }),
+      );
     } catch (err) {
       // The draft stays: trying again uses the same keys, so the saved kit stays valid.
       const mapped = signupError(err);
@@ -155,23 +174,41 @@ export function KeySignupForm({ tokens, onSuccess }: KeySignupFormProps) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    if (!validateDisplayName()) return;
-    setBusy(true);
+    const nameError = checkDisplayName(displayName);
+    if (nameError) {
+      setDisplayNameError(nameError);
+      return;
+    }
+    working(true);
     try {
       if (draft) await createAccount(draft);
       else await createKeys();
     } finally {
-      setBusy(false);
+      working(false);
     }
   }
 
   async function discard() {
     const current = pending.current;
+    if (!current) return;
+    setFormError(null);
+    working(true);
+    try {
+      // An attempt that failed here may have created the account after all: then it is opened.
+      const created = await discardKeySignup(current);
+      if (created) {
+        finish(created);
+        return;
+      }
+    } catch (err) {
+      setFormError(graphqlErrorMessage(err, "Could not discard the keys."));
+      return;
+    } finally {
+      working(false);
+    }
     pending.current = null;
     setDraft(null);
     setSaved(false);
-    setFormError(null);
-    if (current) await abandonKeySignup(current).catch(() => undefined);
   }
 
   const canSubmit = draft

@@ -60,6 +60,18 @@ export function graphqlErrorExtension(err: unknown, key: string): unknown {
 /** The request carried no valid session (an absent, expired or revoked cookie). */
 export const UNAUTHENTICATED = "UNAUTHENTICATED";
 
+/** The write clashes with existing data, such as a username already taken. */
+export const CONFLICT = "CONFLICT";
+
+/** The input was refused; the error's message says why. */
+export const VALIDATION = "VALIDATION";
+
+/** An invite or bootstrap token that is unknown, used up or revoked. */
+export const INVALID_TOKEN = "INVALID_TOKEN";
+
+/** An invite or bootstrap token past its expiry. */
+export const EXPIRED_TOKEN = "EXPIRED_TOKEN";
+
 /**
  * Whether the server answered that the session is not valid: an `UNAUTHENTICATED` error (the
  * server sends it with HTTP 200) or a 401/403 from whatever sits in front of it. Other answers,

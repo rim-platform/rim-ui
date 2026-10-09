@@ -44,27 +44,8 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
 }));
 
-// The key form has its own tests; this stand-in shows the token it got and finishes the way
-// the real one does, with a server id only for a workspace invite.
-vi.mock("./KeySignupForm", () => ({
-  KeySignupForm: ({
-    tokens,
-    onSuccess,
-  }: {
-    tokens: Record<string, string>;
-    onSuccess: (userId: string, serverId: string | null) => void;
-  }) => (
-    <div data-testid="key-signup">
-      <span data-testid="key-signup-tokens">{JSON.stringify(tokens)}</span>
-      <button
-        type="button"
-        onClick={() => onSuccess("user-key", tokens.workspaceInviteToken ? "server-key" : null)}
-      >
-        finish key signup
-      </button>
-    </div>
-  ),
-}));
+// The key form has its own tests; the stand-in is in `__mocks__`.
+vi.mock("./KeySignupForm");
 
 import { OpenJoinPage } from "./OpenJoinPage";
 

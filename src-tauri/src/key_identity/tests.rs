@@ -653,19 +653,13 @@ fn a_refused_signup_removes_its_keys_and_a_retry_signs_the_same_keys_again() {
 }
 
 #[test]
-fn removing_a_drafts_keys_never_touches_confirmed_keys() {
+fn signing_a_draft_again_never_downgrades_confirmed_keys() {
     let state = self::state();
     let draft = state.begin_enrollment("Laptop").unwrap();
     state
-        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
         .unwrap();
-    // An earlier attempt landed and was confirmed while this draft is still held.
-    let ada = ServerAccount {
-        endpoint: ENDPOINT.into(),
-        user_id: "u-ada".into(),
-        username: "ada".into(),
-    };
-    let drafts_before = state.drafts.lock().unwrap().len();
+    // The server confirmed the keys while this draft is still held.
     state
         .keys()
         .put_record(&KeyRecord {
@@ -673,13 +667,78 @@ fn removing_a_drafts_keys_never_touches_confirmed_keys() {
             ..state.record(&draft.principal_id).unwrap()
         })
         .unwrap();
+
+    state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    let accounts = state.accounts(ENDPOINT).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert!(accounts[0].confirmed);
+    assert_eq!(accounts[0].user_id.as_deref(), Some("u1"));
+
     state.remove_draft_keys(&draft.draft_id).unwrap();
-    assert!(state.record(&draft.principal_id).is_ok());
-    assert_eq!(state.drafts.lock().unwrap().len(), drafts_before);
-    assert!(state
-        .settle(&ada, Some(draft.principal_id.as_str()))
-        .unwrap()
-        .is_some());
+    state.forget_unconfirmed(&draft.principal_id).unwrap();
+    assert!(state.record(&draft.principal_id).unwrap().confirmed);
+}
+
+#[test]
+fn a_signup_the_server_took_after_its_keys_were_removed_gets_them_back() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    let signed = state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    state.remove_draft_keys(&draft.draft_id).unwrap();
+    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
+
+    state
+        .restore_draft_keys(&draft.draft_id, ENDPOINT, " ada ")
+        .unwrap();
+    let accounts = state.accounts(ENDPOINT).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].username.as_deref(), Some("ada"));
+    assert_eq!(
+        payload_field(&signed.device, "deviceId"),
+        accounts[0].device_id.as_str()
+    );
+    // The same keys: a login proof from them names the certificate's device.
+    let proof = state
+        .sign_login(ENDPOINT, &draft.principal_id, &challenge())
+        .unwrap();
+    let device_key = payload_field(&signed.device, "deviceKey");
+    assert!(verify(
+        &proof,
+        context::LOGIN,
+        device_key.as_str().unwrap(),
+        2
+    ));
+}
+
+#[test]
+fn unconfirmed_keys_of_a_signup_that_never_reached_the_server_can_be_removed() {
+    // The app quit after storing the keys; the next run holds no draft.
+    let store = Arc::new(MemorySecretStore::default());
+    let state = KeyIdentityState::new(store.clone());
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    let restarted = KeyIdentityState::new(store);
+    assert_eq!(restarted.accounts(ENDPOINT).unwrap().len(), 1);
+
+    restarted.forget_unconfirmed(&draft.principal_id).unwrap();
+    assert!(restarted.accounts(ENDPOINT).unwrap().is_empty());
+    assert!(matches!(
+        restarted.record(&draft.principal_id),
+        Err(KeyIdentityError::NoKeys)
+    ));
+
+    // Confirmed keys stay.
+    let (enrolled, _) = enrolled(&restarted);
+    restarted
+        .forget_unconfirmed(&enrolled.principal_id)
+        .unwrap();
+    assert_eq!(restarted.accounts(ENDPOINT).unwrap().len(), 1);
 }
 
 #[test]

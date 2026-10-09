@@ -86,27 +86,8 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
 }));
 
-// The key form has its own tests; this stand-in shows the token it got and finishes the way
-// the real one does, with a server id only for a workspace invite.
-vi.mock("./KeySignupForm", () => ({
-  KeySignupForm: ({
-    tokens,
-    onSuccess,
-  }: {
-    tokens: Record<string, string>;
-    onSuccess: (userId: string, serverId: string | null) => void;
-  }) => (
-    <div data-testid="key-signup">
-      <span data-testid="key-signup-tokens">{JSON.stringify(tokens)}</span>
-      <button
-        type="button"
-        onClick={() => onSuccess("user-key", tokens.workspaceInviteToken ? "server-key" : null)}
-      >
-        finish key signup
-      </button>
-    </div>
-  ),
-}));
+// The key form has its own tests; the stand-in is in `__mocks__`.
+vi.mock("./KeySignupForm");
 
 import { JoinPage } from "./JoinPage";
 
@@ -454,6 +435,8 @@ describe("JoinPage — create account with a key (desktop)", () => {
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
       workspaceInviteToken: "ws-token-abc",
     });
+    // The preview's workspace, for an account whose answer was lost.
+    expect(screen.getByTestId("key-signup-workspace")).toHaveTextContent("server-1");
     await user.click(screen.getByRole("button", { name: /finish key signup/i }));
 
     expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });

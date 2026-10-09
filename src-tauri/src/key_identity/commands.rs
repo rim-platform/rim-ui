@@ -84,6 +84,29 @@ pub async fn key_identity_remove_draft_keys(
     blocking(&state, move |s| s.remove_draft_keys(&draft_id)).await
 }
 
+/// Store a draft's keys again for a signup the server took after they were removed.
+#[tauri::command]
+pub async fn key_identity_restore_draft_keys(
+    state: State<'_, KeyIdentityState>,
+    draft_id: String,
+    endpoint: String,
+    username: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.restore_draft_keys(&draft_id, &endpoint, &username)
+    })
+    .await
+}
+
+/// Remove an account's keys unless the server confirmed them.
+#[tauri::command]
+pub async fn key_identity_forget_unconfirmed(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| s.forget_unconfirmed(&principal_id)).await
+}
+
 /// Cancel an enrollment, removing its keys unless the server confirmed them.
 #[tauri::command]
 pub async fn key_identity_discard_enrollment(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ClientError } from "graphql-request";
@@ -10,14 +10,19 @@ const api = vi.hoisted(() => ({
   defaultDeviceName: vi.fn(),
   beginEnrollment: vi.fn(),
   signupWithKey: vi.fn(),
+  discardKeySignup: vi.fn(),
   abandonKeySignup: vi.fn(),
 }));
 
-vi.mock("../../key-identity/api/keyIdentity", () => api);
+vi.mock("../../key-identity/api/keyIdentity", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../key-identity/api/keyIdentity")>()),
+  ...api,
+}));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
 }));
 
+import { KeyChallengeFailed } from "../../key-identity/api/keyIdentity";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer".split(
@@ -41,16 +46,34 @@ function serverError(code: string, message = code, extensions: Record<string, un
   );
 }
 
-function renderForm(tokens: KeySignupTokens = { instanceInviteToken: "inst-tok" }) {
+function renderForm(
+  tokens: KeySignupTokens = { instanceInviteToken: "inst-tok" },
+  workspaceId?: string,
+) {
   const qc = createTestQueryClient();
   const invalidate = vi.spyOn(qc, "invalidateQueries");
   const onSuccess = vi.fn();
+  const onBusyChange = vi.fn();
   const view = render(
     <QueryClientProvider client={qc}>
-      <KeySignupForm tokens={tokens} onSuccess={onSuccess} />
+      <KeySignupForm
+        tokens={tokens}
+        workspaceId={workspaceId}
+        onSuccess={onSuccess}
+        onBusyChange={onBusyChange}
+      />
     </QueryClientProvider>,
   );
-  return { ...view, onSuccess, invalidate };
+  return { ...view, onSuccess, onBusyChange, invalidate };
+}
+
+/** jsdom has no Clipboard API; stub it so the copy button is testable. */
+function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+    writable: true,
+  });
 }
 
 /** Fill in the name, create the keys and tick "I saved it". */
@@ -68,6 +91,7 @@ describe("KeySignupForm", () => {
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.beginEnrollment.mockResolvedValue(draft);
     api.abandonKeySignup.mockResolvedValue(undefined);
+    api.discardKeySignup.mockResolvedValue(null);
   });
 
   it("asks for a username, an optional display name and this device's name, with no password or email", async () => {
@@ -87,7 +111,7 @@ describe("KeySignupForm", () => {
   it("shows the recovery kit and creates the account only once the person saved it", async () => {
     const user = userEvent.setup();
     api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
-    const { onSuccess, invalidate } = renderForm();
+    const { onSuccess, onBusyChange, invalidate } = renderForm();
 
     await waitFor(() =>
       expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
@@ -116,6 +140,9 @@ describe("KeySignupForm", () => {
     });
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
+    // The page keeps the form mounted while a step runs.
+    expect(onBusyChange).toHaveBeenCalledWith(true);
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
     // The phrase leaves the screen once the account has its keys.
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
     expect(api.abandonKeySignup).not.toHaveBeenCalled();
@@ -194,6 +221,11 @@ describe("KeySignupForm", () => {
       serverError("RATE_LIMITED", "rate limit exceeded", { retryAfterSeconds: 300 }),
       /too many sign-ups.*try again in 5 minutes/i,
     ],
+    [
+      "a rate limit on the challenge, as attempts rather than sign-ups",
+      new KeyChallengeFailed(serverError("RATE_LIMITED")),
+      /too many attempts.*wait a minute/i,
+    ],
     ["an invalid token", serverError("INVALID_TOKEN"), /invite link is no longer valid/i],
     ["an expired token", serverError("EXPIRED_TOKEN"), /invite link has expired/i],
     [
@@ -227,7 +259,7 @@ describe("KeySignupForm", () => {
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: /discard keys/i }));
 
-    expect(api.abandonKeySignup).toHaveBeenCalledWith(draft);
+    expect(api.discardKeySignup).toHaveBeenCalledWith(draft);
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(await screen.findByRole("button", { name: /create keys/i })).toBeInTheDocument();
@@ -256,5 +288,43 @@ describe("KeySignupForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/key storage: locked/);
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
+  });
+
+  it("opens the account when discarding finds that a failed attempt created it", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey.mockRejectedValueOnce(new Error("Network down"));
+    api.discardKeySignup.mockResolvedValueOnce({ userId: "u-ada", serverId: null });
+    const { onSuccess } = renderForm({ workspaceInviteToken: "ws-tok" }, "srv-preview");
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: /discard keys/i }));
+
+    // The answer naming the workspace was lost; the invite's preview names it.
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-preview"));
+  });
+
+  it("lands in the previewed workspace when the account was found after a lost answer", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+    const { onSuccess } = renderForm({ workspaceInviteToken: "ws-tok" }, "srv-preview");
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-preview"));
+  });
+
+  it("says when the kit could not be copied", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await reachKit(user);
+
+    // userEvent installs its own clipboard; stub after it, and click without it.
+    stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
+    fireEvent.click(screen.getByRole("button", { name: /copy kit/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not copy/i);
   });
 });

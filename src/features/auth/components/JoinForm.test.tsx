@@ -36,22 +36,8 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
 }));
 
-vi.mock("./KeySignupForm", () => ({
-  KeySignupForm: ({
-    tokens,
-    onSuccess,
-  }: {
-    tokens: Record<string, string>;
-    onSuccess: (userId: string, serverId: string | null) => void;
-  }) => (
-    <div data-testid="key-signup">
-      <span data-testid="key-signup-tokens">{JSON.stringify(tokens)}</span>
-      <button type="button" onClick={() => onSuccess("user-key", "server-key")}>
-        finish key signup
-      </button>
-    </div>
-  ),
-}));
+// The key form has its own tests; the stand-in is in `__mocks__`.
+vi.mock("./KeySignupForm");
 
 import { JoinForm } from "./JoinForm";
 import { InviteTokenType } from "../types";
@@ -525,6 +511,16 @@ describe("JoinForm — create account with a key", () => {
 
     expect(onSuccess).toHaveBeenCalledWith("user-key", "server-key");
     expect(mockSignupMutate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the key form while its signup is busy", async () => {
+    const user = userEvent.setup();
+    renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    await user.click(screen.getByRole("button", { name: /start key signup/i }));
+
+    expect(screen.getByRole("button", { name: /create account with a password/i })).toBeDisabled();
   });
 
   it("goes back to the password form", async () => {

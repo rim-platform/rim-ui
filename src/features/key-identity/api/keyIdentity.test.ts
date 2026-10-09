@@ -16,6 +16,9 @@ import {
   abandonKeySignup,
   accountIdInKit,
   completeEnrollment,
+  discardKeySignup,
+  forgetKeysTheServerNeverSaw,
+  KeyChallengeFailed,
   profileCardIsStale,
   reconcileDeviceKeys,
   recoverAccount,
@@ -290,12 +293,18 @@ describe("enrollment", () => {
 });
 
 describe("signupWithKey", () => {
-  const draft: EnrollmentDraft = {
-    draftId: "draft-1",
-    principalId: PRINCIPAL,
-    recoveryKit: "kit",
-    recoveryPhrase: [],
-  };
+  // Each test its own draft: the module remembers what each draft was last sent with.
+  let n = 0;
+  let draft: EnrollmentDraft;
+  beforeEach(() => {
+    n += 1;
+    draft = {
+      draftId: `draft-${n}`,
+      principalId: PRINCIPAL,
+      recoveryKit: "kit",
+      recoveryPhrase: [],
+    };
+  });
   const statements = { keyLog: [STATEMENT], device: STATEMENT, proof: STATEMENT };
   const identity = {
     myKeyIdentity: {
@@ -308,6 +317,7 @@ describe("signupWithKey", () => {
   };
   const fields = { username: " ada ", displayName: "Ada", workspaceInviteToken: "ws-tok" };
   const created = { signupWithKey: { userId: "user-1", serverId: "srv-1" } };
+  const LOG = { keyLog: [{ seq: 0, statement: STATEMENT }] };
 
   it("stores and signs the draft's keys, creates the account, settles and publishes the card", async () => {
     backend(
@@ -325,7 +335,7 @@ describe("signupWithKey", () => {
       serverId: "srv-1",
     });
     expect(invokeMock).toHaveBeenCalledWith("key_identity_sign_signup", {
-      draftId: "draft-1",
+      draftId: draft.draftId,
       endpoint: ENDPOINT,
       username: "ada",
       challenge: { challengeId: "c-1", nonce: "n-1" },
@@ -369,6 +379,14 @@ describe("signupWithKey", () => {
     });
   });
 
+  it("marks a failed challenge, before anything is signed or sent", async () => {
+    backend({ KeyLoginChallenge: serverError("RATE_LIMITED") });
+    const failure = await signupWithKey(draft, fields).catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(KeyChallengeFailed);
+    expect((failure as KeyChallengeFailed).reason).toBeInstanceOf(ClientError);
+    expect(commands()).toEqual([]);
+  });
+
   it("removes the keys but keeps the draft when the server refused the signup", async () => {
     backend(
       {
@@ -381,30 +399,61 @@ describe("signupWithKey", () => {
     await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
     expect(commands()).toEqual(["key_identity_sign_signup", "key_identity_remove_draft_keys"]);
     expect(invokeMock).toHaveBeenCalledWith("key_identity_remove_draft_keys", {
-      draftId: "draft-1",
+      draftId: draft.draftId,
     });
   });
 
-  it("signs in with the key when an earlier attempt whose answer was lost created the account", async () => {
+  it("finishes like a success when an earlier attempt whose answer was lost created the account", async () => {
     backend(
       {
         KeyLoginChallenge: CHALLENGE,
         SignupWithKey: serverError("CONFLICT"),
-        KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] },
+        KeyLog: LOG,
         LoginWithKey: { loginWithKey: { userId: "user-1" } },
         MeKeyAccount: ME(PRINCIPAL),
+        MyKeyIdentity: identity,
+        PublishProfileCard: { publishProfileCard: { version: 1 } },
       },
-      { key_identity_sign_signup: statements, key_identity_sign_login: STATEMENT },
+      {
+        key_identity_sign_signup: statements,
+        key_identity_sign_login: STATEMENT,
+        key_identity_sign_profile_card: STATEMENT,
+      },
     );
+    // The server id is not known here: the caller has the invite's preview.
     await expect(signupWithKey(draft, fields)).resolves.toEqual({
       userId: "user-1",
       serverId: null,
     });
     expect(commands()).toEqual([
       "key_identity_sign_signup",
+      "key_identity_restore_draft_keys",
       "key_identity_sign_login",
       "key_identity_settle",
+      "key_identity_sign_profile_card",
     ]);
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_restore_draft_keys", {
+      draftId: draft.draftId,
+      endpoint: ENDPOINT,
+      username: "ada",
+    });
+  });
+
+  it("keeps the keys and passes on the error when signing in to that account fails", async () => {
+    const refused = serverError("UNAUTHENTICATED");
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: serverError("CONFLICT"),
+        KeyLog: LOG,
+        LoginWithKey: refused,
+      },
+      { key_identity_sign_signup: statements, key_identity_sign_login: STATEMENT },
+    );
+    await expect(signupWithKey(draft, fields)).rejects.toBe(refused);
+    expect(commands()).not.toContain("key_identity_remove_draft_keys");
+    expect(commands()).not.toContain("key_identity_discard_enrollment");
+    expect(commands()).not.toContain("key_identity_forget_unconfirmed");
   });
 
   it("keeps the keys when the server cannot say whether the account exists", async () => {
@@ -420,15 +469,70 @@ describe("signupWithKey", () => {
     expect(commands()).toEqual(["key_identity_sign_signup"]);
   });
 
-  it("abandoning removes the keys only when no account here holds them", async () => {
+  it("discarding after a failure the server committed after all gives the keys back and signs in", async () => {
+    // The attempt failed and the log was still empty, so its keys went.
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: new TypeError("Failed to fetch"),
+        KeyLog: { keyLog: [] },
+      },
+      { key_identity_sign_signup: statements },
+    );
+    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(TypeError);
+    expect(commands()).toContain("key_identity_remove_draft_keys");
+
+    // The server committed it later: discarding finds the account and opens it.
+    invokeMock.mockClear();
+    backend(
+      {
+        KeyLog: LOG,
+        KeyLoginChallenge: CHALLENGE,
+        LoginWithKey: { loginWithKey: { userId: "user-1" } },
+        MeKeyAccount: ME(PRINCIPAL),
+        MyKeyIdentity: new TypeError("Failed to fetch"),
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await expect(discardKeySignup(draft)).resolves.toEqual({ userId: "user-1", serverId: null });
+    expect(commands()).toEqual([
+      "key_identity_restore_draft_keys",
+      "key_identity_sign_login",
+      "key_identity_settle",
+    ]);
+  });
+
+  it("discarding removes the keys only when no account here holds them", async () => {
+    backend({ KeyLog: { keyLog: [] } });
+    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    expect(commands()).toEqual(["key_identity_discard_enrollment"]);
+
+    invokeMock.mockClear();
+    backend({ KeyLog: new TypeError("Failed to fetch") });
+    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    expect(commands()).toEqual([]);
+  });
+
+  it("leaving the page removes unaccepted keys and gives an accepted account its keys back", async () => {
     backend({ KeyLog: { keyLog: [] } });
     await abandonKeySignup(draft);
     expect(commands()).toEqual(["key_identity_discard_enrollment"]);
 
+    // A draft sent and refused, then committed by the server after all.
     invokeMock.mockClear();
-    backend({ KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] } });
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: serverError("CONFLICT"),
+        KeyLog: { keyLog: [] },
+      },
+      { key_identity_sign_signup: statements },
+    );
+    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
+    invokeMock.mockClear();
+    backend({ KeyLog: LOG });
     await abandonKeySignup(draft);
-    expect(commands()).toEqual([]);
+    expect(commands()).toEqual(["key_identity_restore_draft_keys"]);
 
     invokeMock.mockClear();
     backend({ KeyLog: new TypeError("Failed to fetch") });
@@ -453,12 +557,48 @@ describe("signupWithKey", () => {
     );
 
     await abandonKeySignup(draft);
+    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    expect(
+      await forgetKeysTheServerNeverSaw({ ...LOCAL_UNCONFIRMED, principalId: PRINCIPAL }),
+    ).toBe(false);
     expect(commands()).toEqual(["key_identity_sign_signup"]);
 
     answer(created);
     await signingUp;
     expect(commands()).toContain("key_identity_settle");
     expect(commands()).not.toContain("key_identity_discard_enrollment");
+  });
+});
+
+const LOCAL_UNCONFIRMED = {
+  principalId: PRINCIPAL,
+  userId: null,
+  username: "ada",
+  deviceId: "d-1",
+  deviceName: "Laptop",
+  hasIdentityKey: true,
+  confirmed: false,
+};
+
+describe("forgetKeysTheServerNeverSaw", () => {
+  it("removes unconfirmed keys whose principal the server has no log for", async () => {
+    backend({ KeyLog: { keyLog: [] } });
+    await expect(forgetKeysTheServerNeverSaw(LOCAL_UNCONFIRMED)).resolves.toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_forget_unconfirmed", {
+      principalId: PRINCIPAL,
+    });
+  });
+
+  it("keeps keys the server knows, confirmed keys, and keys when it cannot say", async () => {
+    backend({ KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] } });
+    await expect(forgetKeysTheServerNeverSaw(LOCAL_UNCONFIRMED)).resolves.toBe(false);
+    backend({ KeyLog: new TypeError("Failed to fetch") });
+    await expect(forgetKeysTheServerNeverSaw(LOCAL_UNCONFIRMED)).resolves.toBe(false);
+    backend({ KeyLog: { keyLog: [] } });
+    await expect(
+      forgetKeysTheServerNeverSaw({ ...LOCAL_UNCONFIRMED, confirmed: true }),
+    ).resolves.toBe(false);
+    expect(commands()).toEqual([]);
   });
 });
 
