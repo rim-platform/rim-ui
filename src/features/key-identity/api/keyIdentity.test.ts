@@ -11,6 +11,12 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
   safeInvoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+// The desktop app: device key work goes to the Tauri side.
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  isTauri: () => true,
+}));
+
 import {
   abandonEnrollment,
   abandonKeySignup,

@@ -2,8 +2,9 @@
  * Device linking: a device that holds the identity key shows a code, and a new device with the
  * code gets its own certified device key and signs in with it.
  *
- * Secrets stay on the Tauri side; this module talks to the server, which only carries sealed
- * bytes, and asks the Tauri side to seal, open, check and sign.
+ * Secrets stay with the key backend (the Tauri side, or the browser for a web app linked as a
+ * new device); this module talks to the server, which only carries sealed bytes, and asks the
+ * key backend to seal, open, check and sign. Only the desktop is ever the old device.
  */
 
 import { gql } from "graphql-request";
@@ -21,6 +22,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { keyBackend, type SentOffer } from "./keyBackend";
 import {
   fetchKeyAccount,
   fetchKeyLog,
@@ -66,12 +68,6 @@ interface PendingLink {
   principalId: string;
   deviceId: string;
   deviceKey: string;
-}
-
-interface SentOffer {
-  linkId: string;
-  fingerprint: string;
-  offer: SealedMessageInput;
 }
 
 // ─── Server documents ───────────────────────────────────────────────────────
@@ -300,9 +296,9 @@ async function cancelOnServer(linkId: string): Promise<boolean | null> {
 }
 
 async function endLink(linkId: string): Promise<void> {
-  await keyCommand<null>("key_identity_link_end", { linkId }).catch((err: unknown) =>
-    logger.warn("[RIM:link] forgetting the device link failed:", err),
-  );
+  await keyBackend()
+    .linkEnd(linkId)
+    .catch((err: unknown) => logger.warn("[RIM:link] forgetting the device link failed:", err));
 }
 
 // ─── New device ─────────────────────────────────────────────────────────────
@@ -357,21 +353,18 @@ function awaitAnswer(linkId: string, options: PollOptions): Promise<SealedMessag
  * device key. Returns the account's user id. `onOffered` gets the
  * fingerprint to show while the person confirms on the other device.
  *
- * Nothing is written to the keyring until the certificate verifies against the account's key
- * log; any failure before then cancels the link and drops the key.
+ * Nothing is stored until the certificate verifies against the account's key log; any failure
+ * before then cancels the link and drops the key.
  */
 export async function linkNewDevice(
   code: string,
   deviceName: string,
   options: LinkNewDeviceOptions = {},
 ): Promise<string> {
+  const backend = keyBackend();
   let sent: SentOffer;
   try {
-    sent = await keyCommand<SentOffer>("key_identity_link_offer", {
-      endpoint: getGraphqlEndpoint(),
-      code,
-      deviceName,
-    });
+    sent = await backend.linkOffer(getGraphqlEndpoint(), code, deviceName);
   } catch (err) {
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
   }
@@ -382,12 +375,9 @@ export async function linkNewDevice(
     await sendOffer(sent);
     options.onOffered?.({ linkId, fingerprint: sent.fingerprint });
     const answer = await awaitAnswer(linkId, options);
-    ({ principalId } = await keyCommand<{ principalId: string }>("key_identity_link_open_answer", {
-      linkId,
-      answer,
-    }));
+    ({ principalId } = await backend.linkOpenAnswer(linkId, answer));
     const keyLog = await fetchKeyLog(principalId);
-    await keyCommand("key_identity_link_accept", { linkId, keyLog });
+    await backend.linkAccept(linkId, keyLog);
   } catch (err) {
     // The link is over on this side. The server is told unless the link already ended there
     // or the limiter would refuse the cancel too.
