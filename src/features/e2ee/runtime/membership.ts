@@ -8,14 +8,16 @@
 
 import { logger } from "../../../core/logger";
 import { fetchConversationGroup, type ConversationGroupInfo } from "../api/e2eeApi";
-import { e2eeCommands } from "../api/e2eeCommands";
+import { useE2eeStore } from "../state/useE2eeStore";
 import {
+  allowedPrincipals,
   commitPendingChanges,
   createGroup,
   needsSuiteMigration,
   pendingChanges,
   recoverIfStuck,
 } from "./groups";
+import { pinConversation } from "./pins";
 import { commitDelayMs, commitRank } from "./ranking";
 import { e2eeSession, type E2eeSession } from "./session";
 
@@ -109,7 +111,7 @@ export async function syncMembership(
     return;
   }
 
-  const [local] = await e2eeCommands.status(session.account, workspaceId, [conversationId]);
+  const local = (await pinConversation(session, workspaceId, info)) ?? undefined;
   if (local?.readdRequestedAt) {
     await recoverIfStuck(session, workspaceId, conversationId);
     return;
@@ -122,7 +124,9 @@ export async function syncMembership(
     return;
   }
 
-  const { adds, removes } = pendingChanges(group, session.deviceId);
+  const allowed = allowedPrincipals(info.conversationType, local);
+  const { adds, removes, refused } = pendingChanges(group, session.deviceId, allowed);
+  useE2eeStore.getState().setRefusedAdds(conversationId, refused);
   const pending =
     adds.length + removes.length + group.readdRequests.length + (local?.unverified.length ?? 0);
   if (pending === 0) {

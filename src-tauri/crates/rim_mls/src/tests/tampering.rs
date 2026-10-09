@@ -6,7 +6,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 
 use uuid::Uuid;
 
-use super::raw::{commit_raw, key_package_ref, send_raw};
+use super::raw::{commit_raw, commit_raw_with, key_package_ref, send_raw};
 use super::sequencer::{Refusal, Sequencer};
 use super::support::{device_ref, now, sign, tagged_public, Directory, Provider, TestDevice};
 use crate::content::application_data;
@@ -140,8 +140,9 @@ fn every_leaf_verification_failure_is_reported() {
     reader.store.commit();
     assert_eq!(joined.leaves.len(), 10);
 
-    // The crate will not add a key package that names no device; a misbehaving committer does,
-    // and the reader still processes the Commit and checks the new leaf.
+    // The crate will not add a key package that names no device; a misbehaving committer does.
+    // Its Commit cannot name the device in its summary, so readers refuse it; the committer's own
+    // tree has the leaf, and checking it reports the credential.
     let garbage_package = garbage.key_package();
     assert!(owner
         .mls
@@ -160,19 +161,19 @@ fn every_leaf_verification_failure_is_reported() {
         &[],
         &CommitSummary::default().to_bytes(),
     );
-    let CommitOutcome::Applied(applied) = reader
-        .mls
-        .process_commit(&reader.store, group, &commit)
-        .unwrap()
-    else {
-        panic!("the Commit was not applied");
-    };
-    reader.store.commit();
-    assert!(!applied.summary_matches);
-    assert_eq!(applied.to_verify.len(), 1);
-    let all = reader.mls.leaves(&reader.store, group).unwrap();
     assert!(matches!(
-        verify_leaf(&applied.to_verify[0], &all, &directory),
+        reader
+            .mls
+            .process_commit(&reader.store, group, &commit)
+            .unwrap(),
+        CommitOutcome::CannotProcess { committer: Some(ref c), .. } if *c == owner.device
+    ));
+    reader.store.rollback();
+    owner.store.commit();
+    let all = owner.mls.leaves(&owner.store, group).unwrap();
+    let garbage_leaf = all.iter().find(|leaf| leaf.identity.is_err()).unwrap();
+    assert!(matches!(
+        verify_leaf(garbage_leaf, &all, &directory),
         Err(LeafError::BadCredential(_))
     ));
 
@@ -225,7 +226,8 @@ fn application_messages_whose_authenticated_data_lies_are_invalid() {
     let expect = DecryptExpectations {
         message_id: content.id,
         thread_root_id: None,
-        author_principal_id: Some(sender.device.principal_id.clone()),
+        author_principal_id: sender.device.principal_id.clone(),
+        sender_device_id: sender.device.device_id,
     };
     let data = application_data(&franking_key, &bytes).to_vec();
 
@@ -313,7 +315,16 @@ fn application_messages_whose_authenticated_data_lies_are_invalid() {
             honest.clone(),
             data.clone(),
             DecryptExpectations {
-                author_principal_id: Some(mentioned.clone()),
+                author_principal_id: mentioned.clone(),
+                ..expect.clone()
+            },
+        ),
+        (
+            "not the row's sender device",
+            honest.clone(),
+            data.clone(),
+            DecryptExpectations {
+                sender_device_id: Uuid::now_v7(),
                 ..expect.clone()
             },
         ),
@@ -339,21 +350,44 @@ fn application_messages_whose_authenticated_data_lies_are_invalid() {
 }
 
 #[test]
-fn commits_whose_summary_lies_are_flagged() {
+fn finding_20_commits_whose_summary_lies_are_refused_and_wait_for_a_readd() {
     let device = |n| TestDevice::new(Provider::Libcrux, n, 1);
     let (owner, reader, extra, other) = (device(1), device(2), device(3), device(4));
     let group = group_of(&owner, &[&reader, &extra]);
-    let process = |commit: &[u8]| {
-        owner.store.commit();
+    let leaves_before = reader.mls.leaves(&reader.store, group).unwrap();
+    // Process `commit` on the reader, check it was refused and nothing merged, then put both
+    // devices back for the next case.
+    let refused = |case: &str, commit: &[u8]| {
         let outcome = reader
             .mls
             .process_commit(&reader.store, group, commit)
             .unwrap();
-        reader.store.commit();
-        match outcome {
-            CommitOutcome::Applied(applied) => applied,
-            other => panic!("{other:?}"),
-        }
+        assert!(
+            matches!(
+                &outcome,
+                CommitOutcome::CannotProcess { epoch: 1, committer: Some(c), .. }
+                    if *c == owner.device
+            ),
+            "{case}: {outcome:?}"
+        );
+        let status = reader.mls.group_status(&reader.store, group).unwrap();
+        assert_eq!(
+            (status.epoch, status.awaiting_readd),
+            (1, Some(1)),
+            "{case}"
+        );
+        assert_eq!(
+            reader.mls.leaves(&reader.store, group).unwrap(),
+            leaves_before,
+            "{case}"
+        );
+        // A group that waits for a re-add takes no further Commit.
+        assert!(matches!(
+            reader.mls.process_commit(&reader.store, group, commit),
+            Err(crate::Error::AwaitingReadd(1))
+        ));
+        reader.store.rollback();
+        owner.store.rollback();
     };
 
     // Claims to add a device while removing one.
@@ -371,11 +405,9 @@ fn commits_whose_summary_lies_are_flagged() {
         std::slice::from_ref(&extra.device),
         &lie.to_bytes(),
     );
-    let applied = process(&commit);
-    assert!(!applied.summary_matches);
-    assert_eq!(applied.removed, vec![extra.device.clone()]);
+    refused("a remove announced as an add", &commit);
 
-    // Claims nothing while adding a device: flagged, and the new leaf still verifies.
+    // Claims nothing while adding a device.
     let (commit, _) = commit_raw(
         &owner,
         group,
@@ -383,24 +415,50 @@ fn commits_whose_summary_lies_are_flagged() {
         &[],
         &CommitSummary::default().to_bytes(),
     );
-    let applied = process(&commit);
-    assert!(!applied.summary_matches);
-    assert_eq!(applied.added, vec![other.device.clone()]);
-    let all = reader.mls.leaves(&reader.store, group).unwrap();
-    let directory = Directory::with(&[&owner, &reader, &other]);
-    assert!(applied
-        .to_verify
-        .iter()
-        .all(|leaf| verify_leaf(leaf, &all, &directory).is_ok()));
+    refused("an unannounced add", &commit);
 
     // Authenticated data that is no summary at all.
     let (commit, _) = commit_raw(&owner, group, &[], &[], b"not json");
-    assert!(!process(&commit).summary_matches);
+    refused("no summary", &commit);
 
-    // The honest Commit of the same change matches.
-    let outgoing = owner.mls.self_update(&owner.store, group).unwrap();
+    // A proposal other than Add and Remove, under an honest (empty) summary.
+    let (commit, _) = commit_raw_with(
+        &owner,
+        group,
+        &[],
+        &[],
+        &CommitSummary::default().to_bytes(),
+        true,
+    );
+    refused("a GroupContextExtensions proposal", &commit);
+
+    // The honest Commit of a change is merged.
+    let outgoing = owner
+        .mls
+        .commit(
+            &owner.store,
+            group,
+            &[],
+            std::slice::from_ref(&extra.device),
+        )
+        .unwrap();
     owner.mls.commit_accepted(&owner.store, group).unwrap();
-    assert!(process(&outgoing.commit).summary_matches);
+    owner.store.commit();
+    match reader
+        .mls
+        .process_commit(&reader.store, group, &outgoing.commit)
+        .unwrap()
+    {
+        CommitOutcome::Applied(applied) => {
+            assert_eq!(applied.removed, vec![extra.device.clone()]);
+            assert_eq!(
+                applied.membership.removed,
+                vec![extra.device.principal_id.clone()]
+            );
+            assert!(applied.membership.added.is_empty());
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]

@@ -429,7 +429,31 @@ pub async fn e2ee_settle_message(
     .await
 }
 
-/// Forget a conversation's group state (this device left it, or it is gone).
+/// Pin a conversation as encrypted on this device: the server said so (`encrypted_at`), and for
+/// a direct message, its two principals. The first values pinned stay.
+#[tauri::command]
+pub async fn e2ee_pin(
+    cache: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    conversation_id: String,
+    encrypted_at: Option<String>,
+    dm_principals: Option<Vec<String>>,
+) -> Result<GroupView> {
+    in_transaction(cache, account, move |tx, mls| {
+        group::pin(
+            tx,
+            &workspace_id,
+            &conversation_id,
+            encrypted_at.as_deref(),
+            dm_principals.as_deref(),
+        )?;
+        group::view(tx, mls, &workspace_id, &conversation_id)
+    })
+    .await
+}
+
+/// Forget a conversation's group state (this device left it, or it is gone). Its pin stays.
 #[tauri::command]
 pub async fn e2ee_forget(
     cache: State<'_, MessageCacheState>,

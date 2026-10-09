@@ -4,7 +4,8 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use rim_mls::{
-    Change, ClaimedKeyPackage, CommitOutcome, DeviceRef, EncryptedMessage, OutgoingCommit,
+    Change, ClaimedKeyPackage, CommitOutcome, DeviceRef, EncryptedMessage, MembershipChange,
+    MergedCommit, OutgoingCommit,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -155,6 +156,38 @@ pub(crate) fn outgoing_commit(commit: &OutgoingCommit) -> OutgoingCommitWire {
     }
 }
 
+/// The principals a Commit brought into the group or took out of it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MembershipWire {
+    added: Vec<String>,
+    removed: Vec<String>,
+}
+
+impl MembershipWire {
+    fn from(change: &MembershipChange) -> Self {
+        Self {
+            added: change.added.clone(),
+            removed: change.removed.clone(),
+        }
+    }
+}
+
+/// This device's own Commit, merged.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MergedWire {
+    epoch: u64,
+    membership: MembershipWire,
+}
+
+pub(crate) fn merged(merged: &MergedCommit) -> MergedWire {
+    MergedWire {
+        epoch: merged.epoch,
+        membership: MembershipWire::from(&merged.membership),
+    }
+}
+
 /// What processing a Commit did.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -165,14 +198,22 @@ pub(crate) enum CommitOutcomeWire {
         committer: Option<DeviceWire>,
         added: Vec<DeviceWire>,
         removed: Vec<DeviceWire>,
-        summary_matches: bool,
+        membership: MembershipWire,
         to_verify: u32,
         self_removed: bool,
     },
     #[serde(rename_all = "camelCase")]
-    OwnMerged { epoch: u64 },
+    OwnMerged {
+        epoch: u64,
+        membership: MembershipWire,
+    },
+    /// Not merged; `committer` is set when that device's Commit broke a rule.
     #[serde(rename_all = "camelCase")]
-    CannotProcess { epoch: u64, reason: String },
+    CannotProcess {
+        epoch: u64,
+        reason: String,
+        committer: Option<DeviceWire>,
+    },
 }
 
 pub(crate) fn commit_outcome(outcome: &CommitOutcome) -> CommitOutcomeWire {
@@ -182,14 +223,22 @@ pub(crate) fn commit_outcome(outcome: &CommitOutcome) -> CommitOutcomeWire {
             committer: applied.committer.as_ref().map(DeviceWire::from_ref),
             added: applied.added.iter().map(DeviceWire::from_ref).collect(),
             removed: applied.removed.iter().map(DeviceWire::from_ref).collect(),
-            summary_matches: applied.summary_matches,
+            membership: MembershipWire::from(&applied.membership),
             to_verify: applied.to_verify.len() as u32,
             self_removed: applied.self_removed,
         },
-        CommitOutcome::OwnMerged { epoch } => CommitOutcomeWire::OwnMerged { epoch: *epoch },
-        CommitOutcome::CannotProcess { epoch, reason } => CommitOutcomeWire::CannotProcess {
+        CommitOutcome::OwnMerged(merged) => CommitOutcomeWire::OwnMerged {
+            epoch: merged.epoch,
+            membership: MembershipWire::from(&merged.membership),
+        },
+        CommitOutcome::CannotProcess {
+            epoch,
+            reason,
+            committer,
+        } => CommitOutcomeWire::CannotProcess {
             epoch: *epoch,
             reason: reason.clone(),
+            committer: committer.as_ref().map(DeviceWire::from_ref),
         },
     }
 }
@@ -231,8 +280,8 @@ pub(crate) struct ExpectedWire {
     pub message_id: String,
     #[serde(default)]
     pub thread_root_id: Option<String>,
-    #[serde(default)]
-    pub author_principal_id: Option<String>,
+    pub author_principal_id: String,
+    pub sender_device_id: String,
 }
 
 #[derive(Serialize)]

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Lock, RotateCcw } from "lucide-react";
+import { Lock, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 
 import { toast } from "../../../shared/toast";
 import { currentCacheAccount } from "../../messages/api/messageCache";
@@ -51,6 +51,15 @@ export function E2eeNoticeRow({ notice, nameOf, deviceNameOf, onRestored }: E2ee
       <Line>
         <Lock className="h-3 w-3" aria-hidden />
         Messages from here on are end-to-end encrypted
+      </Line>
+    );
+  }
+  if (notice.kind === "member") {
+    const Icon = notice.change === "added" ? UserPlus : UserMinus;
+    return (
+      <Line>
+        <Icon className="h-3 w-3" aria-hidden />
+        {nameOf(notice.principalId)} was {notice.change}
       </Line>
     );
   }

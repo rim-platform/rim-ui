@@ -74,8 +74,9 @@ thread.
 
 ## Storage
 
-One IndexedDB database, `rim-e2ee`; every record is keyed by the account first (`endpoint`
-without a trailing `/`, `principalId`):
+One IndexedDB database, `rim-e2ee` (version 2: version 1 lacked `pins` and `peers`, which the
+upgrade adds); every record is keyed by the account first (`endpoint` without a trailing `/`,
+`principalId`):
 
 | Store | Key | Holds |
 |---|---|---|
@@ -86,6 +87,8 @@ without a trailing `/`, `principalId`):
 | `outgoing` | `[…, messageId]` | Messages and edits until the server acknowledges them, with the content, franking key and commitment to send them again |
 | `devices` | `[…, peerPrincipalId, deviceId]` | Devices whose certificate verified, with the certified key |
 | `accounts` | `[endpoint, principalId]` | This device's public key (from its certificate) and when the browser last ran encryption |
+| `pins` | `[…, workspaceId, conversationId]` | Conversations this browser knows are encrypted (the server's `encryptedAt` as first seen) and a direct message's two principals; kept through `forget` and `NO_ACCESS` |
+| `peers` | `[…, peerPrincipalId]` | Per principal, the seq and hash of the head of the longest key log verified here, and the device ids seen revoked |
 
 **Write-through.** OpenMLS's storage is synchronous and IndexedDB is not, so the engine keeps
 the account's state in memory, loaded from `mls` when the store opens. Every operation is one
@@ -163,6 +166,22 @@ The desktop's timeline states and notices (`e2ee-desktop.md`, "What the person s
   as this browser profile."
 
 The history archive is the desktop's: the web app offers no "Restore from history archive".
+
+## Hardening
+
+The browser holds the server to what it saw exactly as the desktop does (`e2ee-desktop.md`,
+"Hardening"), in its own stores:
+
+- the encryption pin and a DM's two principals in `pins`; a `groups` record of a held group counts
+  as pinned too and is pinned before `forget` drops it (the feed also keeps empty records for the
+  plaintext conversations a plugin reads, which are never pinned);
+- key-log head pins and remembered revocations in `peers`, checked in `web/directory.ts` before
+  the module checks the leaves; a forked principal's leaves are `keyLogForked`;
+- rows without an author principal or with another sender device are "could not be verified";
+  the module refuses a replayed Welcome (`E2EE_STALE_WELCOME`) and a lying Commit, and reports
+  which principals each processed Commit added and removed;
+- certificates before a recovery, equal identity and recovery keys, and log entries or
+  revocations with fields the spec does not name are refused in `key-identity/browser`.
 
 ## Limits
 

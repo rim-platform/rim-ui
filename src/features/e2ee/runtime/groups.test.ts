@@ -40,6 +40,8 @@ vi.mock("./members", () => ({
   notReadyMembers: vi.fn(async () => ({ names: [], directory: [] })),
 }));
 
+import { E2eeCommandError } from "../api/e2eeCommands";
+import { useE2eeStore } from "../state/useE2eeStore";
 import { commitPendingChanges, createGroup, processWelcomes, refreshKeyPackages } from "./groups";
 
 const session = {
@@ -226,6 +228,102 @@ describe("commitPendingChanges", () => {
     });
     expect(await commitPendingChanges(session, "ws", "c")).toBe(false);
     expect(commands.commit).not.toHaveBeenCalled();
+  });
+});
+
+describe("a direct message under a misbehaving server", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useE2eeStore.getState().clear();
+    commands.commit.mockResolvedValue(outgoing);
+    commands.readdCheck.mockResolvedValue([]);
+    api.submitCommit.mockResolvedValue(undefined);
+  });
+
+  it("finding 4: never commits an add outside its two pinned principals, and says so", async () => {
+    commands.status.mockResolvedValue([
+      {
+        conversationId: "c",
+        hasGroup: true,
+        incarnation: 1,
+        epoch: 4,
+        pinned: true,
+        pinnedEncryptedAt: "2026-10-09T00:00:00Z",
+        dmPrincipals: ["rimp1_a", "rimp1_me"],
+      },
+    ]);
+    api.fetchConversationGroup.mockResolvedValue({
+      id: "c",
+      conversationType: "DIRECT",
+      memberIds: ["u-me", "u-a", "u-m"],
+      encryptedAt: "2026-10-09T00:00:00Z",
+      mlsGroup: serverGroup({
+        pendingAdds: [
+          { principalId: "rimp1_a", deviceId: "dev-a2", userId: "u-a", hasKeyPackage: true },
+          { principalId: "rimp1_mallory", deviceId: "dev-m", userId: "u-m", hasKeyPackage: true },
+        ],
+      }),
+    });
+    api.claimKeyPackages.mockResolvedValue([
+      { principalId: "rimp1_a", deviceId: "dev-a2", keyPackage: "kp", userId: "u-a" },
+    ]);
+
+    expect(await commitPendingChanges(session, "ws", "c")).toBe(true);
+    expect(api.claimKeyPackages).toHaveBeenCalledWith("ws", "c", [
+      { principalId: "rimp1_a", deviceId: "dev-a2" },
+    ]);
+    expect(useE2eeStore.getState().refusedAdds.c).toEqual(["rimp1_mallory"]);
+  });
+
+  it("finding 4: does not create a direct message's group with a third principal", async () => {
+    commands.status.mockResolvedValue([{ conversationId: "c", pinned: false }]);
+    api.fetchConversationGroup.mockResolvedValue({
+      id: "c",
+      conversationType: "DIRECT",
+      memberIds: ["u-me", "u-a", "u-m"],
+      encryptedAt: null,
+      mlsGroup: null,
+    });
+    const { directoryFor } = await import("./members");
+    vi.mocked(directoryFor).mockResolvedValueOnce({
+      members: [],
+      principals: ["rimp1_a", "rimp1_mallory"].map((principalId) => ({
+        principalId,
+        keyLog: [],
+        devices: [{ deviceId: `dev-${principalId}`, mlsActive: true, revokedAt: null } as never],
+      })),
+    });
+    api.claimKeyPackages.mockResolvedValue([]);
+    commands.createGroup.mockResolvedValue({ ...outgoing, epoch: 0 });
+
+    await createGroup(session, "ws", "c");
+    expect(api.claimKeyPackages).toHaveBeenCalledWith("ws", "c", []);
+  });
+
+  it("finding 6: a stale or replayed Welcome is acknowledged without asking for a re-add", async () => {
+    api.fetchWelcomes.mockResolvedValue([
+      { id: "w1", serverId: "ws", conversationId: "c1", incarnation: 1, epoch: 1, message: "a" },
+      { id: "w2", serverId: "ws", conversationId: "c2", incarnation: 1, epoch: 1, message: "b" },
+    ]);
+    const stale = Object.assign(new E2eeCommandError("E2EE_STALE_WELCOME", "replayed"), {
+      code: "E2EE_STALE_WELCOME",
+    });
+    commands.join.mockRejectedValueOnce(stale).mockRejectedValueOnce(new Error("no key package"));
+    // The device holds working state of c2's incarnation: the Welcome is a leftover.
+    commands.status.mockResolvedValue([
+      {
+        conversationId: "c2",
+        hasGroup: true,
+        incarnation: 1,
+        awaitingReadd: null,
+        readdRequestedAt: null,
+      },
+    ]);
+
+    expect(await processWelcomes(session)).toEqual([]);
+    expect(commands.readdRequest).not.toHaveBeenCalled();
+    expect(api.requestReadd).not.toHaveBeenCalled();
+    expect(api.ackWelcomes).toHaveBeenCalledWith(["w1", "w2"]);
   });
 });
 

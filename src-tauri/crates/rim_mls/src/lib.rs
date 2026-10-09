@@ -48,14 +48,15 @@ pub use content::{
 };
 pub use device::{
     plan_key_package_upload, GeneratedKeyPackage, KeyPackageStatus, UploadPlan,
-    KEY_PACKAGE_LIFETIME_SECS, KEY_PACKAGE_LOW_WATER, KEY_PACKAGE_TARGET,
+    KEY_PACKAGE_CLOCK_MARGIN_SECS, KEY_PACKAGE_LIFETIME_SECS, KEY_PACKAGE_LOW_WATER,
+    KEY_PACKAGE_TARGET,
 };
 pub use error::{Error, Result};
 pub use franking::{franking_commitment, franking_receipt, franking_receipt_input, ReceiptFacts};
 pub use group::{
     AppliedCommit, ClaimedKeyPackage, CommitOutcome, DecryptExpectations, Decrypted,
-    DecryptedMessage, EncryptedMessage, GroupStatus, Joined, OutgoingCommit, MAX_ENVELOPE_BYTES,
-    MAX_HANDSHAKE_BYTES, MAX_PAST_EPOCHS,
+    DecryptedMessage, EncryptedMessage, GroupStatus, Joined, MembershipChange, MergedCommit,
+    OutgoingCommit, MAX_ENVELOPE_BYTES, MAX_HANDSHAKE_BYTES, MAX_PAST_EPOCHS,
 };
 pub use group_id::ConversationGroup;
 pub use identity::{
@@ -236,8 +237,13 @@ impl Mls {
         self.commit(store, group, &[], &[])
     }
 
-    /// The server accepted this device's pending Commit: merge it. Returns the new epoch.
-    pub fn commit_accepted(&self, store: &impl Store, group: ConversationGroup) -> Result<u64> {
+    /// The server accepted this device's pending Commit: merge it. Returns the new epoch and the
+    /// principals it added and removed.
+    pub fn commit_accepted(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+    ) -> Result<MergedCommit> {
         with_crypto!(&self.backend, |crypto| group::commit_accepted(
             crypto,
             store.backend(),
@@ -272,7 +278,8 @@ impl Mls {
         ))
     }
 
-    /// Join `group` from a Welcome.
+    /// Join `group` from a Welcome. A Welcome to an epoch this device's state of the group already
+    /// reached is refused ([`Error::StaleWelcome`]) unless the group waits for a re-add.
     pub fn join(
         &self,
         store: &impl Store,

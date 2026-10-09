@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 
 const conversation = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 const platform = vi.hoisted(() => ({ current: "desktop" }));
+const serverMembers = vi.hoisted(() => ({ current: [] as Record<string, unknown>[] }));
 const runtime = vi.hoisted(() => ({
   createGroup: vi.fn(),
   refreshGroups: vi.fn(),
@@ -22,6 +23,9 @@ vi.mock("../runtime/groups", () => ({
   refreshGroups: runtime.refreshGroups,
 }));
 vi.mock("../runtime/membership", () => ({ syncMembership: vi.fn(async () => undefined) }));
+vi.mock("../../workspaces/api/useServerMembers", () => ({
+  useServerMembers: () => ({ data: serverMembers.current }),
+}));
 vi.mock("../runtime/members", () => ({
   conversationMembers: runtime.conversationMembers,
   notReadyMembers: runtime.notReadyMembers,
@@ -61,6 +65,7 @@ describe("useE2eeConversation", () => {
     runtime.refreshGroups.mockResolvedValue([]);
     runtime.conversationMembers.mockResolvedValue([]);
     runtime.createGroup.mockResolvedValue(true);
+    serverMembers.current = [];
   });
 
   it("upgrades a DM once every member is ready", async () => {
@@ -142,6 +147,64 @@ describe("useE2eeConversation", () => {
     rerender();
     expect(result.current.sendBlock).toBe("unsupported");
     useE2eeStore.getState().setWebEncryption("ready");
+    rerender();
+    expect(result.current.sendBlock).toBeNull();
+  });
+
+  it("finding 1: a pinned conversation the server calls plaintext stays encrypted and stops sending", () => {
+    conversation.current = dm({ encryptedAt: null });
+    useE2eeStore.getState().setGroup({
+      conversationId: "c",
+      unverified: [],
+      readdRequestedAt: null,
+      awaitingReadd: null,
+      removed: false,
+      pinned: true,
+      pinnedEncryptedAt: "2026-10-09T00:00:00Z",
+      dmPrincipals: null,
+    } as never);
+    const { result } = renderHook(() => useE2eeConversation("ws", "c"), {
+      wrapper: TestProviders,
+    });
+    expect(result.current.encrypted).toBe(true);
+    expect(result.current.encryptedAt).toBe("2026-10-09T00:00:00Z");
+    expect(result.current.sendBlock).toBe("encryptionReset");
+    expect(result.current.notReady).toEqual([]);
+    expect(runtime.createGroup).not.toHaveBeenCalled();
+  });
+
+  it("finding 4: a direct message stops sending while the server lists a third member", () => {
+    serverMembers.current = [
+      { userId: "u-me", principalId: "rimp1_me", displayName: "Me" },
+      { userId: "u-bob", principalId: "rimp1_bob", displayName: "Bob" },
+      { userId: "u-mallory", principalId: "rimp1_mallory", displayName: "Mallory" },
+    ];
+    conversation.current = dm({
+      encryptedAt: "2026-10-09T00:00:00Z",
+      memberIds: ["u-me", "u-bob", "u-mallory"],
+    });
+    useE2eeStore.getState().setGroup({
+      conversationId: "c",
+      unverified: [],
+      readdRequestedAt: null,
+      awaitingReadd: null,
+      removed: false,
+      pinned: true,
+      pinnedEncryptedAt: "2026-10-09T00:00:00Z",
+      dmPrincipals: ["rimp1_bob", "rimp1_me"],
+    } as never);
+    const { result, rerender } = renderHook(() => useE2eeConversation("ws", "c"), {
+      wrapper: TestProviders,
+    });
+    expect(result.current.foreignMembers).toEqual(["Mallory"]);
+    expect(result.current.sendBlock).toBe("foreignMember");
+
+    // Gone from the members, still a pending add the membership sync refused.
+    conversation.current = dm({ encryptedAt: "2026-10-09T00:00:00Z" });
+    useE2eeStore.getState().setRefusedAdds("c", ["rimp1_mallory"]);
+    rerender();
+    expect(result.current.foreignMembers).toEqual(["Mallory"]);
+    useE2eeStore.getState().setRefusedAdds("c", []);
     rerender();
     expect(result.current.sendBlock).toBeNull();
   });

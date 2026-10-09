@@ -87,12 +87,36 @@ pub enum CommitOutcome {
     /// Another device's Commit, merged.
     Applied(AppliedCommit),
     /// This device's own pending Commit came back from the server and was merged.
-    OwnMerged { epoch: u64 },
-    /// The library refused the Commit: the group stays at `epoch` and waits for a re-add.
-    CannotProcess { epoch: u64, reason: String },
+    OwnMerged(MergedCommit),
+    /// The Commit was not merged: the group stays at `epoch` and waits for a re-add.
+    /// `committer` is set when the Commit decrypted but broke a rule (proposals other than Add
+    /// and Remove, or a summary that does not name them): that device misbehaved.
+    CannotProcess {
+        epoch: u64,
+        reason: String,
+        committer: Option<DeviceRef>,
+    },
 }
 
-/// A merged Commit of another device.
+/// The principals a Commit brought into the group (their first leaf) or took out of it (their
+/// last leaf), sorted. Devices joining or leaving a principal already in the group are not
+/// listed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MembershipChange {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+/// This device's own Commit, merged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergedCommit {
+    /// The group's epoch after the Commit.
+    pub epoch: u64,
+    pub membership: MembershipChange,
+}
+
+/// A merged Commit of another device. Its proposals are exactly the adds and removes its
+/// authenticated-data summary names; a Commit that breaks that is never merged.
 #[derive(Debug, Clone)]
 pub struct AppliedCommit {
     /// The group's epoch after the Commit.
@@ -100,9 +124,7 @@ pub struct AppliedCommit {
     pub committer: Option<DeviceRef>,
     pub added: Vec<DeviceRef>,
     pub removed: Vec<DeviceRef>,
-    /// Whether the authenticated-data summary names exactly the Commit's adds and removes.
-    /// When it does not, the committing device misbehaved and every leaf needs checking.
-    pub summary_matches: bool,
+    pub membership: MembershipChange,
     /// Leaves that are new or changed their credential or key: check them.
     pub to_verify: Vec<Leaf>,
     /// This device was removed; its group state is deleted.
@@ -133,15 +155,18 @@ pub struct EncryptedMessage {
     pub commitment: [u8; 32],
 }
 
-/// What the row an envelope arrived in says about the message.
+/// What the row an envelope arrived in says about the message. The sender's MLS credential
+/// must name the row author's principal and the row's sender device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecryptExpectations {
     /// The row's message id.
     pub message_id: Uuid,
     /// The row's thread root, for a thread reply.
     pub thread_root_id: Option<Uuid>,
-    /// The row author's principal id, when known (edits must come from the author).
-    pub author_principal_id: Option<String>,
+    /// The row author's principal id.
+    pub author_principal_id: String,
+    /// The device the server says sent the envelope.
+    pub sender_device_id: Uuid,
 }
 
 /// The result of decrypting an envelope. The key is used up either way.
@@ -276,6 +301,40 @@ pub(crate) fn leaves(group: &MlsGroup) -> Vec<Leaf> {
         .members()
         .map(|member| leaf_of(member.index.u32(), member.signature_key, &member.credential))
         .collect()
+}
+
+/// The principals with at least one leaf in `leaves`.
+fn principals(leaves: &[Leaf]) -> std::collections::BTreeSet<String> {
+    leaves
+        .iter()
+        .filter_map(Leaf::device)
+        .map(|device| device.principal_id)
+        .collect()
+}
+
+/// The principals that gained their first leaf or lost their last between `before` and
+/// `after`.
+fn membership_change(before: &[Leaf], after: &[Leaf]) -> MembershipChange {
+    let (before, after) = (principals(before), principals(after));
+    MembershipChange {
+        added: after.difference(&before).cloned().collect(),
+        removed: before.difference(&after).cloned().collect(),
+    }
+}
+
+/// Merge this device's pending Commit and say what it changed.
+fn merge_own<C: Crypto>(
+    provider: &Provider<'_, C>,
+    mls_group: &mut MlsGroup,
+) -> Result<MergedCommit> {
+    let before = leaves(mls_group);
+    mls_group
+        .merge_pending_commit(provider)
+        .map_err(Error::mls)?;
+    Ok(MergedCommit {
+        epoch: epoch_of(mls_group),
+        membership: membership_change(&before, &leaves(mls_group)),
+    })
 }
 
 pub(crate) fn leaf_index_of(group: &MlsGroup, device: &DeviceRef) -> Result<LeafNodeIndex> {
@@ -481,18 +540,16 @@ pub(crate) fn commit_accepted<C: Crypto>(
     crypto: &C,
     backend: &dyn Backend,
     group: ConversationGroup,
-) -> Result<u64> {
+) -> Result<MergedCommit> {
     let provider = Provider::new(crypto, KvStorage::new(backend));
     let mut record = load_record(backend, &group)?;
     if record.pending_commit.take().is_none() {
         return Err(Error::NoPendingCommit);
     }
     let mut mls_group = load_group(&provider, &group)?;
-    mls_group
-        .merge_pending_commit(&provider)
-        .map_err(Error::mls)?;
+    let merged = merge_own(&provider, &mut mls_group)?;
     save_record(backend, &group, &record)?;
-    Ok(epoch_of(&mls_group))
+    Ok(merged)
 }
 
 /// Drop this device's pending Commit: the server answered `STALE_EPOCH`. A refused first Commit
@@ -540,13 +597,9 @@ pub(crate) fn process_commit<C: Crypto>(
 
     if let Some(pending) = record.pending_commit.take() {
         if unb64(&pending.message)? == bytes {
-            mls_group
-                .merge_pending_commit(&provider)
-                .map_err(Error::mls)?;
+            let merged = merge_own(&provider, &mut mls_group)?;
             save_record(backend, &group, &record)?;
-            return Ok(CommitOutcome::OwnMerged {
-                epoch: epoch_of(&mls_group),
-            });
+            return Ok(CommitOutcome::OwnMerged(merged));
         }
         // Another device's Commit won this epoch.
         mls_group.clear_pending_commit(provider.storage())?;
@@ -556,7 +609,10 @@ pub(crate) fn process_commit<C: Crypto>(
     let processed = match mls_group.process_message(&provider, message) {
         Ok(processed) => processed,
         Err(ProcessMessageError::StorageError(e)) => return Err(e.into()),
-        Err(e) => return cannot_process(backend, &group, &mut record, epoch, format!("{e:?}")),
+        Err(e) => {
+            let reason = format!("{e:?}");
+            return cannot_process(backend, &group, &mut record, epoch, reason, None);
+        }
     };
     let committer = credential_device(processed.credential());
     let aad = processed.aad().to_vec();
@@ -564,19 +620,27 @@ pub(crate) fn process_commit<C: Crypto>(
         ProcessedMessageContent::StagedCommitMessage(staged) => staged,
         other => {
             let reason = format!("not a Commit of another device: {other:?}");
-            return cannot_process(backend, &group, &mut record, epoch, reason);
+            return cannot_process(backend, &group, &mut record, epoch, reason, None);
         }
     };
     let (summary_matches, added, removed) = check_summary(crypto, &staged, &before, &aad)?;
+    if !summary_matches {
+        // Never merged: the committer could add or change what it did not announce.
+        let reason = "the Commit's proposals are not exactly the adds and removes its summary \
+                      names"
+            .to_string();
+        return cannot_process(backend, &group, &mut record, epoch, reason, committer);
+    }
     let self_removed = staged.self_removed();
     mls_group
         .merge_staged_commit(&provider, *staged)
         .map_err(Error::mls)?;
     let new_epoch = epoch_of(&mls_group);
+    let after = leaves(&mls_group);
+    let membership = membership_change(&before, &after);
     let to_verify = if self_removed {
         vec![]
     } else {
-        let after = leaves(&mls_group);
         after
             .into_iter()
             .filter(|leaf| !before.contains(leaf))
@@ -593,7 +657,7 @@ pub(crate) fn process_commit<C: Crypto>(
         committer,
         added,
         removed,
-        summary_matches,
+        membership,
         to_verify,
         self_removed,
     }))
@@ -605,10 +669,15 @@ fn cannot_process(
     record: &mut GroupRecord,
     epoch: u64,
     reason: String,
+    committer: Option<DeviceRef>,
 ) -> Result<CommitOutcome> {
     record.awaiting_readd = Some(epoch);
     save_record(backend, group, record)?;
-    Ok(CommitOutcome::CannotProcess { epoch, reason })
+    Ok(CommitOutcome::CannotProcess {
+        epoch,
+        reason,
+        committer,
+    })
 }
 
 /// Whether the staged Commit adds exactly the summary's key packages (each naming the device the
@@ -672,8 +741,9 @@ fn check_summary<C: Crypto>(
     Ok((matches, added, removed))
 }
 
-/// Join a group from a Welcome. The Welcome must be for `group`; an older state of the same group
-/// on this device is replaced.
+/// Join a group from a Welcome. The Welcome must be for `group`. State this device holds for the
+/// same group is replaced only by a Welcome to a later epoch, or while the group waits for a
+/// re-add: an older Welcome delivered again would roll the group back.
 pub(crate) fn join<C: Crypto>(
     crypto: &C,
     backend: &dyn Backend,
@@ -697,6 +767,19 @@ pub(crate) fn join<C: Crypto>(
     }
     if staged.group_context().ciphersuite() != CIPHER_SUITE {
         return Err(Error::Invalid("the group uses another cipher suite".into()));
+    }
+    let welcome_epoch = staged.group_context().epoch().as_u64();
+    {
+        use openmls_traits::OpenMlsProvider as _;
+        if let Some(held) = MlsGroup::load(provider.storage(), &openmls_group_id(&group))? {
+            let awaiting_readd = load_record(backend, &group)?.awaiting_readd.is_some();
+            if !awaiting_readd && epoch_of(&held) >= welcome_epoch {
+                return Err(Error::StaleWelcome {
+                    held: epoch_of(&held),
+                    welcome: welcome_epoch,
+                });
+            }
+        }
     }
     let welcomer = staged
         .welcome_sender()
@@ -852,12 +935,11 @@ pub(crate) fn decrypt<C: Crypto>(
     if content.thread_root_id != expected.thread_root_id {
         return invalid("the thread is not the row's");
     }
-    if expected
-        .author_principal_id
-        .as_ref()
-        .is_some_and(|author| *author != sender.principal_id)
-    {
+    if expected.author_principal_id != sender.principal_id {
         return invalid("the sender is not the row's author");
+    }
+    if expected.sender_device_id != sender.device_id {
+        return invalid("the sender device is not the row's");
     }
     if aad.mentions != content.mentions || aad.mention_all != content.mention_all {
         return invalid("the authenticated mentions are not the content's");

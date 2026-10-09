@@ -183,6 +183,7 @@ pub fn run() {
             e2ee::commands::e2ee_reencrypt_message,
             e2ee::commands::e2ee_settle_message,
             e2ee::commands::e2ee_forget,
+            e2ee::commands::e2ee_pin,
             e2ee::attachment::e2ee_attachment_encrypt,
             e2ee::attachment::e2ee_attachment_decrypt,
             e2ee::attachment::e2ee_reported_attachment_decrypt,

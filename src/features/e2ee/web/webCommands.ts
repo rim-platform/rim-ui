@@ -45,6 +45,7 @@ const SAME_CODES = new Set([
   "E2EE_AWAITING_READD",
   "E2EE_REMOVED",
   "E2EE_EPOCH_MISMATCH",
+  "E2EE_STALE_WELCOME",
 ]);
 
 function commandError(err: unknown): E2eeCommandError {
@@ -344,6 +345,12 @@ export const webE2eeCommands: E2eeCommands = {
     inStore(account, async (work, store) => {
       await group.forget(work, store.engine, workspaceId, conversationId);
       return null;
+    }),
+
+  pin: (account, workspaceId, conversationId, encryptedAt, dmPrincipals) =>
+    inStore(account, async (work, store) => {
+      await group.pin(work, workspaceId, conversationId, encryptedAt, dmPrincipals);
+      return group.view(work, store.engine, workspaceId, conversationId);
     }),
 };
 

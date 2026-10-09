@@ -29,14 +29,15 @@ explicitly. Every group uses `MLS_128_MLKEM768X25519_AES128GCM_SHA256_Ed25519` (
 | Operation | What it does |
 |---|---|
 | `mls_key_payload`, `install_mls_key_statement`, `ensure_identity`, `mls_key_statement`, `forget_identity` | This device's MLS signature key (Ed25519, generated here) and the `mls-key` statement the device key signs for it. The device key never enters the crate: `ensure_identity` takes a closure that signs `context`, `payload` |
-| `generate_key_packages`, `prune_key_packages`, `plan_key_package_upload` | Key packages (`MLSMessage` bytes and `KeyPackageRef`, last-resort or one-time, 90-day lifetime), deleting private keys of expired or replaced ones, and what to upload given the server's status |
+| `generate_key_packages`, `prune_key_packages`, `plan_key_package_upload` | Key packages (`MLSMessage` bytes and `KeyPackageRef`, last-resort or one-time, valid from an hour before
+now to an hour short of 90 days after), deleting private keys of expired or replaced ones, and what to upload given the server's status |
 | `create_group` | Group at epoch 0 for a `ConversationGroup` (conversation id + incarnation, group id `rim1` ‖ UUID ‖ u32), first Commit adding the claimed devices |
 | `commit`, `self_update` | One Commit with every pending add and remove (a re-add is both for one device), with an update path and the membership summary as authenticated data |
-| `commit_accepted`, `commit_rejected` | The server's answer: merge, or drop (`STALE_EPOCH`; a refused group creation deletes the group) |
-| `process_commit` | Another device's Commit: merged, with `summary_matches` (the authenticated summary names exactly the adds and removes), the added and removed devices and the leaves to verify. This device's own Commit is recognized by its bytes (the answer to a submit that got no reply). A Commit the library refuses gives `CannotProcess` and the group waits for a re-add |
-| `join` | A Welcome for the expected conversation and incarnation; returns every leaf to verify |
+| `commit_accepted`, `commit_rejected` | The server's answer: merge (returning the new epoch and the principals the Commit brought in or took out), or drop (`STALE_EPOCH`; a refused group creation deletes the group) |
+| `process_commit` | Another device's Commit: merged only when its proposals are exactly the adds and removes its authenticated summary names, with the added and removed devices, the principals it brought in or took out, and the leaves to verify. This device's own Commit is recognized by its bytes (the answer to a submit that got no reply). A Commit the library refuses, or one whose summary lies or that carries a proposal other than Add and Remove, gives `CannotProcess` (naming the committer for a lie) and the group waits for a re-add |
+| `join` | A Welcome for the expected conversation and incarnation; returns every leaf to verify. A Welcome to an epoch the held state of the group already reached is refused (`StaleWelcome`) unless the group waits for a re-add |
 | `encrypt`, `reencrypt` | Application data `0x01` ‖ franking key ‖ content, authenticated data `{messageId, franking, mentions, mentionAll}`; `reencrypt` resends the same content and franking key in the new epoch after `STALE_EPOCH` |
-| `decrypt` | Once per message: `Message` (content, sender device, franking key and commitment), `Invalid` (decrypted but breaks a rule: never show its content), or `Own` (this device's own message) |
+| `decrypt` | Once per message, against its row's message id, thread root, author principal and sender device (all required): `Message` (content, sender device, franking key and commitment), `Invalid` (decrypted but breaks a rule, or the sender is not the row's author principal and device: never show its content), or `Own` (this device's own message) |
 | `group_status`, `leaves`, `delete_group`, `prepare_readd` | Epoch, pending Commit and re-add state; the members; deleting state; the signed-request payload for a re-add (the group state goes) |
 
 Pure helpers: `verify_leaf` / `verify_leaves` with the app's `DeviceDirectory`, `MessageContent`
@@ -126,8 +127,10 @@ cargo test -p rim_mls write_appendix_a_fixtures -- --ignored  # re-record the fi
   processed; an added key package that expired before a device processed the Commit; an
   incarnation; decrypt once; a crash between decrypt and store.
 - `tampering`: every leaf-verification failure; application messages whose authenticated data or
-  content lies (invalid); Commits whose summary lies (flagged by receivers, refused by the
-  server).
+  content lies (invalid); Commits whose summary lies or that carry other proposals (refused by
+  receivers, which wait for a re-add, and by the server).
+- `hardening`: a replayed Welcome never rolls a group back; a row must name the MLS sender and its
+  device; key package lifetimes; non-canonical keys.
 
 ## Sizes
 

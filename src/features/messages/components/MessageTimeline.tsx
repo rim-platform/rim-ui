@@ -62,16 +62,18 @@ export function MessageTimeline() {
   const e2ee = useE2eeConversation(workspaceId, conversationId);
   const principalNames = usePrincipalNames(workspaceId);
   const resets = e2ee.group?.resets;
+  const membership = e2ee.group?.membership;
   const encryption = useMemo<EncryptionContext | undefined>(
     () =>
       e2ee.encryptedAt
         ? {
             encryptedAt: e2ee.encryptedAt,
             resets: resets ?? [],
+            membership: membership ?? [],
             userOfPrincipal: principalNames.userOf,
           }
         : undefined,
-    [e2ee.encryptedAt, resets, principalNames.userOf],
+    [e2ee.encryptedAt, resets, membership, principalNames.userOf],
   );
   const deviceNameOf = useDeviceNames((resets ?? []).map((r) => r.principalId));
 

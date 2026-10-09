@@ -6,8 +6,8 @@
 //! function returned, so a Commit is stored as pending before it is submitted.
 
 use rim_mls::{
-    ClaimedKeyPackage, CommitOutcome, ConversationGroup, DeviceRef, Mls, OutgoingCommit,
-    SqliteStore,
+    ClaimedKeyPackage, CommitOutcome, ConversationGroup, DeviceRef, MembershipChange, Mls,
+    OutgoingCommit, SqliteStore,
 };
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,21 @@ pub(crate) struct Reset {
     pub device_id: String,
 }
 
+/// A principal a processed Commit brought into the group or took out of it, for the timeline:
+/// the line sits before the first message of `epoch` (the epoch the Commit made).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MembershipEvent {
+    pub incarnation: u32,
+    pub epoch: u64,
+    /// `added` or `removed`.
+    pub kind: String,
+    pub principal_id: String,
+}
+
+/// How many membership events a conversation keeps, newest last.
+const MEMBERSHIP_EVENTS_KEPT: usize = 200;
+
 /// What the cache keeps about a conversation's group (`e2ee_conversation`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +85,33 @@ pub(crate) struct ConversationState {
     pub readd_requested_at: Option<i64>,
     pub last_update_at: Option<i64>,
     pub resets: Vec<Reset>,
+    pub membership: Vec<MembershipEvent>,
+}
+
+impl ConversationState {
+    /// Whether this is a group's state: held, being created, or waited for.
+    fn holds_group(&self) -> bool {
+        self.incarnation > 0 || self.next_incarnation.is_some() || self.readd_requested_at.is_some()
+    }
+
+    /// Note what a Commit of `incarnation` that moved the group to `epoch` changed.
+    fn note_membership(&mut self, incarnation: u32, epoch: u64, change: &MembershipChange) {
+        let events = change
+            .added
+            .iter()
+            .map(|p| ("added", p))
+            .chain(change.removed.iter().map(|p| ("removed", p)));
+        for (kind, principal_id) in events {
+            self.membership.push(MembershipEvent {
+                incarnation,
+                epoch,
+                kind: kind.to_string(),
+                principal_id: principal_id.clone(),
+            });
+        }
+        let excess = self.membership.len().saturating_sub(MEMBERSHIP_EVENTS_KEPT);
+        self.membership.drain(..excess);
+    }
 }
 
 pub(crate) fn load_state(
@@ -80,7 +122,7 @@ pub(crate) fn load_state(
     let row = tx
         .query_row(
             "SELECT incarnation, next_incarnation, join_epoch, removed, verify_pending,
-                    unverified, misbehaved, readd_requested_at, last_update_at, resets
+                    unverified, misbehaved, readd_requested_at, last_update_at, resets, membership
              FROM e2ee_conversation WHERE workspace_id = ?1 AND conversation_id = ?2",
             params![workspace_id, conversation_id],
             |row| {
@@ -95,6 +137,7 @@ pub(crate) fn load_state(
                     row.get::<_, Option<i64>>(7)?,
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, String>(9)?,
+                    row.get::<_, String>(10)?,
                 ))
             },
         )
@@ -110,6 +153,7 @@ pub(crate) fn load_state(
         readd,
         update,
         resets,
+        membership,
     )) = row
     else {
         return Ok(ConversationState::default());
@@ -125,20 +169,27 @@ pub(crate) fn load_state(
         readd_requested_at: readd,
         last_update_at: update,
         resets: serde_json::from_str(&resets)?,
+        membership: serde_json::from_str(&membership)?,
     })
 }
 
+/// Save the conversation's state; a conversation whose group this device holds, creates or waits
+/// for is pinned as encrypted for good.
 pub(crate) fn save_state(
     tx: &Transaction<'_>,
     workspace_id: &str,
     conversation_id: &str,
     state: &ConversationState,
 ) -> Result<()> {
+    if state.holds_group() {
+        pin(tx, workspace_id, conversation_id, None, None)?;
+    }
     tx.execute(
         "INSERT INTO e2ee_conversation
              (workspace_id, conversation_id, incarnation, next_incarnation, join_epoch, removed,
-              verify_pending, unverified, misbehaved, readd_requested_at, last_update_at, resets)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+              verify_pending, unverified, misbehaved, readd_requested_at, last_update_at, resets,
+              membership)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
              incarnation = excluded.incarnation,
              next_incarnation = excluded.next_incarnation,
@@ -149,7 +200,8 @@ pub(crate) fn save_state(
              misbehaved = excluded.misbehaved,
              readd_requested_at = excluded.readd_requested_at,
              last_update_at = excluded.last_update_at,
-             resets = excluded.resets",
+             resets = excluded.resets,
+             membership = excluded.membership",
         params![
             workspace_id,
             conversation_id,
@@ -167,15 +219,89 @@ pub(crate) fn save_state(
             state.readd_requested_at,
             state.last_update_at,
             serde_json::to_string(&state.resets)?,
+            serde_json::to_string(&state.membership)?,
         ],
     )?;
     Ok(())
 }
 
-/// The conversations of the workspace the cache keeps group state about.
+/// What this device pinned about a conversation (`e2ee_pin`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Pin {
+    /// The server's `encryptedAt` as first seen, when it was.
+    pub encrypted_at: Option<String>,
+    /// A direct message's two principals.
+    pub dm_principals: Option<Vec<String>>,
+}
+
+/// The conversation's pin, if this device pinned it.
+pub(crate) fn load_pin(
+    tx: &Transaction<'_>,
+    workspace_id: &str,
+    conversation_id: &str,
+) -> Result<Option<Pin>> {
+    let row = tx
+        .query_row(
+            "SELECT encrypted_at, dm_principals FROM e2ee_pin
+             WHERE workspace_id = ?1 AND conversation_id = ?2",
+            params![workspace_id, conversation_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()?;
+    row.map(|(encrypted_at, dm)| {
+        Ok(Pin {
+            encrypted_at,
+            dm_principals: dm.map(|d| serde_json::from_str(&d)).transpose()?,
+        })
+    })
+    .transpose()
+}
+
+/// Pin the conversation as encrypted. The first `encrypted_at` and the first pair of
+/// `dm_principals` handed in stay; later values change nothing.
+pub(crate) fn pin(
+    tx: &Transaction<'_>,
+    workspace_id: &str,
+    conversation_id: &str,
+    encrypted_at: Option<&str>,
+    dm_principals: Option<&[String]>,
+) -> Result<()> {
+    let dm = match dm_principals {
+        Some(principals) => {
+            let mut principals = principals.to_vec();
+            principals.sort();
+            principals.dedup();
+            if principals.len() != 2 {
+                return Err(E2eeError::Invalid(
+                    "a direct message is pinned to exactly two principals".into(),
+                ));
+            }
+            Some(serde_json::to_string(&principals)?)
+        }
+        None => None,
+    };
+    tx.execute(
+        "INSERT INTO e2ee_pin (workspace_id, conversation_id, encrypted_at, dm_principals)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
+             encrypted_at = COALESCE(e2ee_pin.encrypted_at, excluded.encrypted_at),
+             dm_principals = COALESCE(e2ee_pin.dm_principals, excluded.dm_principals)",
+        params![workspace_id, conversation_id, encrypted_at, dm],
+    )?;
+    Ok(())
+}
+
+/// The conversations of the workspace the cache keeps group state about or pinned.
 pub(crate) fn conversations(tx: &Transaction<'_>, workspace_id: &str) -> Result<Vec<String>> {
     let mut stmt = tx.prepare_cached(
-        "SELECT conversation_id FROM e2ee_conversation WHERE workspace_id = ?1 ORDER BY conversation_id",
+        "SELECT conversation_id FROM e2ee_conversation WHERE workspace_id = ?1
+         UNION SELECT conversation_id FROM e2ee_pin WHERE workspace_id = ?1
+         ORDER BY conversation_id",
     )?;
     let rows = stmt.query_map(params![workspace_id], |row| row.get(0))?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
@@ -204,6 +330,12 @@ pub(crate) struct GroupView {
     pub commit_pending: bool,
     /// The epoch the group stopped at on a Commit it could not process.
     pub awaiting_readd: Option<u64>,
+    /// This device knows the conversation is encrypted, whatever the server says now.
+    pub pinned: bool,
+    /// The server's `encryptedAt` as this device first saw it.
+    pub pinned_encrypted_at: Option<String>,
+    /// A direct message's two principals, as pinned.
+    pub dm_principals: Option<Vec<String>>,
 }
 
 pub(crate) fn view(
@@ -213,11 +345,15 @@ pub(crate) fn view(
     conversation_id: &str,
 ) -> Result<GroupView> {
     let state = load_state(tx, workspace_id, conversation_id)?;
+    let pin = load_pin(tx, workspace_id, conversation_id)?;
     let mut view = GroupView {
         has_group: false,
         epoch: None,
         commit_pending: false,
         awaiting_readd: None,
+        pinned: pin.is_some(),
+        pinned_encrypted_at: pin.as_ref().and_then(|p| p.encrypted_at.clone()),
+        dm_principals: pin.and_then(|p| p.dm_principals),
         state,
     };
     if view.state.incarnation > 0 {
@@ -389,6 +525,7 @@ pub(crate) fn settle(
             .is_ok_and(|s| s.commit_pending)
         {
             if accepted {
+                // The first Commit of an incarnation: its adds are the group, not changes to it.
                 mls.commit_accepted(&store, group)?;
                 promote(tx, mls, &mut state, conversation_id, next, me)?;
             } else {
@@ -404,7 +541,8 @@ pub(crate) fn settle(
     }
     let group = conversation_group(conversation_id, state.incarnation)?;
     if accepted {
-        mls.commit_accepted(&store, group)?;
+        let merged = mls.commit_accepted(&store, group)?;
+        state.note_membership(group.incarnation, merged.epoch, &merged.membership);
         state.verify_pending = true;
         state.last_update_at = Some(now_ms());
     } else {
@@ -453,7 +591,9 @@ fn note_reset(state: &mut ConversationState, incarnation: u32, by: &DeviceView) 
 }
 
 /// Join `incarnation` of the conversation's group from a Welcome. An older incarnation's state
-/// goes; every leaf waits for verification.
+/// goes; every leaf waits for verification. A Welcome to an epoch the held state of the same
+/// incarnation already reached is refused (`E2EE_STALE_WELCOME`) unless the group waits for a
+/// re-add.
 pub(crate) fn join(
     tx: &Transaction<'_>,
     mls: &Mls,
@@ -565,10 +705,11 @@ pub(crate) fn apply_commit(
         Err(e) => return Err(e.into()),
     };
     match outcome {
-        CommitOutcome::OwnMerged { .. } => {
+        CommitOutcome::OwnMerged(merged) => {
             if creating {
                 promote(tx, mls, state, conversation_id, commit.incarnation, None)?;
             } else {
+                state.note_membership(commit.incarnation, merged.epoch, &merged.membership);
                 state.verify_pending = true;
                 state.last_update_at = Some(now_ms());
             }
@@ -584,19 +725,21 @@ pub(crate) fn apply_commit(
         CommitOutcome::Applied(applied) => {
             if applied.self_removed {
                 state.removed = true;
+            } else {
+                state.note_membership(commit.incarnation, applied.epoch, &applied.membership);
             }
             if !applied.to_verify.is_empty() {
                 state.verify_pending = true;
             }
-            if !applied.summary_matches {
-                log::warn!("[e2ee] a Commit's summary does not match its proposals");
-                state.misbehaved = applied.committer.as_ref().map(DeviceView::from_ref);
-                state.verify_pending = true;
-            }
             Ok(CommitStep::Applied)
         }
-        CommitOutcome::CannotProcess { reason, .. } => {
+        CommitOutcome::CannotProcess {
+            reason, committer, ..
+        } => {
             log::warn!("[e2ee] a Commit could not be processed: {reason}");
+            if let Some(committer) = committer {
+                state.misbehaved = Some(DeviceView::from_ref(&committer));
+            }
             Ok(CommitStep::CannotProcess)
         }
     }

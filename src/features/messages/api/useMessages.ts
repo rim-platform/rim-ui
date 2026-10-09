@@ -15,6 +15,7 @@ import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useConversation } from "../../conversations/api/useConversation";
+import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import {
@@ -68,7 +69,9 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
     storeAvailable ? workspaceId : undefined,
     conversationId,
   );
-  const cacheOnly = storeAvailable && Boolean(conversation?.encryptedAt);
+  // A conversation this device pinned as encrypted stays in the store whatever the server says.
+  const pinned = useE2eeStore((s) => (conversationId ? s.groups[conversationId]?.pinned : false));
+  const cacheOnly = storeAvailable && Boolean(conversation?.encryptedAt || pinned);
   // The web store follows encrypted conversations only.
   const follows = cacheAvailable || cacheOnly;
 
@@ -199,14 +202,15 @@ export function useSendMessageMutation() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (vars: {
+    mutationFn: async (vars: {
       workspaceId: string;
       conversationId: string;
       text: string;
       /** A forward of an encrypted message, re-sent as plaintext. */
       forwardedFromMessageId?: string;
-    }) =>
-      graphqlClient.request<SendMessageResponse>(SEND_MESSAGE_MUTATION, {
+    }) => {
+      await refusePlaintextIfPinned(vars.workspaceId, vars.conversationId);
+      return graphqlClient.request<SendMessageResponse>(SEND_MESSAGE_MUTATION, {
         input: {
           serverId: vars.workspaceId,
           conversationId: vars.conversationId,
@@ -215,7 +219,8 @@ export function useSendMessageMutation() {
             ? { forwardedFromMessageId: vars.forwardedFromMessageId }
             : {}),
         },
-      }),
+      });
+    },
     onSuccess: (_data, vars) => {
       // Note: messages query is NOT invalidated here because the WebSocket
       // "NewMessage" event already appends the message to the cache.

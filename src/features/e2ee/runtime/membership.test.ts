@@ -14,9 +14,13 @@ vi.mock("./groups", async () => {
   return {
     ...groups,
     pendingChanges: actual.pendingChanges,
+    allowedPrincipals: actual.allowedPrincipals,
     needsSuiteMigration: actual.needsSuiteMigration,
   };
 });
+vi.mock("./pins", () => ({
+  pinConversation: async () => ((await status()) as unknown[])[0],
+}));
 vi.mock("./session", () => ({ e2eeSession: async () => null }));
 
 import { cancelMembershipSyncs, firstCommitter, syncMembership } from "./membership";

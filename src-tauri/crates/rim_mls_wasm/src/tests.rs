@@ -104,7 +104,9 @@ fn pair() -> (Device, Device) {
     assert_eq!(commit["epoch"], 0);
     assert_eq!(commit["cipherSuite"], 0x004F);
     assert_eq!(commit["adds"][0]["principalId"], json!(bob.principal_id));
-    assert_eq!(alice.engine.commit_accepted(CONVERSATION, 1).unwrap(), 1.0);
+    let merged = parse(&alice.engine.commit_accepted(CONVERSATION, 1).unwrap());
+    assert_eq!(merged["epoch"], 1);
+    assert_eq!(merged["membership"]["added"], json!([bob.principal_id]));
     alice.engine.keep();
     let joined = parse(
         &bob.engine
@@ -122,6 +124,7 @@ fn expected(content: &str, author: &Device) -> String {
         "messageId": parse(content)["id"],
         "threadRootId": null,
         "authorPrincipalId": author.principal_id,
+        "senderDeviceId": author.device_id,
     })
     .to_string()
 }
@@ -230,6 +233,7 @@ fn a_message_for_another_row_is_invalid() {
     let other = json!({
         "messageId": uuid::Uuid::now_v7().hyphenated().to_string(),
         "authorPrincipalId": alice.principal_id,
+        "senderDeviceId": alice.device_id,
     });
     let read = parse(
         &bob.engine
