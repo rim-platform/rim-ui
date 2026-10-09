@@ -1,0 +1,395 @@
+{
+  "description": "The client message service's answer to rim.chat.list_messages for one encrypted group, as both plugin hosts must give it. `rows` are the local cache's rows of the conversation (a plaintext message from before the upgrade, decrypted messages, a placeholder, a message that could not be verified, a tombstone, an unacknowledged send); `listMessages.result` is what a plugin holding chat.read and chat.read.encrypted gets: no placeholders, unverified rows, tombstones or unacknowledged sends; no franking keys, attachment secrets, blob hashes, MLS facts or user ids. src-tauri/src/message_cache/plugin_view.rs and src/features/plugins/chat both test against it.",
+  "workspaceId": "ws-1",
+  "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+  "encryptedConversation": true,
+  "rows": [
+    {
+      "id": "0192f000-0000-7000-8000-000000000001",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+      "sentAt": "2026-10-01T09:00:00.000001Z",
+      "editedAt": null,
+      "isDeleted": false,
+      "text": "hi <@0192f000-0000-7000-8000-000000000b0b>, shall we encrypt?",
+      "e2eeState": null,
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000001",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+        "author": {
+          "id": "0192f000-0000-7000-8000-0000000a11ce",
+          "username": "alice",
+          "displayName": "Alice",
+          "avatarUrl": null,
+          "principalId": null
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:00:00.000001Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": []
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000002",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-000000000b0b",
+      "sentAt": "2026-10-01T09:05:00.000002Z",
+      "editedAt": null,
+      "isDeleted": false,
+      "text": "plan attached <@rimp1_BobKeyPrincipal>",
+      "e2eeState": "decrypted",
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000002",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-000000000b0b",
+        "author": {
+          "id": "0192f000-0000-7000-8000-000000000b0b",
+          "username": "bob",
+          "displayName": "Bob",
+          "avatarUrl": null,
+          "principalId": "rimp1_BobKeyPrincipal"
+        },
+        "hasAttachments": true,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:05:00.000002Z",
+        "reactions": [],
+        "attachments": [
+          {
+            "id": "0192f000-0000-7000-8000-0000000a7001",
+            "filename": "plan.pdf",
+            "contentType": "application/pdf",
+            "sizeBytes": 48213,
+            "status": "READY",
+            "blobSha256": "q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA"
+          }
+        ],
+        "linkPreviews": [],
+        "e2ee": {
+          "status": "decrypted",
+          "incarnation": 1,
+          "epoch": 4,
+          "senderDeviceId": "dev-bob",
+          "receipt": "cmVjZWlwdA",
+          "receiptKeyId": 1,
+          "sentAtUs": "1791540000000000",
+          "senderPrincipalId": "rimp1_BobKeyPrincipal",
+          "frankingKey": "ZnJhbmtpbmcta2V5LWZyYW5raW5nLWtleS0zMmJ5dGU",
+          "rev": 0,
+          "content": "{\"v\":1,\"type\":\"message\",\"id\":\"0192f000-0000-7000-8000-000000000002\",\"rev\":0,\"threadRootId\":null,\"body\":\"plan attached <@rimp1_BobKeyPrincipal>\",\"mentions\":[\"rimp1_BobKeyPrincipal\"],\"mentionAll\":false,\"replyTo\":null,\"forwardedFrom\":null,\"attachments\":[{\"blobSha256\":\"q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA\",\"secret\":\"c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LTMyYg\",\"name\":\"plan.pdf\",\"mime\":\"application/pdf\",\"size\":48213}],\"linkPreviews\":[]}"
+        }
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000003",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+      "sentAt": "2026-10-01T09:06:00Z",
+      "editedAt": null,
+      "isDeleted": false,
+      "text": null,
+      "e2eeState": "placeholder",
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000003",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+        "author": {
+          "id": "0192f000-0000-7000-8000-0000000a11ce",
+          "username": "alice",
+          "displayName": "Alice",
+          "avatarUrl": null,
+          "principalId": null
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:06:00Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": [],
+        "e2ee": {
+          "status": "undecryptable",
+          "incarnation": 1,
+          "epoch": 4,
+          "senderDeviceId": "dev-bob",
+          "receipt": "cmVjZWlwdA",
+          "receiptKeyId": 1,
+          "sentAtUs": "1791540000000000"
+        }
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000004",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-000000000b0b",
+      "sentAt": "2026-10-01T09:07:00Z",
+      "editedAt": null,
+      "isDeleted": false,
+      "text": null,
+      "e2eeState": "invalid",
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000004",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-000000000b0b",
+        "author": {
+          "id": "0192f000-0000-7000-8000-000000000b0b",
+          "username": "bob",
+          "displayName": "Bob",
+          "avatarUrl": null,
+          "principalId": "rimp1_BobKeyPrincipal"
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:07:00Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": [],
+        "e2ee": {
+          "status": "invalid",
+          "incarnation": 1,
+          "epoch": 4,
+          "senderDeviceId": "dev-bob",
+          "receipt": "cmVjZWlwdA",
+          "receiptKeyId": 1,
+          "sentAtUs": "1791540000000000",
+          "reason": "franking commitment does not match"
+        }
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000005",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+      "sentAt": "2026-10-01T09:08:00Z",
+      "editedAt": null,
+      "isDeleted": true,
+      "text": null,
+      "e2eeState": null,
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000005",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+        "author": {
+          "id": "0192f000-0000-7000-8000-0000000a11ce",
+          "username": "alice",
+          "displayName": "Alice",
+          "avatarUrl": null,
+          "principalId": null
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": true,
+        "sentAt": "2026-10-01T09:08:00Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": []
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000006",
+      "threadId": null,
+      "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+      "sentAt": "2026-10-01T09:09:00Z",
+      "editedAt": null,
+      "isDeleted": false,
+      "text": "still sending",
+      "e2eeState": "outgoing",
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000006",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": null,
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+        "author": {
+          "id": "0192f000-0000-7000-8000-0000000a11ce",
+          "username": "alice",
+          "displayName": "Alice",
+          "avatarUrl": null,
+          "principalId": null
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:09:00Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": [],
+        "e2ee": {
+          "status": "decrypted",
+          "incarnation": 1,
+          "epoch": 4,
+          "senderDeviceId": "dev-bob",
+          "receipt": "cmVjZWlwdA",
+          "receiptKeyId": 1,
+          "sentAtUs": "1791540000000000",
+          "frankingKey": "b3V0Z29pbmc",
+          "content": "{}"
+        }
+      }
+    },
+    {
+      "id": "0192f000-0000-7000-8000-000000000007",
+      "threadId": "0192f000-0000-7000-8000-0000000071d1",
+      "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+      "sentAt": "2026-10-01T09:10:00.5Z",
+      "editedAt": "2026-10-01T09:12:00Z",
+      "isDeleted": false,
+      "text": "edited reply",
+      "e2eeState": "decrypted",
+      "payload": {
+        "id": "0192f000-0000-7000-8000-000000000007",
+        "serverId": "ws-1",
+        "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+        "threadId": "0192f000-0000-7000-8000-0000000071d1",
+        "rootThreadId": null,
+        "authorId": "0192f000-0000-7000-8000-0000000a11ce",
+        "author": {
+          "id": "0192f000-0000-7000-8000-0000000a11ce",
+          "username": "alice",
+          "displayName": "Alice",
+          "avatarUrl": null,
+          "principalId": null
+        },
+        "hasAttachments": false,
+        "parentMessageId": null,
+        "isPinned": false,
+        "mentionedUserIds": [],
+        "forwardedFromMessageId": null,
+        "forwardedFrom": null,
+        "isDeleted": false,
+        "sentAt": "2026-10-01T09:10:00.5Z",
+        "reactions": [],
+        "attachments": [],
+        "linkPreviews": [],
+        "e2ee": {
+          "status": "decrypted",
+          "incarnation": 1,
+          "epoch": 4,
+          "senderDeviceId": "dev-bob",
+          "receipt": "cmVjZWlwdA",
+          "receiptKeyId": 1,
+          "sentAtUs": "1791540000000000",
+          "senderPrincipalId": "rimp1_unused",
+          "frankingKey": "a2V5",
+          "rev": 1,
+          "content": "{}"
+        }
+      }
+    }
+  ],
+  "listMessages": {
+    "params": {
+      "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+      "limit": 50
+    },
+    "grantedCapabilities": ["chat.read", "chat.read.encrypted"],
+    "result": {
+      "messages": [
+        {
+          "id": "0192f000-0000-7000-8000-000000000001",
+          "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+          "threadId": null,
+          "author": {
+            "principalId": "rimp0_Qip4kftVQuApXf-q7DtudnX3dXJOVC9THbLmRKezYkI",
+            "displayName": "Alice"
+          },
+          "text": "hi <@rimp0_Wu72WjgqESuEDxsvHk9AMmftDDzB8dj8mXgdD2C9O3c>, shall we encrypt?",
+          "sentAt": "2026-10-01T09:00:00.000001Z",
+          "editedAt": null,
+          "encrypted": false,
+          "attachments": []
+        },
+        {
+          "id": "0192f000-0000-7000-8000-000000000002",
+          "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+          "threadId": null,
+          "author": {
+            "principalId": "rimp1_BobKeyPrincipal",
+            "displayName": "Bob"
+          },
+          "text": "plan attached <@rimp1_BobKeyPrincipal>",
+          "sentAt": "2026-10-01T09:05:00.000002Z",
+          "editedAt": null,
+          "encrypted": true,
+          "attachments": [
+            {
+              "name": "plan.pdf",
+              "mime": "application/pdf",
+              "size": 48213
+            }
+          ]
+        },
+        {
+          "id": "0192f000-0000-7000-8000-000000000007",
+          "conversationId": "0192f000-0000-7000-8000-00000000c0a1",
+          "threadId": "0192f000-0000-7000-8000-0000000071d1",
+          "author": {
+            "principalId": "rimp0_Qip4kftVQuApXf-q7DtudnX3dXJOVC9THbLmRKezYkI",
+            "displayName": "Alice"
+          },
+          "text": "edited reply",
+          "sentAt": "2026-10-01T09:10:00.5Z",
+          "editedAt": "2026-10-01T09:12:00Z",
+          "encrypted": true,
+          "attachments": []
+        }
+      ],
+      "hasOlder": false
+    }
+  },
+  "forbiddenStrings": [
+    "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LTMyYg",
+    "ZnJhbmtpbmcta2V5LWZyYW5raW5nLWtleS0zMmJ5dGU",
+    "q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA",
+    "cmVjZWlwdA",
+    "0192f000-0000-7000-8000-0000000a11ce",
+    "0192f000-0000-7000-8000-000000000b0b",
+    "still sending",
+    "dev-bob"
+  ]
+}

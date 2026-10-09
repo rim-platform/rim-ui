@@ -454,6 +454,7 @@ mod tests {
                 "/nonexistent",
             )),
             account: std::sync::Mutex::new(None),
+            chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }
     }
 

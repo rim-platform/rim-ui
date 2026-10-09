@@ -1,5 +1,5 @@
 use crate::plugin_host::manifest::PluginManifest;
-use crate::plugin_host::state::{PluginRecord, PluginStateStore, PluginStatus};
+use crate::plugin_host::state::{GrantAction, PluginRecord, PluginStateStore, PluginStatus};
 use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
 
 #[derive(Debug, thiserror::Error)]
@@ -201,9 +201,11 @@ pub fn approve_capabilities(
     }
 
     let mut approved = record.approved_capabilities.clone();
+    let now = chrono::Utc::now();
     for cap in capabilities {
         if !approved.contains(cap) {
             approved.push(cap.clone());
+            store.record_grant(&manifest.plugin_id, cap, GrantAction::Granted, now);
         }
     }
 
@@ -225,6 +227,14 @@ pub fn revoke_capability(
         .clone();
 
     let mut approved = record.approved_capabilities.clone();
+    if approved.iter().any(|c| c == capability) {
+        store.record_grant(
+            plugin_id,
+            capability,
+            GrantAction::Revoked,
+            chrono::Utc::now(),
+        );
+    }
     approved.retain(|c| c != capability);
 
     // If we revoked a capability while plugin is enabled, disable it
@@ -303,6 +313,7 @@ pub fn uninstall(store: &mut PluginStateStore, plugin_id: &str) -> Result<(), Li
     }
 
     store.remove(plugin_id);
+    store.audit.remove(plugin_id);
     Ok(())
 }
 
@@ -331,6 +342,37 @@ mod tests {
             panels: vec![],
             settings_schema: vec![],
         }
+    }
+
+    #[test]
+    fn grants_and_revocations_are_audited() {
+        let mut store = PluginStateStore::default();
+        let manifest = test_manifest("dev.example.test");
+        let cap = "plugin.dev.example.test.run_process".to_string();
+        install(&mut store, &manifest).unwrap();
+
+        approve_capabilities(&mut store, &manifest, std::slice::from_ref(&cap)).unwrap();
+        // Approving it again is not a new grant.
+        approve_capabilities(&mut store, &manifest, std::slice::from_ref(&cap)).unwrap();
+        revoke_capability(&mut store, "dev.example.test", &cap).unwrap();
+        // Revoking what is not granted records nothing.
+        revoke_capability(&mut store, "dev.example.test", &cap).unwrap();
+
+        let actions: Vec<_> = store.audit["dev.example.test"]
+            .grants
+            .iter()
+            .map(|g| (g.capability.as_str(), g.action))
+            .collect();
+        assert_eq!(
+            actions,
+            vec![
+                (cap.as_str(), GrantAction::Granted),
+                (cap.as_str(), GrantAction::Revoked)
+            ]
+        );
+
+        uninstall(&mut store, "dev.example.test").unwrap();
+        assert!(!store.audit.contains_key("dev.example.test"));
     }
 
     #[test]
