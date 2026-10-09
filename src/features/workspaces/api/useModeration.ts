@@ -8,6 +8,8 @@ import {
   type MutationBanMemberArgs,
   type MutationClearTimeoutArgs,
   type MutationKickMemberArgs,
+  type MutationDeleteMessageArgs,
+  type MutationReportEncryptedMessageArgs,
   type MutationReportMessageArgs,
   type MutationResolveReportArgs,
   type MutationSetMemberRoleArgs,
@@ -127,6 +129,10 @@ const MESSAGE_REPORTS = gql`
         messageReadable
         messageText
         messageAuthorId
+        messageSentAt
+        frankingVerifiedAt
+        frankedSenderDeviceId
+        frankedContentExpiresAt
       }
       next {
         createdAt
@@ -137,6 +143,42 @@ const MESSAGE_REPORTS = gql`
         hasPrev
       }
     }
+  }
+`;
+
+const REPORT_ENCRYPTED_MESSAGE = gql`
+  mutation ReportEncryptedMessage($input: ReportEncryptedMessageInput!) {
+    reportEncryptedMessage(input: $input)
+  }
+`;
+
+const MESSAGE_REPORT = gql`
+  query MessageReport($serverId: ID!, $reportId: ID!) {
+    messageReport(serverId: $serverId, reportId: $reportId) {
+      id
+      conversationId
+      messageId
+      reporterUserId
+      reason
+      status
+      resolvedBy
+      resolvedAt
+      createdAt
+      messageReadable
+      messageText
+      messageAuthorId
+      messageSentAt
+      frankingVerifiedAt
+      frankedSenderDeviceId
+      frankedContentExpiresAt
+      frankedContent
+    }
+  }
+`;
+
+const DELETE_REPORTED_MESSAGE = gql`
+  mutation DeleteReportedMessage($input: DeleteMessageInput!) {
+    deleteMessage(input: $input)
   }
 `;
 
@@ -176,6 +218,18 @@ export interface MessageReportRow {
   messageReadable: boolean;
   messageText: string | null;
   messageAuthorId: string | null;
+  messageSentAt: string | null;
+  /** Set for a verified report of an encrypted message. */
+  frankingVerifiedAt: string | null;
+  frankedSenderDeviceId: string | null;
+  /** When the verified content is deleted from the server; null while the report is open. */
+  frankedContentExpiresAt: string | null;
+}
+
+/** One report as `messageReport` answers it, with the verified content of an encrypted one. */
+export interface MessageReportDetail extends MessageReportRow {
+  /** The exact content bytes (base64url); null for a plaintext report or once deleted. */
+  frankedContent: string | null;
 }
 
 export interface MessageReportPage {
@@ -287,6 +341,51 @@ export function useReportMessageMutation() {
       graphqlClient.request<{ reportMessage: { id: string } }>(REPORT_MESSAGE, vars),
     onSuccess: (_data, vars) =>
       qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
+  });
+}
+
+/** A member reports an encrypted message by revealing its content, franking key and receipt. */
+export function useReportEncryptedMessageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationReportEncryptedMessageArgs) =>
+      graphqlClient.request<{ reportEncryptedMessage: boolean }>(REPORT_ENCRYPTED_MESSAGE, vars),
+    onSuccess: (_data, vars) =>
+      qc.invalidateQueries({ queryKey: ["messageReports", vars.input.serverId] }),
+  });
+}
+
+/**
+ * One report with the verified content of an encrypted message (Owner/Moderator). Every fetch
+ * is recorded in the audit log as the moderator viewing the content, so it is fetched once per
+ * opening and never refetched in the background.
+ */
+export function useMessageReport(serverId: string, reportId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.messageReport(serverId, reportId ?? undefined),
+    enabled: Boolean(reportId),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      const res = await graphqlClient.request<{ messageReport: MessageReportDetail }>(
+        MESSAGE_REPORT,
+        { serverId, reportId: reportId! },
+      );
+      return res.messageReport;
+    },
+  });
+}
+
+/** A moderator deletes a reported message, also from a conversation they are not in. */
+export function useDeleteReportedMessageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationDeleteMessageArgs) =>
+      graphqlClient.request<{ deleteMessage: boolean }>(DELETE_REPORTED_MESSAGE, vars),
+    onSuccess: (_data, vars) =>
+      qc.invalidateQueries({ queryKey: ["messageReports", vars.input.serverId] }),
   });
 }
 

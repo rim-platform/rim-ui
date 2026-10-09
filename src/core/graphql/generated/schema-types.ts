@@ -1444,14 +1444,34 @@ export type MessageReference = {
  * A member's report of a message. `messageText` and `messageAuthorId` are present only when
  * the viewing moderator can read the conversation (`messageReadable`); otherwise only the ids
  * and the reporter's reason are shown. `messageText` is also null for a deleted message.
+ *
+ * A report of an encrypted message is franked: the server verified that its content is what
+ * the sender's device sent (`frankingVerifiedAt`). Its author, send time and sender device are
+ * shown to every moderator; its content (`frankedContent`) only by `messageReport`.
  */
 export type MessageReport = {
   conversationId: Scalars['ID']['output'];
   createdAt: Scalars['DateTime']['output'];
+  /**
+   * The exact content bytes of a verified report, unpadded base64url. Only `messageReport`
+   * fills it; null in lists and once retention cleared it.
+   */
+  frankedContent?: Maybe<Scalars['String']['output']>;
+  /**
+   * When the verified content is deleted: 90 days after the report was resolved or
+   * dismissed; null while it is open.
+   */
+  frankedContentExpiresAt?: Maybe<Scalars['DateTime']['output']>;
+  /** The client device id that sent the reported encrypted message. */
+  frankedSenderDeviceId?: Maybe<Scalars['ID']['output']>;
+  /** Set when the server verified a franked report of an encrypted message. */
+  frankingVerifiedAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
   messageAuthorId?: Maybe<Scalars['ID']['output']>;
   messageId: Scalars['ID']['output'];
   messageReadable: Scalars['Boolean']['output'];
+  /** When the reported message was sent; null when its details are not shown. */
+  messageSentAt?: Maybe<Scalars['DateTime']['output']>;
   messageText?: Maybe<Scalars['String']['output']>;
   reason: Scalars['String']['output'];
   reporterUserId: Scalars['ID']['output'];
@@ -2930,6 +2950,12 @@ export type Query = {
   messageChanges: Array<ConversationMessageChanges>;
   messageReference: MessageReference;
   /**
+   * One report of the workspace. Owner/Moderator only. For a verified report of an
+   * encrypted message it includes `frankedContent`, and records that the moderator viewed
+   * it (`e2ee.report_viewed`).
+   */
+  messageReport: MessageReport;
+  /**
    * Message reports of the workspace (all statuses when `status` is omitted), ordered
    * `createdAt ASC, id ASC`. Owner/Moderator only. The message body is included only when
    * the moderator can read the conversation.
@@ -3199,6 +3225,12 @@ export type QueryMessageChangesArgs = {
 export type QueryMessageReferenceArgs = {
   conversationId: Scalars['ID']['input'];
   messageId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMessageReportArgs = {
+  reportId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
 };
 

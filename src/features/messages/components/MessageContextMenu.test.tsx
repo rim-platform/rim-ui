@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import type { MessageItem } from "../../../core/types/messages";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import {
@@ -39,7 +40,7 @@ function serve(role: ServerMemberRoleGql, extra: Record<string, () => unknown> =
   });
 }
 
-async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean) {
+async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean, message?: MessageItem) {
   const qc = createTestQueryClient();
   const onClose = vi.fn();
   render(
@@ -54,6 +55,7 @@ async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean) {
         isOwnMessage={isOwnMessage}
         isPinned={false}
         hasThread={false}
+        message={message}
         onClose={onClose}
       />
     </QueryClientProvider>,
@@ -170,5 +172,97 @@ describe("MessageContextMenu — report and moderator delete (Track 1.2)", () =>
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("not found");
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+function encryptedMessage(e2ee: MessageItem["e2ee"]): MessageItem {
+  return {
+    id: "msg-1",
+    serverId: "ws-1",
+    conversationId: "conv-1",
+    authorId: "u-bob",
+    author: null,
+    text: "hello",
+    hasAttachments: false,
+    isPinned: false,
+    mentionedUserIds: [],
+    forwardedFromMessageId: null,
+    forwardedFrom: null,
+    isDeleted: false,
+    sentAt: "2026-10-09T00:00:00Z",
+    reactions: [],
+    attachments: [],
+    linkPreviews: [],
+    e2ee,
+  };
+}
+
+const CACHED_E2EE: NonNullable<MessageItem["e2ee"]> = {
+  status: "decrypted",
+  incarnation: 1,
+  epoch: 3,
+  senderDeviceId: "dev-bob",
+  senderPrincipalId: "rimp1_bob",
+  receipt: "cmVjZWlwdA",
+  receiptKeyId: 2,
+  sentAtUs: "1791504000123456",
+  frankingKey: "a2V5",
+  rev: 0,
+  content: '{"body":"hello"}',
+};
+
+describe("MessageContextMenu — reporting an encrypted message", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+  });
+
+  it("reports with the content, franking key and receipt from the cache row", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ReportEncryptedMessage": () => ({ reportEncryptedMessage: true }),
+    });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, encryptedMessage(CACHED_E2EE));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    const dialog = screen.getByRole("dialog", { name: "Report message" });
+    expect(dialog).toHaveTextContent("sends its exact content and attachments to the server");
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: " threats " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Report" }));
+
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation ReportEncryptedMessage")).toEqual([
+        {
+          input: {
+            serverId: "ws-1",
+            conversationId: "conv-1",
+            messageId: "msg-1",
+            reason: "threats",
+            content: "eyJib2R5IjoiaGVsbG8ifQ",
+            frankingKey: "a2V5",
+            receipt: "cmVjZWlwdA",
+            receiptKeyId: 2,
+            senderUserId: "u-bob",
+            senderDeviceId: "dev-bob",
+            sentAtUs: "1791504000123456",
+          },
+        },
+      ]),
+    );
+    expect(callsTo(requestMock, "mutation ReportMessage(")).toHaveLength(0);
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Message reported to the moderators"),
+    );
+  });
+
+  it.each([
+    ["a placeholder", { ...CACHED_E2EE, status: "undecryptable" as const }, /could not decrypt/],
+    ["an unverified message", { ...CACHED_E2EE, status: "invalid" as const }, /not be verified/],
+  ])("refuses to report %s and says why", async (_name, e2ee, why) => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, encryptedMessage(e2ee));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    const dialog = screen.getByRole("dialog", { name: "Report message" });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(why);
+    expect(within(dialog).queryByLabelText("Reason")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Report" })).toBeDisabled();
   });
 });

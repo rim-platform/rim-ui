@@ -186,6 +186,7 @@ pub fn run() {
             e2ee::commands::e2ee_pin,
             e2ee::attachment::e2ee_attachment_encrypt,
             e2ee::attachment::e2ee_attachment_decrypt,
+            e2ee::attachment::e2ee_reported_attachment_decrypt,
             e2ee::link_preview::e2ee_link_preview,
             history_archive::commands::history_archive_pick_folder,
             history_archive::commands::history_archive_inspect_folder,

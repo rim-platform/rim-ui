@@ -429,6 +429,30 @@ export async function decryptAttachment(
   }
 }
 
+/**
+ * Decrypt a reported message's attachment with the entry from the report's verified content
+ * (hash, then size, checked).
+ */
+export async function decryptReportedAttachment(
+  content: Uint8Array,
+  blobSha256: string,
+  blob: Uint8Array,
+): Promise<Uint8Array> {
+  const body = new Uint8Array(4 + content.length + blob.length);
+  new DataView(body.buffer).setUint32(0, content.length);
+  body.set(content, 4);
+  body.set(blob, 4 + content.length);
+  try {
+    return new Uint8Array(
+      await invoke<ArrayBuffer>("e2ee_reported_attachment_decrypt", body, {
+        headers: { "x-rim-args": argsHeader({ blobSha256 }) },
+      }),
+    );
+  } catch (err) {
+    throw new E2eeCommandError("E2EE_ATTACHMENT", errorText(err));
+  }
+}
+
 function errorText(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
     return String((err as { message: unknown }).message);

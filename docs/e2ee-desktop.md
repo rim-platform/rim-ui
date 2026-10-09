@@ -212,6 +212,33 @@ device, and only when the person allowed it.
   pins match as usual (`src/features/lenses/utils/localLens.ts`). The lens editor says so
   under a text condition.
 
+## Reporting an encrypted message
+
+"Report Message" on an encrypted message sends `reportEncryptedMessage` with what the cache row
+keeps in `payload.e2ee`: the exact content bytes (`content`, base64url of its UTF-8), the
+franking key, the server's receipt and its key id, the sender's user and device ids, and
+`sentAtUs`. The server recomputes the commitment and the receipt; a match stores the content
+with the report, so it stays reportable after the sender deletes the message. The dialog says
+that the content and attachments go to the moderators and nothing else from the conversation.
+A placeholder (this device could not decrypt it), a message that could not be verified, and an
+own message the server has not acknowledged yet cannot be reported; the dialog says why.
+
+Moderators see a verified report in Settings → Workspace → Moderation as "Encrypted · verified".
+"Show reported message" fetches `messageReport` (each fetch is an audit row, so it is fetched
+once per opening) and shows:
+
+- the body as plain text, `<@principalId>` mentions as `@name`;
+- each attachment's name and size, downloaded from
+  `/api/reports/{reportId}/attachments/{blobSha256}` and decrypted by
+  `e2ee_reported_attachment_decrypt` with the entry of the verified content (hash, then size,
+  checked), so a moderator outside the conversation can open it;
+- the sender, their device, the conversation (its title when this device knows it) and the send
+  time, and "Verified: this is the exact message <sender>'s device sent. Other messages in the
+  conversation are not shown and are not verified.";
+- when the server deletes the content (90 days after the report is closed);
+- "Delete message", which deletes the message for everyone, also from a conversation the
+  moderator is not in.
+
 ## Trying it with two desktops
 
 Needs rim-server with the e2ee server work (S4-1) merged and running locally, and two accounts
@@ -230,6 +257,9 @@ that signed in with device keys (key-only signup or enrollment, `docs/device-lin
    encrypted.
 6. Link a second device to one account: the other members' devices add it after their rank's
    delay; it shows earlier messages as one line and restores them from the history archive.
+7. To try reports, make a third account a workspace Moderator. Report a message with an
+   attachment from the DM, then open it in the moderator's Settings → Moderation, download the
+   attachment and delete the message.
 
 Tests: `cd src-tauri && cargo test e2ee` (against `rim_mls` and real cache databases, with an
 in-process server), `cargo test plugin_view`, `npx vitest run src/features/e2ee
