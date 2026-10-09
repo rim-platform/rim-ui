@@ -632,7 +632,7 @@ describe("AgentSettingsPanel", () => {
     try {
       setup();
       expect(
-        screen.getByText(/Keyring-backed key storage is only available in the desktop app/),
+        screen.getByText(/Key storage is only available in the desktop app/),
       ).toBeInTheDocument();
     } finally {
       runtimeCaps.agent = true;
