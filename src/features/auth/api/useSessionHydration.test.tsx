@@ -8,12 +8,14 @@ import { useAuthStore } from "../state/useAuthStore";
 
 const requestMock = vi.fn();
 const loadSessionRecordMock = vi.fn<() => Promise<SessionRecord | null>>();
+const saveSessionRecordMock = vi.fn<(record: SessionRecord) => Promise<void>>();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 vi.mock("../../offline/api/offlineSession", () => ({
   loadSessionRecord: () => loadSessionRecordMock(),
+  saveSessionRecord: (record: SessionRecord) => saveSessionRecordMock(record),
 }));
 
 import { useSessionHydration } from "./useSessionHydration";
@@ -23,6 +25,25 @@ const networkDown = () => new TypeError("Failed to fetch");
 const unauthorized = () =>
   new ClientError(
     { status: 401, headers: new Headers(), errors: [{ message: "unauthenticated" }] },
+    { query: "query MeSession { me { id } }" },
+  );
+// What the server sends for a missing or expired cookie: HTTP 200 with a coded error.
+const unauthenticated = () =>
+  new ClientError(
+    {
+      status: 200,
+      headers: new Headers(),
+      errors: [{ message: "unauthenticated", extensions: { code: "UNAUTHENTICATED" } }],
+    },
+    { query: "query MeSession { me { id } }" },
+  );
+const internalError = () =>
+  new ClientError(
+    {
+      status: 200,
+      headers: new Headers(),
+      errors: [{ message: "internal error", extensions: { code: "INTERNAL" } }],
+    },
     { query: "query MeSession { me { id } }" },
   );
 
@@ -36,6 +57,7 @@ describe("useSessionHydration", () => {
   beforeEach(() => {
     requestMock.mockReset();
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
+    saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
     useAuthStore.setState({ session: null });
     useOfflineStore.setState({ offline: false });
   });
@@ -67,6 +89,27 @@ describe("useSessionHydration", () => {
 
     expect(result.current.isAuthenticated).toBe(false);
     expect(useOfflineStore.getState().offline).toBe(false);
+  });
+
+  it("records the sign-out when the server says the session expired", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockRejectedValue(unauthenticated());
+
+    const result = await hydrate();
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(saveSessionRecordMock).toHaveBeenCalledWith({ state: "signedOut", endpoint });
+  });
+
+  it("keeps the record when the server fails for another reason", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockRejectedValue(internalError());
+
+    const result = await hydrate();
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(useOfflineStore.getState().offline).toBe(false);
+    expect(saveSessionRecordMock).not.toHaveBeenCalled();
   });
 
   it("stays signed out offline without a record (never signed in on this device)", async () => {

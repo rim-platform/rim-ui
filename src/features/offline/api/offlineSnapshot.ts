@@ -4,8 +4,9 @@
  * (`src-tauri/src/message_cache/snapshot.rs`).
  *
  * {@link withOfflineSnapshot} wraps a query: each server answer is saved, and when the server
- * cannot be reached the saved copy stands in. An answer the server gave (a GraphQL error, a
- * 401) is never replaced, the same rule the message cache follows.
+ * cannot be reached the saved copy stands in and the app switches to offline mode. An answer
+ * the server gave (a GraphQL error, a 401) is never replaced, the same rule the message cache
+ * follows.
  */
 
 import { logger } from "../../../core/logger";
@@ -15,6 +16,7 @@ import {
   isServerUnreachable,
   type CacheAccount,
 } from "../../messages/api/messageCache";
+import { useOfflineStore } from "../state/useOfflineStore";
 
 /** Account-wide kinds take no workspace; the others need one. */
 export type SnapshotKind = "me" | "servers" | "joinedChannels" | "inbox" | "members";
@@ -85,7 +87,12 @@ export async function withOfflineSnapshot<T>(
     const current = isServerUnreachable(err) ? currentCacheAccount() : null;
     if (current) {
       const saved = await loadSnapshot<T>(current, kind, workspaceId);
-      if (saved !== null) return saved;
+      if (saved !== null) {
+        // A saved copy is never shown as if it were live: the banner says so, sending is off,
+        // and the reconnect loop takes over (useOfflineReconnect.ts).
+        useOfflineStore.getState().setOffline(true);
+        return saved;
+      }
     }
     throw err;
   }

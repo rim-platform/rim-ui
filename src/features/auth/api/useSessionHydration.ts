@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { isSessionRefused } from "../../../core/graphql/errors";
 import { isServerUnreachable } from "../../messages/api/messageCache";
-import { loadSessionRecord } from "../../offline/api/offlineSession";
+import { loadSessionRecord, saveSessionRecord } from "../../offline/api/offlineSession";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useAuthStore } from "../state/useAuthStore";
 
@@ -56,11 +57,15 @@ export function useSessionHydration() {
             setSession({ userId: res.me.id });
           }
         } catch (err) {
-          // The server answered (401: cookie invalid or absent): stay logged out. It could not
-          // be reached: open the recorded account offline, if there is one.
-          if (!cancelled && record?.state === "signedIn" && isServerUnreachable(err)) {
+          // The server answered: stay logged out, and when it refused the session, record that
+          // so an offline start does not open the account either. It could not be reached:
+          // open the recorded account offline, if there is one.
+          if (cancelled || record?.state !== "signedIn") return;
+          if (isServerUnreachable(err)) {
             useOfflineStore.getState().setOffline(true);
             setSession({ userId: record.userId });
+          } else if (isSessionRefused(err)) {
+            void saveSessionRecord({ state: "signedOut", endpoint: record.endpoint });
           }
         }
       } finally {

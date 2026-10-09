@@ -22,12 +22,22 @@ vi.mock("../../../core/graphql/wsClient", () => ({
   },
 }));
 
-import { checkSession, OFFLINE_RECHECK_MS, useOfflineReconnect } from "./useOfflineReconnect";
+import {
+  checkSession,
+  OFFLINE_RECHECK_MAX_MS,
+  OFFLINE_RECHECK_MS,
+  useOfflineReconnect,
+} from "./useOfflineReconnect";
 
 const networkDown = () => new TypeError("Failed to fetch");
 const unauthorized = () =>
   new ClientError(
     { status: 401, headers: new Headers(), errors: [{ message: "unauthenticated" }] },
+    { query: "query OfflineSessionCheck { me { id } }" },
+  );
+const coded = (code: string) =>
+  new ClientError(
+    { status: 200, headers: new Headers(), errors: [{ message: code, extensions: { code } }] },
     { query: "query OfflineSessionCheck { me { id } }" },
   );
 
@@ -44,6 +54,17 @@ describe("checkSession", () => {
   it("is signed out when the server refuses the session", async () => {
     requestMock.mockRejectedValue(unauthorized());
     expect(await checkSession("alice")).toBe("signedOut");
+  });
+
+  it("is signed out on the server's UNAUTHENTICATED answer", async () => {
+    requestMock.mockRejectedValue(coded("UNAUTHENTICATED"));
+    expect(await checkSession("alice")).toBe("signedOut");
+  });
+
+  it("stays offline on an answer that says nothing about the session", async () => {
+    // The server is up but its database is not: no reason to sign the user out.
+    requestMock.mockRejectedValue(coded("INTERNAL"));
+    expect(await checkSession("alice")).toBe("offline");
   });
 
   it("is signed out when the cookie now belongs to someone else", async () => {
@@ -73,6 +94,7 @@ describe("useOfflineReconnect", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     useAuthStore.setState({ session: null });
     useWorkspaceStore.setState({ workspaceId: null });
     useOfflineStore.setState({ offline: false });
@@ -103,6 +125,51 @@ describe("useOfflineReconnect", () => {
     expect(useOfflineStore.getState().offline).toBe(false);
     expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
     expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("waits longer after each failed check, up to the cap, and starts over on an event", async () => {
+    requestMock.mockRejectedValue(networkDown());
+    renderHook(() => useOfflineReconnect(), { wrapper });
+
+    let expected = 0;
+    for (const wait of [15_000, 30_000, 60_000, 120_000, 120_000]) {
+      await act(() => vi.advanceTimersByTimeAsync(wait - 1));
+      expect(requestMock).toHaveBeenCalledTimes(expected);
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(requestMock).toHaveBeenCalledTimes(++expected);
+    }
+    expect(OFFLINE_RECHECK_MAX_MS).toBe(120_000);
+
+    // The network is back: check now, then the next wait is the first one again.
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(requestMock).toHaveBeenCalledTimes(++expected);
+    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS));
+    expect(requestMock).toHaveBeenCalledTimes(expected + 1);
+  });
+
+  it("does not ask the server while the OS reports no network or the window is hidden", async () => {
+    requestMock.mockRejectedValue(networkDown());
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    renderHook(() => useOfflineReconnect(), { wrapper });
+
+    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS * 4));
+    expect(requestMock).not.toHaveBeenCalled();
+
+    onLine.mockReturnValue(true);
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS * 4));
+    expect(requestMock).not.toHaveBeenCalled();
+
+    // Shown again: check right away.
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(requestMock).toHaveBeenCalledTimes(1);
   });
 
   it("re-checks when the WebSocket connects", async () => {

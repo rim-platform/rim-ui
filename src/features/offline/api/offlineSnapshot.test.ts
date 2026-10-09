@@ -14,6 +14,7 @@ vi.mock("../../messages/api/messageCache", async (importOriginal) => ({
   currentCacheAccount: () => account,
 }));
 
+import { useOfflineStore } from "../state/useOfflineStore";
 import { withOfflineSnapshot } from "./offlineSnapshot";
 
 const ALICE = { endpoint: "http://localhost:8080/api", userId: "alice" };
@@ -29,6 +30,7 @@ describe("withOfflineSnapshot", () => {
   beforeEach(() => {
     safeInvokeMock.mockReset().mockResolvedValue({ ok: true, value: null });
     account = ALICE;
+    useOfflineStore.setState({ offline: false });
   });
 
   it("saves every server answer as the snapshot", async () => {
@@ -63,6 +65,8 @@ describe("withOfflineSnapshot", () => {
     );
 
     expect(value).toEqual([{ id: "ws-1", name: "Acme" }]);
+    // A saved copy is never passed off as live: the app switches to offline mode.
+    expect(useOfflineStore.getState().offline).toBe(true);
     expect(safeInvokeMock).toHaveBeenCalledWith("message_cache_snapshot_get", {
       account: ALICE,
       kind: "servers",
@@ -74,6 +78,7 @@ describe("withOfflineSnapshot", () => {
     const err = unauthorized();
     await expect(withOfflineSnapshot("me", null, () => Promise.reject(err))).rejects.toBe(err);
     expect(safeInvokeMock).not.toHaveBeenCalled();
+    expect(useOfflineStore.getState().offline).toBe(false);
   });
 
   it("rethrows when nothing was saved on this device", async () => {
