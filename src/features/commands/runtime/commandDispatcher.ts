@@ -7,6 +7,8 @@ import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStor
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
+import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
 import type { PluginCommandResult } from "../../plugins/types";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
@@ -511,13 +513,42 @@ async function dispatchPluginCommand(
 ): Promise<CommandResult> {
   // The host resolves the id against installed manifests, gates `dangerous`
   // commands on `confirmedDangerous`, and sends the command to the plugin process.
-  const result = await safeInvoke<PluginCommandResult>("plugin_execute_command", {
-    pluginId,
-    command,
-    args: args ?? {},
-    confirmedDangerous: confirmedDangerous ?? false,
-    callerPluginId: callerPluginId ?? null,
-  });
+  const run = (confirmed: boolean) =>
+    safeInvoke<PluginCommandResult>("plugin_execute_command", {
+      pluginId,
+      command,
+      args: args ?? {},
+      confirmedDangerous: confirmed,
+      callerPluginId: callerPluginId ?? null,
+    });
+  let result = await run(confirmedDangerous ?? false);
+
+  // The host refused a dangerous command nobody confirmed. Ask the user here,
+  // whichever surface ran it (palette, keybind, panel), and run it only on a yes.
+  if (
+    !result.ok &&
+    result.error.kind === "backend_error" &&
+    result.error.code === "CONFIRMATION_REQUIRED" &&
+    !confirmedDangerous
+  ) {
+    const info = findPluginCommand(`plugin.${pluginId}.${command}`);
+    const confirmed = await usePluginConfirmStore.getState().ask({
+      pluginName: info?.pluginName ?? pluginId,
+      commandTitle: info?.title ?? command,
+      description: info?.description ?? "",
+      args: args ?? {},
+    });
+    if (!confirmed) {
+      return {
+        status: "ERROR",
+        message: "Cancelled",
+        payload: CANCELLED_PAYLOAD,
+        followUpCommands: [],
+      };
+    }
+    result = await run(true);
+  }
+
   if (!result.ok) {
     logger.debug(`[RIM:Plugin] Failed to execute: ${pluginId}.${command}`, result.error);
     return {
@@ -525,7 +556,7 @@ async function dispatchPluginCommand(
       message:
         result.error.kind === "ipc_unavailable"
           ? "Plugin commands need the desktop app"
-          : result.error.message,
+          : result.error.message.replace(/^plugin error: /, ""),
       payload: null,
       followUpCommands: [],
     };

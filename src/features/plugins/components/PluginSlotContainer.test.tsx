@@ -16,7 +16,7 @@ vi.mock("../runtime/pluginBridge", () => ({
     sendToPlugin: vi.fn(),
     destroy: vi.fn(),
   })),
-  fetchAndRelayPanelState: vi.fn(),
+  followPanelState: vi.fn(() => ({ load: vi.fn(() => Promise.resolve()), stop: vi.fn() })),
 }));
 
 vi.mock("../runtime/pluginThemeBridge", () => ({

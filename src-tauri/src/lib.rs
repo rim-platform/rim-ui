@@ -126,6 +126,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             let plugin_state = plugin_host::init(&app_data_dir);
+            plugin_host::forward_to_ui(app.handle().clone(), &plugin_state);
             app.manage(plugin_state);
 
             let terminal_state = terminal::init();

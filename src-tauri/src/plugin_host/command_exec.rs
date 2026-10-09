@@ -446,6 +446,7 @@ mod tests {
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
             pids: Arc::new(Mutex::new(HashMap::new())),
+            events: Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         }
     }
 

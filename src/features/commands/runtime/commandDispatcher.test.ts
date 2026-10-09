@@ -143,6 +143,7 @@ vi.mock("../../../core/query/keys", () => ({
     incidentTimeline: (incidentId: string) => ["incidentTimeline", incidentId],
     server: (serverId: string) => ["server", serverId],
     workspaceFeatures: (serverId: string) => ["workspaceFeatures", serverId],
+    plugins: () => ["plugins"],
   },
 }));
 
@@ -162,6 +163,8 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { FeatureDisabledError } from "../../../core/graphql/errors";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
+import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
 
 function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -494,23 +497,64 @@ describe("plugin commands", () => {
     expect(result?.payload).toEqual({ restarted: 1 });
   });
 
-  it("surfaces the host's error message", async () => {
+  const refusal = {
+    ok: false,
+    error: {
+      kind: "backend_error",
+      code: "CONFIRMATION_REQUIRED",
+      message: "command `restart_pod` is marked dangerous and needs confirmation",
+    },
+  };
+
+  it("asks the user before running a command the host calls dangerous", async () => {
+    safeInvokeMock
+      .mockResolvedValueOnce(refusal)
+      .mockResolvedValueOnce({ ok: true, value: { status: "ok", payload: null, message: "Done" } });
+
+    const pending = dispatchCommand(command, mockExecuteBackend, { args: { pod: "web-1" } });
+    await vi.waitFor(() => expect(usePluginConfirmStore.getState().request).not.toBeNull());
+    expect(usePluginConfirmStore.getState().request).toEqual({
+      pluginName: "dev",
+      commandTitle: "example.hello-world.greet",
+      description: "",
+      args: { pod: "web-1" },
+    });
+    usePluginConfirmStore.getState().confirm();
+
+    expect((await pending)?.message).toBe("Done");
+    expect(safeInvokeMock.mock.calls.map((call) => call[1].confirmedDangerous)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it("runs nothing when the user cancels", async () => {
+    safeInvokeMock.mockResolvedValueOnce(refusal);
+
+    const pending = dispatchCommand(command, mockExecuteBackend);
+    await vi.waitFor(() => expect(usePluginConfirmStore.getState().request).not.toBeNull());
+    usePluginConfirmStore.getState().cancel();
+
+    const result = await pending;
+    expect(result?.status).toBe("ERROR");
+    expect(isCancelledResult(result)).toBe(true);
+    expect(safeInvokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the host's error message without the plugin error prefix", async () => {
     safeInvokeMock.mockResolvedValueOnce({
       ok: false,
       error: {
         kind: "backend_error",
-        code: "CONFIRMATION_REQUIRED",
-        message: "command `restart_pod` is marked dangerous and needs confirmation",
+        code: "PLUGIN_ERROR",
+        message: "plugin error: Cannot reach the cluster",
       },
     });
 
     const result = await dispatchCommand(command, mockExecuteBackend);
 
-    expect(safeInvokeMock).toHaveBeenCalledWith(
-      "plugin_execute_command",
-      expect.objectContaining({ confirmedDangerous: false }),
-    );
     expect(result?.status).toBe("ERROR");
-    expect(result?.message).toContain("needs confirmation");
+    expect(result?.message).toBe("Cannot reach the cluster");
+    expect(usePluginConfirmStore.getState().request).toBeNull();
   });
 });

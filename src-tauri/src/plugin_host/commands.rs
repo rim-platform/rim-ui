@@ -4,7 +4,7 @@ use crate::plugin_host::git_install::{
 };
 use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
-use crate::plugin_host::manifest::{ContextAction, KeybindSuggestion, PanelDef};
+use crate::plugin_host::manifest::{CommandInfo, ContextAction, KeybindSuggestion, PanelDef};
 use crate::plugin_host::protocol::{Initiator, Principal};
 use crate::plugin_host::runtime;
 use crate::plugin_host::state::{PluginRecord, PluginStatus};
@@ -42,6 +42,11 @@ pub struct PluginInfo {
     pub context_actions: Vec<ContextAction>,
     /// Panel definitions from the manifest — used by the shell for slot layout.
     pub panels: Vec<PanelDef>,
+    /// Every manifest command, for the command palette, the keybind picker and
+    /// the agent's tool definitions.
+    pub commands: Vec<CommandInfo>,
+    /// `running` once the plugin process finished its handshake, else `stopped`.
+    pub health: &'static str,
 }
 
 #[tauri::command]
@@ -50,6 +55,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
     let manifests = state.manifests.lock().map_err(|e| e.to_string())?;
 
     let dirs = state.plugin_dirs.lock().map_err(|e| e.to_string())?;
+    let clients = state.clients.lock().map_err(|e| e.to_string())?;
 
     let mut plugins = Vec::new();
     for (id, record) in &store.plugins {
@@ -99,21 +105,50 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .map(|m| m.qualified_context_actions())
                 .unwrap_or_default(),
             panels: manifest.map(|m| m.panels.clone()).unwrap_or_default(),
+            commands: manifest.map(|m| m.command_infos()).unwrap_or_default(),
+            health: if clients.contains_key(id) {
+                "running"
+            } else {
+                "stopped"
+            },
         });
     }
     Ok(plugins)
 }
 
+/// A manifest's keybind suggestion, with the plugin it came from.
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginKeybindSuggestion {
+    pub plugin_id: String,
+    #[serde(flatten)]
+    pub suggestion: KeybindSuggestion,
+}
+
+/// Keybind suggestions with qualified command ids, for one plugin or, without
+/// `plugin_id`, for every installed plugin.
 #[tauri::command]
 pub fn plugin_suggested_keybinds(
-    plugin_id: String,
+    plugin_id: Option<String>,
     state: State<'_, PluginHostState>,
-) -> Result<Vec<KeybindSuggestion>, String> {
+) -> Result<Vec<PluginKeybindSuggestion>, String> {
     let manifests = state.manifests.lock().map_err(|e| e.to_string())?;
-    let manifest = manifests
-        .get(&plugin_id)
-        .ok_or_else(|| format!("plugin not found: {plugin_id}"))?;
-    Ok(manifest.qualified_keybind_suggestions())
+    if let Some(id) = &plugin_id {
+        if !manifests.contains_key(id) {
+            return Err(format!("plugin not found: {id}"));
+        }
+    }
+    Ok(manifests
+        .values()
+        .filter(|m| plugin_id.as_ref().is_none_or(|id| *id == m.plugin_id))
+        .flat_map(|m| {
+            m.qualified_keybind_suggestions()
+                .into_iter()
+                .map(|suggestion| PluginKeybindSuggestion {
+                    plugin_id: m.plugin_id.clone(),
+                    suggestion,
+                })
+        })
+        .collect())
 }
 
 #[tauri::command]

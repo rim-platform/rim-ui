@@ -78,8 +78,15 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           </div>
         </div>
 
+        {/* The plugin's own account of what it does, e.g. where its data goes. */}
+        {plugin.description && (
+          <p className="whitespace-pre-line text-xs text-rim-text">{plugin.description}</p>
+        )}
+
         <p className="text-xs text-rim-text-muted">
-          This plugin requests the following permissions. Uncheck any you want to deny.
+          {parsedCapabilities.length > 0
+            ? "This plugin requests the following permissions. Uncheck any you want to deny."
+            : "This plugin asks for no permissions."}
         </p>
 
         <div className="space-y-1">

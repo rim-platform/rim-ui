@@ -14,6 +14,11 @@ import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
 import { dispatchCommand } from "./commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
+import { useDeviceKeybindStore, withDeviceKeybinds } from "../state/useDeviceKeybindStore";
+import {
+  findPluginCommand,
+  toastPluginCommandResult,
+} from "../../plugins/runtime/pluginCommandInfo";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import type { ResolvedKeybind, CommandDefinition } from "../types";
@@ -219,6 +224,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
+  const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const { data: commands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);
@@ -236,8 +242,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     const context = surfaceToContext(focusedSurface);
 
     // Merge backend keybinds with fallbacks — fallbacks fill in any
-    // commands the backend doesn't know about (e.g. local-only search)
-    const resolvedKeybinds = mergeWithFallbacks(keybinds);
+    // commands the backend doesn't know about (e.g. local-only search).
+    // Plugin keybinds live on this device and come first.
+    const resolvedKeybinds = withDeviceKeybinds(deviceKeybinds, mergeWithFallbacks(keybinds));
 
     // Try context-specific match first, then global
     let match = matchKeybind(keystroke, context, resolvedKeybinds);
@@ -285,19 +292,21 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       match.commandId.startsWith("workspace.") ||
       match.commandId.startsWith("chat.") ||
       match.commandId.startsWith("admin.");
+    const isPluginCommand = match.commandId.startsWith("plugin.");
+    const pluginCommand = isPluginCommand ? findPluginCommand(match.commandId) : null;
     const command: CommandDefinition = commands?.find((cmd) => cmd.id === match!.commandId) ?? {
       id: match.commandId,
-      title: match.commandId,
+      title: pluginCommand?.title ?? match.commandId,
       description: "",
       category: "",
-      sourceKind: "BUILT_IN",
-      executionTarget: isLocalPrefix ? "DESKTOP_LOCAL" : "BACKEND",
+      sourceKind: isPluginCommand ? "PLUGIN" : "BUILT_IN",
+      executionTarget: isLocalPrefix || isPluginCommand ? "DESKTOP_LOCAL" : "BACKEND",
       requiredContext: [],
       requiredCapabilities: [],
       visibleInPalette: false,
       visibleInContextMenus: false,
       keybindCapable: true,
-      dangerous: false,
+      dangerous: pluginCommand?.dangerous ?? false,
     };
 
     dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
@@ -305,15 +314,22 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       commandContext: {
         workspaceId: workspaceId ?? undefined,
       },
-    }).catch((err: unknown) => {
-      // A keybind for a command whose workspace feature is off (Track 0.4) says why instead
-      // of doing nothing; other keybind failures stay in the log as before.
-      if (graphqlErrorCode(err) === FEATURE_DISABLED) {
-        toast.error(graphqlErrorMessage(err, "This command is turned off for this workspace."));
-        return;
-      }
-      logger.warn(`[RIM:Keybind] ${match!.commandId} failed`, err);
-    });
+    })
+      .then((result) => {
+        // A plugin command runs on this device, out of sight: say how it went.
+        if (isPluginCommand) {
+          toastPluginCommandResult(command.title, result);
+        }
+      })
+      .catch((err: unknown) => {
+        // A keybind for a command whose workspace feature is off (Track 0.4) says why instead
+        // of doing nothing; other keybind failures stay in the log as before.
+        if (graphqlErrorCode(err) === FEATURE_DISABLED) {
+          toast.error(graphqlErrorMessage(err, "This command is turned off for this workspace."));
+          return;
+        }
+        logger.warn(`[RIM:Keybind] ${match!.commandId} failed`, err);
+      });
   };
 
   useEffect(() => {
