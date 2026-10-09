@@ -13,26 +13,57 @@
 //! - A device signs MLS messages with its own MLS signature key, which its device key certifies
 //!   in an `mls-key` statement; the device key stays with the app.
 
+mod aad;
+mod attachment;
 mod codec;
+mod content;
 mod device;
 mod error;
+mod franking;
+mod group;
 mod group_id;
 mod identity;
 mod provider;
+mod ranking;
+mod readd;
 mod storage;
+
+#[cfg(test)]
+mod tests;
 
 use openmls::prelude::Ciphersuite;
 
+pub use aad::{
+    AddedDevice, ApplicationAad, AuthenticatedData, CommitSummary, MAX_APPLICATION_AAD,
+    MAX_COMMIT_AAD,
+};
+pub use attachment::{
+    attachment_key_and_nonce, decrypt_attachment, encrypt_attachment, encrypt_attachment_with,
+    EncryptedAttachment,
+};
+pub use content::{
+    mentions_everyone, mentions_in, AttachmentEntry, ForwardedFrom, LinkPreview, MessageContent,
+    MAX_ATTACHMENTS, MAX_ATTACHMENT_PLAINTEXT, MAX_BODY_CHARS, MAX_CONTENT_BYTES,
+    MAX_LINK_PREVIEWS, MAX_MENTIONS,
+};
 pub use device::{
     plan_key_package_upload, GeneratedKeyPackage, KeyPackageStatus, UploadPlan,
     KEY_PACKAGE_LIFETIME_SECS, KEY_PACKAGE_LOW_WATER, KEY_PACKAGE_TARGET,
 };
 pub use error::{Error, Result};
+pub use franking::{franking_commitment, franking_receipt, franking_receipt_input, ReceiptFacts};
+pub use group::{
+    AppliedCommit, ClaimedKeyPackage, CommitOutcome, DecryptExpectations, Decrypted,
+    DecryptedMessage, EncryptedMessage, GroupStatus, Joined, OutgoingCommit, MAX_ENVELOPE_BYTES,
+    MAX_HANDSHAKE_BYTES, MAX_PAST_EPOCHS,
+};
 pub use group_id::ConversationGroup;
 pub use identity::{
     mls_key_payload, verify_leaf, verify_leaves, DeviceDirectory, DeviceRef, DeviceStatus, Leaf,
     LeafError, LeafIdentity, LeafProblem, MlsKeyStatement, SignedStatement, MLS_KEY_CONTEXT,
 };
+pub use ranking::{commit_delay, commit_rank, MAX_JITTER};
+pub use readd::{may_honor_readd, ReaddRequest, READD_CONTEXT};
 pub use storage::{Change, MemoryStore, Store};
 #[cfg(feature = "sqlite")]
 pub use storage::{SqliteStore, SCHEMA};
@@ -159,5 +190,194 @@ impl Mls {
     /// `now`, and forget packages a Welcome used. Returns how many went.
     pub fn prune_key_packages(&self, store: &impl Store, now: u64) -> Result<usize> {
         device::prune_key_packages(store.backend(), now)
+    }
+
+    // ─── Groups ──────────────────────────────────────────────────────────────
+
+    /// Create `group` at epoch 0 and stage its first Commit, adding the claimed devices.
+    pub fn create_group(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        adds: &[ClaimedKeyPackage],
+    ) -> Result<OutgoingCommit> {
+        with_crypto!(&self.backend, |crypto| group::create(
+            crypto,
+            store.backend(),
+            group,
+            adds
+        ))
+    }
+
+    /// Stage one Commit with every pending change: devices to add (with their claimed key
+    /// packages) and devices to remove. A re-add removes and adds the same device.
+    pub fn commit(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        adds: &[ClaimedKeyPackage],
+        removes: &[DeviceRef],
+    ) -> Result<OutgoingCommit> {
+        with_crypto!(&self.backend, |crypto| group::commit(
+            crypto,
+            store.backend(),
+            group,
+            adds,
+            removes
+        ))
+    }
+
+    /// Stage an empty Commit with an update path.
+    pub fn self_update(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+    ) -> Result<OutgoingCommit> {
+        self.commit(store, group, &[], &[])
+    }
+
+    /// The server accepted this device's pending Commit: merge it. Returns the new epoch.
+    pub fn commit_accepted(&self, store: &impl Store, group: ConversationGroup) -> Result<u64> {
+        with_crypto!(&self.backend, |crypto| group::commit_accepted(
+            crypto,
+            store.backend(),
+            group
+        ))
+    }
+
+    /// The server refused this device's pending Commit (`STALE_EPOCH`): drop it. Then process the
+    /// Commits that won and recompute what is still pending.
+    pub fn commit_rejected(&self, store: &impl Store, group: ConversationGroup) -> Result<()> {
+        with_crypto!(&self.backend, |crypto| group::commit_rejected(
+            crypto,
+            store.backend(),
+            group
+        ))
+    }
+
+    /// Process the Commit the server holds for the group's current epoch. This device's own
+    /// pending Commit is recognized by its bytes and merged (the answer to a submit that got no
+    /// reply); any other Commit clears the pending one first.
+    pub fn process_commit(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        commit: &[u8],
+    ) -> Result<CommitOutcome> {
+        with_crypto!(&self.backend, |crypto| group::process_commit(
+            crypto,
+            store.backend(),
+            group,
+            commit
+        ))
+    }
+
+    /// Join `group` from a Welcome.
+    pub fn join(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        welcome: &[u8],
+    ) -> Result<Joined> {
+        with_crypto!(&self.backend, |crypto| group::join(
+            crypto,
+            store.backend(),
+            group,
+            welcome
+        ))
+    }
+
+    /// Encrypt a message for `group` in its current epoch.
+    pub fn encrypt(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        content: &MessageContent,
+    ) -> Result<EncryptedMessage> {
+        with_crypto!(&self.backend, |crypto| group::encrypt(
+            crypto,
+            store.backend(),
+            group,
+            content
+        ))
+    }
+
+    /// Encrypt `previous` again in the group's current epoch with the same content and franking
+    /// key: the resend after `STALE_EPOCH`, once the newer Commits are processed.
+    pub fn reencrypt(
+        &self,
+        store: &impl Store,
+        previous: &EncryptedMessage,
+    ) -> Result<EncryptedMessage> {
+        with_crypto!(&self.backend, |crypto| group::reencrypt(
+            crypto,
+            store.backend(),
+            previous
+        ))
+    }
+
+    /// Decrypt an envelope from the change feed, once, and check it against its row.
+    pub fn decrypt(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+        envelope: &[u8],
+        expected: &DecryptExpectations,
+    ) -> Result<Decrypted> {
+        with_crypto!(&self.backend, |crypto| group::decrypt(
+            crypto,
+            store.backend(),
+            group,
+            envelope,
+            expected
+        ))
+    }
+
+    /// The group's epoch, and whether it waits for a Commit answer or a re-add.
+    pub fn group_status(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+    ) -> Result<GroupStatus> {
+        with_crypto!(&self.backend, |crypto| group::status(
+            crypto,
+            store.backend(),
+            group
+        ))
+    }
+
+    /// Every leaf of the group, to verify.
+    pub fn leaves(&self, store: &impl Store, group: ConversationGroup) -> Result<Vec<Leaf>> {
+        with_crypto!(&self.backend, |crypto| group::group_leaves(
+            crypto,
+            store.backend(),
+            group
+        ))
+    }
+
+    /// Delete the group's state on this device.
+    pub fn delete_group(&self, store: &impl Store, group: ConversationGroup) -> Result<()> {
+        with_crypto!(&self.backend, |crypto| group::delete(
+            crypto,
+            store.backend(),
+            group
+        ))
+    }
+
+    /// The re-add request to sign (over [`READD_CONTEXT`]) for a group this device cannot use:
+    /// it names the last epoch the device processed, and the group's state is deleted.
+    pub fn prepare_readd(
+        &self,
+        store: &impl Store,
+        group: ConversationGroup,
+    ) -> Result<ReaddRequest> {
+        let identity = device::load_identity(store.backend())?;
+        let last_epoch = match self.group_status(store, group) {
+            Ok(status) => Some(status.awaiting_readd.unwrap_or(status.epoch)),
+            Err(Error::NoGroup) => None,
+            Err(e) => return Err(e),
+        };
+        self.delete_group(store, group)?;
+        ReaddRequest::new(identity.device.clone(), group, last_epoch)
     }
 }
