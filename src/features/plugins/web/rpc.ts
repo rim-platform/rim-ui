@@ -32,11 +32,10 @@ export const ErrorCode = {
 
 /** The capability each host method needs, as the desktop's capability table has it. */
 export const METHOD_CAPABILITY: Readonly<Record<string, string>> = {
-  "rim.chat.send_message": "chat.write",
-  "rim.chat.get_messages": "chat.read",
+  "rim.chat.list_messages": "chat.read",
+  "rim.chat.get_message": "chat.read",
   "rim.chat.search_messages": "chat.read",
-  "rim.chat.edit_message": "chat.write",
-  "rim.chat.delete_message": "chat.write",
+  "rim.chat.post_message": "chat.write",
   "rim.events.subscribe": "events.read",
   "rim.process.spawn": "local.process",
   "rim.process.kill": "local.process",

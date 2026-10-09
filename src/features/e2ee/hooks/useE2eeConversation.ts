@@ -15,10 +15,10 @@ import { useConversation } from "../../conversations/api/useConversation";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { fetchPrincipalDevices } from "../api/e2eeApi";
 import type { GroupView } from "../api/e2eeCommands";
-import { createGroup, refreshGroups } from "../runtime/groups";
-import { conversationMembers, notReadyMembers } from "../runtime/members";
+import { refreshGroups } from "../runtime/groups";
 import { syncMembership } from "../runtime/membership";
 import { e2eeSession } from "../runtime/session";
+import { upgradeIfReady } from "../runtime/upgrade";
 import { useE2eeStore } from "../state/useE2eeStore";
 
 export function isEncryptable(conversationType: string | undefined): boolean {
@@ -129,16 +129,18 @@ export function useE2eeConversation(
     void (async () => {
       const session = await e2eeSession();
       if (!session || cancelled) return;
-      const members = await conversationMembers(workspaceId, memberIds);
-      const { names } = await notReadyMembers(members);
-      if (cancelled) return;
-      useE2eeStore.getState().setNotReady(conversationId, names);
-      const eligible =
-        conversationType === ConversationTypeEnum.DIRECT ||
-        createdBy === userId ||
-        !createdBy ||
-        !memberIds.includes(createdBy);
-      if (names.length === 0 && eligible) await createGroup(session, workspaceId, conversationId);
+      const candidate = {
+        id: conversationId,
+        conversationType: conversationType ?? "",
+        memberIds,
+        createdBy,
+        encryptedAt,
+      };
+      await upgradeIfReady(session, workspaceId, candidate, (names) => {
+        if (cancelled) return false;
+        useE2eeStore.getState().setNotReady(conversationId, names);
+        return true;
+      });
     })().catch((err: unknown) => logger.warn("[RIM:e2ee] upgrade check failed:", err));
     return () => {
       cancelled = true;

@@ -8,6 +8,7 @@ use tauri::State;
 use serde::Serialize;
 
 use super::feed::{ChangesRequest, ConversationChanges};
+use super::plugin_view::{PluginMessage, PluginMessagePage, PluginReadScope};
 use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::snapshot::{Snapshot, SnapshotKind};
 use super::store::{TimelineCursor, TimelinePage};
@@ -139,6 +140,68 @@ pub async fn message_cache_message(
     message_id: String,
 ) -> Result<Option<serde_json::Value>, CacheError> {
     with_store(state, account, move |store| store.message(&message_id)).await
+}
+
+/// A conversation's messages as a plugin reads them (`rim.chat.list_messages`), or null
+/// while its history is not fully cached.
+#[tauri::command]
+pub async fn message_cache_plugin_messages(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    conversation_id: String,
+    before: Option<String>,
+    limit: Option<u32>,
+    scope: PluginReadScope,
+) -> Result<Option<PluginMessagePage>, CacheError> {
+    with_store(state, account, move |store| {
+        store.plugin_messages(
+            &workspace_id,
+            &conversation_id,
+            before.as_deref(),
+            limit,
+            &scope,
+        )
+    })
+    .await
+}
+
+/// One message as a plugin reads it (`rim.chat.get_message`), or null.
+#[tauri::command]
+pub async fn message_cache_plugin_message(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    message_id: String,
+    scope: PluginReadScope,
+) -> Result<Option<PluginMessage>, CacheError> {
+    with_store(state, account, move |store| {
+        store.plugin_message(&workspace_id, &message_id, &scope)
+    })
+    .await
+}
+
+/// Local search as a plugin reads it (`rim.chat.search_messages`), newest first.
+#[tauri::command]
+pub async fn message_cache_plugin_search(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    query: String,
+    conversation_id: Option<String>,
+    limit: Option<u32>,
+    scope: PluginReadScope,
+) -> Result<Vec<PluginMessage>, CacheError> {
+    with_store(state, account, move |store| {
+        store.plugin_search(
+            &workspace_id,
+            &query,
+            conversation_id.as_deref(),
+            limit,
+            &scope,
+        )
+    })
+    .await
 }
 
 /// Search the account's cached messages in a workspace: a page of hits, newest first, older

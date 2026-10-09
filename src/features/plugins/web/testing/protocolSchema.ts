@@ -6,6 +6,10 @@ import schema from "../../../../../protocol/plugin-protocol-v1.schema.json";
 type Schema = Record<string, unknown>;
 
 const defs = (schema as { $defs: Record<string, Schema> }).$defs;
+const notFrozen = (schema as unknown as { "x-notFrozen": { definitions: Record<string, Schema> } })[
+  "x-notFrozen"
+].definitions;
+const NOT_FROZEN_REF = "#/x-notFrozen/definitions/";
 
 function typeMatches(type: string, value: unknown): boolean {
   switch (type) {
@@ -31,6 +35,9 @@ function typeMatches(type: string, value: unknown): boolean {
 /** Every way `value` breaks `node`, as paths with a reason; empty when it conforms. */
 function problems(node: Schema, value: unknown, path: string): string[] {
   if (typeof node.$ref === "string") {
+    if (node.$ref.startsWith(NOT_FROZEN_REF)) {
+      return problems(notFrozen[node.$ref.slice(NOT_FROZEN_REF.length)], value, path);
+    }
     const name = node.$ref.replace("#/$defs/", "");
     return problems(defs[name], value, path);
   }
@@ -102,6 +109,13 @@ export function schemaProblems(name: string, message: unknown): string[] {
   const node = defs[name];
   if (!node) return [`no $defs entry ${name}`];
   return problems(node, message, name);
+}
+
+/** Why `value` is not a valid `x-notFrozen.definitions[name]`; empty when it is. */
+export function notFrozenProblems(name: string, value: unknown): string[] {
+  const node = notFrozen[name];
+  if (!node) return [`no x-notFrozen definition ${name}`];
+  return problems(node, value, name);
 }
 
 /** The `$defs` entry a host-to-plugin message must match, by its method or shape. */

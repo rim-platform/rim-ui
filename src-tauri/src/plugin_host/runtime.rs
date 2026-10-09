@@ -138,7 +138,8 @@ pub fn start_plugin(
 
     let gate = CapabilityGate::new(approved_caps.clone());
     let broker = PluginBroker::new(plugin_id.to_string(), gate, BrokerConfig::default())
-        .with_panel_relay(state.panel_relay.clone(), panel_ids);
+        .with_panel_relay(state.panel_relay.clone(), panel_ids)
+        .with_chat_relay(state.chat_relay.clone());
 
     let (client, outbound_rx) = PluginClient::channel();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -546,6 +547,7 @@ mod tests {
                 "/nonexistent",
             )),
             account: std::sync::Mutex::new(None),
+            chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }
     }
 
@@ -702,6 +704,7 @@ mod tests {
                 "/nonexistent",
             )),
             account: std::sync::Mutex::new(None),
+            chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");
         let err = start_plugin("dev.example.test", &manifest, &state).unwrap_err();

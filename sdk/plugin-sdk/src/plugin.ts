@@ -37,6 +37,16 @@ const UPDATE_PANEL_METHOD = "rim.ui.update_panel";
 const STORAGE_GET_METHOD = "rim.storage.get";
 const STORAGE_SET_METHOD = "rim.storage.set";
 
+/**
+ * Not frozen in v1: the client message service. Reads need `chat.read` (and
+ * `chat.read.encrypted` in encrypted DMs and groups); posting needs `chat.write`
+ * (and `chat.write.encrypted`).
+ */
+const CHAT_LIST_MESSAGES_METHOD = "rim.chat.list_messages";
+const CHAT_GET_MESSAGE_METHOD = "rim.chat.get_message";
+const CHAT_SEARCH_MESSAGES_METHOD = "rim.chat.search_messages";
+const CHAT_POST_MESSAGE_METHOD = "rim.chat.post_message";
+
 /** Who started a command: a person (`user`) or the AI agent (`agent`). */
 export type Initiator = wire.CommandExecuteParams["initiator"];
 
@@ -127,6 +137,61 @@ export interface Storage {
   set(key: string, value: unknown): Promise<void>;
 }
 
+/** A message as the person reads it. Ids of messages, conversations and threads are opaque. */
+export interface ChatMessage {
+  readonly id: string;
+  readonly conversationId: string;
+  /** The thread the message replies in, or `null`. */
+  readonly threadId: string | null;
+  readonly author: Principal;
+  /** The body; mentions are `<@principalId>` tokens. */
+  readonly text: string;
+  /** RFC 3339. */
+  readonly sentAt: string;
+  readonly editedAt: string | null;
+  /** The message was end-to-end encrypted. */
+  readonly encrypted: boolean;
+  /** Names, types and sizes only: plugins cannot fetch attachment bytes. */
+  readonly attachments: readonly { name: string; mime: string; size: number }[];
+}
+
+/** A page of a conversation, oldest first. */
+export interface ChatMessagePage {
+  readonly messages: readonly ChatMessage[];
+  /** Older messages exist; pass the first message's id as `before`. */
+  readonly hasOlder: boolean;
+}
+
+/**
+ * The person's messages, through the app's message service: read from what this device
+ * stores, and posted as the person, encrypted where the conversation is.
+ *
+ * Experimental: `rim.chat.*` is routed by the hosts but not frozen in protocol v1. Each
+ * call needs `chat.read` or `chat.write` approved, plus `chat.read.encrypted` or
+ * `chat.write.encrypted` in an encrypted DM or group; without it the promise rejects with
+ * a {@link HostRequestError} whose code is `CAPABILITY_DENIED`.
+ */
+export interface Chat {
+  /** The newest messages of a conversation, or those before the message `before`. */
+  listMessages(
+    conversationId: string,
+    options?: { before?: string; limit?: number },
+  ): Promise<ChatMessagePage>;
+  /** One message, or `null` when this device does not have it. */
+  getMessage(messageId: string): Promise<ChatMessage | null>;
+  /** Full-text search of the messages on this device, newest first. */
+  searchMessages(
+    query: string,
+    options?: { conversationId?: string; limit?: number },
+  ): Promise<ChatMessage[]>;
+  /** Post as the person; answers the new message's id. */
+  postMessage(
+    conversationId: string,
+    body: string,
+    options?: { threadId?: string },
+  ): Promise<{ id: string }>;
+}
+
 /** What the plugin knows about the host after the handshake. */
 export interface Host {
   /** The plugin's id, as the host started it. */
@@ -142,6 +207,7 @@ export interface Host {
   readonly log: Logger;
   readonly panels: Panels;
   readonly storage: Storage;
+  readonly chat: Chat;
 }
 
 /** A plugin, as passed to {@link definePlugin}. */
@@ -697,6 +763,34 @@ class Session {
           await session.request(STORAGE_SET_METHOD, { key, value });
         },
       }),
+      chat: Object.freeze({
+        listMessages: async (conversationId: string, options = {}) =>
+          (await session.request(CHAT_LIST_MESSAGES_METHOD, {
+            conversationId,
+            ...options,
+          })) as ChatMessagePage,
+        getMessage: async (messageId: string) => {
+          const result = await session.request(CHAT_GET_MESSAGE_METHOD, { messageId });
+          return isRecord(result) && isRecord(result.message)
+            ? (result.message as unknown as ChatMessage)
+            : null;
+        },
+        searchMessages: async (query: string, options = {}) => {
+          const result = await session.request(CHAT_SEARCH_MESSAGES_METHOD, {
+            query,
+            ...options,
+          });
+          return isRecord(result) && Array.isArray(result.messages)
+            ? (result.messages as ChatMessage[])
+            : [];
+        },
+        postMessage: async (conversationId: string, body: string, options = {}) =>
+          (await session.request(CHAT_POST_MESSAGE_METHOD, {
+            conversationId,
+            body,
+            ...options,
+          })) as { id: string },
+      } satisfies Chat),
       panels: Object.freeze({
         set: (panelId: string, state: unknown) => session.updatePanel(panelId, state, false),
         patch: (panelId: string, patch: Readonly<Record<string, unknown>>) => {

@@ -63,6 +63,40 @@ pub enum InstallSource {
     },
 }
 
+/// Grant events kept per plugin; older ones are dropped first.
+pub const MAX_GRANT_EVENTS: usize = 200;
+/// Days of encrypted-read counts kept per plugin.
+pub const AUDIT_DAYS: usize = 90;
+
+/// Whether a capability was given or taken back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GrantAction {
+    Granted,
+    Revoked,
+}
+
+/// One capability given to or taken back from a plugin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GrantEvent {
+    pub capability: String,
+    pub action: GrantAction,
+    /// RFC 3339, UTC.
+    pub at: String,
+}
+
+/// What the host records about a plugin for its settings page: when each capability
+/// was given and revoked, and how many encrypted messages it read each day.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginAudit {
+    /// Oldest first, at most [`MAX_GRANT_EVENTS`].
+    #[serde(default)]
+    pub grants: Vec<GrantEvent>,
+    /// Encrypted messages read per UTC day (`YYYY-MM-DD`), the last [`AUDIT_DAYS`] days.
+    #[serde(default)]
+    pub encrypted_reads: BTreeMap<String, u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PluginStateStore {
     pub plugins: HashMap<String, PluginRecord>,
@@ -70,6 +104,10 @@ pub struct PluginStateStore {
     /// sent to plugins in `rim.principals.remapped`. Keyed by the old id.
     #[serde(default)]
     pub principal_ids: BTreeMap<String, String>,
+    /// Each plugin's grant history and encrypted reads. Kept through updates, which
+    /// replace the plugin's record, and dropped on uninstall.
+    #[serde(default)]
+    pub audit: BTreeMap<String, PluginAudit>,
 }
 
 impl PluginStateStore {
@@ -116,6 +154,42 @@ impl PluginStateStore {
     pub fn remove(&mut self, plugin_id: &str) -> Option<PluginRecord> {
         self.plugins.remove(plugin_id)
     }
+
+    /// Note that `capability` was given to or taken back from `plugin_id` at `at`.
+    pub fn record_grant(
+        &mut self,
+        plugin_id: &str,
+        capability: &str,
+        action: GrantAction,
+        at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let audit = self.audit.entry(plugin_id.to_string()).or_default();
+        audit.grants.push(GrantEvent {
+            capability: capability.to_string(),
+            action,
+            at: at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        });
+        let excess = audit.grants.len().saturating_sub(MAX_GRANT_EVENTS);
+        audit.grants.drain(..excess);
+    }
+
+    /// Add `count` encrypted messages read by `plugin_id` on the UTC day of `at`.
+    pub fn record_encrypted_reads(
+        &mut self,
+        plugin_id: &str,
+        count: u64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) {
+        if count == 0 {
+            return;
+        }
+        let audit = self.audit.entry(plugin_id.to_string()).or_default();
+        let day = at.format("%Y-%m-%d").to_string();
+        *audit.encrypted_reads.entry(day).or_default() += count;
+        while audit.encrypted_reads.len() > AUDIT_DAYS {
+            audit.encrypted_reads.pop_first();
+        }
+    }
 }
 
 pub fn state_file_path(app_data_dir: &Path) -> PathBuf {
@@ -125,7 +199,59 @@ pub fn state_file_path(app_data_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use tempfile::NamedTempFile;
+
+    fn day(d: u32) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc.with_ymd_and_hms(2026, 10, d, 12, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn grants_are_recorded_in_order_and_capped() {
+        let mut store = PluginStateStore::default();
+        store.record_grant("p", "chat.read", GrantAction::Granted, day(1));
+        store.record_grant("p", "chat.read", GrantAction::Revoked, day(2));
+        let grants = &store.audit["p"].grants;
+        assert_eq!(grants[0].action, GrantAction::Granted);
+        assert_eq!(grants[0].at, "2026-10-01T12:00:00Z");
+        assert_eq!(grants[1].action, GrantAction::Revoked);
+
+        for _ in 0..MAX_GRANT_EVENTS {
+            store.record_grant("p", "ui.panel", GrantAction::Granted, day(3));
+        }
+        let grants = &store.audit["p"].grants;
+        assert_eq!(grants.len(), MAX_GRANT_EVENTS);
+        assert!(grants.iter().all(|g| g.capability == "ui.panel"));
+    }
+
+    #[test]
+    fn encrypted_reads_are_counted_per_day_for_ninety_days() {
+        let mut store = PluginStateStore::default();
+        store.record_encrypted_reads("p", 3, day(1));
+        store.record_encrypted_reads("p", 2, day(1));
+        store.record_encrypted_reads("p", 0, day(2));
+        store.record_encrypted_reads("p", 1, day(3));
+        let reads = &store.audit["p"].encrypted_reads;
+        assert_eq!(reads.get("2026-10-01"), Some(&5));
+        assert_eq!(reads.get("2026-10-02"), None);
+        assert_eq!(reads.get("2026-10-03"), Some(&1));
+
+        let start = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        for i in 0..(AUDIT_DAYS as i64 + 5) {
+            store.record_encrypted_reads("q", 1, start + chrono::Duration::days(i));
+        }
+        let reads = &store.audit["q"].encrypted_reads;
+        assert_eq!(reads.len(), AUDIT_DAYS);
+        assert!(!reads.contains_key("2026-01-01"));
+    }
+
+    #[test]
+    fn a_store_without_audit_still_loads() {
+        let tmp = NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), r#"{"plugins":{}}"#).unwrap();
+        let loaded = PluginStateStore::load(tmp.path());
+        assert!(loaded.audit.is_empty());
+    }
 
     #[test]
     fn roundtrip() {

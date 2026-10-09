@@ -23,6 +23,7 @@ import {
   usePluginTrustFingerprint,
 } from "../api/usePluginActions";
 import { InstallFromLink } from "./InstallFromLink";
+import { PluginAuditPanel } from "./PluginAuditPanel";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
@@ -388,6 +389,7 @@ function PluginRow({
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
   const blocked = plugin.fingerprint_changed || needsDesktop;
+  const [activityOpen, setActivityOpen] = useState(false);
 
   return (
     <div className="rounded-lg border border-rim-line bg-rim-void">
@@ -443,6 +445,14 @@ function PluginRow({
           <Button variant="ghost" size="sm" onClick={() => onPermissions(plugin)}>
             Permissions
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActivityOpen((open) => !open)}
+            aria-expanded={activityOpen}
+          >
+            Activity
+          </Button>
 
           <button
             type="button"
@@ -475,6 +485,8 @@ function PluginRow({
           </Button>
         </div>
       </div>
+
+      {activityOpen && <PluginAuditPanel plugin={plugin} />}
 
       {/* Fingerprint-changed warning banner */}
       {plugin.fingerprint_changed && (

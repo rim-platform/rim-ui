@@ -2,6 +2,9 @@
 
 export {
   SUPPORTED_VERSIONS,
+  type Chat,
+  type ChatMessage,
+  type ChatMessagePage,
   type CommandContext,
   type CommandDefinition,
   type CommandOutput,

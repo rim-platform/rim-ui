@@ -20,3 +20,19 @@ export function useApproveCapabilities() {
     },
   });
 }
+
+/** Take one capability back; the plugin stops, as for every capability. */
+export function useRevokeCapability() {
+  const qc = useQueryClient();
+  const { platform } = useRuntime();
+
+  return useMutation<void, PluginIpcError, { pluginId: string; capability: string }>({
+    mutationFn: (args) =>
+      platform === "web"
+        ? browserPluginStore.revokeCapability(args.pluginId, args.capability)
+        : safeInvoke("plugin_revoke_capability", args),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.plugins() });
+    },
+  });
+}

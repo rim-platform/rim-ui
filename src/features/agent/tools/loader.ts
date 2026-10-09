@@ -19,6 +19,8 @@ import { pluginServices } from "../../plugins/web/webPluginEnvironment";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import type { AiToolDefinition } from "../providers/types";
+import { agentEncryptedDeps } from "../encrypted/agentEncryptedDeps";
+import { routeEncrypted } from "../encrypted/encryptedTools";
 import { ConfirmationRequiredError } from "../runtime/confirmationGate";
 import { getCurrentCommandContext } from "./commandContext";
 import { registerGetCurrentContextTool } from "./getCurrentContext";
@@ -476,7 +478,12 @@ export async function loadAgentTools(): Promise<MergeResult> {
     });
   }
   for (const tool of backendTools) {
-    registerTool(tool.definition, tool.handler, tool.options);
+    // In an end-to-end encrypted conversation the chat tools work on this device.
+    registerTool(
+      tool.definition,
+      routeEncrypted(tool.definition.name, tool.handler, agentEncryptedDeps),
+      tool.options,
+    );
   }
 
   try {

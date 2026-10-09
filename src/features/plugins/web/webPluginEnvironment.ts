@@ -5,6 +5,7 @@
 import { logger } from "../../../core/logger";
 import type { AppPlatform } from "../../../core/runtime/runtime";
 import { hostDialogOpen, subscribeHostDialogs } from "../../../shared/ui/hostDialogs";
+import { appMessageService } from "../chat/appMessageService";
 import { browserPluginStore } from "./browserPluginStore";
 import { desktopPluginServices, rimOrigins, type PluginServices } from "./pluginServices";
 import type { SessionPort } from "./pluginSession";
@@ -110,5 +111,11 @@ let configuredFor: AppPlatform | null = null;
 export function configureWebPluginHost(platform: AppPlatform): void {
   if (configuredFor === platform) return;
   configuredFor = platform;
-  webPluginHost.configure(createDomEnvironment(platform), pluginServices(platform), rimOrigins());
+  webPluginHost.configure(
+    createDomEnvironment(platform),
+    pluginServices(platform),
+    rimOrigins(),
+    (pluginId, method, params, granted) =>
+      appMessageService.call(pluginId, method, params, granted),
+  );
 }

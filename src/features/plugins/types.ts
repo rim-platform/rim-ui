@@ -5,6 +5,8 @@ export type TrustLevel = "official" | "verified" | "community" | "unverified";
 export type PluginCapability =
   | "chat.read"
   | "chat.write"
+  | "chat.read.encrypted"
+  | "chat.write.encrypted"
   | "events.read"
   | "local.process"
   | "network"
@@ -18,6 +20,8 @@ export type PluginCapability =
 export const PLUGIN_CAPABILITIES: readonly PluginCapability[] = [
   "chat.read",
   "chat.write",
+  "chat.read.encrypted",
+  "chat.write.encrypted",
   "events.read",
   "local.process",
   "network",
@@ -184,6 +188,25 @@ export interface PluginInfo {
   starting?: boolean;
   /** Why a web plugin stopped on its own, or was not started. */
   last_error?: string | null;
+  /** Left out by hosts before the audit. */
+  audit?: PluginAudit;
+}
+
+export type PluginGrantAction = "granted" | "revoked";
+
+/** One capability given to or taken back from a plugin. Mirror of the Rust `GrantEvent`. */
+export interface PluginGrantEvent {
+  capability: string;
+  action: PluginGrantAction;
+  /** RFC 3339, UTC. */
+  at: string;
+}
+
+/** Mirror of the Rust `PluginAudit`: grant history and encrypted reads per UTC day. */
+export interface PluginAudit {
+  grants: PluginGrantEvent[];
+  /** `YYYY-MM-DD` to the encrypted messages the plugin read that day. */
+  encrypted_reads: Record<string, number>;
 }
 
 /** The runtime kind of `plugin`; hosts before web plugins only reported local processes. */

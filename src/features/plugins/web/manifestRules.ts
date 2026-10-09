@@ -6,13 +6,29 @@
 export type RuntimeKind = "DesktopLocalProcess" | "WebSandboxed";
 
 export const NETWORK_FETCH = "network.fetch";
+export const CHAT_READ = "chat.read";
+export const CHAT_WRITE = "chat.write";
+export const CHAT_READ_ENCRYPTED = "chat.read.encrypted";
+export const CHAT_WRITE_ENCRYPTED = "chat.write.encrypted";
+/** Each encrypted chat capability and the plain one a manifest must ask for with it. */
+export const ENCRYPTED_CHAT_CAPABILITIES: readonly (readonly [string, string])[] = [
+  [CHAT_READ_ENCRYPTED, CHAT_READ],
+  [CHAT_WRITE_ENCRYPTED, CHAT_WRITE],
+];
 export const MAX_NETWORK_ORIGINS = 16;
 export const MAX_BUNDLE_PATH_BYTES = 255;
 
 const RESERVED_ID_PREFIXES = ["dev.rim.", "com.rim."];
 const RESERVED_CAPABILITY_PREFIXES = ["system.", "internal.", "admin.", "audit."];
 const RESERVED_SEGMENTS = ["system", "internal", "admin", "audit"];
-const BUILTIN_CAPABILITIES = ["ui.panel", "ui.notify"];
+const BUILTIN_CAPABILITIES = [
+  "ui.panel",
+  "ui.notify",
+  CHAT_READ,
+  CHAT_WRITE,
+  CHAT_READ_ENCRYPTED,
+  CHAT_WRITE_ENCRYPTED,
+];
 const LOCAL_ONLY_CAPABILITIES = ["local.process", "fs.read", "fs.write"];
 const MIN_KEY_BYTES = 4;
 const MAX_KEY_BYTES = 128;
@@ -409,7 +425,7 @@ function validateCapability(kind: RuntimeKind, pluginId: string, key: string): v
   }
   const prefix = `plugin.${pluginId}.`;
   if (!key.startsWith(prefix)) {
-    reject(`capability key must be ui.panel, ui.notify or start with \`${prefix}\``);
+    reject(`capability key must be a built-in name or start with \`${prefix}\``);
   }
   const verb = key.slice(prefix.length);
   if (verb === "") reject("capability key must declare a verb after `plugin.<id>.`");
@@ -545,8 +561,8 @@ export interface InstallContext {
 }
 
 /**
- * The install rules: no reserved id, capabilities this kind may hold,
- * `network_origins`, a web plugin's entrypoint and panel ids, and the AI
+ * The install rules: no reserved id, capabilities this kind may hold (an
+ * encrypted chat capability with its plain one), `network_origins`, a web plugin's entrypoint and panel ids, and the AI
  * surface's install-id leak check.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
@@ -555,6 +571,13 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
   }
   for (const capability of manifest.capabilities) {
     validateCapability(manifest.runtime_kind, manifest.plugin_id, capability);
+  }
+  for (const [encrypted, plain] of ENCRYPTED_CHAT_CAPABILITIES) {
+    if (manifest.capabilities.includes(encrypted) && !manifest.capabilities.includes(plain)) {
+      throw new ManifestError(
+        `invalid capability key \`${encrypted}\`: ${encrypted} requires ${plain} as well`,
+      );
+    }
   }
   validateNetworkOrigins(manifest, context.forbiddenOrigins ?? []);
   if (manifest.runtime_kind === "WebSandboxed") validateWebLayout(manifest);

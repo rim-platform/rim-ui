@@ -1,4 +1,5 @@
-use crate::plugin_host::capability::{self, CapabilityGate};
+use crate::plugin_host::capability::{self, CapabilityGate, CHAT_METHODS};
+use crate::plugin_host::chat_relay::ChatRelay;
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::protocol::{method, LogLevel, LogParams};
 use crate::plugin_host::wire::{
@@ -73,6 +74,45 @@ pub struct PluginBroker {
     panel_relay: Option<Arc<PanelRelay>>,
     /// Panel IDs declared in this plugin's manifest — for ownership verification.
     manifest_panel_ids: Vec<String>,
+    /// Where `rim.chat.*` calls go; without it they are METHOD_NOT_FOUND.
+    chat_relay: Option<Arc<ChatRelay>>,
+}
+
+/// How the broker answers one admitted plugin request.
+pub enum Routed {
+    /// The answer is ready.
+    Done(JsonRpcResponse),
+    /// The UI's message service answers it; run the call off the broker loop.
+    Chat(ChatCall),
+}
+
+/// A `rim.chat.*` call on its way to the UI.
+pub struct ChatCall {
+    relay: Arc<ChatRelay>,
+    id: serde_json::Value,
+    plugin_id: String,
+    method: String,
+    params: serde_json::Value,
+    granted: Vec<String>,
+}
+
+impl ChatCall {
+    /// Wait for the UI's answer, as the response to the plugin.
+    pub async fn run(self) -> JsonRpcResponse {
+        match self
+            .relay
+            .call(&self.plugin_id, &self.method, self.params, self.granted)
+            .await
+        {
+            Ok(result) => JsonRpcResponse::success(self.id, result),
+            Err(error) => JsonRpcResponse {
+                jsonrpc: "2.0".into(),
+                result: None,
+                error: Some(error),
+                id: self.id,
+            },
+        }
+    }
 }
 
 impl PluginBroker {
@@ -86,7 +126,13 @@ impl PluginBroker {
             responsive: true,
             panel_relay: None,
             manifest_panel_ids: vec![],
+            chat_relay: None,
         }
+    }
+
+    pub fn with_chat_relay(mut self, relay: Arc<ChatRelay>) -> Self {
+        self.chat_relay = Some(relay);
+        self
     }
 
     pub fn with_panel_relay(mut self, relay: Arc<PanelRelay>, panel_ids: Vec<String>) -> Self {
@@ -95,8 +141,43 @@ impl PluginBroker {
         self
     }
 
-    /// Handle an incoming JSON-RPC request from the plugin.
+    /// Handle an incoming JSON-RPC request from the plugin, waiting for a relayed
+    /// chat call's answer.
+    #[cfg(test)]
     pub async fn handle_request(&mut self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        match self.route(request).await {
+            Routed::Done(response) => response,
+            Routed::Chat(call) => call.run().await,
+        }
+    }
+
+    /// Admit a request (capability, rate limit) and answer it, or hand back the
+    /// chat call that answers it.
+    pub async fn route(&mut self, request: &JsonRpcRequest) -> Routed {
+        match self.refusal(request) {
+            Some(response) => Routed::Done(response),
+            None => match (
+                &self.chat_relay,
+                CHAT_METHODS.contains(&request.method.as_str()),
+            ) {
+                (Some(relay), true) => Routed::Chat(ChatCall {
+                    relay: relay.clone(),
+                    id: request.id.clone(),
+                    plugin_id: self.plugin_id.clone(),
+                    method: request.method.clone(),
+                    params: request
+                        .params
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    granted: self.gate.approved().to_vec(),
+                }),
+                _ => Routed::Done(self.dispatch(request).await),
+            },
+        }
+    }
+
+    /// The error answer of a request the capability gate or its rate limit refuses.
+    fn refusal(&mut self, request: &JsonRpcRequest) -> Option<JsonRpcResponse> {
         // Check capability
         if let Err(required_cap) = self.gate.check(&request.method) {
             log::warn!(
@@ -105,11 +186,11 @@ impl PluginBroker {
                 request.method,
                 required_cap
             );
-            return JsonRpcResponse::error(
+            return Some(JsonRpcResponse::error(
                 request.id.clone(),
                 CAPABILITY_DENIED,
                 format!("capability denied: {required_cap}"),
-            );
+            ));
         }
 
         // Check rate limit
@@ -132,16 +213,14 @@ impl PluginBroker {
                     request.method,
                     cap_string
                 );
-                return JsonRpcResponse::error(
+                return Some(JsonRpcResponse::error(
                     request.id.clone(),
                     RATE_LIMITED,
                     format!("rate limit exceeded for capability: {cap_string}"),
-                );
+                ));
             }
         }
-
-        // Dispatch
-        self.dispatch(request).await
+        None
     }
 
     async fn dispatch(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -430,6 +509,9 @@ pub async fn run_broker_loop<R, W>(
     }));
 
     let mut pending: HashMap<String, oneshot::Sender<JsonRpcResponse>> = HashMap::new();
+    // Answers of chat calls, which run off the loop so it keeps serving heartbeats
+    // and other calls while the UI works.
+    let (answer_tx, mut answer_rx) = mpsc::channel::<JsonRpcResponse>(INCOMING_QUEUE);
     let mut next_request_id: i64 = 1;
     let mut heartbeat: Option<(String, Instant)> = None;
     let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
@@ -466,6 +548,12 @@ pub async fn run_broker_loop<R, W>(
                 log::warn!("heartbeat timeout — plugin {} unresponsive", broker.plugin_id());
                 broker.responsive = false;
                 heartbeat = None;
+            }
+            Some(answer) = answer_rx.recv() => {
+                if wire::write_frame(&mut writer, &answer).await.is_err() {
+                    log::warn!("failed to write response to plugin");
+                    break;
+                }
             }
             Some(outbound) = outbound_rx.recv() => {
                 let Some(reply) = outbound.reply else {
@@ -505,16 +593,30 @@ pub async fn run_broker_loop<R, W>(
                     }
                 };
                 match classify(frame) {
-                    Incoming::Request(request) => {
-                        let response = broker.handle_request(&request).await;
-                        if wire::write_frame(&mut writer, &response).await.is_err() {
-                            log::warn!("failed to write response to plugin");
-                            break;
+                    Incoming::Request(request) => match broker.route(&request).await {
+                        Routed::Done(response) => {
+                            if wire::write_frame(&mut writer, &response).await.is_err() {
+                                log::warn!("failed to write response to plugin");
+                                break;
+                            }
                         }
-                    }
+                        Routed::Chat(call) => {
+                            let answer_tx = answer_tx.clone();
+                            tokio::spawn(async move {
+                                let _ = answer_tx.send(call.run().await).await;
+                            });
+                        }
+                    },
                     Incoming::Notification(notification) => {
-                        // Same gates as a request; a notification gets no response.
-                        broker.handle_request(&notification).await;
+                        // Same gates as a request; a notification gets no response,
+                        // so a chat call sent as one is dropped.
+                        if let Routed::Chat(_) = broker.route(&notification).await {
+                            log::debug!(
+                                "plugin {} sent {} as a notification; dropped",
+                                broker.plugin_id(),
+                                notification.method
+                            );
+                        }
                     }
                     Incoming::Response(response) => {
                         let key = id_key(&response.id);
@@ -594,14 +696,14 @@ mod tests {
             CapabilityGate::new(vec![]),
             BrokerConfig::default(),
         );
-        let req = JsonRpcRequest::new("rim.chat.send_message", None, 1);
+        let req = JsonRpcRequest::new("rim.chat.post_message", None, 1);
         let resp = broker.handle_request(&req).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, CAPABILITY_DENIED);
     }
 
-    /// No manifest can be granted `chat.*` or `events.read` (see `BUILTIN_CAPABILITIES`),
-    /// but if a grant ever got through, the unwired methods still do nothing.
+    /// Without a chat relay (and for `events.read`, which nothing serves) a granted
+    /// method still does nothing.
     #[tokio::test]
     async fn granted_but_unwired_methods_are_method_not_found() {
         let mut broker = PluginBroker::new(
@@ -614,14 +716,93 @@ mod tests {
             BrokerConfig::default(),
         );
         for method in [
-            "rim.chat.send_message",
-            "rim.chat.get_messages",
+            "rim.chat.post_message",
+            "rim.chat.list_messages",
+            "rim.chat.get_message",
             "rim.chat.search_messages",
             "rim.events.subscribe",
         ] {
             let req = JsonRpcRequest::new(method, Some(serde_json::json!({})), 1);
             let resp = broker.handle_request(&req).await;
             assert_eq!(resp.error.unwrap().code, METHOD_NOT_FOUND, "{method}");
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_calls_go_to_the_relay_with_the_start_time_grants() {
+        let relay = Arc::new(ChatRelay::default());
+        let mut ui = relay.subscribe();
+        let mut broker = PluginBroker::new(
+            "dev.example.reader".into(),
+            CapabilityGate::new(vec!["chat.read".into(), "chat.read.encrypted".into()]),
+            BrokerConfig::default(),
+        )
+        .with_chat_relay(relay.clone());
+        let answering = {
+            let relay = relay.clone();
+            tokio::spawn(async move {
+                let request = ui.recv().await.unwrap();
+                assert_eq!(request.method, "rim.chat.list_messages");
+                assert_eq!(request.params, serde_json::json!({"conversationId": "c"}));
+                assert_eq!(
+                    request.granted_capabilities,
+                    vec!["chat.read".to_string(), "chat.read.encrypted".to_string()]
+                );
+                relay.respond(request.request_id, Ok(serde_json::json!({"messages": []})));
+            })
+        };
+        let req = JsonRpcRequest::new(
+            "rim.chat.list_messages",
+            Some(serde_json::json!({"conversationId": "c"})),
+            4,
+        );
+        let resp = broker.handle_request(&req).await;
+        assert_eq!(resp.id, serde_json::json!(4));
+        assert_eq!(resp.result.unwrap(), serde_json::json!({"messages": []}));
+        answering.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn chat_calls_without_the_plain_grant_never_reach_the_relay() {
+        let relay = Arc::new(ChatRelay::default());
+        let mut ui = relay.subscribe();
+        let mut broker = PluginBroker::new(
+            "dev.example.reader".into(),
+            CapabilityGate::new(vec![
+                "chat.read.encrypted".into(),
+                "chat.write.encrypted".into(),
+            ]),
+            BrokerConfig::default(),
+        )
+        .with_chat_relay(relay);
+        for method in CHAT_METHODS {
+            let req = JsonRpcRequest::new(*method, Some(serde_json::json!({})), 1);
+            let resp = broker.handle_request(&req).await;
+            assert_eq!(resp.error.unwrap().code, CAPABILITY_DENIED, "{method}");
+        }
+        assert!(ui.try_recv().is_err(), "nothing was relayed");
+    }
+
+    #[tokio::test]
+    async fn chat_calls_share_their_capability_rate_limit() {
+        let relay = Arc::new(ChatRelay::new(Duration::from_millis(10)));
+        let _ui = relay.subscribe();
+        let mut broker = PluginBroker::new(
+            "dev.example.reader".into(),
+            CapabilityGate::new(vec!["chat.read".into()]),
+            BrokerConfig {
+                rate_limits: HashMap::from([("chat.read".to_string(), 2)]),
+                default_rate_limit: DEFAULT_RATE_LIMIT,
+            },
+        )
+        .with_chat_relay(relay);
+        let list = JsonRpcRequest::new("rim.chat.list_messages", None, 1);
+        let get = JsonRpcRequest::new("rim.chat.get_message", None, 2);
+        assert!(matches!(broker.route(&list).await, Routed::Chat(_)));
+        assert!(matches!(broker.route(&get).await, Routed::Chat(_)));
+        match broker.route(&list).await {
+            Routed::Done(resp) => assert_eq!(resp.error.unwrap().code, RATE_LIMITED),
+            Routed::Chat(_) => panic!("the third chat.read call is over the limit"),
         }
     }
 
@@ -654,8 +835,8 @@ mod tests {
         // No handler serves the method, so the call fails at dispatch, but rate limiting
         // happens before dispatch. First two calls should pass capability + rate check.
         let req = JsonRpcRequest::new(
-            "rim.chat.send_message",
-            Some(serde_json::json!({"server_id": "a", "conversation_id": "b", "text": "c"})),
+            "rim.chat.post_message",
+            Some(serde_json::json!({"conversationId": "b", "body": "c"})),
             1,
         );
 
@@ -848,6 +1029,51 @@ mod tests {
         let result = client.request("m", None, WAIT).await.unwrap();
         assert_eq!(result, serde_json::json!(true));
         fake_plugin.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_chat_call_does_not_hold_up_the_loop() {
+        let relay = Arc::new(ChatRelay::default());
+        let mut ui = relay.subscribe();
+        let (host_end, mut plugin) = tokio::io::duplex(64 * 1024);
+        let (reader, writer) = tokio::io::split(host_end);
+        let (_client, outbound_rx) = PluginClient::channel();
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let broker = PluginBroker::new(
+            "dev.example.reader".into(),
+            CapabilityGate::new(vec!["chat.read".into()]),
+            BrokerConfig::default(),
+        )
+        .with_chat_relay(relay.clone());
+        tokio::spawn(run_broker_loop(
+            broker,
+            reader,
+            writer,
+            outbound_rx,
+            shutdown_rx,
+        ));
+
+        let list = JsonRpcRequest::new(
+            "rim.chat.list_messages",
+            Some(serde_json::json!({"conversationId": "c"})),
+            "list",
+        );
+        wire::write_frame(&mut plugin, &list).await.unwrap();
+        let request = ui.recv().await.unwrap();
+
+        // While the UI works on the chat call, the plugin's log call is answered.
+        let log = JsonRpcRequest::new(
+            "rim.log",
+            Some(serde_json::json!({"level": "info", "message": "waiting"})),
+            "log",
+        );
+        wire::write_frame(&mut plugin, &log).await.unwrap();
+        assert_eq!(read_json(&mut plugin).await["id"], "log");
+
+        relay.respond(request.request_id, Ok(serde_json::json!({"messages": []})));
+        let answer = read_json(&mut plugin).await;
+        assert_eq!(answer["id"], "list");
+        assert_eq!(answer["result"], serde_json::json!({"messages": []}));
     }
 
     #[tokio::test]

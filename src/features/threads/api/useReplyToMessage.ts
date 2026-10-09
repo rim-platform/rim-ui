@@ -6,7 +6,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { logger } from "../../../core/logger";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 
-const REPLY_TO_MESSAGE_MUTATION = gql`
+export const REPLY_TO_MESSAGE_MUTATION = gql`
   mutation ReplyToMessage($input: ReplyToMessageInput!) {
     replyToMessage(input: $input) {
       ...MessageWithReactions
