@@ -14,9 +14,9 @@ use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::store::{CacheStore, TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
 
-const WS: &str = "ws-1";
+pub(crate) const WS: &str = "ws-1";
 
-struct FixedKey([u8; 32]);
+pub(crate) struct FixedKey([u8; 32]);
 
 impl KeySource for FixedKey {
     fn load_or_create(&self) -> Result<CacheKey, CacheError> {
@@ -24,11 +24,11 @@ impl KeySource for FixedKey {
     }
 }
 
-fn state(dir: &Path, key: u8) -> MessageCacheState {
+pub(crate) fn state(dir: &Path, key: u8) -> MessageCacheState {
     MessageCacheState::new(dir.to_path_buf(), Box::new(FixedKey([key; 32])))
 }
 
-fn account(user: &str) -> AccountId {
+pub(crate) fn account(user: &str) -> AccountId {
     AccountId {
         endpoint: "http://localhost:8080/api".into(),
         user_id: user.into(),
@@ -54,14 +54,14 @@ struct ServerConversation {
     no_access: bool,
 }
 
-struct MockFeed {
+pub(crate) struct MockFeed {
     budget: usize,
     conversations: HashMap<String, ServerConversation>,
-    requests: usize,
+    pub(crate) requests: usize,
 }
 
 impl MockFeed {
-    fn new(budget: usize) -> Self {
+    pub(crate) fn new(budget: usize) -> Self {
         Self {
             budget,
             conversations: HashMap::new(),
@@ -73,7 +73,13 @@ impl MockFeed {
         self.conversations.entry(id.to_string()).or_default()
     }
 
-    fn send(&mut self, conversation: &str, id: &str, text: &str, thread_id: Option<&str>) {
+    pub(crate) fn send(
+        &mut self,
+        conversation: &str,
+        id: &str,
+        text: &str,
+        thread_id: Option<&str>,
+    ) {
         let conv = self.conversation(conversation);
         conv.counter += 1;
         let n = conv.messages.len();
@@ -91,7 +97,7 @@ impl MockFeed {
         );
     }
 
-    fn send_many(&mut self, conversation: &str, count: usize) {
+    pub(crate) fn send_many(&mut self, conversation: &str, count: usize) {
         for i in 0..count {
             self.send(
                 conversation,
@@ -102,7 +108,7 @@ impl MockFeed {
         }
     }
 
-    fn edit(&mut self, conversation: &str, id: &str, text: &str) {
+    pub(crate) fn edit(&mut self, conversation: &str, id: &str, text: &str) {
         let conv = self.conversation(conversation);
         conv.counter += 1;
         let version = conv.counter;
@@ -112,7 +118,7 @@ impl MockFeed {
         message.edited = true;
     }
 
-    fn delete(&mut self, conversation: &str, id: &str) {
+    pub(crate) fn delete(&mut self, conversation: &str, id: &str) {
         let conv = self.conversation(conversation);
         conv.counter += 1;
         let version = conv.counter;
@@ -123,7 +129,7 @@ impl MockFeed {
 
     /// The server's database is restored from an older backup: `id` never existed and the
     /// counters start over, so the client's stored cursor is now ahead of them.
-    fn restore_backup_without(&mut self, conversation: &str, id: &str) {
+    pub(crate) fn restore_backup_without(&mut self, conversation: &str, id: &str) {
         let conv = self.conversation(conversation);
         conv.messages.remove(id);
         let mut ordered: Vec<_> = conv.messages.iter_mut().collect();
@@ -134,7 +140,7 @@ impl MockFeed {
         conv.counter = conv.messages.len() as i64;
     }
 
-    fn respond(&mut self, request: &ChangesRequest) -> Vec<ConversationChanges> {
+    pub(crate) fn respond(&mut self, request: &ChangesRequest) -> Vec<ConversationChanges> {
         self.requests += 1;
         assert!(
             request.conversations.len() <= 100,
@@ -243,7 +249,7 @@ fn message_json(
 }
 
 /// The webview's loop, verbatim: begin, then fetch and apply until there is no next request.
-fn sync(store: &mut CacheStore, feed: &mut MockFeed, ids: Option<&[String]>) {
+pub(crate) fn sync(store: &mut CacheStore, feed: &mut MockFeed, ids: Option<&[String]>) {
     let mut request = store.begin_sync(WS, ids).unwrap();
     let mut rounds = 0;
     while let Some(r) = request {
@@ -254,14 +260,14 @@ fn sync(store: &mut CacheStore, feed: &mut MockFeed, ids: Option<&[String]>) {
     }
 }
 
-fn texts(page: &TimelinePage) -> Vec<String> {
+pub(crate) fn texts(page: &TimelinePage) -> Vec<String> {
     page.items
         .iter()
         .map(|m| m["text"].as_str().unwrap().to_string())
         .collect()
 }
 
-fn cached_ids(store: &CacheStore, conversation: &str) -> Vec<String> {
+pub(crate) fn cached_ids(store: &CacheStore, conversation: &str) -> Vec<String> {
     let mut stmt = store
         .conn
         .prepare("SELECT id FROM message WHERE conversation_id = ?1 ORDER BY id")
@@ -283,7 +289,7 @@ fn seqs(store: &CacheStore, conversation: &str) -> Vec<(String, i64)> {
         .unwrap()
 }
 
-fn open(state: &MessageCacheState, user: &str) -> Arc<Mutex<CacheStore>> {
+pub(crate) fn open(state: &MessageCacheState, user: &str) -> Arc<Mutex<CacheStore>> {
     state.store(&account(user)).unwrap()
 }
 
@@ -1144,9 +1150,24 @@ fn an_existing_cache_is_backfilled_once_on_upgrade() {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     assert_eq!(hit_ids(&search(&store, "before")), vec!["m2", "m1"]);
     assert_index_consistent(&store);
+
+    // Schema v3 numbers what was cached before it, so the first archive export has it all.
+    let mut store = store;
+    let batch = store
+        .archive_batch("archive-1", "device-1", 100)
+        .unwrap()
+        .unwrap();
+    assert_eq!((batch.messages, batch.conversations), (3, 1));
+    store
+        .mark_archived("archive-1", "device-1", &batch)
+        .unwrap();
+    assert!(store
+        .archive_batch("archive-1", "device-1", 100)
+        .unwrap()
+        .is_none());
 
     // Reopening does not backfill a second time.
     drop(store);

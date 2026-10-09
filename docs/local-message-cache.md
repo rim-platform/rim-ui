@@ -45,6 +45,19 @@ the same SQLCipher database, so it is encrypted like the rest; there is no sidec
 
 How the search overlay uses it is in `docs/search-ui.md`.
 
+## History archive (Stage 2)
+
+Schema v3 numbers every change to a message or to a conversation's sync state (`change_seq`,
+from `change_counter`, set by triggers), so the history archive exports exactly what changed
+since its last export; `archive_export` keeps how far each (archive, device) got.
+`conversation_sync.reset_at` records when the server last answered `RESET`. A restore from the
+archive writes through the sync's own upsert (higher version wins, a tie keeps the cached copy)
+and follows restored conversations from the archive's cursor. Restored rows are marked with
+the archive they came from (`restored_from`), so they are not exported back into it but are
+exported to any other archive the device moves to. The format and the rules are in
+`docs/specs/history-archive-v1.md`; the code is `src-tauri/src/history_archive/` and
+`message_cache/archive.rs`.
+
 ## Sync
 
 The server contract is rim-server `docs/message-change-feed.md`. The cache stores a cursor per
@@ -76,7 +89,7 @@ A user who signed in on this device before can open the app without a connection
   session stays in the webview's cookie. When the startup session check cannot reach the
   server, the recorded account opens offline. When the server answers that the session is no
   longer valid, the app goes to sign-in as before.
-- Snapshots (`message_cache/snapshot.rs`, schema v3) keep the last server answer of the
+- Snapshots (`message_cache/snapshot.rs`, schema v4) keep the last server answer of the
   signed-in user, the workspace list, and each workspace's joined channels, DMs and members in
   the same encrypted database. Each answer is saved; a query the server cannot be reached for
   is answered from its snapshot (`src/features/offline/api/offlineSnapshot.ts`). Those queries
@@ -100,7 +113,8 @@ A user who signed in on this device before can open the app without a connection
   version reactions, pins or previews, so cached copies of those are as of the last sync.
 - On Linux the app's keyring backend is the kernel keyring (`keyring`'s `linux-native`), which
   does not survive a reboot, so the cache key is new after every reboot and the cache refills
-  from the server. Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
+  from the server (and the history archive, locked on this device, asks for its passphrase in
+  Settings > History). Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
   that for this key and the agent provider keys alike, and needs libdbus at build time.
-- Local search covers the conversations the cache follows (opened on this device), not every
-  conversation of the workspace. The drive archive comes later.
+- Local search covers the conversations the cache follows (opened on this device, or restored
+  from the history archive), not every conversation of the workspace.

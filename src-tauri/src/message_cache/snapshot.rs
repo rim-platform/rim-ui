@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::store::CacheStore;
 use super::CacheError;
 
-/// Schema v3: the `snapshot` table.
+/// Schema v4: the `snapshot` table (after the history archive's v3).
 ///
 /// Account-wide snapshots (the user, the workspace list) have an empty `workspace_id`.
 pub(super) const SCHEMA_SNAPSHOT: &str = "
@@ -279,6 +279,42 @@ mod tests {
             .unwrap();
         let bob = open(dir.path(), "bob");
         assert_eq!(bob.get_snapshot(SnapshotKind::Me, None).unwrap(), None);
+    }
+
+    #[test]
+    fn a_cache_at_the_archive_schema_gains_the_snapshot_table() {
+        let dir = tempfile::tempdir().unwrap();
+        // Take a fresh cache back to v3, as the history archive build left it.
+        {
+            let store = open(dir.path(), "alice");
+            store
+                .conn
+                .execute_batch("DROP TABLE snapshot; PRAGMA user_version = 3;")
+                .unwrap();
+        }
+
+        let mut store = open(dir.path(), "alice");
+        let version: i32 = store
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+        // The archive's v3 tables are still there.
+        let counter: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM change_counter", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(counter, 1);
+        store
+            .put_snapshot(SnapshotKind::Me, None, &json!({ "id": "alice" }), 1)
+            .unwrap();
+        assert_eq!(
+            store
+                .get_snapshot(SnapshotKind::Me, None)
+                .unwrap()
+                .map(|s| s.value),
+            Some(json!({ "id": "alice" }))
+        );
     }
 
     #[test]
