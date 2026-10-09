@@ -7,6 +7,9 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { detectOs } from "../../../core/runtime/runtime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { logger } from "../../../core/logger";
+import { createGroup, shouldEncryptNewConversation } from "../../e2ee/runtime/groups";
+import { e2eeSession } from "../../e2ee/runtime/session";
 import { MemberPicker } from "./MemberPicker";
 
 interface NewMessagePickerProps {
@@ -38,14 +41,30 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     if (!open) setSelectedUserIds([]);
   }, [open]);
 
-  const handleConfirm = useCallback(() => {
+  const handleConfirm = useCallback(async () => {
     if (!workspaceId || selectedUserIds.length === 0) return;
-    const input =
+    // New DMs and groups are encrypted when every member is ready; this desktop then creates
+    // the group (and upgrades an existing plaintext DM the server hands back).
+    const session = await e2eeSession();
+    const encrypted = await shouldEncryptNewConversation(
+      session,
+      workspaceId,
+      selectedUserIds,
+    ).catch(() => false);
+    const base =
       selectedUserIds.length === 1
         ? { serverId: workspaceId, otherUserId: selectedUserIds[0] }
         : { serverId: workspaceId, memberIds: selectedUserIds };
-    createMutation.mutate(input, {
-      onSuccess: (data) => onCreated(data.createConversation.id),
+    createMutation.mutate(encrypted ? { ...base, encrypted: true } : base, {
+      onSuccess: (data) => {
+        const conversationId = data.createConversation.id;
+        if (session && encrypted) {
+          void createGroup(session, workspaceId, conversationId).catch((err: unknown) =>
+            logger.warn("[RIM:e2ee] creating the group failed:", err),
+          );
+        }
+        onCreated(conversationId);
+      },
     });
   }, [workspaceId, selectedUserIds, createMutation, onCreated]);
 
@@ -69,7 +88,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
           workspaceId={workspaceId ?? undefined}
           selectedUserIds={selectedUserIds}
           onChange={handleSelectionChange}
-          onConfirm={handleConfirm}
+          onConfirm={() => void handleConfirm()}
           onEscape={onClose}
           autoFocus
         />
