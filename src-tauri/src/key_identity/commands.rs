@@ -8,6 +8,7 @@ use super::device_link::{
     IssuedCode, KnownDevice, LinkAnswer, LinkedDevice, OfferReview, OpenedAnswer, PendingLinkView,
     Sealed, SentOffer,
 };
+use super::plugin_manifest::{self, KeyHistory, PluginManifestInput, VerifiedPluginManifest};
 use super::statement::Statement;
 use super::{
     CardContent, Challenge, EnrollmentDraft, EnrollmentStatements, KeyIdentityError,
@@ -187,6 +188,30 @@ pub async fn key_identity_sign_profile_card(
         s.sign_profile_card(&principal_id, &key_log, &card)
     })
     .await
+}
+
+/// Sign a plugin manifest statement with the identity key at the head of `key_log`.
+#[tauri::command]
+pub async fn key_identity_sign_plugin_manifest(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+    key_log: Vec<Statement>,
+    input: PluginManifestInput,
+) -> Result<Statement, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.sign_plugin_manifest(&principal_id, &key_log, &input)
+    })
+    .await
+}
+
+/// Verify a plugin manifest statement against its publisher's key log.
+#[tauri::command]
+pub async fn key_identity_verify_plugin_manifest(
+    statement: Statement,
+    key_log: Vec<Statement>,
+) -> Result<VerifiedPluginManifest, KeyIdentityError> {
+    let history = KeyHistory::replay(&key_log)?;
+    plugin_manifest::verify_plugin_manifest(&history, &statement)
 }
 
 /// Sign a recovery rotation from a recovery kit, for a new identity key and this device.
