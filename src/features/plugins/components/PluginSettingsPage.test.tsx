@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -24,7 +24,12 @@ vi.mock("../api/usePluginActions", () => ({
   })),
 }));
 
+vi.mock("../api/usePluginCapabilities", () => ({
+  useApproveCapabilities: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { usePluginInstallFromLocal } from "../api/usePluginActions";
 import { usePluginList } from "../api/usePluginList";
 import { PluginSettingsPage, PluginDesktopOnlyCard } from "./PluginSettingsPage";
 import type { PluginInfo } from "../types";
@@ -185,6 +190,38 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       name: /trust the new version before enabling/i,
     });
     expect(toggle).toBeDisabled();
+  });
+  it("shows what an installed plugin does and asks for its permissions right away", () => {
+    const k8s = makePlugin({
+      plugin_id: "chat.rim.k8s-pods",
+      display_name: "Kubernetes Pods",
+      description: "Your cluster credentials never leave this device.",
+      capabilities: ["ui.panel"],
+    });
+    vi.mocked(usePluginList).mockReturnValue({ data: [k8s], isLoading: false } as ReturnType<
+      typeof usePluginList
+    >);
+    vi.mocked(usePluginInstallFromLocal).mockReturnValue({
+      mutate: (_path: string, options: { onSuccess: (r: { plugin_id: string }) => void }) =>
+        options.onSuccess({ plugin_id: "chat.rim.k8s-pods" }),
+      isPending: false,
+    } as unknown as ReturnType<typeof usePluginInstallFromLocal>);
+
+    const { container } = render(<PluginSettingsPage />);
+    expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = Object.assign(new File([""], "rim-plugin.json"), {
+      path: "/home/me/k8s-pods/rim-plugin.json",
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Your cluster credentials never leave this device."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Render UI Panels")).toBeInTheDocument();
   });
 });
 

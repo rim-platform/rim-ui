@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -23,8 +23,14 @@ vi.mock("../../plugins/api/usePluginKeybinds", () => ({
   usePluginSuggestedKeybinds: vi.fn(() => []),
 }));
 
+const createKeybind = vi.fn();
+
 vi.mock("../api/useKeybindSettings", () => ({
-  useCreateKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false })),
+  useCreateKeybindMutation: vi.fn(() => ({
+    mutate: createKeybind,
+    isPending: false,
+    isError: false,
+  })),
   useUpdateKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn() })),
 }));
@@ -36,6 +42,9 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { useCommands } from "../api/useCommands";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
+import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { KeybindSettings } from "./KeybindSettings";
 import type { ResolvedKeybind } from "../types";
 import type { CommandDefinition } from "../types";
@@ -194,5 +203,114 @@ describe("KeybindSettings", () => {
     expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
     expect(screen.queryByText("incident.ack")).not.toBeInTheDocument();
     expect(screen.queryByText("Ctrl+Shift+A")).not.toBeInTheDocument();
+  });
+
+  describe("plugin commands", () => {
+    const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
+
+    beforeEach(() => {
+      useDeviceKeybindStore.setState({ keybinds: [] });
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [makeKeybind()],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      vi.mocked(useCommands).mockReturnValue({
+        data: [makeCommand()],
+        isLoading: false,
+      } as ReturnType<typeof useCommands>);
+      vi.mocked(usePluginCommands).mockReturnValue([
+        {
+          ...makeCommand({
+            id: REFRESH,
+            title: "Refresh pods",
+            category: "Kubernetes Pods",
+            sourceKind: "PLUGIN",
+            executionTarget: "DESKTOP_LOCAL",
+            visibleInPalette: true,
+          }),
+          contextTypes: [],
+        },
+      ]);
+    });
+
+    it("binds a key to a plugin command on this device, not on the server", () => {
+      render(<KeybindSettings />);
+      fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+      fireEvent.keyDown(screen.getByPlaceholderText("Press a key combination..."), {
+        key: "p",
+        ctrlKey: true,
+        altKey: true,
+      });
+      const commandSelect = screen.getAllByRole("combobox")[0];
+      expect(within(commandSelect).getByText("Refresh pods")).toBeInTheDocument();
+      fireEvent.change(commandSelect, { target: { value: REFRESH } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(createKeybind).not.toHaveBeenCalled();
+      expect(useDeviceKeybindStore.getState().keybinds).toMatchObject([
+        { keystroke: "Ctrl+Alt+P", commandId: REFRESH, context: "GLOBAL", isEnabled: true },
+      ]);
+      expect(screen.getByText("Refresh pods")).toBeInTheDocument();
+      expect(screen.getByText("This device")).toBeInTheDocument();
+    });
+
+    it("still saves a built-in command's keybind on the server", () => {
+      render(<KeybindSettings />);
+      fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+      fireEvent.keyDown(screen.getByPlaceholderText("Press a key combination..."), {
+        key: "j",
+        ctrlKey: true,
+      });
+      fireEvent.change(screen.getAllByRole("combobox")[0], {
+        target: { value: "workspace.open_command_palette" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(createKeybind).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keystroke: "Ctrl+J",
+          commandId: "workspace.open_command_palette",
+        }),
+        expect.anything(),
+      );
+      expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
+    });
+
+    it("assigns a plugin's suggested keybind on this device", () => {
+      vi.mocked(usePluginSuggestedKeybinds).mockReturnValue([
+        {
+          pluginId: "chat.rim.k8s-pods",
+          pluginName: "Kubernetes Pods",
+          commandId: REFRESH,
+          commandTitle: "Refresh pods",
+          keystroke: "Ctrl+Alt+P",
+          context: "GLOBAL",
+        },
+      ]);
+      render(<KeybindSettings />);
+      fireEvent.click(screen.getByRole("button", { name: "Assign Ctrl+Alt+P to Refresh pods" }));
+
+      expect(createKeybind).not.toHaveBeenCalled();
+      expect(useDeviceKeybindStore.getState().keybinds).toMatchObject([
+        { keystroke: "Ctrl+Alt+P", commandId: REFRESH },
+      ]);
+      // Once bound, the suggestion is gone.
+      expect(screen.queryByRole("button", { name: /^Assign/ })).not.toBeInTheDocument();
+    });
+
+    it("turns off and deletes a device keybind on this device", () => {
+      useDeviceKeybindStore
+        .getState()
+        .add({ keystroke: "Ctrl+Alt+P", commandId: REFRESH, context: "GLOBAL" });
+      render(<KeybindSettings />);
+      const row = screen.getByText("Refresh pods").closest("div") as HTMLElement;
+
+      fireEvent.click(within(row).getByRole("button", { name: "Disable keybind" }));
+      expect(useDeviceKeybindStore.getState().keybinds[0].isEnabled).toBe(false);
+
+      fireEvent.click(within(row).getByRole("button", { name: "Delete keybind" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
+    });
   });
 });

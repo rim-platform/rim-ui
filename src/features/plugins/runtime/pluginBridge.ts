@@ -1,6 +1,12 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
 import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { toast } from "../../../shared/toast";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { showPluginNotification } from "./pluginNotification";
+import { isCancelledResult } from "./pluginCommandInfo";
 import type { PluginCapability } from "../types";
 
 // Plugin iframe → Host message types
@@ -25,7 +31,17 @@ export type HostToPluginMessage =
   | { type: "panel.blur" }
   | { type: "panel.state_update"; state: unknown }
   | { type: "panel.state_patch"; patch: Record<string, unknown> }
-  | { type: "conversation.changed"; conversationId: string | null };
+  | { type: "conversation.changed"; conversationId: string | null }
+  /** The answer to a panel's `rim.command.execute` that carried a `requestId`. */
+  | {
+      type: "rim.command.result";
+      requestId: string;
+      ok: boolean;
+      message: string;
+      payload: unknown;
+      /** The user declined to confirm a dangerous command, so nothing ran. */
+      cancelled?: boolean;
+    };
 
 // Capability requirements for each message type
 const messageCapabilities: Record<string, PluginCapability | null> = {
@@ -41,12 +57,18 @@ const EXPECTED_ORIGIN = "null"; // sandboxed iframes have origin "null"
 
 interface BridgeConfig {
   pluginId: string;
+  /** Shown with the panel's notifications, so they cannot pass for the app's own. */
+  pluginName?: string;
   approvedCapabilities: PluginCapability[];
   iframe: HTMLIFrameElement;
 }
 
+/** How long a request id from a panel may be, so it cannot flood the reply. */
+const MAX_REQUEST_ID_LENGTH = 100;
+
 export function createPluginBridge(config: BridgeConfig) {
   const { pluginId, approvedCapabilities, iframe } = config;
+  const pluginName = config.pluginName ?? pluginId;
 
   function handleMessage(event: MessageEvent) {
     // Strict origin validation — sandboxed iframes without allow-same-origin report origin "null"
@@ -68,6 +90,7 @@ export function createPluginBridge(config: BridgeConfig) {
     switch (msg.type) {
       case "rim.ui.notification.show":
         logger.debug(`[RIM:PluginBridge] ${pluginId} notification:`, msg.title);
+        void showPluginNotification(pluginName, msg.title, msg.body);
         break;
 
       case "rim.ui.dialog.confirm":
@@ -84,6 +107,18 @@ export function createPluginBridge(config: BridgeConfig) {
           return;
         }
         logger.debug(`[RIM:PluginBridge] ${pluginId} execute:`, msg.commandId);
+        // The panel never confirms a dangerous command: only `args` and the
+        // caller go through, and the host asks the user itself.
+        const requestId =
+          typeof msg.requestId === "string" && msg.requestId.length <= MAX_REQUEST_ID_LENGTH
+            ? msg.requestId
+            : null;
+        const answer = (
+          result: Omit<HostToPluginMessage & { type: "rim.command.result" }, "type" | "requestId">,
+        ) => {
+          if (requestId !== null)
+            sendToPlugin({ type: "rim.command.result", requestId, ...result });
+        };
         dispatchCommand(
           {
             id: msg.commandId,
@@ -103,7 +138,24 @@ export function createPluginBridge(config: BridgeConfig) {
             executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
           }),
           { args: msg.args, callerPluginId: pluginId },
-        );
+        )
+          .then((result) => {
+            if (isCancelledResult(result)) {
+              answer({ ok: false, message: "Cancelled", payload: null, cancelled: true });
+            } else if (result === null || result.status === "ERROR") {
+              const message = result?.message || "Command failed";
+              // A panel that asked for no answer still lets the user see the failure.
+              if (requestId === null) toast.error(`${pluginName}: ${message}`);
+              answer({ ok: false, message, payload: null });
+            } else {
+              answer({ ok: true, message: result.message, payload: result.payload });
+            }
+          })
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.warn(`[RIM:PluginBridge] ${pluginId} ${msg.commandId} failed`, error);
+            answer({ ok: false, message, payload: null });
+          });
         break;
       }
 
@@ -165,15 +217,85 @@ async function relayUiEventToProcess(
   }
 }
 
+/** The Tauri event the host emits each time a plugin changes one of its panels' state. */
+export const PANEL_STATE_EVENT = "plugin-panel-state";
+
+interface PanelStateChange {
+  plugin_id: string;
+  panel_id: string;
+  state: unknown;
+}
+
+/** A panel's link to its plugin's state, from {@link followPanelState}. */
+export interface PanelStateFollower {
+  /**
+   * Send the panel the state its plugin holds now. Call it each time the panel
+   * page (re)loads; a live change that arrives meanwhile wins over it.
+   */
+  load: () => Promise<void>;
+  /** Stop sending changes. */
+  stop: () => void;
+}
+
+/**
+ * Send the panel every state change its plugin makes from now on, as
+ * `panel.state_update` (`state: null` once the plugin stopped), and its stored
+ * state on {@link PanelStateFollower.load}. Outside the desktop app there is no
+ * plugin host, so nothing is sent.
+ */
+export function followPanelState(
+  pluginId: string,
+  panelId: string,
+  sendToPlugin: (message: HostToPluginMessage) => void,
+): PanelStateFollower {
+  let active = true;
+  let liveChanges = 0;
+  let unlisten: (() => void) | null = null;
+
+  const ready: Promise<void> = isTauri()
+    ? listen<PanelStateChange>(PANEL_STATE_EVENT, (event) => {
+        const change = event.payload;
+        if (!active || change.plugin_id !== pluginId || change.panel_id !== panelId) return;
+        liveChanges += 1;
+        sendToPlugin({ type: "panel.state_update", state: change.state });
+      })
+        .then((stop) => {
+          if (active) unlisten = stop;
+          else stop();
+        })
+        .catch((error: unknown) => {
+          logger.warn(`[RIM:PluginBridge] cannot follow panel state of ${pluginId}`, error);
+        })
+    : Promise.resolve();
+
+  return {
+    async load() {
+      // Listen first, so no change falls between the stored state and the live ones.
+      await ready;
+      const before = liveChanges;
+      await fetchAndRelayPanelState(pluginId, panelId, (message) => {
+        // A change pushed while the stored state was on its way is newer.
+        if (active && liveChanges === before) sendToPlugin(message);
+      });
+    },
+    stop() {
+      active = false;
+      unlisten?.();
+      unlisten = null;
+    },
+  };
+}
+
 /**
  * Fetch cached panel state from Tauri and send to iframe.
  * Called when a plugin panel is (re)opened.
  */
 export async function fetchAndRelayPanelState(
   pluginId: string,
+  panelId: string,
   sendToPlugin: (message: HostToPluginMessage) => void,
 ): Promise<void> {
-  const result = await safeInvoke<unknown>("plugin_panel_state", { pluginId });
+  const result = await safeInvoke<unknown>("plugin_panel_state", { pluginId, panelId });
   if (!result.ok) {
     if (result.error.kind === "ipc_unavailable") {
       logger.debug(`[RIM:PluginBridge] Mock fetch panel state: ${pluginId}`);

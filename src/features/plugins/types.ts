@@ -68,8 +68,37 @@ export type PluginPanelSlot = "tool_panel" | "main_area";
 export interface PluginPanelDef {
   id: string;
   title: string;
-  slot: PluginPanelSlot;
+  description?: string;
+  /** Left out by most manifests: the panel then opens next to the tool panel. */
+  slot?: PluginPanelSlot;
   icon?: string;
+}
+
+/** Where the shell shows a panel; a manifest without `slot` gets the tool panel column. */
+export function panelSlot(panel: PluginPanelDef): PluginPanelSlot {
+  return panel.slot ?? "tool_panel";
+}
+
+/** One argument of a plugin command, as its manifest declares it. */
+export interface PluginCommandArgument {
+  name: string;
+  type?: string;
+  required?: boolean;
+  description?: string;
+}
+
+/** A manifest command as `plugin_list` reports it. Mirror of the Rust `CommandInfo`. */
+export interface PluginCommandInfo {
+  /** The id in the manifest, e.g. `restart_pod`. */
+  id: string;
+  /** `plugin.<plugin_id>.<id>`, the id the palette and keybinds use. */
+  qualified_id: string;
+  title: string;
+  description: string;
+  keybind_capable: boolean;
+  dangerous: boolean;
+  ai_callable: boolean;
+  arguments: PluginCommandArgument[];
 }
 
 export interface PluginManifest {
@@ -118,6 +147,9 @@ export interface PluginInfo {
   context_actions?: PluginContextAction[];
   /** Panel definitions from the manifest — used by the shell for slot layout. */
   panels?: PluginPanelDef[];
+  /** Every manifest command, for the palette, the keybind picker and the agent. */
+  commands?: PluginCommandInfo[];
+  /** `running` once the plugin process finished its handshake. */
   health?: PluginHealth;
 }
 
