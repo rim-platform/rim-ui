@@ -1150,7 +1150,7 @@ fn an_existing_cache_is_backfilled_once_on_upgrade() {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, super::store::SCHEMA_VERSION);
     assert_eq!(hit_ids(&search(&store, "before")), vec!["m2", "m1"]);
     assert_index_consistent(&store);
 
@@ -1277,4 +1277,65 @@ fn a_key_failure_is_asked_once_and_leaves_no_files() {
     assert_eq!(*asked.lock().unwrap(), 1);
     let files = std::fs::read_dir(dir.path().join("cache")).unwrap().count();
     assert_eq!(files, 0);
+}
+
+#[test]
+fn mls_group_state_lives_in_the_cache_and_follows_its_transactions() {
+    use crate::key_identity::statement::SecretKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    // A cache at schema v4 gains the table on its next open.
+    {
+        let state = state(dir.path(), 1);
+        let store = open(&state, "alice");
+        let store = store.lock().unwrap();
+        store
+            .conn
+            .execute_batch("DROP TABLE mls_storage; PRAGMA user_version = 4;")
+            .unwrap();
+    }
+    let state = state(dir.path(), 1);
+    let store = open(&state, "alice");
+    let store = store.lock().unwrap();
+    let mls = rim_mls::Mls::new().unwrap();
+    let device = rim_mls::DeviceRef {
+        principal_id: "rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0".into(),
+        device_id: uuid::Uuid::from_u128(1),
+    };
+    let device_key = SecretKey::from_seed(zeroize::Zeroizing::new([20; 32]));
+    let enroll = |tx: &rusqlite::Transaction<'_>| {
+        mls.ensure_identity(
+            &rim_mls::SqliteStore::new(tx),
+            &device,
+            &device_key.public_key(),
+            |context, payload| {
+                let signed = device_key.sign(context, payload);
+                rim_mls::SignedStatement {
+                    payload: signed.payload,
+                    signature: signed.signature,
+                }
+            },
+        )
+        .unwrap()
+    };
+
+    // Dropped without a commit: the MLS key and statement go with the transaction.
+    let tx = store.conn.unchecked_transaction().unwrap();
+    enroll(&tx);
+    drop(tx);
+    let tx = store.conn.unchecked_transaction().unwrap();
+    assert_eq!(
+        mls.mls_key_statement(&rim_mls::SqliteStore::new(&tx))
+            .unwrap(),
+        None
+    );
+    let statement = enroll(&tx);
+    tx.commit().unwrap();
+
+    let tx = store.conn.unchecked_transaction().unwrap();
+    assert_eq!(
+        mls.mls_key_statement(&rim_mls::SqliteStore::new(&tx))
+            .unwrap(),
+        Some(statement)
+    );
 }
