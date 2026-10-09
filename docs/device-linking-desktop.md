@@ -95,3 +95,11 @@ the next start finishes the link, or revokes the device if the link expired mean
 QR scanning, the archive key in the answer, moving the identity key, short typed codes, and a
 subscription instead of polling: see the spec's "Deferred" section. The web app as a linked device
 is S3-7.
+
+## Limits
+
+- A pending link record in the keyring is about 1.7 KB with Ed25519 keys. Windows caps a
+  credential at roughly 2.5 KB, so hybrid post-quantum keys will need the record split or the
+  sealed answer stored elsewhere before they can be linked from Windows.
+- Polling gives up 25 minutes after it started: a link lives 10 minutes and an answer 10 more.
+- The desktop does not scan QR codes; the new device takes the pasted code.
