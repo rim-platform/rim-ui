@@ -1237,3 +1237,37 @@ fn a_plugin_manifest_is_signed_at_the_head_and_verifies() {
         .sign_plugin_manifest(&draft.principal_id, &log, &input)
         .is_err());
 }
+
+#[test]
+fn a_device_request_names_this_device_and_verifies_under_its_key() {
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let request = statement::DeviceRequestInput {
+        host: "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw".into(),
+        method: "POST".into(),
+        path: "/api".into(),
+        seq: 1_791_504_000_000_000,
+        body_sha256: "a2PtmXdQU8dMqDduw8cQymbwEmFEilShfZfDDArTcwU".into(),
+        issued_at: "2026-10-09T00:00:00Z".into(),
+    };
+    let signed = state
+        .sign_device_request(&draft.principal_id, &request)
+        .unwrap();
+    assert_eq!(payload_field(&signed, "type"), "device-request");
+    assert_eq!(payload_field(&signed, "principalId"), draft.principal_id);
+    assert_eq!(
+        payload_field(&signed, "deviceId"),
+        payload_field(&statements.device, "deviceId")
+    );
+    let device_key = payload_field(&statements.device, "deviceKey");
+    assert!(verify(
+        &signed,
+        context::DEVICE_REQUEST,
+        device_key.as_str().unwrap(),
+        2
+    ));
+    assert!(matches!(
+        state.sign_device_request("rimp1_someone-else", &request),
+        Err(KeyIdentityError::NoKeys)
+    ));
+}

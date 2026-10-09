@@ -5,6 +5,10 @@
 //! What the server answers is held to what this device saw before (`e2ee_peer`): a key log must
 //! extend the head pinned for its principal (the first log verified here pins it), and a device
 //! once seen revoked stays revoked. A direct message's members are its two pinned principals.
+//!
+//! A principal whose relay is another server arrives the same way, fetched through
+//! `remoteIdentity`, with its profile card: the card must verify against the log's head, or
+//! nothing that relay served about the principal is used.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -21,7 +25,7 @@ use super::group::{
 };
 use super::{parse_uuid, Result};
 use crate::key_identity::statement::{
-    certified_device, replay, verified_revocation, KeyHead, Statement,
+    certified_device, replay, verified_card, verified_revocation, KeyHead, Statement,
 };
 
 /// A device of `principalDevices`.
@@ -36,13 +40,16 @@ pub(crate) struct PrincipalDeviceInput {
     pub revocation: Option<Statement>,
 }
 
-/// One principal's key log and devices, as the server answered.
+/// One principal's key log and devices, as the server answered; with the profile card when the
+/// principal came from another relay.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PrincipalInput {
     pub principal_id: String,
     pub key_log: Vec<Statement>,
     pub devices: Vec<PrincipalDeviceInput>,
+    #[serde(default)]
+    pub card: Option<Statement>,
 }
 
 /// What the webview hands in to check leaves: the conversation's members (principal ids) and
@@ -184,6 +191,13 @@ impl Directory {
                 return;
             }
         };
+        if let Some(card) = &principal.card {
+            if let Err(e) = verified_card(card, &head) {
+                log::warn!("[e2ee] the card served for {principal_id} does not verify: {e}");
+                self.invalid_logs.insert(principal_id);
+                return;
+            }
+        }
         let pinned = self.peers.get(&principal_id).cloned();
         if pinned.as_ref().is_some_and(|pin| !pin.extended_by(&head)) {
             log::warn!("[e2ee] a key log does not extend the head pinned for {principal_id}");

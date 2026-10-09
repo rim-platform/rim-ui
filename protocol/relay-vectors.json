@@ -1,0 +1,70 @@
+{
+  "description": "Known answers of the server, device-request, host-response and host-event statements: what the desktop (src-tauri/src/relay) and the web app (src/features/relay/crypto) must both reproduce byte for byte. Keys are SigningKey::from_bytes([seed; 32]). Never use these values for real keys.",
+  "device": {
+    "seed": 20,
+    "principalId": "rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0",
+    "deviceId": "00000000-0000-0000-0000-000000000001"
+  },
+  "relay": {
+    "seed": 30,
+    "serverKey": "ed25519:rNsOKXQ_DMuGhtChBMuW4Fq-_sFTh2XnWVhp99yMSao",
+    "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+    "keyHash": "8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM",
+    "prev": "dMszB0YhzGkVSf4B-3elynzitpFsvVYojOEW8hXiNKg",
+    "inception": {
+      "payload": "{\"v\":2,\"type\":\"server-inception\",\"seq\":0,\"serverKey\":\"ed25519:rNsOKXQ_DMuGhtChBMuW4Fq-_sFTh2XnWVhp99yMSao\",\"recoveryKey\":\"ed25519:-gE0epkeBK4PGm2B2yml6k7rWWX1d6ye-0TnsfL7sCg\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "signature": "ed25519:_oQe2QcbA37vNosXrUVHFf8iIbnaesyNMmPtj827Wx5Q6vt77tyaOYR6JA9e3Z2FjHDRs0uR0XQEj9TMwoIODA"
+    }
+  },
+  "host": {
+    "seed": 40,
+    "serverKey": "ed25519:6S62BU_pvGgqG887dZ9lqzikz72BxNHzNC5Myc3tiws",
+    "serverId": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+    "keyHash": "qkSWxxJEL_11l8_dTCGhHc_1Q1pAc2pMirMBGnz7388",
+    "prev": "oUvCbfqOS1bUTL5gAtene_faqghv8PaPgrRDIJpXLOM",
+    "inception": {
+      "payload": "{\"v\":2,\"type\":\"server-inception\",\"seq\":0,\"serverKey\":\"ed25519:6S62BU_pvGgqG887dZ9lqzikz72BxNHzNC5Myc3tiws\",\"recoveryKey\":\"ed25519:_L44YyQXu1uHXUmjwCJwYzkXxgk_0B67Wf9kFuN6_gw\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "signature": "ed25519:Dll_XFAqcMn9Pejfpge4oAGiEH16dAEu8KLjLjSEDPd8UFk3-tmRgzINC2G89uyREl1aDYI5bA-O8XOF7oftAg"
+    },
+    "descriptor": {
+      "payload": "{\"v\":2,\"type\":\"server-descriptor\",\"serverId\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"keySeq\":0,\"version\":1,\"roles\":[\"host\",\"relay\"],\"endpoints\":{\"graphql\":\"https://host.example/api\",\"websocket\":\"wss://host.example/api/ws\",\"s2s\":\"https://host.example/s2s/v1\"},\"s2sVersions\":[1],\"mlsCipherSuites\":[79],\"limits\":{\"maxBodyBytes\":8388608,\"clockSkewSeconds\":300,\"maxDeliverItems\":256},\"registration\":{\"mode\":\"invite\",\"powBits\":null},\"issuedAt\":\"2026-10-09T00:00:00Z\"}",
+      "signature": "ed25519:ZdBDMoUEFhLQMnX7dK_r8xUPa0dNoSHOZqfAHelFegW0PUpluRUX84gzBzp2TtMKku19aCrf4wMXjbemA8b_Bw"
+    },
+    "rotation": {
+      "payload": "{\"v\":2,\"type\":\"server-rotate\",\"serverId\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"seq\":1,\"prev\":\"oUvCbfqOS1bUTL5gAtene_faqghv8PaPgrRDIJpXLOM\",\"serverKey\":\"ed25519:-kg0FH9uaQw2k-_2EzYEZAPNiuKhTzGzxAc1hWkjlWU\",\"recoveryKey\":\"ed25519:_L44YyQXu1uHXUmjwCJwYzkXxgk_0B67Wf9kFuN6_gw\",\"signer\":\"server\",\"createdAt\":\"2026-10-10T00:00:00Z\"}",
+      "signature": "ed25519:cysmxfZAsbKJKvFGkftqHCqAzySvf4MMD9PTimeNavN_Oi91Zt-lfcvCswkb08SnVDrS-iMWK1WT1n7iY_fZAA"
+    },
+    "rotatedKeyHash": "fvKh1r_va0lqRvlpGojY2V1JzJMQeSESlNpO4OXw6Ak",
+    "rotatedPrev": "sU02HLfXJNvkpkHn28DO3JdBxQpmTr3Dl4y94zIY9hU",
+    "rotatedDescriptor": {
+      "payload": "{\"v\":2,\"type\":\"server-descriptor\",\"serverId\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"keySeq\":1,\"version\":2,\"roles\":[\"host\",\"relay\"],\"endpoints\":{\"graphql\":\"https://host.example/api\",\"websocket\":\"wss://host.example/api/ws\",\"s2s\":\"https://host.example/s2s/v1\"},\"s2sVersions\":[1],\"mlsCipherSuites\":[79],\"limits\":{\"maxBodyBytes\":8388608,\"clockSkewSeconds\":300,\"maxDeliverItems\":256},\"registration\":{\"mode\":\"invite\",\"powBits\":null},\"issuedAt\":\"2026-10-10T00:00:00Z\"}",
+      "signature": "ed25519:Yuy9VdOS78e8fL4sMDT9PHmBkZcuzeJEvLlfdD8dRhDjJeJiivU4FcatDrlwEKaB3l9Beado7Qi6_33D7UN0AA"
+    }
+  },
+  "hostEvent": {
+    "payload": "{\"v\":2,\"type\":\"host-event\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"keySeq\":0,\"workspaceId\":\"0199d1a0-0000-7000-8000-000000000002\",\"stream\":\"c:0199d1a0-0000-7000-8000-000000000003\",\"seq\":42,\"event\":{\"type\":\"MessageDeleted\",\"workspace_id\":\"0199d1a0-0000-7000-8000-000000000002\",\"conversation_id\":\"0199d1a0-0000-7000-8000-000000000003\",\"conversation_type\":\"Channel\",\"message_id\":\"0199d1a0-0000-7000-8000-000000000004\",\"thread_id\":null},\"issuedAt\":\"2026-10-09T00:00:00Z\"}",
+    "signature": "ed25519:CPSwWGrkjbauuToACdrAuJL4L6mv1XpGTPy_XKjkymGwzqx6pyW-j6V52HkhpPlXx82tXRbQTI-GsH9N4N-zBg"
+  },
+  "deviceRequest": {
+    "input": {
+      "principalId": "rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0",
+      "deviceId": "00000000-0000-0000-0000-000000000001",
+      "host": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+      "method": "POST",
+      "path": "/api",
+      "seq": 1791504000000000,
+      "issuedAt": "2026-10-09T00:00:00Z"
+    },
+    "body": "{\"query\":\"mutation($id:ID!){deleteMessage(messageId:$id)}\",\"variables\":{\"id\":\"0199d1a0-0000-7000-8000-000000000004\"}}",
+    "bodySha256": "a2PtmXdQU8dMqDduw8cQymbwEmFEilShfZfDDArTcwU",
+    "payload": "{\"v\":2,\"type\":\"device-request\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"method\":\"POST\",\"path\":\"/api\",\"seq\":1791504000000000,\"bodySha256\":\"a2PtmXdQU8dMqDduw8cQymbwEmFEilShfZfDDArTcwU\",\"issuedAt\":\"2026-10-09T00:00:00Z\"}",
+    "signature": "ed25519:IoWInJdss89VdGgCEnWvLRCAHZ--5mrIzRiDV0thfCwLOVOgyEZzaGG7CGBfgKqnnJiJvzHMxaCZYFiEMiSbCg",
+    "header": "eyJ2IjoyLCJ0eXBlIjoiZGV2aWNlLXJlcXVlc3QiLCJwcmluY2lwYWxJZCI6InJpbXAxX3R4RExibmlwaTVpM2tDSnRKd0JPVWl4enZfTVk4T25VMG1jeS0tVHlqZTAiLCJkZXZpY2VJZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMSIsImhvc3QiOiJyaW1zMV9PRlBETlhUVjFzcGxDY0tjZ3oxdldZajZNZy1sYlVvbGxIUXdYVGtZRUJ3IiwibWV0aG9kIjoiUE9TVCIsInBhdGgiOiIvYXBpIiwic2VxIjoxNzkxNTA0MDAwMDAwMDAwLCJib2R5U2hhMjU2IjoiYTJQdG1YZFFVOGRNcURkdXc4Y1F5bWJ3RW1GRWlsU2hmWmZEREFyVGN3VSIsImlzc3VlZEF0IjoiMjAyNi0xMC0wOVQwMDowMDowMFoifQ"
+  },
+  "hostResponse": {
+    "status": 200,
+    "body": "{\"data\":{\"deleteMessage\":true}}",
+    "payload": "{\"v\":2,\"type\":\"host-response\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"keySeq\":0,\"requestSha256\":\"USMHYKhT_TDTgBiA_mrWvOz3-RZLlohDKUQREkVxMCY\",\"status\":200,\"bodySha256\":\"6lPwX_33fnLq0QTkKknG-F-tK81icmIjQKnN0eS8JA0\"}",
+    "signature": "ed25519:f-vulCqj3GgD3dI4zNAeCMs1JGyDwkzbkcLhk0uXXMz4NCJ-az1ZVKWxgpbqNMWTzMhSKtnFPhwMHmATk69zDg"
+  }
+}

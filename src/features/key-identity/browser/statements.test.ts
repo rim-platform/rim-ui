@@ -13,6 +13,7 @@ import {
   replay,
   sign,
   signLogin,
+  verifiedCard,
   verifiedRevocation,
   verify,
   type Statement,
@@ -486,6 +487,52 @@ describe("against a misbehaving server", () => {
       statement(DEVICE_CERT, DEVICE_CERT_SIG),
     ]) {
       expect(await verifiedRevocation(forged, head, DEVICE_ID, DEVICE)).toBe(false);
+    }
+  });
+});
+
+describe("profile cards", () => {
+  const cardContext = new TextEncoder().encode("rim.profile-card.v1\0");
+  function card(fields: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      v: 2,
+      type: "profile-card",
+      principalId: PRINCIPAL,
+      version: 3,
+      keySeq: 0,
+      displayName: "Ada",
+      relays: ["https://relay.example", "https://other.example"],
+      devices: [{ deviceId: DEVICE_ID, deviceKey: DEVICE }],
+      issuedAt: AT,
+      ...fields,
+    });
+  }
+
+  it("reads a card the identity key signed", async () => {
+    const head = await replay([statement(INCEPTION, INCEPTION_SIG)]);
+    const signed = await sign((await keyFromSeed(1)).privateKey, cardContext, card());
+    const verified = await verifiedCard(signed, head);
+    expect(verified.displayName).toBe("Ada");
+    expect(verified.relays).toEqual(["https://relay.example", "https://other.example"]);
+    expect(verified.devices).toEqual([{ deviceId: DEVICE_ID, deviceKey: DEVICE }]);
+  });
+
+  it("refuses another signer, another account, and fields out of bounds", async () => {
+    const head = await replay([statement(INCEPTION, INCEPTION_SIG)]);
+    const identity = (await keyFromSeed(1)).privateKey;
+    const byDevice = await sign((await keyFromSeed(20)).privateKey, cardContext, card());
+    await expect(verifiedCard(byDevice, head)).rejects.toThrow(/signature/);
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ principalId: V1_PRINCIPAL }, /another account/],
+      [{ displayName: " " }, /name/],
+      [{ relays: ["ftp://relay.example"] }, /relays/],
+      [{ relays: ["https://a.example", "https://a.example"] }, /repeat/],
+      [{ keySeq: 1 }, /lost key/],
+      [{ extra: true }, /not a profile card/],
+    ];
+    for (const [fields, error] of cases) {
+      const signed = await sign(identity, cardContext, card(fields));
+      await expect(verifiedCard(signed, head)).rejects.toThrow(error);
     }
   });
 });

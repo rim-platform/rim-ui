@@ -107,6 +107,8 @@ export interface DirectoryInput {
     principalId: string;
     keyLog: SignedStatementInput[];
     devices: DirectoryPrincipal["devices"];
+    /** The profile card, for a principal fetched from another relay. */
+    card?: SignedStatementInput | null;
   }[];
 }
 

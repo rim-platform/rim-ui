@@ -6,6 +6,7 @@ mod key_identity;
 mod message_cache;
 mod offline_session;
 mod plugin_host;
+mod relay;
 mod secret_store;
 
 use std::sync::Arc;
@@ -220,6 +221,12 @@ pub fn run() {
             key_identity::commands::key_identity_discard_enrollment,
             key_identity::commands::key_identity_settle,
             key_identity::commands::key_identity_sign_login,
+            key_identity::commands::key_identity_sign_device_request,
+            relay::commands::relay_verify_discovery,
+            relay::commands::relay_replay_server_log,
+            relay::commands::relay_host_response_key_seq,
+            relay::commands::relay_verify_host_response,
+            relay::commands::relay_read_host_event,
             key_identity::commands::key_identity_sync_log,
             key_identity::commands::key_identity_sign_revocation,
             key_identity::commands::key_identity_begin_rotation,

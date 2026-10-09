@@ -6,11 +6,14 @@
  * What the server answers is held to what this browser saw before (`peers`): a key log must
  * extend the head pinned for its principal (the first log verified here pins it), and a device
  * once seen revoked stays revoked. A direct message's members are its two pinned principals.
+ * A principal from another relay comes with its profile card, which must verify against the
+ * log's head or nothing served about that principal is used.
  */
 
 import {
   certifiedDevice,
   replay,
+  verifiedCard,
   verifiedRevocation,
   type KeyHead,
 } from "../../key-identity/browser/statements";
@@ -88,6 +91,14 @@ export async function answers(
     if (head.principalId !== principalId) {
       invalidLogs.push(principalId);
       continue;
+    }
+    if (principal.card) {
+      try {
+        await verifiedCard(principal.card, head);
+      } catch {
+        invalidLogs.push(principalId);
+        continue;
+      }
     }
     const pinned = await work.get<PeerRecord>("peers", peerKey(work, principalId));
     if (pinned && !extendsPin(pinned, head)) {

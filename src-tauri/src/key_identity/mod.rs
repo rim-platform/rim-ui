@@ -683,6 +683,25 @@ impl KeyIdentityState {
         ))
     }
 
+    /// Sign a device request for `principal_id` with this device's key: a request to a space
+    /// hosted elsewhere, which the relay forwards to the host unchanged.
+    pub(crate) fn sign_device_request(
+        &self,
+        principal_id: &str,
+        request: &statement::DeviceRequestInput,
+    ) -> Result<Statement> {
+        let record = {
+            let _guard = self.guard()?;
+            self.record(principal_id)?
+        };
+        statement::device_request(
+            &key(&record.device_seed)?,
+            principal_id,
+            &record.device_id,
+            request,
+        )
+    }
+
     /// This device's id and device key (tagged text) for `principal_id`.
     pub(crate) fn device(&self, principal_id: &str) -> Result<(String, String)> {
         let record = {
