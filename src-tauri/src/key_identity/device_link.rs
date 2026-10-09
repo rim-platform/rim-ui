@@ -936,6 +936,7 @@ impl KeyIdentityState {
             identity_seed: None,
             pending_identity_seed: None,
             pending_identity_seq: None,
+            backup_key: None,
             confirmed: false,
             replaced: None,
         })?;

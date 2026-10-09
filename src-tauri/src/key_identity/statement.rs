@@ -13,6 +13,7 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -102,6 +103,16 @@ impl SecretKey {
         let mut seed = Zeroizing::new([0u8; 32]);
         seed.copy_from_slice(&bytes);
         Ok(Self { seed })
+    }
+
+    /// A 32-byte key derived from this key's secret: `HKDF-SHA256(ikm = seed, salt, info)`.
+    /// Whoever holds the key can derive it again; nobody else can.
+    pub(crate) fn derive_key(&self, salt: &[u8], info: &[u8]) -> Zeroizing<[u8; 32]> {
+        let mut out = Zeroizing::new([0u8; 32]);
+        Hkdf::<Sha256>::new(Some(salt), self.seed.as_ref())
+            .expand(info, out.as_mut())
+            .expect("32 bytes is a valid HKDF-SHA256 output length");
+        out
     }
 
     /// Sign `payload` for `context`, with a version 2 (tagged) signature.

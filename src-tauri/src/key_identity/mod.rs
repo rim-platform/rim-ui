@@ -18,7 +18,10 @@
 //!   a new device.
 //! - **Device linking** (`device_link`) certifies another device's key through a code shown on
 //!   this one, or makes this computer such a device.
+//! - **Identity key backup** (`backup`) seals the identity key under a key derived from the
+//!   recovery kit's secret, for the history archive, and lets a linked device take it over.
 
+pub(crate) mod backup;
 pub(crate) mod commands;
 pub(crate) mod device_link;
 pub(crate) mod recovery_kit;
@@ -277,6 +280,7 @@ fn identity_at_head(record: &mut KeyRecord, head: &KeyHead) -> Result<(Option<Se
 struct Draft {
     principal_id: String,
     identity_seed: SecretKey,
+    backup_key: recovery_kit::BackupKey,
     device_seed: SecretKey,
     device_id: String,
     device_name: String,
@@ -370,6 +374,7 @@ impl KeyIdentityState {
         );
         let recovery_kit = recovery_kit::format_kit(&principal_id, &recovery_entropy)?;
         let recovery_phrase = recovery_kit::phrase_words(&recovery_entropy)?;
+        let backup_key = recovery_kit::phrase_backup_key(&recovery_entropy)?;
         drop(recovery_seed);
         drop(recovery_entropy);
 
@@ -382,6 +387,7 @@ impl KeyIdentityState {
                 Draft {
                     principal_id: principal_id.clone(),
                     identity_seed,
+                    backup_key,
                     device_seed,
                     device_id,
                     device_name,
@@ -500,6 +506,7 @@ impl KeyIdentityState {
             identity_seed: Some(draft.identity_seed.to_text()),
             pending_identity_seed: None,
             pending_identity_seq: None,
+            backup_key: Some(backup::encode_key(&draft.backup_key)),
             confirmed,
             replaced: None,
         })?;
@@ -826,7 +833,8 @@ impl KeyIdentityState {
         name: &str,
     ) -> Result<RecoveryStatements> {
         let device_name = device_name(name)?;
-        let (principal_id, recovery_seed) = recovery_kit::parse_kit(kit, account_id)?;
+        let (principal_id, secret) = recovery_kit::parse_kit(kit, account_id)?;
+        let recovery_seed = secret.key;
         if log.is_empty() {
             return Err(KeyIdentityError::Invalid(
                 "this server has no account with that account id".into(),
@@ -898,6 +906,7 @@ impl KeyIdentityState {
             identity_seed: Some(identity_seed.to_text()),
             pending_identity_seed: None,
             pending_identity_seq: None,
+            backup_key: Some(backup::encode_key(&secret.backup_key)),
             confirmed: false,
             replaced,
         })?;

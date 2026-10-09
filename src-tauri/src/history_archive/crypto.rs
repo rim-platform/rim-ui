@@ -1,8 +1,8 @@
 //! Keys of the history archive (`docs/specs/history-archive-v1.md`, "Keys").
 //!
 //! One random 256-bit archive key per archive. Every file is sealed with XChaCha20-Poly1305
-//! under a subkey of it; the user's passphrase only wraps it (Argon2id), so Stage 3 can wrap
-//! the same key under the identity key without re-encrypting a single file.
+//! under a subkey of it; the user's passphrase only wraps it (Argon2id), and so can a key
+//! derived from the identity key (`identity`), without re-encrypting a single file.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};

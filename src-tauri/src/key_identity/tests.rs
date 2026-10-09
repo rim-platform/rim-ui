@@ -84,12 +84,18 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
         "Recovery phrase: {}\n",
         draft.recovery_phrase.join(" ")
     )));
-    let (principal, recovery) = recovery_kit::parse_kit(&draft.recovery_kit, None).unwrap();
+    let (principal, secret) = recovery_kit::parse_kit(&draft.recovery_kit, None).unwrap();
+    let recovery = secret.key;
     assert_eq!(principal, draft.principal_id);
     assert_eq!(recovery.public_key(), head.recovery_key);
     let record = state.record(&draft.principal_id).unwrap();
     let stored = serde_json::to_string(&record).unwrap();
     assert!(!stored.contains(&recovery.to_text()["ed25519:".len()..]));
+    // The backup key is kept; it is not the recovery key.
+    assert_eq!(
+        record.backup_key.as_deref().map(String::as_str),
+        Some(backup::encode_key(&secret.backup_key).as_str())
+    );
     assert!(!record.confirmed);
 }
 
@@ -392,6 +398,16 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
             .unwrap()
             .holds_identity_key
     );
+    // The kit's backup key came along, the same the enrolling device kept.
+    assert_eq!(
+        fresh.record(&draft.principal_id).unwrap().backup_key,
+        old.record(&draft.principal_id).unwrap().backup_key
+    );
+    assert!(fresh
+        .record(&draft.principal_id)
+        .unwrap()
+        .backup_key
+        .is_some());
 }
 
 #[test]

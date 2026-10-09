@@ -1,5 +1,6 @@
 mod agent_proxy;
 mod history_archive;
+mod identity_backup;
 mod key_identity;
 mod message_cache;
 mod offline_session;
@@ -136,6 +137,11 @@ pub fn run() {
             history_archive::commands::history_archive_disconnect,
             history_archive::commands::history_archive_export,
             history_archive::commands::history_archive_restore,
+            identity_backup::commands::identity_backup_sync,
+            identity_backup::commands::identity_backup_enable,
+            identity_backup::commands::identity_backup_take_over,
+            identity_backup::commands::identity_backup_can_unlock_archive,
+            identity_backup::commands::identity_backup_unlock_archive,
             message_cache::commands::message_cache_snapshot_put,
             message_cache::commands::message_cache_snapshot_get,
             offline_session::offline_session_load,

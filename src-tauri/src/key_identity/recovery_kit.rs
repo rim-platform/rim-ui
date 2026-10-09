@@ -22,6 +22,10 @@
 //!
 //! Readers tell the two apart by content, not by the header line.
 //!
+//! The same secret also gives the identity backup key, which seals the copy of the identity key
+//! kept in the history archive: HKDF of the phrase's 16 bytes, or of a v1 kit's 32-byte seed,
+//! with another `info` than the recovery key's.
+//!
 //! This module and `statement.rs` are the only places that see a raw 32-byte seed: both kits
 //! hold an Ed25519 seed by definition. A recovery key of another algorithm needs a new kit
 //! version.
@@ -47,10 +51,37 @@ pub(crate) const PHRASE_ENTROPY_LEN: usize = 16;
 pub(crate) const PHRASE_WORDS: usize = 12;
 const PHRASE_SALT: &[u8] = b"rim.recovery-phrase.v1";
 const PHRASE_INFO: &[u8] = b"recovery key";
+const BACKUP_INFO: &[u8] = b"identity backup key";
 const PHRASE_LABEL: &str = "recovery phrase:";
 
 /// The 16 bytes a recovery phrase spells, wiped on drop.
 pub(crate) type PhraseEntropy = Zeroizing<[u8; PHRASE_ENTROPY_LEN]>;
+
+/// The key that seals the identity key's backup in the history archive, wiped on drop.
+pub(crate) type BackupKey = Zeroizing<[u8; 32]>;
+
+/// What a recovery kit's secret gives: the recovery key and the identity backup key.
+pub(crate) struct RecoverySecret {
+    pub(crate) key: SecretKey,
+    pub(crate) backup_key: BackupKey,
+}
+
+/// `HKDF-SHA256(ikm, salt = "rim.recovery-phrase.v1", info = "identity backup key")`, 32 bytes.
+/// `ikm` is a phrase's 16 bytes, or a v1 kit's 32-byte seed.
+fn backup_key(ikm: &[u8]) -> Result<BackupKey, KeyIdentityError> {
+    let mut key = Zeroizing::new([0u8; 32]);
+    Hkdf::<Sha256>::new(Some(PHRASE_SALT), ikm)
+        .expand(BACKUP_INFO, key.as_mut())
+        .map_err(|e| KeyIdentityError::Crypto(format!("backup key derivation failed: {e}")))?;
+    Ok(key)
+}
+
+/// The identity backup key of a recovery phrase's entropy.
+pub(crate) fn phrase_backup_key(
+    entropy: &[u8; PHRASE_ENTROPY_LEN],
+) -> Result<BackupKey, KeyIdentityError> {
+    backup_key(entropy)
+}
 
 // ─── Version 2: the recovery phrase ──────────────────────────────────────────
 
@@ -314,21 +345,34 @@ fn v1_key_text(text: &str) -> Option<&str> {
 
 // ─── Either version ──────────────────────────────────────────────────────────
 
-/// The recovery key in a pasted kit or bare secret, whichever version: a `RK1-` key (v1) or a
-/// 12-word phrase (v2), told apart by content.
-pub(crate) fn parse_recovery_secret(text: &str) -> Result<SecretKey, KeyIdentityError> {
+/// The recovery key and identity backup key in a pasted kit or bare secret, whichever version:
+/// a `RK1-` key (v1) or a 12-word phrase (v2), told apart by content.
+pub(crate) fn parse_recovery_secret(text: &str) -> Result<RecoverySecret, KeyIdentityError> {
     match v1_key_text(text) {
-        Some(key) => Ok(SecretKey::from_seed(parse_recovery_key(key)?)),
-        None => phrase_key(&*parse_recovery_phrase(text)?),
+        Some(key) => {
+            let seed = parse_recovery_key(key)?;
+            let backup_key = backup_key(seed.as_ref())?;
+            Ok(RecoverySecret {
+                key: SecretKey::from_seed(seed),
+                backup_key,
+            })
+        }
+        None => {
+            let entropy = parse_recovery_phrase(text)?;
+            Ok(RecoverySecret {
+                key: phrase_key(&entropy)?,
+                backup_key: phrase_backup_key(&entropy)?,
+            })
+        }
     }
 }
 
-/// The account id and recovery key of a pasted kit, phrase or key. `account_id` comes from its
-/// own field when the person typed it separately, else from the kit text.
+/// The account id and the keys of a pasted kit, phrase or key. `account_id` comes from its own
+/// field when the person typed it separately, else from the kit text.
 pub(crate) fn parse_kit(
     kit: &str,
     account_id: Option<&str>,
-) -> Result<(String, SecretKey), KeyIdentityError> {
+) -> Result<(String, RecoverySecret), KeyIdentityError> {
     let principal_id = match account_id.map(str::trim).filter(|a| !a.is_empty()) {
         Some(id) => id.to_string(),
         None => find_principal_id(kit).ok_or_else(|| {
@@ -478,20 +522,20 @@ mod tests {
 
         // A v2 kit, and a bare phrase with numbering and odd casing.
         let v2_kit = format_kit(PRINCIPAL, &entropy).unwrap();
-        assert!(parse_recovery_secret(&v2_kit).unwrap() == v2_key);
+        assert!(parse_recovery_secret(&v2_kit).unwrap().key == v2_key);
         let bare: String = VECTOR_WORDS
             .split(' ')
             .enumerate()
             .map(|(i, w)| format!("{}) {}{} ", i + 1, w[..1].to_uppercase(), &w[1..]))
             .collect();
-        assert!(parse_recovery_secret(&bare).unwrap() == v2_key);
+        assert!(parse_recovery_secret(&bare).unwrap().key == v2_key);
 
         // A v1 kit, and a bare RK1 key.
         let v1_kit = format_kit_v1(PRINCIPAL, &v1_key);
-        assert!(parse_recovery_secret(&v1_kit).unwrap() == v1_key);
+        assert!(parse_recovery_secret(&v1_kit).unwrap().key == v1_key);
         let rk1 = format_recovery_key(v1_key.seed());
-        assert!(parse_recovery_secret(&rk1).unwrap() == v1_key);
-        assert!(parse_recovery_secret(&rk1.to_lowercase()).unwrap() == v1_key);
+        assert!(parse_recovery_secret(&rk1).unwrap().key == v1_key);
+        assert!(parse_recovery_secret(&rk1.to_lowercase()).unwrap().key == v1_key);
     }
 
     #[test]
@@ -535,7 +579,7 @@ mod tests {
             assert!(kit.contains(PRINCIPAL));
             let (principal, parsed) = parse_kit(&kit, None).unwrap();
             assert_eq!(principal, PRINCIPAL);
-            assert!(parsed == key);
+            assert!(parsed.key == key);
         }
 
         // Only the secret pasted, with the account id typed separately.
