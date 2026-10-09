@@ -164,7 +164,7 @@ fn split_tagged(text: &str, version: u8) -> Result<(&str, Vec<u8>), KeyIdentityE
 
 /// A key as `version` spells it, in canonical tagged text. The algorithm stays opaque here: an
 /// algorithm this device cannot sign or verify with still has a canonical text.
-fn canonical_key(text: &str, version: u8) -> Result<String, KeyIdentityError> {
+pub(crate) fn canonical_key(text: &str, version: u8) -> Result<String, KeyIdentityError> {
     let (algorithm, bytes) = split_tagged(text, version)?;
     Ok(format!("{algorithm}:{}", b64(&bytes)))
 }
@@ -199,6 +199,26 @@ pub(crate) fn verify(statement: &Statement, context: &[u8], public_key: &str, ve
         &Signature::from_bytes(&sig_bytes),
     )
     .is_ok()
+}
+
+/// A device key offered for certification: canonical version 2 tagged text of an algorithm this
+/// device can verify, and not a weak key. Returns it unchanged.
+pub(crate) fn usable_device_key(text: &str) -> Result<String, KeyIdentityError> {
+    let refused = || {
+        KeyIdentityError::Invalid(
+            "the new device's key is malformed or of a kind this app cannot check".into(),
+        )
+    };
+    let (algorithm, bytes) = split_tagged(text, WRITE_VERSION).map_err(|_| refused())?;
+    if algorithm != ED25519 {
+        return Err(refused());
+    }
+    let bytes = <[u8; 32]>::try_from(bytes).map_err(|_| refused())?;
+    let key = VerifyingKey::from_bytes(&bytes).map_err(|_| refused())?;
+    if key.is_weak() || format!("{ED25519_TAG}{}", b64(&bytes)) != text {
+        return Err(refused());
+    }
+    Ok(text.to_string())
 }
 
 /// base64url(SHA-256(bytes)), the `prev` link of a rotation.
@@ -566,7 +586,36 @@ struct CertEntry {
     principal_id: String,
     device_id: String,
     device_key: String,
+    name: String,
     key_seq: u32,
+}
+
+/// What a device certificate says, read before it is verified: which account's log to verify
+/// it against, and whether it names the device it was asked for. Never trusted on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CertificateClaim {
+    pub(crate) principal_id: String,
+    pub(crate) device_id: String,
+    /// Canonical tagged text.
+    pub(crate) device_key: String,
+    pub(crate) name: String,
+}
+
+/// Read what a device certificate claims, without verifying it.
+pub(crate) fn certificate_claim(
+    certificate: &Statement,
+) -> Result<CertificateClaim, KeyIdentityError> {
+    let refused = || KeyIdentityError::Invalid("not a device certificate".into());
+    let entry: CertEntry = serde_json::from_str(&certificate.payload).map_err(|_| refused())?;
+    if entry.kind != "device" {
+        return Err(refused());
+    }
+    Ok(CertificateClaim {
+        device_key: canonical_key(&entry.device_key, entry.v).map_err(|_| refused())?,
+        principal_id: entry.principal_id,
+        device_id: entry.device_id,
+        name: entry.name,
+    })
 }
 
 /// The device a certificate vouches for, once the certificate verifies against the log: it

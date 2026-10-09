@@ -30,6 +30,7 @@ import { RegistrationMode } from "../types";
 import { LoginForm } from "./LoginForm";
 import { HealthIndicator } from "./HealthIndicator";
 import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/DeviceKeySignIn";
+import { LinkThisDevice } from "../../key-identity/components/LinkThisDevice";
 
 /**
  * Top-level component for the `/login` route.
@@ -89,6 +90,8 @@ export function LoginPage() {
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
           <LoginForm onSuccess={handleLoginSuccess} />
         </div>
+
+        <LinkThisDevice onSuccess={handleLoginSuccess} />
 
         <RecoverAccount onSuccess={handleLoginSuccess} />
 

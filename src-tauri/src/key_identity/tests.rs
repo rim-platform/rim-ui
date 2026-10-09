@@ -557,3 +557,426 @@ fn a_settle_never_removes_the_keys_of_an_enrollment_still_in_flight() {
         .unwrap();
     assert!(local.confirmed && local.has_identity_key);
 }
+
+// ─── Device linking ──────────────────────────────────────────────────────────
+
+use device_link::{KnownDevice, LinkCode, LiveLink, Offer, Sealed};
+
+const LINK_ID: &str = "AAECAwQFBgcICQoLDA0ODw";
+
+/// An enrolled old device with a started link, and its code.
+struct OldDevice {
+    store: Arc<MemorySecretStore>,
+    state: KeyIdentityState,
+    principal_id: String,
+    key_log: Vec<Statement>,
+    devices: Vec<KnownDevice>,
+    code: String,
+}
+
+fn old_device() -> OldDevice {
+    let store = Arc::new(MemorySecretStore::default());
+    let state = KeyIdentityState::new(store.clone());
+    let (draft, statements) = enrolled(&state);
+    let started = state
+        .begin_link(&draft.principal_id, ENDPOINT, LINK_ID)
+        .unwrap();
+    assert!(started
+        .code
+        .starts_with("rim-link:1:AAECAwQFBgcICQoLDA0ODw:"));
+    let devices = vec![KnownDevice {
+        device_id: payload_field(&statements.device, "deviceId")
+            .as_str()
+            .unwrap()
+            .into(),
+        public_key: payload_field(&statements.device, "deviceKey")
+            .as_str()
+            .unwrap()
+            .into(),
+    }];
+    OldDevice {
+        store,
+        state,
+        principal_id: draft.principal_id,
+        key_log: statements.key_log,
+        devices,
+        code: started.code.to_string(),
+    }
+}
+
+impl OldDevice {
+    fn review(&self, offer: &Sealed) -> Result<device_link::OfferReview> {
+        self.state
+            .review_offer(LINK_ID, &self.key_log, &self.devices, offer)
+    }
+
+    /// Seal an offer as anyone holding the code could.
+    fn seal_offer(&self, offer: &Offer) -> Sealed {
+        let code = LinkCode::parse(&self.code).unwrap();
+        device_link::seal(&code, device_link::Direction::Offer, &offer.to_bytes()).unwrap()
+    }
+}
+
+fn fresh_offer() -> Offer {
+    Offer::new(
+        &uuid::Uuid::now_v7().to_string(),
+        &SecretKey::generate().unwrap().public_key(),
+        "Phone",
+    )
+}
+
+fn nothing_stored(store: &MemorySecretStore) -> bool {
+    let keys = store::Keys(store);
+    keys.links().unwrap().is_empty() && keys.pending_links().unwrap().is_empty()
+}
+
+#[test]
+fn a_device_links_end_to_end_and_signs_in_with_its_own_key() {
+    let old = old_device();
+    let new_store = Arc::new(MemorySecretStore::default());
+    let new = KeyIdentityState::new(new_store.clone());
+
+    let sent = new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    assert_eq!(sent.link_id, LINK_ID);
+    assert!(nothing_stored(&new_store));
+
+    let review = old.review(&sent.offer).unwrap();
+    assert_eq!(review.fingerprint, sent.fingerprint);
+    assert_eq!(review.name, "Phone");
+    assert_eq!(review.platform, "desktop");
+
+    // The person renamed it before confirming.
+    let answer = old
+        .state
+        .confirm_link(LINK_ID, &old.key_log, "  Work phone ")
+        .unwrap();
+    assert_eq!(answer.device_id, review.device_id);
+    assert_eq!(payload_field(&answer.certificate, "name"), "Work phone");
+    assert_eq!(payload_field(&answer.certificate, "keySeq"), 0);
+    let head = replay(&old.key_log).unwrap();
+    assert!(statement::certified_device(&answer.certificate, &head).is_ok());
+    // A retry sends the same bytes.
+    assert_eq!(
+        old.state
+            .confirm_link(LINK_ID, &old.key_log, "Other")
+            .unwrap(),
+        answer
+    );
+    // The pending record is in the keyring before `addDeviceKey`.
+    let pending = store::Keys(old.store.as_ref()).pending_links().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].device_id, answer.device_id);
+    assert_eq!(pending[0].certificate, answer.certificate);
+
+    let opened = new.open_link_answer(LINK_ID, &answer.answer).unwrap();
+    assert_eq!(opened.principal_id, old.principal_id);
+    assert!(nothing_stored(&new_store));
+
+    let linked = new.accept_link(LINK_ID, &old.key_log).unwrap();
+    assert_eq!(linked.principal_id, old.principal_id);
+    assert_eq!(linked.device_id, answer.device_id);
+    assert_eq!(linked.device_name, "Work phone");
+    let accounts = new.accounts(ENDPOINT).unwrap();
+    assert_eq!(accounts.len(), 1);
+    let account = &accounts[0];
+    assert!(!account.has_identity_key && !account.confirmed);
+    assert_eq!(account.user_id, None);
+
+    let proof = new
+        .sign_login(ENDPOINT, &old.principal_id, &challenge())
+        .unwrap();
+    assert!(verify(&proof, context::LOGIN, &answer.device_key, 2));
+    assert_eq!(payload_field(&proof, "deviceId"), answer.device_id.as_str());
+    // The link is over on the new device.
+    assert!(matches!(
+        new.accept_link(LINK_ID, &old.key_log),
+        Err(KeyIdentityError::NoLink)
+    ));
+
+    old.state.end_link(LINK_ID).unwrap();
+    assert!(store::Keys(old.store.as_ref())
+        .pending_links()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn the_old_device_refuses_and_reports_bad_offers() {
+    let old = old_device();
+    let head = replay(&old.key_log).unwrap();
+    let refused = |offer: &Offer| old.review(&old.seal_offer(offer)).unwrap_err().to_string();
+
+    // Sealed without the secret: the same link id under another secret.
+    let mut parts: Vec<String> = old.code.splitn(5, ':').map(String::from).collect();
+    parts[3] = statement::b64(&[7u8; 32]);
+    let stranger = LinkCode::parse(&parts.join(":")).unwrap();
+    let bogus = device_link::seal(
+        &stranger,
+        device_link::Direction::Offer,
+        &fresh_offer().to_bytes(),
+    )
+    .unwrap();
+    assert!(old
+        .review(&bogus)
+        .unwrap_err()
+        .to_string()
+        .contains("someone other than your new device"));
+    // A sealed plaintext that breaks the rules reads the same.
+    let code = LinkCode::parse(&old.code).unwrap();
+    let not_json = device_link::seal(&code, device_link::Direction::Offer, b"{\"v\":1}").unwrap();
+    assert!(old
+        .review(&not_json)
+        .unwrap_err()
+        .to_string()
+        .contains("someone other than your new device"));
+
+    let with = |f: &dyn Fn(&mut Offer)| {
+        let mut offer = fresh_offer();
+        f(&mut offer);
+        offer
+    };
+    for key in [head.identity_key.clone(), head.recovery_key.clone()] {
+        let err = refused(&with(&|o| o.device_key = key.clone()));
+        assert!(err.contains("one of this account's own keys"), "{err}");
+    }
+    let used_key = old.devices[0].public_key.clone();
+    assert!(refused(&with(&|o| o.device_key = used_key.clone())).contains("already used"));
+    let used_id = old.devices[0].device_id.clone();
+    assert!(refused(&with(&|o| o.device_id = used_id.clone())).contains("already used"));
+    assert!(refused(&with(&|o| o.device_key = "ed25519:AAAA".into())).contains("malformed"));
+    assert!(refused(&with(&|o| o.device_key = "mldsa44:AAAA".into())).contains("malformed"));
+    assert!(refused(&with(&|o| o.device_id = "not-a-uuid".into())).contains("device id"));
+    assert!(refused(&with(&|o| o.name = "\u{7}".into())).contains("name"));
+
+    // A revoked device's key and id stay taken: `devices` lists it.
+    let revoked = fresh_offer();
+    let mut devices = old.devices.clone();
+    devices.push(KnownDevice {
+        device_id: revoked.device_id.clone(),
+        public_key: revoked.device_key.clone(),
+    });
+    assert!(old
+        .state
+        .review_offer(LINK_ID, &old.key_log, &devices, &old.seal_offer(&revoked))
+        .is_err());
+
+    // Nothing to confirm after a refusal.
+    assert!(old.state.confirm_link(LINK_ID, &old.key_log, "x").is_err());
+    assert!(store::Keys(old.store.as_ref())
+        .pending_links()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn only_a_device_holding_the_identity_key_reviews_offers() {
+    let old = old_device();
+    let stranger = KeyIdentityState::new(Arc::new(MemorySecretStore::default()));
+    assert!(matches!(
+        stranger.begin_link(&old.principal_id, ENDPOINT, LINK_ID),
+        Err(KeyIdentityError::NoKeys)
+    ));
+
+    // A linked device holds only its own device key.
+    let linked = KeyIdentityState::new(Arc::new(MemorySecretStore::default()));
+    let sent = linked.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    old.review(&sent.offer).unwrap();
+    let answer = old
+        .state
+        .confirm_link(LINK_ID, &old.key_log, "Phone")
+        .unwrap();
+    linked.open_link_answer(LINK_ID, &answer.answer).unwrap();
+    linked.accept_link(LINK_ID, &old.key_log).unwrap();
+
+    const SECOND: &str = "EBESExQVFhcYGRobHB0eHw";
+    let started = linked
+        .begin_link(&old.principal_id, ENDPOINT, SECOND)
+        .unwrap();
+    let code = LinkCode::parse(&started.code).unwrap();
+    let offer = device_link::seal(
+        &code,
+        device_link::Direction::Offer,
+        &fresh_offer().to_bytes(),
+    )
+    .unwrap();
+    assert!(matches!(
+        linked.review_offer(SECOND, &old.key_log, &old.devices, &offer),
+        Err(KeyIdentityError::NoIdentityKey)
+    ));
+}
+
+#[test]
+fn a_confirmed_link_resumes_after_a_restart_with_the_same_certificate() {
+    let old = old_device();
+    let new = KeyIdentityState::new(Arc::new(MemorySecretStore::default()));
+    let sent = new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    old.review(&sent.offer).unwrap();
+    let answer = old
+        .state
+        .confirm_link(LINK_ID, &old.key_log, "Phone")
+        .unwrap();
+    // This run carries the link on itself.
+    assert!(old.state.pending_links(ENDPOINT).unwrap().is_empty());
+
+    let restarted = KeyIdentityState::new(old.store.clone());
+    assert!(restarted
+        .pending_links("https://other.example/api")
+        .unwrap()
+        .is_empty());
+    let pending = restarted.pending_links(ENDPOINT).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].link_id, LINK_ID);
+    assert_eq!(pending[0].principal_id, old.principal_id);
+    assert_eq!(pending[0].device_id, answer.device_id);
+    assert_eq!(pending[0].device_key, answer.device_key);
+
+    let resumed = restarted.resume_link(LINK_ID).unwrap();
+    assert_eq!(resumed, answer);
+    assert_eq!(restarted.resume_link(LINK_ID).unwrap(), resumed);
+    assert!(restarted.pending_links(ENDPOINT).unwrap().is_empty());
+    new.open_link_answer(LINK_ID, &resumed.answer).unwrap();
+    new.accept_link(LINK_ID, &old.key_log).unwrap();
+
+    restarted.end_link(LINK_ID).unwrap();
+    assert!(KeyIdentityState::new(old.store.clone())
+        .pending_links(ENDPOINT)
+        .unwrap()
+        .is_empty());
+    assert!(matches!(
+        restarted.resume_link(LINK_ID),
+        Err(KeyIdentityError::NoLink)
+    ));
+}
+
+/// The old device certifies `offer` instead of the new device's own, as it would after the
+/// person confirmed an offer someone else posted.
+fn answer_for(old: &OldDevice, offer: &Offer) -> Sealed {
+    old.review(&old.seal_offer(offer)).unwrap();
+    old.state
+        .confirm_link(LINK_ID, &old.key_log, "Phone")
+        .unwrap()
+        .answer
+}
+
+#[test]
+fn the_new_device_refuses_a_certificate_for_another_key_or_device_id() {
+    for change in [
+        (|o: &mut Offer| o.device_key = SecretKey::generate().unwrap().public_key())
+            as fn(&mut Offer),
+        |o: &mut Offer| o.device_id = uuid::Uuid::now_v7().to_string(),
+    ] {
+        let old = old_device();
+        let new_store = Arc::new(MemorySecretStore::default());
+        let new = KeyIdentityState::new(new_store.clone());
+        new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+        let LiveLink::New(link) = new.live_links().unwrap()[LINK_ID].clone() else {
+            panic!("not a new-device link");
+        };
+        let mut other = link.offer().clone();
+        change(&mut other);
+        let answer = answer_for(&old, &other);
+
+        let err = new
+            .open_link_answer(LINK_ID, &answer)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("did not verify"), "{err}");
+        assert!(nothing_stored(&new_store));
+        assert!(matches!(
+            new.accept_link(LINK_ID, &old.key_log),
+            Err(KeyIdentityError::NoLink)
+        ));
+    }
+}
+
+#[test]
+fn the_new_device_refuses_a_certificate_the_served_log_does_not_verify() {
+    let old = old_device();
+    let new_store = Arc::new(MemorySecretStore::default());
+    let new = KeyIdentityState::new(new_store.clone());
+    new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    let LiveLink::New(link) = new.live_links().unwrap()[LINK_ID].clone() else {
+        panic!("not a new-device link");
+    };
+    let offer = link.offer().clone();
+
+    // A certificate naming this device, signed by a key that is not the account's.
+    let forged = statement::device_cert(
+        &SecretKey::generate().unwrap(),
+        &statement::DeviceCertInput {
+            principal_id: &old.principal_id,
+            device_id: &offer.device_id,
+            device_key: &offer.device_key,
+            name: "Phone",
+            key_seq: 0,
+            issued_at: "2026-10-09T00:00:00Z",
+        },
+    );
+    let code = LinkCode::parse(&old.code).unwrap();
+    let sealed = device_link::seal(
+        &code,
+        device_link::Direction::Answer,
+        &device_link::Answer::new(&forged).to_bytes(),
+    )
+    .unwrap();
+    new.open_link_answer(LINK_ID, &sealed).unwrap();
+    let err = new
+        .accept_link(LINK_ID, &old.key_log)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("did not verify"), "{err}");
+    assert!(nothing_stored(&new_store));
+
+    // A genuine certificate checked against another account's log.
+    let new = KeyIdentityState::new(new_store.clone());
+    new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    let LiveLink::New(link) = new.live_links().unwrap()[LINK_ID].clone() else {
+        panic!("not a new-device link");
+    };
+    let answer = answer_for(&old, link.offer());
+    new.open_link_answer(LINK_ID, &answer).unwrap();
+    let elsewhere = old_device();
+    assert!(new.accept_link(LINK_ID, &elsewhere.key_log).is_err());
+    assert!(nothing_stored(&new_store));
+}
+
+#[test]
+fn a_new_device_never_links_over_keys_it_holds_or_for_another_server() {
+    let old = old_device();
+    let new = KeyIdentityState::new(Arc::new(MemorySecretStore::default()));
+    let err = new
+        .offer_link("https://other.example/api", &old.code, "Phone")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("another server"), "{err}");
+    let err = new
+        .offer_link(ENDPOINT, "rim-link:2:x:y:http://h", "Phone")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("newer app"), "{err}");
+
+    // A computer that already holds this account's keys keeps them.
+    let same_computer = KeyIdentityState::new(old.store.clone());
+    let sent = same_computer
+        .offer_link(&format!("{ENDPOINT}/"), &old.code, "Phone")
+        .unwrap();
+    old.review(&sent.offer).unwrap();
+    let answer = old
+        .state
+        .confirm_link(LINK_ID, &old.key_log, "Phone")
+        .unwrap();
+    same_computer
+        .open_link_answer(LINK_ID, &answer.answer)
+        .unwrap();
+    let err = same_computer
+        .accept_link(LINK_ID, &old.key_log)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("already holds keys"), "{err}");
+    assert!(old
+        .state
+        .record(&old.principal_id)
+        .unwrap()
+        .identity_seed
+        .is_some());
+}
