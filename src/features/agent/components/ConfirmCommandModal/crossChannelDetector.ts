@@ -50,5 +50,3 @@ export function detectCrossChannel(
   }
   return null;
 }
-
-export const __test_destinationArgNames = DESTINATION_ARG_NAMES;

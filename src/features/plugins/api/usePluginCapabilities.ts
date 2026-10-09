@@ -14,14 +14,3 @@ export function useApproveCapabilities() {
     },
   });
 }
-
-export function useRevokeCapabilities() {
-  const qc = useQueryClient();
-
-  return useMutation<void, PluginIpcError, { pluginId: string; capabilities: PluginCapability[] }>({
-    mutationFn: (args) => safeInvoke("plugin_revoke_capabilities", args),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.plugins() });
-    },
-  });
-}

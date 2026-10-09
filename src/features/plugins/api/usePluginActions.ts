@@ -30,18 +30,6 @@ export function usePluginDisable() {
   });
 }
 
-export function usePluginInstall() {
-  const qc = useQueryClient();
-
-  return useMutation<void, PluginIpcError, string>({
-    mutationFn: (pluginId) => safeInvoke("plugin_install", { pluginId }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.plugins() });
-      reloadCommands();
-    },
-  });
-}
-
 export function usePluginUninstall() {
   const qc = useQueryClient();
 

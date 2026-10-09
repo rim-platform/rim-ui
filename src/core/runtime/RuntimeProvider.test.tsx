@@ -8,7 +8,7 @@ function RuntimeConsumer() {
     <div>
       <span data-testid="platform">{platform}</span>
       <span data-testid="os">{osType}</span>
-      <span data-testid="multi-pane">{String(capabilities.multiPaneShell)}</span>
+      <span data-testid="docked-thread-pane">{String(capabilities.dockedThreadPane)}</span>
     </div>
   );
 }
@@ -31,7 +31,7 @@ describe("RuntimeProvider", () => {
       </RuntimeProvider>,
     );
     // In jsdom, platform should be "web" (no __TAURI_INTERNALS__)
-    expect(screen.getByTestId("multi-pane").textContent).toBe("true");
+    expect(screen.getByTestId("docked-thread-pane").textContent).toBe("true");
   });
 });
 

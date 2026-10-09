@@ -3,15 +3,6 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 
-const BOOTSTRAP_MUTATION = gql`
-  mutation Bootstrap($input: BootstrapInput!) {
-    bootstrap(input: $input) {
-      userId
-      serverId
-    }
-  }
-`;
-
 const LOGIN_MUTATION = gql`
   mutation Login($input: LoginInput!) {
     login(input: $input) {
@@ -26,23 +17,9 @@ const LOGOUT_MUTATION = gql`
   }
 `;
 
-interface BootstrapInput {
-  secret: string;
-  username: string;
-  password: string;
-  serverName: string;
-}
-
 interface LoginInput {
   username: string;
   password: string;
-}
-
-interface BootstrapResponse {
-  bootstrap: {
-    userId: string;
-    serverId: string;
-  };
 }
 
 interface LoginResponse {
@@ -53,13 +30,6 @@ interface LoginResponse {
 
 interface LogoutResponse {
   logout: boolean;
-}
-
-export function useBootstrapMutation() {
-  return useMutation({
-    mutationFn: (input: BootstrapInput) =>
-      graphqlClient.request<BootstrapResponse>(BOOTSTRAP_MUTATION, { input }),
-  });
 }
 
 export function useLoginMutation() {

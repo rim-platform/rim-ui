@@ -1,30 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import type {
-  KeybindScope,
-  ResolvedKeybind,
-  CreateKeybindInput,
-  UpdateKeybindInput,
-  DeleteKeybindInput,
-} from "../types";
-
-const KeybindsDocument = gql`
-  query Keybinds($scope: KeybindScope!, $workspaceId: ID) {
-    keybinds(scope: $scope, workspaceId: $workspaceId) {
-      id
-      keystroke
-      commandId
-      context
-      source
-      scope
-      isEnabled
-      presetArgs
-    }
-  }
-`;
+import type { CreateKeybindInput, UpdateKeybindInput, DeleteKeybindInput } from "../types";
 
 const CreateKeybindDocument = gql`
   mutation CreateKeybind($input: CreateKeybindInput!) {
@@ -57,19 +36,6 @@ const DeleteKeybindDocument = gql`
     deleteKeybind(input: $input)
   }
 `;
-
-export function useKeybindsByScope(scope: KeybindScope, workspaceId?: string) {
-  return useQuery({
-    queryKey: queryKeys.keybinds(scope, workspaceId),
-    queryFn: async () => {
-      const res = await graphqlClient.request<{ keybinds: ResolvedKeybind[] }>(KeybindsDocument, {
-        scope,
-        workspaceId,
-      });
-      return res.keybinds;
-    },
-  });
-}
 
 export function useCreateKeybindMutation() {
   const qc = useQueryClient();

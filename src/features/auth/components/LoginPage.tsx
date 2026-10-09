@@ -16,9 +16,8 @@
  * **Key sign-in (desktop):** above the password form, "Sign in with this device" for each
  * account this computer holds a key for; below it, recovery with a recovery kit.
  *
- * **Bootstrap mode is removed.** The `BootstrapForm` component and its tab
- * strip are gone from the UI. The CLI handles bootstrap via the same mutation;
- * `useBootstrapMutation` is preserved in the API layer.
+ * **Bootstrap mode is removed.** There is no bootstrap form or bootstrap
+ * mutation in the client.
  */
 
 import { useEffect } from "react";
