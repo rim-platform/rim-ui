@@ -56,6 +56,11 @@ const HistoryArchiveSettings = lazy(() =>
     default: m.HistoryArchiveSettings,
   })),
 );
+const KeyIdentitySettings = lazy(() =>
+  import("../../key-identity/components/KeyIdentitySettings").then((m) => ({
+    default: m.KeyIdentitySettings,
+  })),
+);
 const IngestTokenSettings = lazy(() =>
   import("../../integrations/components/IngestTokenSettings").then((m) => ({
     default: m.IngestTokenSettings,
@@ -288,6 +293,7 @@ type SettingsTab =
   | "history"
   | "workspace"
   | "integrations"
+  | "security"
   | "account"
   | "about";
 
@@ -307,6 +313,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "history", label: "History" },
   { key: "workspace", label: "Workspace" },
   { key: "integrations", label: "Integrations" },
+  { key: "security", label: "Security" },
   { key: "account", label: "Account" },
   { key: "about", label: "About" },
 ];
@@ -414,6 +421,7 @@ export function SettingsPage() {
               </div>
             )}
             {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
+            {shownTab === "security" && <KeyIdentitySettings />}
             {shownTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
             )}

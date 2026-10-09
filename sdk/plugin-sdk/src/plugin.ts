@@ -6,7 +6,13 @@ import { ErrorCode, Method, PROTOCOL_VERSION } from "./generated/protocol.ts";
 import { HostRequestError, PluginError, toWireError } from "./errors.ts";
 import { encodeFrame, FrameDecoder, FrameTooLargeError } from "./framing.ts";
 import { readManifest, type ManifestInfo } from "./manifest.ts";
-import { readPrincipal, samePrincipal, type Principal } from "./principal.ts";
+import {
+  readPrincipal,
+  readPrincipalMappings,
+  samePrincipal,
+  type Principal,
+  type PrincipalMapping,
+} from "./principal.ts";
 
 /** Protocol versions this SDK speaks, newest first. */
 export const SUPPORTED_VERSIONS: readonly number[] = Object.freeze([PROTOCOL_VERSION]);
@@ -120,6 +126,15 @@ export interface PluginDefinition {
   readonly onReady?: (host: Host) => void | Promise<void>;
   /** Called when the user signs in, signs out or switches account. */
   readonly onPrincipalChanged?: (principal: Principal | null, host: Host) => void | Promise<void>;
+  /**
+   * Called with every provisional id the host has seen switch to a key-based id. Arrives
+   * after every handshake while the host knows any, so rewrite stored ids idempotently:
+   * replace each `from` with its `to` and leave other ids alone.
+   */
+  readonly onPrincipalsRemapped?: (
+    mappings: readonly PrincipalMapping[],
+    host: Host,
+  ) => void | Promise<void>;
   /** Called before the plugin exits. The host kills it about a second later. */
   readonly onShutdown?: () => void | Promise<void>;
 }
@@ -413,6 +428,8 @@ class Session {
       this.stopping = true;
     } else if (method === Method.principalChanged) {
       this.onPrincipalChanged(params);
+    } else if (method === Method.principalsRemapped) {
+      this.onPrincipalsRemapped(params);
     }
     // Any other notification is ignored: v1 may add new ones.
   }
@@ -514,6 +531,20 @@ class Session {
     this.principal = principal;
     void this.callHook("onPrincipalChanged", () =>
       this.definition.onPrincipalChanged?.(principal, this.host),
+    );
+  }
+
+  private onPrincipalsRemapped(params: unknown): void {
+    let mappings: readonly PrincipalMapping[];
+    try {
+      mappings = readPrincipalMappings(isRecord(params) ? params.mappings : undefined);
+    } catch (error) {
+      this.log("warn", `ignored rim.principals.remapped: ${(error as Error).message}`);
+      return;
+    }
+    if (mappings.length === 0) return;
+    void this.callHook("onPrincipalsRemapped", () =>
+      this.definition.onPrincipalsRemapped?.(mappings, this.host),
     );
   }
 

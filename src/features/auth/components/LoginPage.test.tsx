@@ -52,6 +52,12 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
+// Device key sign-in has its own tests; here it renders nothing, as in the web app.
+vi.mock("../../key-identity/components/DeviceKeySignIn", () => ({
+  DeviceKeySignIn: () => null,
+  RecoverAccount: () => null,
+}));
+
 import { LoginPage } from "./LoginPage";
 
 describe("LoginPage", () => {

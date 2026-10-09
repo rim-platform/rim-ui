@@ -33,6 +33,7 @@ export const Method = {
   heartbeat: "rim.heartbeat",
   shutdown: "rim.shutdown",
   principalChanged: "rim.principal.changed",
+  principalsRemapped: "rim.principals.remapped",
   commandExecute: "rim.command.execute",
   log: "rim.log",
 } as const;
@@ -140,6 +141,21 @@ export interface PrincipalChangedNotification {
   params: {
     /** The signed-in user from now on, or null after sign-out. */
     principal: NullablePrincipal;
+  };
+}
+
+/** Host to plugin: provisional principal ids (rimp0_) and the key-based ids that replaced them. Sent right after every handshake when the host knows at least one mapping, and to running plugins when it learns a new one. The list is the whole mapping the host knows, so applying it must be idempotent: replace each stored from with its to. */
+export interface PrincipalsRemappedNotification {
+  jsonrpc: JsonRpcVersion;
+  method: "rim.principals.remapped";
+  params: {
+    /** Every switched id this host knows, each from once. */
+    mappings: {
+      /** The provisional id. */
+      from: string;
+      /** The id that replaced it. */
+      to: string;
+    }[];
   };
 }
 

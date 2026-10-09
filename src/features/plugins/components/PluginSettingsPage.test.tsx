@@ -73,6 +73,7 @@ describe("PluginSettingsPage — web build (pluginHost: false)", () => {
         filesystemAccess: false,
         nativeNotifications: false,
         customTitleBar: false,
+        deviceKeys: false,
       },
     });
 
@@ -104,6 +105,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
         filesystemAccess: true,
         nativeNotifications: true,
         customTitleBar: true,
+        deviceKeys: true,
       },
     });
   });

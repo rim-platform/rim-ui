@@ -9,7 +9,8 @@
  *
  * - the session is still good: leave offline mode and refetch every query, so the sidebar and
  *   timelines replace their saved copies (the WebSocket connect also starts a cache sync);
- * - the server refused the session (it expired meanwhile): sign out to the sign-in screen;
+ * - the server refused the session (it expired meanwhile): sign in again with this device's key
+ *   when it holds one for the account, else sign out to the sign-in screen;
  * - still unreachable, or an answer that says nothing about the session (an internal error):
  *   stay offline and try again.
  */
@@ -23,6 +24,7 @@ import { isSessionRefused } from "../../../core/graphql/errors";
 import { onWsConnected } from "../../../core/graphql/wsClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useOfflineStore } from "../state/useOfflineStore";
@@ -46,7 +48,8 @@ export async function checkSession(userId: string): Promise<SessionCheck> {
     const res = await graphqlClient.request<{ me: { id: string } }>(SESSION_CHECK_QUERY);
     return res.me?.id === userId ? "online" : "signedOut";
   } catch (err) {
-    return !isServerUnreachable(err) && isSessionRefused(err) ? "signedOut" : "offline";
+    if (isServerUnreachable(err) || !isSessionRefused(err)) return "offline";
+    return (await resumeWithDeviceKey(userId)) === userId ? "online" : "signedOut";
   }
 }
 

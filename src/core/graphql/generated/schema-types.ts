@@ -680,6 +680,19 @@ export type DeleteWorkspaceStateInput = {
   serverId: Scalars['ID']['input'];
 };
 
+export type DeviceKey = {
+  addedAt: Scalars['DateTime']['output'];
+  certificate: SignedStatement;
+  /** The client-chosen device id from the certificate. */
+  deviceId: Scalars['ID']['output'];
+  /** Key log seq whose identity key signed the certificate. */
+  keySeq: Scalars['Int']['output'];
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  name: Scalars['String']['output'];
+  publicKey: Scalars['String']['output'];
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
 /** How often unread notifications are emailed. */
 export enum DigestFrequency {
   DAILY = 'DAILY',
@@ -711,6 +724,18 @@ export type EditMessageInput = {
   messageId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
   text: Scalars['String']['input'];
+};
+
+export type EnrollIdentityKeyInput = {
+  /** Certificate of the device enrolling; this session becomes its session. */
+  device: SignedStatementInput;
+  /** The whole key log, inception first. */
+  keyLog: Array<SignedStatementInput>;
+  /**
+   * A `login` statement signed by that device over a fresh `keyLoginChallenge`, proving the
+   * caller holds the device key.
+   */
+  proof: SignedStatementInput;
 };
 
 /**
@@ -1152,6 +1177,39 @@ export type JoinServerByInvitePayload = {
   serverId: Scalars['ID']['output'];
 };
 
+/**
+ * What this server holds about the signed-in account's key identity. Before the account
+ * enrolls a key, `principalId` and `keySeq` are null and the lists are empty.
+ */
+export type KeyIdentity = {
+  /** Every device, revoked ones included, oldest first. */
+  devices: Array<DeviceKey>;
+  /** Oldest entry first. */
+  keyLog: Array<KeyLogEntry>;
+  keySeq?: Maybe<Scalars['Int']['output']>;
+  principalId?: Maybe<Scalars['String']['output']>;
+  profileCard?: Maybe<ProfileCard>;
+};
+
+export type KeyLogEntry = {
+  createdAt: Scalars['DateTime']['output'];
+  kind: KeyLogEntryKind;
+  seq: Scalars['Int']['output'];
+  statement: SignedStatement;
+};
+
+export enum KeyLogEntryKind {
+  INCEPTION = 'INCEPTION',
+  ROTATE = 'ROTATE'
+}
+
+export type KeyLoginChallenge = {
+  challengeId: Scalars['ID']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  /** Copy into the `login` statement's `nonce`. */
+  nonce: Scalars['String']['output'];
+};
+
 export type Keybind = {
   commandId: Scalars['String']['output'];
   context: KeybindContext;
@@ -1410,6 +1468,8 @@ export type Mutation = {
   acknowledgeIncident: IncidentGql;
   /** Add (invite) workspace members to a channel or group the caller belongs to. */
   addConversationMembers: Conversation;
+  /** Add a device certified by the current identity key. */
+  addDeviceKey: DeviceKey;
   /** Add a rotation layer to a schedule. Owner-only. */
   addRotationLayer: RotationLayerGql;
   advanceIncidentPhase: IncidentPhaseGql;
@@ -1474,6 +1534,8 @@ export type Mutation = {
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
   editMessage: Message;
+  /** Bind a key identity to the signed-in account. Afterwards the password no longer signs in. */
+  enrollIdentityKey: KeyIdentity;
   executeCommand: CommandResult;
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
@@ -1484,6 +1546,8 @@ export type Mutation = {
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   joinServerByInvite: JoinServerByInvitePayload;
+  /** Start a key login: a single-use challenge for a device to sign. No session needed. */
+  keyLoginChallenge: KeyLoginChallenge;
   /**
    * Remove a member from the workspace (Owner/Moderator; nobody can kick the owner, and a
    * moderator cannot kick a moderator). They may re-join with a new invite. Audited.
@@ -1492,6 +1556,11 @@ export type Mutation = {
   /** Leave a channel or group (not a DM). */
   leaveConversation: Scalars['Boolean']['output'];
   login: LoginPayload;
+  /**
+   * Sign in with a `login` statement signed by an enrolled device key. Sets the same session
+   * cookie as `login`.
+   */
+  loginWithKey: LoginPayload;
   logout: Scalars['Boolean']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
   markAsRead: Scalars['Boolean']['output'];
@@ -1503,6 +1572,8 @@ export type Mutation = {
   muteConversation: Scalars['Boolean']['output'];
   overrideSkillTier: SkillProfileGql;
   pinMessage: Scalars['Boolean']['output'];
+  /** Publish a profile card signed by the current identity key. */
+  publishProfileCard: ProfileCard;
   recordFeatureUsage: SkillProfileGql;
   /**
    * Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
@@ -1525,6 +1596,8 @@ export type Mutation = {
    * (`admin.resolve_report`).
    */
   resolveReport: MessageReport;
+  /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
+  revokeDeviceKey: DeviceKey;
   /** Revoke an ingest token. Owner-only, permanent (no un-revoke). */
   revokeIngestToken: Scalars['Boolean']['output'];
   /**
@@ -1534,6 +1607,11 @@ export type Mutation = {
    */
   revokeInstanceInvite: Scalars['Boolean']['output'];
   revokeInvite: Scalars['Boolean']['output'];
+  /**
+   * Append a rotation to the key log. A rotation signed by the recovery key works without a
+   * session, revokes every device and session, and enrolls the device given with it.
+   */
+  rotateIdentityKey: KeyIdentity;
   sendMessage: Message;
   /**
    * Set a conversation's default escalation policy — the policy `ingestAlert`-declared
@@ -1666,6 +1744,11 @@ export type MutationAddConversationMembersArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
   userIds: Array<Scalars['ID']['input']>;
+};
+
+
+export type MutationAddDeviceKeyArgs = {
+  certificate: SignedStatementInput;
 };
 
 
@@ -1850,6 +1933,11 @@ export type MutationEditMessageArgs = {
 };
 
 
+export type MutationEnrollIdentityKeyArgs = {
+  input: EnrollIdentityKeyInput;
+};
+
+
 export type MutationExecuteCommandArgs = {
   input: ExecuteCommandInput;
 };
@@ -1914,6 +2002,11 @@ export type MutationLoginArgs = {
 };
 
 
+export type MutationLoginWithKeyArgs = {
+  proof: SignedStatementInput;
+};
+
+
 export type MutationMarkAllAsReadArgs = {
   input: MarkAllAsReadInput;
 };
@@ -1943,6 +2036,11 @@ export type MutationOverrideSkillTierArgs = {
 
 export type MutationPinMessageArgs = {
   input: PinMessageInput;
+};
+
+
+export type MutationPublishProfileCardArgs = {
+  card: SignedStatementInput;
 };
 
 
@@ -1999,6 +2097,11 @@ export type MutationResolveReportArgs = {
 };
 
 
+export type MutationRevokeDeviceKeyArgs = {
+  revocation: SignedStatementInput;
+};
+
+
 export type MutationRevokeIngestTokenArgs = {
   tokenId: Scalars['ID']['input'];
 };
@@ -2011,6 +2114,11 @@ export type MutationRevokeInstanceInviteArgs = {
 
 export type MutationRevokeInviteArgs = {
   inviteId: Scalars['ID']['input'];
+};
+
+
+export type MutationRotateIdentityKeyArgs = {
+  input: RotateIdentityKeyInput;
 };
 
 
@@ -2445,6 +2553,12 @@ export enum PresenceStatus {
   ONLINE = 'ONLINE'
 }
 
+export type ProfileCard = {
+  statement: SignedStatement;
+  updatedAt: Scalars['DateTime']['output'];
+  version: Scalars['Int']['output'];
+};
+
 export type Query = {
   actions: Array<Action>;
   activeIncident?: Maybe<IncidentGql>;
@@ -2479,6 +2593,12 @@ export type Query = {
   /** List every alert-ingest token for a server (including revoked). Owner-only. */
   ingestTokens: Array<IngestTokenGql>;
   integrations: Array<Integration>;
+  /**
+   * The public key log of a principal enrolled on this server, oldest first; empty when none
+   * is. No session needed: a person who lost every device reads the head here to sign a
+   * recovery rotation (`rotateIdentityKey`).
+   */
+  keyLog: Array<KeyLogEntry>;
   keybindLayers: KeybindLayers;
   keybinds: Array<Keybind>;
   /** Query the command audit log. Requires `audit.read` capability. */
@@ -2511,6 +2631,8 @@ export type Query = {
   messages: MessagePage;
   mutedConversations: Array<MutedConversation>;
   myInvites: Array<Invite>;
+  /** The signed-in account's key log, devices and profile card on this server. */
+  myKeyIdentity: KeyIdentity;
   myMacros: Array<MacroDef>;
   myMentions: Array<Message>;
   /** The viewer's notification settings in the workspace (defaults until first saved). */
@@ -2687,6 +2809,11 @@ export type QueryIncidentTimelineArgs = {
 
 export type QueryIngestTokensArgs = {
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryKeyLogArgs = {
+  principalId: Scalars['String']['input'];
 };
 
 
@@ -2982,6 +3109,12 @@ export enum ReportOutcome {
   RESOLVED = 'RESOLVED'
 }
 
+export type RotateIdentityKeyInput = {
+  /** Device certificate under the new identity key. Required for a recovery rotation. */
+  device?: InputMaybe<SignedStatementInput>;
+  entry: SignedStatementInput;
+};
+
 /**
  * Discriminator for [`RotationLayerGql::kind`] / [`RotationKindInputGql::kind`]. See
  * `docs/oncall.md` for the timezone/DST semantics of each variant.
@@ -3166,6 +3299,21 @@ export enum SettingScope {
   USER = 'USER',
   WORKSPACE = 'WORKSPACE'
 }
+
+/** A stored signed statement, exactly as it was signed, so the client can verify it again. */
+export type SignedStatement = {
+  payload: Scalars['String']['output'];
+  signature: Scalars['String']['output'];
+};
+
+/**
+ * A signed statement as the client sends it: the exact JSON text that was signed, and its
+ * unpadded base64url Ed25519 signature.
+ */
+export type SignedStatementInput = {
+  payload: Scalars['String']['input'];
+  signature: Scalars['String']['input'];
+};
 
 /**
  * Input for `signupWithInvite`.
@@ -3407,6 +3555,12 @@ export type User = {
   bio?: Maybe<Scalars['String']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  /**
+   * Key-based principal id (`rimp1_...`) once the account enrolled a key; null before. Plugins
+   * see this id, and the host maps a provisional `rimp0_` id to it once
+   * (`docs/specs/key-identity-v1.md`).
+   */
+  principalId?: Maybe<Scalars['String']['output']>;
   statusText?: Maybe<Scalars['String']['output']>;
   username: Scalars['String']['output'];
 };

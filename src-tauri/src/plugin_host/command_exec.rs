@@ -448,6 +448,7 @@ mod tests {
             panel_registry: PanelRegistry::new(),
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
+            principal_ids: Arc::new(Mutex::new(Vec::new())),
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         }

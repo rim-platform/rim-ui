@@ -30,7 +30,10 @@ use crate::plugin_host::handshake::{self, HandshakeError};
 use crate::plugin_host::host_events::PluginEventKind;
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::process::{self, PluginProcess};
-use crate::plugin_host::protocol::{method, Principal, PrincipalChangedParams};
+use crate::plugin_host::protocol::{
+    method, Principal, PrincipalChangedParams, PrincipalMapping, PrincipalsRemappedParams,
+};
+use crate::plugin_host::state::PluginStateStore;
 use crate::plugin_host::PluginHostState;
 use std::path::PathBuf;
 use tokio::sync::watch;
@@ -136,6 +139,7 @@ pub fn start_plugin(
     let clients = state.clients.clone();
     let shutdown_txs = state.shutdown_txs.clone();
     let principal = state.principal.clone();
+    let principal_ids = state.principal_ids.clone();
     let pids = state.pids.clone();
     let panel_relay = state.panel_relay.clone();
     let events = state.events.clone();
@@ -191,6 +195,12 @@ pub fn start_plugin(
             let current = principal.lock().ok().and_then(|p| p.clone());
             if current != sent_principal {
                 let _ = notify_principal(&client, current).await;
+            }
+            // Every connection hears the id switch, so a plugin that was not running when it
+            // happened can still rewrite the ids it stored.
+            let mappings = principal_ids.lock().map(|m| m.clone()).unwrap_or_default();
+            if !mappings.is_empty() {
+                let _ = notify_remapped(&client, mappings).await;
             }
             broker_loop.await;
             if let Ok(mut map) = clients.lock() {
@@ -382,6 +392,74 @@ async fn notify_principal(
     .unwrap_or(Err(RequestError::TimedOut(NOTIFY_TIMEOUT)))
 }
 
+/// The persisted id switches as [`method::PRINCIPALS_REMAPPED`] sends them.
+pub fn mappings_of(store: &PluginStateStore) -> Vec<PrincipalMapping> {
+    store
+        .principal_ids
+        .iter()
+        .map(|(from, to)| PrincipalMapping {
+            from: from.clone(),
+            to: to.clone(),
+        })
+        .collect()
+}
+
+/// Record that the provisional id `from` became `to`, in memory and in the state file.
+/// Returns whether that is news (a new or changed mapping).
+pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) -> bool {
+    let mappings = {
+        let Ok(mut store) = state.store.lock() else {
+            return false;
+        };
+        if store.principal_ids.get(from).map(String::as_str) == Some(to) {
+            return false;
+        }
+        store.principal_ids.insert(from.to_string(), to.to_string());
+        if let Err(e) = store.save(&state.state_path) {
+            // Still sent this run; the next start learns it again from the signed-in user.
+            log::warn!("[plugin_host] could not save the principal id switch: {e}");
+        }
+        mappings_of(&store)
+    };
+    if let Ok(mut current) = state.principal_ids.lock() {
+        *current = mappings;
+    }
+    true
+}
+
+/// Send the whole id switch list to every running plugin.
+pub async fn announce_remapped(state: &PluginHostState) {
+    let mappings = match state.principal_ids.lock() {
+        Ok(mappings) => mappings.clone(),
+        Err(_) => return,
+    };
+    if mappings.is_empty() {
+        return;
+    }
+    let clients: Vec<PluginClient> = match state.clients.lock() {
+        Ok(clients) => clients.values().cloned().collect(),
+        Err(_) => Vec::new(),
+    };
+    for client in clients {
+        let _ = notify_remapped(&client, mappings.clone()).await;
+    }
+}
+
+/// Send `rim.principals.remapped` to one plugin.
+async fn notify_remapped(
+    client: &PluginClient,
+    mappings: Vec<PrincipalMapping>,
+) -> Result<(), RequestError> {
+    let params = serde_json::to_value(PrincipalsRemappedParams { mappings })
+        .unwrap_or(serde_json::Value::Null);
+    timeout(
+        NOTIFY_TIMEOUT,
+        client.notify(method::PRINCIPALS_REMAPPED, Some(params)),
+    )
+    .await
+    .unwrap_or(Err(RequestError::TimedOut(NOTIFY_TIMEOUT)))
+}
+
 /// Send `rim.handshake` through the broker loop and validate the plugin's answer.
 async fn handshake_through(
     client: &PluginClient,
@@ -483,6 +561,7 @@ mod tests {
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         }
@@ -635,6 +714,7 @@ mod tests {
             panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         };

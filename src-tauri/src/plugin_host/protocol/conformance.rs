@@ -315,6 +315,36 @@ async fn principal_changed_notification_is_frozen() {
 }
 
 #[tokio::test]
+async fn principals_remapped_notification_is_frozen() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = PluginHostState::with_installed(vec![]);
+    state.state_path = dir.path().join("plugins.json");
+    let (_client, mut plugin, _shutdown) = connect(Some(&state));
+    let from = principal().principal_id;
+    let to = "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo";
+
+    assert!(runtime::record_principal_switch(&state, &from, to));
+    // The same switch again is no news.
+    assert!(!runtime::record_principal_switch(&state, &from, to));
+    runtime::announce_remapped(&state).await;
+    let frame = read(&mut plugin).await;
+    assert_valid("PrincipalsRemappedNotification", &frame);
+    assert_eq!(
+        frame["params"]["mappings"],
+        json!([{ "from": from, "to": to }])
+    );
+    assert_no_raw_ids(&frame);
+
+    // The switch outlives the app: the state file keeps it.
+    let stored = crate::plugin_host::state::PluginStateStore::load(&state.state_path);
+    assert_eq!(
+        stored.principal_ids.get(&from).map(String::as_str),
+        Some(to)
+    );
+    assert_eq!(runtime::mappings_of(&stored).len(), 1);
+}
+
+#[tokio::test]
 async fn command_execute_request_is_frozen() {
     let state = PluginHostState::with_installed(vec![hello_world_manifest()]);
     *state.principal.lock().unwrap() = Some(principal());

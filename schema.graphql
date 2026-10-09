@@ -725,6 +725,23 @@ input DeleteWorkspaceStateInput {
 	scope: WorkspaceStateScopeGql!
 }
 
+type DeviceKey {
+	"""
+	The client-chosen device id from the certificate.
+	"""
+	deviceId: ID!
+	publicKey: String!
+	name: String!
+	"""
+	Key log seq whose identity key signed the certificate.
+	"""
+	keySeq: Int!
+	certificate: SignedStatement!
+	addedAt: DateTime!
+	lastUsedAt: DateTime
+	revokedAt: DateTime
+}
+
 """
 How often unread notifications are emailed.
 """
@@ -764,6 +781,22 @@ input EditMessageInput {
 	conversationId: ID!
 	messageId: ID!
 	text: String!
+}
+
+input EnrollIdentityKeyInput {
+	"""
+	The whole key log, inception first.
+	"""
+	keyLog: [SignedStatementInput!]!
+	"""
+	Certificate of the device enrolling; this session becomes its session.
+	"""
+	device: SignedStatementInput!
+	"""
+	A `login` statement signed by that device over a fresh `keyLoginChallenge`, proving the
+	caller holds the device key.
+	"""
+	proof: SignedStatementInput!
 }
 
 """
@@ -1238,6 +1271,45 @@ input JoinServerByInviteInput {
 
 type JoinServerByInvitePayload {
 	serverId: ID!
+}
+
+"""
+What this server holds about the signed-in account's key identity. Before the account
+enrolls a key, `principalId` and `keySeq` are null and the lists are empty.
+"""
+type KeyIdentity {
+	principalId: String
+	keySeq: Int
+	"""
+	Oldest entry first.
+	"""
+	keyLog: [KeyLogEntry!]!
+	"""
+	Every device, revoked ones included, oldest first.
+	"""
+	devices: [DeviceKey!]!
+	profileCard: ProfileCard
+}
+
+type KeyLogEntry {
+	seq: Int!
+	kind: KeyLogEntryKind!
+	statement: SignedStatement!
+	createdAt: DateTime!
+}
+
+enum KeyLogEntryKind {
+	INCEPTION
+	ROTATE
+}
+
+type KeyLoginChallenge {
+	challengeId: ID!
+	"""
+	Copy into the `login` statement's `nonce`.
+	"""
+	nonce: String!
+	expiresAt: DateTime!
 }
 
 type Keybind {
@@ -1782,6 +1854,36 @@ type Mutation {
 	or off. While paused, notifications are still recorded but arrive `quiet`.
 	"""
 	setDoNotDisturb(serverId: ID!, paused: Boolean!, until: DateTime): NotificationSettings!
+	"""
+	Start a key login: a single-use challenge for a device to sign. No session needed.
+	"""
+	keyLoginChallenge: KeyLoginChallenge!
+	"""
+	Sign in with a `login` statement signed by an enrolled device key. Sets the same session
+	cookie as `login`.
+	"""
+	loginWithKey(proof: SignedStatementInput!): LoginPayload!
+	"""
+	Bind a key identity to the signed-in account. Afterwards the password no longer signs in.
+	"""
+	enrollIdentityKey(input: EnrollIdentityKeyInput!): KeyIdentity!
+	"""
+	Add a device certified by the current identity key.
+	"""
+	addDeviceKey(certificate: SignedStatementInput!): DeviceKey!
+	"""
+	Revoke a device, signed by the identity key or by the device itself. Ends its sessions.
+	"""
+	revokeDeviceKey(revocation: SignedStatementInput!): DeviceKey!
+	"""
+	Append a rotation to the key log. A rotation signed by the recovery key works without a
+	session, revokes every device and session, and enrolls the device given with it.
+	"""
+	rotateIdentityKey(input: RotateIdentityKeyInput!): KeyIdentity!
+	"""
+	Publish a profile card signed by the current identity key.
+	"""
+	publishProfileCard(card: SignedStatementInput!): ProfileCard!
 }
 
 input MuteConversationInput {
@@ -2048,6 +2150,12 @@ enum PresenceStatus {
 	OFFLINE
 }
 
+type ProfileCard {
+	version: Int!
+	statement: SignedStatement!
+	updatedAt: DateTime!
+}
+
 type Query {
 	commands(surface: CommandSurface, commandContext: CommandContextInput): [Command!]!
 	"""
@@ -2217,6 +2325,16 @@ type Query {
 	Unread notifications of the viewer in the workspace (the bell badge).
 	"""
 	myUnreadNotificationCount(serverId: ID!): Int!
+	"""
+	The signed-in account's key log, devices and profile card on this server.
+	"""
+	myKeyIdentity: KeyIdentity!
+	"""
+	The public key log of a principal enrolled on this server, oldest first; empty when none
+	is. No session needed: a person who lost every device reads the head here to sign a
+	recovery rotation (`rotateIdentityKey`).
+	"""
+	keyLog(principalId: String!): [KeyLogEntry!]!
 }
 
 type ReactionGroup {
@@ -2257,6 +2375,14 @@ How a moderator closes a report.
 enum ReportOutcome {
 	RESOLVED
 	DISMISSED
+}
+
+input RotateIdentityKeyInput {
+	entry: SignedStatementInput!
+	"""
+	Device certificate under the new identity key. Required for a recovery rotation.
+	"""
+	device: SignedStatementInput
 }
 
 """
@@ -2470,6 +2596,23 @@ enum SettingScope {
 	WORKSPACE
 	INTEGRATION
 	DEVICE_LOCAL
+}
+
+"""
+A stored signed statement, exactly as it was signed, so the client can verify it again.
+"""
+type SignedStatement {
+	payload: String!
+	signature: String!
+}
+
+"""
+A signed statement as the client sends it: the exact JSON text that was signed, and its
+unpadded base64url Ed25519 signature.
+"""
+input SignedStatementInput {
+	payload: String!
+	signature: String!
 }
 
 """
@@ -2715,6 +2858,12 @@ type User {
 	avatarUrl: String
 	statusText: String
 	bio: String
+	"""
+	Key-based principal id (`rimp1_...`) once the account enrolled a key; null before. Plugins
+	see this id, and the host maps a provisional `rimp0_` id to it once
+	(`docs/specs/key-identity-v1.md`).
+	"""
+	principalId: String
 }
 
 input UserCommandStepInput {

@@ -52,6 +52,9 @@ pub struct PluginHostState {
     /// The signed-in user as plugins see it; the UI sets it on sign-in and sign-out.
     /// Arc so a broker task can read it when its plugin finishes the handshake.
     pub principal: Arc<Mutex<Option<protocol::Principal>>>,
+    /// Provisional principal ids and the key-based ids that replaced them, as persisted in
+    /// the state store; sent to every plugin after its handshake. Arc for the broker tasks.
+    pub principal_ids: Arc<Mutex<Vec<protocol::PrincipalMapping>>>,
     /// OS process ids of running plugin processes, keyed by plugin_id, so app quit
     /// can kill any process that outlives its graceful shutdown.
     pub pids: Arc<Mutex<HashMap<String, u32>>>,
@@ -62,6 +65,7 @@ pub struct PluginHostState {
 pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     let state_path = state_file_path(app_data_dir);
     let store = PluginStateStore::load(&state_path);
+    let principal_ids = runtime::mappings_of(&store);
 
     let mut manifests = HashMap::new();
     let mut plugin_dirs = HashMap::new();
@@ -93,6 +97,7 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         panel_registry: PanelRegistry::new(),
         pending_ui_events: Mutex::new(Vec::new()),
         principal: Arc::new(Mutex::new(None)),
+        principal_ids: Arc::new(Mutex::new(principal_ids)),
         pids: Arc::new(Mutex::new(HashMap::new())),
         events: Arc::new(host_events::PluginEvents::new()),
     };
@@ -200,6 +205,7 @@ impl PluginHostState {
             panel_registry: PanelRegistry::new(),
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
+            principal_ids: Arc::new(Mutex::new(Vec::new())),
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(host_events::PluginEvents::new()),
         }

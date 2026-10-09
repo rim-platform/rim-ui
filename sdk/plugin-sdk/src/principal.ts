@@ -4,10 +4,10 @@ declare const principalIdBrand: unique symbol;
  * Opaque, stable id of a person.
  *
  * Store it and compare it with `===`, but never parse it or build one: it is
- * not an account UUID and not a `name@domain`, and its format will change once
- * when key identity ships (ids starting `rimp0_` are provisional). Keep stored
- * ids somewhere you can rewrite, because the host will send an old-to-new
- * mapping then.
+ * not an account UUID and not a `name@domain`, and its format changes once,
+ * when the person enrolls a key identity (ids starting `rimp0_` are
+ * provisional). Keep stored ids somewhere you can rewrite: the host sends the
+ * old-to-new mapping in `rim.principals.remapped` (`onPrincipalsRemapped`).
  */
 export type PrincipalId = string & { readonly [principalIdBrand]: true };
 
@@ -42,6 +42,46 @@ export function readPrincipal(value: unknown): Principal | null {
   }
   if (typeof displayName !== "string") throw new MalformedPrincipalError(value);
   return Object.freeze({ principalId: principalId as PrincipalId, displayName });
+}
+
+/** One switched id: a provisional id and the key-based id that replaced it. */
+export interface PrincipalMapping {
+  readonly from: PrincipalId;
+  readonly to: PrincipalId;
+}
+
+/** `rim.principals.remapped` params that are not `{ mappings: [{ from, to }, ...] }` with strings. */
+export class MalformedMappingError extends Error {
+  constructor(value: unknown) {
+    super(`malformed principal mapping: ${JSON.stringify(value)}`);
+    this.name = "MalformedMappingError";
+  }
+}
+
+/**
+ * Read the mappings of `rim.principals.remapped`, keeping only `from` and `to`.
+ *
+ * @throws MalformedMappingError when `value` is not a list of `{ from, to }` strings.
+ */
+export function readPrincipalMappings(value: unknown): readonly PrincipalMapping[] {
+  if (!Array.isArray(value)) throw new MalformedMappingError(value);
+  return Object.freeze(
+    value.map((item: unknown) => {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) {
+        throw new MalformedMappingError(item);
+      }
+      const { from, to } = item as Record<string, unknown>;
+      if (
+        typeof from !== "string" ||
+        from.length === 0 ||
+        typeof to !== "string" ||
+        to.length === 0
+      ) {
+        throw new MalformedMappingError(item);
+      }
+      return Object.freeze({ from: from as PrincipalId, to: to as PrincipalId });
+    }),
+  );
 }
 
 /** True when both are null or both name the same person with the same label. */

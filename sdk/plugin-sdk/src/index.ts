@@ -26,7 +26,12 @@ export {
   type RunOptions,
 } from "./plugin.ts";
 export { ErrorCode, HostRequestError, PluginError } from "./errors.ts";
-export { samePrincipal, type Principal, type PrincipalId } from "./principal.ts";
+export {
+  samePrincipal,
+  type Principal,
+  type PrincipalId,
+  type PrincipalMapping,
+} from "./principal.ts";
 export { encodeFrame, FrameDecoder, FrameTooLargeError, type DecodedFrame } from "./framing.ts";
 export { MAX_FRAME_BYTES, Method, PROTOCOL_VERSION } from "./generated/protocol.ts";
 /** The protocol's frames and payloads exactly as the schema defines them. */

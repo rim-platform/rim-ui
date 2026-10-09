@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +37,10 @@ pub struct PluginRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PluginStateStore {
     pub plugins: HashMap<String, PluginRecord>,
+    /// Provisional `rimp0_` principal ids this device has seen switch to a key-based id,
+    /// sent to plugins in `rim.principals.remapped`. Keyed by the old id.
+    #[serde(default)]
+    pub principal_ids: BTreeMap<String, String>,
 }
 
 impl PluginStateStore {

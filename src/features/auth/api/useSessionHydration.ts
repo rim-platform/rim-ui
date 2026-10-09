@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { isSessionRefused } from "../../../core/graphql/errors";
+import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
 import { loadSessionRecord, saveSessionRecord } from "../../offline/api/offlineSession";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
@@ -30,7 +31,9 @@ interface MeResponse {
  *
  * On the desktop app the session record (`offlineSession.ts`) adds two cases: after an
  * explicit sign-out the app stays on sign-in without asking the server, and when the server
- * cannot be reached the recorded account opens offline from the local cache.
+ * cannot be reached the recorded account opens offline from the local cache. When the server
+ * refuses the recorded account's session and this device holds that account's key, the app
+ * signs in again with the key (key identity, Stage 3).
  */
 export function useSessionHydration() {
   const session = useAuthStore((s) => s.session);
@@ -65,7 +68,15 @@ export function useSessionHydration() {
             useOfflineStore.getState().setOffline(true);
             setSession({ userId: record.userId });
           } else if (isSessionRefused(err)) {
-            void saveSessionRecord({ state: "signedOut", endpoint: record.endpoint });
+            // The cookie is gone or expired. With a device key for that account, sign in again
+            // with it; otherwise the account needs signing in, offline too.
+            const userId = await resumeWithDeviceKey(record.userId);
+            if (cancelled) return;
+            if (userId) {
+              setSession({ userId });
+            } else {
+              void saveSessionRecord({ state: "signedOut", endpoint: record.endpoint });
+            }
           }
         }
       } finally {
