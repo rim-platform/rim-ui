@@ -13,6 +13,9 @@ const MAX_URL_BYTES = 256;
 /** The scheme, the version, a principal id and a 256-byte URL, with their separators. */
 export const MAX_CONTACT_LINK_LEN = SCHEME.length + 2 + 49 + 1 + MAX_URL_BYTES;
 
+/** The most relays a profile card lists. */
+export const MAX_CARD_RELAYS = 8;
+
 export interface ContactLink {
   principalId: string;
   relayUrl: string;
@@ -68,4 +71,12 @@ export function parseContactLink(text: string): ContactLink {
   }
   if (!validPrincipalId(principalId) || !validRelayUrl(relayUrl)) throw new ContactLinkError();
   return { principalId, relayUrl };
+}
+
+/** Why `url` cannot be added to `relays`, or `null` when it can. */
+export function relayProblem(url: string, relays: readonly string[]): string | null {
+  if (!validRelayUrl(url)) return "Enter the relay's address, like https://relay.example.";
+  if (relays.includes(url)) return "That relay is already listed.";
+  if (relays.length >= MAX_CARD_RELAYS) return `A card lists at most ${MAX_CARD_RELAYS} relays.`;
+  return null;
 }

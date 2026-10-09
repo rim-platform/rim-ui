@@ -26,6 +26,7 @@ import {
   forgetKeysTheServerNeverSaw,
   KeyChallengeFailed,
   profileCardIsStale,
+  profileCardRelays,
   reconcileDeviceKeys,
   recoverAccount,
   resumeWithDeviceKey,
@@ -746,5 +747,34 @@ describe("helpers", () => {
     expect(
       profileCardIsStale(identity(card, [{ ...device, revokedAt: "2026-10-09T01:00:00Z" }]), "Ada"),
     ).toBe(true);
+  });
+
+  it("keeps the relays the person chose, as long as this server is one of them", () => {
+    const device = {
+      deviceId: "d-1",
+      publicKey: "k",
+      name: "Laptop",
+      keySeq: 0,
+      certificate: STATEMENT,
+      addedAt: "2026-10-09T00:00:00Z",
+      lastUsedAt: null,
+      revokedAt: null,
+    };
+    const card = (relays: string[]) => ({
+      displayName: "Ada",
+      keySeq: 0,
+      relays,
+      devices: [{ deviceId: "d-1" }],
+    });
+    const chosen = identity(card(["https://relay.example", "http://localhost:8080"]), [device]);
+    expect(profileCardRelays(chosen)).toEqual(["https://relay.example", "http://localhost:8080"]);
+    expect(profileCardIsStale(chosen, "Ada")).toBe(false);
+    const elsewhere = identity(card(["https://relay.example"]), [device]);
+    expect(profileCardRelays(elsewhere)).toEqual([
+      "http://localhost:8080",
+      "https://relay.example",
+    ]);
+    expect(profileCardIsStale(elsewhere, "Ada")).toBe(true);
+    expect(profileCardRelays(identity(null, [device]))).toEqual(["http://localhost:8080"]);
   });
 });

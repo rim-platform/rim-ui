@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
   rotateIdentityKey: vi.fn(),
   publishProfileCard: vi.fn(),
   profileCardIsStale: vi.fn(),
+  profileCardRelays: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ value: true }));
 const sessions = vi.hoisted(() => ({ logoutOtherSessions: vi.fn() }));
@@ -108,6 +109,7 @@ describe("KeyIdentitySettings", () => {
   beforeEach(() => {
     desktop.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
+    api.profileCardRelays.mockReturnValue(["http://localhost:8080"]);
     sessions.logoutOtherSessions.mockReset();
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.defaultDeviceName.mockResolvedValue("Laptop");
