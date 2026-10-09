@@ -1,5 +1,5 @@
-//! The app's secrets in the OS credential store: the message cache key, the AI provider keys
-//! and the legacy Stronghold password, all under one service name.
+//! The app's secrets in the OS credential store: the message cache key, the history archive
+//! keys, the AI provider keys and the legacy Stronghold password, all under one service name.
 //!
 //! - macOS: Keychain. Windows: Credential Manager. Both are `keyring`'s defaults.
 //! - Linux: the desktop keyring service (Secret Service over D-Bus, provided by GNOME Keyring,
