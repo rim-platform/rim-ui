@@ -11,6 +11,13 @@ import { logger } from "../../../core/logger";
 import { createGroup, shouldEncryptNewConversation } from "../../e2ee/runtime/groups";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import { isWebAccount } from "../../e2ee/web/webAccount";
+import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
+import { startDirectConversation, type DirectMember } from "../../relay/conversations/startDirect";
+import { useRelayStore } from "../../relay/state/useRelayStore";
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
+import type { ServerMember } from "../../workspaces/api/useServerMembers";
+import { selectDirectConversation } from "../state/directSelection";
 import { MemberPicker } from "./MemberPicker";
 
 interface NewMessagePickerProps {
@@ -19,10 +26,34 @@ interface NewMessagePickerProps {
   onCreated: (conversationId: string) => void;
 }
 
+/**
+ * The members of a workspace selection as principals, when every one of them has a principal
+ * id: then the conversation starts in this relay's direct space instead of the workspace.
+ */
+function asPrincipals(workspaceId: string, userIds: string[]): DirectMember[] | null {
+  const members =
+    queryClient.getQueryData<ServerMember[]>(queryKeys.serverMembers(workspaceId)) ?? [];
+  const picked = userIds.map((id) => members.find((m) => m.userId === id));
+  if (picked.some((m) => !m?.principalId)) return null;
+  return (picked as ServerMember[]).map((m) => ({
+    principalId: m.principalId!,
+    relayUrls: [],
+    name: m.displayName || m.username,
+  }));
+}
+
 export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerProps) {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [contacts, setContacts] = useState<PickedContact[]>([]);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const relayOn = useRelayStore((s) => s.info !== null);
+  const inDirectSpace = useRelayStore(
+    (s) =>
+      Boolean(workspaceId) &&
+      (s.info?.directSpaceId === workspaceId || s.spaces[workspaceId ?? ""]?.kind === "direct"),
+  );
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
   const createMutation = useCreateConversationMutation();
   // Guests may open DMs but not create groups (the server refuses with FORBIDDEN), so their
@@ -39,11 +70,39 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
 
   // Reset state when picker closes
   useEffect(() => {
-    if (!open) setSelectedUserIds([]);
+    if (!open) {
+      setSelectedUserIds([]);
+      setContacts([]);
+      setStartError(null);
+    }
   }, [open]);
 
+  const startDirect = useCallback(
+    async (members: DirectMember[]) => {
+      setStartError(null);
+      try {
+        const { spaceId, conversationId } = await startDirectConversation(members);
+        selectDirectConversation(spaceId, conversationId);
+        onClose();
+      } catch (err) {
+        setStartError(graphqlErrorMessage(err, "Failed to create conversation"));
+      }
+    },
+    [onClose],
+  );
+
   const handleConfirm = useCallback(async () => {
+    if (inDirectSpace) {
+      if (contacts.length > 0) await startDirect(contacts);
+      return;
+    }
     if (!workspaceId || selectedUserIds.length === 0) return;
+    // When everyone has a principal id, new DMs and groups live in this relay's direct space.
+    const principals = relayOn ? asPrincipals(workspaceId, selectedUserIds) : null;
+    if (principals) {
+      await startDirect(principals);
+      return;
+    }
     // New DMs and groups are encrypted when every member is ready; this device then creates
     // the group. An existing plaintext DM the server hands back is upgraded only by a desktop.
     const session = await e2eeSession();
@@ -68,7 +127,16 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         onCreated(conversationId);
       },
     });
-  }, [workspaceId, selectedUserIds, createMutation, onCreated]);
+  }, [
+    workspaceId,
+    selectedUserIds,
+    createMutation,
+    onCreated,
+    inDirectSpace,
+    contacts,
+    relayOn,
+    startDirect,
+  ]);
 
   if (!open) return null;
 
@@ -86,26 +154,38 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         className="relative w-full max-w-lg rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <MemberPicker
-          workspaceId={workspaceId ?? undefined}
-          selectedUserIds={selectedUserIds}
-          onChange={handleSelectionChange}
-          onConfirm={() => void handleConfirm()}
-          onEscape={onClose}
-          autoFocus
-        />
+        {inDirectSpace ? (
+          <ContactPicker
+            selected={contacts}
+            onChange={setContacts}
+            onConfirm={() => void handleConfirm()}
+            onEscape={onClose}
+          />
+        ) : (
+          <MemberPicker
+            workspaceId={workspaceId ?? undefined}
+            selectedUserIds={selectedUserIds}
+            onChange={handleSelectionChange}
+            onConfirm={() => void handleConfirm()}
+            onEscape={onClose}
+            autoFocus
+          />
+        )}
 
         {/* Error */}
-        {createMutation.error && (
+        {(createMutation.error || startError) && (
           <div className="border-t border-rim-line px-4 py-2">
             <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-              {graphqlErrorMessage(createMutation.error, "Failed to create conversation")}
+              {startError ??
+                graphqlErrorMessage(createMutation.error, "Failed to create conversation")}
             </p>
           </div>
         )}
 
         {/* Footer */}
-        <NewMessagePickerFooter selectedCount={selectedUserIds.length} />
+        <NewMessagePickerFooter
+          selectedCount={inDirectSpace ? contacts.length : selectedUserIds.length}
+        />
       </div>
     </div>
   );

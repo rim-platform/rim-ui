@@ -23,13 +23,14 @@ import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
 import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
+import { rememberRelays } from "../contacts/knownRelays";
 import { useContactStore } from "../contacts/useContactStore";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, resetPinCache } from "../state/serverPins";
 import { loadSpaces, registerSpace } from "../state/spaces";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
-import { RelayStreamProcessor } from "../stream/relayStream";
+import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
 import { loadRelayHealth } from "../transport/relayHealth";
 import { sendGraphql } from "../transport/remoteFetch";
 
@@ -78,6 +79,7 @@ function applyRelayEvent(
   spaceId: string,
 ): void {
   if (event.type === "DmInvite") {
+    rememberRelays(event.from_principal_id, cardRelays(event.from_card));
     void qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
     return;
   }

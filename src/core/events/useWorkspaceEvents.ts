@@ -11,6 +11,7 @@ import { BUS_EVENTS } from "./busEvents";
 import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
 import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
+import { hostOf } from "../../features/relay/state/useRelayStore";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
@@ -95,7 +96,8 @@ export function useWorkspaceEvents(workspaceId: string | null) {
   }, [qc]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    // A space on another server reaches this app through the relay's `relayStream` instead.
+    if (!workspaceId || hostOf(workspaceId)) return;
 
     logger.debug("[RIM:WS] Subscribing to workspace events for:", workspaceId);
 

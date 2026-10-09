@@ -20,6 +20,17 @@ interface CreateConversationResponse {
   createConversation: ConversationSummary;
 }
 
+/** Create a conversation outside React: a DM or group in a direct space, a successor. */
+export async function createConversation(
+  input: CreateConversationInput,
+): Promise<ConversationSummary> {
+  const res = await graphqlClient.request<CreateConversationResponse>(
+    CREATE_CONVERSATION_MUTATION,
+    { input },
+  );
+  return res.createConversation;
+}
+
 export function useCreateConversationMutation() {
   const qc = useQueryClient();
   return useMutation({
