@@ -168,7 +168,7 @@ impl Mls {
     // ─── Key packages ────────────────────────────────────────────────────────
 
     /// Generate `count` key packages to upload (last-resort ones when `last_resort`), valid from
-    /// an hour before `now` (Unix seconds) for 30 days.
+    /// an hour before `now` (Unix seconds) for 90 days.
     pub fn generate_key_packages(
         &self,
         store: &impl Store,

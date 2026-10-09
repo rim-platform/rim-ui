@@ -27,7 +27,7 @@ pub const KEY_PACKAGE_TARGET: u32 = 20;
 /// Below this many, a device tops up to [`KEY_PACKAGE_TARGET`].
 pub const KEY_PACKAGE_LOW_WATER: u32 = 10;
 /// A key package's lifetime.
-pub const KEY_PACKAGE_LIFETIME_SECS: u64 = 30 * 24 * 60 * 60;
+pub const KEY_PACKAGE_LIFETIME_SECS: u64 = 90 * 24 * 60 * 60;
 /// How far before now a key package's lifetime starts, for skewed clocks.
 const KEY_PACKAGE_BACKDATE_SECS: u64 = 60 * 60;
 const DAY_SECS: u64 = 24 * 60 * 60;

@@ -638,11 +638,15 @@ fn readd(
         READD_CONTEXT,
         request.payload(),
     );
-    // Fresh key packages before asking.
-    clients[lost].upload(server, 2);
     server.request_readd(clients[lost].device(), statement);
-
+    // Only key packages uploaded after the request serve a re-add.
     let (device, statement) = server.readd_targets().remove(0);
+    assert!(matches!(
+        server.claim(clients[committer].device(), std::slice::from_ref(&device)),
+        Err(Refusal::Validation(_))
+    ));
+    clients[lost].upload(server, 2);
+
     let verified = server
         .verify_readd(&statement, &tagged_public(&clients[lost].dev.device_key))
         .unwrap();
@@ -806,9 +810,10 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
     clients[0].create(&mut server, 1).unwrap();
     sync_all(&mut clients, &mut server, &directory);
 
-    // A key package whose lifetime ends one second from now.
+    // A key package whose lifetime ends one second from now. The server never hands out one
+    // this close to expiry; a committer that got it anyway adds it.
     let newcomer = Client::new(1, 2);
-    let packages = crate::provider::with_crypto!(&newcomer.dev.mls.backend, |crypto| {
+    let mut packages = crate::provider::with_crypto!(&newcomer.dev.mls.backend, |crypto| {
         crate::device::generate_key_packages(
             crypto,
             crate::storage::sealed::Sealed::backend(&newcomer.dev.store),
@@ -820,15 +825,32 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
     })
     .unwrap();
     newcomer.dev.store.commit();
-    server.upload(newcomer.device(), packages);
-    clients[0].commit_pending(&mut server).unwrap();
+    server.upload(newcomer.device(), packages.clone());
+    assert!(matches!(
+        server.claim(clients[0].device(), &[newcomer.device().clone()]),
+        Err(Refusal::Validation(_))
+    ));
+    let group = clients[0].group(&server);
+    let claimed = crate::ClaimedKeyPackage {
+        device: newcomer.device().clone(),
+        key_package: packages.remove(0).message,
+    };
+    let outgoing = clients[0]
+        .dev
+        .mls
+        .commit(&clients[0].dev.store, group, &[claimed], &[])
+        .unwrap();
+    clients[0]
+        .dev
+        .mls
+        .commit_accepted(&clients[0].dev.store, group)
+        .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(2100));
 
     // A device that processes the Commit later refuses it (OpenMLS checks an added key
     // package's lifetime when it processes the Commit) and needs a re-add.
-    let commit = server.commit_at(1).unwrap();
     assert!(matches!(
-        clients[1].apply_commit(&server, &commit, &directory),
+        clients[1].apply_commit(&server, &outgoing.commit, &directory),
         CommitOutcome::CannotProcess { .. }
     ));
 }

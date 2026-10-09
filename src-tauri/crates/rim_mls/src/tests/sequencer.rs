@@ -7,6 +7,7 @@ use openmls::prelude::tls_codec::DeserializeBytes as _;
 use openmls::prelude::{ContentType, MlsMessageBodyIn, MlsMessageIn, PrivateMessageIn};
 use uuid::Uuid;
 
+use super::support::now;
 use crate::{
     AuthenticatedData, ClaimedKeyPackage, ConversationGroup, DeviceRef, EncryptedMessage,
     GeneratedKeyPackage, OutgoingCommit, ReaddRequest, SignedStatement,
@@ -21,11 +22,23 @@ pub(crate) enum Refusal {
     Validation(String),
 }
 
+/// A key package as uploaded: its bytes, ref, expiry, and when (in upload order) it arrived.
+#[derive(Clone)]
+struct Stored {
+    message: Vec<u8>,
+    key_package_ref: Vec<u8>,
+    not_after: u64,
+    uploaded: u64,
+}
+
 #[derive(Default)]
 struct Packages {
-    one_time: VecDeque<(Vec<u8>, Vec<u8>)>,
-    last_resort: Option<(Vec<u8>, Vec<u8>)>,
+    one_time: VecDeque<Stored>,
+    last_resort: Option<Stored>,
 }
+
+/// A package expiring sooner than this is never handed out.
+const MIN_REMAINING_SECS: u64 = 14 * 24 * 60 * 60;
 
 /// The current incarnation's group as the server records it.
 pub(crate) struct ServerGroup {
@@ -62,7 +75,10 @@ pub(crate) struct Sequencer {
     claims: HashMap<Vec<u8>, Claim>,
     pub(crate) group: Option<ServerGroup>,
     pub(crate) feed: Vec<Row>,
-    readds: Vec<(DeviceRef, SignedStatement, u32)>,
+    /// Re-add requests: the device, the request, its incarnation, and the upload count at the
+    /// time (packages uploaded later are the ones a re-add may use).
+    readds: Vec<(DeviceRef, SignedStatement, u32, u64)>,
+    uploads: u64,
     /// Commits older than this many epochs are dropped.
     pub(crate) retention: Option<u64>,
 }
@@ -88,6 +104,7 @@ impl Sequencer {
             group: None,
             feed: vec![],
             readds: vec![],
+            uploads: 0,
             retention: None,
         }
     }
@@ -139,8 +156,8 @@ impl Sequencer {
         let incarnation = self.incarnation();
         self.readds
             .iter()
-            .filter(|(_, _, at)| *at == incarnation)
-            .map(|(device, statement, _)| (device.clone(), statement.clone()))
+            .filter(|(_, _, at, _)| *at == incarnation)
+            .map(|(device, statement, _, _)| (device.clone(), statement.clone()))
             .collect()
     }
 
@@ -152,7 +169,13 @@ impl Sequencer {
             .insert(device.device_id);
         let stored = self.packages.entry(device.clone()).or_default();
         for package in packages {
-            let entry = (package.message, package.key_package_ref);
+            self.uploads += 1;
+            let entry = Stored {
+                message: package.message,
+                key_package_ref: package.key_package_ref,
+                not_after: package.not_after,
+                uploaded: self.uploads,
+            };
             if package.last_resort {
                 stored.last_resort = Some(entry);
             } else {
@@ -170,7 +193,8 @@ impl Sequencer {
 
     pub(crate) fn request_readd(&mut self, device: &DeviceRef, statement: SignedStatement) {
         let incarnation = self.incarnation();
-        self.readds.push((device.clone(), statement, incarnation));
+        self.readds
+            .push((device.clone(), statement, incarnation, self.uploads));
     }
 
     fn is_group_device(&self, device: &DeviceRef) -> bool {
@@ -188,13 +212,19 @@ impl Sequencer {
         self.claim_among(caller, targets, &allowed)
     }
 
-    /// Claims for the first Commit of the next incarnation: every desired device but the caller.
+    /// Claims for the first Commit of the next incarnation: the current group devices and the
+    /// pending adds, but not the caller.
     pub(crate) fn claim_for_incarnation(
         &mut self,
         caller: &DeviceRef,
         targets: &[DeviceRef],
     ) -> Result<Vec<ClaimedKeyPackage>, Refusal> {
-        let allowed: Vec<DeviceRef> = self.desired().into_iter().filter(|d| d != caller).collect();
+        let allowed: Vec<DeviceRef> = self
+            .group_devices()
+            .into_iter()
+            .chain(self.pending_adds())
+            .filter(|d| d != caller)
+            .collect();
         self.claim_among(caller, targets, &allowed)
     }
 
@@ -211,29 +241,46 @@ impl Sequencer {
         if !permitted {
             return Err(Refusal::Forbidden);
         }
-        let readds: Vec<DeviceRef> = self.readd_targets().into_iter().map(|(d, _)| d).collect();
+        let incarnation = self.incarnation();
+        let earliest = now() + MIN_REMAINING_SECS;
         let mut claimed = vec![];
         for target in targets {
             if !allowed.contains(target) {
                 return Err(Refusal::Validation("not a pending add".into()));
             }
-            let is_readd = readds.contains(target);
+            let readd_after = self
+                .readds
+                .iter()
+                .filter(|(device, _, at, _)| device == target && *at == incarnation)
+                .map(|(_, _, _, uploads)| *uploads)
+                .max();
             let packages = self.packages.entry(target.clone()).or_default();
-            // A re-add takes the newest one-time package (uploaded with the request: the older
-            // ones may belong to the lost state) and never the last-resort one.
-            let one_time = if is_readd {
-                packages.one_time.pop_back()
-            } else {
-                packages.one_time.pop_front()
+            packages.one_time.retain(|p| p.not_after >= earliest);
+            let usable = |p: &Stored| p.not_after >= earliest;
+            let one_time = match readd_after {
+                // A re-add takes the newest one-time package uploaded after the request (older
+                // ones may belong to the lost state), never the last-resort one.
+                Some(after) => match packages.one_time.back() {
+                    Some(newest) if newest.uploaded > after => packages.one_time.pop_back(),
+                    _ => {
+                        return Err(Refusal::Validation(
+                            "the device has not uploaded key packages since its re-add request"
+                                .into(),
+                        ))
+                    }
+                },
+                None => packages.one_time.pop_front(),
             };
-            let (message, key_package_ref) = match one_time {
+            let Stored {
+                message,
+                key_package_ref,
+                ..
+            } = match one_time {
                 Some(package) => package,
-                None if is_readd => {
-                    return Err(Refusal::Validation("no one-time key package".into()))
-                }
                 None => packages
                     .last_resort
                     .clone()
+                    .filter(usable)
                     .ok_or_else(|| Refusal::Validation("no key package".into()))?,
             };
             self.claims.insert(
@@ -365,7 +412,8 @@ impl Sequencer {
             self.claims.remove(&add.key_package_ref);
         }
         let added: BTreeSet<DeviceRef> = summary.adds.iter().map(|a| a.device.clone()).collect();
-        self.readds.retain(|(device, _, _)| !added.contains(device));
+        self.readds
+            .retain(|(device, _, _, _)| !added.contains(device));
         let mut group = if new_group {
             ServerGroup {
                 incarnation: expected_group.incarnation,

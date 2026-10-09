@@ -29,7 +29,7 @@ explicitly. Every group uses `MLS_128_MLKEM768X25519_AES128GCM_SHA256_Ed25519` (
 | Operation | What it does |
 |---|---|
 | `mls_key_payload`, `install_mls_key_statement`, `ensure_identity`, `mls_key_statement`, `forget_identity` | This device's MLS signature key (Ed25519, generated here) and the `mls-key` statement the device key signs for it. The device key never enters the crate: `ensure_identity` takes a closure that signs `context`, `payload` |
-| `generate_key_packages`, `prune_key_packages`, `plan_key_package_upload` | Key packages (`MLSMessage` bytes and `KeyPackageRef`, last-resort or one-time, 30-day lifetime), deleting private keys of expired or replaced ones, and what to upload given the server's status |
+| `generate_key_packages`, `prune_key_packages`, `plan_key_package_upload` | Key packages (`MLSMessage` bytes and `KeyPackageRef`, last-resort or one-time, 90-day lifetime), deleting private keys of expired or replaced ones, and what to upload given the server's status |
 | `create_group` | Group at epoch 0 for a `ConversationGroup` (conversation id + incarnation, group id `rim1` ‖ UUID ‖ u32), first Commit adding the claimed devices |
 | `commit`, `self_update` | One Commit with every pending add and remove (a re-add is both for one device), with an update path and the membership summary as authenticated data |
 | `commit_accepted`, `commit_rejected` | The server's answer: merge, or drop (`STALE_EPOCH`; a refused group creation deletes the group) |
@@ -108,7 +108,9 @@ cargo test -p rim_mls write_appendix_a_fixtures -- --ignored  # re-record the fi
   (`src/tests/fixtures/appendix_a.json`): one key package of the A.2 device with its
   `KeyPackageRef`, and one PrivateMessage of the A.4 application data with the receiving device's
   group state, which also shows that state written by this OpenMLS release still loads.
-- `simulation` (against `sequencer`, an in-process server with the spec's rules): 3 users × 3
+- `simulation` (against `sequencer`, an in-process server with the spec's rules, including its
+  claims: never a package within 14 days of expiry, and for a re-add the newest one-time package
+  uploaded after the request, so the device uploads after asking): 3 users × 3
   devices; devices linked and revoked; members leaving and joining; racing committers in rank
   order; a submit without an answer; a message refused as stale and resent; a device offline past
   Commit retention re-added; lost state re-added with a new key; a Commit that cannot be
