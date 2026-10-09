@@ -6,6 +6,7 @@
 use tauri::State;
 
 use super::feed::{ChangesRequest, ConversationChanges};
+use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::store::{TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
 
@@ -83,6 +84,23 @@ pub async fn message_cache_timeline(
 ) -> Result<Option<TimelinePage>, CacheError> {
     with_store(state, account, move |store| {
         store.timeline(&workspace_id, &conversation_id, before.as_ref(), limit)
+    })
+    .await
+}
+
+/// Search the account's cached messages in a workspace: a page of hits, newest first, older
+/// than `after` (the previous page's last hit) when given.
+#[tauri::command]
+pub async fn message_cache_search(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    query: LocalSearchQuery,
+    after: Option<TimelineCursor>,
+    limit: u32,
+) -> Result<LocalSearchPage, CacheError> {
+    with_store(state, account, move |store| {
+        store.search(&workspace_id, &query, after.as_ref(), limit)
     })
     .await
 }

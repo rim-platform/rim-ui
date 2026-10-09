@@ -18,9 +18,32 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   user's own device is the point of Stage 2); signing back in to the same account reuses it. A
   sync still in flight when the signed-in account changes is discarded before it is applied.
 - `message.text` is its own column, and `message.seq` is an `INTEGER PRIMARY KEY` that upserts
-  never change, so local search (PR 10) can add an external-content FTS5 index over it
-  (`content_rowid='seq'`) that survives a `VACUUM`. Deleted messages stay as tombstones with no text,
-  attachments, link previews or reactions.
+  never change, so the local search index (below) points at rows that survive a `VACUUM`.
+  Deleted messages stay as tombstones with no text, attachments, link previews or reactions.
+- The schema is versioned with `PRAGMA user_version` (`SCHEMA_VERSION` in `store.rs`); each
+  version is one migration step that commits with its version number.
+
+## Local search (PR 10)
+
+Schema v2 adds `message_fts`, an external-content FTS5 index over `message.text`
+(`content='message'`, `content_rowid='seq'`, `unicode61` with diacritics folded). It is a table of
+the same SQLCipher database, so it is encrypted like the rest; there is no sidecar file.
+
+- FTS5's standard external-content triggers on `message` keep it in step with every write the sync
+  makes: a create indexes the text, an edit replaces the old entry, a delete (`NO_ACCESS`,
+  `RESET`) removes it. Tombstones have no text, so a message deleted on the server is not
+  searchable; nor is anything in a conversation the user lost access to, which the sync drops.
+- Upgrading a v1 cache backfills the index once (`'rebuild'`) in the same transaction as the
+  version bump.
+- `message_cache_search` takes the free text and the parsed operators (`from:`, `in:`, `has:link`,
+  `has:attachment`, `before:`, `after:`; the webview parses them, see
+  `src/features/messages/api/localSearch.ts`) and returns hits newest first with the timeline's
+  `(sentAt, id)` cursor, a `-bm25` rank, and a snippet that is HTML-escaped apart from its
+  `<mark>` tags. Free text is never FTS5 syntax: each word becomes a quoted prefix term (`depl`
+  finds `deploy`), `"quoted words"` a phrase, all of them required.
+- Search covers one workspace of the signed-in account's own database, live messages only.
+
+How the search overlay uses it is in `docs/search-ui.md`.
 
 ## Sync
 
@@ -54,4 +77,5 @@ while input: input = message_cache_sync_apply(await messageChanges(input))
   does not survive a reboot, so the cache key is new after every reboot and the cache refills
   from the server. Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
   that for this key and the agent provider keys alike, and needs libdbus at build time.
-- Local search (PR 10) and the drive archive come later.
+- Local search covers the conversations the cache follows (opened on this device), not every
+  conversation of the workspace. The drive archive comes later.

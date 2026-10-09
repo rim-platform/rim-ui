@@ -10,6 +10,8 @@
 //!   account is recorded inside it, so two accounts never share a cache.
 //! - One cache key per installation, in the OS keyring ([`key`]).
 //! - Deleted messages stay as tombstones without text or attachments.
+//! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
+//!   ([`search`], PR 10).
 //!
 //! The webview performs the HTTP call (it holds the session cookie) and passes the answer
 //! in; see `sync.rs` for the loop and `commands.rs` for the Tauri surface.
@@ -17,6 +19,7 @@
 pub(crate) mod commands;
 mod feed;
 mod key;
+mod search;
 mod store;
 mod sync;
 

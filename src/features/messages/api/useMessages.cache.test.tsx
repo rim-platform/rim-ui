@@ -19,7 +19,9 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
-vi.mock("./messageCache", () => ({
+vi.mock("./messageCache", async (importOriginal) => ({
+  isServerUnreachable: (await importOriginal<typeof import("./messageCache")>())
+    .isServerUnreachable,
   currentCacheAccount: () => (useAuthStore.getState().session ? account : null),
   readCachedTimeline: (...args: unknown[]) => readCachedTimelineMock(...args),
   trackConversation: (...args: unknown[]) => trackConversationMock(...args),

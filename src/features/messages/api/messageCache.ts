@@ -11,7 +11,7 @@
  */
 
 import { isTauri } from "@tauri-apps/api/core";
-import { gql } from "graphql-request";
+import { ClientError, gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
@@ -38,6 +38,15 @@ export function currentCacheAccount(): CacheAccount | null {
   const userId = useAuthStore.getState().session?.userId;
   if (!userId) return null;
   return { endpoint: getGraphqlEndpoint(), userId };
+}
+
+/**
+ * Whether a failed request means the server could not be reached (a network failure, or a 5xx
+ * from whatever sits in front of it), the only case the cache stands in for. An answer the
+ * server gave (a GraphQL error, a 401) is never replaced with cached data.
+ */
+export function isServerUnreachable(err: unknown): boolean {
+  return !(err instanceof ClientError && err.response.status < 500);
 }
 
 // ─── Change feed ────────────────────────────────────────────────────────────
@@ -171,4 +180,65 @@ export function cachedPageToMessagesPage(page: CachedTimelinePage): MessagesPage
     prev: null,
     pageInfo: { hasNext: next !== null, hasPrev: false },
   };
+}
+
+// ─── Local search (PR 10) ───────────────────────────────────────────────────
+
+/**
+ * A search of the cached messages, operators already parsed (see `localSearch.ts`). Every
+ * field narrows the result.
+ */
+export interface LocalSearchQuery {
+  /** Free text: every word matches as a prefix; `"quoted words"` as a phrase. */
+  text: string;
+  conversationId?: string;
+  /** A user id, or a username with or without `@`. */
+  from?: string;
+  /** RFC 3339: sent strictly before / at or after. */
+  before?: string;
+  after?: string;
+  hasLink?: boolean;
+  hasAttachment?: boolean;
+}
+
+/** A hit from the local index, in `SearchMessageItem`'s shape minus the conversation's title. */
+export interface LocalSearchHit {
+  id: string;
+  serverId: string;
+  conversationId: string;
+  threadId: string | null;
+  rootMessageId: string | null;
+  authorId: string;
+  author: MessageItem["author"] | null;
+  text: string;
+  sentAt: string;
+  rank: number;
+  /** Escaped HTML with `<mark>` around the matches; `null` without free text. */
+  headline: string | null;
+}
+
+export interface LocalSearchPage {
+  /** Newest first, as the server's `searchMessages`. */
+  items: LocalSearchHit[];
+  hasMore: boolean;
+}
+
+/**
+ * A page of hits from the account's local search index, newest first, older than `after`
+ * when given. `null` when there is no cache to search.
+ */
+export function searchCachedMessages(
+  account: CacheAccount,
+  workspaceId: string,
+  query: LocalSearchQuery,
+  after: MessageCursor | null,
+  limit: number,
+): Promise<LocalSearchPage | null> {
+  return invokeCache<LocalSearchPage>("message_cache_search", {
+    account,
+    workspaceId,
+    query,
+    after,
+    limit,
+  });
 }

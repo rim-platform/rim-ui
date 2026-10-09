@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { useCallback, useState, useEffect } from "react";
+import { useInfiniteQuery, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -10,6 +10,19 @@ import {
   type MessageCursorInput,
   type MessageCursorOutput,
 } from "../../../core/graphql/generated/schema-types";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import {
+  localHitToSearchItem,
+  localPageToSearchPage,
+  parseLocalSearchQuery,
+  type ConversationDirectory,
+} from "./localSearch";
+import {
+  currentCacheAccount,
+  isServerUnreachable,
+  searchCachedMessages,
+  type LocalSearchHit,
+} from "./messageCache";
 
 const SEARCH_MESSAGES_QUERY = gql`
   query SearchMessages($input: SearchMessagesInput!) {
@@ -88,6 +101,8 @@ export interface SearchResultPage {
   next: MessageCursorOutput | null;
   prev: MessageCursorOutput | null;
   pageInfo: { hasNext: boolean; hasPrev: boolean };
+  /** `"local"`: the server could not be reached and this page came from the local index. */
+  source?: "local";
 }
 
 interface SearchMessagesResponse {
@@ -95,6 +110,21 @@ interface SearchMessagesResponse {
 }
 
 const SEARCH_PAGE_LIMIT = 25;
+/** Local hits fetched to add to online results: the newest this many. */
+const LOCAL_SUPPLEMENT_LIMIT = 100;
+const EMPTY_DIRECTORY: ConversationDirectory = { byId: new Map(), idByName: new Map() };
+
+/** The query as typed, once it has been still for 300ms. */
+function useDebouncedQuery(query: string): string {
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timeout);
+  }, [query]);
+
+  return debouncedQuery;
+}
 
 /**
  * Debounced (300ms), cursor-paginated full-text message search.
@@ -105,19 +135,19 @@ const SEARCH_PAGE_LIMIT = 25;
  * item is display-only. See `docs/search-ui.md` and
  * `../rim-server/docs/search.md` for the ranking/pagination rationale and
  * the `from:`/`in:`/`has:`/`before:`/`after:` operator syntax (parsed
- * entirely server-side; this hook passes `query` through unchanged).
+ * server-side; this hook passes `query` through unchanged).
+ *
+ * On the desktop app, a page the server cannot be reached for comes from the local search
+ * index instead (PR 10), with the same cursor, marked `source: "local"`; `directory` resolves
+ * `in:#name` and conversation titles for it.
  */
 export function useSearchMessages(
   workspaceId: string | undefined,
   conversationId: string | undefined,
   query: string,
+  directory: ConversationDirectory = EMPTY_DIRECTORY,
 ) {
-  const [debouncedQuery, setDebouncedQuery] = useState(query);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedQuery(query), 300);
-    return () => clearTimeout(timeout);
-  }, [query]);
+  const debouncedQuery = useDebouncedQuery(query);
 
   return useInfiniteQuery({
     queryKey: queryKeys.searchMessages(workspaceId, conversationId ?? "__all__", debouncedQuery),
@@ -133,10 +163,27 @@ export function useSearchMessages(
         dir: PageDir.AFTER,
         cursor: pageParam,
       };
-      const res = await graphqlClient.request<SearchMessagesResponse>(SEARCH_MESSAGES_QUERY, {
-        input,
-      });
-      return res.searchMessages;
+      try {
+        const res = await graphqlClient.request<SearchMessagesResponse>(SEARCH_MESSAGES_QUERY, {
+          input,
+        });
+        return res.searchMessages;
+      } catch (err) {
+        const account = isServerUnreachable(err) ? currentCacheAccount() : null;
+        if (account) {
+          const local = parseLocalSearchQuery(input.query, conversationId, directory);
+          if (!local) return localPageToSearchPage({ items: [], hasMore: false }, directory);
+          const page = await searchCachedMessages(
+            account,
+            input.serverId,
+            local,
+            pageParam ?? null,
+            SEARCH_PAGE_LIMIT,
+          );
+          if (page) return localPageToSearchPage(page, directory);
+        }
+        throw err;
+      }
     },
     getNextPageParam: (lastPage) => {
       if (lastPage.pageInfo.hasNext && lastPage.next) {
@@ -157,4 +204,52 @@ export function flattenSearchPages(
 ): SearchMessageItem[] {
   if (!data) return [];
   return data.pages.flatMap((page) => page.items);
+}
+
+/**
+ * The newest local-index hits for the query (desktop app only), to add to the server's results
+ * with `mergeSearchResults`. Empty in the web app or when the cache cannot answer.
+ */
+export function useLocalSearchHits(
+  workspaceId: string | undefined,
+  conversationId: string | undefined,
+  query: string,
+  directory: ConversationDirectory,
+) {
+  const debouncedQuery = useDebouncedQuery(query);
+  const userId = useAuthStore((s) => s.session?.userId);
+  const parsed = workspaceId
+    ? parseLocalSearchQuery(debouncedQuery, conversationId, directory)
+    : null;
+  // Titles come from the lists as they are now, not as they were when the hits were fetched.
+  const toItems = useCallback(
+    (hits: LocalSearchHit[]) => hits.map((hit) => localHitToSearchItem(hit, directory)),
+    [directory],
+  );
+
+  return useQuery({
+    // Keyed by the parsed query, so an `in:#name` the lists resolve differently fetches again.
+    queryKey: queryKeys.localSearchMessages(
+      workspaceId,
+      userId,
+      conversationId ?? "__all__",
+      JSON.stringify(parsed),
+    ),
+    enabled: Boolean(parsed && userId && currentCacheAccount()),
+    staleTime: 5_000,
+    retry: false,
+    queryFn: async (): Promise<LocalSearchHit[]> => {
+      const account = currentCacheAccount();
+      if (!account || !parsed || !workspaceId) return [];
+      const page = await searchCachedMessages(
+        account,
+        workspaceId,
+        parsed,
+        null,
+        LOCAL_SUPPLEMENT_LIMIT,
+      );
+      return page?.items ?? [];
+    },
+    select: toItems,
+  });
 }

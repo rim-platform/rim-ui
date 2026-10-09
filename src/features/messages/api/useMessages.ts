@@ -6,7 +6,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { ClientError, gql } from "graphql-request";
+import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
@@ -15,7 +15,12 @@ import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { requestCacheSync } from "../runtime/messageCacheSync";
-import { currentCacheAccount, readCachedTimeline, trackConversation } from "./messageCache";
+import {
+  currentCacheAccount,
+  isServerUnreachable,
+  readCachedTimeline,
+  trackConversation,
+} from "./messageCache";
 
 export { MESSAGES_QUERY };
 export type { MessageItem, MessageCursor, MessagesPage };
@@ -93,11 +98,8 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
         const res = await graphqlClient.request<MessagesResponse>(MESSAGES_QUERY, variables);
         return res.messages;
       } catch (err) {
-        // The cache stands in only when the server could not be reached (a network failure,
-        // or a 5xx from whatever sits in front of it), never for an answer it gave (a GraphQL
-        // error, a 401).
-        const serverAnswered = err instanceof ClientError && err.response.status < 500;
-        const account = serverAnswered ? null : currentCacheAccount();
+        // The cache stands in only when the server could not be reached.
+        const account = isServerUnreachable(err) ? currentCacheAccount() : null;
         if (account) {
           const page = await readCachedTimeline(
             account,

@@ -1,5 +1,5 @@
 //! The encrypted SQLite database behind the cache: opening it, its schema, and timeline reads.
-//! Writes from the change feed live in `sync.rs`.
+//! Writes from the change feed live in `sync.rs`, local search in `search.rs`.
 
 use std::path::Path;
 
@@ -10,16 +10,16 @@ use super::key::CacheKey;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
-/// Schema v1.
+/// Schema v1: the cache (PR 9).
 ///
 /// `message` has the body in its own `text` column and an explicit `INTEGER PRIMARY KEY`
 /// (`seq`, an alias of the rowid), so PR 10 can add an external-content FTS5 index
 /// (`content='message', content_rowid='seq'`) without moving data. The alias matters: `VACUUM`
 /// may renumber the rowids of a table without one, which would leave the index pointing at the
 /// wrong rows. Writes upsert by `id` and never `REPLACE`, which keeps each message's `seq`.
-const SCHEMA_V1: &str = "
+pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -60,6 +60,50 @@ CREATE TABLE message (
 
 CREATE INDEX message_timeline
     ON message (workspace_id, conversation_id, thread_id, sent_at_us, id);
+";
+
+/// Schema v2: local full-text search (PR 10).
+///
+/// An external-content FTS5 index over `message.text`: the index keeps only its token lists and
+/// reads the text back from `message` by `seq`, so the text is stored once, and the index lives
+/// in this SQLCipher file like every other table (no plaintext sidecar).
+///
+/// The triggers are FTS5's standard external-content ones and keep the index in step with every
+/// write to `message`, whichever code path makes it: a create indexes the text, an edit replaces
+/// the old entry with the new one, and a delete (`NO_ACCESS`, `RESET`) removes it. A tombstone's
+/// text is NULL, which indexes no words, so a message deleted on the server leaves no searchable
+/// trace. The `'delete'` command must be handed exactly what was indexed, which `old.text` is.
+///
+/// `message_thread_root` finds a thread's root message by the thread id in its payload, which
+/// search does for each hit inside a thread; without it, that is a scan of the conversation.
+///
+/// The last statement is the one-time backfill of a cache created by an earlier build.
+const SCHEMA_V2: &str = "
+CREATE VIRTUAL TABLE message_fts USING fts5(
+    text,
+    content = 'message',
+    content_rowid = 'seq',
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER message_fts_insert AFTER INSERT ON message BEGIN
+    INSERT INTO message_fts (rowid, text) VALUES (new.seq, new.text);
+END;
+
+CREATE TRIGGER message_fts_delete AFTER DELETE ON message BEGIN
+    INSERT INTO message_fts (message_fts, rowid, text) VALUES ('delete', old.seq, old.text);
+END;
+
+CREATE TRIGGER message_fts_update AFTER UPDATE OF text ON message BEGIN
+    INSERT INTO message_fts (message_fts, rowid, text) VALUES ('delete', old.seq, old.text);
+    INSERT INTO message_fts (rowid, text) VALUES (new.seq, new.text);
+END;
+
+CREATE INDEX message_thread_root
+    ON message (workspace_id, conversation_id, json_extract(payload, '$.rootThreadId'))
+    WHERE thread_id IS NULL;
+
+INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 ";
 
 /// An open cache database of one account.
@@ -119,9 +163,14 @@ impl CacheStore {
                 "cache schema {version} is newer than this build ({SCHEMA_VERSION})"
             )));
         }
-        if version < 1 {
-            self.conn.execute_batch(SCHEMA_V1)?;
-            self.conn.pragma_update(None, "user_version", 1)?;
+        // Each step commits with its version, so an interrupted upgrade resumes at that step.
+        for (target, sql) in [(1, SCHEMA_V1), (2, SCHEMA_V2)] {
+            if version < target {
+                let tx = self.conn.unchecked_transaction()?;
+                tx.execute_batch(sql)?;
+                tx.pragma_update(None, "user_version", target)?;
+                tx.commit()?;
+            }
         }
         Ok(())
     }
@@ -247,7 +296,7 @@ pub(super) fn parse_timestamp_us(value: &str) -> Result<i64, CacheError> {
         .map_err(|_| CacheError::Invalid(format!("not an RFC 3339 timestamp: {value}")))
 }
 
-fn open_keyed(path: &Path, key: &CacheKey) -> Result<Connection, CacheError> {
+pub(super) fn open_keyed(path: &Path, key: &CacheKey) -> Result<Connection, CacheError> {
     let conn = Connection::open(path)?;
     // Must be the first statement on the connection.
     conn.execute_batch(&format!(
@@ -264,6 +313,9 @@ fn open_keyed(path: &Path, key: &CacheKey) -> Result<Connection, CacheError> {
         }
         Err(e) => return Err(e.into()),
     }
+    // Sorts and other temporary results (search orders its matches) stay in memory, never in a
+    // temporary file outside the encrypted database.
+    conn.pragma_update(None, "temp_store", "MEMORY")?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     Ok(conn)
