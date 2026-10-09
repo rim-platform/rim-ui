@@ -24,7 +24,8 @@ const deviceKeys = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../api/keyIdentity", () => api);
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  // The desktop and the web app can both hold a device key; only the desktop signs statements.
+  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value, deviceKeySignIn: true } }),
 }));
 vi.mock("../../workspaces/api/useCurrentUser", () => ({
   useCurrentUser: () => ({
@@ -299,5 +300,26 @@ describe("KeyIdentitySettings", () => {
 
     expect(await screen.findByText(/set up from the desktop app/i)).toBeInTheDocument();
     expect(api.reconcileDeviceKeys).not.toHaveBeenCalled();
+  });
+
+  it("shows a linked browser's key without verifying the log in the web app", async () => {
+    deviceKeys.value = false;
+    api.fetchMyKeyIdentity.mockResolvedValue(enrolled);
+    api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
+    renderSettings();
+
+    expect(await screen.findByText(/this browser signs in with its own key/i)).toBeInTheDocument();
+    expect(api.syncKeyLog).not.toHaveBeenCalled();
+    expect(api.settleDeviceKeys).toHaveBeenCalledWith(expect.objectContaining(me), "rimp1_alice");
+    expect(screen.queryByRole("button", { name: /link a device/i })).toBeNull();
+  });
+
+  it("tells a browser without a key how to link it", async () => {
+    deviceKeys.value = false;
+    api.fetchMyKeyIdentity.mockResolvedValue(enrolled);
+    api.settleDeviceKeys.mockResolvedValue(null);
+    renderSettings();
+
+    expect(await screen.findByText(/this browser holds no key/i)).toBeInTheDocument();
   });
 });

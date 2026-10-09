@@ -2,14 +2,15 @@
  * Device linking: a device that holds the identity key shows a code, and a new device with the
  * code gets its own certified device key and signs in with it.
  *
- * Secrets stay on the Tauri side; this module talks to the server, which only carries sealed
- * bytes, and asks the Tauri side to seal, open, check and sign.
+ * On the desktop secrets stay on the Tauri side; this module talks to the server, which only
+ * carries sealed bytes, and asks the Tauri side to seal, open, check and sign. The web app joins
+ * as a new device only, with its channel and key in `browserKeys.ts`.
  */
 
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { getGraphqlEndpoint } from "../../../core/graphql/config";
+import { getAbsoluteGraphqlEndpoint, getGraphqlEndpoint } from "../../../core/graphql/config";
 import { graphqlErrorCode, graphqlErrorMessage, RATE_LIMITED } from "../../../core/graphql/errors";
 import {
   DeviceLinkState,
@@ -21,6 +22,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { acceptBrowserJoin, beginBrowserJoin, discardBrowserJoin } from "./browserKeys";
 import {
   fetchKeyAccount,
   fetchKeyLog,
@@ -28,6 +30,7 @@ import {
   forgetDeviceKeys,
   keyCommand,
   logStatements,
+  onDesktop,
   publishProfileCard,
   revokeDevice,
   signInWithDeviceKey,
@@ -307,6 +310,52 @@ async function endLink(linkId: string): Promise<void> {
 
 // ─── New device ─────────────────────────────────────────────────────────────
 
+/**
+ * The new device's side of the channel: the Tauri commands on the desktop, the browser's
+ * WebCrypto key in the web app. Nothing is stored until `accept` has checked the answer.
+ */
+interface JoiningKeys {
+  offer(code: string, deviceName: string): Promise<SentOffer>;
+  /** Open the answer, check its certificate, store the key; returns the account's principal. */
+  accept(linkId: string, answer: SealedMessageInput): Promise<string>;
+  /** Drop a join that ended; it stored nothing. */
+  end(linkId: string): Promise<void>;
+}
+
+const desktopJoin: JoiningKeys = {
+  offer: (code, deviceName) =>
+    keyCommand<SentOffer>("key_identity_link_offer", {
+      endpoint: getGraphqlEndpoint(),
+      code,
+      deviceName,
+    }),
+  async accept(linkId, answer) {
+    const { principalId } = await keyCommand<{ principalId: string }>(
+      "key_identity_link_open_answer",
+      { linkId, answer },
+    );
+    const keyLog = await fetchKeyLog(principalId);
+    await keyCommand("key_identity_link_accept", { linkId, keyLog });
+    return principalId;
+  },
+  end: endLink,
+};
+
+/**
+ * The web app checks that the certificate names this browser's device id and key, and does not
+ * replay the key log: the page's code comes from the server it links through, so a check in that
+ * code could not protect it from that server, and the server accepts the key's first sign-in
+ * only for a device the account's identity key certified (the spec's web client section).
+ */
+const browserJoin: JoiningKeys = {
+  offer: (code, deviceName) => beginBrowserJoin(code, getAbsoluteGraphqlEndpoint(), deviceName),
+  accept: acceptBrowserJoin,
+  end: (linkId) => {
+    discardBrowserJoin(linkId);
+    return Promise.resolve();
+  },
+};
+
 export interface LinkNewDeviceOptions extends PollOptions {
   /** The offer is on the server: show this fingerprint and ask to confirm it on the other device. */
   onOffered?: (offer: { linkId: string; fingerprint: string }) => void;
@@ -357,21 +406,18 @@ function awaitAnswer(linkId: string, options: PollOptions): Promise<SealedMessag
  * device key. Returns the account's user id. `onOffered` gets the
  * fingerprint to show while the person confirms on the other device.
  *
- * Nothing is written to the keyring until the certificate verifies against the account's key
- * log; any failure before then cancels the link and drops the key.
+ * Nothing is stored until the answer's certificate checks out (on the desktop, verified against
+ * the account's key log); any failure before then cancels the link and drops the key.
  */
 export async function linkNewDevice(
   code: string,
   deviceName: string,
   options: LinkNewDeviceOptions = {},
 ): Promise<string> {
+  const keys = onDesktop() ? desktopJoin : browserJoin;
   let sent: SentOffer;
   try {
-    sent = await keyCommand<SentOffer>("key_identity_link_offer", {
-      endpoint: getGraphqlEndpoint(),
-      code,
-      deviceName,
-    });
+    sent = await keys.offer(code, deviceName);
   } catch (err) {
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
   }
@@ -382,12 +428,7 @@ export async function linkNewDevice(
     await sendOffer(sent);
     options.onOffered?.({ linkId, fingerprint: sent.fingerprint });
     const answer = await awaitAnswer(linkId, options);
-    ({ principalId } = await keyCommand<{ principalId: string }>("key_identity_link_open_answer", {
-      linkId,
-      answer,
-    }));
-    const keyLog = await fetchKeyLog(principalId);
-    await keyCommand("key_identity_link_accept", { linkId, keyLog });
+    principalId = await keys.accept(linkId, answer);
   } catch (err) {
     // The link is over on this side. The server is told unless the link already ended there
     // or the limiter would refuse the cancel too.
@@ -395,7 +436,7 @@ export async function linkNewDevice(
       err instanceof DeviceLinkError &&
       (err.reason === "codeUnusable" || err.reason === "linkEnded" || err.reason === "rateLimited");
     if (!noCancel) await cancelOnServer(linkId);
-    await endLink(linkId);
+    await keys.end(linkId);
     if (err instanceof DeviceLinkError) throw err;
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
   }

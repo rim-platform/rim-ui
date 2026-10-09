@@ -1,18 +1,23 @@
 /**
- * Key identity in the desktop app: enrolling the account's key, creating an account from a key
- * alone, signing in with this device's key, devices, identity rotation, the profile card and
- * recovery.
+ * Key identity in the app: enrolling the account's key, creating an account from a key alone,
+ * signing in with this device's key, devices, identity rotation, the profile card and recovery.
  *
- * The keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach the webview.
- * This module talks to the server and asks the Tauri side for each signed statement it needs,
- * so the session cookie a key sign-in sets lands in the webview like a password sign-in's.
- * Keys and signatures are opaque strings here: their algorithm is the Tauri side's business.
+ * On the desktop the keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach
+ * the webview. This module talks to the server and asks the Tauri side for each signed
+ * statement it needs, so the session cookie a key sign-in sets lands in the webview like a
+ * password sign-in's. Keys and signatures are opaque strings here: their algorithm is the Tauri
+ * side's business. The web app holds only a linked device's key (`browserKeys.ts`): it signs in
+ * with it, and everything else stays on the desktop.
  */
 
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { getApiOrigin, getGraphqlEndpoint } from "../../../core/graphql/config";
+import {
+  getAbsoluteGraphqlEndpoint,
+  getApiOrigin,
+  getGraphqlEndpoint,
+} from "../../../core/graphql/config";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type {
   DeviceKey,
@@ -26,7 +31,15 @@ import type {
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
+import { detectPlatform } from "../../../core/runtime/runtime";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import {
+  browserAccounts,
+  browserDeviceName,
+  forgetBrowserKeys,
+  settleBrowserKeys,
+  signBrowserLogin,
+} from "./browserKeys";
 
 // ─── What the Tauri side returns ────────────────────────────────────────────
 
@@ -79,6 +92,11 @@ interface RecoveryStatements {
 export interface KeyAccount {
   userId: string;
   username: string;
+}
+
+/** Keys on the Tauri side (desktop), or in the browser (web app, a linked device only). */
+export function onDesktop(): boolean {
+  return detectPlatform() === "desktop";
 }
 
 /** A Tauri key command; a failure becomes an `Error` with the command's message. */
@@ -256,8 +274,9 @@ async function challenge(): Promise<Pick<KeyLoginChallenge, "challengeId" | "non
 
 // ─── Local accounts ─────────────────────────────────────────────────────────
 
-/** Accounts on this server this device can sign in to with a key. Empty in the web app. */
+/** Accounts on this server this device can sign in to with a key. */
 export async function listDeviceKeyAccounts(): Promise<LocalKeyAccount[]> {
+  if (!onDesktop()) return browserAccounts(getAbsoluteGraphqlEndpoint()).catch(() => []);
   const result = await safeInvoke<LocalKeyAccount[]>("key_identity_accounts", {
     endpoint: getGraphqlEndpoint(),
   });
@@ -273,6 +292,9 @@ export async function settleDeviceKeys(
   account: KeyAccount,
   principalId: string | null,
 ): Promise<LocalKeyAccount | null> {
+  if (!onDesktop()) {
+    return settleBrowserKeys(getAbsoluteGraphqlEndpoint(), account, principalId);
+  }
   return keyCommand<LocalKeyAccount | null>("key_identity_settle", {
     account: serverAccount(account),
     principalId,
@@ -291,10 +313,12 @@ export async function reconcileDeviceKeys(account: KeyAccount): Promise<LocalKey
 }
 
 export async function forgetDeviceKeys(principalId: string): Promise<void> {
+  if (!onDesktop()) return forgetBrowserKeys(getAbsoluteGraphqlEndpoint(), principalId);
   await keyCommand<null>("key_identity_forget", { principalId });
 }
 
 export async function defaultDeviceName(): Promise<string> {
+  if (!onDesktop()) return browserDeviceName();
   const result = await safeInvoke<string>("key_identity_default_device_name");
   return result.ok ? result.value : "Desktop";
 }
@@ -303,16 +327,18 @@ export async function defaultDeviceName(): Promise<string> {
 
 /**
  * Sign in with this device's key for `principalId`: a fresh challenge, signed on the Tauri
- * side, sent to `loginWithKey`, which sets the session cookie. Returns the account's user id.
- * A revoked device fails with the server's `FORBIDDEN`.
+ * side (or by the browser's key in the web app), sent to `loginWithKey`, which sets the session
+ * cookie. Returns the account's user id. A revoked device fails with the server's `FORBIDDEN`.
  */
 export async function signInWithDeviceKey(principalId: string): Promise<string> {
   const { challengeId, nonce } = await challenge();
-  const proof = await keyCommand<SignedStatementInput>("key_identity_sign_login", {
-    endpoint: getGraphqlEndpoint(),
-    principalId,
-    challenge: { challengeId, nonce },
-  });
+  const proof = onDesktop()
+    ? await keyCommand<SignedStatementInput>("key_identity_sign_login", {
+        endpoint: getGraphqlEndpoint(),
+        principalId,
+        challenge: { challengeId, nonce },
+      })
+    : await signBrowserLogin(getAbsoluteGraphqlEndpoint(), principalId, { challengeId, nonce });
   const res = await graphqlClient.request<{ loginWithKey: { userId: string } }>(
     LOGIN_WITH_KEY_MUTATION,
     { proof },
@@ -606,6 +632,8 @@ export async function abandonKeySignup(draft: EnrollmentDraft): Promise<void> {
  * whether they did.
  */
 export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Promise<boolean> {
+  // A browser holds only keys a certificate named, for an account the server already had.
+  if (!onDesktop()) return false;
   if (account.confirmed || signupsInFlight > 0 || enrollmentsInFlight > 0) return false;
   if ((await principalTaken(account.principalId)) !== false) return false;
   await keyCommand<null>("key_identity_forget_unconfirmed", { principalId: account.principalId });

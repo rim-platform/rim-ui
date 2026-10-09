@@ -17,13 +17,16 @@ const api = vi.hoisted(() => ({
   defaultDeviceName: vi.fn(),
 }));
 const deviceKeys = vi.hoisted(() => ({ value: true }));
+const deviceKeySignIn = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../api/keyIdentity", async () => {
   const actual = await vi.importActual<typeof import("../api/keyIdentity")>("../api/keyIdentity");
   return { ...actual, ...api };
 });
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({
+    capabilities: { deviceKeys: deviceKeys.value, deviceKeySignIn: deviceKeySignIn.value },
+  }),
 }));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
@@ -60,6 +63,7 @@ function wrap(ui: ReactNode) {
 describe("DeviceKeySignIn", () => {
   beforeEach(() => {
     deviceKeys.value = true;
+    deviceKeySignIn.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
     api.listDeviceKeyAccounts.mockResolvedValue([alice]);
     api.forgetDeviceKeys.mockResolvedValue(undefined);
@@ -132,8 +136,20 @@ describe("DeviceKeySignIn", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("renders nothing in the web app", () => {
+  it("signs in with a linked browser's key in the web app", async () => {
     deviceKeys.value = false;
+    api.listDeviceKeyAccounts.mockResolvedValue([{ ...alice, hasIdentityKey: false }]);
+    api.signInWithDeviceKey.mockResolvedValue("u-alice");
+    const onSuccess = vi.fn();
+    wrap(<DeviceKeySignIn onSuccess={onSuccess} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /sign in as alice/i }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
+  });
+
+  it("renders nothing where this app cannot hold a device key", () => {
+    deviceKeys.value = false;
+    deviceKeySignIn.value = false;
     const { container } = wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
     expect(api.listDeviceKeyAccounts).not.toHaveBeenCalled();

@@ -26,8 +26,9 @@ function accountLabel(account: LocalKeyAccount): string {
 }
 
 /**
- * "Sign in with this device" on the sign-in screen, for each account on this server this
- * computer holds a key for. Renders nothing in the web app or without such keys.
+ * "Sign in with this device" on the sign-in screen, for each account on this server this device
+ * holds a key for (the desktop's keyring, or a linked browser's key). Renders nothing without
+ * such keys.
  */
 export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();
@@ -36,7 +37,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
   const accounts = useQuery({
     queryKey: queryKeys.deviceKeyAccounts(endpoint),
     queryFn: listDeviceKeyAccounts,
-    enabled: capabilities.deviceKeys,
+    enabled: capabilities.deviceKeySignIn,
   });
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<{
@@ -47,7 +48,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
   // Said after keys the server never saw were removed, when their account is gone from the list.
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (!capabilities.deviceKeys || (!accounts.data?.length && !notice)) return null;
+  if (!capabilities.deviceKeySignIn || (!accounts.data?.length && !notice)) return null;
 
   async function signIn(account: LocalKeyAccount) {
     setPendingId(account.principalId);
@@ -117,7 +118,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
                   size="sm"
                   onClick={() => void forget(account.principalId)}
                 >
-                  Remove this device&apos;s keys from this computer
+                  Remove this device&apos;s keys from here
                 </Button>
               )}
             </div>

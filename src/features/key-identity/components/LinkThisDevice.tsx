@@ -6,23 +6,30 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { browserKeysSupported } from "../api/browserKeys";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
 import { defaultDeviceName } from "../api/keyIdentity";
 import { Fingerprint } from "./Fingerprint";
+import { QrScanner } from "./QrScanner";
 
 const inputClass =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
 
 /**
  * "Link this device" on the sign-in screen: opens a form for the code shown on another device
- * of the account. Desktop only; renders nothing in the web app.
+ * of the account. The desktop takes the pasted code; the web app (a browser key, S3-7) also
+ * scans it with the camera.
  */
 export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();
   const [open, setOpen] = useState(false);
-  if (!capabilities.deviceKeys) return null;
+  if (!capabilities.deviceKeySignIn) return null;
   return open ? (
-    <LinkThisDeviceForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    <LinkThisDeviceForm
+      onSuccess={onSuccess}
+      onCancel={() => setOpen(false)}
+      browser={!capabilities.deviceKeys}
+    />
   ) : (
     <button
       type="button"
@@ -37,9 +44,12 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
 function LinkThisDeviceForm({
   onSuccess,
   onCancel,
+  browser,
 }: {
   onSuccess: (userId: string) => void;
   onCancel: () => void;
+  /** The web app: the key is a browser key, and the camera can read the code. */
+  browser: boolean;
 }) {
   const qc = useQueryClient();
   const [code, setCode] = useState("");
@@ -47,6 +57,8 @@ function LinkThisDeviceForm({
   const [busy, setBusy] = useState(false);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [supported, setSupported] = useState(true);
   const flow = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -54,21 +66,25 @@ function LinkThisDeviceForm({
     void defaultDeviceName().then((name) => {
       if (!cancelled) setDeviceName((current) => current || name);
     });
+    if (browser) {
+      void browserKeysSupported().then((ok) => {
+        if (!cancelled) setSupported(ok);
+      });
+    }
     return () => {
       cancelled = true;
       flow.current?.abort();
     };
-  }, []);
+  }, [browser]);
 
-  async function link(e: React.FormEvent) {
-    e.preventDefault();
+  async function link(text: string) {
     const controller = new AbortController();
     flow.current = controller;
     setBusy(true);
     setError(null);
     setFingerprint(null);
     try {
-      const userId = await linkNewDevice(code, deviceName, {
+      const userId = await linkNewDevice(text, deviceName, {
         signal: controller.signal,
         onOffered: (offer) => setFingerprint(offer.fingerprint),
       });
@@ -100,6 +116,8 @@ function LinkThisDeviceForm({
     setFingerprint(null);
   }
 
+  const here = browser ? "browser" : "computer";
+
   if (busy) {
     return (
       <div className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4">
@@ -109,7 +127,7 @@ function LinkThisDeviceForm({
             <p className="text-xs text-rim-text-muted">Confirm this code on your other device:</p>
             <Fingerprint value={fingerprint} />
             <p className="text-xs text-rim-text-faint">
-              Waiting for your other device. This computer stores nothing until it answers.
+              Waiting for your other device. This {here} stores nothing until it answers.
             </p>
           </>
         ) : (
@@ -124,15 +142,52 @@ function LinkThisDeviceForm({
 
   return (
     <form
-      onSubmit={(e) => void link(e)}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void link(code);
+      }}
       className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4"
     >
       <p className="text-sm font-medium text-rim-text">Link this device</p>
       <p className="text-xs text-rim-text-muted">
         On a computer that is signed in and holds your account&apos;s identity key, open Settings
-        &gt; Security &gt; Link a device, and paste the code it shows here. This computer gets its
-        own key; nothing else moves over.
+        &gt; Security &gt; Link a device, and {browser ? "scan or paste" : "paste"} the code it
+        shows here. This {here} gets its own key; nothing else moves over.
       </p>
+      {browser && (
+        <p className="text-xs text-rim-text-faint">
+          A browser keeps its key less safely than the desktop app: anything running in this page
+          could sign in with it while the page is open, though it cannot copy the key out. Link only
+          a browser you trust, and remove it under Devices on the other computer when you stop using
+          it.
+        </p>
+      )}
+      {!supported && (
+        <p role="alert" className="text-sm text-rim-danger">
+          This browser cannot keep a device key. Use a current Firefox, Chrome, Edge or Safari.
+        </p>
+      )}
+      {browser &&
+        supported &&
+        (scanning ? (
+          <div className="space-y-2">
+            <QrScanner
+              onCode={(text) => {
+                setScanning(false);
+                setCode(text);
+                // Without a name the code waits in the field for the person to finish the form.
+                if (deviceName.trim()) void link(text);
+              }}
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={() => setScanning(false)}>
+              Stop the camera
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" variant="secondary" size="sm" onClick={() => setScanning(true)}>
+            Scan the code with the camera
+          </Button>
+        ))}
       <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
         Link code
         <textarea
@@ -162,7 +217,7 @@ function LinkThisDeviceForm({
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" disabled={!code.trim() || !deviceName.trim()}>
+        <Button type="submit" disabled={!supported || !code.trim() || !deviceName.trim()}>
           Link this device
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>

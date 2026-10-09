@@ -10,6 +10,11 @@ export type RuntimeCapabilities = {
   customTitleBar: boolean;
   /** Device keys in the OS keyring: key sign-in, enrollment and recovery (Stage 3). */
   deviceKeys: boolean;
+  /**
+   * Signing in with a device key and joining an account by a device link: the desktop's keyring
+   * key, or a browser's non-extractable WebCrypto key (the web app as a linked device).
+   */
+  deviceKeySignIn: boolean;
 };
 
 export function detectPlatform(): AppPlatform {
@@ -35,6 +40,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       deviceLocalKeybinds: true,
       customTitleBar: true,
       deviceKeys: true,
+      deviceKeySignIn: true,
     };
   }
 
@@ -46,6 +52,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       deviceLocalKeybinds: true,
       customTitleBar: false,
       deviceKeys: false,
+      deviceKeySignIn: true,
     };
   }
 
@@ -56,5 +63,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
     deviceLocalKeybinds: false,
     customTitleBar: false,
     deviceKeys: false,
+    // A phone's browser joining by the desktop's code is the natural way to link it.
+    deviceKeySignIn: true,
   };
 }

@@ -6,6 +6,21 @@ export function getGraphqlEndpoint(): string {
 }
 
 /**
+ * The GraphQL endpoint as an absolute URL: as configured when it is one, else resolved against
+ * the page (the web app may be served with a relative `/api`). Key sign-in and device linking
+ * name the server by this URL's `host[:port]`, so it must not depend on how it was written.
+ */
+export function getAbsoluteGraphqlEndpoint(): string {
+  const endpoint = getGraphqlEndpoint();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) return endpoint;
+  try {
+    return new URL(endpoint, window.location.origin).toString();
+  } catch {
+    return endpoint;
+  }
+}
+
+/**
  * API origin with the trailing `/api` mount path stripped, e.g.
  * `http://localhost:8080` (or `https://api.example.com/rim` if `/api` is
  * mounted under a sub-path). Use to build REST/file paths like

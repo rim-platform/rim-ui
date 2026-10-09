@@ -1,10 +1,10 @@
-# Device linking (desktop)
+# Device linking
 
-A computer that holds the account's identity key shows a code; another computer pastes it and
-gets a device key of its own, certified by the identity key, and signs in with it (master plan
-Stage 3, S3-5). The contract, with the code format, the channel cryptography and the known-answer
-vectors, is `../rim-server/docs/specs/device-linking-v1.md`; this page says where the desktop
-app implements it.
+A computer that holds the account's identity key shows a code; another computer or a browser
+takes it and gets a device key of its own, certified by the identity key, and signs in with it
+(master plan Stage 3: S3-5 for the desktop, S3-7 for the web app). The contract, with the code
+format, the channel cryptography and the known-answer vectors, is
+`../rim-server/docs/specs/device-linking-v1.md`; this page says where the app implements it.
 
 ## What lives where
 
@@ -76,6 +76,37 @@ them. `completeDeviceLink` is tried twice at most. `FORBIDDEN` at that sign-in r
 other failures keep them for the sign-in screen. A computer that already holds keys for the
 account refuses to link over them.
 
+## The web app
+
+The web app is only ever the new device: it holds no identity key, so Settings > Security shows
+its own key's state and leaves device management to the desktop. What differs from the desktop's
+new device:
+
+- `api/linkChannel.ts` is the channel in SubtleCrypto: the code reader (the same rules as the
+  Tauri side), HKDF to non-extractable AES-GCM keys, seal and open with the spec's AAD, the
+  fingerprint, and the exact offer and answer JSON. `linkChannel.test.ts` checks appendix A byte
+  for byte through Node's WebCrypto.
+- `api/browserKeys.ts` makes the device key with `crypto.subtle.generateKey("Ed25519", false,
+  ...)`, keeps it in memory until the answer arrives, and then stores the `CryptoKey` in
+  IndexedDB (database `rim-device-keys`), one record per server audience and account. Page script
+  can have it sign while the page is open but cannot read it out. A browser without Ed25519 in
+  WebCrypto, or without IndexedDB, cannot be linked; there is no extractable fallback.
+- `deviceLink.ts`'s `linkNewDevice` takes the same path on both, with the keys behind one
+  interface: the Tauri commands on the desktop, `browserKeys.ts` in the web app. The browser
+  checks that the answer's certificate names its own device id and key, and does not replay the
+  key log (the spec's "Web client" section says why). A code for another endpoint than the web
+  app's own (resolved against the page when it is relative) is refused before the server is
+  asked.
+- `keyIdentity.ts` routes key sign-in (`signInWithDeviceKey`, a version 2 login proof signed in
+  the browser), the account list, settling and forgetting to the browser's store; enrollment,
+  recovery, rotation and revocation stay desktop-only. The `deviceKeySignIn` capability turns on
+  "Sign in with this device" and "Link this device" in the web app; `deviceKeys` stays
+  desktop-only.
+- "Link this device" offers the camera (`components/QrScanner.tsx`, frames through `jsqr`,
+  nothing leaves the page) beside the pasted code, and says up front that a browser keeps its key
+  less safely than the desktop app. The old device shows its own note when the offer says
+  `platform: "web"`.
+
 ## Trying it with two app instances
 
 Both instances must use the same server (the code carries the endpoint and the new device refuses
@@ -87,14 +118,19 @@ another), and each needs its own keyring entries, so run them as two OS users or
 3. On the first, compare the fingerprint, adjust the name, and confirm. The second signs in; the
    first says the device is linked and lists it under Devices.
 
+To link the web app instead, open it in a browser against the same server (`npm run dev` serves
+it at `http://localhost:1420`) and use "Link this device" on its sign-in screen in step 2; the
+camera button reads the QR code from the first computer's screen.
+
 To try the restart path, quit the first app after confirming and before the second signs in;
 the next start finishes the link, or revokes the device if the link expired meanwhile.
 
 ## Not in v1
 
-QR scanning, the archive key in the answer, moving the identity key, short typed codes, and a
-subscription instead of polling: see the spec's "Deferred" section. The web app as a linked device
-is S3-7.
+QR scanning on the desktop, the archive key in the answer, moving the identity key, short typed
+codes, and a subscription instead of polling: see the spec's "Deferred" section. The web app
+does not sign in with its key on its own when the session cookie is gone; the sign-in screen
+offers the key instead.
 
 ## Limits
 
@@ -102,4 +138,14 @@ is S3-7.
   credential at roughly 2.5 KB, so hybrid post-quantum keys will need the record split or the
   sealed answer stored elsewhere before they can be linked from Windows.
 - Polling gives up 25 minutes after it started: a link lives 10 minutes and an answer 10 more.
-- The desktop does not scan QR codes; the new device takes the pasted code.
+- The desktop does not scan QR codes; it takes the pasted code. The web app scans with the camera
+  or takes the pasted code.
+- Write `VITE_GRAPHQL_ENDPOINT`, `RIM_PUBLIC_BASE_URL` and `RIM_KEY_LOGIN_AUDIENCES` without a
+  default port (`https://rim.chat`, not `https://rim.chat:443`). A browser drops a default port
+  when it resolves a relative endpoint, and audiences are compared as written, so a server that
+  names its audience with `:443` refuses the web app's login proofs.
+- The browser's IndexedDB store has no automated test (jsdom has no IndexedDB); the tests use the
+  in-memory store behind the same interface.
+- Anything running in the web app's page (a malicious extension, a script injection) can sign
+  with the browser's key while the page is open. It cannot copy the key out, and removing the
+  device on the desktop ends it.

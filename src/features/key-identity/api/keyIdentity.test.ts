@@ -11,14 +11,23 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
   safeInvoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+const platform = vi.hoisted(() => ({ value: "desktop" as "desktop" | "web" }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => platform.value,
+}));
+
+import { MemoryKeyStore, setBrowserKeyStore } from "./browserKeys";
 import {
   abandonEnrollment,
   abandonKeySignup,
   accountIdInKit,
   completeEnrollment,
   discardKeySignup,
+  forgetDeviceKeys,
   forgetKeysTheServerNeverSaw,
   KeyChallengeFailed,
+  listDeviceKeyAccounts,
   profileCardIsStale,
   reconcileDeviceKeys,
   recoverAccount,
@@ -86,6 +95,85 @@ function commands(): string[] {
 beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
+  platform.value = "desktop";
+});
+
+describe("in the web app", () => {
+  async function linkedBrowser(): Promise<MemoryKeyStore> {
+    const store = new MemoryKeyStore();
+    setBrowserKeyStore(store);
+    const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, false, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    await store.put({
+      id: `localhost:8080 ${PRINCIPAL}`,
+      endpoint: ENDPOINT,
+      principalId: PRINCIPAL,
+      deviceId: "0192f3c4-1b2a-7c3d-8e4f-5a6b7c8d9e0f",
+      deviceName: "Firefox on Linux",
+      deviceKey: "ed25519:k",
+      privateKey: pair.privateKey,
+      userId: null,
+      username: null,
+    });
+    return store;
+  }
+
+  it("signs in with the browser's linked key and links it to the account", async () => {
+    platform.value = "web";
+    await linkedBrowser();
+    let proof: { payload: string } | null = null;
+    backend({
+      KeyLoginChallenge: CHALLENGE,
+      LoginWithKey: (vars: { proof: { payload: string } }) => {
+        proof = vars.proof;
+        return { loginWithKey: { userId: "user-1" } };
+      },
+      MeKeyAccount: ME(PRINCIPAL),
+    });
+
+    await expect(signInWithDeviceKey(PRINCIPAL)).resolves.toBe("user-1");
+    expect(JSON.parse(proof!.payload)).toEqual({
+      v: 2,
+      type: "login",
+      challengeId: "c-1",
+      nonce: "n-1",
+      audience: "localhost:8080",
+      principalId: PRINCIPAL,
+      deviceId: "0192f3c4-1b2a-7c3d-8e4f-5a6b7c8d9e0f",
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(await listDeviceKeyAccounts()).toEqual([
+      expect.objectContaining({ principalId: PRINCIPAL, userId: "user-1", username: "ada" }),
+    ]);
+  });
+
+  it("signs in again with the browser's key when the session ended", async () => {
+    platform.value = "web";
+    const store = await linkedBrowser();
+    const [record] = store.records.values();
+    store.records.set(record.id, { ...record, userId: "user-1", username: "ada" });
+    backend({
+      KeyLoginChallenge: CHALLENGE,
+      LoginWithKey: { loginWithKey: { userId: "user-1" } },
+      MeKeyAccount: ME(PRINCIPAL),
+    });
+    await expect(resumeWithDeviceKey("user-1")).resolves.toBe("user-1");
+    await expect(resumeWithDeviceKey("someone-else")).resolves.toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("removes the browser's key and never forgets keys as an unfinished signup", async () => {
+    platform.value = "web";
+    const store = await linkedBrowser();
+    const [account] = await listDeviceKeyAccounts();
+    await expect(forgetKeysTheServerNeverSaw(account)).resolves.toBe(false);
+    expect(requestMock).not.toHaveBeenCalled();
+    await forgetDeviceKeys(PRINCIPAL);
+    expect(store.records.size).toBe(0);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("signInWithDeviceKey", () => {

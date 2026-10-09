@@ -11,6 +11,14 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
   safeInvoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+const platform = vi.hoisted(() => ({ value: "desktop" as "desktop" | "web" }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => platform.value,
+}));
+
+import { MemoryKeyStore, setBrowserKeyStore } from "./browserKeys";
+import { open, openChannel, parseLinkCode, seal, type SealedMessage } from "./linkChannel";
 import {
   cancelLink,
   confirmLink,
@@ -99,6 +107,7 @@ beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
   sleep.mockClear();
+  platform.value = "desktop";
 });
 
 describe("pollDelay", () => {
@@ -381,6 +390,125 @@ function oldDeviceBackend(
     },
   );
 }
+
+describe("linkNewDevice in the web app", () => {
+  // Appendix A's secret: the browser seals for real, and the old device's side runs here.
+  const WEB_CODE = `rim-link:1:${LINK_ID}:ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8:${ENDPOINT}`;
+  let store: MemoryKeyStore;
+
+  beforeEach(() => {
+    platform.value = "web";
+    store = new MemoryKeyStore();
+    setBrowserKeyStore(store);
+  });
+
+  /** The old device: open the offer and answer with a certificate for what it offered. */
+  async function oldDeviceAnswers(
+    offer: SealedMessage,
+    cert: (offered: Record<string, unknown>) => Record<string, unknown> = () => ({}),
+  ): Promise<SealedMessage> {
+    const channel = await openChannel(parseLinkCode(WEB_CODE));
+    const offered = JSON.parse((await open(channel, "offer", offer)) ?? "null") as Record<
+      string,
+      unknown
+    >;
+    const payload = JSON.stringify({
+      v: 2,
+      type: "device",
+      principalId: PRINCIPAL,
+      deviceId: offered.deviceId,
+      deviceKey: offered.deviceKey,
+      name: offered.name,
+      keySeq: 0,
+      issuedAt: "2026-10-09T00:00:00Z",
+      ...cert(offered),
+    });
+    return seal(
+      channel,
+      "answer",
+      JSON.stringify({
+        v: 1,
+        type: "link-answer",
+        certificate: { payload, signature: "ed25519:sig" },
+      }),
+    );
+  }
+
+  function webBackend(
+    cert?: (offered: Record<string, unknown>) => Record<string, unknown>,
+    server: Record<string, unknown> = {},
+  ) {
+    let answer: Promise<SealedMessage> | null = null;
+    newDeviceBackend({
+      SendDeviceLinkOffer: (vars: { offer: SealedMessage }) => {
+        answer ??= oldDeviceAnswers(vars.offer, cert);
+        return { sendDeviceLinkOffer: true };
+      },
+      DeviceLinkAnswer: async () => ({ deviceLinkAnswer: await answer }),
+      ...server,
+    });
+  }
+
+  it("joins with a browser key, stores it once the answer checks out, and signs in", async () => {
+    webBackend();
+    const onOffered = vi.fn();
+    await expect(linkNewDevice(WEB_CODE, "Firefox on Linux", { sleep, onOffered })).resolves.toBe(
+      "user-1",
+    );
+
+    const [offered] = requestMock.mock.calls.filter((c) => operation(c) === "SendDeviceLinkOffer");
+    const channel = await openChannel(parseLinkCode(WEB_CODE));
+    const offer = JSON.parse(
+      (await open(channel, "offer", (offered[1] as { offer: SealedMessage }).offer)) ?? "null",
+    ) as Record<string, unknown>;
+    expect(offer).toMatchObject({ type: "link-offer", platform: "web", name: "Firefox on Linux" });
+    expect(onOffered).toHaveBeenCalledWith({
+      linkId: LINK_ID,
+      fingerprint: expect.stringMatching(/^[A-Z2-7]{4}-[A-Z2-7]{4}$/),
+    });
+
+    const [record] = store.records.values();
+    expect(record).toMatchObject({
+      principalId: PRINCIPAL,
+      deviceId: offer.deviceId,
+      deviceKey: offer.deviceKey,
+      userId: "user-1",
+      username: "ada",
+    });
+    expect(record.privateKey.extractable).toBe(false);
+    // No Tauri side, and no key log replay in the browser.
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(requests()).not.toContain("KeyLog");
+    expect(requests()).toContain("LoginWithKey");
+    expect(requests().filter((r) => r === "CompleteDeviceLink")).toHaveLength(1);
+  });
+
+  it("cancels the link and stores nothing when the answer names another device", async () => {
+    webBackend(() => ({ deviceId: "01999999-0000-7000-8000-00000000ffff" }));
+    await expect(linkNewDevice(WEB_CODE, "Firefox", { sleep })).rejects.toThrow(
+      /not for this device/,
+    );
+    expect(store.records.size).toBe(0);
+    expect(requests()).toContain("CancelDeviceLink");
+    expect(requests()).not.toContain("KeyLoginChallenge");
+  });
+
+  it("refuses a code for another server before asking the server", async () => {
+    newDeviceBackend();
+    await expect(
+      linkNewDevice(WEB_CODE.replace("localhost:8080", "rim.example.com"), "Firefox", { sleep }),
+    ).rejects.toThrow(/server at https?:\/\/rim\.example\.com/);
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("removes the browser key when the other device revoked it before it signed in", async () => {
+    webBackend(undefined, { LoginWithKey: serverError("FORBIDDEN") });
+    await expect(linkNewDevice(WEB_CODE, "Firefox", { sleep })).rejects.toThrow(
+      DEVICE_LINK_MESSAGES.revoked,
+    );
+    expect(store.records.size).toBe(0);
+  });
+});
 
 describe("startLinkingDevice", () => {
   it("starts a link on the server and makes the code on the Tauri side", async () => {

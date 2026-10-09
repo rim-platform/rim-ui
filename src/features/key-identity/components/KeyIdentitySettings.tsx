@@ -82,6 +82,7 @@ export function KeyIdentitySettings() {
           principalId={identity.data.principalId}
           me={me}
           canSign={capabilities.deviceKeys}
+          canHoldDeviceKey={capabilities.deviceKeySignIn}
         />
       ) : capabilities.deviceKeys ? (
         <EnrollKeyIdentity me={me} />
@@ -241,19 +242,23 @@ function KeyIdentityOverview({
   principalId,
   me,
   canSign,
+  canHoldDeviceKey,
 }: {
   identity: MyKeyIdentity;
   principalId: string;
   me: Me;
+  /** Keys on the Tauri side: this device verifies the log and may hold the identity key. */
   canSign: boolean;
+  /** This app can hold a device key at all (the desktop, or a linked browser). */
+  canHoldDeviceKey: boolean;
 }) {
   const qc = useQueryClient();
   const local = useQuery({
     queryKey: queryKeys.deviceKeyStatus(principalId, identity.keySeq),
-    enabled: canSign,
+    enabled: canHoldDeviceKey,
     retry: false,
     queryFn: async () => {
-      const status = await syncKeyLog(identity);
+      const status = canSign ? await syncKeyLog(identity) : null;
       const keys = await settleDeviceKeys(me, principalId);
       return { holdsIdentityKey: status?.holdsIdentityKey ?? false, deviceId: keys?.deviceId };
     },
@@ -309,19 +314,28 @@ function KeyIdentityOverview({
           {principalId}
         </code>
         <p className="mt-3 text-xs text-rim-text-muted">
-          {!canSign
+          {!canHoldDeviceKey
             ? "This app has no keys of its own. Manage keys from the desktop app that holds them."
-            : local.isPending
-              ? "Checking this computer's keys..."
-              : !local.data?.deviceId
-                ? "This computer holds no key for this account. It stays signed in until its session ends."
-                : holdsIdentityKey
-                  ? "This computer holds the account's identity key, so it can manage devices."
-                  : "This computer signs in with its own key. Devices are managed from the computer that holds the identity key."}
+            : !canSign
+              ? local.isPending
+                ? "Checking this browser's key..."
+                : local.data?.deviceId
+                  ? "This browser signs in with its own key. Devices are managed from the computer that holds the identity key."
+                  : "This browser holds no key for this account. To sign in here without a password, link it from the computer that holds the identity key (Settings > Security > Link a device)."
+              : local.isPending
+                ? "Checking this computer's keys..."
+                : !local.data?.deviceId
+                  ? "This computer holds no key for this account. It stays signed in until its session ends."
+                  : holdsIdentityKey
+                    ? "This computer holds the account's identity key, so it can manage devices."
+                    : "This computer signs in with its own key. Devices are managed from the computer that holds the identity key."}
         </p>
         {local.error && (
           <p role="alert" className="mt-2 text-xs text-rim-danger">
-            {errorText(local.error, "Could not check this computer's keys.")}
+            {errorText(
+              local.error,
+              `Could not check this ${canSign ? "computer" : "browser"}'s keys.`,
+            )}
           </p>
         )}
       </div>
