@@ -122,7 +122,7 @@ real browser shows them.
 | `rim.log` | none | 120 lines a minute |
 | `rim.ui.update_panel` | `ui.panel` | Routed, not frozen |
 | `rim.storage.get`, `rim.storage.set` | none | Routed, not frozen; 120 calls a minute |
-| `rim.chat.list_messages`, `get_message`, `search_messages` | `chat.read` (+ `chat.read.encrypted` in encrypted DMs and groups) | Routed, not frozen; `docs/plugin-chat-methods.md`. Reads need the desktop app's message cache: the web app answers `INTERNAL_ERROR` with `data.reason: "noCache"` |
+| `rim.chat.list_messages`, `get_message`, `search_messages` | `chat.read` (+ `chat.read.encrypted` in encrypted DMs and groups) | Routed, not frozen; `docs/plugin-chat-methods.md`. Reads come from the browser's encrypted store once it is set up as a linked device (`e2ee-web.md`, "Plugins"); otherwise `INTERNAL_ERROR` with `data.reason: "noCache"` |
 | `rim.chat.post_message` | `chat.write` (+ `chat.write.encrypted`) | Routed, not frozen; in the web app plaintext conversations only |
 | `rim.events.subscribe`, `rim.process.*`, `rim.fs.*`, `rim.network.*` | `events.read`, `local.process`, `fs.*`, `network` | `CAPABILITY_DENIED`: no web plugin can hold them |
 

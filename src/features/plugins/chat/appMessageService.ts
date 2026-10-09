@@ -1,6 +1,7 @@
 // The message service wired to the app: the desktop's local cache through its
-// plugin commands, conversations from the query cache, the person's own send
-// path, and each plugin's audit in the store that keeps its approvals.
+// plugin commands, or in the web app the browser's encrypted store; conversations
+// from the query cache, the person's own send path, and each plugin's audit in the
+// store that keeps its approvals.
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
@@ -11,6 +12,8 @@ import { fetchConversation, findCachedConversation } from "../../conversations/a
 import { fetchThreadRoot } from "../../e2ee/api/e2eeApi";
 import { workspaceMembers } from "../../e2ee/runtime/members";
 import { sendEncrypted } from "../../e2ee/runtime/send";
+import type * as PluginViewModule from "../../e2ee/web/pluginView";
+import { webStoreAccount, type WebAccount } from "../../e2ee/web/webAccount";
 import { currentCacheAccount, trackConversation } from "../../messages/api/messageCache";
 import { SEND_MESSAGE_MUTATION } from "../../messages/api/useMessages";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
@@ -22,6 +25,8 @@ import { ErrorCode, RpcError } from "../web/rpc";
 import { mentionsForSend } from "./chatMentions";
 import type { PluginChatMessage, PluginMessagePage } from "./chatTypes";
 import { createMessageService, type ChatCache, type ChatPost } from "./messageService";
+
+type PluginView = typeof PluginViewModule;
 
 async function invokeOrThrow<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const result = await safeInvoke<T>(command, args);
@@ -71,6 +76,45 @@ export const desktopChatCache: ChatCache = {
     requestCacheSync(workspaceId, [conversationId]);
   },
 };
+
+/**
+ * The web app's encrypted store, once this browser is set up for encrypted conversations. It
+ * keeps the conversations it follows (those opened, and those a plugin asks for), and answers
+ * in the desktop cache's plugin shape; search is a substring match over the stored rows.
+ */
+export function webChatCache(account: WebAccount): ChatCache {
+  const read = async <T>(task: (db: IDBDatabase, view: PluginView) => Promise<T>) => {
+    const [{ openStore }, view] = await Promise.all([
+      import("../../e2ee/web/webCommands"),
+      import("../../e2ee/web/pluginView"),
+    ]);
+    const store = await openStore(account);
+    return store.read((db) => task(db, view));
+  };
+  return {
+    list: (workspaceId, conversationId, before, limit, scope) =>
+      read((db, view) =>
+        view.pluginMessages(db, account, workspaceId, conversationId, before, limit, scope),
+      ),
+    get: (workspaceId, messageId, scope) =>
+      read((db, view) => view.pluginMessage(db, account, workspaceId, messageId, scope)),
+    search: (workspaceId, query, conversationId, limit, scope) =>
+      read((db, view) =>
+        view.pluginSearch(db, account, workspaceId, query, conversationId, limit, scope),
+      ),
+    async follow(workspaceId, conversationId) {
+      await trackConversation(account, workspaceId, conversationId);
+      requestCacheSync(workspaceId, [conversationId]);
+    },
+  };
+}
+
+/** The store the service reads: the desktop's cache, or a set-up browser's encrypted store. */
+function chatCache(): ChatCache | null {
+  if (detectPlatform() === "desktop") return desktopChatCache;
+  const account = webStoreAccount();
+  return account ? webChatCache(account) : null;
+}
 
 /** Whether the person's conversation is encrypted, from the server or, offline, the lists. */
 export async function conversationEncrypted(
@@ -160,7 +204,7 @@ async function recordEncryptedReads(pluginId: string, count: number): Promise<vo
 export const appMessageService = createMessageService({
   workspaceId: () => useWorkspaceStore.getState().workspaceId,
   encrypted: conversationEncrypted,
-  cache: () => (detectPlatform() === "desktop" ? desktopChatCache : null),
+  cache: chatCache,
   post: postAsUser,
   recordEncryptedReads,
 });

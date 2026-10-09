@@ -3,7 +3,8 @@
 The client message service lets a plugin read and post the person's messages. It is the
 same for a web plugin and a local process: the web host calls it in the page, and the
 Rust broker relays a local process's calls to it. Reads come from the device's local
-message cache only; posts go through the person's own send path and are encrypted where
+messages only: the desktop's message cache, or in the web app the browser's encrypted store
+once the browser is set up as a linked device (`e2ee-web.md`); posts go through the person's own send path and are encrypted where
 the conversation is. The contract is the "Plugins and the client message service" section
 of `../rim-server/docs/specs/e2ee-mls-v1.md`.
 
@@ -55,9 +56,10 @@ not have it or a plugin may not see it (below).
 
 ### `rim.chat.search_messages`
 
-Params `{ query, conversationId?, limit? }`: full-text search of the messages on this
-device, newest first (the local search index, "on this device"; the server is not asked).
-Answers `{ messages }`. Without `conversationId` and without `chat.read.encrypted`, hits
+Params `{ query, conversationId?, limit? }`: search of the messages on this device, newest
+first; the server is not asked. On the desktop it is the local full-text index (every word
+matches as a prefix); in the web app a case-insensitive substring match over the text of the
+browser's stored messages. Answers `{ messages }`. Without `conversationId` and without `chat.read.encrypted`, hits
 in encrypted conversations are left out; naming an encrypted conversation without it is
 refused.
 
@@ -94,7 +96,8 @@ principal ids. `encrypted` says whether the message itself was end-to-end encryp
 - Rows this device could not decrypt (placeholders), messages that could not be
   verified, tombstones, and this device's sends the server has not acknowledged yet.
 
-The projection is in Rust (`src-tauri/src/message_cache/plugin_view.rs`) and is tested
+The projection is in Rust on the desktop (`src-tauri/src/message_cache/plugin_view.rs`)
+and in TypeScript in the web app (`src/features/e2ee/web/pluginView.ts`); both are tested
 against the shared vector `protocol/plugin-chat-vectors.json`.
 
 ## Errors
@@ -104,7 +107,7 @@ against the shared vector `protocol/plugin-chat-vectors.json`.
 | `CAPABILITY_DENIED` (-32000) | The plain capability is missing, or the conversation is encrypted and the encrypted one is |
 | `RATE_LIMITED` (-32001) | More than 120 calls a minute on the capability |
 | `INVALID_PARAMS` (-32602) | A param is missing or out of range, the conversation or thread is unknown, `before` names no message of the conversation, no workspace is open |
-| `INTERNAL_ERROR` (-32603) | `data.reason` `notCached`: the conversation is not fully stored on this device yet (the app starts caching it; try again shortly). `noCache`: the app keeps no message cache (the web app). `noEncryption`: an encrypted conversation cannot be written from here. Otherwise the app failed |
+| `INTERNAL_ERROR` (-32603) | `data.reason` `notCached`: the conversation is not fully stored on this device yet (the app starts caching it; try again shortly). `noCache`: the app keeps no messages here (a browser not set up as a linked device). `noEncryption`: an encrypted conversation cannot be written from here. Otherwise the app failed |
 
 ## Audit
 
