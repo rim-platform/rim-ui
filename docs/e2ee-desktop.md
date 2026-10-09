@@ -10,7 +10,7 @@ contract is rim-server `docs/specs/e2ee-mls-v1.md`; the engine is the `rim_mls` 
 |---|---|
 | `src-tauri/crates/rim_mls` | MLS through OpenMLS: identity, key packages, groups, Commits, Welcomes, encrypt and decrypt once, content and authenticated-data rules, franking, attachments |
 | `src-tauri/src/e2ee/` | The app's side: Tauri commands, the change-feed handler that decrypts into the cache, leaf verification (`DeviceDirectory` over key logs and device certificates), sends with stored plaintext, attachments over raw IPC, sender-side link previews |
-| `src-tauri/src/message_cache/` | The SQLCipher cache: MLS state (`mls_storage`, schema v5) and the e2ee tables (schema v6) live in the same file as the messages |
+| `src-tauri/src/message_cache/` | The SQLCipher cache: MLS state (`mls_storage`, schema v5), the e2ee tables (schema v6) and the pins (schema v7) live in the same file as the messages |
 | `src-tauri/src/key_identity/` | The device key; it signs `mls-key` statements and re-add requests (`sign_mls`) and nothing else for e2ee |
 | `src/features/e2ee/api/` | `documents.ts` (every e2ee GraphQL document), `e2eeApi.ts` (server calls), `e2eeCommands.ts` (Tauri commands) |
 | `src/features/e2ee/runtime/` | The webview's driver: client loop inputs, groups (create, commit, settle, join, re-add, recovery), membership ranking, sending, events, the 12-hour key package refresh |
@@ -20,19 +20,25 @@ The webview holds the session cookie, so it makes every server call and hands th
 the Tauri side; the Tauri side never talks to the server for e2ee (apart from link previews,
 which only the sender fetches).
 
-### Cache tables (schema v6)
+### Cache tables (schemas v6 and v7)
 
 - `message.e2ee_state`: `decrypted`, `invalid` (decrypted, broke a rule, stored without content),
   `placeholder` (this device cannot decrypt it: sent before it joined, or in an older
   incarnation) or `outgoing` (sent here, not acknowledged yet). `NULL` for plaintext rows.
 - `e2ee_conversation`: per conversation, the incarnation this device holds, an incarnation it
   is creating, the first epoch it can read, whether it was removed, whether leaves wait for
-  verification, devices that failed verification, a committer whose summary lied, a pending
-  re-add request, the last update path, and who reset each incarnation.
+  verification, devices that failed verification, a committer whose Commit was refused for
+  lying, a pending re-add request, the last update path, who reset each incarnation, and
+  (`membership`, v7) the principals processed Commits added and removed.
 - `e2ee_outgoing`: messages and edits until the server acknowledges them, with the content and
   franking key to resend them in a newer epoch.
 - `e2ee_verified_device`: devices whose certificate verified, with the certified key.
 - `e2ee_readd_honored`: when this device last acted on a device's re-add request.
+- `e2ee_pin` (v7): conversations this device knows are encrypted, with the server's
+  `encryptedAt` as first seen and a direct message's two principals. Never deleted, `forget`
+  included. The migration pins every conversation that had an `e2ee_conversation` row.
+- `e2ee_peer` (v7): per principal, the seq and hash of the head of the longest key log verified
+  here, and the device ids seen revoked.
 
 The row upsert keeps "higher version wins", with two exceptions: a placeholder never replaces
 a readable row, and a readable row (decrypted, or restored from the archive) replaces a
@@ -108,7 +114,52 @@ A leaf that does not verify (after one refetch) stops sending in the conversatio
 On start and every 12 hours: `e2ee_ensure_identity` (the MLS key and its `mls-key` statement,
 signed by the device key), then `myMlsKeyPackageStatus` → `e2ee_key_packages` (prune, top up to
 20 below 10, a new last-resort package when needed) → `uploadMlsKeyPackages`. A re-add request
-uploads 5 fresh one-time packages after the request.
+uploads 5 fresh one-time packages after the request. A key package's lifetime runs from an hour
+before it was made to an hour short of 90 days after, so a server whose clock is behind this
+one still accepts it.
+
+## Hardening
+
+What this device holds the server to, whatever it answers later:
+
+- **Encryption pin.** A conversation this device holds group state for, has an
+  `e2ee_conversation` row for, saw an encrypted feed entry in, or saw `encryptedAt` on is pinned
+  in `e2ee_pin` for good. The UI treats a conversation as encrypted when the server says so or
+  it is pinned. A pinned conversation the server answers `encryptedAt: null` for shows
+  "Encryption was reset by the server" and stops sending; every plaintext write (`sendMessage`,
+  `replyToMessage`, `editMessage`, `forwardMessage`, a plugin's post) asks the pin first and is
+  refused; it is never upgraded again.
+- **Direct messages.** A DM is pinned to its two principals on first use (the two the server
+  lists, one of them this device's). Pending adds of anyone else are never committed and the
+  conversation says "The server tried to add <name> to this conversation" and stops sending
+  until they are gone; leaf verification counts only the two as members, so a third principal's
+  leaf is "Unverified device present" and removed.
+- **Membership lines.** "<name> was added" and "<name> was removed" come from the Commits this
+  device processed (principals that gained their first leaf or lost their last), placed before
+  the first message of the epoch the Commit made, never from the server's member list.
+- **Sender.** A feed entry whose author has no principal id, or whose `senderDeviceId` is not the
+  decrypted sender's device, is stored as "could not be verified". A decrypted message is shown
+  as its MLS sender's: device to principal to workspace member.
+- **Welcomes.** A Welcome to an epoch this device's state of that incarnation already reached is
+  refused (`E2EE_STALE_WELCOME`, acknowledged, no re-add request) unless the group waits for a
+  re-add. A Welcome that does not open while the device holds working state of its incarnation
+  is a leftover, not a reason to ask for a re-add.
+- **Commits.** A Commit whose proposals are not exactly the adds and removes its summary names,
+  or that carries any proposal other than Add and Remove, is never merged: the group waits for
+  a re-add and the committer is named as misbehaving.
+- **Key logs.** The first key log verified for a principal pins its head (`e2ee_peer`). A served
+  log must contain the pinned head; a shorter or forked one is refused ("<name>'s identity
+  changed in a way RIM cannot verify", reason `keyLogForked`) and the pin moves only along valid
+  rotations.
+- **Certificates.** A device certificate signed at a `keySeq` that a recovery rotation follows is
+  refused, as the server refuses such plugin manifests.
+- **Revocations.** A `revocation` is verified (by an identity key of the log, or by the revoked
+  device's own key). A verified revocation or a `revokedAt` is remembered with the head pin, so a
+  server that stops listing it changes nothing here; one that does not verify keeps the device
+  out this time only.
+- **Keys.** Ed25519 keys must be canonically encoded points that are not of small order, an
+  inception's or rotation's identity key must differ from its recovery key, and key log entries
+  with unknown fields are refused, as on the server.
 
 ## What the person sees
 
@@ -119,6 +170,8 @@ uploads 5 fresh one-time packages after the request.
   with "Restore from history archive" when an archive is set up.
 - "Encryption was reset by <name>'s <device>" between incarnations.
 - "A message from <sender> could not be verified" for invalid messages.
+- "<name> was added" and "<name> was removed" where processed Commits changed who is in the
+  group.
 - Above the composer: "Not encrypted yet: <name> has not set up encryption on a desktop device";
   the unverified-device warning (sending stops); "This device can't read new messages until
   another device re-adds it". The web app runs the same flows once the browser is a linked
