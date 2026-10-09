@@ -10,7 +10,7 @@ use super::key::CacheKey;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 /// Schema v1: the cache (PR 9).
 ///
@@ -106,6 +106,85 @@ CREATE INDEX message_thread_root
 INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 ";
 
+/// Schema v3: what the history archive needs (Stage 2 drive archive, `archive.rs`).
+///
+/// - `change_counter` hands out a number to every change of a message or of a conversation's
+///   sync state (`change_seq`), so an export picks up exactly what changed since the last one.
+///   The triggers number every write, whichever code path makes it. An upsert that keeps the
+///   cached copy (an older version) writes nothing and so is not a change.
+/// - `archive_export` is how far each (archive, device) has exported, per table.
+/// - `conversation_sync.reset_at` is when the server last answered `RESET` for a conversation:
+///   the archive uses it to tell stale copies from current ones.
+/// - A restore writes rows with the `archive_restoring` flag set in `meta` (inside its own
+///   transaction), so restored rows are not numbered and are never exported again by the
+///   device that restored them.
+///
+/// Rows cached by an earlier build are numbered once, so the first export covers them.
+pub(super) const SCHEMA_V3: &str = "
+ALTER TABLE message ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversation_sync ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversation_sync ADD COLUMN reset_at INTEGER;
+
+CREATE TABLE change_counter (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    value INTEGER NOT NULL
+);
+
+CREATE TABLE archive_export (
+    archive_id                   TEXT NOT NULL,
+    device_id                    TEXT NOT NULL,
+    -- Highest message change_seq in the archive.
+    messages_through             INTEGER NOT NULL DEFAULT 0,
+    -- Highest conversation_sync change_seq in the archive.
+    conversations_through        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (archive_id, device_id)
+);
+
+UPDATE message SET change_seq = seq;
+INSERT INTO change_counter (id, value) VALUES (1, (SELECT coalesce(max(seq), 0) FROM message) + 1);
+UPDATE conversation_sync SET change_seq = (SELECT value FROM change_counter);
+
+CREATE INDEX message_change ON message (change_seq);
+CREATE INDEX conversation_sync_change ON conversation_sync (change_seq);
+
+CREATE TRIGGER message_change_insert AFTER INSERT ON message
+WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
+BEGIN
+    UPDATE change_counter SET value = value + 1 WHERE id = 1;
+    UPDATE message SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    WHERE seq = new.seq;
+END;
+
+CREATE TRIGGER message_change_update
+AFTER UPDATE OF version, is_deleted, text, payload, thread_id, edited_at ON message
+WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
+BEGIN
+    UPDATE change_counter SET value = value + 1 WHERE id = 1;
+    UPDATE message SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    WHERE seq = new.seq;
+END;
+
+CREATE TRIGGER conversation_change_insert AFTER INSERT ON conversation_sync
+WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
+BEGIN
+    UPDATE change_counter SET value = value + 1 WHERE id = 1;
+    UPDATE conversation_sync SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    WHERE workspace_id = new.workspace_id AND conversation_id = new.conversation_id;
+END;
+
+CREATE TRIGGER conversation_change_update
+AFTER UPDATE OF cursor, complete, reset_at ON conversation_sync
+WHEN NOT EXISTS (SELECT 1 FROM meta WHERE key = 'archive_restoring')
+     AND (old.cursor IS NOT new.cursor
+          OR old.complete IS NOT new.complete
+          OR old.reset_at IS NOT new.reset_at)
+BEGIN
+    UPDATE change_counter SET value = value + 1 WHERE id = 1;
+    UPDATE conversation_sync SET change_seq = (SELECT value FROM change_counter WHERE id = 1)
+    WHERE workspace_id = new.workspace_id AND conversation_id = new.conversation_id;
+END;
+";
+
 /// An open cache database of one account.
 pub(crate) struct CacheStore {
     pub(super) conn: Connection,
@@ -164,7 +243,7 @@ impl CacheStore {
             )));
         }
         // Each step commits with its version, so an interrupted upgrade resumes at that step.
-        for (target, sql) in [(1, SCHEMA_V1), (2, SCHEMA_V2)] {
+        for (target, sql) in [(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)] {
             if version < target {
                 let tx = self.conn.unchecked_transaction()?;
                 tx.execute_batch(sql)?;

@@ -117,9 +117,10 @@ impl CacheStore {
         workspace_id: &str,
         response: Vec<ConversationChanges>,
     ) -> Result<Option<ChangesRequest>, CacheError> {
+        let now_ms = chrono::Utc::now().timestamp_millis();
         let tx = self.conn.transaction()?;
         for entry in response {
-            apply_conversation(&tx, workspace_id, entry)?;
+            apply_conversation(&tx, workspace_id, entry, now_ms)?;
         }
         tx.commit()?;
         self.next_request(workspace_id)
@@ -130,6 +131,7 @@ fn apply_conversation(
     tx: &Transaction<'_>,
     workspace_id: &str,
     entry: ConversationChanges,
+    now_ms: i64,
 ) -> Result<(), CacheError> {
     let conversation_id = entry.conversation_id.as_str();
     let followed: Option<i64> = tx
@@ -166,10 +168,11 @@ fn apply_conversation(
         }
         ChangesStatus::Reset => {
             drop_messages(tx, workspace_id, conversation_id)?;
+            // `reset_at` tells the history archive which archived copies predate the reset.
             tx.execute(
-                "UPDATE conversation_sync SET complete = 0
+                "UPDATE conversation_sync SET complete = 0, reset_at = ?3
                  WHERE workspace_id = ?1 AND conversation_id = ?2",
-                params![workspace_id, conversation_id],
+                params![workspace_id, conversation_id, now_ms],
             )?;
         }
         ChangesStatus::Ok => {}
@@ -237,7 +240,46 @@ fn upsert_message(
     let text = if core.is_deleted { None } else { core.text };
     let payload = stored_payload(change.message, core.is_deleted);
 
-    tx.execute(
+    write_message(
+        tx,
+        &MessageRow {
+            id: core.id,
+            workspace_id: workspace_id.to_string(),
+            conversation_id: conversation_id.to_string(),
+            thread_id: core.thread_id,
+            author_id: core.author_id,
+            version,
+            sent_at_us,
+            edited_at: change.edited_at,
+            is_deleted: core.is_deleted,
+            text,
+            payload,
+        },
+    )?;
+    Ok(())
+}
+
+/// A message as the `message` table holds it.
+pub(super) struct MessageRow {
+    pub id: String,
+    pub workspace_id: String,
+    pub conversation_id: String,
+    pub thread_id: Option<String>,
+    pub author_id: String,
+    pub version: i64,
+    pub sent_at_us: i64,
+    pub edited_at: Option<String>,
+    pub is_deleted: bool,
+    pub text: Option<String>,
+    pub payload: String,
+}
+
+/// Insert a message, or replace the cached copy only if `row` has a higher version (a tie
+/// keeps the cached copy). The sync and the archive restore both write through here, so one
+/// rule decides between the server's copy and the archive's. A row filed under another
+/// conversation is never moved. Returns whether anything was written.
+pub(super) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bool, CacheError> {
+    let changed = tx.execute(
         "INSERT INTO message (id, workspace_id, conversation_id, thread_id, author_id, version,
                               sent_at_us, edited_at, is_deleted, text, payload)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -254,25 +296,25 @@ fn upsert_message(
            AND message.workspace_id = excluded.workspace_id
            AND message.conversation_id = excluded.conversation_id",
         params![
-            core.id,
-            workspace_id,
-            conversation_id,
-            core.thread_id,
-            core.author_id,
-            version,
-            sent_at_us,
-            change.edited_at,
-            core.is_deleted,
-            text,
-            payload,
+            row.id,
+            row.workspace_id,
+            row.conversation_id,
+            row.thread_id,
+            row.author_id,
+            row.version,
+            row.sent_at_us,
+            row.edited_at,
+            row.is_deleted,
+            row.text,
+            row.payload,
         ],
     )?;
-    Ok(())
+    Ok(changed > 0)
 }
 
 /// The message JSON to store: without `text` (it has its own column), and emptied of content
 /// for a tombstone.
-fn stored_payload(mut message: serde_json::Value, deleted: bool) -> String {
+pub(super) fn stored_payload(mut message: serde_json::Value, deleted: bool) -> String {
     if let Some(obj) = message.as_object_mut() {
         obj.remove("text");
         if deleted {

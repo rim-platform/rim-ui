@@ -12,10 +12,13 @@
 //! - Deleted messages stay as tombstones without text or attachments.
 //! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
 //!   ([`search`], PR 10).
+//! - Every change is numbered so the history archive can export incrementally, and a restore
+//!   from the archive writes back through the sync's own upsert ([`archive`]).
 //!
 //! The webview performs the HTTP call (it holds the session cookie) and passes the answer
 //! in; see `sync.rs` for the loop and `commands.rs` for the Tauri surface.
 
+mod archive;
 pub(crate) mod commands;
 mod feed;
 mod key;
@@ -31,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use key::{CacheKey, KeySource, KeyringKeySource};
-use store::CacheStore;
+pub(crate) use store::CacheStore;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CacheError {
@@ -54,7 +57,7 @@ pub(crate) enum CacheError {
 }
 
 impl CacheError {
-    fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::Key(_) => "CACHE_KEY",
             Self::Db(_) | Self::Unreadable | Self::Schema(_) | Self::Io(_) | Self::Json(_) => {
@@ -86,7 +89,7 @@ pub(crate) struct AccountId {
 }
 
 impl AccountId {
-    fn validate(&self) -> Result<(), CacheError> {
+    pub(crate) fn validate(&self) -> Result<(), CacheError> {
         if self.endpoint.trim().is_empty() || self.user_id.trim().is_empty() {
             return Err(CacheError::Invalid(
                 "account needs an endpoint and a user id".into(),
@@ -97,7 +100,7 @@ impl AccountId {
 
     /// The account as written into its database: endpoint without a trailing slash, then
     /// the user id.
-    fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         format!(
             "{}\n{}",
             self.endpoint.trim().trim_end_matches('/'),
@@ -105,10 +108,15 @@ impl AccountId {
         )
     }
 
-    /// The database file name: no endpoint or user id in clear on disk.
-    fn file_name(&self) -> String {
+    /// A name for this account's files: a hash, so no endpoint or user id is in clear on disk.
+    pub(crate) fn file_stem(&self) -> String {
         let digest = Sha256::digest(self.label().as_bytes());
-        format!("{}.db", hex::encode(&digest[..16]))
+        hex::encode(&digest[..16])
+    }
+
+    /// The database file name.
+    fn file_name(&self) -> String {
+        format!("{}.db", self.file_stem())
     }
 }
 
@@ -184,4 +192,4 @@ fn restrict_dir_permissions(dir: &Path) {
 fn restrict_dir_permissions(_dir: &Path) {}
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

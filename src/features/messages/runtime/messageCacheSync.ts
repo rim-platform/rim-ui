@@ -19,6 +19,7 @@ import type { MessageChangesInput } from "../../../core/graphql/generated/schema
 import { onWsConnected } from "../../../core/graphql/wsClient";
 import { logger } from "../../../core/logger";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { requestArchiveExport } from "../../history-archive/runtime/archiveExport";
 import {
   applyCacheChanges,
   beginCacheSync,
@@ -69,6 +70,8 @@ interface SchedulerDeps {
   debounceMs: number;
   /** Pause before resuming a run that hit {@link MAX_ROUNDS_PER_RUN}. */
   resumeDelayMs: number;
+  /** The account's cache took a sync without errors (the history archive exports after it). */
+  onSynced?: (account: CacheAccount) => void;
 }
 
 interface Pending {
@@ -115,6 +118,7 @@ export function createCacheSyncScheduler(deps: SchedulerDeps) {
           setTimeout(() => request(workspaceId, []), deps.resumeDelayMs);
         }
       }
+      deps.onSynced?.(account);
     } catch (err) {
       // Offline or signed out: drop what was queued. The next reconnect syncs everything.
       entry.all = false;
@@ -169,6 +173,7 @@ const scheduler = createCacheSyncScheduler({
   feed: fetchMessageChanges,
   debounceMs: 250,
   resumeDelayMs: 5_000,
+  onSynced: requestArchiveExport,
 });
 
 /** See {@link createCacheSyncScheduler}'s `request`. A no-op outside the desktop app. */

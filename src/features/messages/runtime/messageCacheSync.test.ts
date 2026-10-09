@@ -227,3 +227,52 @@ describe("createCacheSyncScheduler", () => {
     expect(backend.begin).not.toHaveBeenCalled();
   });
 });
+
+describe("createCacheSyncScheduler onSynced", () => {
+  const account = { endpoint: "http://localhost:8080/api", userId: "u1" };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reports a sync that went through, so the history archive can export it", async () => {
+    const onSynced = vi.fn();
+    const scheduler = createCacheSyncScheduler({
+      getAccount: () => account,
+      backendFor: () => pagingBackend(2),
+      feed: vi.fn(async () => [answer("c1", false)]),
+      debounceMs: 100,
+      resumeDelayMs: 1_000,
+      onSynced,
+    });
+
+    scheduler.request("ws-1");
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(onSynced).toHaveBeenCalledTimes(1);
+    expect(onSynced).toHaveBeenCalledWith(account);
+  });
+
+  it("does not report a sync that failed", async () => {
+    const onSynced = vi.fn();
+    const scheduler = createCacheSyncScheduler({
+      getAccount: () => account,
+      backendFor: () => pagingBackend(2),
+      feed: vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+      debounceMs: 100,
+      resumeDelayMs: 1_000,
+      onSynced,
+    });
+
+    scheduler.request("ws-1");
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(onSynced).not.toHaveBeenCalled();
+  });
+});

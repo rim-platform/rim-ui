@@ -45,6 +45,12 @@ hex = "0.4"
 # macOS links CommonCrypto and Linux the system libcrypto; Windows has no system OpenSSL, so
 # it builds a vendored one (see the target section below).
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher"] }
+# History archive (src/history_archive): XChaCha20-Poly1305 seals the archive files, Argon2id
+# turns the passphrase into a key, HKDF and HMAC derive subkeys and the account folder name.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+hkdf = "0.12"
+hmac = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }

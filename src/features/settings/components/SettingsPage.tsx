@@ -51,6 +51,11 @@ const ModerationSettings = lazy(() =>
     default: m.ModerationSettings,
   })),
 );
+const HistoryArchiveSettings = lazy(() =>
+  import("../../history-archive/components/HistoryArchiveSettings").then((m) => ({
+    default: m.HistoryArchiveSettings,
+  })),
+);
 const IngestTokenSettings = lazy(() =>
   import("../../integrations/components/IngestTokenSettings").then((m) => ({
     default: m.IngestTokenSettings,
@@ -280,6 +285,7 @@ type SettingsTab =
   | "agent"
   | "notifications"
   | "terminal"
+  | "history"
   | "workspace"
   | "integrations"
   | "account"
@@ -298,6 +304,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "agent", label: "AI Agent" },
   { key: "notifications", label: "Notifications" },
   { key: "terminal", label: "Terminal" },
+  { key: "history", label: "History" },
   { key: "workspace", label: "Workspace" },
   { key: "integrations", label: "Integrations" },
   { key: "account", label: "Account" },
@@ -399,6 +406,7 @@ export function SettingsPage() {
             {shownTab === "agent" && <AgentSettingsPanel />}
             {shownTab === "notifications" && <NotificationSettings />}
             {shownTab === "terminal" && <TerminalSettings />}
+            {shownTab === "history" && <HistoryArchiveSettings />}
             {shownTab === "workspace" && (
               <div className="space-y-10">
                 {isOwner && <WorkspaceFeatureSettings serverId={workspaceId} />}
