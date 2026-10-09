@@ -24,6 +24,7 @@ import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import type { MessageCursor, MessageItem, MessagesPage } from "../../../core/types/messages";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 
 /** Whose cache: the server the app talks to and the signed-in user on it. */
@@ -97,11 +98,23 @@ export const fetchMessageChanges: ChangeFeed = async (input) => {
 
 // ─── Tauri commands ─────────────────────────────────────────────────────────
 
+// The cache key failing (on Linux: no desktop keyring service, or a locked one) turns the
+// cache off for the whole run, so it is said once rather than only logged.
+let keyErrorShown = false;
+
 async function invokeCache<T>(command: string, args: Record<string, unknown>): Promise<T | null> {
   const result = await safeInvoke<T>(command, args);
   if (result.ok) return result.value;
   if (result.error.kind !== "ipc_unavailable") {
     logger.warn(`[RIM:cache] ${command} failed:`, result.error);
+  }
+  if (
+    result.error.kind === "backend_error" &&
+    result.error.code === "CACHE_KEY" &&
+    !keyErrorShown
+  ) {
+    keyErrorShown = true;
+    toast.warning("Local message cache is off", { description: result.error.message });
   }
   return null;
 }

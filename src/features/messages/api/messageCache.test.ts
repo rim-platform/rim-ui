@@ -1,7 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import type { MessageItem } from "../../../core/types/messages";
-import { cachedPageToMessagesPage, currentCacheAccount } from "./messageCache";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { toast } from "../../../shared/toast";
+import { cachedPageToMessagesPage, currentCacheAccount, trackConversation } from "./messageCache";
+
+vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: vi.fn() }));
+vi.mock("../../../shared/toast", () => ({ toast: { warning: vi.fn() } }));
 
 function item(id: string, sentAt: string): MessageItem {
   return { id, sentAt } as MessageItem;
@@ -30,5 +35,27 @@ describe("cachedPageToMessagesPage", () => {
 describe("currentCacheAccount", () => {
   it("is null outside the desktop app", () => {
     expect(currentCacheAccount()).toBeNull();
+  });
+});
+
+describe("cache key errors", () => {
+  it("are shown once per run, not only logged", async () => {
+    vi.mocked(safeInvoke).mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "backend_error",
+        code: "CACHE_KEY",
+        message: "cache key unavailable: the desktop keyring service is not available",
+      },
+    });
+    const account = { endpoint: "http://localhost:8080/api", userId: "u1" };
+
+    await trackConversation(account, "w1", "c1");
+    await trackConversation(account, "w1", "c2");
+
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning).toHaveBeenCalledWith("Local message cache is off", {
+      description: "cache key unavailable: the desktop keyring service is not available",
+    });
   });
 });
