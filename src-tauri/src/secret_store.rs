@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 /// The service name the vault key is stored under; entries differ by user name.
-pub(crate) const SERVICE: &str = "com.rim.rim-ui";
+const SERVICE: &str = "com.rim.rim-ui";
 
 /// Credential store name of the vault key.
 const VAULT_KEY_NAME: &str = "vault-key-v1";
@@ -53,7 +53,7 @@ const NONCE_LEN: usize = 24;
 
 /// The credential store entry for `user`.
 #[cfg(target_os = "linux")]
-pub(crate) fn entry(user: &str) -> keyring::Result<Entry> {
+fn entry(user: &str) -> keyring::Result<Entry> {
     let credential = keyring::secret_service::SsCredential::new_with_target(None, SERVICE, user)?;
     Ok(Entry::new_with_credential(Box::new(linux::Explaining(
         Box::new(credential),
@@ -62,7 +62,7 @@ pub(crate) fn entry(user: &str) -> keyring::Result<Entry> {
 
 /// The credential store entry for `user`.
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn entry(user: &str) -> keyring::Result<Entry> {
+fn entry(user: &str) -> keyring::Result<Entry> {
     Entry::new(SERVICE, user)
 }
 

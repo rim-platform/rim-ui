@@ -1,16 +1,20 @@
-//! The cache key: one random 256-bit key per installation, kept in the OS keyring.
+//! The cache key: one random 256-bit key per installation, kept in the secret vault.
 //!
 //! Every account's cache database is encrypted with it (SQLCipher raw key). This is the
 //! Stage 2 cache key of the master plan; Stage 3 re-wraps it under the device key, so all
 //! key handling stays in this module and the rest of the cache only sees [`CacheKey`].
 
+use std::sync::Arc;
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use zeroize::Zeroizing;
 
+use crate::secret_store::SecretVault;
+
 use super::CacheError;
 
-/// Keyring user name of the cache key (service is `secret_store::SERVICE`).
-const KEYRING_USER: &str = "message-cache-key-v1";
+/// Secret name of the cache key.
+const SECRET_NAME: &str = "message-cache-key-v1";
 
 /// A 256-bit SQLCipher key. Zeroed on drop.
 #[derive(Clone)]
@@ -28,34 +32,33 @@ impl CacheKey {
     }
 }
 
-/// Where the cache key comes from. The keyring in the app; a fixed key in tests.
+/// Where the cache key comes from. The secret vault in the app; a fixed key in tests.
 pub(crate) trait KeySource: Send + Sync {
     fn load_or_create(&self) -> Result<CacheKey, CacheError>;
 }
 
-/// Reads the key from the OS keyring, generating and storing one on first use.
-pub(crate) struct KeyringKeySource;
+/// Reads the key from the secret vault, generating and storing one on first use.
+pub(crate) struct VaultKeySource(pub(crate) Arc<SecretVault>);
 
-impl KeySource for KeyringKeySource {
+impl KeySource for VaultKeySource {
     fn load_or_create(&self) -> Result<CacheKey, CacheError> {
-        let entry = crate::secret_store::entry(KEYRING_USER)
-            .map_err(|e| CacheError::Key(format!("keyring init failed: {e}")))?;
-
-        match entry.get_password() {
-            Ok(stored) => decode(&stored),
-            Err(keyring::Error::NoEntry) => {
-                let mut bytes = Zeroizing::new([0u8; 32]);
-                getrandom::fill(bytes.as_mut())
-                    .map_err(|e| CacheError::Key(format!("random generation failed: {e}")))?;
-                let encoded = Zeroizing::new(URL_SAFE_NO_PAD.encode(*bytes));
-                entry
-                    .set_password(&encoded)
-                    .map_err(|e| CacheError::Key(format!("keyring store failed: {e}")))?;
-                log::info!("[message_cache] generated a new cache key in the OS keyring");
-                Ok(CacheKey::from_bytes(*bytes))
-            }
-            Err(e) => Err(CacheError::Key(format!("keyring read failed: {e}"))),
+        let stored = self
+            .0
+            .read(SECRET_NAME)
+            .map_err(|e| CacheError::Key(e.to_string()))?;
+        if let Some(stored) = stored {
+            return decode(&stored);
         }
+
+        let mut bytes = Zeroizing::new([0u8; 32]);
+        getrandom::fill(bytes.as_mut())
+            .map_err(|e| CacheError::Key(format!("random generation failed: {e}")))?;
+        let encoded = Zeroizing::new(URL_SAFE_NO_PAD.encode(*bytes));
+        self.0
+            .write(SECRET_NAME, &encoded)
+            .map_err(|e| CacheError::Key(e.to_string()))?;
+        log::info!("[message_cache] generated a new cache key in the secret vault");
+        Ok(CacheKey::from_bytes(*bytes))
     }
 }
 

@@ -8,7 +8,7 @@
 //!
 //! - One database file per account, named after a hash of (server endpoint, user id), and the
 //!   account is recorded inside it, so two accounts never share a cache.
-//! - One cache key per installation, in the OS keyring ([`key`]).
+//! - One cache key per installation, in the secret vault ([`key`]).
 //! - Deleted messages stay as tombstones without text or attachments.
 //! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
 //!   ([`search`], PR 10).
@@ -36,7 +36,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use key::{CacheKey, KeySource, KeyringKeySource};
+use crate::secret_store::SecretVault;
+use key::{CacheKey, KeySource, VaultKeySource};
 pub(crate) use store::CacheStore;
 
 #[derive(Debug, thiserror::Error)]
@@ -127,7 +128,7 @@ impl AccountId {
 pub(crate) struct MessageCacheState {
     dir: PathBuf,
     key_source: Box<dyn KeySource>,
-    /// The key, or why it could not be had, as read from the keyring the first time.
+    /// The key, or why it could not be had, as read from the secret vault the first time.
     key: Mutex<Option<Result<CacheKey, String>>>,
     stores: Mutex<HashMap<String, Arc<Mutex<CacheStore>>>>,
 }
@@ -163,10 +164,11 @@ impl MessageCacheState {
         Ok(store)
     }
 
-    /// The key is read from the keyring once per run. Callers hold the `stores` lock, so two
-    /// first opens cannot each create a different key. A failure is kept for the run too: on
-    /// Linux a locked keyring answers with an unlock prompt, and a dismissed one must not come
-    /// back on every cache call. The cache stays off until the app restarts.
+    /// The key is read from the secret vault once per run. Callers hold the `stores` lock, so
+    /// two first opens cannot each create a different key. A failure is kept for the run too:
+    /// on Linux a locked keyring answers the vault key's read with an unlock prompt, and a
+    /// dismissed one must not come back on every cache call. The cache stays off until the app
+    /// restarts.
     fn key(&self) -> Result<CacheKey, CacheError> {
         let mut key = self.key.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(known) = key.as_ref() {
@@ -181,11 +183,11 @@ impl MessageCacheState {
     }
 }
 
-/// The cache lives in `<app data>/message-cache/`.
-pub(crate) fn init(app_data_dir: &Path) -> MessageCacheState {
+/// The cache lives in `<app data>/message-cache/`, its key in the secret vault.
+pub(crate) fn init(app_data_dir: &Path, vault: Arc<SecretVault>) -> MessageCacheState {
     MessageCacheState::new(
         app_data_dir.join("message-cache"),
-        Box::new(KeyringKeySource),
+        Box::new(VaultKeySource(vault)),
     )
 }
 

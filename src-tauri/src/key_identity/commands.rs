@@ -1,5 +1,6 @@
-//! Tauri commands of key identity. Keyring work runs on the blocking pool, since a keyring
-//! call can wait on an unlock prompt (see `secret_store`).
+//! Tauri commands of key identity. Key storage work runs on the blocking pool: it reads and
+//! writes the secret vault file, and the vault key's first read can wait on an unlock prompt
+//! (see `secret_store`).
 
 use tauri::State;
 use zeroize::Zeroizing;

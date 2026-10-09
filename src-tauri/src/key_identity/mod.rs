@@ -7,7 +7,7 @@
 //!
 //! - **Enrollment** creates an identity key, a recovery key and a device key. The recovery key
 //!   is shown once, as the 12-word phrase of the recovery kit, and never stored. The identity
-//!   and device keys are written to the keyring before the server is asked to enroll them, so
+//!   and device keys are written to the secret vault before the server is asked to enroll them, so
 //!   an enrolled account never ends up without its keys; keys the server never accepted are
 //!   cleaned up later.
 //! - **Key-only signup** uses the same draft for an account that does not exist yet: its keys
@@ -37,6 +37,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::secret_store::SecretVault;
 use statement::{KeyHead, RotationSigner, SecretKey, Statement};
 use store::{same_endpoint, AccountLink, KeyRecord, Keys, SecretStore};
 
@@ -301,12 +302,12 @@ pub(crate) struct KeyIdentityState {
     /// Device links this run takes part in, by link id: their secrets, and a new device's key
     /// until its certificate verifies.
     links: Arc<Mutex<HashMap<String, device_link::LiveLink>>>,
-    /// Serializes read-modify-write of the keyring entries.
+    /// Serializes read-modify-write of the stored records.
     lock: Arc<Mutex<()>>,
 }
 
-pub(crate) fn init() -> KeyIdentityState {
-    KeyIdentityState::new(Arc::new(store::KeyringSecretStore))
+pub(crate) fn init(vault: Arc<SecretVault>) -> KeyIdentityState {
+    KeyIdentityState::new(Arc::new(store::VaultSecretStore(vault)))
 }
 
 impl KeyIdentityState {

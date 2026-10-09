@@ -1,28 +1,28 @@
-//! Where this device keeps its keys: one OS keyring entry per principal (through
+//! Where this device keeps its keys: one secret vault record per principal (through
 //! `secret_store`), plus a small index saying which account on which server each principal
 //! signs in to. Memory in tests.
-//!
-//! Each entry stays small (a few hundred bytes), well under the 2.5 KB Windows Credential
-//! Manager allows per secret.
 
 #[cfg(test)]
 use std::collections::HashMap;
+use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::secret_store::{SecretVault, VaultError};
+
 use super::device_link::Sealed;
 use super::statement::Statement;
 use super::KeyIdentityError;
 
-/// Keyring user name of the account index.
+/// Secret name of the account index.
 const INDEX_NAME: &str = "key-identity-accounts-v1";
 /// Where an unreadable index is kept instead of being overwritten.
 const UNREADABLE_INDEX_NAME: &str = "key-identity-accounts-v1.unreadable";
 
-/// Keyring user name of the list of pending device links (link ids).
+/// Secret name of the list of pending device links (link ids).
 const PENDING_LINKS_NAME: &str = "device-links-v1";
 
 fn record_name(principal_id: &str) -> String {
@@ -41,40 +41,25 @@ pub(crate) trait SecretStore: Send + Sync {
     fn delete(&self, name: &str) -> Result<(), KeyIdentityError>;
 }
 
-pub(crate) struct KeyringSecretStore;
+/// The secrets in the app's secret vault.
+pub(crate) struct VaultSecretStore(pub(crate) Arc<SecretVault>);
 
-impl KeyringSecretStore {
-    fn entry(name: &str) -> Result<keyring::Entry, KeyIdentityError> {
-        crate::secret_store::entry(name)
-            .map_err(|e| KeyIdentityError::Keyring(format!("keyring init failed: {e}")))
-    }
-}
-
-impl SecretStore for KeyringSecretStore {
+impl SecretStore for VaultSecretStore {
     fn read(&self, name: &str) -> Result<Option<Zeroizing<String>>, KeyIdentityError> {
-        match Self::entry(name)?.get_password() {
-            Ok(value) => Ok(Some(Zeroizing::new(value))),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(KeyIdentityError::Keyring(format!(
-                "keyring read failed: {e}"
-            ))),
-        }
+        self.0.read(name).map_err(vault_error)
     }
 
     fn write(&self, name: &str, value: &str) -> Result<(), KeyIdentityError> {
-        Self::entry(name)?
-            .set_password(value)
-            .map_err(|e| KeyIdentityError::Keyring(format!("keyring store failed: {e}")))
+        self.0.write(name, value).map_err(vault_error)
     }
 
     fn delete(&self, name: &str) -> Result<(), KeyIdentityError> {
-        match Self::entry(name)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(KeyIdentityError::Keyring(format!(
-                "keyring delete failed: {e}"
-            ))),
-        }
+        self.0.delete(name).map_err(vault_error)
     }
+}
+
+fn vault_error(e: VaultError) -> KeyIdentityError {
+    KeyIdentityError::Keyring(e.to_string())
 }
 
 #[cfg(test)]
@@ -266,7 +251,7 @@ impl Keys<'_> {
         Ok(())
     }
 
-    /// An unreadable list reads as empty: the records it named stay in the keyring, unused.
+    /// An unreadable list reads as empty: the records it named stay stored, unused.
     fn pending_link_ids(&self) -> Result<Vec<String>, KeyIdentityError> {
         let Some(raw) = self.0.read(PENDING_LINKS_NAME)? else {
             return Ok(Vec::new());

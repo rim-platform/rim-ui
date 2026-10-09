@@ -44,10 +44,10 @@ does not open means someone else used the code.
 On Confirm, `key_identity_link_confirm` signs the certificate at the head's `keySeq`, seals the
 answer, and writes the **pending link** record before the webview sends `addDeviceKey`:
 
-| Keyring entry | Holds |
+| Secret vault record | Holds |
 |---|---|
 | `device-link-v1:<link id>` | link id, secret, endpoint, principal id, device id and key, certificate, sealed answer (resent byte for byte) |
-| `device-links-v1` | the list of link ids that have a record (the keyring cannot be listed) |
+| `device-links-v1` | the list of link ids that have a record |
 
 The record is removed when the link ends `CONSUMED`, or once a link that ended `CANCELLED` or
 `EXPIRED` has been settled: a certified device whose `lastUsedAt` is still empty is revoked with
@@ -68,7 +68,7 @@ this key is a retry after a lost answer and carries on; any other refusal cancel
 
 `key_identity_link_offer` reads the pasted code, refuses a code for another server (compared as
 the key store compares endpoints), and makes the device key and a UUID v7 device id in memory.
-Nothing is written to the keyring until `key_identity_link_open_answer` has found a certificate
+Nothing is written to the secret vault until `key_identity_link_open_answer` has found a certificate
 for exactly this device id and key, and `key_identity_link_accept` has verified it against the
 account's `keyLog` at its `keySeq`. Then the key, id and name are stored like a recovered device's
 (no identity key, user id unknown), and the existing `signInWithDeviceKey` signs in and settles
@@ -79,7 +79,8 @@ account refuses to link over them.
 ## Trying it with two app instances
 
 Both instances must use the same server (the code carries the endpoint and the new device refuses
-another), and each needs its own keyring entries, so run them as two OS users or on two machines:
+another), and each needs its own secret vault and credential store entry, so run them as two OS
+users or on two machines:
 
 1. On the first, sign in, set up key sign-in in Settings > Security, and choose "Link a device".
 2. On the second, open the sign-in screen, choose "Link this device with its code", paste the
@@ -104,8 +105,5 @@ non-extractable key in IndexedDB and signs in with it, through the same `linkNew
 
 ## Limits
 
-- A pending link record in the keyring is about 1.7 KB with Ed25519 keys. Windows caps a
-  credential at roughly 2.5 KB, so hybrid post-quantum keys will need the record split or the
-  sealed answer stored elsewhere before they can be linked from Windows.
 - Polling gives up 25 minutes after it started: a link lives 10 minutes and an answer 10 more.
 - The desktop does not scan QR codes; the new device takes the pasted code.

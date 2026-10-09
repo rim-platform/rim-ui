@@ -64,12 +64,12 @@ directories whose name is not an id (lowercase hex and `-`, 8 to 64 characters).
 
 | Key | What it is | Where it lives |
 |---|---|---|
-| Archive key | 32 random bytes, one per archive | Wrapped in the manifest; this device's copy in the OS keyring (`history-archive-key-v1:<archive id>`) |
+| Archive key | 32 random bytes, one per archive | Wrapped in the manifest; this device's copy in the secret vault (`history-archive-key-v1:<archive id>`) |
 | Passphrase key | Argon2id(passphrase, salt), 32 bytes | Never stored |
 | File key | HKDF-SHA256(archive key, no salt, info `rim-history-archive v1 file key`) | Derived |
 | Name key | HKDF-SHA256(archive key, no salt, info `rim-history-archive v1 name key`) | Derived |
 | Identity wrap key | HKDF-SHA256(identity seed, salt `rim.history-archive.v1`, info `archive key wrap`) | Derived by a device holding the identity key |
-| Backup key | HKDF-SHA256(recovery phrase entropy, or a version 1 kit's seed, salt `rim.recovery-phrase.v1`, info `identity backup key`) | The keyring record of a device that holds the identity key |
+| Backup key | HKDF-SHA256(recovery phrase entropy, or a version 1 kit's seed, salt `rim.recovery-phrase.v1`, info `identity backup key`) | The secret vault record of a device that holds the identity key |
 
 - The passphrase must be at least 12 characters. There is no recovery: losing the passphrase and
   every device that holds the key loses the archive, by design.
@@ -209,7 +209,7 @@ holds the device's whole history.
 
 ## Reading and restoring
 
-1. Unlock the archive key (passphrase, or the device's keyring copy). Check the manifest's
+1. Unlock the archive key (passphrase, or the device's stored copy). Check the manifest's
    `archiveId` before writing: a device never writes into a folder that now holds another
    archive, or into an empty folder where its archive used to be (an unplugged drive).
 2. List `accounts/<tag>/devices/`, read each head, then each listed segment.
@@ -236,8 +236,8 @@ and stops following it.
 ## Identity key backup
 
 The identity key (rim-server `docs/specs/key-identity-v1.md`) adds devices, rotates and publishes
-the profile card. It lives in the keyring of the device that enrolled the account. The archive
-keeps two things for it, both written only by a device that holds the account's current
+the profile card. It lives in the secret vault of the device that enrolled the account. The
+archive keeps two things for it, both written only by a device that holds the account's current
 identity key:
 
 - a **backup of the identity key**, sealed under a key that only the recovery phrase gives, so
@@ -257,8 +257,8 @@ backup key (but not the other way round), which gives them nothing they could no
 with a recovery.
 
 The entropy exists only while the kit is shown (enrollment, key-only signup) or typed
-(recovery). The device keeps the **backup key**, never the entropy, in its keyring record next
-to the identity key. A device that holds the identity key without a backup key (enrolled before
+(recovery). The device keeps the **backup key**, never the entropy, in its secret vault record
+next to the identity key. A device that holds the identity key without a backup key (enrolled before
 the backup existed) gets one when the person types the phrase or `RK1-` key in Settings >
 Security; the app checks it against the key log's `recoveryKey` first.
 
@@ -281,7 +281,7 @@ file name. The plaintext is JSON:
 ```
 
 - `keySeq`: the key log `seq` whose head names `identitySeed`, as the writer verified it.
-- `identitySeed`: the identity key as the keyring stores it, algorithm tag and seed.
+- `identitySeed`: the identity key as the secret vault stores it, algorithm tag and seed.
 - `pendingIdentitySeed`, `pendingKeySeq`: present while a rotation the writer sent has not been
   confirmed: the new key and the `seq` its rotation creates.
 
@@ -307,8 +307,8 @@ On a device that holds only a device key for the account, with the archive set u
 3. It keeps the seed (current or pending) whose public key is the head's `identityKey`. If none
    is, every backup predates the last rotation, and the takeover stops: the device that holds
    the current key backs it up the next time it runs.
-4. It stores the identity key and the backup key in its keyring record and writes a backup and a
-   wrap of its own.
+4. It stores the identity key and the backup key in its secret vault record and writes a backup
+   and a wrap of its own.
 
 The old device keeps its copy; nothing is revoked or signed. The new holder can add and revoke
 devices, rotate and publish the profile card from then on.
@@ -462,13 +462,13 @@ temporary file (or an exclusive open where there are no hard links).
   `state` must match. Google redirects to `http://127.0.0.1:<any free port>/callback`; Dropbox
   only accepts registered redirect URIs, so it uses `http://localhost:<fixed port>/callback`
   (53241 unless the build says otherwise).
-- The refresh token is kept in the OS keyring as `history-archive-cloud-v1:<connection id>`.
+- The refresh token is kept in the secret vault as `history-archive-cloud-v1:<connection id>`.
   The account's archive settings file names the provider, the connection id and the signed-in
   email address, never a token. Access tokens live in memory and are refreshed shortly before
   they expire, or once when the service refuses one.
 - A sign-in is kept only when the user connects the archive with its passphrase. Stopping
-  backups on a device, or leaving a sign-in unused, deletes its refresh token from the keyring
-  first and then, for Dropbox only, revokes it (once, best effort; a failed revoke is logged
+  backups on a device, or leaving a sign-in unused, deletes its refresh token from the secret
+  vault first and then, for Dropbox only, revokes it (once, best effort; a failed revoke is logged
   and does not undo the sign-out). Dropbox revokes one token and leaves the user's other
   devices signed in. Google cannot: revoking any token removes the user's whole grant to the
   OAuth client and invalidates every device's refresh tokens, so RIM never calls Google's

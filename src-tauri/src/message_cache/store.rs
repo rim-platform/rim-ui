@@ -213,7 +213,7 @@ pub(crate) struct TimelineCursor {
 
 impl CacheStore {
     /// Open (or create) the database at `path` with `key`. A file the key cannot read (the
-    /// keyring entry was reset, or the file is damaged) is a cache with nothing worth
+    /// stored key was lost, or the file is damaged) is a cache with nothing worth
     /// keeping: it is deleted and created again, and the feed refills it.
     pub(crate) fn open(
         path: &Path,

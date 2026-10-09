@@ -9,15 +9,17 @@
 //! An explicit sign-out is recorded too (`SignedOut`): the next start then lands on sign-in
 //! even if the server still accepts the old cookie (the sign-out request failed offline).
 //!
-//! The record lives in the OS keyring next to the cache key, never in a plain file.
+//! The record lives in the secret vault next to the cache key, never in a plain file.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-/// Keyring user name of the record (service is `secret_store::SERVICE`).
-const KEYRING_USER: &str = "offline-session-v1";
+use crate::secret_store::SecretVault;
+
+/// Secret name of the record.
+const SECRET_NAME: &str = "offline-session-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -57,33 +59,24 @@ fn same_endpoint(a: &str, b: &str) -> bool {
     a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
 }
 
-/// Where the record is kept. The keyring in the app; memory in tests.
+/// Where the record is kept. The secret vault in the app; memory in tests.
 pub(crate) trait RecordStore: Send + Sync {
     fn read(&self) -> Result<Option<String>, String>;
     fn write(&self, value: &str) -> Result<(), String>;
 }
 
-pub(crate) struct KeyringRecordStore;
+pub(crate) struct VaultRecordStore(Arc<SecretVault>);
 
-impl KeyringRecordStore {
-    fn entry() -> Result<keyring::Entry, String> {
-        crate::secret_store::entry(KEYRING_USER).map_err(|e| format!("keyring init failed: {e}"))
-    }
-}
-
-impl RecordStore for KeyringRecordStore {
+impl RecordStore for VaultRecordStore {
     fn read(&self) -> Result<Option<String>, String> {
-        match Self::entry()?.get_password() {
-            Ok(value) => Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("keyring read failed: {e}")),
-        }
+        self.0
+            .read(SECRET_NAME)
+            .map(|value| value.map(|value| value.to_string()))
+            .map_err(|e| e.to_string())
     }
 
     fn write(&self, value: &str) -> Result<(), String> {
-        Self::entry()?
-            .set_password(value)
-            .map_err(|e| format!("keyring store failed: {e}"))
+        self.0.write(SECRET_NAME, value).map_err(|e| e.to_string())
     }
 }
 
@@ -128,8 +121,8 @@ impl OfflineSessionState {
     }
 }
 
-pub(crate) fn init() -> OfflineSessionState {
-    OfflineSessionState::new(Arc::new(KeyringRecordStore))
+pub(crate) fn init(vault: Arc<SecretVault>) -> OfflineSessionState {
+    OfflineSessionState::new(Arc::new(VaultRecordStore(vault)))
 }
 
 /// The session record for the server at `endpoint`, or null when there is none.
@@ -180,11 +173,11 @@ mod tests {
 
     impl RecordStore for BrokenStore {
         fn read(&self) -> Result<Option<String>, String> {
-            Err("no keyring".into())
+            Err("no secret store".into())
         }
 
         fn write(&self, _value: &str) -> Result<(), String> {
-            Err("no keyring".into())
+            Err("no secret store".into())
         }
     }
 
@@ -281,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn a_keyring_failure_loads_nothing_and_reports_on_save() {
+    fn a_store_failure_loads_nothing_and_reports_on_save() {
         let state = OfflineSessionState::new(Arc::new(BrokenStore));
         assert_eq!(state.load(ENDPOINT), None);
         assert!(state.save(&signed_in("user-1")).is_err());
