@@ -13,6 +13,9 @@
 //! [`CacheStore::begin_sync`] marks conversations pending; [`CacheStore::next_request`] asks
 //! for every pending conversation with its stored cursor; [`CacheStore::apply_changes`]
 //! writes the answer and leaves a conversation pending while the feed says `hasMore`.
+//!
+//! Entries of end-to-end encrypted conversations go through an [`EnvelopeHandler`] (the `e2ee`
+//! module), which decrypts each one in the page's transaction; this module never sees MLS.
 
 use rusqlite::{params, OptionalExtension, Transaction};
 
@@ -112,18 +115,107 @@ impl CacheStore {
     /// - `NO_ACCESS`: the user can no longer read it; drop its messages and stop following it.
     ///
     /// An answer for a conversation the cache does not follow is ignored.
+    #[cfg(test)]
     pub(crate) fn apply_changes(
         &mut self,
         workspace_id: &str,
         response: Vec<ConversationChanges>,
     ) -> Result<Option<ChangesRequest>, CacheError> {
+        self.apply_changes_with(workspace_id, response, &mut PlaintextOnly)
+    }
+
+    /// [`Self::apply_changes`], with encrypted entries handed to `handler` inside the same
+    /// transaction.
+    pub(crate) fn apply_changes_with(
+        &mut self,
+        workspace_id: &str,
+        response: Vec<ConversationChanges>,
+        handler: &mut dyn EnvelopeHandler,
+    ) -> Result<Option<ChangesRequest>, CacheError> {
         let now_ms = chrono::Utc::now().timestamp_millis();
         let tx = self.conn.transaction()?;
         for entry in response {
-            apply_conversation(&tx, workspace_id, entry, now_ms)?;
+            apply_conversation(&tx, workspace_id, entry, now_ms, handler)?;
         }
         tx.commit()?;
         self.next_request(workspace_id)
+    }
+}
+
+/// What an [`EnvelopeHandler`] did with a change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Handled {
+    /// Not an encrypted entry: stored as a plaintext message.
+    Plaintext,
+    /// Stored (or deliberately skipped) by the handler.
+    Done,
+    /// The handler cannot go on in this conversation yet: the rest of the page is left for a
+    /// later sync, and the cursor stays where it was.
+    Stop,
+}
+
+/// Decrypts the encrypted entries of the change feed, each in the page's transaction.
+pub(crate) trait EnvelopeHandler {
+    /// One change of a conversation, in feed order.
+    fn change(
+        &mut self,
+        tx: &Transaction<'_>,
+        workspace_id: &str,
+        conversation_id: &str,
+        change: &MessageChange,
+    ) -> Result<Handled, CacheError>;
+
+    /// The conversation's page is stored; `drained` when the feed has nothing more for it.
+    fn finish(
+        &mut self,
+        tx: &Transaction<'_>,
+        workspace_id: &str,
+        conversation_id: &str,
+        drained: bool,
+    ) -> Result<(), CacheError>;
+
+    /// The user lost access to the conversation: forget everything kept for it.
+    fn dropped(
+        &mut self,
+        tx: &Transaction<'_>,
+        workspace_id: &str,
+        conversation_id: &str,
+    ) -> Result<(), CacheError>;
+}
+
+/// The handler of a cache without end-to-end encryption: every entry is plaintext.
+#[cfg(test)]
+pub(crate) struct PlaintextOnly;
+
+#[cfg(test)]
+impl EnvelopeHandler for PlaintextOnly {
+    fn change(
+        &mut self,
+        _tx: &Transaction<'_>,
+        _workspace_id: &str,
+        _conversation_id: &str,
+        _change: &MessageChange,
+    ) -> Result<Handled, CacheError> {
+        Ok(Handled::Plaintext)
+    }
+
+    fn finish(
+        &mut self,
+        _tx: &Transaction<'_>,
+        _workspace_id: &str,
+        _conversation_id: &str,
+        _drained: bool,
+    ) -> Result<(), CacheError> {
+        Ok(())
+    }
+
+    fn dropped(
+        &mut self,
+        _tx: &Transaction<'_>,
+        _workspace_id: &str,
+        _conversation_id: &str,
+    ) -> Result<(), CacheError> {
+        Ok(())
     }
 }
 
@@ -132,6 +224,7 @@ fn apply_conversation(
     workspace_id: &str,
     entry: ConversationChanges,
     now_ms: i64,
+    handler: &mut dyn EnvelopeHandler,
 ) -> Result<(), CacheError> {
     let conversation_id = entry.conversation_id.as_str();
     let followed: Option<i64> = tx
@@ -148,7 +241,8 @@ fn apply_conversation(
 
     match entry.status {
         ChangesStatus::NoAccess => {
-            drop_messages(tx, workspace_id, conversation_id)?;
+            drop_messages(tx, workspace_id, conversation_id, false)?;
+            handler.dropped(tx, workspace_id, conversation_id)?;
             tx.execute(
                 "DELETE FROM conversation_sync WHERE workspace_id = ?1 AND conversation_id = ?2",
                 params![workspace_id, conversation_id],
@@ -167,7 +261,8 @@ fn apply_conversation(
             return Ok(());
         }
         ChangesStatus::Reset => {
-            drop_messages(tx, workspace_id, conversation_id)?;
+            // Decrypted rows cannot be fetched again: they stay, and the feed is read over them.
+            drop_messages(tx, workspace_id, conversation_id, true)?;
             // `reset_at` tells the history archive which archived copies predate the reset.
             tx.execute(
                 "UPDATE conversation_sync SET complete = 0, reset_at = ?3
@@ -179,7 +274,20 @@ fn apply_conversation(
     }
 
     for change in entry.changes {
-        upsert_message(tx, workspace_id, conversation_id, change)?;
+        match handler.change(tx, workspace_id, conversation_id, &change)? {
+            Handled::Plaintext => upsert_message(tx, workspace_id, conversation_id, change)?,
+            Handled::Done => {}
+            Handled::Stop => {
+                // Not pending: this run would only stop at the same entry again. The handler
+                // says why, and the next sync of the conversation resumes from the cursor.
+                tx.execute(
+                    "UPDATE conversation_sync SET pending = 0
+                     WHERE workspace_id = ?1 AND conversation_id = ?2",
+                    params![workspace_id, conversation_id],
+                )?;
+                return Ok(());
+            }
+        }
     }
 
     tx.execute(
@@ -190,17 +298,22 @@ fn apply_conversation(
          WHERE workspace_id = ?1 AND conversation_id = ?2",
         params![workspace_id, conversation_id, entry.cursor, entry.has_more],
     )?;
+    handler.finish(tx, workspace_id, conversation_id, !entry.has_more)?;
     Ok(())
 }
 
+/// Delete a conversation's cached messages; with `keep_decrypted`, all but the rows only this
+/// device can read (decrypted, invalid or still being sent).
 fn drop_messages(
     tx: &Transaction<'_>,
     workspace_id: &str,
     conversation_id: &str,
+    keep_decrypted: bool,
 ) -> Result<(), CacheError> {
     tx.execute(
-        "DELETE FROM message WHERE workspace_id = ?1 AND conversation_id = ?2",
-        params![workspace_id, conversation_id],
+        "DELETE FROM message WHERE workspace_id = ?1 AND conversation_id = ?2
+           AND (?3 = 0 OR e2ee_state IS NULL OR e2ee_state = 'placeholder')",
+        params![workspace_id, conversation_id, keep_decrypted],
     )?;
     Ok(())
 }
@@ -254,13 +367,14 @@ fn upsert_message(
             is_deleted: core.is_deleted,
             text,
             payload,
+            e2ee_state: None,
         },
     )?;
     Ok(())
 }
 
 /// A message as the `message` table holds it.
-pub(super) struct MessageRow {
+pub(crate) struct MessageRow {
     pub id: String,
     pub workspace_id: String,
     pub conversation_id: String,
@@ -272,17 +386,24 @@ pub(super) struct MessageRow {
     pub is_deleted: bool,
     pub text: Option<String>,
     pub payload: String,
+    /// For an encrypted message: `decrypted`, `invalid` (decrypted but breaks a rule),
+    /// `placeholder` (this device cannot decrypt it) or `outgoing` (sent from this device,
+    /// not yet acknowledged). `None` for plaintext rows and tombstones.
+    pub e2ee_state: Option<String>,
 }
 
 /// Insert a message, or replace the cached copy only if `row` has a higher version (a tie
 /// keeps the cached copy). The sync and the archive restore both write through here, so one
 /// rule decides between the server's copy and the archive's. A row filed under another
 /// conversation is never moved. Returns whether anything was written.
-pub(super) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bool, CacheError> {
+///
+/// Encrypted rows add two exceptions: a placeholder never replaces a row this device could
+/// read, and a readable row replaces a placeholder whatever their versions.
+pub(crate) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bool, CacheError> {
     let changed = tx.execute(
         "INSERT INTO message (id, workspace_id, conversation_id, thread_id, author_id, version,
-                              sent_at_us, edited_at, is_deleted, text, payload)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                              sent_at_us, edited_at, is_deleted, text, payload, e2ee_state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT (id) DO UPDATE SET
              thread_id  = excluded.thread_id,
              author_id  = excluded.author_id,
@@ -291,10 +412,15 @@ pub(super) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bo
              edited_at  = excluded.edited_at,
              is_deleted = excluded.is_deleted,
              text       = excluded.text,
-             payload    = excluded.payload
-         WHERE excluded.version > message.version
-           AND message.workspace_id = excluded.workspace_id
-           AND message.conversation_id = excluded.conversation_id",
+             payload    = excluded.payload,
+             e2ee_state = excluded.e2ee_state
+         WHERE message.workspace_id = excluded.workspace_id
+           AND message.conversation_id = excluded.conversation_id
+           AND ((excluded.version > message.version
+                 AND NOT (excluded.e2ee_state IS 'placeholder'
+                          AND message.e2ee_state IN ('decrypted', 'invalid', 'outgoing')))
+                OR (message.e2ee_state IS 'placeholder'
+                    AND excluded.e2ee_state IN ('decrypted', 'invalid')))",
         params![
             row.id,
             row.workspace_id,
@@ -307,6 +433,7 @@ pub(super) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bo
             row.is_deleted,
             row.text,
             row.payload,
+            row.e2ee_state,
         ],
     )?;
     Ok(changed > 0)
@@ -314,10 +441,13 @@ pub(super) fn write_message(tx: &Transaction<'_>, row: &MessageRow) -> Result<bo
 
 /// The message JSON to store: without `text` (it has its own column), and emptied of content
 /// for a tombstone.
-pub(super) fn stored_payload(mut message: serde_json::Value, deleted: bool) -> String {
+pub(crate) fn stored_payload(mut message: serde_json::Value, deleted: bool) -> String {
     if let Some(obj) = message.as_object_mut() {
         obj.remove("text");
+        // The envelope is never stored: a decrypted row keeps its plaintext instead.
+        obj.remove("encryption");
         if deleted {
+            obj.remove("e2ee");
             for field in [
                 "attachments",
                 "linkPreviews",

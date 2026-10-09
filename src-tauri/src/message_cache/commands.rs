@@ -5,11 +5,14 @@
 
 use tauri::State;
 
+use serde::Serialize;
+
 use super::feed::{ChangesRequest, ConversationChanges};
 use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::snapshot::{Snapshot, SnapshotKind};
 use super::store::{TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
+use crate::e2ee::{ConversationInput, Decryptor, SyncNote};
 
 async fn with_store<T, F>(
     state: State<'_, MessageCacheState>,
@@ -59,16 +62,34 @@ pub async fn message_cache_sync_begin(
     .await
 }
 
-/// Apply a `messageChanges` answer. Returns the next input, or null when the sync is done.
+/// What applying a feed answer did.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncStep {
+    /// The next `messageChanges` input, or null when the sync is done.
+    next: Option<ChangesRequest>,
+    /// What happened in each end-to-end encrypted conversation of the answer.
+    e2ee: Vec<SyncNote>,
+}
+
+/// Apply a `messageChanges` answer. Encrypted entries are decrypted with the Commits and
+/// thread roots `mls` hands in for their conversations.
 #[tauri::command]
 pub async fn message_cache_sync_apply(
     state: State<'_, MessageCacheState>,
     account: AccountId,
     workspace_id: String,
     changes: Vec<ConversationChanges>,
-) -> Result<Option<ChangesRequest>, CacheError> {
+    mls: Option<Vec<ConversationInput>>,
+) -> Result<SyncStep, CacheError> {
     with_store(state, account, move |store| {
-        store.apply_changes(&workspace_id, changes)
+        let engine = rim_mls::Mls::new().map_err(|e| CacheError::Invalid(e.to_string()))?;
+        let mut decryptor = Decryptor::new(&engine, mls.unwrap_or_default());
+        let next = store.apply_changes_with(&workspace_id, changes, &mut decryptor)?;
+        Ok(SyncStep {
+            next,
+            e2ee: decryptor.into_notes(),
+        })
     })
     .await
 }
@@ -87,6 +108,37 @@ pub async fn message_cache_timeline(
         store.timeline(&workspace_id, &conversation_id, before.as_ref(), limit)
     })
     .await
+}
+
+/// A thread's cached replies, oldest first, after its root message when that is cached.
+#[tauri::command]
+pub async fn message_cache_thread(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    workspace_id: String,
+    conversation_id: String,
+    thread_id: String,
+    root_message_id: Option<String>,
+) -> Result<Vec<serde_json::Value>, CacheError> {
+    with_store(state, account, move |store| {
+        store.thread(
+            &workspace_id,
+            &conversation_id,
+            &thread_id,
+            root_message_id.as_deref(),
+        )
+    })
+    .await
+}
+
+/// One cached message as the timeline renders it, or null.
+#[tauri::command]
+pub async fn message_cache_message(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    message_id: String,
+) -> Result<Option<serde_json::Value>, CacheError> {
+    with_store(state, account, move |store| store.message(&message_id)).await
 }
 
 /// Search the account's cached messages in a workspace: a page of hits, newest first, older

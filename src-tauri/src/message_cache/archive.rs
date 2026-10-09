@@ -78,6 +78,7 @@ impl CacheStore {
                         sent_at_us, edited_at, is_deleted, text, payload, change_seq
                  FROM message
                  WHERE change_seq > ?1 AND change_seq <= ?2 AND restored_from IS NOT ?4
+                   AND e2ee_state IS NOT 'placeholder' AND e2ee_state IS NOT 'outgoing'
                  ORDER BY change_seq
                  LIMIT ?3",
             )?;
@@ -213,6 +214,11 @@ impl CacheStore {
         for m in &plan.messages {
             // A tombstone keeps who and when, never what, whatever the archive says.
             let text = if m.deleted { None } else { m.text.clone() };
+            let e2ee_state = if m.deleted {
+                None
+            } else {
+                archived_e2ee_state(&m.payload)
+            };
             let written = write_message(
                 &tx,
                 &MessageRow {
@@ -227,6 +233,7 @@ impl CacheStore {
                     is_deleted: m.deleted,
                     text,
                     payload: stored_payload(m.payload.clone(), m.deleted),
+                    e2ee_state,
                 },
             )?;
             if written {
@@ -265,6 +272,16 @@ impl CacheStore {
         tx.commit()?;
         Ok(counts)
     }
+}
+
+/// The cache state of an archived encrypted message, from its `payload.e2ee.status`. Only rows
+/// this device could read are archived, so anything else is not trusted as such.
+fn archived_e2ee_state(payload: &serde_json::Value) -> Option<String> {
+    let status = payload.get("e2ee")?.get("status")?.as_str()?;
+    Some(match status {
+        "invalid" => "invalid".to_string(),
+        _ => "decrypted".to_string(),
+    })
 }
 
 #[cfg(test)]

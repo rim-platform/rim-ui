@@ -289,9 +289,10 @@ mod tests {
             let store = open(dir.path(), "alice");
             store
                 .conn
-                .execute_batch(
-                    "DROP TABLE snapshot; DROP TABLE mls_storage; PRAGMA user_version = 3;",
-                )
+                .execute_batch(&format!(
+                    "{} DROP TABLE snapshot; DROP TABLE mls_storage; PRAGMA user_version = 3;",
+                    crate::e2ee::DROP_SCHEMA
+                ))
                 .unwrap();
         }
 

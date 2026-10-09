@@ -11,7 +11,7 @@ use super::snapshot::SCHEMA_SNAPSHOT;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-pub(super) const SCHEMA_VERSION: i32 = 5;
+pub(super) const SCHEMA_VERSION: i32 = 6;
 
 /// Schema v1: the cache (PR 9).
 ///
@@ -196,7 +196,7 @@ const SCHEMA_MLS: &str = rim_mls::SCHEMA;
 
 /// An open cache database of one account.
 pub(crate) struct CacheStore {
-    pub(super) conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 /// A page of a conversation's timeline served from the cache, oldest first.
@@ -258,6 +258,7 @@ impl CacheStore {
             (3, SCHEMA_V3),
             (4, SCHEMA_SNAPSHOT),
             (5, SCHEMA_MLS),
+            (6, crate::e2ee::SCHEMA),
         ] {
             if version < target {
                 let tx = self.conn.unchecked_transaction()?;
@@ -371,6 +372,54 @@ impl CacheStore {
     }
 }
 
+impl CacheStore {
+    /// A thread's replies (live ones, oldest first, at most 500), after its root message when
+    /// `root_message_id` is cached.
+    pub(crate) fn thread(
+        &self,
+        workspace_id: &str,
+        conversation_id: &str,
+        thread_id: &str,
+        root_message_id: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, CacheError> {
+        let mut items = Vec::new();
+        if let Some(root) = root_message_id {
+            if let Some(item) = self.message(root)? {
+                items.push(item);
+            }
+        }
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT text, payload FROM message
+             WHERE workspace_id = ?1 AND conversation_id = ?2 AND thread_id = ?3
+               AND is_deleted = 0
+             ORDER BY sent_at_us, id
+             LIMIT 500",
+        )?;
+        let rows = stmt.query_map(params![workspace_id, conversation_id, thread_id], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (text, payload) = row?;
+            items.push(render(text, &payload)?);
+        }
+        Ok(items)
+    }
+
+    /// One cached message, or `None`.
+    pub(crate) fn message(&self, id: &str) -> Result<Option<serde_json::Value>, CacheError> {
+        let row: Option<(Option<String>, String)> = self
+            .conn
+            .query_row(
+                "SELECT text, payload FROM message WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        row.map(|(text, payload)| render(text, &payload))
+            .transpose()
+    }
+}
+
 /// The stored payload with its text put back, as the UI's `MessageItem`.
 fn render(text: Option<String>, payload: &str) -> Result<serde_json::Value, CacheError> {
     let mut value: serde_json::Value = serde_json::from_str(payload)?;
@@ -384,7 +433,7 @@ fn render(text: Option<String>, payload: &str) -> Result<serde_json::Value, Cach
 }
 
 /// RFC 3339 to microseconds since the epoch, the precision the server stores.
-pub(super) fn parse_timestamp_us(value: &str) -> Result<i64, CacheError> {
+pub(crate) fn parse_timestamp_us(value: &str) -> Result<i64, CacheError> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|t| t.timestamp_micros())
         .map_err(|_| CacheError::Invalid(format!("not an RFC 3339 timestamp: {value}")))
