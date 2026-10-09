@@ -3366,6 +3366,8 @@ export type ServerMember = {
   displayName?: Maybe<Scalars['String']['output']>;
   joinedAt: Scalars['DateTime']['output'];
   memberRole: ServerMemberRoleGql;
+  /** The member's key identity (`rimp1_…`), once enrolled; null for a password-only account. */
+  principalId?: Maybe<Scalars['String']['output']>;
   serverId: Scalars['ID']['output'];
   statusText?: Maybe<Scalars['String']['output']>;
   /** End of the member's timeout while one is in force (Track 1.2), else null. */

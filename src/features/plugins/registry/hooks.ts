@@ -3,11 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
-import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
 import { useInstalledPlugins } from "../api/usePluginList";
-import { useWorkspacePlugins, type RegistryEntry } from "./api";
+import { useWorkspacePlugins } from "./api";
 import { registryEndpoint } from "./installer";
 import { installState, publisherOf, runsHere, type InstallState, type Publisher } from "./model";
 import { checkEntry, PUBLISHER_RECOVERED_TEXT, type EntryCheck } from "./verify";
@@ -40,28 +39,6 @@ export function useRegistryChecks(serverId: string | null | undefined) {
   };
 }
 
-/**
- * The workspace's names of members whose principal ids this client knows: the signed-in
- * account, and the entries' approvers who are still members.
- */
-export function useMemberPrincipalNames(
-  serverId: string | null | undefined,
-  entries: readonly RegistryEntry[],
-): Map<string, string> {
-  const { data: members } = useServerMembers(serverId ?? undefined);
-  const { data: me } = useCurrentUser();
-  return useMemo(() => {
-    const names = new Map<string, string>();
-    const known = [me, ...entries.map((e) => e.approvedBy)];
-    for (const user of known) {
-      if (!user?.principalId) continue;
-      const member = members?.find((m) => m.userId === user.id);
-      if (member) names.set(user.principalId, member.displayName || member.username);
-    }
-    return names;
-  }, [members, me, entries]);
-}
-
 /** One registry entry as the palette, the dialogs and Settings show it. */
 export interface RegistryItem {
   check: EntryCheck;
@@ -77,8 +54,7 @@ export function useRegistryItems(serverId: string | null | undefined) {
   const { checks, loaded } = useRegistryChecks(serverId);
   const { data: installed } = useInstalledPlugins();
   const { data: workspace } = useWorkspace(serverId ?? undefined);
-  const entries = useMemo(() => (checks ?? []).map((c) => c.entry), [checks]);
-  const names = useMemberPrincipalNames(serverId, entries);
+  const { data: members } = useServerMembers(serverId ?? undefined);
   const items = useMemo<RegistryItem[]>(() => {
     if (!checks || !serverId) return [];
     const endpoint = registryEndpoint();
@@ -87,14 +63,15 @@ export function useRegistryItems(serverId: string | null | undefined) {
       publisher: publisherOf(
         check.entry.publisherPrincipalId,
         check.ok ? check.statement.publisherName : check.entry.publisherName,
-        names,
+        members ?? [],
       ),
       state: installState(check, installed ?? [], endpoint, serverId),
       runsHere: runsHere(check, desktop),
     }));
-  }, [checks, installed, names, serverId, desktop]);
+  }, [checks, installed, members, serverId, desktop]);
   return {
     items,
+    members: members ?? [],
     loaded: loaded && installed !== undefined,
     installed: installed ?? [],
     workspaceName: workspace?.name ?? "this workspace",

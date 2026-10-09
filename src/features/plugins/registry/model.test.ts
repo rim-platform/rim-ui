@@ -29,7 +29,11 @@ const withCapabilities = (capabilities: string[]) =>
 
 describe("the trust badge", () => {
   it("shows the member's name from the workspace when a member has the principal id", () => {
-    const publisher = publisherOf(PUBLISHER, "Ada", new Map([[PUBLISHER, "Ada Lovelace"]]));
+    const members = [
+      { principalId: "rimp1_other", username: "bob", displayName: "Bob" },
+      { principalId: PUBLISHER, username: "ada", displayName: "Ada Lovelace" },
+    ];
+    const publisher = publisherOf(PUBLISHER, "Ada", members);
     expect(publisher).toEqual({ principalId: PUBLISHER, name: "Ada Lovelace", member: true });
     expect(trustBadge(publisher)).toBe("Signed by Ada Lovelace · rimp1_txDLbnip");
     expect(paletteLine(WorkspacePluginStatus.RECOMMENDED, "Acme", publisher)).toBe(
@@ -38,7 +42,11 @@ describe("the trust badge", () => {
   });
 
   it("quotes the self-asserted name and calls out a publisher who is not a member", () => {
-    const publisher = publisherOf(PUBLISHER, "RIM team", new Map([["rimp1_other", "Bob"]]));
+    const members = [
+      { principalId: "rimp1_other", username: "bob", displayName: "Bob" },
+      { principalId: null, username: "carol", displayName: null },
+    ];
+    const publisher = publisherOf(PUBLISHER, "RIM team", members);
     expect(publisher.member).toBe(false);
     expect(trustBadge(publisher)).toBe(
       "Signed by “RIM team” (not a member of this workspace) · rimp1_txDLbnip",
@@ -46,6 +54,11 @@ describe("the trust badge", () => {
     expect(paletteLine(WorkspacePluginStatus.REQUIRED, "Acme", publisher)).toBe(
       "Required by Acme · signed by “RIM team”, not a member of this workspace (rimp1_txDLbnip)",
     );
+  });
+
+  it("falls back to the member's username when they have no display name", () => {
+    const publisher = publisherOf(PUBLISHER, "Ada", [{ principalId: PUBLISHER, username: "ada" }]);
+    expect(trustBadge(publisher)).toBe("Signed by ada · rimp1_txDLbnip");
   });
 
   it("shortens principal ids and describes sources", () => {
@@ -103,7 +116,7 @@ describe("where this device stands with an entry", () => {
       [
         {
           check: desktopEntry,
-          publisher: publisherOf(PUBLISHER, "Ada", new Map()),
+          publisher: publisherOf(PUBLISHER, "Ada", []),
           state: { kind: "notInstalled" },
           runsHere: false,
         },
@@ -125,7 +138,7 @@ describe("where this device stands with an entry", () => {
             reason: "signature does not verify",
             statementSha256: "c",
           },
-          publisher: publisherOf(PUBLISHER, "Ada", new Map()),
+          publisher: publisherOf(PUBLISHER, "Ada", []),
           state: { kind: "notInstalled" },
           runsHere: true,
         },

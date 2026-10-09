@@ -54,7 +54,7 @@ import { RegistryHost } from "./RegistryHost";
 function requiredItem(hash: string): RegistryItem {
   return {
     check: verified({ entry: helloEntry({ status: WorkspacePluginStatus.REQUIRED }), hash }),
-    publisher: publisherOf(PUBLISHER, "Ada", new Map()),
+    publisher: publisherOf(PUBLISHER, "Ada", []),
     state: { kind: "notInstalled" },
     runsHere: true,
   };

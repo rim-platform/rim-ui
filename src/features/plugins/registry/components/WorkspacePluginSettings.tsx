@@ -10,7 +10,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import { useCanModerate } from "../../../workspaces/api/useMyServerRole";
 import { removeWorkspacePlugin, updateWorkspacePlugin, type RegistryEntry } from "../api";
-import { useMemberPrincipalNames, useRegistryItems } from "../hooks";
+import { useRegistryItems } from "../hooks";
 import { sourceLine, statusWord } from "../model";
 import { PUBLISHER_RECOVERED_TEXT } from "../verify";
 import { AddFromFilesDialog } from "./AddFromFilesDialog";
@@ -23,9 +23,8 @@ import { TrustBadge } from "./TrustBadge";
 export function WorkspacePluginSettings({ serverId }: { serverId: string | null }) {
   const qc = useQueryClient();
   const canManage = useCanModerate(serverId ?? undefined);
-  const { items, workspaceName } = useRegistryItems(serverId);
+  const { items, members, workspaceName } = useRegistryItems(serverId);
   const entries = items.map((i) => i.check.entry);
-  const names = useMemberPrincipalNames(serverId, entries);
   const [adding, setAdding] = useState<{ replacing?: RegistryEntry } | null>(null);
   const [removing, setRemoving] = useState<RegistryEntry | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -159,7 +158,7 @@ export function WorkspacePluginSettings({ serverId }: { serverId: string | null 
           serverId={serverId}
           workspaceName={workspaceName}
           entries={entries}
-          memberNames={names}
+          members={members}
           replacing={adding.replacing}
           onClose={() => setAdding(null)}
         />

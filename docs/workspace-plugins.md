@@ -59,7 +59,8 @@ On a desktop that holds the account's identity key (Settings > Security shows it
   `npm run plugin:bundle -- <dir>` instead. The dialog shows the plugin id, version, kind,
   SHA-256 and size, to compare with what `rim-plugin-bundle` printed.
 - The publisher name defaults to the profile card's display name. It is self-asserted: other
-  members see the workspace's name for the publisher only when the publisher is a member.
+  members see the workspace's name for the publisher only when a member of the workspace has the
+  publisher's principal id (`ServerMember.principalId`).
 - An Owner or Moderator of the current workspace picks a status and publishes: the bundle is
   uploaded to `POST /api/plugin-bundles/<serverId>`, then the entry is added, or updated after
   "Replaces 0.1.0 signed by Ada". Anyone can export

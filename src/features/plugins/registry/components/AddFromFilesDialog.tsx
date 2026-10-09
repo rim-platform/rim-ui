@@ -12,7 +12,7 @@ import { Dialog } from "../../../../shared/ui/Dialog";
 import type { PluginManifestStatement } from "../../../key-identity/browser/pluginManifest";
 import type { RegistryEntry } from "../api";
 import { messageOf } from "../installer";
-import { publisherOf, sourceLine, statusWord } from "../model";
+import { publisherOf, sourceLine, statusWord, type MemberIdentity } from "../model";
 import { publishStatement } from "../publish";
 import { readSignatureFile } from "../signatureFile";
 import {
@@ -27,7 +27,8 @@ interface AddFromFilesDialogProps {
   serverId: string;
   workspaceName: string;
   entries: readonly RegistryEntry[];
-  memberNames: ReadonlyMap<string, string>;
+  /** The workspace's members, whose names the badge shows for a member publisher. */
+  members: readonly MemberIdentity[];
   /** The entry whose statement is replaced; any plugin id when absent. */
   replacing?: RegistryEntry;
   onClose: () => void;
@@ -53,7 +54,7 @@ export function AddFromFilesDialog({
   serverId,
   workspaceName,
   entries,
-  memberNames,
+  members,
   replacing,
   onClose,
 }: AddFromFilesDialogProps) {
@@ -175,7 +176,7 @@ export function AddFromFilesDialog({
               publisher={publisherOf(
                 checked.signed.principalId,
                 checked.signed.publisherName,
-                memberNames,
+                members,
               )}
             />
             <p className="font-mono text-[11px]">{sourceLine(checked.signed.source)}</p>

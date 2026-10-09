@@ -23,6 +23,13 @@ export interface Publisher {
   member: boolean;
 }
 
+/** A workspace member as the badge rule reads them. */
+export interface MemberIdentity {
+  principalId?: string | null;
+  username: string;
+  displayName?: string | null;
+}
+
 /**
  * The publisher of a statement: the workspace's name for the member with that principal id,
  * else the name the publisher chose, which proves nothing.
@@ -30,11 +37,11 @@ export interface Publisher {
 export function publisherOf(
   principalId: string,
   publisherName: string,
-  memberNames: ReadonlyMap<string, string>,
+  members: readonly MemberIdentity[],
 ): Publisher {
-  const member = memberNames.get(principalId);
-  return member !== undefined
-    ? { principalId, name: member, member: true }
+  const member = members.find((m) => m.principalId === principalId);
+  return member
+    ? { principalId, name: member.displayName || member.username, member: true }
     : { principalId, name: publisherName, member: false };
 }
 

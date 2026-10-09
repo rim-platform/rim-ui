@@ -2653,6 +2653,10 @@ type ServerMember {
 	End of the member's timeout while one is in force (Track 1.2), else null.
 	"""
 	timeoutUntil: DateTime
+	"""
+	The member's key identity (`rimp1_…`), once enrolled; null for a password-only account.
+	"""
+	principalId: String
 }
 
 """
