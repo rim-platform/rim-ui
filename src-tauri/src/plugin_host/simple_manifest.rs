@@ -140,6 +140,7 @@ pub fn parse_simple_manifest(
         runtime_kind: RuntimeKind::DesktopLocalProcess,
         entrypoint,
         capabilities,
+        network_origins: None,
         commands,
         keybind_suggestions: vec![],
         context_actions: vec![],

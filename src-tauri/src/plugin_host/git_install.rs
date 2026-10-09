@@ -1,9 +1,11 @@
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::git_source;
-use crate::plugin_host::manifest::{ManifestError, PluginManifest};
+use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install::{self, PostInstallStep};
 use crate::plugin_host::simple_manifest;
-use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
+use crate::plugin_host::validation::{
+    validate_plugin_manifest, validate_plugin_manifest_for_host, ValidationError,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -214,6 +216,7 @@ pub async fn install_from_git(
     branch: Option<&str>,
     existing_plugin_ids: &[String],
     allow_post_install: bool,
+    forbidden_origins: &[String],
 ) -> Result<(PluginManifest, PathBuf, PluginInstallResult), GitInstallError> {
     let clone_dir = git_clone(url, branch).await?;
 
@@ -241,7 +244,7 @@ pub async fn install_from_git(
 
     // N1 + F2 validation: capability key shape + AI-surface install-ID leak check.
     // Must run BEFORE persisting to disk so a malformed manifest never reaches the registry.
-    if let Err(e) = validate_plugin_manifest(&manifest) {
+    if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=plugin_install_rejected plugin_id={} reason={}",
             manifest.plugin_id,
@@ -251,10 +254,26 @@ pub async fn install_from_git(
         return Err(GitInstallError::InvalidManifest(e));
     }
 
+    // A web plugin is installed built: its checkout must hold what a bundle of
+    // it would, and nothing of it ever runs on this computer.
+    let web = manifest.runtime_kind == RuntimeKind::WebSandboxed;
+    if web {
+        if let Err(e) = crate::plugin_host::bundle::check_dir(&clone_dir) {
+            let _ = std::fs::remove_dir_all(&clone_dir);
+            return Err(GitInstallError::Manifest(ManifestError::Validation(
+                format!("web plugins are installed built: {e}"),
+            )));
+        }
+    }
+
     // S-H3 consent gate — decided on the staged files, before anything is
     // moved into the plugins directory or executed.
     let planned_dir = plugins_dir().join(&manifest.plugin_id);
-    let steps = post_install::detect_steps(&clone_dir, &planned_dir);
+    let steps = if web {
+        Vec::new()
+    } else {
+        post_install::detect_steps(&clone_dir, &planned_dir)
+    };
     let steps = match post_install::gate(&manifest.plugin_id, steps, allow_post_install) {
         Ok(s) => s,
         Err(e) => {
@@ -331,8 +350,11 @@ pub async fn update_plugin(
         .lines()
         .map(str::to_string)
         .collect();
-    let upstream_steps = post_install::steps_for_top_level_files(&upstream_files, plugin_dir);
-    post_install::gate(&old_manifest.plugin_id, upstream_steps, allow_post_install)?;
+    // A web plugin is installed built and has no steps to consent to.
+    if old_manifest.runtime_kind != RuntimeKind::WebSandboxed {
+        let upstream_steps = post_install::steps_for_top_level_files(&upstream_files, plugin_dir);
+        post_install::gate(&old_manifest.plugin_id, upstream_steps, allow_post_install)?;
+    }
 
     run_git_in(plugin_dir, git_source::merge_upstream_args()).await?;
 
@@ -373,7 +395,11 @@ pub async fn update_plugin(
 
     // Re-detect on the merged working tree (source of truth for what runs);
     // gate_and_run re-applies the consent check.
-    let steps = post_install::detect_steps(plugin_dir, plugin_dir);
+    let steps = if new_manifest.runtime_kind == RuntimeKind::WebSandboxed {
+        Vec::new()
+    } else {
+        post_install::detect_steps(plugin_dir, plugin_dir)
+    };
     post_install::gate_and_run(
         &new_manifest.plugin_id,
         steps,

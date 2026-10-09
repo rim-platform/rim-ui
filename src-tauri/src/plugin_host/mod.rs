@@ -1,4 +1,5 @@
 pub mod broker;
+pub mod bundle;
 pub mod capability;
 pub mod command_exec;
 pub mod commands;
@@ -18,6 +19,7 @@ pub mod protocol;
 pub mod runtime;
 pub mod simple_manifest;
 pub mod state;
+pub mod storage;
 pub mod validation;
 pub mod wire;
 
@@ -54,6 +56,11 @@ pub struct PluginHostState {
     pub pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Plugins starting and stopping, for the UI. Arc so broker tasks can publish.
     pub events: Arc<host_events::PluginEvents>,
+    /// The stores `WebSandboxed` plugins keep through `rim.storage.*`.
+    pub storage: storage::PluginStorage,
+    /// The signed-in account's provisional principal id, which names its plugin
+    /// stores; `None` when nobody is signed in.
+    pub account: Mutex<Option<String>>,
 }
 
 pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
@@ -93,6 +100,8 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         principal_ids: Arc::new(Mutex::new(principal_ids)),
         pids: Arc::new(Mutex::new(HashMap::new())),
         events: Arc::new(host_events::PluginEvents::new()),
+        storage: storage::PluginStorage::new(app_data_dir),
+        account: Mutex::new(None),
     };
 
     // Re-spawn any plugins that were Enabled on last shutdown.
@@ -200,6 +209,8 @@ impl PluginHostState {
             principal_ids: Arc::new(Mutex::new(Vec::new())),
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(host_events::PluginEvents::new()),
+            storage: storage::PluginStorage::new(std::path::Path::new("/nonexistent")),
+            account: Mutex::new(None),
         }
     }
 }

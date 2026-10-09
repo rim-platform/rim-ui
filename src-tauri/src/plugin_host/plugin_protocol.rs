@@ -17,6 +17,29 @@
 
 use std::path::{Path, PathBuf};
 
+/// The content security policy the frame shell's own `<meta>` states, also sent
+/// as a header so the two can only agree.
+pub const SHELL_POLICY: &str = "default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; \
+style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src blob: data:; \
+media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; \
+form-action 'none'; base-uri 'none'";
+
+const SHELL_INDEX: &[u8] = include_bytes!("../../../public/plugin-frame/v1/index.html");
+const SHELL_SCRIPT: &[u8] = include_bytes!("../../../public/plugin-frame/v1/shell.js");
+
+/// The frame shell file at `uri_path` (`shell/v1/index.html` or
+/// `shell/v1/shell.js`), with its media type, or `None` for any other path. The
+/// authority `shell` cannot be a plugin id, which has at least three segments.
+pub fn shell_asset(uri_path: &str) -> Option<(&'static [u8], &'static str)> {
+    let path = uri_path.trim_start_matches('/');
+    let path = path.split(['?', '#']).next().unwrap_or_default();
+    match path {
+        "shell/v1/" | "shell/v1/index.html" => Some((SHELL_INDEX, "text/html; charset=utf-8")),
+        "shell/v1/shell.js" => Some((SHELL_SCRIPT, "text/javascript; charset=utf-8")),
+        _ => None,
+    }
+}
+
 /// Outcome of resolving a `rim-plugin://` URI.
 #[derive(Debug, PartialEq)]
 pub enum ResolveResult {
@@ -255,6 +278,18 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let result = resolve_plugin_uri("/main/index.html", tmp.path());
         assert_eq!(result, ResolveResult::Forbidden);
+    }
+
+    #[test]
+    fn serves_the_frame_shell_with_its_policy() {
+        let (index, mime) = shell_asset("shell/v1/index.html").expect("index");
+        assert!(mime.starts_with("text/html"));
+        let index = std::str::from_utf8(index).unwrap();
+        assert!(index.contains(SHELL_POLICY));
+        assert!(index.contains(r#"<script src="shell.js""#));
+        assert!(shell_asset("/shell/v1/shell.js").is_some());
+        assert!(shell_asset("shell/v1/../../etc/passwd").is_none());
+        assert!(shell_asset("shell/v2/index.html").is_none());
     }
 
     #[test]

@@ -1,14 +1,20 @@
+use crate::plugin_host::bundle::{self, BundleError};
 use crate::plugin_host::command_exec::{self, PluginCommandError, PluginCommandResult};
 use crate::plugin_host::git_install::{
     self, GitInstallError, PluginInstallResult, PluginUpdateResult,
 };
 use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
-use crate::plugin_host::manifest::{CommandInfo, ContextAction, KeybindSuggestion, PanelDef};
-use crate::plugin_host::protocol::{Initiator, Principal};
+use crate::plugin_host::manifest::{
+    CommandInfo, ContextAction, KeybindSuggestion, PanelDef, RuntimeKind,
+};
+use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::runtime;
-use crate::plugin_host::state::{PluginRecord, PluginStatus};
+use crate::plugin_host::state::{InstallSource, PluginRecord, PluginStatus};
+use crate::plugin_host::storage::StorageError;
+use crate::plugin_host::validation::validate_plugin_manifest_for_host;
 use crate::plugin_host::PluginHostState;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use tauri::{Emitter, State};
 
@@ -46,7 +52,17 @@ pub struct PluginInfo {
     /// the agent's tool definitions.
     pub commands: Vec<CommandInfo>,
     /// `running` once the plugin process finished its handshake, else `stopped`.
+    /// A `WebSandboxed` plugin runs in the UI, which knows its health.
     pub health: &'static str,
+    /// How the plugin runs: a local process, or sandboxed in the app's frames.
+    pub runtime_kind: RuntimeKind,
+    /// Origins a `WebSandboxed` plugin may reach with `network.fetch`.
+    pub network_origins: Vec<String>,
+    /// Where the plugin was installed from, when known.
+    pub source: Option<InstallSource>,
+    /// The app died while starting this `WebSandboxed` plugin, so it waits for the
+    /// user to enable it again.
+    pub starting: bool,
 }
 
 #[tauri::command]
@@ -111,6 +127,14 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
             } else {
                 "stopped"
             },
+            runtime_kind: manifest
+                .map(|m| m.runtime_kind)
+                .unwrap_or(RuntimeKind::DesktopLocalProcess),
+            network_origins: manifest
+                .and_then(|m| m.network_origins.clone())
+                .unwrap_or_default(),
+            source: record.source.clone(),
+            starting: record.starting,
         });
     }
     Ok(plugins)
@@ -329,6 +353,9 @@ pub async fn plugin_uninstall(
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
     manifests.remove(&plugin_id);
 
+    if let Err(e) = state.storage.remove_plugin(&plugin_id) {
+        log::warn!("[plugin_host] could not delete the storage of {plugin_id}: {e}");
+    }
     Ok(())
 }
 
@@ -405,6 +432,7 @@ pub async fn plugin_install_from_git(
     url: String,
     branch: Option<String>,
     allow_post_install: Option<bool>,
+    forbidden_origins: Option<Vec<String>>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginInstallResult, GitInstallError> {
     let existing_ids: Vec<String> = {
@@ -420,6 +448,7 @@ pub async fn plugin_install_from_git(
         branch.as_deref(),
         &existing_ids,
         allow_post_install.unwrap_or(false),
+        &forbidden_origins.unwrap_or_default(),
     )
     .await?;
 
@@ -451,6 +480,12 @@ pub async fn plugin_install_from_git(
             lifecycle::LifecycleError::InvalidManifest(v) => GitInstallError::InvalidManifest(v),
             other => GitInstallError::LifecycleFailure(other.to_string()),
         })?;
+        if let Some(record) = store.get(&manifest.plugin_id).cloned() {
+            store.upsert(PluginRecord {
+                source: Some(InstallSource::Git { url: url.clone() }),
+                ..record
+            });
+        }
         store.save(&state.state_path).map_err(GitInstallError::Io)?;
     }
 
@@ -773,6 +808,11 @@ pub async fn plugin_set_principal(
             runtime::record_principal_switch(&state, &from, to)
         })
     });
+    if let Ok(mut account) = state.account.lock() {
+        *account = user
+            .as_ref()
+            .map(|u| Principal::provisional(&u.user_id, &u.display_name).principal_id);
+    }
     runtime::set_principal(&state, user.as_ref().map(SignedInUser::principal)).await;
     if switched {
         runtime::announce_remapped(&state).await;
@@ -845,6 +885,7 @@ fn check_ai_consent(
 #[tauri::command]
 pub async fn plugin_install_from_local(
     path: String,
+    forbidden_origins: Option<Vec<String>>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginInstallResult, LocalInstallError> {
     let source_path = std::path::PathBuf::from(&path);
@@ -857,8 +898,12 @@ pub async fn plugin_install_from_local(
         store.plugins.keys().cloned().collect()
     };
 
-    let (manifest, final_dir, result, bundle_fingerprint) =
-        local_install::install_from_local(&source_path, &existing_ids).await?;
+    let (manifest, final_dir, result, bundle_fingerprint) = local_install::install_from_local(
+        &source_path,
+        &existing_ids,
+        &forbidden_origins.unwrap_or_default(),
+    )
+    .await?;
 
     // Register in manifests and plugin_dirs caches.
     {
@@ -892,6 +937,7 @@ pub async fn plugin_install_from_local(
             store.upsert(crate::plugin_host::state::PluginRecord {
                 bundle_fingerprint,
                 fingerprint_changed: false,
+                source: Some(InstallSource::Local),
                 ..record
             });
         }
@@ -959,4 +1005,294 @@ pub fn plugin_trust_fingerprint(
     store.save(&state.state_path)?;
 
     Ok(())
+}
+
+/// Install a `.rimbundle` the UI fetched (from a pasted link, or a registry
+/// entry it verified): check its hash, read it, validate its manifest for this
+/// host, then unpack it into the plugins directory and record its fingerprint.
+///
+/// `bundle` is the file's bytes in standard base64 and `sha256` the hash the
+/// link or entry names. With `replace`, an installed plugin of the same id is
+/// stopped and replaced by a fresh install that the user approves again.
+#[tauri::command]
+pub async fn plugin_install_bundle(
+    bundle: String,
+    sha256: String,
+    source: InstallSource,
+    replace: Option<bool>,
+    forbidden_origins: Option<Vec<String>>,
+    state: State<'_, PluginHostState>,
+) -> Result<PluginInstallResult, LocalInstallError> {
+    let io = |e: String| LocalInstallError::Io(std::io::Error::other(e));
+    match &source {
+        InstallSource::Link { url, sha256: named } => {
+            if !url.starts_with("https://") || named != &sha256 {
+                return Err(io(
+                    "a link install needs an https:// link naming this hash".into()
+                ));
+            }
+        }
+        InstallSource::Registry { .. } => {}
+        InstallSource::Local | InstallSource::Git { .. } => {
+            return Err(io("local and git installs do not come as bundles".into()));
+        }
+    }
+    let bytes = STANDARD
+        .decode(bundle.as_bytes())
+        .map_err(|e| io(format!("bundle is not base64: {e}")))?;
+    let actual = bundle::bundle_sha256(&bytes);
+    if actual != sha256 {
+        return Err(BundleError::HashMismatch {
+            expected: sha256,
+            actual,
+        }
+        .into());
+    }
+    let read = bundle::read_bundle(&bytes)?;
+    let manifest = read.manifest.clone();
+    if manifest.has_reserved_prefix() {
+        return Err(io(format!(
+            "reserved plugin_id prefix: {}",
+            manifest.plugin_id
+        )));
+    }
+    validate_plugin_manifest_for_host(&manifest, &forbidden_origins.unwrap_or_default())?;
+
+    let installed = state
+        .store
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .get(&manifest.plugin_id)
+        .is_some();
+    if installed {
+        if replace != Some(true) {
+            return Err(LocalInstallError::AlreadyExists(manifest.plugin_id.clone()));
+        }
+        runtime::stop_plugin(&manifest.plugin_id, &state)
+            .await
+            .map_err(|e| io(e.to_string()))?;
+        state
+            .store
+            .lock()
+            .map_err(|e| io(e.to_string()))?
+            .remove(&manifest.plugin_id);
+    }
+
+    let final_dir = bundle::unpack(&read, &crate::plugin_host::discovery::plugins_dir(), true)?;
+    let fingerprint = local_install::compute_bundle_fingerprint(&final_dir)?;
+    state
+        .manifests
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .insert(manifest.plugin_id.clone(), manifest.clone());
+    state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .insert(manifest.plugin_id.clone(), final_dir.clone());
+    {
+        let mut store = state.store.lock().map_err(|e| io(e.to_string()))?;
+        lifecycle::install(&mut store, &manifest).map_err(|e| match e {
+            LifecycleError::InvalidManifest(v) => LocalInstallError::InvalidManifest(v),
+            other => LocalInstallError::LifecycleFailure(other.to_string()),
+        })?;
+        if let Some(record) = store.get(&manifest.plugin_id).cloned() {
+            store.upsert(PluginRecord {
+                bundle_fingerprint: fingerprint,
+                fingerprint_changed: false,
+                source: Some(source),
+                ..record
+            });
+        }
+        store.save(&state.state_path)?;
+    }
+    log::warn!(
+        "[AUDIT] event=plugin_bundle_installed plugin_id={} sha256={}",
+        manifest.plugin_id,
+        bundle::bundle_sha256(&bytes)
+    );
+    Ok(PluginInstallResult {
+        plugin_id: manifest.plugin_id.clone(),
+        display_name: manifest.display_name.clone(),
+        version: manifest.version.clone(),
+        capabilities: manifest.capabilities.clone(),
+        install_path: final_dir.display().to_string(),
+    })
+}
+
+/// A `WebSandboxed` plugin's files, for the UI to hand to its frames.
+#[derive(Debug, Clone, Serialize)]
+pub struct WebPluginFiles {
+    /// The exact text of `rim-plugin.json`.
+    pub manifest: String,
+    pub files: Vec<WebPluginFile>,
+}
+
+/// One file of [`WebPluginFiles`]: its bundle path and its bytes in base64.
+#[derive(Debug, Clone, Serialize)]
+pub struct WebPluginFile {
+    pub path: String,
+    pub base64: String,
+}
+
+/// Read an installed `WebSandboxed` plugin's files after checking its
+/// fingerprint against the one recorded at install, as enabling a process does,
+/// and the bundle rules.
+#[tauri::command]
+pub fn plugin_web_files(
+    plugin_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<WebPluginFiles, LifecycleError> {
+    let lock = |e: String| LifecycleError::Io(std::io::Error::other(e));
+    let manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
+    if manifest.runtime_kind != RuntimeKind::WebSandboxed {
+        return Err(LifecycleError::Bundle(format!(
+            "{plugin_id} is not a WebSandboxed plugin"
+        )));
+    }
+    let dir = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
+    let stored = state
+        .store
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(&plugin_id)
+        .map(|r| r.bundle_fingerprint.clone())
+        .unwrap_or_default();
+    if !stored.is_empty() && local_install::compute_bundle_fingerprint(&dir)? != stored {
+        let mut store = state.store.lock().map_err(|e| lock(e.to_string()))?;
+        if let Some(record) = store.get(&plugin_id).cloned() {
+            store.upsert(PluginRecord {
+                fingerprint_changed: true,
+                ..record
+            });
+            let _ = store.save(&state.state_path);
+        }
+        log::warn!("[AUDIT] event=plugin_fingerprint_changed plugin_id={plugin_id}");
+        return Err(LifecycleError::FingerprintChanged(plugin_id));
+    }
+    let read = bundle::check_dir(&dir).map_err(|e| LifecycleError::Bundle(e.to_string()))?;
+    if read.manifest.plugin_id != plugin_id {
+        return Err(LifecycleError::Bundle(format!(
+            "the folder of {plugin_id} holds {}",
+            read.manifest.plugin_id
+        )));
+    }
+    Ok(WebPluginFiles {
+        manifest: read.manifest_text,
+        files: read
+            .files
+            .into_iter()
+            .map(|f| WebPluginFile {
+                path: f.path,
+                base64: STANDARD.encode(&f.bytes),
+            })
+            .collect(),
+    })
+}
+
+/// Set or clear the marker the UI keeps while it starts a `WebSandboxed` plugin.
+#[tauri::command]
+pub fn plugin_set_starting(
+    plugin_id: String,
+    starting: bool,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    let record = store
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
+    store.upsert(PluginRecord { starting, ..record });
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// The installed plugin `plugin_id`, or `INVALID_PARAMS` for a storage call.
+fn storage_plugin(state: &PluginHostState, plugin_id: &str) -> Result<(), StorageError> {
+    let known = state
+        .store
+        .lock()
+        .map(|store| store.get(plugin_id).is_some())
+        .unwrap_or(false);
+    if known {
+        Ok(())
+    } else {
+        Err(StorageError::Io(std::io::Error::other(format!(
+            "plugin not found: {plugin_id}"
+        ))))
+    }
+}
+
+fn signed_in_account(state: &PluginHostState) -> Option<String> {
+    state.account.lock().ok().and_then(|a| a.clone())
+}
+
+/// `rim.storage.get` for a `WebSandboxed` plugin: the value stored under `key`
+/// for the signed-in account, or `null`.
+#[tauri::command]
+pub fn plugin_storage_get(
+    plugin_id: String,
+    key: String,
+    state: State<'_, PluginHostState>,
+) -> Result<serde_json::Value, StorageError> {
+    storage_plugin(&state, &plugin_id)?;
+    state
+        .storage
+        .get(&plugin_id, signed_in_account(&state).as_deref(), &key)
+}
+
+/// `rim.storage.set` for a `WebSandboxed` plugin; `value: null` deletes the key.
+#[tauri::command]
+pub fn plugin_storage_set(
+    plugin_id: String,
+    key: String,
+    value: serde_json::Value,
+    state: State<'_, PluginHostState>,
+) -> Result<(), StorageError> {
+    storage_plugin(&state, &plugin_id)?;
+    state.storage.set(
+        &plugin_id,
+        signed_in_account(&state).as_deref(),
+        &key,
+        value,
+    )
+}
+
+/// Every provisional principal id this device has seen switch to a key-based id,
+/// for the plugins the UI runs.
+#[tauri::command]
+pub fn plugin_principal_mappings(
+    state: State<'_, PluginHostState>,
+) -> Result<Vec<PrincipalMapping>, String> {
+    state
+        .principal_ids
+        .lock()
+        .map(|ids| ids.clone())
+        .map_err(|e| e.to_string())
+}
+
+/// The AI consent gates of [`plugin_run_ai_command`], for a `WebSandboxed`
+/// plugin's command, which the UI then runs itself.
+#[tauri::command]
+pub fn plugin_check_ai_consent(
+    plugin_id: String,
+    command_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    check_ai_consent(&state, &plugin_id, &command_id)
 }

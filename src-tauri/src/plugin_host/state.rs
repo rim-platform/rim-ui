@@ -32,6 +32,35 @@ pub struct PluginRecord {
     #[serde(default)]
     pub fingerprint_changed: bool,
     pub last_error: Option<String>,
+    /// Where the plugin was installed from; `None` for records older than this field.
+    #[serde(default)]
+    pub source: Option<InstallSource>,
+    /// Set while the app starts a `WebSandboxed` plugin and cleared after its
+    /// handshake. Still set at the next start means the app died starting it,
+    /// so it is not started again until the user enables it.
+    #[serde(default)]
+    pub starting: bool,
+}
+
+/// Where an installed plugin came from, as Settings shows it and updates use it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum InstallSource {
+    /// Copied from a folder on this computer.
+    Local,
+    /// Cloned from a git repository.
+    Git { url: String },
+    /// A `.rimbundle` fetched from a pasted link carrying its SHA-256.
+    Link { url: String, sha256: String },
+    /// A signed entry of a workspace's plugin registry.
+    #[serde(rename_all = "camelCase")]
+    Registry {
+        endpoint: String,
+        server_id: String,
+        plugin_id: String,
+        statement_sha256: String,
+        publisher_principal_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -110,6 +139,8 @@ mod tests {
             bundle_fingerprint: String::new(),
             fingerprint_changed: false,
             last_error: None,
+            source: None,
+            starting: false,
         });
 
         let tmp = NamedTempFile::new().unwrap();
@@ -121,6 +152,28 @@ mod tests {
         let rec = loaded.get("dev.example.test").unwrap();
         assert_eq!(rec.status, PluginStatus::Enabled);
         assert_eq!(rec.approved_capabilities, vec!["local.process"]);
+    }
+
+    #[test]
+    fn install_sources_are_tagged_by_kind() {
+        let link = InstallSource::Link {
+            url: "https://example.com/p.rimbundle".into(),
+            sha256: "ab".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&link).unwrap(),
+            serde_json::json!({ "kind": "link", "url": "https://example.com/p.rimbundle", "sha256": "ab" })
+        );
+        let registry: InstallSource = serde_json::from_value(serde_json::json!({
+            "kind": "registry", "endpoint": "https://rim.example/api", "serverId": "s",
+            "pluginId": "dev.example.p", "statementSha256": "cd", "publisherPrincipalId": "rimp1_x"
+        }))
+        .unwrap();
+        assert!(matches!(registry, InstallSource::Registry { .. }));
+        assert_eq!(
+            serde_json::to_value(InstallSource::Local).unwrap(),
+            serde_json::json!({ "kind": "local" })
+        );
     }
 
     #[test]

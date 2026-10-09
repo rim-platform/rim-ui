@@ -3,9 +3,12 @@ use std::path::Path;
 
 const RESERVED_PREFIXES: &[&str] = &["dev.rim.", "com.rim."];
 
+/// How a plugin runs: as a program on this computer, or sandboxed in an iframe
+/// of the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuntimeKind {
     DesktopLocalProcess,
+    WebSandboxed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,6 +114,10 @@ pub struct PluginManifest {
     pub entrypoint: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Origins a `WebSandboxed` plugin may connect to once `network.fetch` is
+    /// approved. Skipped when empty so manifests without it keep their content hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_origins: Option<Vec<String>>,
     #[serde(default)]
     pub commands: Vec<ManifestCommand>,
     #[serde(default)]
@@ -320,6 +327,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main".into(),
             capabilities: vec![],
+            network_origins: None,
             commands: vec![],
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -341,6 +349,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main".into(),
             capabilities: vec![],
+            network_origins: None,
             commands: vec![],
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -361,6 +370,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main".into(),
             capabilities: vec![],
+            network_origins: None,
             commands: vec![
                 ManifestCommand {
                     id: "do_thing".into(),
