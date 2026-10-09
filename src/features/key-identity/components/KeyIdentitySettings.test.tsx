@@ -20,13 +20,13 @@ const api = vi.hoisted(() => ({
   publishProfileCard: vi.fn(),
   profileCardIsStale: vi.fn(),
 }));
-const deviceKeys = vi.hoisted(() => ({ value: true }));
+const desktop = vi.hoisted(() => ({ value: true }));
 const sessions = vi.hoisted(() => ({ logoutOtherSessions: vi.fn() }));
 
 vi.mock("../api/keyIdentity", () => api);
 vi.mock("../../auth/api/sessions", () => sessions);
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 vi.mock("../../workspaces/api/useCurrentUser", () => ({
   useCurrentUser: () => ({
@@ -106,7 +106,7 @@ function renderSettings() {
 
 describe("KeyIdentitySettings", () => {
   beforeEach(() => {
-    deviceKeys.value = true;
+    desktop.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
     sessions.logoutOtherSessions.mockReset();
     api.reconcileDeviceKeys.mockResolvedValue(null);
@@ -326,7 +326,7 @@ describe("KeyIdentitySettings", () => {
   });
 
   it("only explains key sign-in in the web app", async () => {
-    deviceKeys.value = false;
+    desktop.value = false;
     api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
     renderSettings();
 

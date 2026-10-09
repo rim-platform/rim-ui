@@ -93,8 +93,13 @@ the next start finishes the link, or revokes the device if the link expired mean
 ## Not in v1
 
 QR scanning, the archive key in the answer, moving the identity key, short typed codes, and a
-subscription instead of polling: see the spec's "Deferred" section. The web app as a linked device
-is S3-7.
+subscription instead of polling: see the spec's "Deferred" section.
+
+## Web client
+
+The web app is only ever the new device: a browser with WebCrypto Ed25519 pastes the code, keeps a
+non-extractable key in IndexedDB and signs in with it, through the same `linkNewDevice` and
+`signInWithDeviceKey` behind the `KeyBackend` interface. See `web-linked-device.md`.
 
 ## Limits
 

@@ -47,6 +47,7 @@ function makeRuntime(pluginHost: boolean) {
       deviceLocalKeybinds: true,
       customTitleBar: false,
       deviceKeys: false,
+      identityKeys: false,
     },
   };
 }

@@ -300,7 +300,7 @@ export function JoinForm({ variant, token, workspaceName, workspaceId, onSuccess
           )}
         </div>
 
-        {capabilities.deviceKeys && (
+        {capabilities.identityKeys && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />

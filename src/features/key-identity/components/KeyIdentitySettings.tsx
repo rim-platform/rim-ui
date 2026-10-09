@@ -85,10 +85,10 @@ export function KeyIdentitySettings() {
           identity={identity.data}
           principalId={identity.data.principalId}
           me={me}
-          canSign={capabilities.deviceKeys}
+          canSign={capabilities.identityKeys}
           justEnrolled={justEnrolled}
         />
-      ) : capabilities.deviceKeys ? (
+      ) : capabilities.identityKeys ? (
         <EnrollKeyIdentity me={me} onEnrolled={() => setJustEnrolled(true)} />
       ) : (
         <p className="text-sm text-rim-text-muted">Key sign-in is set up from the desktop app.</p>

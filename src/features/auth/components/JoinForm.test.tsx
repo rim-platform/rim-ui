@@ -30,10 +30,10 @@ vi.mock("../api/useSignupWithInviteMutation", () => ({
   }),
 }));
 
-const deviceKeys = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
@@ -44,7 +44,7 @@ import { InviteTokenType } from "../types";
 
 // The web app, unless a test says otherwise.
 beforeEach(() => {
-  deviceKeys.value = false;
+  desktop.value = false;
 });
 
 /** Renders `JoinForm` inside a router so any internal Links don't break. */
@@ -457,7 +457,7 @@ describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
 describe("JoinForm — create account with a key", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    deviceKeys.value = true;
+    desktop.value = true;
   });
 
   function renderVariant(
@@ -473,7 +473,7 @@ describe("JoinForm — create account with a key", () => {
   }
 
   it("is not offered in the web app", () => {
-    deviceKeys.value = false;
+    desktop.value = false;
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
     expect(screen.queryByRole("button", { name: /create account with a key/i })).toBeNull();
     expect(screen.getByPlaceholderText("password")).toBeInTheDocument();

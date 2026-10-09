@@ -13,8 +13,9 @@
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
  * the login page is never shown to an authenticated user.
  *
- * **Key sign-in (desktop):** above the password form, "Sign in with this device" for each
- * account this computer holds a key for; below it, recovery with a recovery kit.
+ * **Key sign-in:** above the password form, "Sign in with this device" for each account this
+ * computer, or this browser once linked, holds a key for; below it, "Link this device" with a
+ * code from another device and, on the desktop, recovery with a recovery kit.
  *
  * **Bootstrap mode is removed.** There is no bootstrap form or bootstrap
  * mutation in the client.

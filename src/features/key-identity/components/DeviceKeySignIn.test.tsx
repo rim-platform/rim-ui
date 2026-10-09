@@ -16,14 +16,21 @@ const api = vi.hoisted(() => ({
   recoverAccount: vi.fn(),
   defaultDeviceName: vi.fn(),
 }));
-const deviceKeys = vi.hoisted(() => ({ value: true }));
+const desktop = vi.hoisted(() => ({ value: true }));
+const web = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../api/keyIdentity", async () => {
   const actual = await vi.importActual<typeof import("../api/keyIdentity")>("../api/keyIdentity");
   return { ...actual, ...api };
 });
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () =>
+    web.value
+      ? { platform: "web", capabilities: { deviceKeys: true, identityKeys: false } }
+      : {
+          platform: "desktop",
+          capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value },
+        },
 }));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
@@ -59,7 +66,8 @@ function wrap(ui: ReactNode) {
 
 describe("DeviceKeySignIn", () => {
   beforeEach(() => {
-    deviceKeys.value = true;
+    desktop.value = true;
+    web.value = false;
     Object.values(api).forEach((fn) => fn.mockReset());
     api.listDeviceKeyAccounts.mockResolvedValue([alice]);
     api.forgetDeviceKeys.mockResolvedValue(undefined);
@@ -132,17 +140,33 @@ describe("DeviceKeySignIn", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("renders nothing in the web app", () => {
-    deviceKeys.value = false;
+  it("renders nothing without device keys", () => {
+    desktop.value = false;
     const { container } = wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
     expect(api.listDeviceKeyAccounts).not.toHaveBeenCalled();
+  });
+
+  it("signs in a linked browser, with the weaker-keys notice", async () => {
+    web.value = true;
+    const linked = { ...alice, hasIdentityKey: false };
+    api.listDeviceKeyAccounts.mockResolvedValue([linked]);
+    api.signInWithDeviceKey.mockRejectedValue(forbidden());
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    expect(await screen.findByText(/keys kept in a browser are weaker/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /sign in as alice/i }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /remove this device's keys from this browser/i }),
+    );
+    expect(api.forgetDeviceKeys).toHaveBeenCalledWith("rimp1_alice");
   });
 });
 
 describe("RecoverAccount", () => {
   beforeEach(() => {
-    deviceKeys.value = true;
+    desktop.value = true;
+    web.value = false;
     Object.values(api).forEach((fn) => fn.mockReset());
     api.defaultDeviceName.mockResolvedValue("Laptop");
   });
@@ -204,5 +228,11 @@ describe("RecoverAccount", () => {
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/word 5 .*not in the word list/i);
+  });
+
+  it("is not offered in the web app, even with device keys", () => {
+    web.value = true;
+    const { container } = wrap(<RecoverAccount onSuccess={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

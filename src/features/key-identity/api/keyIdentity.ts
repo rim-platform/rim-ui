@@ -1,12 +1,13 @@
 /**
- * Key identity in the desktop app: enrolling the account's key, creating an account from a key
- * alone, signing in with this device's key, devices, identity rotation, the profile card and
- * recovery.
+ * Key identity: enrolling the account's key, creating an account from a key alone, signing in
+ * with this device's key, devices, identity rotation, the profile card and recovery.
  *
- * The keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach the webview.
- * This module talks to the server and asks the Tauri side for each signed statement it needs,
- * so the session cookie a key sign-in sets lands in the webview like a password sign-in's.
- * Keys and signatures are opaque strings here: their algorithm is the Tauri side's business.
+ * On the desktop the keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach
+ * the webview: this module talks to the server and asks the Tauri side for each signed
+ * statement it needs, so the session cookie a key sign-in sets lands in the webview like a
+ * password sign-in's. In the web app, signing in uses the browser's device key
+ * (`keyBackend`); everything that needs the identity key stays desktop-only. Keys and
+ * signatures are opaque strings here: their algorithm is the key backend's business.
  */
 
 import { gql } from "graphql-request";
@@ -26,23 +27,11 @@ import type {
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
-import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { keyBackend, keyCommand, type LocalKeyAccount } from "./keyBackend";
+
+export { keyCommand, type LocalKeyAccount } from "./keyBackend";
 
 // ─── What the Tauri side returns ────────────────────────────────────────────
-
-/** An account on this server that this device holds keys for. */
-export interface LocalKeyAccount {
-  principalId: string;
-  /** Unknown right after a recovery, until the first sign-in. */
-  userId: string | null;
-  username: string | null;
-  deviceId: string;
-  deviceName: string;
-  /** This device holds the identity key (it enrolled the account). */
-  hasIdentityKey: boolean;
-  /** The server has shown these keys on the account. */
-  confirmed: boolean;
-}
 
 /** A started enrollment: the new account id and the recovery kit, shown once. */
 export interface EnrollmentDraft {
@@ -79,16 +68,6 @@ interface RecoveryStatements {
 export interface KeyAccount {
   userId: string;
   username: string;
-}
-
-/** A Tauri key command; a failure becomes an `Error` with the command's message. */
-export async function keyCommand<T>(
-  command: string,
-  args: Record<string, unknown> = {},
-): Promise<T> {
-  const result = await safeInvoke<T>(command, args);
-  if (result.ok) return result.value;
-  throw new Error(result.error.message);
 }
 
 function serverAccount(account: KeyAccount) {
@@ -256,12 +235,9 @@ async function challenge(): Promise<Pick<KeyLoginChallenge, "challengeId" | "non
 
 // ─── Local accounts ─────────────────────────────────────────────────────────
 
-/** Accounts on this server this device can sign in to with a key. Empty in the web app. */
+/** Accounts on this server this device can sign in to with a key. */
 export async function listDeviceKeyAccounts(): Promise<LocalKeyAccount[]> {
-  const result = await safeInvoke<LocalKeyAccount[]>("key_identity_accounts", {
-    endpoint: getGraphqlEndpoint(),
-  });
-  return result.ok ? result.value : [];
+  return keyBackend().accounts(getGraphqlEndpoint());
 }
 
 /**
@@ -273,10 +249,7 @@ export async function settleDeviceKeys(
   account: KeyAccount,
   principalId: string | null,
 ): Promise<LocalKeyAccount | null> {
-  return keyCommand<LocalKeyAccount | null>("key_identity_settle", {
-    account: serverAccount(account),
-    principalId,
-  });
+  return keyBackend().settle(serverAccount(account), principalId);
 }
 
 /**
@@ -291,27 +264,25 @@ export async function reconcileDeviceKeys(account: KeyAccount): Promise<LocalKey
 }
 
 export async function forgetDeviceKeys(principalId: string): Promise<void> {
-  await keyCommand<null>("key_identity_forget", { principalId });
+  await keyBackend().forget(principalId);
 }
 
 export async function defaultDeviceName(): Promise<string> {
-  const result = await safeInvoke<string>("key_identity_default_device_name");
-  return result.ok ? result.value : "Desktop";
+  return keyBackend().defaultDeviceName();
 }
 
 // ─── Sign-in ────────────────────────────────────────────────────────────────
 
 /**
- * Sign in with this device's key for `principalId`: a fresh challenge, signed on the Tauri
- * side, sent to `loginWithKey`, which sets the session cookie. Returns the account's user id.
+ * Sign in with this device's key for `principalId`: a fresh challenge, signed by the key
+ * backend, sent to `loginWithKey`, which sets the session cookie. Returns the account's user id.
  * A revoked device fails with the server's `FORBIDDEN`.
  */
 export async function signInWithDeviceKey(principalId: string): Promise<string> {
   const { challengeId, nonce } = await challenge();
-  const proof = await keyCommand<SignedStatementInput>("key_identity_sign_login", {
-    endpoint: getGraphqlEndpoint(),
-    principalId,
-    challenge: { challengeId, nonce },
+  const proof = await keyBackend().signLogin(getGraphqlEndpoint(), principalId, {
+    challengeId,
+    nonce,
   });
   const res = await graphqlClient.request<{ loginWithKey: { userId: string } }>(
     LOGIN_WITH_KEY_MUTATION,
@@ -608,7 +579,7 @@ export async function abandonKeySignup(draft: EnrollmentDraft): Promise<void> {
 export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Promise<boolean> {
   if (account.confirmed || signupsInFlight > 0 || enrollmentsInFlight > 0) return false;
   if ((await principalTaken(account.principalId)) !== false) return false;
-  await keyCommand<null>("key_identity_forget_unconfirmed", { principalId: account.principalId });
+  await keyBackend().forgetUnconfirmed(account.principalId);
   return true;
 }
 

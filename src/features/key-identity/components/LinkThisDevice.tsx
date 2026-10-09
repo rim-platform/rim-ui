@@ -8,6 +8,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
 import { defaultDeviceName } from "../api/keyIdentity";
+import { BrowserKeyNotice } from "./BrowserKeyNotice";
 import { Fingerprint } from "./Fingerprint";
 
 const inputClass =
@@ -15,32 +16,52 @@ const inputClass =
 
 /**
  * "Link this device" on the sign-in screen: opens a form for the code shown on another device
- * of the account. Desktop only; renders nothing in the web app.
+ * of the account. In the web app, only in a browser that can hold a device key; one that cannot
+ * says why.
  */
 export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => void }) {
-  const { capabilities } = useRuntime();
+  const { capabilities, platform, deviceKeyStore } = useRuntime();
   const [open, setOpen] = useState(false);
+  const inBrowser = platform === "web";
+  if (deviceKeyStore === "unsupported") {
+    return (
+      <p className="text-center text-xs text-rim-text-faint">
+        This browser cannot be linked to your account: it has no Ed25519 keys in WebCrypto, or no
+        IndexedDB to keep one in (a private window may block it). Use a current browser, or the
+        desktop app.
+      </p>
+    );
+  }
   if (!capabilities.deviceKeys) return null;
   return open ? (
-    <LinkThisDeviceForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    <LinkThisDeviceForm
+      inBrowser={inBrowser}
+      onSuccess={onSuccess}
+      onCancel={() => setOpen(false)}
+    />
   ) : (
     <button
       type="button"
       onClick={() => setOpen(true)}
       className="block w-full text-center text-sm text-rim-text-muted transition hover:text-rim-text"
     >
-      Have another device signed in? Link this device with its code
+      {inBrowser
+        ? "Signed in on the desktop app? Link this browser with its code"
+        : "Have another device signed in? Link this device with its code"}
     </button>
   );
 }
 
 function LinkThisDeviceForm({
+  inBrowser,
   onSuccess,
   onCancel,
 }: {
+  inBrowser: boolean;
   onSuccess: (userId: string) => void;
   onCancel: () => void;
 }) {
+  const here = inBrowser ? "This browser" : "This computer";
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -109,7 +130,8 @@ function LinkThisDeviceForm({
             <p className="text-xs text-rim-text-muted">Confirm this code on your other device:</p>
             <Fingerprint value={fingerprint} />
             <p className="text-xs text-rim-text-faint">
-              Waiting for your other device. This computer stores nothing until it answers.
+              Waiting for your other device. {here} stores nothing until it answers
+              {inBrowser ? "; reloading the page abandons the link" : ""}.
             </p>
           </>
         ) : (
@@ -130,9 +152,10 @@ function LinkThisDeviceForm({
       <p className="text-sm font-medium text-rim-text">Link this device</p>
       <p className="text-xs text-rim-text-muted">
         On a computer that is signed in and holds your account&apos;s identity key, open Settings
-        &gt; Security &gt; Link a device, and paste the code it shows here. This computer gets its
-        own key; nothing else moves over.
+        &gt; Security &gt; Link a device, and paste the code it shows here. {here} gets its own key;
+        nothing else moves over.
       </p>
+      {inBrowser && <BrowserKeyNotice />}
       <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
         Link code
         <textarea

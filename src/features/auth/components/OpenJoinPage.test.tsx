@@ -38,10 +38,10 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
-const deviceKeys = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
@@ -52,7 +52,7 @@ import { OpenJoinPage } from "./OpenJoinPage";
 describe("OpenJoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    deviceKeys.value = false;
+    desktop.value = false;
   });
 
   function renderPage() {
@@ -104,7 +104,7 @@ describe("OpenJoinPage", () => {
   });
 
   it("offers a key signup on the desktop, with no token, and signs the new account in", async () => {
-    deviceKeys.value = true;
+    desktop.value = true;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "OPEN" },
       isPending: false,
