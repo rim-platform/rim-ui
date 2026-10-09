@@ -2,7 +2,6 @@ import { useState, useCallback } from "react";
 
 import { invoke } from "@tauri-apps/api/core";
 import { registerProvider, getProvider } from "../../agent/providers/registry";
-import { loadApiKey, ProviderKeyMissingError } from "../../agent/runtime/keyStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import type { AiMessage } from "../../agent/providers/types";
 import type { CommandDefinition } from "../../commands/types";
@@ -118,8 +117,8 @@ export function useMacroAgent(): UseMacroAgentResult {
         const settings = useAgentStore.getState().settings;
         const { providerId, modelId } = settings;
 
-        // Presence-check the OS keyring — single source of truth after the
-        // Stronghold → keyring cutover (agent-settings-consolidation §3).
+        // Presence-check the OS keyring — the single source of truth for
+        // provider keys (agent-settings-consolidation §3).
         const hasKey = await invoke<boolean>("is_provider_key_configured", {
           provider: providerId,
         });
@@ -129,23 +128,18 @@ export function useMacroAgent(): UseMacroAgentResult {
 
         // Lazy-register: if the macro builder is invoked before AgentOverlay
         // has ever opened, there is no registered provider yet. Register one
-        // here using the same Stronghold-reading loader pattern as
-        // AgentOverlay. If a provider is already registered, we reuse it —
-        // but first-open from the macro surface must still work.
+        // here the same way AgentOverlay does. If a provider is already
+        // registered, we reuse it — but first-open from the macro surface
+        // must still work.
         let provider = getProvider(providerId);
         if (!provider) {
-          const loader = async () => {
-            const key = await loadApiKey(providerId);
-            if (!key) throw new ProviderKeyMissingError(providerId);
-            return key;
-          };
           if (providerId === "anthropic") {
             const { createAnthropicProvider } = await import("../../agent/providers/anthropic");
-            provider = createAnthropicProvider(loader);
+            provider = createAnthropicProvider();
             registerProvider(provider);
           } else if (providerId === "openai") {
             const { createOpenAiProvider } = await import("../../agent/providers/openai");
-            provider = createOpenAiProvider(loader);
+            provider = createOpenAiProvider();
             registerProvider(provider);
           } else {
             throw new Error(

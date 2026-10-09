@@ -148,8 +148,6 @@ pub enum ProxyError {
     KeyNotConfigured { provider: String },
     #[error("keyring error: {0}")]
     Keyring(String),
-    #[error("event emit failed: {0}")]
-    EmitFailed(String),
 }
 
 /// Outcome of `agent_validate_credentials`. Distinguishes "provider said no"
@@ -238,51 +236,6 @@ pub fn is_provider_key_configured(provider: Provider) -> Result<bool, ProxyError
         Err(keyring::Error::NoEntry) => Ok(false),
         Err(e) => Err(ProxyError::Keyring(e.to_string())),
     }
-}
-
-/// Boot-time migration stub: checks whether any Stronghold-stored key needs
-/// to be migrated to the OS keyring. Emits a Tauri event so the JS thunk can
-/// drive the actual migration (JS-driven per CTO decision #1).
-///
-/// Idempotent — safe to call on every app start.
-#[tauri::command]
-pub async fn migrate_provider_keys(app: tauri::AppHandle) -> Result<(), ProxyError> {
-    use tauri::Emitter;
-
-    // Check which providers are already in the keyring.
-    let providers = [Provider::Anthropic, Provider::Openai];
-    let mut needs_migration: Vec<&str> = Vec::new();
-
-    for provider in &providers {
-        let user = format!("provider:{}", provider.as_str());
-        match secret_store::entry(&user).and_then(|e| e.get_password()) {
-            Ok(_) => {
-                // Key already in keyring — migration done for this provider.
-            }
-            Err(keyring::Error::NoEntry) => {
-                // Not in keyring yet — JS thunk should check Stronghold and
-                // call set_provider_key if a key exists there.
-                needs_migration.push(provider.as_str());
-            }
-            Err(e) => {
-                log::warn!(
-                    "migrate_provider_keys: keyring check failed for {}: {e}",
-                    provider.as_str()
-                );
-            }
-        }
-    }
-
-    if !needs_migration.is_empty() {
-        log::info!(
-            "[AUDIT] migrate_provider_keys: emitting migration event for providers: {:?}",
-            needs_migration
-        );
-        app.emit("provider-key-migration-needed", &needs_migration)
-            .map_err(|e| ProxyError::EmitFailed(e.to_string()))?;
-    }
-
-    Ok(())
 }
 
 /// Tauri command: stream a chat completion. Errors that occur before the
@@ -681,11 +634,10 @@ mod tests {
     #[test]
     fn keyring_user_format_is_namespaced() {
         // The keyring USER must be prefixed with "provider:" so it can't
-        // collide with the Stronghold master key stored under "stronghold-master-key".
+        // collide with the app's other secrets under the same service (secret_store).
         for provider in [Provider::Anthropic, Provider::Openai] {
             let user = format!("provider:{}", provider.as_str());
             assert!(user.starts_with("provider:"), "must be namespaced");
-            assert_ne!(user, "stronghold-master-key", "must not collide");
         }
     }
 

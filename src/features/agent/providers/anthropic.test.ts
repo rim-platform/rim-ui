@@ -48,14 +48,14 @@ describe("createAnthropicProvider", () => {
   });
 
   it("returns a provider with correct config", () => {
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     expect(provider.config.id).toBe("anthropic");
     expect(provider.config.name).toBe("Anthropic Claude");
     expect(provider.config.models.length).toBeGreaterThan(0);
   });
 
   it("config contains expected models", () => {
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const modelIds = provider.config.models.map((m) => m.id);
     expect(modelIds).toContain("claude-opus-4-20250514");
     expect(modelIds).toContain("claude-sonnet-4-20250514");
@@ -63,7 +63,7 @@ describe("createAnthropicProvider", () => {
   });
 
   it("models have pricing info", () => {
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     for (const model of provider.config.models) {
       expect(model.inputPricePerMToken).toBeGreaterThan(0);
       expect(model.outputPricePerMToken).toBeGreaterThan(0);
@@ -79,7 +79,7 @@ describe("createAnthropicProvider", () => {
     // proxy inline. Any payload that includes api_key is rejected.
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createAnthropicProvider(async () => "sk-my-key");
+    const provider = createAnthropicProvider();
     const messages: AiMessage[] = [{ role: "user", content: "Hello" }];
 
     for await (const _ of provider.chat({
@@ -106,7 +106,7 @@ describe("createAnthropicProvider", () => {
   it("chat omits system_prompt and tools when not provided", async () => {
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const messages: AiMessage[] = [{ role: "user", content: "Hello" }];
 
     for await (const _ of provider.chat({
@@ -124,7 +124,7 @@ describe("createAnthropicProvider", () => {
   it("chat translates AiToolDefinition[] to Anthropic tools shape", async () => {
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const tools = [
       {
         name: "search",
@@ -154,7 +154,7 @@ describe("createAnthropicProvider", () => {
   it("chat yields error on ChatStreamEvent::Error", async () => {
     mockChatCompletion([{ kind: "error", message: "provider 401: invalid_api_key" }]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "claude-sonnet-4-20250514",
@@ -173,7 +173,7 @@ describe("createAnthropicProvider", () => {
   it("chat yields error when invoke promise rejects without firing channel events", async () => {
     invokeMock.mockRejectedValueOnce(new Error("IPC layer refused"));
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "claude-sonnet-4-20250514",
@@ -214,7 +214,7 @@ describe("createAnthropicProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "claude-sonnet-4-20250514",
@@ -264,7 +264,7 @@ describe("createAnthropicProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "claude-sonnet-4-20250514",
@@ -308,7 +308,7 @@ describe("createAnthropicProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createAnthropicProvider(async () => "sk-test");
+    const provider = createAnthropicProvider();
     const schema = { type: "object", properties: {} };
     const messages: AiMessage[] = [
       { role: "user", content: "list channels" },

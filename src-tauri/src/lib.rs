@@ -15,39 +15,6 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-/// Retrieve (or generate) a per-installation Stronghold password from the OS keychain.
-///
-/// On first run a cryptographically random 32-byte key is generated, stored in
-/// the platform keystore (macOS Keychain / Windows Credential Manager / Linux
-/// Secret Service) and returned as a base64 string.  Subsequent calls retrieve
-/// the existing key. Runs off the main thread, since a keyring call can block (see
-/// `secret_store`).
-#[tauri::command(async)]
-fn get_stronghold_password() -> Result<String, String> {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-
-    const USER: &str = "stronghold-master-key";
-
-    let entry = secret_store::entry(USER).map_err(|e| format!("keyring init failed: {e}"))?;
-
-    // Try to retrieve an existing password.
-    match entry.get_password() {
-        Ok(existing) => Ok(existing),
-        Err(keyring::Error::NoEntry) => {
-            // First run — generate a new random password.
-            let mut bytes = [0u8; 32];
-            getrandom::fill(&mut bytes).map_err(|e| format!("random generation failed: {e}"))?;
-            let password = URL_SAFE_NO_PAD.encode(bytes);
-            entry
-                .set_password(&password)
-                .map_err(|e| format!("keyring store failed: {e}"))?;
-            log::info!("Generated and stored new Stronghold master key in OS keychain");
-            Ok(password)
-        }
-        Err(e) => Err(format!("keyring retrieval failed: {e}")),
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -120,14 +87,6 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app
                 .path()
-                .app_local_data_dir()
-                .expect("failed to resolve app local data dir");
-            let salt_path = app_data_dir.join("salt.txt");
-            app.handle()
-                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
-
-            let app_data_dir = app
-                .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             let plugin_state = plugin_host::init(&app_data_dir);
@@ -145,7 +104,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
-            get_stronghold_password,
             plugin_host::commands::plugin_list,
             plugin_host::commands::plugin_install,
             plugin_host::commands::plugin_enable,
@@ -178,7 +136,6 @@ pub fn run() {
             agent_proxy::set_provider_key,
             agent_proxy::clear_provider_key,
             agent_proxy::is_provider_key_configured,
-            agent_proxy::migrate_provider_keys,
             message_cache::commands::message_cache_track,
             message_cache::commands::message_cache_sync_begin,
             message_cache::commands::message_cache_sync_apply,

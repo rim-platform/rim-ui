@@ -112,17 +112,14 @@ type ChatStreamEvent =
  * Tauri `agent_chat_completion` command. The API key is read directly from
  * the OS keyring by the Rust proxy on every request — the JS side never
  * holds or transmits the key bytes (Phase 5 / Option B, §2 of the
- * agent-settings-consolidation decision). The `loadKey` parameter is
- * retained for callers that registered providers before the keyring cutover;
- * it is no longer used inside `chat()` and will be removed once all
- * call-sites are updated (step 9 of the consolidation task list).
+ * agent-settings-consolidation decision).
  *
  * `validateCredentials` and `fetchModels` retain their existing
  * explicit-key parameter because they are invoked from the settings panel
  * with the user's in-form value (not yet saved to the keyring); those paths
  * are already per-call and do not need loader indirection.
  */
-export function createAnthropicProvider(_loadKey: () => Promise<string>): AiProvider {
+export function createAnthropicProvider(): AiProvider {
   return {
     config,
 

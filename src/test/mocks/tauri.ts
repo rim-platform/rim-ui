@@ -9,11 +9,6 @@ vi.mock("@tauri-apps/api/path", () => ({
   appConfigDir: vi.fn(() => Promise.resolve("/mock/app/config")),
 }));
 
-// Mock @tauri-apps/plugin-stronghold
-vi.mock("@tauri-apps/plugin-stronghold", () => ({
-  Stronghold: { load: vi.fn() },
-}));
-
 // Mock @tauri-apps/plugin-notification
 vi.mock("@tauri-apps/plugin-notification", () => ({
   sendNotification: vi.fn(),

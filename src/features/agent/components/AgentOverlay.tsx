@@ -11,7 +11,6 @@ import type { AiMessage } from "../providers/types";
 import { loadAgentTools } from "../tools/loader";
 import { invoke } from "@tauri-apps/api/core";
 import { registerProvider } from "../providers/registry";
-import { loadApiKey, ProviderKeyMissingError } from "../runtime/keyStore";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
@@ -38,30 +37,21 @@ function ensureToolsRegistered(): Promise<void> {
   return toolsLoading;
 }
 
-// Providers are registered once per providerId. Post-#59 the provider
-// instance no longer closes over the key — it holds a loader thunk that
-// reads Stronghold per-request. Switching the key in Settings is therefore
-// invisible at this layer: the same provider instance keeps serving, and
-// the next `chat()` reads whatever Stronghold currently holds.
+// Providers are registered once per providerId. The provider never holds the
+// key: the Rust proxy reads it from the OS keyring on every request, so
+// switching the key in Settings is invisible at this layer and the next
+// `chat()` uses whatever the keyring currently holds.
 const registeredProviders = new Set<string>();
-
-function makeKeyLoader(providerId: string): () => Promise<string> {
-  return async () => {
-    const key = await loadApiKey(providerId);
-    if (!key) throw new ProviderKeyMissingError(providerId);
-    return key;
-  };
-}
 
 async function ensureProviderRegistered(providerId: string): Promise<void> {
   if (registeredProviders.has(providerId)) return;
 
   if (providerId === "anthropic") {
     const { createAnthropicProvider } = await import("../providers/anthropic");
-    registerProvider(createAnthropicProvider(makeKeyLoader(providerId)));
+    registerProvider(createAnthropicProvider());
   } else if (providerId === "openai") {
     const { createOpenAiProvider } = await import("../providers/openai");
-    registerProvider(createOpenAiProvider(makeKeyLoader(providerId)));
+    registerProvider(createOpenAiProvider());
   }
 
   registeredProviders.add(providerId);
@@ -192,7 +182,7 @@ export function AgentOverlay() {
 
     void (async () => {
       // Presence-check the OS keyring before spinning up runAgent. The keyring
-      // is the single source of truth after the Stronghold → keyring cutover
+      // is the single source of truth for provider keys
       // (agent-settings-consolidation decision §3). We do NOT hold any key
       // bytes here — the Rust proxy reads from the keyring inline per-request.
       const hasKey = await invoke<boolean>("is_provider_key_configured", {

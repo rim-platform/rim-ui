@@ -173,11 +173,9 @@ type ChatStreamEvent =
  * Tauri `agent_chat_completion` command. The API key is read directly from
  * the OS keyring by the Rust proxy on every request — the JS side never
  * holds or transmits the key bytes (Phase 5 / Option B). See
- * `anthropic.ts::createAnthropicProvider` for the full rationale. The
- * `_loadKey` parameter is retained for call-site compatibility and will be
- * removed in the cleanup pass (step 9 of the consolidation task list).
+ * `anthropic.ts::createAnthropicProvider` for the full rationale.
  */
-export function createOpenAiProvider(_loadKey: () => Promise<string>): AiProvider {
+export function createOpenAiProvider(): AiProvider {
   return {
     config,
 
