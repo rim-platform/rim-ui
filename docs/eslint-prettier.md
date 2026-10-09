@@ -29,8 +29,7 @@ npm run format:check   # prettier --check . — CI-safe, no writes
 5. `eslint-config-prettier` — **last**, disables every stylistic rule that would
    fight Prettier.
 6. Global `ignores`: `dist/`, `coverage/`, `node_modules/`, `src-tauri/`,
-   `src/core/graphql/generated/`, and build-artifact config files
-   (`vite.config.js`, `vite.config.d.ts`, `*.config.js`).
+   `src/core/graphql/generated/`, `sdk/plugin-sdk/src/generated/` and `*.config.js`.
 
 `.prettierrc.json` matches the codebase's existing conventions (verified against the
 code, not assumed): double quotes, semicolons, trailing commas, 100-column width.

@@ -1,5 +1,8 @@
 # Plugin System — Phase Plan (Frontend + Backend)
 
+> **Note (2026-10-09):** `rim-server/docs/research/plugin-backend-validation-2026-04-29.md`,
+> linked below, was deleted as outdated; it remains in rim-server's git history.
+
 - **Status:** **DECISIONS-LOCKED 2026-04-29.** Q1, Q3, Q4 answered by Jakub
   this round. Q2 and Q5 remain open but do not block the locked-in phases.
   See "Decision Gates" section below for the locked answers.

@@ -5,7 +5,7 @@
 **Revision:** r2 — incorporates Black Widow's security review (M2 spoofing defense, sensitive-arg masking extension, capability-name leak, bare-Enter supersession amplification). See §14 for the diff vs r1.
 **Audience:** Kuba (owner, morning briefing), Tony (CTO), Nick Fury (architect), Black Widow (security)
 **Scope:** UX-only. No implementation. Pure surface, flow, and trust design.
-**Source of truth this leans on:** Falcon's audit `rim-server/docs/design/ai-agent-audit-2026-04-22.md` (sections A.6, C, E.3, E.4) + Black Widow's review `rim-server/docs/security/ai-reframe-review-2026-04-22.md` (M2, §3.4 extension, §6.5 leak, L4 amplification).
+**Source of truth this leans on:** Falcon's audit `rim-server/docs/design/ai-agent-audit-2026-04-22.md` (sections A.6, C, E.3, E.4; deleted 2026-10-09, see rim-server git history) + Black Widow's review `rim-server/docs/security/ai-reframe-review-2026-04-22.md` (M2, §3.4 extension, §6.5 leak, L4 amplification).
 
 > "I may shrink to the size of an ant, but I can spot a bad confirm dialog from a mile away. Make this one count."
 
