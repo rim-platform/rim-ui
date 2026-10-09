@@ -10,11 +10,19 @@ import {
   type PluginInfo,
   type PluginCapability,
 } from "../types";
-import { KIND_CONSENT_TEXT, networkFetchText } from "./consentText";
+import {
+  CHAT_CONSENT_TEXT,
+  KIND_CONSENT_TEXT,
+  isChatCapability,
+  networkFetchText,
+  plainCapabilityOf,
+} from "./consentText";
 
 const capabilityLabels: Record<PluginCapability, string> = {
   "chat.read": "Read Chat Messages",
   "chat.write": "Send Chat Messages",
+  "chat.read.encrypted": "Read Encrypted Messages",
+  "chat.write.encrypted": "Send Encrypted Messages",
   "events.read": "Receive Workspace Events",
   "local.process": "Run Local Processes",
   network: "Network Access",
@@ -26,8 +34,10 @@ const capabilityLabels: Record<PluginCapability, string> = {
 };
 
 const capabilityDescriptions: Record<PluginCapability, string> = {
-  "chat.read": "Read messages and search conversation history",
-  "chat.write": "Send, edit, and delete messages on your behalf",
+  "chat.read": CHAT_CONSENT_TEXT["chat.read"],
+  "chat.write": CHAT_CONSENT_TEXT["chat.write"],
+  "chat.read.encrypted": CHAT_CONSENT_TEXT["chat.read.encrypted"],
+  "chat.write.encrypted": CHAT_CONSENT_TEXT["chat.write.encrypted"],
   "events.read": "Subscribe to workspace events such as member joins and status changes",
   "local.process": "Spawn and control processes on your device",
   network: "Make outbound network requests to external services",
@@ -58,13 +68,22 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
   );
   const approve = useApproveCapabilities();
 
+  // An encrypted chat capability needs its plain one: checking it checks the plain one,
+  // and unchecking the plain one unchecks it.
   function toggleCapability(cap: PluginCapability) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(cap)) {
         next.delete(cap);
+        for (const other of parsedCapabilities) {
+          if (plainCapabilityOf(other) === cap) next.delete(other);
+        }
       } else {
         next.add(cap);
+        const plain = plainCapabilityOf(cap);
+        if (plain && parsedCapabilities.includes(plain as PluginCapability)) {
+          next.add(plain as PluginCapability);
+        }
       }
       return next;
     });
@@ -128,7 +147,9 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
                 onChange={() => toggleCapability(cap)}
                 className="mt-0.5 accent-rim-accent"
               />
-              {cap === "network.fetch" ? (
+              {isChatCapability(cap) ? (
+                <ChatConsentLine text={CHAT_CONSENT_TEXT[cap]} />
+              ) : cap === "network.fetch" ? (
                 <p className="text-sm text-rim-text">
                   <span className="font-medium">{capabilityLabels[cap]}:</span>{" "}
                   <span className="text-rim-text-muted">
@@ -155,5 +176,16 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/** A chat capability's line: the words before the colon name it, the rest says what it allows. */
+function ChatConsentLine({ text }: { text: string }) {
+  const colon = text.indexOf(":");
+  return (
+    <p className="text-sm text-rim-text">
+      <span className="font-medium">{text.slice(0, colon + 1)}</span>
+      <span className="text-rim-text-muted">{text.slice(colon + 1)}</span>
+    </p>
   );
 }

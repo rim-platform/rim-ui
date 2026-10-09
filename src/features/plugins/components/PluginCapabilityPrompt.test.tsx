@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
+const approve = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginCapabilities", () => ({
-  useApproveCapabilities: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useApproveCapabilities: vi.fn(() => ({ mutate: approve, isPending: false })),
 }));
 
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
@@ -74,6 +75,45 @@ describe("PluginCapabilityPrompt consent text", () => {
     const line = screen.getByText(/^Connect to listed sites:/).closest("p");
     expect(line?.textContent).toBe(
       "Connect to listed sites: send and receive data from api.github.com, avatars.githubusercontent.com. Anything you show this plugin can be sent to these sites.",
+    );
+  });
+});
+
+describe("PluginCapabilityPrompt chat lines", () => {
+  const chat = plugin({
+    runtime_kind: "WebSandboxed",
+    capabilities: ["chat.read", "chat.read.encrypted", "chat.write", "chat.write.encrypted"],
+  });
+
+  it("gives each chat capability its own line, the encrypted read in the spec's words", () => {
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={chat} />);
+    const line = (start: RegExp) => screen.getByText(start).closest("p")?.textContent;
+    expect(line(/^Read your encrypted DMs and groups:/)).toBe(
+      "Read your encrypted DMs and groups: this plugin sees their decrypted text and can send it anywhere its other permissions allow.",
+    );
+    expect(line(/^Post as you in your encrypted DMs and groups:/)).toBe(
+      "Post as you in your encrypted DMs and groups: this plugin sends messages in your name there, encrypted like your own.",
+    );
+    expect(line(/^Read your conversations:/)).toMatch(/except those of encrypted DMs and groups/);
+    expect(line(/^Post as you:/)).toMatch(/except in encrypted DMs and groups/);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+  });
+
+  it("keeps an encrypted grant with its plain one", () => {
+    approve.mockClear();
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={chat} />);
+    const [read, readEncrypted, write, writeEncrypted] = screen.getAllByRole("checkbox");
+    // Unchecking the plain read unchecks the encrypted read with it.
+    fireEvent.click(read);
+    expect(readEncrypted).not.toBeChecked();
+    // Checking the encrypted write after unchecking both brings the plain write back.
+    fireEvent.click(write);
+    expect(writeEncrypted).not.toBeChecked();
+    fireEvent.click(writeEncrypted);
+    expect(write).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(new Set(approve.mock.calls[0][0].capabilities)).toEqual(
+      new Set(["chat.write", "chat.write.encrypted"]),
     );
   });
 });
