@@ -80,7 +80,7 @@ without a trailing `/`, `principalId`):
 | Store | Key | Holds |
 |---|---|---|
 | `mls` | `[endpoint, principalId, label, key]` | `rim_mls`'s entries as its `MemoryStore` has them: OpenMLS state (`openmls.v1.*`), this device's MLS signature key and `mls-key` statement (`rim.device`), group records, key package records. Key and value base64url |
-| `messages` | `[endpoint, principalId, id]` | The messages of the encrypted conversations this browser follows, as the desktop's cache rows: `text`, the server's JSON without text or envelope (`payload`, with `payload.e2ee`), `version`, `sentAtUs`, `e2eeState` (`decrypted`, `invalid`, `placeholder`, `outgoing`, `null` for plaintext from before encryption and tombstones). Indexes by time and by thread |
+| `messages` | `[endpoint, principalId, id]` | The messages of the conversations this browser follows (encrypted ones it opened, and any a plugin asked for), as the desktop's cache rows: `text`, the server's JSON without text or envelope (`payload`, with `payload.e2ee`), `version`, `sentAtUs`, `e2eeState` (`decrypted`, `invalid`, `placeholder`, `outgoing`, `null` for plaintext from before encryption and tombstones). Indexes by time and by thread |
 | `groups` | `[…, workspaceId, conversationId]` | `e2ee_conversation`'s fields (incarnation, next incarnation, join epoch, removal, leaves to verify, devices that failed, a misbehaving committer, a re-add wait, last update path, resets) and the re-adds this browser honored |
 | `sync` | `[…, workspaceId, conversationId]` | The change feed's cursor, whether more is pending, whether the history was read once, last viewed |
 | `outgoing` | `[…, messageId]` | Messages and edits until the server acknowledges them, with the content, franking key and commitment to send them again |
@@ -125,8 +125,8 @@ The webview runtime is the desktop's, unchanged in what it does:
 - **Key packages**: on start and every 12 hours while a tab is open (`myMlsKeyPackageStatus`,
   `planKeyPackageUpload`, prune, top up, last resort). A closed browser uploads nothing.
 - **The client loop** (`web/feed.ts`, a port of the desktop's `feed.rs` and cache sync): the
-  encrypted conversations this browser follows (it follows a conversation once opened, and only
-  encrypted ones), Commits applied up to each entry's epoch, decrypt once, placeholders,
+  conversations this browser follows (an encrypted conversation once opened, and any
+  conversation a plugin reads), Commits applied up to each entry's epoch, decrypt once, placeholders,
   invalid rows, stops (`needCommits`, `noGroupState`, `awaitingReadd`, `needThreadRoot`) and
   `RESET` / `NO_ACCESS` as on the desktop.
 - **Groups**: create, commit, settle, process, join, re-add requests and checks, incarnations,
@@ -173,7 +173,19 @@ The history archive is the desktop's: the web app offers no "Restore from histor
   in every group, and earlier messages are gone from this browser.
 - Key packages are only refreshed while a tab is open; a browser closed for 60 days leaves its
   groups.
-- No local search over encrypted messages, no history archive, no link previews in the web app.
+- No local search over encrypted messages in the app's search, no history archive, no link
+  previews in the web app. Plugins search the store by substring (below).
+
+## Plugins
+
+A web plugin's `rim.chat.*` reads (`docs/plugin-chat-methods.md`) come from this store once the
+browser is set up for encrypted conversations: `webChatCache` (`plugins/chat/appMessageService.ts`)
+over `web/pluginView.ts`, which gives the desktop cache's plugin shape and leaves out the same rows
+(checked against `protocol/plugin-chat-vectors.json`). A conversation a plugin asks for that the
+store does not hold yet is followed and answers `notCached` until its history is read; a browser
+not set up answers `noCache`. Search is a case-insensitive substring match over the stored rows,
+newest first, not the desktop's word-prefix index. A web plugin's `rim.chat.post_message` into an encrypted
+conversation goes through the same encrypted send path as the person's own messages.
 
 ## Trying it against a desktop
 

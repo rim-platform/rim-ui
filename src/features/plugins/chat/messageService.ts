@@ -66,7 +66,7 @@ export interface ChatDeps {
   workspaceId(): string | null;
   /** Whether a conversation is end-to-end encrypted; `null` when the person cannot see it. */
   encrypted(workspaceId: string, conversationId: string): Promise<boolean | null>;
-  /** The local cache; `null` where the app keeps none (the web app). */
+  /** The local cache; `null` where the app keeps none (a browser not set up as a linked device). */
   cache(): ChatCache | null;
   /** Send through the person's own send path; the new message's id. */
   post(post: ChatPost): Promise<string>;
@@ -139,7 +139,7 @@ function cacheError(error: unknown): RpcError {
 
 const NO_CACHE = new RpcError(
   ErrorCode.INTERNAL_ERROR,
-  "messages are not stored on this device; plugins read them in the desktop app",
+  "messages are not stored in this app; plugins read them in the desktop app, or in a browser set up as a linked device",
   { reason: "noCache" },
 );
 
