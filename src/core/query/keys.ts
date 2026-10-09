@@ -7,6 +7,9 @@ export const queryKeys = {
   deviceKeyStatus: (principalId: string, keySeq: number | null) =>
     ["deviceKeyStatus", principalId, keySeq] as const,
   deviceKeyAccounts: (endpoint: string) => ["deviceKeyAccounts", endpoint] as const,
+  // Where the identity key's backup in the history archive stands for this device.
+  identityBackupStatus: (principalId: string, keySeq: number | null) =>
+    ["identityBackupStatus", principalId, keySeq] as const,
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
   server: (serverId?: string) => ["server", serverId] as const,

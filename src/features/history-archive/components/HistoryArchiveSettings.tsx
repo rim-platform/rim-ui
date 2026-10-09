@@ -5,6 +5,11 @@ import { Cloud, FolderOpen } from "lucide-react";
 import { Button } from "../../../shared/ui/Button";
 import type { SafeInvokeError } from "../../../core/tauri/safeInvoke";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import {
+  backUpIdentityKeyQuietly,
+  canUnlockArchiveWithKeys,
+  unlockArchiveWithKeys,
+} from "../../key-identity/api/identityBackup";
 import { currentCacheAccount, type CacheAccount } from "../../messages/api/messageCache";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -40,6 +45,8 @@ function errorText(error: SafeInvokeError): string {
     switch (error.code) {
       case ArchiveErrorCode.WRONG_PASSPHRASE:
         return "That passphrase does not open this archive.";
+      case ArchiveErrorCode.NO_IDENTITY_WRAP:
+        return "This device's keys do not open this archive. Enter the passphrase.";
       case ArchiveErrorCode.UNAVAILABLE:
         return "The archive cannot be reached. Is the drive connected, and are you online?";
       case ArchiveErrorCode.NOT_WRITABLE:
@@ -284,6 +291,7 @@ function SetupArchive({
     }
     // The first backup of this device's history starts right away, not at the next sync.
     void exportArchive(account);
+    void backUpIdentityKeyQuietly();
     setBusy(false);
     onDone(connected.value.status, restored);
   }
@@ -416,16 +424,29 @@ function UnlockArchive({
   onChange: (status: ArchiveStatus) => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"passphrase" | "keys" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether this device's identity key opens a copy of the archive key.
+  const { data: withKeys } = useQuery({
+    queryKey: ["historyArchiveUnlockWithKeys", account.endpoint, account.userId, status.archiveId],
+    retry: false,
+    queryFn: () => canUnlockArchiveWithKeys(account),
+  });
 
-  async function unlock() {
-    setBusy(true);
+  async function unlock(kind: "passphrase" | "keys") {
+    setBusy(kind);
     setError(null);
-    const result = await unlockArchive(account, passphrase);
-    setBusy(false);
-    if (result.ok) onChange(result.value);
-    else setError(errorText(result.error));
+    const result =
+      kind === "passphrase"
+        ? await unlockArchive(account, passphrase)
+        : await unlockArchiveWithKeys(account);
+    setBusy(null);
+    if (result.ok) {
+      onChange(result.value);
+      void backUpIdentityKeyQuietly();
+    } else {
+      setError(errorText(result.error));
+    }
   }
 
   return (
@@ -433,7 +454,7 @@ function UnlockArchive({
       className="space-y-3 rounded-lg border border-rim-line bg-rim-panel p-4"
       onSubmit={(e) => {
         e.preventDefault();
-        void unlock();
+        void unlock("passphrase");
       }}
     >
       <p className="text-sm font-medium text-rim-text">Archive locked on this device</p>
@@ -451,9 +472,34 @@ function UnlockArchive({
           className={inputClass}
         />
       </label>
-      <Button type="submit" size="sm" disabled={passphrase.length === 0} isLoading={busy}>
-        Unlock
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={passphrase.length === 0 || busy !== null}
+          isLoading={busy === "passphrase"}
+        >
+          Unlock
+        </Button>
+        {withKeys && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy !== null}
+            isLoading={busy === "keys"}
+            onClick={() => void unlock("keys")}
+          >
+            Unlock with this device&apos;s keys
+          </Button>
+        )}
+      </div>
+      {withKeys && (
+        <p className="text-xs text-rim-text-faint">
+          This computer holds your identity key, which opens a copy of the archive key kept in the
+          archive.
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-rim-danger">
           {error}

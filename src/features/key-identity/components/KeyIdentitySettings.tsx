@@ -25,6 +25,7 @@ import {
   type KeyAccount,
   type MyKeyIdentity,
 } from "../api/keyIdentity";
+import { IdentityKeyBackup } from "./IdentityKeyBackup";
 import { SaveRecoveryKit } from "./SaveRecoveryKit";
 import { LinkDevicePanel } from "./LinkDevicePanel";
 
@@ -446,6 +447,14 @@ function KeyIdentityOverview({
             </p>
           )}
         </section>
+      )}
+
+      {canSign && local.data?.deviceId && (
+        <IdentityKeyBackup
+          identity={identity}
+          principalId={principalId}
+          holdsIdentityKey={holdsIdentityKey}
+        />
       )}
 
       {error && (
