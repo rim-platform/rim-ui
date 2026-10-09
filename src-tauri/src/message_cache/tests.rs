@@ -1252,7 +1252,9 @@ struct UnavailableKey(Arc<Mutex<u32>>);
 impl KeySource for UnavailableKey {
     fn load_or_create(&self) -> Result<CacheKey, CacheError> {
         *self.0.lock().unwrap() += 1;
-        Err(CacheError::Key("keyring read failed: the keyring is locked".into()))
+        Err(CacheError::Key(
+            "keyring read failed: the keyring is locked".into(),
+        ))
     }
 }
 

@@ -115,7 +115,9 @@ async function invokeCache<T>(command: string, args: Record<string, unknown>): P
     !keyErrorShown
   ) {
     keyErrorShown = true;
-    toast.warning("Local message cache is off until RIM restarts", { description: result.error.message });
+    toast.warning("Local message cache is off until RIM restarts", {
+      description: result.error.message,
+    });
   }
   return null;
 }
