@@ -1,7 +1,7 @@
 /**
- * Key identity in the desktop app (master plan Stage 3; contract
- * `rim-server/docs/specs/key-identity-v1.md`): enrolling the account's key, signing in with
- * this device's key, devices, identity rotation, the profile card and recovery.
+ * Key identity in the desktop app: enrolling the account's key, creating an account from a key
+ * alone, signing in with this device's key, devices, identity rotation, the profile card and
+ * recovery.
  *
  * The keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach the webview.
  * This module talks to the server and asks the Tauri side for each signed statement it needs,
@@ -13,6 +13,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getApiOrigin, getGraphqlEndpoint } from "../../../core/graphql/config";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type {
   DeviceKey,
   EnrollIdentityKeyInput,
@@ -21,6 +22,8 @@ import type {
   RotateIdentityKeyInput,
   SignedStatement,
   SignedStatementInput,
+  SignupWithInvitePayloadGql,
+  SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
@@ -144,6 +147,15 @@ const ENROLL_MUTATION = gql`
   mutation EnrollIdentityKey($input: EnrollIdentityKeyInput!) {
     enrollIdentityKey(input: $input) {
       principalId
+    }
+  }
+`;
+
+const SIGNUP_WITH_KEY_MUTATION = gql`
+  mutation SignupWithKey($input: SignupWithKeyInput!) {
+    signupWithKey(input: $input) {
+      userId
+      serverId
     }
   }
 `;
@@ -408,6 +420,196 @@ export async function completeEnrollment(
   } catch {
     // Settings shows the card as not published and offers to publish it.
   }
+}
+
+// ─── Key-only signup ────────────────────────────────────────────────────────
+
+/** What the join page fills in for `signupWithKey`: the name and the page's token, if any. */
+export type KeySignupFields = Omit<SignupWithKeyInput, "keyLog" | "device" | "proof">;
+
+/** The new account; `serverId` is set when a workspace invite also joined its workspace. */
+export type KeySignupResult = Pick<SignupWithInvitePayloadGql, "userId"> & {
+  serverId: string | null;
+};
+
+/** `keyLoginChallenge` failed, so nothing was signed or sent. `reason` is what it threw. */
+export class KeyChallengeFailed extends Error {
+  readonly reason: unknown;
+
+  constructor(reason: unknown) {
+    super(graphqlErrorMessage(reason, "Could not reach the server."));
+    this.name = "KeyChallengeFailed";
+    this.reason = reason;
+  }
+}
+
+/** Signups sent to the server and not answered yet; their keys are never given up meanwhile. */
+let signupsInFlight = 0;
+
+/** What each draft was last sent with, by draft id, to store its keys again under. */
+const sentSignups = new Map<string, KeySignupFields>();
+
+/**
+ * Whether an account on this server holds `principalId`, read from its public key log:
+ * `null` when the server cannot say.
+ */
+async function principalTaken(principalId: string): Promise<boolean | null> {
+  try {
+    const { keyLog } = await graphqlClient.request<{ keyLog: StatementOnly[] }>(KEY_LOG_QUERY, {
+      principalId,
+    });
+    return keyLog.length > 0;
+  } catch {
+    return null;
+  }
+}
+
+function cardName(fields: KeySignupFields): string {
+  return fields.displayName?.trim() || fields.username;
+}
+
+/** Best-effort: publish the new account's profile card; Settings publishes a missing one. */
+async function publishFirstCard(fields: KeySignupFields): Promise<void> {
+  try {
+    await publishProfileCard(await fetchMyKeyIdentity(), cardName(fields));
+  } catch (err) {
+    logger.warn("[RIM:keys] publishing the profile card after signup failed:", err);
+  }
+}
+
+/**
+ * Finish a signup the server took although no answer said so: store the draft's keys again (a
+ * failed attempt may have removed them), sign in with the device key, which links the keys to
+ * the account, and publish the profile card. The server id is `null`: the answer that named it
+ * was lost and the invite token is used up, so the caller fills in the workspace of the invite
+ * it previewed.
+ */
+async function finishTakenSignup(draft: EnrollmentDraft): Promise<KeySignupResult> {
+  const fields = sentSignups.get(draft.draftId);
+  if (fields) {
+    await keyCommand<null>("key_identity_restore_draft_keys", {
+      draftId: draft.draftId,
+      endpoint: getGraphqlEndpoint(),
+      username: fields.username,
+    });
+  }
+  const userId = await signInWithDeviceKey(draft.principalId);
+  if (fields) await publishFirstCard(fields);
+  sentSignups.delete(draft.draftId);
+  return { userId, serverId: null };
+}
+
+/**
+ * Create an account from a draft's keys alone, with no password and no email. The keys are
+ * stored before `signupWithKey` is sent, so an account the server created never ends up
+ * without them. When it fails, the key log says whether the account exists: if not, the keys
+ * go and the draft stays, so a retry uses the same keys and the saved recovery kit; if an
+ * earlier attempt whose answer was lost created it, this device signs in with its key; with no
+ * answer either way the keys stay for a later sign-in. The server sets the session cookie.
+ */
+export async function signupWithKey(
+  draft: EnrollmentDraft,
+  fields: KeySignupFields,
+): Promise<KeySignupResult> {
+  const sent: KeySignupFields = { ...fields, username: fields.username.trim() };
+  let challengeId: string;
+  let nonce: string;
+  try {
+    ({ challengeId, nonce } = await challenge());
+  } catch (err) {
+    throw new KeyChallengeFailed(err);
+  }
+  const statements = await keyCommand<EnrollmentStatements>("key_identity_sign_signup", {
+    draftId: draft.draftId,
+    endpoint: getGraphqlEndpoint(),
+    username: sent.username,
+    challenge: { challengeId, nonce },
+  });
+  sentSignups.set(draft.draftId, sent);
+  const input: SignupWithKeyInput = { ...sent, ...statements };
+  let result: KeySignupResult;
+  signupsInFlight += 1;
+  try {
+    const res = await graphqlClient.request<{ signupWithKey: SignupWithInvitePayloadGql }>(
+      SIGNUP_WITH_KEY_MUTATION,
+      { input },
+    );
+    result = { userId: res.signupWithKey.userId, serverId: res.signupWithKey.serverId ?? null };
+  } catch (err) {
+    const taken = await principalTaken(draft.principalId);
+    if (taken === false) {
+      await keyCommand<null>("key_identity_remove_draft_keys", { draftId: draft.draftId }).catch(
+        () => undefined,
+      );
+    }
+    if (!taken) throw err;
+    return await finishTakenSignup(draft);
+  } finally {
+    signupsInFlight -= 1;
+  }
+  sentSignups.delete(draft.draftId);
+  // Best-effort from here: the account exists and the session is set. A later sign-in links
+  // the keys.
+  try {
+    await settleDeviceKeys({ userId: result.userId, username: sent.username }, draft.principalId);
+  } catch (err) {
+    logger.warn("[RIM:keys] linking the keys after signup failed:", err);
+  }
+  await publishFirstCard(sent);
+  return result;
+}
+
+/**
+ * Remove a draft's keys when the server holds no account with them. Returns whether it holds
+ * one (`null` when it cannot say, or while a signup is in flight; nothing changes then).
+ */
+async function discardUnlessTaken(draft: EnrollmentDraft): Promise<boolean | null> {
+  if (signupsInFlight > 0) return null;
+  const taken = await principalTaken(draft.principalId);
+  if (taken === false) {
+    sentSignups.delete(draft.draftId);
+    await keyCommand<null>("key_identity_discard_enrollment", { draftId: draft.draftId });
+  }
+  return taken;
+}
+
+/**
+ * The person discards a signup draft. Its keys go only when the server holds no account with
+ * them. If an attempt the client saw fail created the account after all, the account gets its
+ * keys back and this device signs in to it: the result is that account, else `null`.
+ */
+export async function discardKeySignup(draft: EnrollmentDraft): Promise<KeySignupResult | null> {
+  if ((await discardUnlessTaken(draft)) !== true) return null;
+  return finishTakenSignup(draft);
+}
+
+/**
+ * The page closes with a signup draft. Its keys go only when the server holds no account with
+ * them; an account an earlier attempt created gets its keys back, to sign in with from the
+ * sign-in screen. Without an answer the keys stay.
+ */
+export async function abandonKeySignup(draft: EnrollmentDraft): Promise<void> {
+  if ((await discardUnlessTaken(draft)) !== true) return;
+  const fields = sentSignups.get(draft.draftId);
+  if (!fields) return;
+  await keyCommand<null>("key_identity_restore_draft_keys", {
+    draftId: draft.draftId,
+    endpoint: getGraphqlEndpoint(),
+    username: fields.username,
+  });
+}
+
+/**
+ * After a device-key sign-in failed: remove this device's keys for an account the server has
+ * never seen, such as a signup or enrollment whose request never reached it (the app quit, the
+ * page closed). Only unconfirmed keys whose principal has no key log on the server go. Returns
+ * whether they did.
+ */
+export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Promise<boolean> {
+  if (account.confirmed || signupsInFlight > 0 || enrollmentsInFlight > 0) return false;
+  if ((await principalTaken(account.principalId)) !== false) return false;
+  await keyCommand<null>("key_identity_forget_unconfirmed", { principalId: account.principalId });
+  return true;
 }
 
 // ─── Devices, rotation, profile card ────────────────────────────────────────

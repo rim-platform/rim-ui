@@ -163,6 +163,7 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
       variant={inviteTokenTypeToJoinFormVariant(preview.tokenType)}
       token={token}
       workspaceName={preview.workspace?.serverName}
+      workspaceId={preview.workspace?.serverId}
       onSuccess={onSignupSuccess}
     />
   );

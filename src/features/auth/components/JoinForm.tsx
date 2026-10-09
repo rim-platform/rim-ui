@@ -7,6 +7,9 @@
  * - `"BOOTSTRAP"`: same UI as INSTANCE ("Create your RIM account"). Routes via `bootstrapToken`.
  * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
  *
+ * On the desktop the page also offers "Create account with a key" (`KeySignupForm`): an
+ * account with no password and no email, signed in by a key kept on this computer.
+ *
  * **Fields:**
  * - `username` — required, unique handle.
  * - `email` — required, validated client-side against `EMAIL_REGEX` before
@@ -25,13 +28,18 @@
  * - `variant` — token type discriminator; controls header copy and mutation input.
  * - `token` — raw token string (`null` for open registration).
  * - `workspaceName` — workspace name shown in the header when `variant === "WORKSPACE"`.
+ * - `workspaceId` — the invite's workspace, from its preview, when `variant === "WORKSPACE"`.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
  */
 
 import { useState } from "react";
 
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
+import { checkDisplayName } from "../displayName";
 import { InviteTokenType } from "../types";
+import { JoinField } from "./JoinField";
+import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
 /**
  * Email validation regex mirroring the backend's pragmatic email regex.
@@ -55,6 +63,8 @@ interface JoinFormProps {
   token: string | null;
   /** Workspace name shown in the header when `variant === "WORKSPACE"`. */
   workspaceName?: string;
+  /** The invite's workspace, from its preview, when `variant === "WORKSPACE"`. */
+  workspaceId?: string;
   /**
    * Called on successful signup.
    * @param userId - The new user's ID.
@@ -63,44 +73,19 @@ interface JoinFormProps {
   onSuccess: (userId: string, serverId: string | null) => void;
 }
 
-interface FieldProps {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  type?: string;
-  hint?: string;
-  error?: string | null;
-  required?: boolean;
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  hint,
-  error,
-  required,
-}: FieldProps) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        placeholder={placeholder}
-        required={required}
-        className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
-      />
-      {error && <span className="mt-1 block text-xs text-rim-danger">{error}</span>}
-      {!error && hint && <span className="mt-1 block text-xs text-rim-text-faint">{hint}</span>}
-    </label>
-  );
+/**
+ * The token field a signup sends for the given variant: exactly one for a token variant, none
+ * in OPEN mode.
+ *   - `WORKSPACE` → `workspaceInviteToken`
+ *   - `INSTANCE`  → `instanceInviteToken`
+ *   - `BOOTSTRAP` → `bootstrapToken`
+ */
+function tokenFields(variant: JoinFormVariant, token: string | null): KeySignupTokens {
+  if (!token) return {};
+  if (variant === InviteTokenType.WORKSPACE) return { workspaceInviteToken: token };
+  if (variant === InviteTokenType.INSTANCE) return { instanceInviteToken: token };
+  if (variant === InviteTokenType.BOOTSTRAP) return { bootstrapToken: token };
+  return {};
 }
 
 /**
@@ -139,7 +124,11 @@ function mapSignupError(err: unknown): { field: "email" | "general"; message: st
 /**
  * Signup form for all registration paths (invite token + open registration).
  */
-export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormProps) {
+export function JoinForm({ variant, token, workspaceName, workspaceId, onSuccess }: JoinFormProps) {
+  const { capabilities } = useRuntime();
+  const [method, setMethod] = useState<"password" | "key">("password");
+  // A key signup in progress keeps its form mounted until it settles.
+  const [keySignupBusy, setKeySignupBusy] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -178,13 +167,9 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
    * 80 characters (matching the backend's 1–80 char constraint).
    */
   function validateDisplayName(value: string): boolean {
-    const trimmed = value.trim();
-    if (trimmed.length > 80) {
-      setDisplayNameError("Display name must be at most 80 characters.");
-      return false;
-    }
-    setDisplayNameError(null);
-    return true;
+    const error = checkDisplayName(value);
+    setDisplayNameError(error);
+    return error === null;
   }
 
   /**
@@ -193,31 +178,17 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
    * - `email`: always included, trimmed client-side.
    * - `displayName`: omitted entirely from the payload when blank after trim
    *   (NOT sent as `""`). Falls back to `username` server-side.
-   * - Token fields: exactly one is set per variant; none are set in OPEN mode.
-   *   - `WORKSPACE` → `workspaceInviteToken`
-   *   - `INSTANCE`  → `instanceInviteToken`
-   *   - `BOOTSTRAP` → `bootstrapToken`
+   * - Token fields: from `tokenFields`.
    */
   function buildInput() {
     const trimmedDisplayName = displayName.trim();
-    const base = {
+    return {
       username,
       email: email.trim(),
       password,
       ...(trimmedDisplayName.length > 0 ? { displayName: trimmedDisplayName } : {}),
+      ...tokenFields(variant, token),
     };
-
-    if (variant === InviteTokenType.WORKSPACE && token) {
-      return { ...base, workspaceInviteToken: token };
-    }
-    if (variant === InviteTokenType.INSTANCE && token) {
-      return { ...base, instanceInviteToken: token };
-    }
-    if (variant === InviteTokenType.BOOTSTRAP && token) {
-      return { ...base, bootstrapToken: token };
-    }
-    // OPEN — no token fields
-    return base;
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -263,62 +234,89 @@ export function JoinForm({ variant, token, workspaceName, onSuccess }: JoinFormP
         </header>
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            <Field
-              label="Username"
-              value={username}
-              onChange={setUsername}
-              placeholder="yourname"
-              required
+          {method === "key" ? (
+            <KeySignupForm
+              tokens={tokenFields(variant, token)}
+              workspaceId={variant === InviteTokenType.WORKSPACE ? workspaceId : undefined}
+              onSuccess={onSuccess}
+              onBusyChange={setKeySignupBusy}
             />
-            <Field
-              label="Email"
-              value={email}
-              onChange={(v) => {
-                setEmail(v);
-                // Clear inline error on edit so the user isn't blocked while typing.
-                if (emailError) setEmailError(null);
-              }}
-              placeholder="you@example.com"
-              type="email"
-              error={emailError}
-              required
-            />
-            <Field
-              label="Password"
-              value={password}
-              onChange={setPassword}
-              placeholder="password"
-              type="password"
-              hint="8 character minimum"
-            />
-            <Field
-              label="Display name (optional)"
-              value={displayName}
-              onChange={(v) => {
-                setDisplayName(v);
-                // Clear the inline error while the user edits.
-                if (displayNameError) setDisplayNameError(null);
-              }}
-              placeholder=""
-              hint="If left blank, your username will be shown."
-              error={displayNameError}
-            />
-            {(formError || signup.error) && !emailError && (
-              <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                {formError ??
-                  (signup.error instanceof Error ? signup.error.message : "Registration failed.")}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={signup.isPending || !canSubmit}
-              className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
-            >
-              {signup.isPending ? "Creating account..." : "Create account"}
-            </button>
-          </form>
+          ) : (
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              <JoinField
+                label="Username"
+                value={username}
+                onChange={setUsername}
+                placeholder="yourname"
+                required
+              />
+              <JoinField
+                label="Email"
+                value={email}
+                onChange={(v) => {
+                  setEmail(v);
+                  // Clear inline error on edit so the user isn't blocked while typing.
+                  if (emailError) setEmailError(null);
+                }}
+                placeholder="you@example.com"
+                type="email"
+                error={emailError}
+                required
+              />
+              <JoinField
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                placeholder="password"
+                type="password"
+                hint="8 character minimum"
+              />
+              <JoinField
+                label="Display name (optional)"
+                value={displayName}
+                onChange={(v) => {
+                  setDisplayName(v);
+                  // Clear the inline error while the user edits.
+                  if (displayNameError) setDisplayNameError(null);
+                }}
+                placeholder=""
+                hint="If left blank, your username will be shown."
+                error={displayNameError}
+              />
+              {(formError || signup.error) && !emailError && (
+                <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
+                  {formError ??
+                    (signup.error instanceof Error ? signup.error.message : "Registration failed.")}
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={signup.isPending || !canSubmit}
+                className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
+              >
+                {signup.isPending ? "Creating account..." : "Create account"}
+              </button>
+            </form>
+          )}
         </div>
+
+        {capabilities.deviceKeys && (
+          <div className="space-y-3 text-center">
+            <div className="flex items-center gap-3 text-xs text-rim-text-faint">
+              <span className="flex-1 border-t border-rim-line" />
+              <span>OR</span>
+              <span className="flex-1 border-t border-rim-line" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setMethod(method === "key" ? "password" : "key")}
+              disabled={keySignupBusy}
+              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text disabled:opacity-50"
+            >
+              {method === "key" ? "Create account with a password" : "Create account with a key"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

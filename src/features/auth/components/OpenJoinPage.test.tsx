@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 const mockNavigate = vi.fn();
@@ -23,10 +24,12 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   ) => selector({ workspaceId: null, setWorkspaceId: vi.fn() }),
 }));
 
+const mockSetSession = vi.fn();
+
 vi.mock("../state/useAuthStore", () => ({
   useAuthStore: (
     selector: (s: { session: null; setSession: (s: { userId: string }) => void }) => unknown,
-  ) => selector({ session: null, setSession: vi.fn() }),
+  ) => selector({ session: null, setSession: mockSetSession }),
 }));
 
 const mockUseServerConfig = vi.fn();
@@ -35,11 +38,21 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
+const deviceKeys = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+}));
+
+// The key form has its own tests; the stand-in is in `__mocks__`.
+vi.mock("./KeySignupForm");
+
 import { OpenJoinPage } from "./OpenJoinPage";
 
 describe("OpenJoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deviceKeys.value = false;
   });
 
   function renderPage() {
@@ -88,5 +101,31 @@ describe("OpenJoinPage", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
     // No redirect should have fired yet
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("offers a key signup on the desktop, with no token, and signs the new account in", async () => {
+    deviceKeys.value = true;
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "OPEN" },
+      isPending: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("does not offer a key signup in the web app", () => {
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "OPEN" },
+      isPending: false,
+    });
+    renderPage();
+    expect(screen.queryByRole("button", { name: /create account with a key/i })).toBeNull();
   });
 });

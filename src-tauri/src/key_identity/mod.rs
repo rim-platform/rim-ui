@@ -10,6 +10,8 @@
 //!   and device keys are written to the keyring before the server is asked to enroll them, so
 //!   an enrolled account never ends up without its keys; keys the server never accepted are
 //!   cleaned up later.
+//! - **Key-only signup** uses the same draft for an account that does not exist yet: its keys
+//!   are stored before `signupWithKey` is sent and linked to the new account once it answers.
 //! - **Sign-in** signs a login proof over a server challenge with the device key.
 //! - **Rotation** stores the new identity key as pending until the server's log names it.
 //! - **Recovery** signs a rotation with the recovery key from a kit, for a new identity key and
@@ -404,41 +406,59 @@ impl KeyIdentityState {
         account: &ServerAccount,
         challenge: &Challenge,
     ) -> Result<EnrollmentStatements> {
-        let audience = audience(&account.endpoint)?;
-        // Copied out, so the draft lock is never held together with the store lock.
-        let draft = self
-            .drafts
-            .lock()
-            .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
-            .get(draft_id)
-            .cloned()
-            .ok_or(KeyIdentityError::NoDraft)?;
+        self.sign_draft(
+            draft_id,
+            &account.endpoint,
+            Some(&account.user_id),
+            &account.username,
+            challenge,
+        )
+    }
 
-        let _guard = self.guard()?;
-        let keys = self.keys();
-        keys.put_record(&KeyRecord {
-            v: 1,
-            principal_id: draft.principal_id.clone(),
-            device_id: draft.device_id.clone(),
-            device_name: draft.device_name.clone(),
-            device_seed: draft.device_seed.to_text(),
-            identity_seed: Some(draft.identity_seed.to_text()),
-            pending_identity_seed: None,
-            pending_identity_seq: None,
-            confirmed: false,
-            replaced: None,
-        })?;
-        let mut links = keys.links()?;
-        links.retain(|l| {
-            !(same_endpoint(&l.endpoint, &account.endpoint) && l.principal_id == draft.principal_id)
-        });
-        links.push(AccountLink {
-            endpoint: account.endpoint.clone(),
-            principal_id: draft.principal_id.clone(),
-            user_id: Some(account.user_id.clone()),
-            username: Some(account.username.clone()),
-        });
-        keys.put_links(&links)?;
+    /// Store a draft's keys for a new account named `username` on `endpoint` and sign what
+    /// `signupWithKey` needs. The account has no user id until the server answers; settling
+    /// with the one it returns links the keys to it. A refused attempt removes the keys with
+    /// `remove_draft_keys` and keeps the draft for a retry.
+    pub(crate) fn sign_signup(
+        &self,
+        draft_id: &str,
+        endpoint: &str,
+        username: &str,
+        challenge: &Challenge,
+    ) -> Result<EnrollmentStatements> {
+        let username = username.trim();
+        if username.is_empty() {
+            return Err(KeyIdentityError::Invalid("choose a username".into()));
+        }
+        self.sign_draft(draft_id, endpoint, None, username, challenge)
+    }
+
+    /// Store a draft's keys again for a signup the server took after a failed attempt removed
+    /// them, so the account it created has its keys on this device.
+    pub(crate) fn restore_draft_keys(
+        &self,
+        draft_id: &str,
+        endpoint: &str,
+        username: &str,
+    ) -> Result<()> {
+        audience(endpoint)?;
+        let draft = self.draft(draft_id)?;
+        self.store_draft(&draft, endpoint, None, username.trim())
+    }
+
+    /// Store a draft's keys, linked to the account on `endpoint`, and sign its log, its device
+    /// certificate and a login proof over `challenge`.
+    fn sign_draft(
+        &self,
+        draft_id: &str,
+        endpoint: &str,
+        user_id: Option<&str>,
+        username: &str,
+        challenge: &Challenge,
+    ) -> Result<EnrollmentStatements> {
+        let audience = audience(endpoint)?;
+        let draft = self.draft(draft_id)?;
+        self.store_draft(&draft, endpoint, user_id, username)?;
 
         let proof = statement::login(
             &draft.device_seed,
@@ -457,6 +477,60 @@ impl KeyIdentityState {
         })
     }
 
+    /// Write a draft's keys and link them to the account on `endpoint`. Keys the server has
+    /// already confirmed stay confirmed, and a link that knows the account's user id keeps it.
+    fn store_draft(
+        &self,
+        draft: &Draft,
+        endpoint: &str,
+        user_id: Option<&str>,
+        username: &str,
+    ) -> Result<()> {
+        let _guard = self.guard()?;
+        let keys = self.keys();
+        let confirmed = keys
+            .record(&draft.principal_id)?
+            .is_some_and(|r| r.confirmed);
+        keys.put_record(&KeyRecord {
+            v: 1,
+            principal_id: draft.principal_id.clone(),
+            device_id: draft.device_id.clone(),
+            device_name: draft.device_name.clone(),
+            device_seed: draft.device_seed.to_text(),
+            identity_seed: Some(draft.identity_seed.to_text()),
+            pending_identity_seed: None,
+            pending_identity_seq: None,
+            confirmed,
+            replaced: None,
+        })?;
+        let mut links = keys.links()?;
+        let same = |l: &AccountLink| {
+            same_endpoint(&l.endpoint, endpoint) && l.principal_id == draft.principal_id
+        };
+        let known_user_id = links
+            .iter()
+            .find(|l| same(l))
+            .and_then(|l| l.user_id.clone());
+        links.retain(|l| !same(l));
+        links.push(AccountLink {
+            endpoint: endpoint.to_string(),
+            principal_id: draft.principal_id.clone(),
+            user_id: user_id.map(str::to_string).or(known_user_id),
+            username: Some(username.to_string()),
+        });
+        keys.put_links(&links)
+    }
+
+    /// A copy of a held draft, so the draft lock is never held together with the store lock.
+    fn draft(&self, draft_id: &str) -> Result<Draft> {
+        self.drafts
+            .lock()
+            .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
+            .get(draft_id)
+            .cloned()
+            .ok_or(KeyIdentityError::NoDraft)
+    }
+
     /// Drop a draft the person cancelled or the server refused, with any keys it stored that
     /// the server never confirmed.
     pub(crate) fn discard_enrollment(&self, draft_id: &str) -> Result<()> {
@@ -465,16 +539,32 @@ impl KeyIdentityState {
             .lock()
             .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
             .remove(draft_id);
-        let Some(draft) = draft else {
-            return Ok(());
-        };
-        let _guard = self.guard()?;
-        if let Some(record) = self.keys().record(&draft.principal_id)? {
-            if !record.confirmed {
-                self.keys().forget(&draft.principal_id)?;
-            }
+        match draft {
+            Some(draft) => self.forget_unconfirmed(&draft.principal_id),
+            None => Ok(()),
         }
-        Ok(())
+    }
+
+    /// Remove the keys a draft stored that the server never confirmed, keeping the draft: a
+    /// retry stores and signs the same keys again, so the recovery kit already shown stays
+    /// theirs.
+    pub(crate) fn remove_draft_keys(&self, draft_id: &str) -> Result<()> {
+        let draft = self.draft(draft_id)?;
+        self.forget_unconfirmed(&draft.principal_id)
+    }
+
+    /// Remove keys of `principal_id` the server never confirmed, putting back the confirmed
+    /// keys an unconfirmed recovery replaced, if any. Confirmed keys are left alone.
+    pub(crate) fn forget_unconfirmed(&self, principal_id: &str) -> Result<()> {
+        let _guard = self.guard()?;
+        let keys = self.keys();
+        match keys.record(principal_id)? {
+            Some(record) if !record.confirmed => match record.replaced {
+                Some(previous) => keys.put_record(&previous),
+                None => keys.forget(principal_id),
+            },
+            _ => Ok(()),
+        }
     }
 
     /// Reconcile this device's keys with what the server says about the signed-in account:

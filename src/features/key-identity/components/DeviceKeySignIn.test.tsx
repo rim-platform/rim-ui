@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   listDeviceKeyAccounts: vi.fn(),
   signInWithDeviceKey: vi.fn(),
   forgetDeviceKeys: vi.fn(),
+  forgetKeysTheServerNeverSaw: vi.fn(),
   recoverAccount: vi.fn(),
   defaultDeviceName: vi.fn(),
 }));
@@ -62,6 +63,7 @@ describe("DeviceKeySignIn", () => {
     Object.values(api).forEach((fn) => fn.mockReset());
     api.listDeviceKeyAccounts.mockResolvedValue([alice]);
     api.forgetDeviceKeys.mockResolvedValue(undefined);
+    api.forgetKeysTheServerNeverSaw.mockResolvedValue(false);
   });
 
   it("signs in with this device's key", async () => {
@@ -99,6 +101,35 @@ describe("DeviceKeySignIn", () => {
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove this device's keys/i })).toBeNull();
+    // The server knows these keys' account: they stay.
+    expect(api.forgetKeysTheServerNeverSaw).toHaveBeenCalledWith(alice);
+    expect(screen.getByRole("button", { name: /sign in as alice/i })).toBeInTheDocument();
+  });
+
+  it("removes the keys of a sign-up that never reached the server, and says so", async () => {
+    const unfinished: LocalKeyAccount = {
+      ...alice,
+      principalId: "rimp1_ada",
+      userId: null,
+      username: "ada",
+      confirmed: false,
+    };
+    api.listDeviceKeyAccounts.mockResolvedValue([unfinished]);
+    api.signInWithDeviceKey.mockRejectedValue(new Error("unauthenticated"));
+    api.forgetKeysTheServerNeverSaw.mockImplementation(async () => {
+      api.listDeviceKeyAccounts.mockResolvedValue([]);
+      return true;
+    });
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /sign in as ada/i }));
+
+    expect(api.forgetKeysTheServerNeverSaw).toHaveBeenCalledWith(unfinished);
+    expect(await screen.findByRole("status")).toHaveTextContent(/sign-up of ada never completed/i);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /sign in as ada/i })).toBeNull(),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renders nothing in the web app", () => {

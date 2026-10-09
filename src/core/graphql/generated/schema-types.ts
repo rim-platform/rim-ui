@@ -1629,6 +1629,13 @@ export type Mutation = {
    * On success, sets session and CSRF cookies via `AuthIntent`.
    */
   signupWithInvite: SignupWithInvitePayloadGql;
+  /**
+   * Create an account from a key identity alone: no password, no email. The registration
+   * mode applies as for `signupWithInvite` (exactly one token in invite-only mode, none in
+   * open mode). Signs the new account in on the device that signed up, setting the same
+   * session and CSRF cookies as `signupWithInvite`.
+   */
+  signupWithKey: SignupWithInvitePayloadGql;
   startDeviceLink: StartedDeviceLink;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
@@ -2168,6 +2175,11 @@ export type MutationSetWorkspaceStateArgs = {
 
 export type MutationSignupWithInviteArgs = {
   input: SignupWithInviteInput;
+};
+
+
+export type MutationSignupWithKeyArgs = {
+  input: SignupWithKeyInput;
 };
 
 
@@ -3332,6 +3344,29 @@ export type SignupWithInviteInput = {
 export type SignupWithInvitePayloadGql = {
   serverId?: Maybe<Scalars['ID']['output']>;
   userId: Scalars['ID']['output'];
+};
+
+/**
+ * Input for `signupWithKey`: an account created from a key identity alone, with no password
+ * and no email. The tokens follow the same rules as `signupWithInvite`: exactly one in
+ * invite-only mode, none in open mode.
+ */
+export type SignupWithKeyInput = {
+  bootstrapToken?: InputMaybe<Scalars['String']['input']>;
+  /** Certificate of the device signing up; the new session belongs to it. */
+  device: SignedStatementInput;
+  /**
+   * Optional display name (1–80 chars when present). Falls back to `username` when absent
+   * or blank after trim.
+   */
+  displayName?: InputMaybe<Scalars['String']['input']>;
+  instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
+  /** The whole key log, inception first. */
+  keyLog: Array<SignedStatementInput>;
+  /** A `login` statement signed by that device over a fresh `keyLoginChallenge`. */
+  proof: SignedStatementInput;
+  username: Scalars['String']['input'];
+  workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SkillProfileGql = {

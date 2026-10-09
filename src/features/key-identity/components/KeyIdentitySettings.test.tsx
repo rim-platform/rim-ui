@@ -166,6 +166,24 @@ describe("KeyIdentitySettings", () => {
     expect(await screen.findByRole("button", { name: /copied/i })).toBeInTheDocument();
   });
 
+  it("says when the kit could not be copied", async () => {
+    api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
+    api.beginEnrollment.mockResolvedValue(draft);
+    renderSettings();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /create keys/i }));
+    await screen.findByLabelText("Recovery phrase");
+
+    // userEvent installs its own clipboard; stub after it, and click without it.
+    stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
+    fireEvent.click(screen.getByRole("button", { name: /copy kit/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not copy/i);
+  });
+
   it("gives up on the started keys when the user cancels", async () => {
     api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
     api.beginEnrollment.mockResolvedValue(draft);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -79,6 +79,15 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
   ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
 }));
+
+const deviceKeys = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+}));
+
+// The key form has its own tests; the stand-in is in `__mocks__`.
+vi.mock("./KeySignupForm");
 
 import { JoinPage } from "./JoinPage";
 
@@ -393,5 +402,68 @@ describe("JoinPage", () => {
     expect(
       screen.getByText("You already have a RIM account; instance invites are only for new users."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("JoinPage — create account with a key (desktop)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession = null;
+    deviceKeys.value = true;
+    mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
+  });
+
+  afterEach(() => {
+    deviceKeys.value = false;
+  });
+
+  function renderAtPath(path: string) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/join/:token" element={<JoinPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("workspace token: signs up with workspaceInviteToken and opens the workspace", async () => {
+    const user = userEvent.setup();
+    renderAtPath("/join/ws-token-abc");
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
+      workspaceInviteToken: "ws-token-abc",
+    });
+    // The preview's workspace, for an account whose answer was lost.
+    expect(screen.getByTestId("key-signup-workspace")).toHaveTextContent("server-1");
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
+    expect(mockSetWorkspaceId).toHaveBeenCalledWith("server-key");
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+    expect(mockSignupMutate).not.toHaveBeenCalled();
+  });
+
+  it("bootstrap token: signs up with bootstrapToken and lands with no workspace", async () => {
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const user = userEvent.setup();
+    renderAtPath("/join/boot-token-abc");
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
+      bootstrapToken: "boot-token-abc",
+    });
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
+    expect(mockSetWorkspaceId).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 });
