@@ -22,6 +22,16 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown; }
 };
 
+export type AddWorkspacePluginInput = {
+  /** Only for a bundle source; omitted, this server's copy, which must have been uploaded. */
+  bundleUrl?: InputMaybe<Scalars['String']['input']>;
+  /** Required when the publisher is not enrolled on this server. */
+  publisherKeyLog?: InputMaybe<Array<SignedStatementInput>>;
+  serverId: Scalars['ID']['input'];
+  statement: SignedStatementInput;
+  status: WorkspacePluginStatus;
+};
+
 export type AdvanceIncidentPhaseInput = {
   incidentId: Scalars['ID']['input'];
   nextPhase: IncidentPhaseNameGql;
@@ -1438,6 +1448,8 @@ export type Mutation = {
   addDeviceKey: DeviceKey;
   /** Add a rotation layer to a schedule. Owner-only. */
   addRotationLayer: RotationLayerGql;
+  /** Add the statement's plugin to the workspace's registry. Owner or Moderator. */
+  addWorkspacePlugin: WorkspacePlugin;
   advanceIncidentPhase: IncidentPhaseGql;
   /**
    * Remove a member and block them from re-joining until `expiresAt` (or until unbanned
@@ -1552,6 +1564,8 @@ export type Mutation = {
   removeConversationMember: Scalars['Boolean']['output'];
   /** Remove a rotation layer (cascades to its participants). Owner-only. */
   removeRotationLayer: Scalars['Boolean']['output'];
+  /** Remove an entry from the workspace's registry. Owner or Moderator. */
+  removeWorkspacePlugin: Scalars['Boolean']['output'];
   replyToMessage: Message;
   /**
    * Report a message to the workspace moderators. Any member who can read it, once per
@@ -1716,6 +1730,8 @@ export type Mutation = {
    */
   updateRotationLayer: RotationLayerGql;
   updateUserCommand: Command;
+  /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
+  updateWorkspacePlugin: WorkspacePlugin;
 };
 
 
@@ -1742,6 +1758,11 @@ export type MutationAddRotationLayerArgs = {
   name: Scalars['String']['input'];
   priority: Scalars['Int']['input'];
   scheduleId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddWorkspacePluginArgs = {
+  input: AddWorkspacePluginInput;
 };
 
 
@@ -2050,6 +2071,12 @@ export type MutationRemoveRotationLayerArgs = {
 };
 
 
+export type MutationRemoveWorkspacePluginArgs = {
+  pluginId: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationReplyToMessageArgs = {
   input: ReplyToMessageInput;
 };
@@ -2317,6 +2344,11 @@ export type MutationUpdateUserCommandArgs = {
   input: UpdateUserCommandInput;
 };
 
+
+export type MutationUpdateWorkspacePluginArgs = {
+  input: UpdateWorkspacePluginInput;
+};
+
 export type MuteConversationInput = {
   conversationId: Scalars['ID']['input'];
   mutedUntil?: InputMaybe<Scalars['DateTime']['input']>;
@@ -2553,6 +2585,40 @@ export enum PipelineTriggerKindGql {
   WORKSPACE_STATE_CHANGED = 'WORKSPACE_STATE_CHANGED'
 }
 
+export enum PluginRuntimeKind {
+  DESKTOP_LOCAL_PROCESS = 'DESKTOP_LOCAL_PROCESS',
+  WEB_SANDBOXED = 'WEB_SANDBOXED'
+}
+
+export enum PluginSignatureStatus {
+  /**
+   * The publisher recovered their key after the statement's `keySeq`: clients refuse new
+   * installs and updates of the entry.
+   */
+  PUBLISHER_RECOVERED = 'PUBLISHER_RECOVERED',
+  VALID = 'VALID'
+}
+
+/**
+ * Where an entry's code comes from: the bundle fields for `BUNDLE`, the git fields for `GIT`.
+ * Hashes are lowercase hex.
+ */
+export type PluginSource = {
+  bundleSha256?: Maybe<Scalars['String']['output']>;
+  bundleSize?: Maybe<Scalars['Int']['output']>;
+  /** Where to fetch the bundle. Not signed: the hash decides whether the bytes are right. */
+  bundleUrl?: Maybe<Scalars['String']['output']>;
+  gitCommit?: Maybe<Scalars['String']['output']>;
+  gitTreeSha256?: Maybe<Scalars['String']['output']>;
+  gitUrl?: Maybe<Scalars['String']['output']>;
+  kind: PluginSourceKind;
+};
+
+export enum PluginSourceKind {
+  BUNDLE = 'BUNDLE',
+  GIT = 'GIT'
+}
+
 export enum PresenceStatus {
   AWAY = 'AWAY',
   OFFLINE = 'OFFLINE',
@@ -2731,6 +2797,8 @@ export type Query = {
    * entry per known feature, defaults filled in.
    */
   workspaceFeatures: Array<WorkspaceFeatureState>;
+  /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
+  workspacePlugins: Array<WorkspacePlugin>;
   workspacePresence: Array<UserPresenceGql>;
   workspaceState?: Maybe<WorkspaceStateEntryGql>;
   workspaceStateList: Array<WorkspaceStateEntryGql>;
@@ -3074,6 +3142,11 @@ export type QueryWhoIsOnCallArgs = {
 
 
 export type QueryWorkspaceFeaturesArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryWorkspacePluginsArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3593,6 +3666,16 @@ export type UpdateUserCommandInput = {
   title: Scalars['String']['input'];
 };
 
+export type UpdateWorkspacePluginInput = {
+  bundleUrl?: InputMaybe<Scalars['String']['input']>;
+  pluginId: Scalars['String']['input'];
+  publisherKeyLog?: InputMaybe<Array<SignedStatementInput>>;
+  serverId: Scalars['ID']['input'];
+  /** A new version, or a re-signed one, of the same plugin. */
+  statement?: InputMaybe<SignedStatementInput>;
+  status?: InputMaybe<WorkspacePluginStatus>;
+};
+
 export type UploadTicket = {
   attachmentId: Scalars['ID']['output'];
   expiresAt?: Maybe<Scalars['DateTime']['output']>;
@@ -3655,6 +3738,40 @@ export type WorkspaceInvitePreviewGql = {
   serverId: Scalars['ID']['output'];
   serverName: Scalars['String']['output'];
 };
+
+export type WorkspacePlugin = {
+  approvedAt: Scalars['DateTime']['output'];
+  /** Who approved the entry last; null once that account is deleted. */
+  approvedBy?: Maybe<User>;
+  displayName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  /** The exact text of `rim-plugin.json` inside the statement. */
+  manifest: Scalars['String']['output'];
+  pluginId: Scalars['String']['output'];
+  /**
+   * This server's key log of the publisher when they are enrolled here, else the one stored
+   * with the entry.
+   */
+  publisherKeyLog: Array<SignedStatement>;
+  publisherKeySeq: Scalars['Int']['output'];
+  /** Chosen by the publisher: it proves nothing about who they are. */
+  publisherName: Scalars['String']['output'];
+  publisherPrincipalId: Scalars['String']['output'];
+  runtimeKind: PluginRuntimeKind;
+  serverId: Scalars['ID']['output'];
+  signatureStatus: PluginSignatureStatus;
+  source: PluginSource;
+  statement: SignedStatement;
+  status: WorkspacePluginStatus;
+  updatedAt: Scalars['DateTime']['output'];
+  version: Scalars['String']['output'];
+};
+
+export enum WorkspacePluginStatus {
+  RECOMMENDED = 'RECOMMENDED',
+  /** Offered to every member when the workspace opens; never installed without consent. */
+  REQUIRED = 'REQUIRED'
+}
 
 export type WorkspaceStateEntryGql = {
   createdAt: Scalars['DateTime']['output'];
