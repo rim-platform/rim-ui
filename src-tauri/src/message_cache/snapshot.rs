@@ -289,7 +289,9 @@ mod tests {
             let store = open(dir.path(), "alice");
             store
                 .conn
-                .execute_batch("DROP TABLE snapshot; PRAGMA user_version = 3;")
+                .execute_batch(
+                    "DROP TABLE snapshot; DROP TABLE mls_storage; PRAGMA user_version = 3;",
+                )
                 .unwrap();
         }
 
@@ -298,7 +300,7 @@ mod tests {
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, crate::message_cache::store::SCHEMA_VERSION);
         // The archive's v3 tables are still there.
         let counter: i64 = store
             .conn

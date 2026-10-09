@@ -104,6 +104,9 @@ A user who signed in on this device before can open the app without a connection
   is answered from its snapshot (`src/features/offline/api/offlineSnapshot.ts`). Those queries
   and the timeline run with TanStack Query's `offlineFirst` network mode, so they still try
   (and fall back) while the OS reports no network.
+- Schema v5 adds `mls_storage`, the MLS group state of end-to-end encrypted conversations
+  (`rim_mls`, see `rim-mls.md`): in the same encrypted file, so decrypting a message, storing its
+  plaintext and advancing the group's ratchet commit in one transaction. It is never archived.
 - While offline a banner says so and sending is off (typing still works). Writes fail at once
   instead of waiting to be replayed: mutations run with the `always` network mode.
 - Offline mode re-checks the session on a timer that starts at 15 seconds and doubles after each

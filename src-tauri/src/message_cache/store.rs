@@ -11,7 +11,7 @@ use super::snapshot::SCHEMA_SNAPSHOT;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-const SCHEMA_VERSION: i32 = 4;
+pub(super) const SCHEMA_VERSION: i32 = 5;
 
 /// Schema v1: the cache (PR 9).
 ///
@@ -189,6 +189,11 @@ BEGIN
 END;
 ";
 
+/// Schema v5: MLS group state of the end-to-end encrypted conversations (`rim_mls`), in the same
+/// encrypted file as the messages, so decrypting a message, storing its plaintext and advancing
+/// the group's ratchet commit in one transaction. Never archived.
+const SCHEMA_MLS: &str = rim_mls::SCHEMA;
+
 /// An open cache database of one account.
 pub(crate) struct CacheStore {
     pub(super) conn: Connection,
@@ -252,6 +257,7 @@ impl CacheStore {
             (2, SCHEMA_V2),
             (3, SCHEMA_V3),
             (4, SCHEMA_SNAPSHOT),
+            (5, SCHEMA_MLS),
         ] {
             if version < target {
                 let tx = self.conn.unchecked_transaction()?;
