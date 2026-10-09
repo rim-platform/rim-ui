@@ -7,6 +7,10 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: vi.fn(),
 }));
 
+vi.mock("../registry/components/RegistryNotes", () => ({ RegistryNotes: () => null }));
+vi.mock("../registry/signing", () => ({
+  usePluginSigning: () => ({ canSign: false, identity: undefined }),
+}));
 vi.mock("../api/usePluginList", () => ({
   usePluginList: vi.fn(() => ({ data: [], isLoading: false })),
 }));

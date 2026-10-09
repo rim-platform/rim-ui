@@ -16,6 +16,10 @@ export interface BundleInstall {
   source: PluginInstallSource;
   /** Replace an installed plugin of the same id. */
   replace: boolean;
+  /** The signed manifest the bundle's `rim-plugin.json` must equal byte for byte. */
+  manifest?: string;
+  /** Keep the replaced copy's approvals and state: an update that asks for nothing new. */
+  keepApprovals?: boolean;
 }
 
 /** The host's services, plus installing bundles and the agent's consent gate. */
@@ -25,6 +29,8 @@ export interface PluginServices extends HostServices {
   checkAiConsent(pluginId: string, commandId: string): Promise<void>;
   /** Every provisional-to-key principal mapping this device knows. */
   mappings(): Promise<PrincipalMapping[]>;
+  /** Make a registry install a local one: no registry source and no updates. */
+  detachRegistry(pluginId: string): Promise<void>;
 }
 
 /**
@@ -89,14 +95,20 @@ export const desktopPluginServices: PluginServices = {
     if (!result.ok) throw toRpcError(result.error);
   },
 
-  installBundle({ bytes, sha256, source, replace }) {
+  installBundle({ bytes, sha256, source, replace, manifest, keepApprovals }) {
     return invokeOrThrow<PluginInstallResult>("plugin_install_bundle", {
       bundle: encodeBase64(bytes),
       sha256,
       source,
       replace,
+      manifest: manifest ?? null,
+      keepApprovals: keepApprovals === true,
       forbiddenOrigins: rimOrigins(),
     });
+  },
+
+  async detachRegistry(pluginId) {
+    await invokeOrThrow<null>("plugin_detach_registry", { pluginId });
   },
 
   async checkAiConsent(pluginId, commandId) {

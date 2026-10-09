@@ -7,6 +7,7 @@ import {
   GitBranch,
   AlertTriangle,
   ShieldCheck,
+  PenLine,
 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
@@ -25,6 +26,9 @@ import { InstallFromLink } from "./InstallFromLink";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
+import { RegistryNotes } from "../registry/components/RegistryNotes";
+import { SignAndPublishDialog } from "../registry/components/SignAndPublishDialog";
+import { usePluginSigning } from "../registry/signing";
 import {
   parsePostInstallConsent,
   runtimeKind,
@@ -68,6 +72,8 @@ export function PluginSettingsPage() {
   const installFromLocal = usePluginInstallFromLocal();
   const installFromGit = usePluginInstallFromGit();
   const trustFingerprint = usePluginTrustFingerprint();
+  const signing = usePluginSigning();
+  const [signTarget, setSignTarget] = useState<PluginInfo | null>(null);
 
   const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
   // A plugin just installed: its permission prompt opens once it is in the list,
@@ -286,6 +292,8 @@ export function PluginSettingsPage() {
         </p>
       )}
 
+      <RegistryNotes />
+
       {/* Plugin list or empty state */}
       {!plugins || plugins.length === 0 ? (
         <PluginEmptyState desktop={desktop} />
@@ -302,6 +310,7 @@ export function PluginSettingsPage() {
                 onUninstall={handleUninstall}
                 onPermissions={setPermissionsTarget}
                 onTrustFingerprint={handleTrustFingerprint}
+                onSign={desktop && signing.canSign ? setSignTarget : undefined}
                 trustPending={
                   trustFingerprint.isPending && trustFingerprint.variables === plugin.plugin_id
                 }
@@ -317,6 +326,14 @@ export function PluginSettingsPage() {
           isPending={installFromGit.isPending}
           onConfirm={() => runGitInstall(consentRequest.url, true)}
           onCancel={() => setConsentRequest(null)}
+        />
+      )}
+
+      {signTarget && signing.identity && (
+        <SignAndPublishDialog
+          plugin={signTarget}
+          identity={signing.identity}
+          onClose={() => setSignTarget(null)}
         />
       )}
 
@@ -344,6 +361,8 @@ interface PluginRowProps {
   onUninstall: (pluginId: string) => void;
   onPermissions: (plugin: PluginInfo) => void;
   onTrustFingerprint: (pluginId: string) => void;
+  /** Present when this device can sign plugins with the account's identity key. */
+  onSign?: (plugin: PluginInfo) => void;
   trustPending: boolean;
 }
 
@@ -364,6 +383,7 @@ function PluginRow({
   onUninstall,
   onPermissions,
   onTrustFingerprint,
+  onSign,
   trustPending,
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
@@ -414,6 +434,12 @@ function PluginRow({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {onSign && (
+            <Button variant="ghost" size="sm" onClick={() => onSign(plugin)}>
+              <PenLine className="mr-1 h-3.5 w-3.5" />
+              Sign and publish…
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => onPermissions(plugin)}>
             Permissions
           </Button>

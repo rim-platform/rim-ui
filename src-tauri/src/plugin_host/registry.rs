@@ -406,6 +406,28 @@ pub async fn plugin_export_signature(
     .map_err(locked)?
 }
 
+/// Make a registry install a local one, with no registry source and no updates: the person
+/// kept it after its workspace removed the entry.
+#[tauri::command]
+pub fn plugin_detach_registry(
+    plugin_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), RegistryError> {
+    let mut store = state.store.lock().map_err(locked)?;
+    let record = store
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| invalid(format!("plugin not found: {plugin_id}")))?;
+    if matches!(record.source, Some(InstallSource::Registry { .. })) {
+        store.upsert(PluginRecord {
+            source: Some(InstallSource::Local),
+            ..record
+        });
+        store.save(&state.state_path)?;
+    }
+    Ok(())
+}
+
 // ─── Installing a git source at its commit ──────────────────────────────────
 
 /// Fetch `commit` of `url` into a new directory, checked out detached, with `origin` set.

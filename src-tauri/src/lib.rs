@@ -142,6 +142,7 @@ pub fn run() {
             plugin_host::registry::plugin_pick_signing_bundle,
             plugin_host::registry::plugin_export_signature,
             plugin_host::registry::plugin_install_registry_git,
+            plugin_host::registry::plugin_detach_registry,
             agent_proxy::agent_chat_completion,
             agent_proxy::agent_validate_credentials,
             agent_proxy::agent_validate_provided_key,

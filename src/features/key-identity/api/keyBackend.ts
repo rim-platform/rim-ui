@@ -13,6 +13,12 @@ import type {
 } from "../../../core/graphql/generated/schema-types";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { browserKeyBackend } from "../browser/browserKeyBackend";
+import {
+  replayHistory,
+  verifyPluginManifest as verifyInBrowser,
+  type SignedPluginSource,
+  type VerifiedPluginManifest,
+} from "../browser/pluginManifest";
 
 /** An account on this server that this device holds keys for. */
 export interface LocalKeyAccount {
@@ -128,4 +134,45 @@ export const tauriKeyBackend: KeyBackend = {
 /** The backend of this platform: the Tauri side when it is there, the browser otherwise. */
 export function keyBackend(): KeyBackend {
   return isTauri() ? tauriKeyBackend : browserKeyBackend;
+}
+
+/**
+ * Verify a plugin manifest statement against its publisher's key log: in the Tauri host on
+ * the desktop, with WebCrypto in the web app. Refuses with the rule that failed.
+ */
+export async function verifyPluginManifest(
+  statement: SignedStatementInput,
+  keyLog: SignedStatementInput[],
+): Promise<VerifiedPluginManifest> {
+  if (isTauri()) {
+    return keyCommand<VerifiedPluginManifest>("key_identity_verify_plugin_manifest", {
+      statement,
+      keyLog,
+    });
+  }
+  return verifyInBrowser(await replayHistory(keyLog), statement);
+}
+
+/** What a publisher chooses for a plugin manifest statement; the rest comes from the key log. */
+export interface PluginManifestInput {
+  publisherName: string;
+  /** The exact text of `rim-plugin.json`. */
+  manifest: string;
+  source: SignedPluginSource;
+}
+
+/**
+ * Sign a plugin manifest statement with the identity key at the head of `keyLog`, on the
+ * Tauri side. The web app holds no identity key, so it never signs.
+ */
+export function signPluginManifest(
+  principalId: string,
+  keyLog: SignedStatementInput[],
+  input: PluginManifestInput,
+): Promise<SignedStatementInput> {
+  return keyCommand<SignedStatementInput>("key_identity_sign_plugin_manifest", {
+    principalId,
+    keyLog,
+    input,
+  });
 }
