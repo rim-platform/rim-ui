@@ -4,7 +4,14 @@ import { Shield } from "lucide-react";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { useApproveCapabilities } from "../api/usePluginCapabilities";
-import { parsePluginCapabilities, type PluginInfo, type PluginCapability } from "../types";
+import {
+  parsePluginCapabilities,
+  runtimeKind,
+  type PluginInfo,
+  type PluginCapability,
+  type PluginRuntimeKind,
+} from "../types";
+import { parseNetworkOrigin, siteOf } from "../web/manifestRules";
 
 const capabilityLabels: Record<PluginCapability, string> = {
   "chat.read": "Read Chat Messages",
@@ -16,6 +23,7 @@ const capabilityLabels: Record<PluginCapability, string> = {
   "fs.write": "Write Files",
   "ui.notify": "Show Notifications",
   "ui.panel": "Render UI Panels",
+  "network.fetch": "Connect to listed sites",
 };
 
 const capabilityDescriptions: Record<PluginCapability, string> = {
@@ -28,7 +36,32 @@ const capabilityDescriptions: Record<PluginCapability, string> = {
   "fs.write": "Create, modify, and delete files on your device",
   "ui.notify": "Show desktop notifications",
   "ui.panel": "Render custom UI panels inside the workspace",
+  "network.fetch": "Send and receive data from the sites the plugin lists",
 };
+
+/** What kind of plugin this is, in the app's words, above the permissions it asks for. */
+export const KIND_CONSENT_TEXT: Record<PluginRuntimeKind, string> = {
+  WebSandboxed:
+    "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below.",
+  DesktopLocalProcess:
+    "Runs as a program on this computer with your account's access. It is not sandboxed: it can read your files and use the network whatever you approve below. Install it only if you trust its author.",
+};
+
+/** The sites `network.fetch` reaches, as a person reads them: no scheme, no default port. */
+export function listedSites(origins: readonly string[]): string[] {
+  return origins.map((origin) => {
+    try {
+      return siteOf(parseNetworkOrigin(origin));
+    } catch {
+      return origin;
+    }
+  });
+}
+
+/** The prompt's `network.fetch` line, naming every listed site. */
+export function networkFetchText(origins: readonly string[]): string {
+  return `send and receive data from ${listedSites(origins).join(", ")}. Anything you show this plugin can be sent to these sites.`;
+}
 
 /** How much of a plugin's description the permission prompt shows. */
 const MAX_DESCRIPTION_LENGTH = 600;
@@ -98,6 +131,10 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           </figure>
         )}
 
+        <p className="rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-xs text-rim-text">
+          {KIND_CONSENT_TEXT[runtimeKind(plugin)]}
+        </p>
+
         <p className="text-xs text-rim-text-muted">
           {parsedCapabilities.length > 0
             ? "This plugin requests the following permissions. Uncheck any you want to deny."
@@ -116,10 +153,19 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
                 onChange={() => toggleCapability(cap)}
                 className="mt-0.5 accent-rim-accent"
               />
-              <div>
-                <p className="text-sm text-rim-text">{capabilityLabels[cap] ?? cap}</p>
-                <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
-              </div>
+              {cap === "network.fetch" ? (
+                <p className="text-sm text-rim-text">
+                  <span className="font-medium">{capabilityLabels[cap]}:</span>{" "}
+                  <span className="text-rim-text-muted">
+                    {networkFetchText(plugin.network_origins ?? [])}
+                  </span>
+                </p>
+              ) : (
+                <div>
+                  <p className="text-sm text-rim-text">{capabilityLabels[cap] ?? cap}</p>
+                  <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
+                </div>
+              )}
             </label>
           ))}
         </div>

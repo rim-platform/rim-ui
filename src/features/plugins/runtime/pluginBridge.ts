@@ -61,6 +61,8 @@ interface BridgeConfig {
   pluginName?: string;
   approvedCapabilities: PluginCapability[];
   iframe: HTMLIFrameElement;
+  /** Messages a minute the panel may send; the rest are dropped. Unlimited when left out. */
+  maxMessagesPerMinute?: number;
 }
 
 /** How long a request id from a panel may be, so it cannot flood the reply. */
@@ -69,6 +71,20 @@ const MAX_REQUEST_ID_LENGTH = 100;
 export function createPluginBridge(config: BridgeConfig) {
   const { pluginId, approvedCapabilities, iframe } = config;
   const pluginName = config.pluginName ?? pluginId;
+  let windowStart = Date.now();
+  let windowCount = 0;
+
+  /** Count one message against the per-minute limit; false once it is over. */
+  function withinLimit(): boolean {
+    if (config.maxMessagesPerMinute === undefined) return true;
+    const now = Date.now();
+    if (now - windowStart >= 60_000) {
+      windowStart = now;
+      windowCount = 0;
+    }
+    windowCount += 1;
+    return windowCount <= config.maxMessagesPerMinute;
+  }
 
   function handleMessage(event: MessageEvent) {
     // Strict origin validation — sandboxed iframes without allow-same-origin report origin "null"
@@ -76,6 +92,8 @@ export function createPluginBridge(config: BridgeConfig) {
 
     // Verify source is our iframe (lookup plugin_id from event.source, NOT message payload)
     if (event.source !== iframe.contentWindow) return;
+
+    if (!withinLimit()) return;
 
     const msg = event.data as PluginToHostMessage;
     if (!msg || typeof msg.type !== "string") return;

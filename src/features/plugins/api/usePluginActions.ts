@@ -1,16 +1,27 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "../../../core/query/keys";
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { reloadCommands } from "../../commands/api/useCommands";
 import { safeInvoke, type PluginIpcError } from "./ipc";
 import { safeInvoke as coreSafeInvoke } from "../../../core/tauri/safeInvoke";
 import type { PluginInstallResult } from "../types";
+import { browserPluginStore } from "../web/browserPluginStore";
+import { readBundle, type Bundle } from "../web/bundle";
+import { fetchBundle, parseBundleLink, type BundleLink } from "../web/bundleLink";
+import { checkInstall } from "../web/manifestRules";
+import { rimOrigins } from "../web/pluginServices";
+import { pluginServices } from "../web/webPluginEnvironment";
 
 export function usePluginEnable() {
   const qc = useQueryClient();
+  const { platform } = useRuntime();
 
   return useMutation<void, PluginIpcError, string>({
-    mutationFn: (pluginId) => safeInvoke("plugin_enable", { pluginId }),
+    mutationFn: (pluginId) =>
+      platform === "web"
+        ? browserPluginStore.enable(pluginId)
+        : safeInvoke("plugin_enable", { pluginId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
       reloadCommands();
@@ -20,9 +31,13 @@ export function usePluginEnable() {
 
 export function usePluginDisable() {
   const qc = useQueryClient();
+  const { platform } = useRuntime();
 
   return useMutation<void, PluginIpcError, string>({
-    mutationFn: (pluginId) => safeInvoke("plugin_disable", { pluginId }),
+    mutationFn: (pluginId) =>
+      platform === "web"
+        ? browserPluginStore.disable(pluginId)
+        : safeInvoke("plugin_disable", { pluginId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
       reloadCommands();
@@ -32,9 +47,13 @@ export function usePluginDisable() {
 
 export function usePluginUninstall() {
   const qc = useQueryClient();
+  const { platform } = useRuntime();
 
   return useMutation<void, PluginIpcError, string>({
-    mutationFn: (pluginId) => safeInvoke("plugin_uninstall", { pluginId }),
+    mutationFn: (pluginId) =>
+      platform === "web"
+        ? browserPluginStore.uninstall(pluginId)
+        : safeInvoke("plugin_uninstall", { pluginId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
       reloadCommands();
@@ -58,6 +77,7 @@ export function usePluginInstallFromLocal() {
     mutationFn: async (path) => {
       const result = await coreSafeInvoke<PluginInstallResult>("plugin_install_from_local", {
         path,
+        forbiddenOrigins: rimOrigins(),
       });
       if (!result.ok) {
         if (result.error.kind === "ipc_unavailable") return undefined;
@@ -107,6 +127,7 @@ export function usePluginInstallFromGit() {
         url,
         branch: branch ?? null,
         allowPostInstall: allowPostInstall === true,
+        forbiddenOrigins: rimOrigins(),
       });
       if (!result.ok) {
         if (result.error.kind === "ipc_unavailable") return undefined;
@@ -136,6 +157,46 @@ export function usePluginTrustFingerprint() {
     mutationFn: (pluginId) => safeInvoke("plugin_trust_fingerprint", { pluginId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
+    },
+  });
+}
+
+/** A bundle fetched from a pasted link and checked, waiting for the user to install it. */
+export interface FetchedLinkBundle {
+  link: BundleLink;
+  bytes: Uint8Array;
+  bundle: Bundle;
+}
+
+/**
+ * Fetch the bundle a pasted `…#sha256=…` link names and check it: the hash, the
+ * bundle rules and the manifest rules of this host. Nothing is installed yet,
+ * so the UI can show what it is, and what changed when it replaces a plugin.
+ */
+export async function fetchLinkBundle(input: string): Promise<FetchedLinkBundle> {
+  const link = parseBundleLink(input);
+  const bytes = await fetchBundle(link.url, link.sha256);
+  const bundle = readBundle(bytes);
+  checkInstall(bundle.manifest, { forbiddenOrigins: rimOrigins() });
+  return { link, bytes, bundle };
+}
+
+/** Install a bundle fetched from a link; `replace` installs over the same plugin id. */
+export function usePluginInstallFromLink() {
+  const qc = useQueryClient();
+  const { platform } = useRuntime();
+
+  return useMutation<PluginInstallResult, Error, { fetched: FetchedLinkBundle; replace: boolean }>({
+    mutationFn: ({ fetched, replace }) =>
+      pluginServices(platform).installBundle({
+        bytes: fetched.bytes,
+        sha256: fetched.link.sha256,
+        source: { kind: "link", url: fetched.link.url, sha256: fetched.link.sha256 },
+        replace,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.plugins() });
+      reloadCommands();
     },
   });
 }

@@ -236,11 +236,17 @@ export class BrowserPluginStore implements PluginServices {
     return this.update(pluginId, (r) => ({ ...r, status: "disabled" }));
   }
 
-  /** Grant `capabilities`, the subset the user approved of those the manifest asks for. */
+  /** Add `capabilities` to those approved; each must be one the manifest asks for, as on the desktop. */
   approveCapabilities(pluginId: string, capabilities: string[]): Promise<void> {
     return this.update(pluginId, (r) => {
       const asked = parseManifestText(r.manifestText).capabilities;
-      return { ...r, approvedCapabilities: capabilities.filter((c) => asked.includes(c)) };
+      const unknown = capabilities.find((c) => !asked.includes(c));
+      if (unknown !== undefined) throw new Error(`capability not requested by plugin: ${unknown}`);
+      const approved = [...r.approvedCapabilities];
+      for (const capability of capabilities) {
+        if (!approved.includes(capability)) approved.push(capability);
+      }
+      return { ...r, approvedCapabilities: approved };
     });
   }
 

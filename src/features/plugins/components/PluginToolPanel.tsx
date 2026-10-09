@@ -22,7 +22,7 @@ export function PluginToolPanel() {
   const enable = usePluginEnable();
   const disable = usePluginDisable();
 
-  if (!capabilities.pluginHost) {
+  if (!capabilities.pluginHost && !capabilities.webPlugins) {
     return (
       <p className="px-2 py-4 text-sm text-rim-text-muted">
         Plugins are only available in the desktop app.

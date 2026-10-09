@@ -2,7 +2,14 @@ import { useMemo } from "react";
 import { X, Puzzle } from "lucide-react";
 
 import { PluginPanel } from "./PluginPanel";
-import { parsePluginCapabilities, type PluginInfo, type PluginPanelDef } from "../types";
+import { kindLabel, trustBadge } from "./pluginTrust";
+import { WebPluginPanel } from "../web/WebPluginPanel";
+import {
+  parsePluginCapabilities,
+  runtimeKind,
+  type PluginInfo,
+  type PluginPanelDef,
+} from "../types";
 
 interface PluginSlotContainerProps {
   plugin: PluginInfo;
@@ -16,13 +23,18 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
     () => parsePluginCapabilities(plugin.approved_capabilities),
     [plugin.approved_capabilities],
   );
+  const web = runtimeKind(plugin) === "WebSandboxed";
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-rim-line px-3">
-        <div className="flex items-center gap-2">
-          <Puzzle className="h-4 w-4 text-rim-accent" />
-          <span className="text-sm font-medium text-rim-text">{panel.title}</span>
+      {/* Header: the host's chrome names the plugin and how far to trust it, so a
+          plugin cannot pass its panel off as part of the app. */}
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-rim-line px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Puzzle className="h-4 w-4 shrink-0 text-rim-accent" />
+          <span className="truncate text-sm font-medium text-rim-text">{panel.title}</span>
+          <span className="truncate text-[11px] text-rim-text-muted" title={trustBadge(plugin)}>
+            {plugin.display_name} · {kindLabel(plugin)} · {trustBadge(plugin)}
+          </span>
         </div>
         <button
           type="button"
@@ -37,13 +49,23 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
 
       {/* Plugin iframe */}
       <div className="min-h-0 flex-1">
-        <PluginPanel
-          pluginId={plugin.plugin_id}
-          panelId={panel.id}
-          pluginName={plugin.display_name}
-          approvedCapabilities={approvedCapabilities}
-          onClose={onClose}
-        />
+        {web ? (
+          <WebPluginPanel
+            pluginId={plugin.plugin_id}
+            panelId={panel.id}
+            pluginName={plugin.display_name}
+            approvedCapabilities={approvedCapabilities}
+            onClose={onClose}
+          />
+        ) : (
+          <PluginPanel
+            pluginId={plugin.plugin_id}
+            panelId={panel.id}
+            pluginName={plugin.display_name}
+            approvedCapabilities={approvedCapabilities}
+            onClose={onClose}
+          />
+        )}
       </div>
     </div>
   );
