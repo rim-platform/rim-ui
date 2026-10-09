@@ -32,6 +32,7 @@ coverage/
 .claude/
 .env
 src-tauri/target/
+*.tsbuildinfo
 
 # Python bytecode (plugins/hello-world runs under the conformance tests)
 __pycache__/
