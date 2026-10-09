@@ -325,6 +325,9 @@ pub async fn execute(
     caller_plugin_id: Option<&str>,
     initiator: Initiator,
 ) -> Result<CommandResult, PluginCommandError> {
+    // Only a person confirms a dangerous run: whatever the caller says, the
+    // agent's runs count as unconfirmed, so the gate in `prepare` refuses them.
+    let confirmed_dangerous = confirmed_dangerous && initiator != Initiator::Agent;
     let prepared = normalize_args(args).and_then(|args| {
         prepare(
             state,
@@ -446,6 +449,7 @@ mod tests {
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
             pids: Arc::new(Mutex::new(HashMap::new())),
+            events: Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         }
     }
 

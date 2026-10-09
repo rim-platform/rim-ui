@@ -58,11 +58,13 @@ export function usePluginSuggestedKeybinds(): PluginSuggestedKeybind[] {
       for (const rk of rustKeybinds) {
         const plugin = plugins.find((p) => p.plugin_id === rk.plugin_id);
         if (!plugin || !plugin.enabled) continue;
+        // The host already qualified `command_id` as `plugin.<plugin_id>.<command>`.
+        const command = plugin.commands?.find((c) => c.qualified_id === rk.command_id);
         suggestions.push({
           pluginId: rk.plugin_id,
           pluginName: plugin.display_name,
-          commandId: `plugin.${rk.plugin_id}.${rk.command_id}`,
-          commandTitle: rk.command_id,
+          commandId: rk.command_id,
+          commandTitle: command?.title ?? rk.command_id,
           keystroke: rk.keystroke,
           context: (rk.context as KeybindContext) || "GLOBAL",
         });

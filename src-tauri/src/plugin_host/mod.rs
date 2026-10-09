@@ -8,6 +8,7 @@ pub mod event_forwarder;
 pub mod git_install;
 pub mod git_source;
 pub mod handshake;
+pub mod host_events;
 pub mod lifecycle;
 pub mod local_install;
 pub mod manifest;
@@ -54,6 +55,8 @@ pub struct PluginHostState {
     /// OS process ids of running plugin processes, keyed by plugin_id, so app quit
     /// can kill any process that outlives its graceful shutdown.
     pub pids: Arc<Mutex<HashMap<String, u32>>>,
+    /// Plugins starting and stopping, for the UI. Arc so broker tasks can publish.
+    pub events: Arc<host_events::PluginEvents>,
 }
 
 pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
@@ -91,6 +94,7 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         pending_ui_events: Mutex::new(Vec::new()),
         principal: Arc::new(Mutex::new(None)),
         pids: Arc::new(Mutex::new(HashMap::new())),
+        events: Arc::new(host_events::PluginEvents::new()),
     };
 
     // Re-spawn any plugins that were Enabled on last shutdown.
@@ -124,6 +128,54 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     plugin_host_state
 }
 
+/// UI event that carries a [`panel_relay::PanelStateChange`] each time a plugin
+/// updates one of its panels.
+pub const PANEL_STATE_EVENT: &str = "plugin-panel-state";
+
+/// Push what the plugin host does to the UI: every panel state change as
+/// [`PANEL_STATE_EVENT`], so an open panel shows a plugin's updates as they
+/// happen, and plugins starting and stopping as [`host_events::PLUGIN_EVENT`].
+/// Called once at app start; a panel that opens later asks for the stored state
+/// with `plugin_panel_state`.
+pub fn forward_to_ui<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: &PluginHostState) {
+    forward(
+        app.clone(),
+        state.panel_relay.subscribe(),
+        PANEL_STATE_EVENT,
+    );
+    forward(app, state.events.subscribe(), host_events::PLUGIN_EVENT);
+}
+
+fn forward<R, T>(
+    app: tauri::AppHandle<R>,
+    mut rx: tokio::sync::broadcast::Receiver<T>,
+    event: &'static str,
+) where
+    R: tauri::Runtime,
+    T: serde::Serialize + Clone + Send + 'static,
+{
+    use tauri::Emitter;
+    use tokio::sync::broadcast::error::RecvError;
+
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(payload) => {
+                    if let Err(e) = app.emit(event, &payload) {
+                        log::warn!("[plugin_host] could not push {event}: {e}");
+                    }
+                }
+                // A skipped panel state is older than the next one received; a
+                // skipped start or stop only delays the UI's next list refresh.
+                Err(RecvError::Lagged(skipped)) => {
+                    log::debug!("[plugin_host] {event} forwarder skipped {skipped} events");
+                }
+                Err(RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 impl PluginHostState {
     /// Empty host state with the given manifests installed, for tests.
@@ -149,6 +201,7 @@ impl PluginHostState {
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
             pids: Arc::new(Mutex::new(HashMap::new())),
+            events: Arc::new(host_events::PluginEvents::new()),
         }
     }
 }

@@ -56,6 +56,36 @@ pub struct PanelDef {
     pub title: String,
     #[serde(default)]
     pub description: String,
+    /// Where the shell shows the panel. Left out, it opens next to the tool panel.
+    /// Skipped when absent so manifests without it keep their content hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<PanelSlot>,
+}
+
+/// Where the shell shows a plugin panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelSlot {
+    /// A narrow column next to the tool panel (the default).
+    ToolPanel,
+    /// The main area, in place of the conversation.
+    MainArea,
+}
+
+/// A manifest command as the UI lists it in the palette, the keybind picker
+/// and the agent's tools.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CommandInfo {
+    /// The id in the manifest, e.g. `restart_pod`.
+    pub id: String,
+    /// `plugin.<plugin_id>.<id>`, the id the palette and keybinds use.
+    pub qualified_id: String,
+    pub title: String,
+    pub description: String,
+    pub keybind_capable: bool,
+    pub dangerous: bool,
+    pub ai_callable: bool,
+    pub arguments: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,6 +216,23 @@ impl PluginManifest {
                 title: a.title.clone(),
                 command_id: format!("plugin.{}.{}", self.plugin_id, a.command_id),
                 context_types: a.context_types.clone(),
+            })
+            .collect()
+    }
+
+    /// Every declared command, with its qualified id, for the UI.
+    pub fn command_infos(&self) -> Vec<CommandInfo> {
+        self.commands
+            .iter()
+            .map(|c| CommandInfo {
+                id: c.id.clone(),
+                qualified_id: format!("plugin.{}.{}", self.plugin_id, c.id),
+                title: c.title.clone(),
+                description: c.description.clone(),
+                keybind_capable: c.keybind_capable,
+                dangerous: c.dangerous,
+                ai_callable: c.ai_callable,
+                arguments: c.arguments.clone(),
             })
             .collect()
     }
@@ -355,6 +402,34 @@ mod tests {
             panels: vec![],
             settings_schema: vec![],
         }
+    }
+
+    #[test]
+    fn command_infos_carry_qualified_ids_and_flags() {
+        let mut m = manifest_with_commands();
+        m.commands[1].dangerous = true;
+        let infos = m.command_infos();
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].qualified_id, "plugin.dev.example.tool.do_thing");
+        assert!(infos[0].keybind_capable && !infos[0].dangerous);
+        assert_eq!(infos[1].id, "other_action");
+        assert!(infos[1].dangerous && !infos[1].keybind_capable);
+    }
+
+    #[test]
+    fn panel_slot_is_optional_and_left_out_when_absent() {
+        let panel: PanelDef =
+            serde_json::from_value(serde_json::json!({"id": "main", "title": "Main"})).unwrap();
+        assert_eq!(panel.slot, None);
+        assert_eq!(
+            serde_json::to_value(&panel).unwrap(),
+            serde_json::json!({"id": "main", "title": "Main", "description": ""})
+        );
+        let panel: PanelDef = serde_json::from_value(
+            serde_json::json!({"id": "pods", "title": "Pods", "slot": "main_area"}),
+        )
+        .unwrap();
+        assert_eq!(panel.slot, Some(PanelSlot::MainArea));
     }
 
     #[test]

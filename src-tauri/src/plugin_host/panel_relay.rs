@@ -3,7 +3,22 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use tokio::sync::broadcast;
+
 const MAX_STATE_SIZE_BYTES: usize = 1024 * 1024; // 1 MiB per plugin
+/// Changes a slow listener may fall behind by before it misses some. A panel
+/// only needs the newest state, so a lagging listener skips to it.
+const CHANGE_QUEUE: usize = 64;
+
+/// A panel's new state, pushed to the UI as the `plugin-panel-state` event so an
+/// open panel sees each update as it happens.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PanelStateChange {
+    pub plugin_id: String,
+    pub panel_id: String,
+    /// The whole state after the change; `null` when the plugin stopped.
+    pub state: serde_json::Value,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum PanelRelayError {
@@ -27,13 +42,29 @@ impl serde::Serialize for PanelRelayError {
 pub struct PanelRelay {
     /// plugin_id -> (panel_id -> state JSON)
     states: RwLock<HashMap<String, HashMap<String, serde_json::Value>>>,
+    changes: broadcast::Sender<PanelStateChange>,
 }
 
 impl PanelRelay {
     pub fn new() -> Self {
         Self {
             states: RwLock::new(HashMap::new()),
+            changes: broadcast::channel(CHANGE_QUEUE).0,
         }
+    }
+
+    /// Every state change from now on, in order. The app forwards them to the UI.
+    pub fn subscribe(&self) -> broadcast::Receiver<PanelStateChange> {
+        self.changes.subscribe()
+    }
+
+    fn publish(&self, plugin_id: &str, panel_id: &str, state: serde_json::Value) {
+        // No receiver (tests, or before the app subscribed) is not an error.
+        let _ = self.changes.send(PanelStateChange {
+            plugin_id: plugin_id.to_string(),
+            panel_id: panel_id.to_string(),
+            state,
+        });
     }
 
     /// Full replace of panel state for a plugin's panel.
@@ -52,7 +83,9 @@ impl PanelRelay {
         states
             .entry(plugin_id.to_string())
             .or_default()
-            .insert(panel_id.to_string(), state);
+            .insert(panel_id.to_string(), state.clone());
+        drop(states);
+        self.publish(plugin_id, panel_id, state);
         Ok(())
     }
 
@@ -94,6 +127,8 @@ impl PanelRelay {
             return Err(PanelRelayError::StateTooLarge(total));
         }
 
+        drop(states);
+        self.publish(plugin_id, panel_id, merged.clone());
         Ok(merged)
     }
 
@@ -119,7 +154,12 @@ impl PanelRelay {
             .states
             .write()
             .map_err(|_| PanelRelayError::LockPoisoned)?;
-        states.remove(plugin_id);
+        let panels = states.remove(plugin_id);
+        drop(states);
+        // Tell open panels the plugin's state is gone, so none shows stale data.
+        for panel_id in panels.into_iter().flat_map(|p| p.into_keys()) {
+            self.publish(plugin_id, &panel_id, serde_json::Value::Null);
+        }
         Ok(())
     }
 
@@ -256,6 +296,53 @@ mod tests {
 
         assert!(relay.get_state("dev.example.a", "main").unwrap().is_none());
         assert!(relay.get_state("dev.example.b", "main").unwrap().is_some());
+    }
+
+    #[test]
+    fn every_change_is_pushed_with_the_whole_state() {
+        let relay = PanelRelay::new();
+        let mut changes = relay.subscribe();
+        relay
+            .set_state("dev.example.test", "main", serde_json::json!({"a": 1}))
+            .unwrap();
+        relay
+            .patch_state("dev.example.test", "main", serde_json::json!({"b": 2}))
+            .unwrap();
+        relay.cleanup_plugin("dev.example.test").unwrap();
+
+        let change = |state| PanelStateChange {
+            plugin_id: "dev.example.test".into(),
+            panel_id: "main".into(),
+            state,
+        };
+        assert_eq!(
+            changes.try_recv().unwrap(),
+            change(serde_json::json!({"a": 1}))
+        );
+        assert_eq!(
+            changes.try_recv().unwrap(),
+            change(serde_json::json!({"a": 1, "b": 2}))
+        );
+        assert_eq!(changes.try_recv().unwrap(), change(serde_json::Value::Null));
+        assert!(changes.try_recv().is_err(), "nothing else was pushed");
+    }
+
+    #[test]
+    fn a_refused_change_is_not_pushed() {
+        let relay = PanelRelay::new();
+        let mut changes = relay.subscribe();
+        let big_string = "x".repeat(MAX_STATE_SIZE_BYTES + 1);
+        assert!(relay
+            .set_state("dev.example.test", "main", serde_json::json!(big_string))
+            .is_err());
+        assert!(relay
+            .patch_state(
+                "dev.example.test",
+                "main",
+                serde_json::json!({"s": big_string})
+            )
+            .is_err());
+        assert!(changes.try_recv().is_err());
     }
 
     #[test]

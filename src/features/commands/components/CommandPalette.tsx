@@ -6,6 +6,8 @@ import { useCommandStore } from "../state/useCommandStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { toastPluginCommandResult } from "../../plugins/runtime/pluginCommandInfo";
+import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { dispatchCommand } from "../runtime/commandDispatcher";
@@ -39,6 +41,7 @@ export function CommandPalette() {
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
+  const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const executeCommandMutation = useExecuteCommandMutation();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -102,15 +105,13 @@ export function CommandPalette() {
   // Build keybind lookup
   const keybindMap = useMemo(() => {
     const map = new Map<string, string>();
-    if (keybinds) {
-      for (const kb of keybinds) {
-        if (kb.isEnabled && !map.has(kb.commandId)) {
-          map.set(kb.commandId, kb.keystroke);
-        }
+    for (const kb of [...deviceKeybinds, ...(keybinds ?? [])]) {
+      if (kb.isEnabled && !map.has(kb.commandId)) {
+        map.set(kb.commandId, kb.keystroke);
       }
     }
     return map;
-  }, [keybinds]);
+  }, [keybinds, deviceKeybinds]);
 
   // Reset selection when query changes
   useEffect(() => {
@@ -225,7 +226,10 @@ export function CommandPalette() {
             },
           },
         );
-        if (result === null || result.status === "ERROR") {
+        if (command.sourceKind === "PLUGIN") {
+          // A plugin answers in words (its payload is for scripts and the agent).
+          toastPluginCommandResult(command.title, result);
+        } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
           const payloadPreview =

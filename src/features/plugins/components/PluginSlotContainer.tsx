@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { X, Puzzle } from "lucide-react";
 
 import { PluginPanel } from "./PluginPanel";
@@ -10,6 +11,11 @@ interface PluginSlotContainerProps {
 }
 
 export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContainerProps) {
+  // A stable list, so the panel keeps its bridge across re-renders.
+  const approvedCapabilities = useMemo(
+    () => parsePluginCapabilities(plugin.approved_capabilities),
+    [plugin.approved_capabilities],
+  );
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -34,7 +40,8 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
         <PluginPanel
           pluginId={plugin.plugin_id}
           panelId={panel.id}
-          approvedCapabilities={parsePluginCapabilities(plugin.approved_capabilities)}
+          pluginName={plugin.display_name}
+          approvedCapabilities={approvedCapabilities}
           onClose={onClose}
         />
       </div>

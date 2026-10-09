@@ -27,6 +27,8 @@ import { usePresenceEventHandler } from "../../features/presence/state/usePresen
 import { useTypingEventHandler } from "../../features/messages/state/useTypingEventHandler";
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
+import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
+import { panelSlot } from "../../features/plugins/types";
 import { SurfaceErrorBoundary } from "../../shared/ui/SurfaceErrorBoundary";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../state/useShellStore";
@@ -196,9 +198,13 @@ function WorkspaceShell() {
   }, [activePluginPanel, plugins]);
 
   const toolPanelPlugin =
-    resolvedPluginPanel?.panel.slot === "tool_panel" ? resolvedPluginPanel : null;
+    resolvedPluginPanel && panelSlot(resolvedPluginPanel.panel) === "tool_panel"
+      ? resolvedPluginPanel
+      : null;
   const mainAreaPlugin =
-    resolvedPluginPanel?.panel.slot === "main_area" ? resolvedPluginPanel : null;
+    resolvedPluginPanel && panelSlot(resolvedPluginPanel.panel) === "main_area"
+      ? resolvedPluginPanel
+      : null;
 
   return (
     <KeybindProvider>
@@ -437,6 +443,7 @@ function WorkspaceShell() {
           <SearchOverlay />
           <AgentOverlay />
           <ConfirmCommandModal />
+          <PluginCommandConfirmDialog />
           <QuickAccessAssigner />
           {incidentsEnabled && workspaceId && selectedConversationId && (
             <StartIncidentDialog serverId={workspaceId} conversationId={selectedConversationId} />
