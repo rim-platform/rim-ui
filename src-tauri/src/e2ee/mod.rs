@@ -115,9 +115,46 @@ CREATE TABLE e2ee_readd_honored (
 );
 ";
 
-/// Undoes [`SCHEMA`], for tests that take a cache back to an older version.
+/// Schema v7 of the cache database: what this device pins against a server that changes its
+/// answers.
+///
+/// - `e2ee_conversation.membership`: the principals processed Commits added and removed, for the
+///   timeline.
+/// - `e2ee_pin`: conversations this device knows are encrypted, kept whatever the server says
+///   later and through `forget`; a direct message's two principals, fixed on first use.
+/// - `e2ee_peer`: per principal, the head of the longest key log verified here and the devices
+///   seen revoked.
+pub(crate) const SCHEMA_PINS: &str = "
+ALTER TABLE e2ee_conversation ADD COLUMN membership TEXT NOT NULL DEFAULT '[]';
+
+CREATE TABLE e2ee_pin (
+    workspace_id    TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    -- The server's encryptedAt as this device first saw it, when it did.
+    encrypted_at    TEXT,
+    -- JSON list of a direct message's two principal ids.
+    dm_principals   TEXT,
+    PRIMARY KEY (workspace_id, conversation_id)
+);
+
+INSERT INTO e2ee_pin (workspace_id, conversation_id)
+    SELECT workspace_id, conversation_id FROM e2ee_conversation;
+
+CREATE TABLE e2ee_peer (
+    principal_id TEXT PRIMARY KEY,
+    -- The seq and payload hash of the head of the longest key log verified on this device.
+    head_seq     INTEGER NOT NULL,
+    head_hash    TEXT NOT NULL,
+    -- JSON list of the principal's device ids seen revoked.
+    revoked      TEXT NOT NULL DEFAULT '[]'
+);
+";
+
+/// Undoes [`SCHEMA`] and [`SCHEMA_PINS`], for tests that take a cache back to an older version.
 #[cfg(test)]
 pub(crate) const DROP_SCHEMA: &str = "
+DROP TABLE e2ee_pin;
+DROP TABLE e2ee_peer;
 DROP TABLE e2ee_conversation;
 DROP TABLE e2ee_outgoing;
 DROP TABLE e2ee_verified_device;
@@ -173,6 +210,7 @@ impl E2eeError {
             Self::Mls(M::NoPendingCommit) => "E2EE_NO_PENDING_COMMIT",
             Self::Mls(M::AwaitingReadd(_)) => "E2EE_AWAITING_READD",
             Self::Mls(M::Removed) => "E2EE_REMOVED",
+            Self::Mls(M::StaleWelcome { .. }) => "E2EE_STALE_WELCOME",
             Self::Mls(M::EpochMismatch { .. }) => "E2EE_EPOCH_MISMATCH",
             Self::Mls(M::Storage(_)) => "CACHE_STORAGE",
             Self::Mls(_) => "E2EE_MLS",

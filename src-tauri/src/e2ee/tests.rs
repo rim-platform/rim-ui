@@ -866,16 +866,6 @@ fn leaves_verify_against_key_logs_and_certificates() {
             .collect()
     };
 
-    let mut revoked = pa.input();
-    revoked.devices[0].revoked_at = Some(AT.into());
-    assert_eq!(
-        check(DirectoryInput {
-            members: members.clone(),
-            principals: vec![revoked, pb.input()],
-        }),
-        ["revokedDevice"]
-    );
-
     let mut unknown = pa.input();
     unknown.devices.clear();
     assert_eq!(
@@ -926,7 +916,19 @@ fn leaves_verify_against_key_logs_and_certificates() {
         outgoing::encrypt(tx, mls, WS, CONV, &draft("u-b", "hi"), &mut |_| None)
     });
     assert_eq!(refused.unwrap_err().code(), "E2EE_UNVERIFIED_DEVICE");
-    assert!(check(full).is_empty());
+    assert!(check(full.clone()).is_empty());
+
+    // A device the server marks revoked stays revoked here, though the server stops saying so.
+    let mut revoked = pa.input();
+    revoked.devices[0].revoked_at = Some(AT.into());
+    assert_eq!(
+        check(DirectoryInput {
+            members: members.clone(),
+            principals: vec![revoked, pb.input()],
+        }),
+        ["revokedDevice"]
+    );
+    assert_eq!(check(full), ["revokedDevice"]);
     let _ = alice;
 }
 
@@ -1086,4 +1088,320 @@ fn plaintext_entries_of_an_upgraded_conversation_stay_plaintext() {
         ("plain-1".into(), Some("from before".into()), None, 1)
     );
     assert_eq!(bob.row(&id).0.as_deref(), Some("encrypted now"));
+}
+
+// ─── Hardening against a misbehaving server ─────────────────────────────────
+
+fn view(device: &Device) -> group::GroupView {
+    device.run(|tx, mls| group::view(tx, mls, WS, CONV))
+}
+
+#[test]
+fn finding_1_a_conversation_stays_encrypted_here_whatever_the_server_says() {
+    let (mut pa, _pb, alice, bob, mut server) = alice_and_bob();
+    // Group state pins it.
+    let pinned = view(&bob);
+    assert!(pinned.pinned);
+    assert_eq!(pinned.pinned_encrypted_at, None);
+
+    // The first encryptedAt seen stays; a later answer changes nothing.
+    bob.run(|tx, _| group::pin(tx, WS, CONV, Some(AT), None));
+    bob.run(|tx, _| group::pin(tx, WS, CONV, Some("2030-01-01T00:00:00Z"), None));
+    assert_eq!(view(&bob).pinned_encrypted_at.as_deref(), Some(AT));
+
+    // Forgetting the group (a NO_ACCESS the server answered, say) keeps the pin.
+    bob.run(|tx, mls| group::forget(tx, mls, WS, CONV));
+    let forgotten = view(&bob);
+    assert!(forgotten.pinned && !forgotten.has_group);
+    assert_eq!(forgotten.pinned_encrypted_at.as_deref(), Some(AT));
+    assert_eq!(
+        bob.run(|tx, _| group::conversations(tx, WS)),
+        vec![CONV.to_string()]
+    );
+
+    // A device that only ever saw an encrypted entry pins the conversation too.
+    let other = Device::new(&mut pa, "u-a", 7);
+    send(&mut server, &alice, "seen elsewhere");
+    other.sync(&server);
+    assert!(view(&other).pinned);
+}
+
+#[test]
+fn finding_4_a_direct_message_is_pinned_to_its_two_principals() {
+    let (pa, pb, alice, bob, mut server) = alice_and_bob();
+    let mut pc = Principal::new(3);
+    let carol = Device::new(&mut pc, "u-c", 3);
+    bob.run(|tx, _| group::pin(tx, WS, CONV, None, Some(&[pb.id.clone(), pa.id.clone()])));
+    assert_eq!(
+        view(&bob).dm_principals,
+        Some({
+            let mut pair = vec![pa.id.clone(), pb.id.clone()];
+            pair.sort();
+            pair
+        })
+    );
+    // Neither a third principal nor a later pair replaces the first.
+    let three = [pa.id.clone(), pb.id.clone(), pc.id.clone()];
+    assert!(bob
+        .try_run(|tx, _| group::pin(tx, WS, CONV, None, Some(&three)))
+        .is_err());
+    bob.run(|tx, _| group::pin(tx, WS, CONV, None, Some(&[pa.id.clone(), pc.id.clone()])));
+    assert!(!view(&bob).dm_principals.unwrap().contains(&pc.id));
+
+    // The server lists Carol as a member and a device of Alice's adds her: Bob does not take
+    // her leaf as a member's.
+    server.member(&carol);
+    let claimed = carol.key_package();
+    let commit = alice.run(|tx, mls| group::commit(tx, mls, WS, CONV, &[claimed], &[]));
+    assert!(server.submit(&commit));
+    alice.run(|tx, mls| group::settle(tx, mls, None, WS, CONV, true));
+    bob.sync(&server);
+    let outcome = bob.run(|tx, mls| {
+        directory::verify(
+            tx,
+            mls,
+            WS,
+            CONV,
+            &DirectoryInput {
+                members: three.to_vec(),
+                principals: vec![pa.input(), pb.input(), pc.input()],
+            },
+        )
+    });
+    assert_eq!(
+        outcome
+            .unverified
+            .iter()
+            .map(|u| (u.principal_id.as_str(), u.reason.as_str()))
+            .collect::<Vec<_>>(),
+        [(pc.id.as_str(), "notMember")]
+    );
+}
+
+#[test]
+fn finding_4_adds_and_removes_come_from_processed_commits() {
+    let (_pa, _pb, alice, bob, mut server) = alice_and_bob();
+    let mut pc = Principal::new(3);
+    let carol = Device::new(&mut pc, "u-c", 3);
+    server.member(&carol);
+
+    let claimed = carol.key_package();
+    let commit = alice.run(|tx, mls| group::commit(tx, mls, WS, CONV, &[claimed], &[]));
+    assert!(server.submit(&commit));
+    alice.run(|tx, mls| group::settle(tx, mls, None, WS, CONV, true));
+    let removal = alice.run(|tx, mls| group::commit(tx, mls, WS, CONV, &[], &[carol.view()]));
+    assert!(server.submit(&removal));
+    alice.run(|tx, mls| group::settle(tx, mls, None, WS, CONV, true));
+    bob.sync(&server);
+
+    let expected = vec![
+        group::MembershipEvent {
+            incarnation: 1,
+            epoch: 2,
+            kind: "added".into(),
+            principal_id: pc.id.clone(),
+        },
+        group::MembershipEvent {
+            incarnation: 1,
+            epoch: 3,
+            kind: "removed".into(),
+            principal_id: pc.id.clone(),
+        },
+    ];
+    // The committer from its own merges, the reader from the Commits it processed.
+    assert_eq!(view(&alice).state.membership, expected);
+    assert_eq!(view(&bob).state.membership, expected);
+    // A device joining a principal already in the group is not a member added.
+    let mut pb2 = Principal::new(2);
+    let bob_laptop = Device::new(&mut pb2, "u-b", 9);
+    let claimed = bob_laptop.key_package();
+    let commit = alice.run(|tx, mls| group::commit(tx, mls, WS, CONV, &[claimed], &[]));
+    assert!(server.submit(&commit));
+    alice.run(|tx, mls| group::settle(tx, mls, None, WS, CONV, true));
+    assert_eq!(view(&alice).state.membership, expected);
+}
+
+#[test]
+fn finding_5_a_row_must_name_its_author_principal_and_the_mls_sender_device() {
+    let (_pa, pb, alice, bob, mut server) = alice_and_bob();
+    let nameless = send(&mut server, &alice, "who am i");
+    server.messages.get_mut(&nameless).unwrap().1["author"]["principalId"] = Value::Null;
+    let moved = send(&mut server, &alice, "from another device");
+    server.messages.get_mut(&moved).unwrap().1["encryption"]["senderDeviceId"] =
+        json!(Uuid::from_u128(99).hyphenated().to_string());
+    let claimed = send(&mut server, &alice, "claimed by bob");
+    server.messages.get_mut(&claimed).unwrap().1["author"]["principalId"] = json!(pb.id);
+    let honest = send(&mut server, &alice, "honest");
+    bob.sync(&server);
+
+    for (id, reason) in [
+        (&nameless, "the row names no author principal"),
+        (&moved, "the sender device is not the row's"),
+        (&claimed, "the sender is not the row's author"),
+    ] {
+        let (text, state, payload) = bob.row(id);
+        assert_eq!(
+            (text, state.as_deref()),
+            (None, Some("invalid")),
+            "{reason}"
+        );
+        assert_eq!(payload["e2ee"]["reason"], json!(reason));
+    }
+    let (text, _, payload) = bob.row(&honest);
+    assert_eq!(text.as_deref(), Some("honest"));
+    assert_eq!(
+        payload["e2ee"]["senderPrincipalId"],
+        json!(alice.device.principal_id)
+    );
+    assert_eq!(payload["e2ee"]["senderDeviceId"], json!(alice.device_id()));
+}
+
+#[test]
+fn finding_6_a_replayed_welcome_is_refused_and_keeps_the_group() {
+    let mut pa = Principal::new(1);
+    let mut pb = Principal::new(2);
+    let alice = Device::new(&mut pa, "u-a", 1);
+    let bob = Device::new(&mut pb, "u-b", 2);
+    let mut server = Server::new();
+    server.member(&alice);
+    server.member(&bob);
+    server.group_devices.push(alice.device_id());
+    // A last-resort package keeps its private key: its Welcome would open again.
+    let packages = bob.run(|tx, mls| {
+        Ok(mls.generate_key_packages(&rim_mls::SqliteStore::new(tx), 1, true, now())?)
+    });
+    let claimed = ClaimedInput {
+        principal_id: pb.id.clone(),
+        device_id: bob.device_id(),
+        key_package: b64(&packages[0].message),
+    };
+    let commit = alice.run(|tx, mls| group::create(tx, mls, WS, CONV, 1, &[claimed]));
+    assert!(server.submit(&commit));
+    alice.run(|tx, mls| group::settle(tx, mls, Some(&alice.device), WS, CONV, true));
+    let (incarnation, welcome) = server.welcome_for(&bob);
+    bob.run(|tx, mls| group::join(tx, mls, WS, CONV, incarnation, &welcome));
+
+    let update = alice.run(|tx, mls| group::commit(tx, mls, WS, CONV, &[], &[]));
+    assert!(server.submit(&update));
+    alice.run(|tx, mls| group::settle(tx, mls, None, WS, CONV, true));
+    bob.sync(&server);
+    assert_eq!(view(&bob).epoch, Some(2));
+
+    let replay = bob.try_run(|tx, mls| group::join(tx, mls, WS, CONV, incarnation, &welcome));
+    assert_eq!(replay.unwrap_err().code(), "E2EE_STALE_WELCOME");
+    assert_eq!(view(&bob).epoch, Some(2));
+    let after = send(&mut server, &alice, "still in step");
+    bob.sync(&server);
+    assert_eq!(bob.row(&after).0.as_deref(), Some("still in step"));
+}
+
+#[test]
+fn finding_11_a_key_log_must_extend_the_head_pinned_here() {
+    let (mut pa, pb, _alice, bob, _server) = alice_and_bob();
+    let members = vec![pa.id.clone(), pb.id.clone()];
+    let check = |a: PrincipalInput| -> Vec<String> {
+        bob.run(|tx, mls| {
+            directory::verify(
+                tx,
+                mls,
+                WS,
+                CONV,
+                &DirectoryInput {
+                    members: members.clone(),
+                    principals: vec![a, pb.input()],
+                },
+            )
+        })
+        .unverified
+        .into_iter()
+        .map(|u| u.reason)
+        .collect()
+    };
+    let pinned = |principal: &str| {
+        bob.run(|tx, _| Ok(directory::load_peers(tx)?.get(principal).cloned()))
+            .map(|p| (p.head_seq, p.head_hash))
+    };
+
+    // First use pins the head.
+    let original = pa.input();
+    assert!(check(original.clone()).is_empty());
+    let head = statement::replay(&pa.log).unwrap();
+    assert_eq!(pinned(&pa.id), Some((0, head.hash.clone())));
+
+    // A valid rotation extends it, and the pin moves.
+    let rotation = statement::rotation(
+        &head,
+        statement::RotationSigner::Identity,
+        &pa.identity,
+        &SecretKey::from_seed(Zeroizing::new([77; 32])).public_key(),
+        AT,
+    );
+    pa.log.push(rotation.clone());
+    assert!(check(pa.input()).is_empty());
+    assert_eq!(pinned(&pa.id).map(|p| p.0), Some(1));
+
+    // The older prefix (hiding the rotation) and a fork at the same seq are both refused.
+    assert_eq!(check(original.clone()), ["keyLogForked"]);
+    let mut forked = original;
+    forked.key_log.push(statement::rotation(
+        &head,
+        statement::RotationSigner::Identity,
+        &pa.identity,
+        &SecretKey::from_seed(Zeroizing::new([78; 32])).public_key(),
+        AT,
+    ));
+    assert_eq!(check(forked), ["keyLogForked"]);
+    assert_eq!(pinned(&pa.id).map(|p| p.0), Some(1));
+    assert!(check(pa.input()).is_empty());
+}
+
+#[test]
+fn finding_2_a_signed_revocation_is_verified_and_remembered() {
+    let (pa, pb, _alice, bob, _server) = alice_and_bob();
+    let members = vec![pa.id.clone(), pb.id.clone()];
+    let check = |a: PrincipalInput| -> Vec<String> {
+        bob.run(|tx, mls| {
+            directory::verify(
+                tx,
+                mls,
+                WS,
+                CONV,
+                &DirectoryInput {
+                    members: members.clone(),
+                    principals: vec![a, pb.input()],
+                },
+            )
+        })
+        .unverified
+        .into_iter()
+        .map(|u| u.reason)
+        .collect()
+    };
+    let device_id = pa.devices[0].device_id.clone();
+
+    // A revocation nobody with a key signed keeps the device out this time only.
+    let mut forged = pa.input();
+    forged.devices[0].revocation = Some(statement::revocation(
+        &SecretKey::from_seed(Zeroizing::new([66; 32])),
+        false,
+        &pa.id,
+        &device_id,
+        AT,
+    ));
+    assert_eq!(check(forged), ["revokedDevice"]);
+    assert!(check(pa.input()).is_empty());
+
+    // One the identity key signed stays, though the server stops listing it.
+    let mut signed = pa.input();
+    signed.devices[0].revocation = Some(statement::revocation(
+        &pa.identity,
+        false,
+        &pa.id,
+        &device_id,
+        AT,
+    ));
+    assert_eq!(check(signed), ["revokedDevice"]);
+    assert_eq!(check(pa.input()), ["revokedDevice"]);
+    let remembered = bob.run(|tx, _| directory::load_peers(tx));
+    assert!(remembered[&pa.id].revoked.contains(&device_id));
 }

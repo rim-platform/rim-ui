@@ -29,11 +29,12 @@ fn header_aad(message: &[u8]) -> Vec<u8> {
     }
 }
 
-fn expect(content: &MessageContent) -> DecryptExpectations {
+fn expect(content: &MessageContent, from: &TestDevice) -> DecryptExpectations {
     DecryptExpectations {
         message_id: content.id,
         thread_root_id: content.thread_root_id,
-        author_principal_id: None,
+        author_principal_id: from.device.principal_id.clone(),
+        sender_device_id: from.device.device_id,
     }
 }
 
@@ -46,7 +47,7 @@ fn create_join_and_talk(a: &TestDevice, b: &TestDevice) {
         .unwrap();
     assert_eq!(outgoing.cipher_suite, CIPHER_SUITE_ID);
     assert_eq!(outgoing.epoch, 0);
-    assert_eq!(a.mls.commit_accepted(&a.store, group).unwrap(), 1);
+    assert_eq!(a.mls.commit_accepted(&a.store, group).unwrap().epoch, 1);
     let joined = b
         .mls
         .join(&b.store, group, outgoing.welcome.as_ref().unwrap())
@@ -60,7 +61,7 @@ fn create_join_and_talk(a: &TestDevice, b: &TestDevice) {
         let sent = from.mls.encrypt(&from.store, group, &content).unwrap();
         match to
             .mls
-            .decrypt(&to.store, group, &sent.envelope, &expect(&content))
+            .decrypt(&to.store, group, &sent.envelope, &expect(&content, from))
             .unwrap()
         {
             Decrypted::Message(message) => {
@@ -115,8 +116,11 @@ fn a_group_of_one_provider_is_joined_and_read_with_the_other() {
             .unwrap()
         {
             CommitOutcome::Applied(applied) => {
-                assert!(applied.summary_matches);
                 assert_eq!(applied.added, vec![c.device.clone()]);
+                assert_eq!(
+                    applied.membership.added,
+                    vec![c.device.principal_id.clone()]
+                );
             }
             other => panic!("{other:?}"),
         }
@@ -129,7 +133,7 @@ fn a_group_of_one_provider_is_joined_and_read_with_the_other() {
             for to in [&a, &b, &c] {
                 let result = to
                     .mls
-                    .decrypt(&to.store, group, &sent.envelope, &expect(&content))
+                    .decrypt(&to.store, group, &sent.envelope, &expect(&content, from))
                     .unwrap();
                 if std::ptr::eq(from, to) {
                     assert!(matches!(result, Decrypted::Own));
@@ -187,7 +191,7 @@ fn authenticated_data_is_framed_into_commits_and_application_messages() {
         a.mls.commit_accepted(&a.store, group).unwrap();
         assert!(matches!(
             b.mls.process_commit(&b.store, group, &added.commit).unwrap(),
-            CommitOutcome::Applied(applied) if applied.summary_matches
+            CommitOutcome::Applied(applied) if applied.added == vec![c.device.clone()]
         ));
 
         let content = MessageContent::new(Uuid::now_v7(), "aad");

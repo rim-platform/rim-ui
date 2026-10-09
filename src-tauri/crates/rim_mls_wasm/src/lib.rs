@@ -215,13 +215,14 @@ impl Engine {
         Ok(json(&wire::outgoing_commit(&commit)))
     }
 
-    /// The server accepted the pending Commit: merge it. Returns the new epoch.
+    /// The server accepted the pending Commit: merge it. Returns `{epoch, membership: {added,
+    /// removed}}`, the principals it brought in and took out.
     #[wasm_bindgen(js_name = commitAccepted)]
-    pub fn commit_accepted(&self, conversation_id: &str, incarnation: u32) -> Result<f64> {
-        let epoch = self
+    pub fn commit_accepted(&self, conversation_id: &str, incarnation: u32) -> Result<String> {
+        let merged = self
             .mls
             .commit_accepted(&self.store, group(conversation_id, incarnation)?)?;
-        Ok(epoch as f64)
+        Ok(json(&wire::merged(&merged)))
     }
 
     /// The server refused the pending Commit: drop it.
@@ -248,7 +249,8 @@ impl Engine {
         Ok(json(&wire::commit_outcome(&outcome)))
     }
 
-    /// Join `incarnation` of the conversation's group from a Welcome.
+    /// Join `incarnation` of the conversation's group from a Welcome. A Welcome to an epoch the
+    /// held state already reached fails with `E2EE_STALE_WELCOME`.
     pub fn join(&self, conversation_id: &str, incarnation: u32, welcome: &str) -> Result<String> {
         let joined = self.mls.join(
             &self.store,
@@ -301,7 +303,7 @@ impl Engine {
     }
 
     /// Decrypt an envelope once and check it against its row (`{messageId, threadRootId,
-    /// authorPrincipalId}`).
+    /// authorPrincipalId, senderDeviceId}`).
     pub fn decrypt(
         &self,
         conversation_id: &str,
@@ -318,6 +320,7 @@ impl Engine {
                 .map(parse_uuid)
                 .transpose()?,
             author_principal_id: expected.author_principal_id,
+            sender_device_id: parse_uuid(&expected.sender_device_id)?,
         };
         let decrypted = self.mls.decrypt(
             &self.store,

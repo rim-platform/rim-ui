@@ -481,7 +481,8 @@ fn the_recorded_private_message_decrypts_to_the_vector_application_data() {
     let expected = DecryptExpectations {
         message_id: message_id(),
         thread_root_id: None,
-        author_principal_id: Some(PRINCIPAL.into()),
+        author_principal_id: PRINCIPAL.into(),
+        sender_device_id: vector_device().device_id,
     };
     // State written by this OpenMLS release loads, on either provider, and decrypts once.
     for mls in [Mls::new().unwrap(), Mls::rust_crypto()] {

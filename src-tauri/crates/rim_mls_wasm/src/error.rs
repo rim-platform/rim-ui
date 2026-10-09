@@ -38,6 +38,7 @@ impl From<rim_mls::Error> for Failure {
             E::CommitPending => "E2EE_COMMIT_PENDING",
             E::NoPendingCommit => "E2EE_NO_PENDING_COMMIT",
             E::AwaitingReadd(_) => "E2EE_AWAITING_READD",
+            E::StaleWelcome { .. } => "E2EE_STALE_WELCOME",
             E::Removed => "E2EE_REMOVED",
             E::NotInGroup(_) => "E2EE_NOT_IN_GROUP",
             E::Decrypt(_) => "E2EE_DECRYPT",

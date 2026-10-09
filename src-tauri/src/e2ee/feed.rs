@@ -6,11 +6,12 @@
 //! plaintext row written, in the same transaction that advanced the ratchet. When the feed is
 //! drained, the remaining Commits are applied. An entry this device cannot read (sent before it
 //! joined, in an older incarnation, or too many epochs back) becomes a placeholder; one that
-//! decrypts but breaks a rule is stored as "could not be verified", without its content. When a
+//! decrypts but breaks a rule is stored as "could not be verified", without its content, and so is
+//! one whose row names no author principal or a sender other than the MLS sender. When a
 //! Commit or a Welcome is missing the handler stops the conversation where it is and says why;
 //! the webview fetches what is missing and syncs it again.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rim_mls::{
     DecryptExpectations, Decrypted, DecryptedMessage, MessageContent, Mls, SqliteStore,
@@ -21,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::group::{
-    apply_commit, conversation_group, load_state, save_state, CommitInput, CommitStep,
+    apply_commit, conversation_group, load_state, pin, save_state, CommitInput, CommitStep,
     ConversationState,
 };
 use super::{b64, parse_uuid, unb64, E2eeError};
@@ -138,6 +139,8 @@ pub(crate) struct Decryptor<'a> {
     inputs: HashMap<String, ConversationInput>,
     states: HashMap<String, ConversationState>,
     notes: BTreeMap<String, SyncNote>,
+    /// Conversations pinned as encrypted during this page.
+    pinned: HashSet<String>,
 }
 
 impl<'a> Decryptor<'a> {
@@ -150,6 +153,7 @@ impl<'a> Decryptor<'a> {
                 .collect(),
             states: HashMap::new(),
             notes: BTreeMap::new(),
+            pinned: HashSet::new(),
         }
     }
 
@@ -325,6 +329,17 @@ impl<'a> Decryptor<'a> {
                 }
             },
         };
+        // The row must name the author's principal and the sending device: the MLS sender is
+        // checked against both, and the timeline shows the MLS sender.
+        let Some(author_principal_id) = entry.author.as_ref().and_then(|a| a.principal_id.clone())
+        else {
+            log::warn!("[e2ee] an encrypted entry whose author has no principal id");
+            return row.invalid(tx, "the row names no author principal");
+        };
+        let Ok(sender_device_id) = parse_uuid(&encryption.sender_device_id) else {
+            log::warn!("[e2ee] an encrypted entry whose sender device is not a device id");
+            return row.invalid(tx, "the row names no sender device");
+        };
         let Some(ciphertext) = &encryption.ciphertext else {
             log::warn!("[e2ee] an encrypted entry without a ciphertext");
             return Ok(Handled::Done);
@@ -336,7 +351,8 @@ impl<'a> Decryptor<'a> {
         let expected = DecryptExpectations {
             message_id: parse_uuid(&entry.id).map_err(CacheError::from)?,
             thread_root_id,
-            author_principal_id: entry.author.as_ref().and_then(|a| a.principal_id.clone()),
+            author_principal_id,
+            sender_device_id,
         };
         match self.mls.decrypt(&store, group, &envelope, &expected) {
             Ok(Decrypted::Message(message)) => {
@@ -390,6 +406,9 @@ impl EnvelopeHandler for Decryptor<'_> {
         };
         if entry.conversation_id != conversation_id {
             return Ok(Handled::Plaintext);
+        }
+        if self.pinned.insert(conversation_id.to_string()) {
+            pin(tx, workspace_id, conversation_id, None, None).map_err(CacheError::from)?;
         }
         let Ok(version) = change.version.parse::<i64>() else {
             return Ok(Handled::Plaintext);
@@ -607,6 +626,10 @@ impl RowFacts<'_> {
         e2ee.insert(
             "senderPrincipalId".into(),
             json!(message.sender.principal_id),
+        );
+        e2ee.insert(
+            "senderDeviceId".into(),
+            json!(message.sender.device_id.hyphenated().to_string()),
         );
         e2ee.insert(
             "frankingKey".into(),
