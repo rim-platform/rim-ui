@@ -138,7 +138,8 @@ CREATE TABLE e2ee_pin (
 );
 
 INSERT INTO e2ee_pin (workspace_id, conversation_id)
-    SELECT workspace_id, conversation_id FROM e2ee_conversation;
+    SELECT workspace_id, conversation_id FROM e2ee_conversation
+    WHERE incarnation > 0 OR next_incarnation IS NOT NULL OR readd_requested_at IS NOT NULL;
 
 CREATE TABLE e2ee_peer (
     principal_id TEXT PRIMARY KEY,

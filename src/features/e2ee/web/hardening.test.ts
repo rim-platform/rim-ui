@@ -117,6 +117,17 @@ describe("the web backend against a misbehaving server", () => {
     expect(seen.pinned).toBe(true);
   });
 
+  it("finding 1: a plaintext conversation the store follows for a plugin is never pinned", async () => {
+    const s = server.current;
+    const reader = await TestDevice.create(await principal(4), "u-dana", 0x41);
+    s.plaintext("p1", reader, "plain");
+    await reader.sync(s);
+    const [plain] = await commands.status(reader.account, WS, [CONVERSATION]);
+    expect(plain).toMatchObject({ pinned: false, hasGroup: false });
+    const listed = await commands.status(reader.account, WS, []);
+    expect(listed.filter((v) => v.pinned)).toEqual([]);
+  });
+
   it("finding 4: a direct message is pinned to its two principals", async () => {
     const { s, alice, bob } = await aliceAndBob();
     const carol = await TestDevice.create(await principal(3), "u-carol", 0x31);

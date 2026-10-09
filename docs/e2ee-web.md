@@ -172,8 +172,9 @@ The history archive is the desktop's: the web app offers no "Restore from histor
 The browser holds the server to what it saw exactly as the desktop does (`e2ee-desktop.md`,
 "Hardening"), in its own stores:
 
-- the encryption pin and a DM's two principals in `pins`; `groups` records count as pinned too,
-  and a record that `forget` drops is pinned first;
+- the encryption pin and a DM's two principals in `pins`; a `groups` record of a held group counts
+  as pinned too and is pinned before `forget` drops it (the feed also keeps empty records for the
+  plaintext conversations a plugin reads, which are never pinned);
 - key-log head pins and remembered revocations in `peers`, checked in `web/directory.ts` before
   the module checks the leaves; a forked principal's leaves are `keyLogForked`;
 - rows without an author principal or with another sender device are "could not be verified";

@@ -89,6 +89,11 @@ pub(crate) struct ConversationState {
 }
 
 impl ConversationState {
+    /// Whether this is a group's state: held, being created, or waited for.
+    fn holds_group(&self) -> bool {
+        self.incarnation > 0 || self.next_incarnation.is_some() || self.readd_requested_at.is_some()
+    }
+
     /// Note what a Commit of `incarnation` that moved the group to `epoch` changed.
     fn note_membership(&mut self, incarnation: u32, epoch: u64, change: &MembershipChange) {
         let events = change
@@ -168,15 +173,17 @@ pub(crate) fn load_state(
     })
 }
 
-/// Save the conversation's state; a conversation this device keeps state for is pinned as
-/// encrypted for good.
+/// Save the conversation's state; a conversation whose group this device holds, creates or waits
+/// for is pinned as encrypted for good.
 pub(crate) fn save_state(
     tx: &Transaction<'_>,
     workspace_id: &str,
     conversation_id: &str,
     state: &ConversationState,
 ) -> Result<()> {
-    pin(tx, workspace_id, conversation_id, None, None)?;
+    if state.holds_group() {
+        pin(tx, workspace_id, conversation_id, None, None)?;
+    }
     tx.execute(
         "INSERT INTO e2ee_conversation
              (workspace_id, conversation_id, incarnation, next_incarnation, join_epoch, removed,

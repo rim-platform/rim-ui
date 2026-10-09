@@ -158,14 +158,22 @@ export async function pin(
   work.put("pins", next);
 }
 
-/** Save the conversation's state; a conversation this browser keeps state for is pinned. */
+/**
+ * Whether `state` is a group's: held, being created, or waited for. The feed saves an empty state
+ * for every conversation it follows, plaintext ones a plugin reads included.
+ */
+function holdsGroup(state: GroupState): boolean {
+  return state.incarnation > 0 || state.nextIncarnation !== null || state.readdRequestedAt !== null;
+}
+
+/** Save the conversation's state; a conversation whose group this browser holds is pinned. */
 export async function saveState(
   work: Work,
   workspaceId: string,
   conversationId: string,
   state: GroupState,
 ): Promise<void> {
-  await pin(work, workspaceId, conversationId);
+  if (holdsGroup(state)) await pin(work, workspaceId, conversationId);
   const record = await loadRecord(work, workspaceId, conversationId);
   work.put("groups", {
     endpoint: work.account.endpoint,
@@ -235,7 +243,7 @@ export async function view(
     epoch: null,
     commitPending: false,
     awaitingReadd: null,
-    pinned: Boolean(pinned ?? held),
+    pinned: Boolean(pinned) || Boolean(held && holdsGroup(held)),
     pinnedEncryptedAt: pinned?.encryptedAt ?? null,
     dmPrincipals: pinned?.dmPrincipals ?? null,
   };
@@ -599,9 +607,8 @@ export async function forget(
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
-  if (await loadRecord(work, workspaceId, conversationId)) {
-    await pin(work, workspaceId, conversationId);
-  }
+  const record = await loadRecord(work, workspaceId, conversationId);
+  if (record && holdsGroup(record)) await pin(work, workspaceId, conversationId);
   const state = await loadState(work, workspaceId, conversationId);
   for (const incarnation of [state.incarnation, state.nextIncarnation]) {
     if (incarnation) engine.deleteGroup(conversationId, incarnation);

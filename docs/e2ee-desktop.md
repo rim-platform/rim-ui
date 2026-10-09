@@ -36,7 +36,8 @@ which only the sender fetches).
 - `e2ee_readd_honored`: when this device last acted on a device's re-add request.
 - `e2ee_pin` (v7): conversations this device knows are encrypted, with the server's
   `encryptedAt` as first seen and a direct message's two principals. Never deleted, `forget`
-  included. The migration pins every conversation that had an `e2ee_conversation` row.
+  included. The migration pins every conversation whose group this device held, was creating
+  or waited to be re-added to.
 - `e2ee_peer` (v7): per principal, the seq and hash of the head of the longest key log verified
   here, and the device ids seen revoked.
 
@@ -122,8 +123,8 @@ one still accepts it.
 
 What this device holds the server to, whatever it answers later:
 
-- **Encryption pin.** A conversation this device holds group state for, has an
-  `e2ee_conversation` row for, saw an encrypted feed entry in, or saw `encryptedAt` on is pinned
+- **Encryption pin.** A conversation whose group this device holds, creates or waits to be
+  re-added to, that it saw an encrypted feed entry in, or that it saw `encryptedAt` on is pinned
   in `e2ee_pin` for good. The UI treats a conversation as encrypted when the server says so or
   it is pinned. A pinned conversation the server answers `encryptedAt: null` for shows
   "Encryption was reset by the server" and stops sending; every plaintext write (`sendMessage`,

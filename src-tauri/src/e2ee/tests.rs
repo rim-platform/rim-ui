@@ -1119,6 +1119,11 @@ fn finding_1_a_conversation_stays_encrypted_here_whatever_the_server_says() {
         vec![CONV.to_string()]
     );
 
+    // State without a group (a leaf check of a conversation it holds nothing for) pins nothing.
+    let bystander = Device::new(&mut pa, "u-a", 8);
+    bystander.run(|tx, mls| directory::verify(tx, mls, WS, CONV, &DirectoryInput::default()));
+    assert!(!view(&bystander).pinned);
+
     // A device that only ever saw an encrypted entry pins the conversation too.
     let other = Device::new(&mut pa, "u-a", 7);
     send(&mut server, &alice, "seen elsewhere");
