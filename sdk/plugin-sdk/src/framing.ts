@@ -31,7 +31,17 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
  * @throws FrameTooLargeError when the JSON is over {@link MAX_FRAME_BYTES}.
  */
 export function encodeFrame(message: unknown): Uint8Array {
-  const body = encoder.encode(JSON.stringify(message));
+  return encodeText(JSON.stringify(message));
+}
+
+/**
+ * Frame the JSON text of one message: a 4-byte little-endian length, then the
+ * text as UTF-8.
+ *
+ * @throws FrameTooLargeError when the text is over {@link MAX_FRAME_BYTES} bytes.
+ */
+export function encodeText(text: string): Uint8Array {
+  const body = encoder.encode(text);
   if (body.length > MAX_FRAME_BYTES) throw new FrameTooLargeError(body.length);
   const frame = new Uint8Array(HEADER_BYTES + body.length);
   new DataView(frame.buffer).setUint32(0, body.length, true);
@@ -55,11 +65,31 @@ export class FrameDecoder {
    * @throws FrameTooLargeError when a length prefix is over {@link MAX_FRAME_BYTES}.
    */
   push(chunk: Uint8Array): DecodedFrame[] {
+    return this.pushBodies(chunk).map(parse);
+  }
+
+  /**
+   * Add bytes from the stream and return the text of every frame they complete,
+   * in order, or `null` for a frame whose body is not UTF-8.
+   *
+   * @throws FrameTooLargeError when a length prefix is over {@link MAX_FRAME_BYTES}.
+   */
+  pushText(chunk: Uint8Array): (string | null)[] {
+    return this.pushBodies(chunk).map((body) => {
+      try {
+        return decoder.decode(body);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  private pushBodies(chunk: Uint8Array): Uint8Array[] {
     if (chunk.length > 0) {
       this.chunks.push(chunk);
       this.buffered += chunk.length;
     }
-    const frames: DecodedFrame[] = [];
+    const frames: Uint8Array[] = [];
     while (this.buffered >= HEADER_BYTES) {
       const header = this.peek(HEADER_BYTES);
       const length = new DataView(header.buffer, header.byteOffset, HEADER_BYTES).getUint32(
@@ -68,7 +98,7 @@ export class FrameDecoder {
       );
       if (length > MAX_FRAME_BYTES) throw new FrameTooLargeError(length);
       if (this.buffered < HEADER_BYTES + length) break;
-      frames.push(parse(this.take(HEADER_BYTES + length).subarray(HEADER_BYTES)));
+      frames.push(this.take(HEADER_BYTES + length).subarray(HEADER_BYTES));
     }
     return frames;
   }

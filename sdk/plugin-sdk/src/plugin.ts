@@ -1,11 +1,8 @@
-import { Console } from "node:console";
-import { resolve } from "node:path";
-
 import type * as wire from "./generated/protocol.ts";
-import { ErrorCode, Method, PROTOCOL_VERSION } from "./generated/protocol.ts";
+import { ErrorCode, MAX_FRAME_BYTES, Method, PROTOCOL_VERSION } from "./generated/protocol.ts";
 import { HostRequestError, PluginError, toWireError } from "./errors.ts";
-import { encodeFrame, FrameDecoder, FrameTooLargeError } from "./framing.ts";
-import { readManifest, type ManifestInfo } from "./manifest.ts";
+import { FrameTooLargeError } from "./framing.ts";
+import { parseManifestInfo, type ManifestInfo } from "./manifest.ts";
 import {
   readPrincipal,
   readPrincipalMappings,
@@ -13,6 +10,13 @@ import {
   type Principal,
   type PrincipalMapping,
 } from "./principal.ts";
+import {
+  portTransport,
+  streamTransport,
+  type FrameSink,
+  type PortLike,
+  type Transport,
+} from "./transport.ts";
 
 /** Protocol versions this SDK speaks, newest first. */
 export const SUPPORTED_VERSIONS: readonly number[] = Object.freeze([PROTOCOL_VERSION]);
@@ -25,6 +29,13 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
  * Needs the `ui.panel` capability.
  */
 const UPDATE_PANEL_METHOD = "rim.ui.update_panel";
+
+/**
+ * Not frozen in v1: a WebSandboxed plugin's small store, kept by the host. A
+ * local-process host answers both with `METHOD_NOT_FOUND`.
+ */
+const STORAGE_GET_METHOD = "rim.storage.get";
+const STORAGE_SET_METHOD = "rim.storage.set";
 
 /** Who started a command: a person (`user`) or the AI agent (`agent`). */
 export type Initiator = wire.CommandExecuteParams["initiator"];
@@ -100,6 +111,22 @@ export interface Panels {
   patch(panelId: string, patch: Readonly<Record<string, unknown>>): Promise<void>;
 }
 
+/**
+ * A small key-value store the host keeps for a WebSandboxed plugin, per
+ * signed-in user and device: keys of 1 to 128 characters of `A-Z a-z 0-9 . _ -`,
+ * any JSON as a value, 1 MiB in all. It is not secret: never keep tokens in it.
+ *
+ * Experimental: `rim.storage.*` is not frozen in protocol v1. A local-process
+ * host has no store, so the promises reject with a {@link HostRequestError}
+ * whose code is `METHOD_NOT_FOUND`.
+ */
+export interface Storage {
+  /** The stored value of `key`, or `null`. */
+  get(key: string): Promise<unknown>;
+  /** Store `value` under `key`; `null` deletes the key. */
+  set(key: string, value: unknown): Promise<void>;
+}
+
 /** What the plugin knows about the host after the handshake. */
 export interface Host {
   /** The plugin's id, as the host started it. */
@@ -114,6 +141,7 @@ export interface Host {
   readonly principal: Principal | null;
   readonly log: Logger;
   readonly panels: Panels;
+  readonly storage: Storage;
 }
 
 /** A plugin, as passed to {@link definePlugin}. */
@@ -139,14 +167,21 @@ export interface PluginDefinition {
   readonly onShutdown?: () => void | Promise<void>;
 }
 
-/** Where a plugin reads and writes frames. The defaults are the process's stdio. */
+/**
+ * How a plugin talks to the host. By default: the port in
+ * `globalThis.rimPluginPort` when a WebSandboxed plugin's frame has one, else
+ * the process's stdio.
+ */
 export interface RunOptions {
-  /** Frames from the host. Defaults to `process.stdin`. */
+  /** The connection to the host, overriding the default. */
+  readonly transport?: Transport;
+  /** Frames from the host, over a byte stream. Defaults to `process.stdin`. */
   readonly input?: AsyncIterable<Uint8Array | string>;
-  /** Frames to the host. Defaults to `process.stdout`. */
+  /** Frames to the host, over a byte stream. Defaults to `process.stdout`. */
   readonly output?: FrameSink;
   /**
-   * The manifest to check the plugin against. Defaults to `rim-plugin.json` in
+   * The manifest to check the plugin against. Defaults to the text in
+   * `globalThis.rimPluginManifest` in a plugin frame, else `rim-plugin.json` in
    * the working directory, which is the plugin directory when the host starts
    * it; a missing file is skipped. `false` skips the check.
    */
@@ -155,11 +190,6 @@ export interface RunOptions {
   readonly exit?: (code: number) => void;
   /** How long to wait for the host to answer a request. Defaults to 30 seconds. */
   readonly requestTimeoutMs?: number;
-}
-
-/** A writable byte stream, such as `process.stdout`. */
-export interface FrameSink {
-  write(chunk: Uint8Array, callback?: (error?: Error | null) => void): boolean;
 }
 
 /** A plugin ready to run. */
@@ -173,6 +203,26 @@ export interface Plugin {
   run(options?: RunOptions): Promise<void>;
 }
 
+/** What `run()` needs from where the plugin runs: Node, or a browser frame. */
+export interface Platform {
+  /** The process's stdin and stdout; throws where there are none. */
+  streams(): { input: AsyncIterable<Uint8Array | string>; output: FrameSink };
+  /**
+   * Called when the plugin talks over the process's own stdio: keep stdout for
+   * frames, and say how the process exits when the connection ends.
+   */
+  claimStdio(): (code: number) => void;
+  /** Read a manifest file; `undefined` when it does not exist or there are no files. */
+  readManifest(path: string): ManifestInfo | undefined;
+  /** Write a line where a person can see it, once the host cannot. */
+  stderr(line: string): void;
+}
+
+/** A transport that can wait until what it sent has left. */
+interface FlushableTransport extends Transport {
+  flush?(): Promise<void>;
+}
+
 /**
  * Define a plugin.
  *
@@ -184,7 +234,11 @@ export interface Plugin {
  *   },
  * }).run();
  */
-export function definePlugin(definition: PluginDefinition): Plugin {
+export function createDefinePlugin(platform: Platform): (definition: PluginDefinition) => Plugin {
+  return (definition) => definePluginOn(platform, definition);
+}
+
+function definePluginOn(platform: Platform, definition: PluginDefinition): Plugin {
   if (typeof definition.id !== "string" || definition.id.length === 0) {
     throw new TypeError("definePlugin: id must be the plugin_id from rim-plugin.json");
   }
@@ -197,38 +251,46 @@ export function definePlugin(definition: PluginDefinition): Plugin {
   }
   return Object.freeze({
     id: definition.id,
-    run: (options: RunOptions = {}) => runPlugin(definition, commands, options),
+    run: (options: RunOptions = {}) => runPlugin(platform, definition, commands, options),
   });
 }
 
 async function runPlugin(
+  platform: Platform,
   definition: PluginDefinition,
   commands: ReadonlyMap<string, CommandDefinition>,
   options: RunOptions,
 ): Promise<void> {
-  const onStdio = options.input === undefined && options.output === undefined;
-  const input = options.input ?? process.stdin;
-  const output = options.output ?? process.stdout;
-  const exit = options.exit ?? (onStdio ? (code: number) => process.exit(code) : undefined);
-  if (onStdio) keepStdoutForFrames();
+  const port = (globalThis as { rimPluginPort?: PortLike }).rimPluginPort;
+  const onStreams = options.input === undefined && options.output === undefined;
+  let transport: FlushableTransport;
+  let exit = options.exit;
+  if (options.transport) {
+    transport = options.transport;
+  } else if (port && onStreams) {
+    transport = portTransport(port);
+  } else {
+    const streams =
+      options.input === undefined || options.output === undefined ? platform.streams() : undefined;
+    transport = streamTransport(
+      options.input ?? (streams as NonNullable<typeof streams>).input,
+      options.output ?? (streams as NonNullable<typeof streams>).output,
+    );
+    if (onStreams) exit ??= platform.claimStdio();
+  }
 
   const session = new Session(
     definition,
     commands,
-    output,
-    loadManifest(options.manifestPath),
+    (text) => transport.send(text),
+    loadManifest(platform, options.manifestPath),
     options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    platform,
   );
-  const decoder = new FrameDecoder();
-  const encoder = new TextEncoder();
   let code = 0;
   try {
-    for await (const chunk of input) {
-      for (const frame of decoder.push(typeof chunk === "string" ? encoder.encode(chunk) : chunk)) {
-        if (frame.ok) session.receive(frame.value);
-        else session.log("warn", `dropped a frame that is not JSON: ${frame.error}`);
-        if (session.stopping) break;
-      }
+    for await (const text of transport.messages) {
+      session.receiveText(text);
       if (session.stopping) break;
     }
   } catch (error) {
@@ -236,13 +298,9 @@ async function runPlugin(
     code = error instanceof FrameTooLargeError ? 1 : 2;
   }
   await session.close();
-  await new Promise<void>((done) => output.write(new Uint8Array(0), () => done()));
+  await transport.flush?.();
+  transport.close();
   exit?.(code);
-}
-
-/** stdout carries frames, so anything a plugin prints goes to stderr instead. */
-function keepStdoutForFrames(): void {
-  globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
 }
 
 interface LoadedManifest {
@@ -250,14 +308,18 @@ interface LoadedManifest {
   problem?: string;
 }
 
-function loadManifest(path: string | false | undefined): LoadedManifest {
+function loadManifest(platform: Platform, path: string | false | undefined): LoadedManifest {
   if (path === false) return {};
-  const fullPath = resolve(path ?? "rim-plugin.json");
+  const text = (globalThis as { rimPluginManifest?: unknown }).rimPluginManifest;
+  const source = path ?? (typeof text === "string" ? "rimPluginManifest" : "rim-plugin.json");
   try {
-    return { manifest: readManifest(fullPath) };
+    if (path === undefined && typeof text === "string") {
+      return { manifest: parseManifestInfo(text, source) };
+    }
+    return { manifest: platform.readManifest(source) };
   } catch (error) {
     return {
-      problem: `cannot read ${fullPath}: ${error instanceof Error ? error.message : error}`,
+      problem: `cannot read ${source}: ${error instanceof Error ? error.message : error}`,
     };
   }
 }
@@ -284,7 +346,8 @@ class Session {
 
   private readonly definition: PluginDefinition;
   private readonly commands: ReadonlyMap<string, CommandDefinition>;
-  private readonly output: FrameSink;
+  private readonly send: (text: string) => void;
+  private readonly platform: Platform;
   private readonly manifest: ManifestInfo | undefined;
   private readonly manifestProblem: string | undefined;
   private readonly requestTimeoutMs: number;
@@ -300,13 +363,15 @@ class Session {
   constructor(
     definition: PluginDefinition,
     commands: ReadonlyMap<string, CommandDefinition>,
-    output: FrameSink,
+    send: (text: string) => void,
     loaded: LoadedManifest,
     requestTimeoutMs: number,
+    platform: Platform,
   ) {
     this.definition = definition;
     this.commands = commands;
-    this.output = output;
+    this.send = send;
+    this.platform = platform;
     this.manifest = loaded.manifest;
     this.requestTimeoutMs = requestTimeoutMs;
     this.manifestProblem =
@@ -328,7 +393,19 @@ class Session {
     }
   }
 
-  /** Handle one decoded frame from the host. */
+  /** Handle the JSON text of one message from the host. */
+  receiveText(text: string): void {
+    let frame: unknown;
+    try {
+      frame = JSON.parse(text);
+    } catch {
+      this.log("warn", "dropped a message that is not JSON");
+      return;
+    }
+    this.receive(frame);
+  }
+
+  /** Handle one parsed message from the host. */
   receive(frame: unknown): void {
     if (!isRecord(frame) || frame.jsonrpc !== "2.0") {
       this.log("warn", "dropped a frame that is not JSON-RPC 2.0");
@@ -363,7 +440,7 @@ class Session {
         // Too large for a frame: fall through to stderr.
       }
     }
-    process.stderr.write(`[${level}] ${message}\n`);
+    this.platform.stderr(`[${level}] ${message}`);
   }
 
   /** Run `onShutdown` and fail every request still waiting for the host. */
@@ -548,7 +625,7 @@ class Session {
     );
   }
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  request(method: string, params: unknown): Promise<unknown> {
     if (this.closed || this.stopping || !this.ready) {
       const message = this.ready
         ? "the connection to the host is closing"
@@ -611,6 +688,15 @@ class Session {
         warn: (message: string) => session.log("warn", message),
         error: (message: string) => session.log("error", message),
       }),
+      storage: Object.freeze({
+        get: async (key: string) => {
+          const result = await session.request(STORAGE_GET_METHOD, { key });
+          return isRecord(result) && "value" in result ? result.value : null;
+        },
+        set: async (key: string, value: unknown) => {
+          await session.request(STORAGE_SET_METHOD, { key, value });
+        },
+      }),
       panels: Object.freeze({
         set: (panelId: string, state: unknown) => session.updatePanel(panelId, state, false),
         patch: (panelId: string, patch: Readonly<Record<string, unknown>>) => {
@@ -632,7 +718,10 @@ class Session {
   }
 
   private write(frame: object): void {
-    this.output.write(encodeFrame(frame));
+    const text = JSON.stringify(frame);
+    const bytes = new TextEncoder().encode(text).length;
+    if (bytes > MAX_FRAME_BYTES) throw new FrameTooLargeError(bytes);
+    this.send(text);
   }
 
   /** Write a response, or an error saying why it could not be sent. */

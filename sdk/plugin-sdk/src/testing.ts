@@ -1,9 +1,11 @@
 import { PassThrough } from "node:stream";
+import { MessageChannel } from "node:worker_threads";
 
 import type * as wire from "./generated/protocol.ts";
 import { ErrorCode, Method, PROTOCOL_VERSION } from "./generated/protocol.ts";
 import { encodeFrame, FrameDecoder } from "./framing.ts";
 import type { Initiator, Plugin } from "./plugin.ts";
+import { portTransport, type PortLike } from "./transport.ts";
 
 /** What the test host sends in its handshake, and how it answers the plugin. */
 export interface TestHostOptions {
@@ -17,6 +19,12 @@ export interface TestHostOptions {
   readonly onRequest?: (method: string, params: unknown) => unknown;
   /** How long to wait for each plugin answer. Defaults to 5 seconds. */
   readonly timeoutMs?: number;
+  /**
+   * How the plugin and the test host talk: frames over stdio streams, as a
+   * local process does (the default), or JSON text over a `MessageChannel`, as
+   * a WebSandboxed plugin's frame does. Every assertion works the same on both.
+   */
+  readonly transport?: "stdio" | "port";
 }
 
 /** A command answer: exactly one of `result` and `error` is set. */
@@ -59,7 +67,7 @@ export interface TestHost {
   notify(method: string, params?: unknown): void;
   /** Send `rim.shutdown` and wait for the plugin to stop. */
   shutdown(): Promise<number>;
-  /** Close the plugin's input, as the host does after `rim.shutdown`. */
+  /** Close the plugin's input (stdio) or the host's end of the port, as the host does after `rim.shutdown`. */
   close(): void;
 }
 
@@ -87,9 +95,6 @@ export const TEST_PRINCIPAL: wire.Principal = Object.freeze({
  * await host.shutdown();
  */
 export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): TestHost {
-  const input = new PassThrough();
-  const output = new PassThrough();
-  const decoder = new FrameDecoder();
   const frames: unknown[] = [];
   const logs: wire.LogParams[] = [];
   const waiting = new Map<wire.Id, (frame: Record<string, unknown>) => void>();
@@ -103,27 +108,19 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
     exitCode = done;
   });
 
-  const send = (frame: unknown) => {
-    if (!input.writableEnded) input.write(encodeFrame(frame));
-  };
-
-  output.on("data", (chunk: Uint8Array) => {
-    for (const decoded of decoder.push(chunk)) {
-      if (!decoded.ok) {
-        frames.push({ invalidFrame: decoded.error });
-        continue;
-      }
-      const frame = decoded.value as Record<string, unknown>;
-      frames.push(frame);
-      if (typeof frame.method === "string") {
-        if (frame.method === Method.log) logs.push(frame.params as wire.LogParams);
-        if (frame.id !== undefined && frame.id !== null) void answer(frame);
-      } else if (waiting.has(frame.id as wire.Id)) {
-        waiting.get(frame.id as wire.Id)?.(frame);
-        waiting.delete(frame.id as wire.Id);
-      }
+  const received = (frame: Record<string, unknown>) => {
+    frames.push(frame);
+    if (typeof frame.method === "string") {
+      if (frame.method === Method.log) logs.push(frame.params as wire.LogParams);
+      if (frame.id !== undefined && frame.id !== null) void answer(frame);
+    } else if (waiting.has(frame.id as wire.Id)) {
+      waiting.get(frame.id as wire.Id)?.(frame);
+      waiting.delete(frame.id as wire.Id);
     }
-  });
+  };
+  const connection =
+    options.transport === "port" ? connectPort(received, frames) : connectStdio(received, frames);
+  const send = connection.send;
 
   const answer = async (frame: Record<string, unknown>) => {
     const id = frame.id;
@@ -181,8 +178,7 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
 
   void plugin
     .run({
-      input,
-      output,
+      ...connection.runOptions,
       manifestPath: options.manifestPath ?? false,
       exit: (code) => exitCode(code),
     })
@@ -226,11 +222,70 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
     },
     async shutdown() {
       send({ jsonrpc: "2.0", method: Method.shutdown });
-      input.end();
+      connection.close();
       return exited;
+    },
+    close() {
+      connection.close();
+    },
+  };
+}
+
+interface Connection {
+  send(frame: unknown): void;
+  close(): void;
+  runOptions: Parameters<Plugin["run"]>[0];
+}
+
+/** Frames over a pair of in-memory streams, as the host talks to a local process. */
+function connectStdio(
+  received: (frame: Record<string, unknown>) => void,
+  frames: unknown[],
+): Connection {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const decoder = new FrameDecoder();
+  output.on("data", (chunk: Uint8Array) => {
+    for (const decoded of decoder.push(chunk)) {
+      if (decoded.ok) received(decoded.value as Record<string, unknown>);
+      else frames.push({ invalidFrame: decoded.error });
+    }
+  });
+  return {
+    send(frame) {
+      if (!input.writableEnded) input.write(encodeFrame(frame));
     },
     close() {
       input.end();
     },
+    runOptions: { input, output },
+  };
+}
+
+/** JSON text over a `MessageChannel`, as the host talks to a WebSandboxed plugin's frame. */
+function connectPort(
+  received: (frame: Record<string, unknown>) => void,
+  frames: unknown[],
+): Connection {
+  const channel = new MessageChannel();
+  let closed = false;
+  channel.port1.on("message", (data: unknown) => {
+    try {
+      received(JSON.parse(String(data)) as Record<string, unknown>);
+    } catch (error) {
+      frames.push({ invalidFrame: (error as Error).message });
+    }
+  });
+  return {
+    send(frame) {
+      if (!closed) channel.port1.postMessage(JSON.stringify(frame));
+    },
+    close() {
+      // Let what was sent arrive first, as a frame keeps its queue until it is removed.
+      if (closed) return;
+      closed = true;
+      setTimeout(() => channel.port1.close(), 0);
+    },
+    runOptions: { transport: portTransport(channel.port2 as unknown as PortLike) },
   };
 }
