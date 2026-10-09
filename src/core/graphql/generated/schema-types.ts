@@ -22,24 +22,6 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown; }
 };
 
-export type AcceptInviteInput = {
-  inviteToken: Scalars['String']['input'];
-  password: Scalars['String']['input'];
-  username: Scalars['String']['input'];
-};
-
-export type AcceptInvitePayload = {
-  serverId: Scalars['ID']['output'];
-  userId: Scalars['ID']['output'];
-};
-
-export type Action = {
-  capabilityIds: Array<Scalars['String']['output']>;
-  description: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  title: Scalars['String']['output'];
-};
-
 export type AdvanceIncidentPhaseInput = {
   incidentId: Scalars['ID']['input'];
   nextPhase: IncidentPhaseNameGql;
@@ -119,18 +101,6 @@ export enum AuditOutcomeGql {
   STEP_ERROR = 'STEP_ERROR',
   SUCCESS = 'SUCCESS'
 }
-
-export type BootstrapInput = {
-  password: Scalars['String']['input'];
-  secret: Scalars['String']['input'];
-  serverName: Scalars['String']['input'];
-  username: Scalars['String']['input'];
-};
-
-export type BootstrapPayload = {
-  serverId: Scalars['ID']['output'];
-  userId: Scalars['ID']['output'];
-};
 
 export type Capability = {
   description: Scalars['String']['output'];
@@ -811,12 +781,6 @@ export enum EscalationTargetKindGql {
   USER = 'USER'
 }
 
-export type Event = {
-  description: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  title: Scalars['String']['output'];
-};
-
 export type ExecuteCommandInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   commandContext?: InputMaybe<CommandContextInput>;
@@ -1108,21 +1072,6 @@ export type InstanceInviteGql = {
   revokedAt?: Maybe<Scalars['DateTime']['output']>;
   useCount: Scalars['Int']['output'];
 };
-
-export type Integration = {
-  enabled: Scalars['Boolean']['output'];
-  id: Scalars['String']['output'];
-  kind: IntegrationKind;
-  principalId?: Maybe<Scalars['ID']['output']>;
-  title: Scalars['String']['output'];
-};
-
-export enum IntegrationKind {
-  BOT = 'BOT',
-  BUILT_IN = 'BUILT_IN',
-  LOCAL_PLUGIN = 'LOCAL_PLUGIN',
-  WEBHOOK = 'WEBHOOK'
-}
 
 export type Invite = {
   createdByUserId: Scalars['ID']['output'];
@@ -1460,7 +1409,6 @@ export enum MessageTagTypeGql {
 }
 
 export type Mutation = {
-  acceptInvite: AcceptInvitePayload;
   /**
    * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
    * responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
@@ -1479,8 +1427,6 @@ export type Mutation = {
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
   banMember: ServerBan;
-  /** @deprecated Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release. */
-  bootstrap: BootstrapPayload;
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
@@ -1731,11 +1677,6 @@ export type Mutation = {
 };
 
 
-export type MutationAcceptInviteArgs = {
-  input: AcceptInviteInput;
-};
-
-
 export type MutationAcknowledgeIncidentArgs = {
   incidentId: Scalars['ID']['input'];
 };
@@ -1772,11 +1713,6 @@ export type MutationBanMemberArgs = {
   reason?: InputMaybe<Scalars['String']['input']>;
   serverId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
-};
-
-
-export type MutationBootstrapArgs = {
-  input: BootstrapInput;
 };
 
 
@@ -2561,7 +2497,6 @@ export type ProfileCard = {
 };
 
 export type Query = {
-  actions: Array<Action>;
   activeIncident?: Maybe<IncidentGql>;
   applyChannelLens: Array<Message>;
   attachment: Attachment;
@@ -2588,12 +2523,10 @@ export type Query = {
   defaultKeybinds: Array<DefaultKeybind>;
   /** List a server's escalation policies. Any workspace member may read. */
   escalationPolicies: Array<EscalationPolicyGql>;
-  events: Array<Event>;
   inboxConversations: ConversationPage;
   incidentTimeline: IncidentTimelineGql;
   /** List every alert-ingest token for a server (including revoked). Owner-only. */
   ingestTokens: Array<IngestTokenGql>;
-  integrations: Array<Integration>;
   /**
    * The public key log of a principal enrolled on this server, oldest first; empty when none
    * is. No session needed: a person who lost every device reads the head here to sign a
@@ -2704,7 +2637,6 @@ export type Query = {
    * individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
    */
   serverOnCall: Array<OnCallNowGql>;
-  settings: Array<Setting>;
   thread: Thread;
   threadByRootMessage?: Maybe<Thread>;
   threadMessages: MessagePage;
@@ -3284,22 +3216,6 @@ export type SetWorkspaceStateInput = {
   ttlSeconds?: InputMaybe<Scalars['Int']['input']>;
   value: Scalars['JSON']['input'];
 };
-
-export type Setting = {
-  description: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  isSecret: Scalars['Boolean']['output'];
-  scope: SettingScope;
-  title: Scalars['String']['output'];
-  valueType: Scalars['String']['output'];
-};
-
-export enum SettingScope {
-  DEVICE_LOCAL = 'DEVICE_LOCAL',
-  INTEGRATION = 'INTEGRATION',
-  USER = 'USER',
-  WORKSPACE = 'WORKSPACE'
-}
 
 /** A stored signed statement, exactly as it was signed, so the client can verify it again. */
 export type SignedStatement = {

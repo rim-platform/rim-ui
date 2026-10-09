@@ -1,21 +1,3 @@
-input AcceptInviteInput {
-	inviteToken: String!
-	username: String!
-	password: String!
-}
-
-type AcceptInvitePayload {
-	userId: ID!
-	serverId: ID!
-}
-
-type Action {
-	id: String!
-	title: String!
-	description: String!
-	capabilityIds: [String!]!
-}
-
 input AdvanceIncidentPhaseInput {
 	incidentId: ID!
 	nextPhase: IncidentPhaseNameGql!
@@ -98,18 +80,6 @@ enum AuditOutcomeGql {
 	RATE_LIMITED
 	STEP_ERROR
 	MACRO_PARTIAL_FAILURE
-}
-
-input BootstrapInput {
-	secret: String!
-	username: String!
-	password: String!
-	serverName: String!
-}
-
-type BootstrapPayload {
-	userId: ID!
-	serverId: ID!
 }
 
 type Capability {
@@ -890,12 +860,6 @@ enum EscalationTargetKindGql {
 	ON_CALL
 }
 
-type Event {
-	id: String!
-	title: String!
-	description: String!
-}
-
 input ExecuteCommandInput {
 	commandId: String!
 	args: JSON
@@ -1188,21 +1152,6 @@ type InstanceInviteGql {
 	useCount: Int!
 	revokedAt: DateTime
 	createdAt: DateTime!
-}
-
-type Integration {
-	id: String!
-	kind: IntegrationKind!
-	title: String!
-	enabled: Boolean!
-	principalId: ID
-}
-
-enum IntegrationKind {
-	BUILT_IN
-	LOCAL_PLUGIN
-	BOT
-	WEBHOOK
 }
 
 type Invite {
@@ -1582,11 +1531,9 @@ enum MessageTagTypeGql {
 }
 
 type Mutation {
-	bootstrap(input: BootstrapInput!): BootstrapPayload! @deprecated(reason: "Use signupWithInvite with a bootstrapToken issued by the rim_server bootstrap-user CLI command. The BOOTSTRAP_SECRET path will be removed in the next minor release.")
 	login(input: LoginInput!): LoginPayload!
 	logout: Boolean!
 	createInvite(input: CreateInviteInput!): CreateInvitePayload!
-	acceptInvite(input: AcceptInviteInput!): AcceptInvitePayload!
 	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
 	revokeInvite(inviteId: ID!): Boolean!
 	"""
@@ -2175,11 +2122,7 @@ type Query {
 	"""
 	commandDiscover(intentPhrase: String, limit: Int, workspaceId: ID): [Command!]!
 	command(commandId: String!): Command
-	actions: [Action!]!
-	events: [Event!]!
 	capabilities: [Capability!]!
-	integrations: [Integration!]!
-	settings: [Setting!]!
 	keybinds(scope: KeybindScope!, workspaceId: ID): [Keybind!]!
 	defaultKeybinds: [DefaultKeybind!]!
 	resolvedKeybinds(workspaceId: ID): [Keybind!]!
@@ -2585,22 +2528,6 @@ input SetWorkspaceStateInput {
 	ttlSeconds: Int
 }
 
-type Setting {
-	id: String!
-	scope: SettingScope!
-	title: String!
-	description: String!
-	valueType: String!
-	isSecret: Boolean!
-}
-
-enum SettingScope {
-	USER
-	WORKSPACE
-	INTEGRATION
-	DEVICE_LOCAL
-}
-
 """
 A stored signed statement, exactly as it was signed, so the client can verify it again.
 """
@@ -2928,10 +2855,6 @@ enum WorkspaceStateScopeGql {
 	USER
 }
 
-"""
-Marks an element of a GraphQL schema as no longer supported.
-"""
-directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """
