@@ -42,6 +42,7 @@ import { TitleBar } from "../components/TitleBar";
 import { ConnectionBanner } from "../../features/system/components/ConnectionBanner";
 import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
+import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
 import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
 import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
@@ -65,6 +66,7 @@ export function AppShell() {
   const session = useAuthStore((s) => s.session);
   const { isHydrating } = useSessionHydration();
   useOfflineReconnect();
+  useResumeDeviceLinks();
   usePluginPrincipalSync();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { capabilities } = useRuntime();
