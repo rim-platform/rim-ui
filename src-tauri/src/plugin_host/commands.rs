@@ -739,6 +739,29 @@ pub async fn plugin_run_ai_command(
 pub struct SignedInUser {
     pub user_id: String,
     pub display_name: String,
+    /// The account's key-based principal id (`User.principalId`), once it enrolled a key.
+    #[serde(default)]
+    pub principal_id: Option<String>,
+}
+
+impl SignedInUser {
+    /// The principal plugins see: the key-based id once there is one, else the provisional
+    /// id derived from the account id.
+    fn principal(&self) -> Principal {
+        match self.key_principal_id() {
+            Some(id) => Principal {
+                principal_id: id.to_string(),
+                display_name: self.display_name.clone(),
+            },
+            None => Principal::provisional(&self.user_id, &self.display_name),
+        }
+    }
+
+    fn key_principal_id(&self) -> Option<&str> {
+        self.principal_id
+            .as_deref()
+            .filter(|id| crate::plugin_host::protocol::is_key_principal_id(id))
+    }
 }
 
 /// Tell the plugin host who is signed in (`None` after sign-out).
@@ -747,13 +770,25 @@ pub struct SignedInUser {
 /// [`Principal`] in the handshake, in every `rim.command.execute`, and in a
 /// `rim.principal.changed` notification sent to each running plugin whenever
 /// the principal changes.
+///
+/// When the account has a key-based id, the host records once that its provisional id
+/// became that id, and tells every plugin with `rim.principals.remapped` (after the
+/// `rim.principal.changed` carrying the new id).
 #[tauri::command]
 pub async fn plugin_set_principal(
     user: Option<SignedInUser>,
     state: State<'_, PluginHostState>,
 ) -> Result<(), String> {
-    let principal = user.map(|u| Principal::provisional(&u.user_id, &u.display_name));
-    runtime::set_principal(&state, principal).await;
+    let switched = user.as_ref().is_some_and(|u| {
+        u.key_principal_id().is_some_and(|to| {
+            let from = Principal::provisional(&u.user_id, &u.display_name).principal_id;
+            runtime::record_principal_switch(&state, &from, to)
+        })
+    });
+    runtime::set_principal(&state, user.as_ref().map(SignedInUser::principal)).await;
+    if switched {
+        runtime::announce_remapped(&state).await;
+    }
     Ok(())
 }
 

@@ -11,7 +11,8 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => runtime,
 }));
 
-type Me = { id: string; username: string; displayName: string } | undefined;
+type Me =
+  { id: string; username: string; displayName: string; principalId?: string | null } | undefined;
 let me: Me;
 vi.mock("../../workspaces/api/useCurrentUser", () => ({
   useCurrentUser: () => ({ data: me }),
@@ -38,7 +39,19 @@ describe("usePluginPrincipalSync", () => {
 
     await waitFor(() =>
       expect(safeInvokeMock).toHaveBeenCalledWith("plugin_set_principal", {
-        user: { userId: "user-1", displayName: "Jakub" },
+        user: { userId: "user-1", displayName: "Jakub", principalId: null },
+      }),
+    );
+  });
+
+  it("passes the key-based id once the account enrolled a key", async () => {
+    useAuthStore.setState({ session: { userId: USER.id } });
+    me = { ...USER, principalId: "rimp1_key" };
+    renderHook(() => usePluginPrincipalSync());
+
+    await waitFor(() =>
+      expect(safeInvokeMock).toHaveBeenCalledWith("plugin_set_principal", {
+        user: { userId: "user-1", displayName: "Jakub", principalId: "rimp1_key" },
       }),
     );
   });
@@ -50,7 +63,7 @@ describe("usePluginPrincipalSync", () => {
 
     await waitFor(() =>
       expect(safeInvokeMock).toHaveBeenCalledWith("plugin_set_principal", {
-        user: { userId: "user-1", displayName: "jakub" },
+        user: { userId: "user-1", displayName: "jakub", principalId: null },
       }),
     );
   });

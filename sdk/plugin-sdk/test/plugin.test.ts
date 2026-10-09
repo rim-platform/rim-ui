@@ -267,6 +267,22 @@ describe("signed-in user", () => {
     expect(lastHost.principal).toBeNull();
     await host.shutdown();
   });
+
+  it("passes on id switches and ignores malformed ones", async () => {
+    const onPrincipalsRemapped = vi.fn();
+    const host = start({ onPrincipalsRemapped });
+    await host.handshake();
+    const mapping = { from: "rimp0_old", to: "rimp1_new" };
+
+    host.notify("rim.principals.remapped", { mappings: [mapping] });
+    host.notify("rim.principals.remapped", { mappings: [{ from: "rimp0_old" }] });
+    host.notify("rim.principals.remapped", { mappings: "rimp1_new" });
+    host.notify("rim.principals.remapped", { mappings: [] });
+    await host.heartbeat();
+
+    expect(onPrincipalsRemapped.mock.calls.map((call) => call[0])).toEqual([[mapping]]);
+    await host.shutdown();
+  });
 });
 
 describe("panels", () => {

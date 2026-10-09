@@ -9,6 +9,7 @@ import { useAuthStore } from "../state/useAuthStore";
 const requestMock = vi.fn();
 const loadSessionRecordMock = vi.fn<() => Promise<SessionRecord | null>>();
 const saveSessionRecordMock = vi.fn<(record: SessionRecord) => Promise<void>>();
+const resumeWithDeviceKeyMock = vi.fn<(userId: string) => Promise<string | null>>();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -16,6 +17,10 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../offline/api/offlineSession", () => ({
   loadSessionRecord: () => loadSessionRecordMock(),
   saveSessionRecord: (record: SessionRecord) => saveSessionRecordMock(record),
+}));
+
+vi.mock("../../key-identity/api/keyIdentity", () => ({
+  resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
 }));
 
 import { useSessionHydration } from "./useSessionHydration";
@@ -58,6 +63,7 @@ describe("useSessionHydration", () => {
     requestMock.mockReset();
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
     saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
+    resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
     useAuthStore.setState({ session: null });
     useOfflineStore.setState({ offline: false });
   });
@@ -99,6 +105,19 @@ describe("useSessionHydration", () => {
 
     expect(result.current.isAuthenticated).toBe(false);
     expect(saveSessionRecordMock).toHaveBeenCalledWith({ state: "signedOut", endpoint });
+  });
+
+  it("signs in again with this device's key when the server refuses the session", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockRejectedValue(unauthenticated());
+    resumeWithDeviceKeyMock.mockResolvedValue("alice");
+
+    const result = await hydrate();
+
+    expect(resumeWithDeviceKeyMock).toHaveBeenCalledWith("alice");
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
+    expect(saveSessionRecordMock).not.toHaveBeenCalled();
   });
 
   it("keeps the record when the server fails for another reason", async () => {

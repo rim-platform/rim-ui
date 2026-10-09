@@ -11,6 +11,7 @@ import { useOfflineStore } from "../state/useOfflineStore";
 
 const requestMock = vi.fn();
 const wsConnectedListeners: (() => void)[] = [];
+const resumeWithDeviceKeyMock = vi.fn<(userId: string) => Promise<string | null>>();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -20,6 +21,10 @@ vi.mock("../../../core/graphql/wsClient", () => ({
     wsConnectedListeners.push(listener);
     return () => wsConnectedListeners.splice(wsConnectedListeners.indexOf(listener), 1);
   },
+}));
+
+vi.mock("../../key-identity/api/keyIdentity", () => ({
+  resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
 }));
 
 import {
@@ -44,6 +49,14 @@ const coded = (code: string) =>
 describe("checkSession", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
+  });
+
+  it("is online when this device's key signs the same user in again", async () => {
+    requestMock.mockRejectedValue(coded("UNAUTHENTICATED"));
+    resumeWithDeviceKeyMock.mockResolvedValue("alice");
+    expect(await checkSession("alice")).toBe("online");
+    expect(resumeWithDeviceKeyMock).toHaveBeenCalledWith("alice");
   });
 
   it("is online when the server still knows the user", async () => {
@@ -87,6 +100,7 @@ describe("useOfflineReconnect", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     requestMock.mockReset();
+    resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
     useAuthStore.setState({ session: { userId: "alice" } });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useOfflineStore.setState({ offline: true });

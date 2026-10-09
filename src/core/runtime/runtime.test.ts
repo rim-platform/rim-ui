@@ -13,6 +13,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.filesystemAccess).toBe(true);
     expect(caps.nativeNotifications).toBe(true);
     expect(caps.customTitleBar).toBe(true);
+    expect(caps.deviceKeys).toBe(true);
   });
 
   it("returns limited capabilities for web", () => {
@@ -26,6 +27,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.filesystemAccess).toBe(false);
     expect(caps.nativeNotifications).toBe(false);
     expect(caps.customTitleBar).toBe(false);
+    expect(caps.deviceKeys).toBe(false);
   });
 
   it("returns all capabilities disabled for mobile", () => {
@@ -40,6 +42,7 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.filesystemAccess).toBe(false);
     expect(caps.nativeNotifications).toBe(false);
     expect(caps.customTitleBar).toBe(false);
+    expect(caps.deviceKeys).toBe(false);
   });
 
   it("web still allows device-local keybinds", () => {

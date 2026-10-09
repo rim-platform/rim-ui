@@ -37,6 +37,9 @@ pub mod method {
     pub const SHUTDOWN: &str = "rim.shutdown";
     /// Host → plugin notification: the signed-in user changed.
     pub const PRINCIPAL_CHANGED: &str = "rim.principal.changed";
+    /// Host → plugin notification: provisional principal ids and the key-based ids that
+    /// replaced them, so a plugin can rewrite ids it stored.
+    pub const PRINCIPALS_REMAPPED: &str = "rim.principals.remapped";
     /// Host → plugin request: run one of the plugin's manifest commands.
     pub const COMMAND_EXECUTE: &str = "rim.command.execute";
     /// Plugin → host request or notification: write a line to the host log.
@@ -45,9 +48,13 @@ pub mod method {
 
 /// Prefix of a provisional principal id, derived from today's account id.
 ///
-/// Once user keys exist, a principal id becomes the hash of the user's inception
-/// key and the host announces the switch with [`method::PRINCIPAL_CHANGED`].
+/// Once an account enrolls a key identity, its principal id becomes the server's
+/// `rimp1_` id (a hash of the first key log entry) and the host announces the switch
+/// with [`method::PRINCIPAL_CHANGED`] and [`method::PRINCIPALS_REMAPPED`].
 pub const PROVISIONAL_PRINCIPAL_PREFIX: &str = "rimp0_";
+
+/// Prefix of a key-based principal id (`rim-server/docs/specs/key-identity-v1.md`).
+pub const KEY_PRINCIPAL_PREFIX: &str = "rimp1_";
 
 /// Domain separator hashed in front of the account id.
 const PROVISIONAL_PRINCIPAL_DOMAIN: &[u8] = b"rim.principal.provisional.v1\0";
@@ -84,6 +91,33 @@ impl Principal {
             display_name: display_name.to_string(),
         }
     }
+}
+
+/// Whether `id` is a key-based principal id the host may pass to plugins: `rimp1_` and
+/// the protocol's principal id alphabet, at most 128 characters.
+pub fn is_key_principal_id(id: &str) -> bool {
+    id.len() <= 128
+        && id.len() > KEY_PRINCIPAL_PREFIX.len()
+        && id.starts_with(KEY_PRINCIPAL_PREFIX)
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+}
+
+/// One switched id in [`method::PRINCIPALS_REMAPPED`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrincipalMapping {
+    /// The provisional `rimp0_` id.
+    pub from: String,
+    /// The id that replaced it.
+    pub to: String,
+}
+
+/// Params of [`method::PRINCIPALS_REMAPPED`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrincipalsRemappedParams {
+    /// Every mapping the host knows, each `from` once.
+    pub mappings: Vec<PrincipalMapping>,
 }
 
 /// Params of [`method::HANDSHAKE`].

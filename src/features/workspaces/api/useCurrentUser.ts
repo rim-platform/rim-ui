@@ -14,6 +14,7 @@ const ME_QUERY = gql`
       avatarUrl
       statusText
       bio
+      principalId
     }
   }
 `;
@@ -25,6 +26,8 @@ interface User {
   avatarUrl: string | null;
   statusText: string | null;
   bio: string | null;
+  /** The key identity id (`rimp1_…`) once the account enrolled a key, else null. */
+  principalId: string | null;
 }
 
 interface MeResponse {

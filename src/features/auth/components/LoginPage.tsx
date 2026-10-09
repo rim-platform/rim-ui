@@ -13,6 +13,9 @@
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
  * the login page is never shown to an authenticated user.
  *
+ * **Key sign-in (desktop):** above the password form, "Sign in with this device" for each
+ * account this computer holds a key for; below it, recovery with a recovery kit.
+ *
  * **Bootstrap mode is removed.** The `BootstrapForm` component and its tab
  * strip are gone from the UI. The CLI handles bootstrap via the same mutation;
  * `useBootstrapMutation` is preserved in the API layer.
@@ -27,6 +30,7 @@ import { useServerConfig } from "../api/useServerConfig";
 import { RegistrationMode } from "../types";
 import { LoginForm } from "./LoginForm";
 import { HealthIndicator } from "./HealthIndicator";
+import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/DeviceKeySignIn";
 
 /**
  * Top-level component for the `/login` route.
@@ -81,9 +85,13 @@ export function LoginPage() {
 
         <HealthIndicator />
 
+        <DeviceKeySignIn onSuccess={handleLoginSuccess} />
+
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
           <LoginForm onSuccess={handleLoginSuccess} />
         </div>
+
+        <RecoverAccount onSuccess={handleLoginSuccess} />
 
         {isOpen ? (
           <div className="space-y-3 text-center">

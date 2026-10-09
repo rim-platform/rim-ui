@@ -1,5 +1,6 @@
 mod agent_proxy;
 mod history_archive;
+mod key_identity;
 mod message_cache;
 mod offline_session;
 mod plugin_host;
@@ -136,6 +137,7 @@ pub fn run() {
             app.manage(message_cache::init(&app_data_dir));
             app.manage(history_archive::init(&app_data_dir));
             app.manage(offline_session::init());
+            app.manage(key_identity::init());
 
             let terminal_state = terminal::init();
             app.manage(terminal_state);
@@ -198,6 +200,20 @@ pub fn run() {
             message_cache::commands::message_cache_snapshot_get,
             offline_session::offline_session_load,
             offline_session::offline_session_save,
+            key_identity::commands::key_identity_accounts,
+            key_identity::commands::key_identity_default_device_name,
+            key_identity::commands::key_identity_begin_enrollment,
+            key_identity::commands::key_identity_sign_enrollment,
+            key_identity::commands::key_identity_discard_enrollment,
+            key_identity::commands::key_identity_settle,
+            key_identity::commands::key_identity_sign_login,
+            key_identity::commands::key_identity_sync_log,
+            key_identity::commands::key_identity_sign_revocation,
+            key_identity::commands::key_identity_begin_rotation,
+            key_identity::commands::key_identity_sign_profile_card,
+            key_identity::commands::key_identity_begin_recovery,
+            key_identity::commands::key_identity_discard_recovery,
+            key_identity::commands::key_identity_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -51,6 +51,7 @@ function makeRuntime(pluginHost: boolean) {
       filesystemAccess: false,
       nativeNotifications: false,
       customTitleBar: false,
+      deviceKeys: false,
     },
   };
 }

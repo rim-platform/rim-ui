@@ -60,10 +60,11 @@ executable (`chmod +x`), because the host runs it directly through its `#!` line
   and the code does not, the SDK treats it as dangerous.
 - **People.** The signed-in user and a command's invoker are `{ principalId,
 displayName }` and nothing else. `principalId` is an opaque `PrincipalId`: store it
-  and compare it, never parse it. Ids starting `rimp0_` are provisional and will be
-  replaced once, with a mapping from the host, when key identity ships, so keep stored
-  ids somewhere you can rewrite. `onPrincipalChanged` runs when the user signs in, out
-  or switches.
+  and compare it, never parse it. Ids starting `rimp0_` are provisional and are
+  replaced once, when the person enrolls a key identity, so keep stored ids somewhere
+  you can rewrite. `onPrincipalChanged` runs when the user signs in, out or switches,
+  or their id switches; `onPrincipalsRemapped` gets every `{ from, to }` switch the host
+  knows, after every handshake, so apply it idempotently.
 - **Errors.** Throw `PluginError(message, { code, data })` to choose the JSON-RPC
   error; anything else thrown becomes `PLUGIN_ERROR` with its message. `ErrorCode`
   lists the protocol's codes.

@@ -13,6 +13,8 @@ export type RuntimeCapabilities = {
   filesystemAccess: boolean;
   nativeNotifications: boolean;
   customTitleBar: boolean;
+  /** Device keys in the OS keyring: key sign-in, enrollment and recovery (Stage 3). */
+  deviceKeys: boolean;
 };
 
 export function detectPlatform(): AppPlatform {
@@ -42,6 +44,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       filesystemAccess: true,
       nativeNotifications: true,
       customTitleBar: true,
+      deviceKeys: true,
     };
   }
 
@@ -57,6 +60,7 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
       filesystemAccess: false,
       nativeNotifications: false,
       customTitleBar: false,
+      deviceKeys: false,
     };
   }
 
@@ -71,5 +75,6 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
     filesystemAccess: false,
     nativeNotifications: false,
     customTitleBar: false,
+    deviceKeys: false,
   };
 }
