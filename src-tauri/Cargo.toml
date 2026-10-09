@@ -52,6 +52,9 @@ hkdf = "0.12"
 hmac = "0.12"
 # Key identity (src/key_identity): Ed25519 device, identity and recovery keys.
 ed25519-dalek = "2"
+# The recovery phrase (src/key_identity/recovery_kit.rs): the BIP39 English word list and its
+# checksum. Only the word encoding is used; the key comes from HKDF, not BIP39's PBKDF2 seed.
+bip39 = { version = "2.2", default-features = false, features = ["zeroize"] }
 
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }

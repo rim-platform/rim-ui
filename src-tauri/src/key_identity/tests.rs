@@ -76,7 +76,14 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
         payload_field(&statements.device, "deviceId")
     );
 
-    // The kit's recovery key is the one the inception names, and it is not stored anywhere.
+    // The kit is version 2, its phrase is the grid's 12 words, and its recovery key is the one
+    // the inception names. It is not stored anywhere.
+    assert!(draft.recovery_kit.starts_with("RIM recovery kit (v2)\n"));
+    assert_eq!(draft.recovery_phrase.len(), 12);
+    assert!(draft.recovery_kit.contains(&format!(
+        "Recovery phrase: {}\n",
+        draft.recovery_phrase.join(" ")
+    )));
     let (principal, recovery) = recovery_kit::parse_kit(&draft.recovery_kit, None).unwrap();
     assert_eq!(principal, draft.principal_id);
     assert_eq!(recovery.public_key(), head.recovery_key);
@@ -388,6 +395,36 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
 }
 
 #[test]
+fn recovery_takes_a_bare_numbered_phrase_with_the_account_id_typed_separately() {
+    let old = state();
+    let (draft, statements) = enrolled(&old);
+    let numbered: String = draft
+        .recovery_phrase
+        .iter()
+        .enumerate()
+        .map(|(i, w)| format!("{}. {}\n", i + 1, w.to_uppercase()))
+        .collect();
+
+    let recovered = self::state()
+        .begin_recovery(
+            ENDPOINT,
+            &numbered,
+            Some(draft.principal_id.as_str()),
+            &statements.key_log,
+            "New laptop",
+        )
+        .unwrap();
+    assert_eq!(recovered.principal_id, draft.principal_id);
+    let head = replay(&statements.key_log).unwrap();
+    assert!(verify(
+        &recovered.entry,
+        context::KEY_LOG,
+        &head.recovery_key,
+        2
+    ));
+}
+
+#[test]
 fn a_refused_recovery_puts_back_the_keys_it_replaced() {
     let state = self::state();
     let (draft, statements) = enrolled(&state);
@@ -450,7 +487,7 @@ fn recovery_refuses_a_wrong_kit_an_unknown_account_and_a_device_that_still_has_t
     let log = statements.key_log;
     let fresh = self::state();
 
-    let wrong = recovery_kit::format_kit(
+    let wrong = recovery_kit::format_kit_v1(
         &draft.principal_id,
         &statement::SecretKey::from_seed(zeroize::Zeroizing::new([5u8; 32])),
     );
