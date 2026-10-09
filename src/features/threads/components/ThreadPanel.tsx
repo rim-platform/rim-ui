@@ -12,6 +12,14 @@ import { replaceShortcodes } from "../../messages/utils/emojiShortcodes";
 import { MessageItem } from "../../messages/components/MessageItem";
 import type { MessageItemHandlers } from "../../messages/components/MessageItem";
 import { logger } from "../../../core/logger";
+import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useEncryptedOnDesktop, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
+import { invalidateTimeline } from "../../e2ee/runtime/groups";
+import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
+import { toPrincipalMentions, toUserMentions } from "../../e2ee/utils/content";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
+import { toast } from "../../../shared/toast";
 
 export function ThreadPanel() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -30,11 +38,14 @@ export function ThreadPanel() {
   const thread = threadByRoot.data;
 
   const threadId = thread?.id;
+  const encrypted = useEncryptedOnDesktop(workspaceId, conversationId);
+  const { userOf } = usePrincipalNames(workspaceId);
 
   const threadMsgs = useThreadMessages(
     workspaceId ?? undefined,
     conversationId ?? undefined,
     threadId ?? undefined,
+    encrypted,
   );
   const threadMessages = threadMsgs.data;
 
@@ -93,6 +104,9 @@ export function ThreadPanel() {
     if (conversationData?.pages) {
       for (const page of conversationData.pages) {
         const found = page.items.find((m) => m.id === rootMessageId);
+        if (found && encrypted && found.text) {
+          return { ...found, text: toUserMentions(found.text, userOf) };
+        }
         if (found) return found;
       }
     }
@@ -119,12 +133,15 @@ export function ThreadPanel() {
     }
 
     return null;
-  }, [conversationData?.pages, rootMessageId, thread]);
+  }, [conversationData?.pages, rootMessageId, thread, encrypted, userOf]);
 
   // Backend returns thread messages in display order (oldest-first); no reverse needed.
+  // Decrypted replies name mentioned principals; the renderer names users.
   const items = useMemo(() => {
-    return threadMessages?.items ?? [];
-  }, [threadMessages?.items]);
+    const replies = threadMessages?.items ?? [];
+    if (!encrypted) return replies;
+    return replies.map((m) => (m.text ? { ...m, text: toUserMentions(m.text, userOf) } : m));
+  }, [threadMessages?.items, encrypted, userOf]);
   const replyCount = items.length;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -291,6 +308,8 @@ export function ThreadPanel() {
           workspaceId={workspaceId}
           conversationId={conversationId}
           rootMessageId={rootMessageId}
+          threadId={threadId ?? null}
+          encrypted={encrypted}
         />
       )}
     </div>
@@ -301,14 +320,56 @@ function ThreadComposer({
   workspaceId,
   conversationId,
   rootMessageId,
+  threadId,
+  encrypted,
 }: {
   workspaceId: string;
   conversationId: string;
   rootMessageId: string;
+  threadId: string | null;
+  encrypted: boolean;
 }) {
   const [text, setText] = useState("");
+  const [sendingEncrypted, setSendingEncrypted] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const replyToMessage = useReplyToMessageMutation();
+  const { data: serverMembers } = useServerMembers(workspaceId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
+
+  /** A thread reply in an encrypted conversation: an encrypted message naming its root. */
+  async function replyEncrypted(processed: string) {
+    const members = serverMembers ?? [];
+    const me = members.find((m) => m.userId === currentUserId);
+    const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
+    setSendingEncrypted(true);
+    try {
+      await sendEncrypted(workspaceId, conversationId, {
+        body: toPrincipalMentions(processed, new Map(), principalOf),
+        threadRootId: rootMessageId,
+        threadId,
+        author: {
+          id: currentUserId ?? "",
+          username: me?.username ?? "",
+          displayName: me?.displayName ?? null,
+          avatarUrl: me?.avatarUrl ?? null,
+          principalId: me?.principalId ?? null,
+        },
+      });
+      setText("");
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.threadByRoot(workspaceId, conversationId, rootMessageId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["threadMessages", workspaceId, conversationId],
+      });
+      invalidateTimeline(workspaceId, conversationId);
+    } catch (err) {
+      toast.error(err instanceof EncryptedSendError ? err.message : "Failed to send the reply");
+    } finally {
+      setSendingEncrypted(false);
+      textareaRef.current?.focus();
+    }
+  }
 
   // Auto-focus on mount
   useEffect(() => {
@@ -321,6 +382,10 @@ function ThreadComposer({
     if (!trimmed) return;
 
     const processed = replaceShortcodes(trimmed);
+    if (encrypted) {
+      void replyEncrypted(processed);
+      return;
+    }
 
     replyToMessage.mutate(
       {
@@ -373,7 +438,7 @@ function ThreadComposer({
       />
       <button
         type="submit"
-        disabled={replyToMessage.isPending || !text.trim()}
+        disabled={replyToMessage.isPending || sendingEncrypted || !text.trim()}
         className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
         aria-label="Send reply"
       >

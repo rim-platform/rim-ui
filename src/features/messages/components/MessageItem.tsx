@@ -9,6 +9,7 @@ import {
   MessageThreadButton,
 } from "./message-item/MessageAnnotations";
 import { MessageAttachments } from "./message-item/MessageAttachments";
+import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
 import { MessageEditForm } from "./message-item/MessageEditForm";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
@@ -53,6 +54,9 @@ export const MessageItem = memo(function MessageItem({
   const { onContextMenu, onOpenThread, onToggleReaction, onSaveEdit, onCancelEdit } = handlers;
 
   const isDeleted = message.isDeleted === true;
+  const encrypted = Boolean(message.e2ee || message.encryption);
+  // Decrypted but breaking a rule: never show what it says.
+  const unverifiable = message.e2ee?.status === "invalid";
   const isUltraCompact = displayDensity === "ultra-compact";
   const isCompact = displayDensity === "compact";
   const hideAvatar = isUltraCompact || (isGrouped && !isFirstInGroup);
@@ -70,7 +74,7 @@ export const MessageItem = memo(function MessageItem({
   );
 
   const textProps = (variant: MessageTextVariant) => ({
-    text: message.text,
+    text: unverifiable ? `*A message from ${author.name} could not be verified*` : message.text,
     hasAttachments,
     variant,
     memberDisplayMap: members?.displayMap,
@@ -80,13 +84,22 @@ export const MessageItem = memo(function MessageItem({
   const extras = (
     <>
       <MessageIncidentTags tags={incidentTags} />
-      {hasAttachments && (
-        <MessageAttachments
-          attachments={message.attachments ?? []}
-          hasText={!!message.text}
-          serverId={message.serverId}
-        />
-      )}
+      {hasAttachments &&
+        (message.e2ee && message.serverId && message.conversationId ? (
+          <EncryptedAttachments
+            messageId={messageId}
+            serverId={message.serverId}
+            conversationId={message.conversationId}
+            attachments={message.attachments ?? []}
+            hasText={!!message.text}
+          />
+        ) : (
+          <MessageAttachments
+            attachments={message.attachments ?? []}
+            hasText={!!message.text}
+            serverId={message.serverId}
+          />
+        ))}
       <MessageLinkPreviews previews={message.linkPreviews} />
       <MessageReactions
         messageId={messageId}
@@ -213,6 +226,8 @@ export const MessageItem = memo(function MessageItem({
               rootThreadId={message.rootThreadId}
               forwardedFromMessageId={message.forwardedFromMessageId}
               forwardedFrom={message.forwardedFrom}
+              encrypted={encrypted}
+              beforeEncryption={message.beforeEncryption}
               onOpenThread={onOpenThread}
               onNavigateToForwardedSource={handlers.onNavigateToForwardedSource}
             />

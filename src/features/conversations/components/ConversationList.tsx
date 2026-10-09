@@ -27,6 +27,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../types";
 import { ChannelIcon } from "./ChannelIcon";
+import { LockMark } from "../../e2ee/components/LockMark";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 
 interface ConversationListProps {
@@ -459,6 +460,7 @@ const ConversationItem = memo(function ConversationItem({
           >
             {displayTitle ?? "Untitled"}
           </span>
+          {conv.encryptedAt && <LockMark className="shrink-0" />}
           {dimmed && <BellOff className="h-3 w-3 shrink-0 text-rim-text-faint" />}
           {hasDraft && !active && (
             <span className="shrink-0 text-[10px] italic text-rim-warm">Draft</span>

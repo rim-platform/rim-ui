@@ -14,6 +14,7 @@ import { MESSAGES_QUERY } from "../../../core/graphql/queries";
 import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useConversation } from "../../conversations/api/useConversation";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import {
   currentCacheAccount,
@@ -31,17 +32,33 @@ interface MessagesResponse {
 
 const PAGE_SIZE = 50;
 
+const EMPTY_PAGE: MessagesPage = {
+  items: [],
+  next: null,
+  prev: null,
+  pageInfo: { hasNext: false, hasPrev: false },
+};
+
 /**
  * A conversation's timeline. On the desktop app the local message cache (PR 9) serves it
  * first: its newest page shows while the server answers, and a page the server cannot be
  * reached for comes from the cache. The server stays the source of what is shown once it
  * answers; the cache only fills the gaps.
+ *
+ * An end-to-end encrypted conversation is read from the cache only: the server holds its
+ * messages as ciphertext, which this device decrypted once, into the cache.
  */
 export function useConversationMessages(workspaceId?: string, conversationId?: string) {
   // Re-run the cache effects when the signed-in user changes.
   const userId = useAuthStore((s) => s.session?.userId);
   const hasConversation = Boolean(workspaceId && conversationId);
   const cacheAvailable = Boolean(userId && hasConversation && currentCacheAccount());
+  // Only the desktop app has a cache to read an encrypted conversation from.
+  const { data: conversation } = useConversation(
+    cacheAvailable ? workspaceId : undefined,
+    conversationId,
+  );
+  const cacheOnly = cacheAvailable && Boolean(conversation?.encryptedAt);
 
   // Opening a conversation makes the cache follow it, then syncs it.
   useEffect(() => {
@@ -73,7 +90,7 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
     enabled: hasConversation,
     staleTime: 10_000,
     // Runs offline too, so a page the server cannot be reached for comes from the cache.
-    networkMode: "offlineFirst",
+    networkMode: cacheOnly ? "always" : "offlineFirst",
     initialPageParam: null as MessageCursor | null,
     placeholderData: cachedPage
       ? ({ pages: [cachedPage], pageParams: [null] } as InfiniteData<
@@ -82,6 +99,13 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
         >)
       : undefined,
     queryFn: async ({ pageParam }) => {
+      if (cacheOnly) {
+        const account = currentCacheAccount();
+        const page = account
+          ? await readCachedTimeline(account, workspaceId!, conversationId!, pageParam, PAGE_SIZE)
+          : null;
+        return page ?? EMPTY_PAGE;
+      }
       const variables: Record<string, unknown> = {
         serverId: workspaceId!,
         conversationId: conversationId!,
@@ -157,9 +181,22 @@ export function useSendMessageMutation() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; conversationId: string; text: string }) =>
+    mutationFn: (vars: {
+      workspaceId: string;
+      conversationId: string;
+      text: string;
+      /** A forward of an encrypted message, re-sent as plaintext. */
+      forwardedFromMessageId?: string;
+    }) =>
       graphqlClient.request<SendMessageResponse>(SEND_MESSAGE_MUTATION, {
-        input: { serverId: vars.workspaceId, conversationId: vars.conversationId, text: vars.text },
+        input: {
+          serverId: vars.workspaceId,
+          conversationId: vars.conversationId,
+          text: vars.text,
+          ...(vars.forwardedFromMessageId
+            ? { forwardedFromMessageId: vars.forwardedFromMessageId }
+            : {}),
+        },
       }),
     onSuccess: (_data, vars) => {
       // Note: messages query is NOT invalidated here because the WebSocket

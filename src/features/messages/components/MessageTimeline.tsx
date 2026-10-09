@@ -12,6 +12,15 @@ import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
+import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
+import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
+import {
+  useDeviceNames,
+  useE2eeConversation,
+  usePrincipalNames,
+} from "../../e2ee/hooks/useE2eeConversation";
+import { invalidateTimeline } from "../../e2ee/runtime/groups";
+import type { EncryptionContext, TimelineMessage } from "../../e2ee/utils/timeline";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 import { computeGroups } from "./timeline/computeGroups";
@@ -50,8 +59,25 @@ export function MessageTimeline() {
     [memberLookup.resolve, memberDisplayMap],
   );
 
-  const timeline = useTimelineItems(workspaceId, conversationId);
-  const { items, isLensActive, activeLens } = timeline;
+  const e2ee = useE2eeConversation(workspaceId, conversationId);
+  const principalNames = usePrincipalNames(workspaceId);
+  const resets = e2ee.group?.resets;
+  const encryption = useMemo<EncryptionContext | undefined>(
+    () =>
+      e2ee.encryptedAt
+        ? {
+            encryptedAt: e2ee.encryptedAt,
+            resets: resets ?? [],
+            userOfPrincipal: principalNames.userOf,
+          }
+        : undefined,
+    [e2ee.encryptedAt, resets, principalNames.userOf],
+  );
+  const deviceNameOf = useDeviceNames((resets ?? []).map((r) => r.principalId));
+
+  const timeline = useTimelineItems(workspaceId, conversationId, encryption);
+  const items: TimelineMessage[] = timeline.items;
+  const { isLensActive, activeLens } = timeline;
   const groups = useMemo(() => computeGroups(items), [items]);
 
   const isAtBottomRef = useRef(true);
@@ -185,6 +211,24 @@ export function MessageTimeline() {
             >
               {virtualizer.getVirtualItems().map((row) => {
                 const msg = items[row.index];
+                if (msg.e2eeNotice && workspaceId) {
+                  return (
+                    <div
+                      key={row.key}
+                      data-index={row.index}
+                      ref={virtualizer.measureElement}
+                      className="absolute left-0 top-0 w-full"
+                      style={{ transform: `translateY(${row.start}px)` }}
+                    >
+                      <E2eeNoticeRow
+                        notice={msg.e2eeNotice}
+                        nameOf={principalNames.nameOf}
+                        deviceNameOf={deviceNameOf}
+                        onRestored={() => invalidateTimeline(workspaceId, conversationId)}
+                      />
+                    </div>
+                  );
+                }
                 const member = memberLookup.resolve(msg.authorId);
                 const group = groups[row.index] ?? { isGrouped: false, isFirstInGroup: true };
                 return (
@@ -243,7 +287,14 @@ export function MessageTimeline() {
       )}
 
       <TypingIndicator conversationId={conversationId} />
-      {workspaceId && <Composer workspaceId={workspaceId} conversationId={conversationId} />}
+      {workspaceId && <EncryptionNotices workspaceId={workspaceId} e2ee={e2ee} />}
+      {workspaceId && (
+        <Composer
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          encryption={e2ee.encrypted ? e2ee : undefined}
+        />
+      )}
       {contextMenu && workspaceId && (
         <MessageContextMenu
           x={contextMenu.x}

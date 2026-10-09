@@ -1,14 +1,20 @@
 import { useMemo } from "react";
 
+import { withEncryptionNotices, type EncryptionContext } from "../../../e2ee/utils/timeline";
 import { useConversationMessages } from "../../api/useMessages";
 import { useApplyLens, useLenses } from "../../../lenses/api/useLenses";
 import { useLensStore } from "../../../lenses/state/useLensStore";
 
 /**
  * The messages the timeline shows: the conversation's loaded pages flattened
- * oldest -> newest, or the active lens's results when a lens is applied.
+ * oldest -> newest, or the active lens's results when a lens is applied. An encrypted
+ * conversation's items carry its encryption notices (see `withEncryptionNotices`).
  */
-export function useTimelineItems(workspaceId: string | null, conversationId: string | null) {
+export function useTimelineItems(
+  workspaceId: string | null,
+  conversationId: string | null,
+  encryption?: EncryptionContext,
+) {
   const activeLensId = useLensStore((s) =>
     conversationId ? (s.activeLenses[conversationId] ?? null) : null,
   );
@@ -34,8 +40,9 @@ export function useTimelineItems(workspaceId: string | null, conversationId: str
   const items = useMemo(() => {
     if (isLensActive) return lensItems ?? [];
     if (!pages) return [];
-    return [...pages].reverse().flatMap((p) => p.items);
-  }, [isLensActive, lensItems, pages]);
+    const flat = [...pages].reverse().flatMap((p) => p.items);
+    return encryption ? withEncryptionNotices(flat, encryption) : flat;
+  }, [isLensActive, lensItems, pages, encryption]);
 
   return {
     items,

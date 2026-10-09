@@ -5,6 +5,7 @@ import { Avatar } from "../../../../shared/ui/Avatar";
 import { UserHoverCard } from "../../../../shared/ui/UserHoverCard";
 import { cn } from "../../../../shared/ui/cn";
 import { formatTime } from "../../../../shared/utils/formatTime";
+import { LockMark } from "../../../e2ee/components/LockMark";
 import { sameAuthor } from "./areMessageItemPropsEqual";
 import { useAuthorPresence } from "./useAuthorPresence";
 import type { ForwardedFromInfo, MessageAuthorView } from "./types";
@@ -79,6 +80,10 @@ interface MessageHeaderProps {
   rootThreadId?: string | null;
   forwardedFromMessageId?: string | null;
   forwardedFrom?: ForwardedFromInfo | null;
+  /** The message is end-to-end encrypted. */
+  encrypted?: boolean;
+  /** A plaintext message of a conversation that is encrypted now, sent before that. */
+  beforeEncryption?: boolean;
   onOpenThread: (messageId: string) => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;
 }
@@ -94,6 +99,8 @@ export const MessageHeader = memo(function MessageHeader({
   rootThreadId,
   forwardedFromMessageId,
   forwardedFrom,
+  encrypted,
+  beforeEncryption,
   onOpenThread,
   onNavigateToForwardedSource,
 }: MessageHeaderProps) {
@@ -110,6 +117,10 @@ export const MessageHeader = memo(function MessageHeader({
         </span>
       </AuthorHoverCard>
       <span className="text-xs text-rim-text-faint">{formatTime(sentAt)}</span>
+      {encrypted && <LockMark className="self-center" />}
+      {beforeEncryption && (
+        <span className="text-xs text-rim-text-faint">sent before encryption</span>
+      )}
       {isPinned && <Pin className="h-3 w-3 text-rim-accent" />}
       {forwardedFromMessageId &&
         (forwardedFrom ? (

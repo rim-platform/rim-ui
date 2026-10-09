@@ -1,4 +1,4 @@
-import type { MessageAttachment } from "../../../../core/types/messages";
+import type { MessageAttachment, MessageE2ee } from "../../../../core/types/messages";
 import type { MessageTagType } from "../../../incidents/api/useIncident";
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 import type { PresenceStatus } from "../../../../shared/ui/Avatar";
@@ -41,6 +41,13 @@ export interface MessageItemMessage {
   attachments?: MessageAttachment[];
   reactions?: Reaction[];
   linkPreviews?: LinkPreview[];
+  conversationId?: string;
+  /** What the desktop's cache keeps about an encrypted message. */
+  e2ee?: MessageE2ee | null;
+  /** Set on encrypted messages as the server returns them. */
+  encryption?: unknown;
+  /** A plaintext message sent before its conversation was encrypted. */
+  beforeEncryption?: boolean;
 }
 
 export interface ResolvedMember {
