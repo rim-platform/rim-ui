@@ -9,6 +9,7 @@ import type {
   AiContentBlock,
   AiToolDefinition,
 } from "./types";
+import { buildRequestToolNameMap, type ToolNameMap } from "./toolNames";
 
 const config: AiProviderConfig = {
   id: "anthropic",
@@ -59,7 +60,7 @@ interface AnthropicMessage {
   content: string | AnthropicContent[];
 }
 
-function toAnthropicMessages(messages: AiMessage[]): AnthropicMessage[] {
+function toAnthropicMessages(messages: AiMessage[], toolNames: ToolNameMap): AnthropicMessage[] {
   return messages
     .filter((m) => m.role !== "system")
     .map((m) => ({
@@ -73,7 +74,7 @@ function toAnthropicMessages(messages: AiMessage[]): AnthropicMessage[] {
                 return {
                   type: "tool_use" as const,
                   id: block.id,
-                  name: block.name,
+                  name: toolNames.toApi(block.name),
                   input: block.input,
                 };
               if (block.type === "tool_result")
@@ -87,9 +88,9 @@ function toAnthropicMessages(messages: AiMessage[]): AnthropicMessage[] {
     }));
 }
 
-function toAnthropicTools(tools: AiToolDefinition[]) {
+function toAnthropicTools(tools: AiToolDefinition[], toolNames: ToolNameMap) {
   return tools.map((t) => ({
-    name: t.name,
+    name: toolNames.toApi(t.name),
     description: t.description,
     input_schema: t.input_schema,
   }));
@@ -130,13 +131,16 @@ export function createAnthropicProvider(_loadKey: () => Promise<string>): AiProv
       // (agent_proxy.rs:295). Do NOT send api_key here — ChatCompletionRequest
       // uses #[serde(deny_unknown_fields)] and will reject any unknown field,
       // including the legacy api_key (Pete's #8, agent_proxy.rs:96–98).
+      // Command ids contain dots, which the API refuses in tool names; tool
+      // calls come back under the API name and are translated back below.
+      const toolNames = buildRequestToolNameMap(request.tools, request.messages);
       const proxyRequest = {
         provider: "anthropic" as const,
         model: request.model,
-        messages: toAnthropicMessages(request.messages),
+        messages: toAnthropicMessages(request.messages, toolNames),
         ...(request.systemPrompt ? { system_prompt: request.systemPrompt } : {}),
         ...(request.tools && request.tools.length > 0
-          ? { tools: toAnthropicTools(request.tools) }
+          ? { tools: toAnthropicTools(request.tools, toolNames) }
           : {}),
         max_tokens: request.maxTokens ?? 4096,
       };
@@ -237,7 +241,12 @@ export function createAnthropicProvider(_loadKey: () => Promise<string>): AiProv
             } catch {
               // malformed tool input
             }
-            yield { kind: "tool_use", id: currentToolId, name: currentToolName, input };
+            yield {
+              kind: "tool_use",
+              id: currentToolId,
+              name: toolNames.fromApi(currentToolName),
+              input,
+            };
             currentToolId = "";
             currentToolName = "";
             toolInputJson = "";
