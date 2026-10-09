@@ -97,14 +97,17 @@ describe("LinkThisDevice", () => {
     api.linkNewDevice.mockImplementation(
       (_code: string, _name: string, options: LinkNewDeviceOptions) => {
         signal = options.signal;
-        return new Promise(() => undefined);
+        return new Promise((_resolve, reject) =>
+          options.signal?.addEventListener("abort", () => reject(new DeviceLinkError("aborted"))),
+        );
       },
     );
     wrap(<LinkThisDevice onSuccess={vi.fn()} />);
     await openAndSubmit();
     await userEvent.click(await screen.findByRole("button", { name: /cancel/i }));
     expect(signal?.aborted).toBe(true);
-    expect(screen.getByLabelText(/link code/i)).toHaveValue(CODE);
+    // The code is spent.
+    await waitFor(() => expect(screen.getByLabelText(/link code/i)).toHaveValue(""));
   });
 
   it("renders nothing in the web app", () => {

@@ -1,19 +1,16 @@
 /**
- * Device linking in the desktop app (contract `rim-server/docs/specs/device-linking-v1.md`):
- * a device that holds the identity key shows a code, and a new device that has the code gets
- * its own certified device key and signs in with it.
+ * Device linking: a device that holds the identity key shows a code, and a new device with the
+ * code gets its own certified device key and signs in with it.
  *
- * The secret in the code, the new device's key and the identity key stay on the Tauri side
- * (`src-tauri/src/key_identity/device_link.rs`). This module talks to the server, which only
- * carries sealed bytes, and asks the Tauri side to seal, open, check and sign. The webview sees
- * the code text (to show it), the fingerprint, device names and link states.
+ * Secrets stay on the Tauri side; this module talks to the server, which only carries sealed
+ * bytes, and asks the Tauri side to seal, open, check and sign.
  */
 
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
-import { graphqlErrorCode, RATE_LIMITED } from "../../../core/graphql/errors";
+import { graphqlErrorCode, graphqlErrorMessage, RATE_LIMITED } from "../../../core/graphql/errors";
 import {
   DeviceLinkState,
   type DeviceLink,
@@ -207,14 +204,16 @@ function sessionFailure(err: unknown): DeviceLinkError | null {
   }
 }
 
+/** The message to show for `err`; a `ClientError` without GraphQL errors gets `fallback`. */
 function messageOf(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
+  const response = (err as { response?: { errors?: unknown } } | null)?.response;
+  if (response && !Array.isArray(response.errors)) return fallback;
+  return graphqlErrorMessage(err, fallback);
 }
 
 // ─── Polling ────────────────────────────────────────────────────────────────
 
-/** The spec's cadence: every 2 seconds for the first minute, then every 5 seconds. */
+/** Poll every 2 seconds for the first minute, then every 5 seconds. */
 export function pollDelay(elapsedMs: number): number {
   return elapsedMs < 60_000 ? 2_000 : 5_000;
 }
@@ -248,7 +247,7 @@ function sleepFor(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Call `step` on the spec's cadence until it returns a value. */
+/** Call `step` on the `pollDelay` cadence until it returns a value. */
 async function poll<T>(
   step: () => Promise<T | undefined>,
   { signal, sleep = sleepFor, now = Date.now }: PollOptions,
@@ -265,9 +264,27 @@ async function poll<T>(
   }
 }
 
-/** A request that failed without a server error code: the network, not the server, said no. */
+/** A failed fetch, or a 5xx without GraphQL errors. */
 function isTransient(err: unknown): boolean {
-  return graphqlErrorCode(err) === undefined && !(err instanceof DeviceLinkError);
+  if (err instanceof DeviceLinkError) return false;
+  const response = (err as { response?: { status?: number; errors?: unknown[] } } | null)?.response;
+  if (!response) return true;
+  return (response.status ?? 0) >= 500 && !response.errors?.length;
+}
+
+/** Retry `request` up to three times while it fails transiently. */
+async function retrying<T>(
+  request: () => Promise<T>,
+  { signal, sleep = sleepFor }: PollOptions,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await request();
+    } catch (err) {
+      if (!isTransient(err) || attempt >= 3) throw err;
+      await sleep(2_000, signal);
+    }
+  }
 }
 
 async function cancelOnServer(linkId: string): Promise<boolean | null> {
@@ -329,15 +346,15 @@ function awaitAnswer(linkId: string, options: PollOptions): Promise<SealedMessag
       const code = graphqlErrorCode(err);
       if (code === "UNAUTHENTICATED") throw failure("linkEnded");
       // Network trouble and a busy limiter pass; the link stays answerable for 10 minutes.
-      if (code === undefined || code === RATE_LIMITED) return undefined;
+      if (isTransient(err) || code === RATE_LIMITED) return undefined;
       throw new DeviceLinkError("failed", messageOf(err, DEVICE_LINK_MESSAGES.failed));
     }
   }, options);
 }
 
 /**
- * Link this computer with a code from another device of the account (new device rules), and
- * sign in with the new device key. Returns the account's user id. `onOffered` gets the
+ * Link this computer with a code from another device of the account, and sign in with the new
+ * device key. Returns the account's user id. `onOffered` gets the
  * fingerprint to show while the person confirms on the other device.
  *
  * Nothing is written to the keyring until the certificate verifies against the account's key
@@ -372,12 +389,12 @@ export async function linkNewDevice(
     const keyLog = await fetchKeyLog(principalId);
     await keyCommand("key_identity_link_accept", { linkId, keyLog });
   } catch (err) {
-    // The link is over: the server forgets it, and so does this side, with the unsaved key.
-    // A code already used up answers UNAUTHENTICATED to the cancel as well.
-    const unusable =
+    // The link is over on this side. The server is told unless the link already ended there
+    // or the limiter would refuse the cancel too.
+    const noCancel =
       err instanceof DeviceLinkError &&
-      (err.reason === "codeUnusable" || err.reason === "linkEnded");
-    if (!unusable) await cancelOnServer(linkId);
+      (err.reason === "codeUnusable" || err.reason === "linkEnded" || err.reason === "rateLimited");
+    if (!noCancel) await cancelOnServer(linkId);
     await endLink(linkId);
     if (err instanceof DeviceLinkError) throw err;
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
@@ -412,7 +429,7 @@ export async function linkNewDevice(
 
 // ─── Old device ─────────────────────────────────────────────────────────────
 
-/** Start a link for the signed-in account (old device rule 1). */
+/** Start a link for the signed-in account. */
 export async function startLinkingDevice(identity: MyKeyIdentity): Promise<StartedLink> {
   if (!identity.principalId) throw failure("noKeyIdentity");
   let started: Pick<StartedDeviceLink, "linkId" | "expiresAt">;
@@ -450,9 +467,8 @@ function knownDevices(identity: MyKeyIdentity) {
 }
 
 /**
- * Wait for the new device's offer, open it and check it against the account (old device
- * rules 2 and 3). An offer that fails to open or breaks a rule cancels the link. Aborting
- * cancels it too.
+ * Wait for the new device's offer, open it and check it against the account. A refused offer
+ * cancels the link; so does aborting.
  */
 export async function waitForOffer(
   link: StartedLink,
@@ -479,7 +495,7 @@ export async function waitForOffer(
           throw failure("cancelled");
       }
     }, options);
-    const identity = await fetchMyKeyIdentity();
+    const identity = await retrying(fetchMyKeyIdentity, options);
     try {
       return await keyCommand<OfferToConfirm>("key_identity_link_review_offer", {
         linkId: link.linkId,
@@ -491,8 +507,9 @@ export async function waitForOffer(
       throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
     }
   } catch (err) {
-    // The server answers `true` for a link that already ended, so this is safe either way.
-    await cancelOnServer(link.linkId);
+    if (err instanceof DeviceLinkError && (err.reason === "refused" || err.reason === "aborted")) {
+      await cancelOnServer(link.linkId);
+    }
     await endLink(link.linkId);
     throw err;
   }
@@ -504,16 +521,21 @@ export async function declineLink(link: StartedLink): Promise<void> {
   await endLink(link.linkId);
 }
 
-/** How a link that ended after the device was certified was settled (old device rule 7). */
-export type EndedLink = "revoked" | "kept" | "absent";
+/** How a link that ended after the device was certified was settled; `deferred` left it. */
+export type EndedLink = "revoked" | "kept" | "absent" | "deferred";
 
 /**
- * A link ended `CANCELLED` or `EXPIRED` after this device certified `deviceId`: revoke the
- * device if it never signed in, so no certified key is left that nobody used, then forget the
- * link. A failure keeps the pending record for the next start-up.
+ * Settle a link of `principalId` that ended after `deviceId` was certified: revoke the device
+ * if it never signed in, then forget the link. Another signed-in account, or a failure, leaves
+ * the pending record.
  */
-export async function settleEndedLink(linkId: string, deviceId: string): Promise<EndedLink> {
+export async function settleEndedLink(
+  linkId: string,
+  deviceId: string,
+  principalId: string,
+): Promise<EndedLink> {
   const identity = await fetchMyKeyIdentity();
+  if (identity.principalId !== principalId) return "deferred";
   const device = identity.devices.find((d) => d.deviceId === deviceId);
   let outcome: EndedLink = "absent";
   if (device && !device.revokedAt && !device.lastUsedAt) {
@@ -527,7 +549,7 @@ export async function settleEndedLink(linkId: string, deviceId: string): Promise
 }
 
 /** `addDeviceKey`; a `CONFLICT` whose device list already shows this device with this key is a
- * retry after a lost answer, and carries on (old device rule 5). */
+ * retry after a lost answer, and carries on. */
 async function addDevice(answer: LinkAnswer): Promise<void> {
   try {
     await graphqlClient.request(ADD_DEVICE_KEY_MUTATION, { certificate: answer.certificate });
@@ -543,14 +565,16 @@ async function addDevice(answer: LinkAnswer): Promise<void> {
 
 /**
  * Add the certified device, send the answer, republish the profile card and wait for the new
- * device to finish (old device rules 5 to 7). Shared by a live link and one resumed at start-up.
+ * device to finish. Shared by a live link and a resumed one.
  */
 async function deliverAnswer(
   linkId: string,
+  principalId: string,
   answer: LinkAnswer,
   displayName: string,
   options: PollOptions,
 ): Promise<void> {
+  if (options.signal?.aborted) throw new DeviceLinkError("aborted");
   try {
     await addDevice(answer);
   } catch (err) {
@@ -572,7 +596,7 @@ async function deliverAnswer(
       throw new DeviceLinkError("failed", messageOf(err, DEVICE_LINK_MESSAGES.failed));
     }
     if (!options.signal?.aborted) {
-      await settleEndedLink(linkId, answer.deviceId).catch((settleErr: unknown) =>
+      await settleEndedLink(linkId, answer.deviceId, principalId).catch((settleErr: unknown) =>
         logger.warn("[RIM:link] settling the ended link failed:", settleErr),
       );
     }
@@ -587,11 +611,16 @@ async function deliverAnswer(
     logger.warn("[RIM:link] republishing the profile card failed:", err);
   }
 
-  await awaitConsumed(linkId, answer.deviceId, options);
+  await awaitConsumed(linkId, answer.deviceId, principalId, options);
 }
 
 /** Poll until the new device completes the link; a link that ends otherwise is settled. */
-async function awaitConsumed(linkId: string, deviceId: string, options: PollOptions) {
+async function awaitConsumed(
+  linkId: string,
+  deviceId: string,
+  principalId: string,
+  options: PollOptions,
+) {
   const ended = await poll<DeviceLinkState | "NOT_FOUND">(async () => {
     try {
       const { state } = await linkStatus(linkId);
@@ -608,7 +637,7 @@ async function awaitConsumed(linkId: string, deviceId: string, options: PollOpti
     await endLink(linkId);
     return;
   }
-  const outcome = await settleEndedLink(linkId, deviceId);
+  const outcome = await settleEndedLink(linkId, deviceId, principalId);
   // The new device signed in before the link ended: it is linked all the same.
   if (outcome === "kept") return;
   throw failure(ended === DeviceLinkState.EXPIRED ? "expired" : "cancelled");
@@ -624,9 +653,9 @@ export async function confirmLink(
   displayName: string,
   options: PollOptions = {},
 ): Promise<void> {
-  const identity = await fetchMyKeyIdentity();
   let answer: LinkAnswer;
   try {
+    const identity = await fetchMyKeyIdentity();
     answer = await keyCommand<LinkAnswer>("key_identity_link_confirm", {
       linkId: link.linkId,
       keyLog: logStatements(identity.keyLog),
@@ -636,26 +665,27 @@ export async function confirmLink(
     await declineLink(link);
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
   }
-  await deliverAnswer(link.linkId, answer, displayName, options);
+  await deliverAnswer(link.linkId, link.principalId, answer, displayName, options);
 }
 
 /**
  * Cancel a link at any point; abort the flow's signal first. `certifiedDeviceId` is the
- * offer's device once the person confirmed it: a device that never signed in is then revoked
- * (rule 7). Returns `true` when the new device had already finished, so it stays linked.
+ * offer's device once the person confirmed it: a device that never signed in is then revoked.
+ * Returns `true` when the new device had already finished, so it stays linked.
  */
 export async function cancelLink(link: StartedLink, certifiedDeviceId?: string): Promise<boolean> {
   const cancelled = await cancelOnServer(link.linkId);
-  const deviceId = certifiedDeviceId;
   if (cancelled === false) {
     await endLink(link.linkId);
     return true;
   }
-  if (deviceId) {
-    const outcome = await settleEndedLink(link.linkId, deviceId).catch((err: unknown) => {
-      logger.warn("[RIM:link] settling the cancelled link failed:", err);
-      return "absent" as const;
-    });
+  if (certifiedDeviceId) {
+    const outcome = await settleEndedLink(link.linkId, certifiedDeviceId, link.principalId).catch(
+      (err: unknown) => {
+        logger.warn("[RIM:link] settling the cancelled link failed:", err);
+        return "absent" as const;
+      },
+    );
     return outcome === "kept";
   }
   await endLink(link.linkId);
@@ -663,7 +693,7 @@ export async function cancelLink(link: StartedLink, certifiedDeviceId?: string):
 }
 
 /**
- * Carry on links an earlier run confirmed and did not finish (old device rule 8): `OFFERED`
+ * Carry on confirmed links left in the keyring by a previous run: `OFFERED`
  * sends the answer again, adding the device first if needed; `ANSWERED` waits for the new
  * device; anything else settles the link. Runs in the background after sign-in; never throws.
  */
@@ -682,9 +712,11 @@ export async function resumePendingDeviceLinks(options: PollOptions = {}): Promi
   // Another account's links on this server wait for that account's sign-in.
   const mine = result.value.filter((p) => p.principalId === identity.principalId);
   for (const pending of mine) {
+    if (options.signal?.aborted) return;
     try {
       await resumeLink(pending, options);
     } catch (err) {
+      if (err instanceof DeviceLinkError && err.reason === "aborted") return;
       logger.warn("[RIM:link] resuming a pending device link failed:", err);
     }
   }
@@ -703,12 +735,12 @@ async function resumeLink(pending: PendingLink, options: PollOptions): Promise<v
       linkId: pending.linkId,
     });
     const { displayName } = await fetchKeyAccount();
-    await deliverAnswer(pending.linkId, answer, displayName, options);
+    await deliverAnswer(pending.linkId, pending.principalId, answer, displayName, options);
   } else if (state === DeviceLinkState.ANSWERED) {
-    await awaitConsumed(pending.linkId, pending.deviceId, options);
+    await awaitConsumed(pending.linkId, pending.deviceId, pending.principalId, options);
   } else if (state === DeviceLinkState.CONSUMED) {
     await endLink(pending.linkId);
   } else {
-    await settleEndedLink(pending.linkId, pending.deviceId);
+    await settleEndedLink(pending.linkId, pending.deviceId, pending.principalId);
   }
 }

@@ -8,14 +8,14 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
 import { defaultDeviceName } from "../api/keyIdentity";
+import { Fingerprint } from "./Fingerprint";
 
 const inputClass =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
 
 /**
- * "Link this device" on the sign-in screen (device linking, new device): a link that opens a
- * form for the code shown on another device of the account. Desktop only; renders nothing in
- * the web app.
+ * "Link this device" on the sign-in screen: opens a form for the code shown on another device
+ * of the account. Desktop only; renders nothing in the web app.
  */
 export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();
@@ -81,6 +81,8 @@ function LinkThisDeviceForm({
           : graphqlErrorMessage(err, "This device could not be linked."),
       );
     } finally {
+      // The code is spent either way.
+      setCode("");
       if (flow.current === controller) {
         flow.current = null;
         setBusy(false);
@@ -105,12 +107,7 @@ function LinkThisDeviceForm({
         {fingerprint ? (
           <>
             <p className="text-xs text-rim-text-muted">Confirm this code on your other device:</p>
-            <p
-              aria-label="Fingerprint"
-              className="font-mono text-2xl tracking-widest text-rim-text"
-            >
-              {fingerprint}
-            </p>
+            <Fingerprint value={fingerprint} />
             <p className="text-xs text-rim-text-faint">
               Waiting for your other device. This computer stores nothing until it answers.
             </p>

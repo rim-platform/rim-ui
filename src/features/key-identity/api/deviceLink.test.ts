@@ -198,6 +198,27 @@ describe("linkNewDevice", () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  it("does not cancel when the limiter refuses the offer", async () => {
+    newDeviceBackend({ SendDeviceLinkOffer: serverError("RATE_LIMITED") });
+    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+      DEVICE_LINK_MESSAGES.rateLimited,
+    );
+    expect(requests()).not.toContain("CancelDeviceLink");
+    expect(commands()).toContain("key_identity_link_end");
+  });
+
+  it("shows the fallback for a server error without GraphQL errors", async () => {
+    newDeviceBackend({
+      SendDeviceLinkOffer: new ClientError(
+        { status: 400, headers: new Headers(), errors: undefined },
+        { query: "" },
+      ),
+    });
+    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+      DEVICE_LINK_MESSAGES.failed,
+    );
+  });
+
   it("says the code is used up when the server refuses the offer", async () => {
     newDeviceBackend({ SendDeviceLinkOffer: serverError("UNAUTHENTICATED") });
     await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
@@ -418,6 +439,25 @@ describe("waitForOffer", () => {
     await expect(waitForOffer(LINK, { sleep })).rejects.toThrow(DEVICE_LINK_MESSAGES.expired);
     expect(commands()).toContain("key_identity_link_end");
   });
+
+  it("retries the identity fetch on a network failure and cancels nothing after", async () => {
+    oldDeviceBackend({ MyKeyIdentity: new TypeError("fetch failed") });
+    await expect(waitForOffer(LINK, { sleep })).rejects.toThrow("fetch failed");
+    expect(requests().filter((r) => r === "MyKeyIdentity")).toHaveLength(3);
+    expect(requests()).not.toContain("CancelDeviceLink");
+    expect(commands()).toContain("key_identity_link_end");
+  });
+
+  it("treats a GraphQL error without a code as final", async () => {
+    oldDeviceBackend({
+      DeviceLink: new ClientError(
+        { status: 200, headers: new Headers(), errors: [{ message: "boom" }] },
+        { query: "" },
+      ),
+    });
+    await expect(waitForOffer(LINK, { sleep })).rejects.toBeInstanceOf(ClientError);
+    expect(requests().filter((r) => r === "DeviceLink")).toHaveLength(1);
+  });
 });
 
 describe("confirmLink", () => {
@@ -499,6 +539,15 @@ describe("confirmLink", () => {
     );
     expect(commands()).not.toContain("key_identity_link_end");
   });
+
+  it("declines the link when the identity cannot be fetched", async () => {
+    oldDeviceBackend({ MyKeyIdentity: serverError("UNAUTHENTICATED") });
+    await expect(confirmLink(LINK, "Laptop", "Ada", { sleep })).rejects.toBeInstanceOf(
+      DeviceLinkError,
+    );
+    expect(requests()).toContain("CancelDeviceLink");
+    expect(commands()).not.toContain("key_identity_link_confirm");
+  });
 });
 
 describe("cancelLink", () => {
@@ -519,6 +568,15 @@ describe("cancelLink", () => {
     oldDeviceBackend({ CancelDeviceLink: serverError("CONFLICT") });
     await expect(cancelLink(LINK, DEVICE_ID)).resolves.toBe(true);
     expect(requests()).not.toContain("RevokeDeviceKey");
+  });
+
+  it("leaves the record of a link another account confirmed", async () => {
+    oldDeviceBackend({
+      MyKeyIdentity: { myKeyIdentity: { ...identity().myKeyIdentity, principalId: "rimp1_x" } },
+    });
+    await cancelLink(LINK, DEVICE_ID);
+    expect(requests()).not.toContain("RevokeDeviceKey");
+    expect(commands()).not.toContain("key_identity_link_end");
   });
 });
 
@@ -577,5 +635,48 @@ describe("resumePendingDeviceLinks", () => {
     oldDeviceBackend({}, { key_identity_link_pending: [] });
     await resumePendingDeviceLinks({ sleep });
     expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("forgets a link the new device consumed", async () => {
+    oldDeviceBackend({ DeviceLink: status("CONSUMED") }, { key_identity_link_pending: [PENDING] });
+    await resumePendingDeviceLinks({ sleep });
+    expect(argsOf("key_identity_link_end")).toEqual({ linkId: LINK_ID });
+    expect(requests()).not.toContain("RevokeDeviceKey");
+  });
+
+  it("revokes an unused device of a cancelled link", async () => {
+    oldDeviceBackend(
+      {
+        DeviceLink: status("CANCELLED"),
+        MyKeyIdentity: identity([{}, { ...NEW_DEVICE, lastUsedAt: null }]),
+      },
+      { key_identity_link_pending: [PENDING] },
+    );
+    await resumePendingDeviceLinks({ sleep });
+    expect(requests()).toContain("RevokeDeviceKey");
+    expect(commands()).toContain("key_identity_link_end");
+  });
+
+  it("settles a link the server no longer knows", async () => {
+    oldDeviceBackend(
+      {
+        DeviceLink: serverError("NOT_FOUND"),
+        MyKeyIdentity: identity([{}, { ...NEW_DEVICE, lastUsedAt: null }]),
+      },
+      { key_identity_link_pending: [PENDING] },
+    );
+    await resumePendingDeviceLinks({ sleep });
+    expect(requests()).toContain("RevokeDeviceKey");
+    expect(commands()).toContain("key_identity_link_end");
+  });
+
+  it("stops when aborted", async () => {
+    oldDeviceBackend({ DeviceLink: status("ANSWERED") }, { key_identity_link_pending: [PENDING] });
+    const controller = new AbortController();
+    await resumePendingDeviceLinks({
+      sleep: async () => controller.abort(),
+      signal: controller.signal,
+    });
+    expect(commands()).not.toContain("key_identity_link_end");
   });
 });

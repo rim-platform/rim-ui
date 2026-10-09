@@ -46,15 +46,20 @@ answer, and writes the **pending link** record before the webview sends `addDevi
 
 | Keyring entry | Holds |
 |---|---|
-| `device-link-v1:<link id>` | link id, secret, endpoint, principal id, device id and key, certificate |
+| `device-link-v1:<link id>` | link id, secret, endpoint, principal id, device id and key, certificate, sealed answer (resent byte for byte) |
 | `device-links-v1` | the list of link ids that have a record (the keyring cannot be listed) |
 
 The record is removed when the link ends `CONSUMED`, or once a link that ended `CANCELLED` or
 `EXPIRED` has been settled: a certified device whose `lastUsedAt` is still empty is revoked with
 the identity key. If revoking fails, the record stays for the next start-up. On start-up a record
-whose link is still `OFFERED` is answered again (the device added first if the list lacks it),
+whose link is still `OFFERED` is answered again with the same sealed bytes (the device added first if the list lacks it),
 `ANSWERED` waits for the new device, and anything else is settled as above. Records of another
 account on the same server wait for that account's sign-in.
+
+Cancelling after Confirm aborts the flow, waits for any `addDeviceKey` in flight, then cancels
+and settles, so an added device is never left unrevoked. Closing the panel after Confirm does
+not stop the flow. A network failure past Confirm offers Retry, which sends the same certificate
+and answer.
 
 An `addDeviceKey` refused with `CONFLICT` while the device list already shows this device id with
 this key is a retry after a lost answer and carries on; any other refusal cancels the link.

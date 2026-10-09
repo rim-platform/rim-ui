@@ -6,10 +6,8 @@ import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { resumePendingDeviceLinks } from "../api/deviceLink";
 
 /**
- * Once per signed-in account and run, carry on device links an earlier run confirmed as the
- * old device and did not finish (device linking, old device rule 8): send the answer again,
- * wait for the new device, or revoke a certified device nobody used. Desktop only, and only
- * while the server can be reached.
+ * Once per signed-in account and run, carry on device links left pending in the keyring.
+ * Desktop only, and only while the server can be reached.
  */
 export function useResumeDeviceLinks() {
   const { capabilities } = useRuntime();
@@ -19,7 +17,10 @@ export function useResumeDeviceLinks() {
 
   useEffect(() => {
     if (!capabilities.deviceKeys || !userId || offline || resumedFor.current === userId) return;
-    resumedFor.current = userId;
-    void resumePendingDeviceLinks();
+    const controller = new AbortController();
+    void resumePendingDeviceLinks({ signal: controller.signal }).then(() => {
+      if (!controller.signal.aborted) resumedFor.current = userId;
+    });
+    return () => controller.abort();
   }, [capabilities.deviceKeys, userId, offline]);
 }

@@ -17,18 +17,25 @@ import {
   type StartedLink,
 } from "../api/deviceLink";
 import type { MyKeyIdentity } from "../api/keyIdentity";
+import { Fingerprint } from "./Fingerprint";
 
 const inputClass =
   "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
+
+interface Confirmed {
+  link: StartedLink;
+  offer: OfferToConfirm;
+  name: string;
+}
 
 type Step =
   | { kind: "idle" }
   | { kind: "starting" }
   | { kind: "code"; link: StartedLink }
   | { kind: "confirm"; link: StartedLink; offer: OfferToConfirm }
-  | { kind: "linking"; link: StartedLink; offer: OfferToConfirm; name: string }
+  | ({ kind: "linking" } & Confirmed)
   | { kind: "linked"; name: string }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: string; retry?: Confirmed };
 
 function failureText(err: unknown): string {
   if (err instanceof DeviceLinkError) return err.message;
@@ -41,9 +48,8 @@ function timeLeft(expiresAt: string, now: number): string {
 }
 
 /**
- * Settings > Security > "Link a device" (device linking, old device): shows a code as a QR code
- * and as text, then the new device's name and fingerprint for the person to confirm, and signs
- * its certificate with the identity key. Shown only on the computer that holds the identity key.
+ * Settings > Security > "Link a device": the code as a QR code and as text, then the new
+ * device's name and fingerprint to confirm. Shown only where the identity key is held.
  */
 export function LinkDevicePanel({
   identity,
@@ -57,13 +63,16 @@ export function LinkDevicePanel({
   const [name, setName] = useState("");
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const flow = useRef<AbortController | null>(null);
-  // What to undo if the panel closes: a link not confirmed yet is cancelled.
+  const offerFlow = useRef<AbortController | null>(null);
+  // Aborted only by Cancel: closing the panel lets a confirmed link finish.
+  const confirmFlow = useRef<AbortController | null>(null);
+  const confirming = useRef<Promise<void> | null>(null);
+  // A link not confirmed yet, cancelled if the panel closes.
   const open = useRef<StartedLink | null>(null);
 
   useEffect(
     () => () => {
-      flow.current?.abort();
+      offerFlow.current?.abort();
       if (open.current) void declineLink(open.current);
     },
     [],
@@ -84,7 +93,7 @@ export function LinkDevicePanel({
 
   async function start() {
     const controller = new AbortController();
-    flow.current = controller;
+    offerFlow.current = controller;
     setStep({ kind: "starting" });
     setCopied(false);
     try {
@@ -100,35 +109,57 @@ export function LinkDevicePanel({
     }
   }
 
-  async function confirm(link: StartedLink, offer: OfferToConfirm) {
+  function confirm(confirmed: Confirmed) {
     const controller = new AbortController();
-    flow.current = controller;
-    // Confirmed: closing the panel no longer cancels; a restart finishes or undoes the link.
+    confirmFlow.current = controller;
     open.current = null;
-    setStep({ kind: "linking", link, offer, name });
-    try {
-      await confirmLink(link, name, displayName, { signal: controller.signal });
-      setStep({ kind: "linked", name: name.trim() });
-    } catch (err) {
-      fail(err);
-    } finally {
-      void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
-    }
+    setStep({ kind: "linking", ...confirmed });
+    const run = (async () => {
+      try {
+        await confirmLink(confirmed.link, confirmed.name, displayName, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) setStep({ kind: "linked", name: confirmed.name.trim() });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof DeviceLinkError && err.reason === "failed") {
+          setStep({ kind: "failed", message: err.message, retry: confirmed });
+        } else {
+          fail(err);
+        }
+      } finally {
+        void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
+      }
+    })();
+    confirming.current = run;
+    return run;
   }
 
   async function cancel() {
     const current = step;
-    flow.current?.abort();
     open.current = null;
     setStep({ kind: "idle" });
-    if (current.kind === "linking") {
-      const linked = await cancelLink(current.link, current.offer.deviceId);
-      if (linked) setStep({ kind: "linked", name: current.name.trim() });
-      void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
-    } else if (current.kind === "confirm") {
-      await cancelLink(current.link);
+    if (current.kind === "code") {
+      // `waitForOffer` cancels the link when aborted.
+      offerFlow.current?.abort();
+      return;
     }
-    // While the code shows, aborting is enough: `waitForOffer` cancels the link.
+    if (current.kind === "confirm") {
+      await cancelLink(current.link);
+      return;
+    }
+    const confirmed =
+      current.kind === "linking" ? current : current.kind === "failed" ? current.retry : undefined;
+    if (!confirmed) return;
+    const controller = confirmFlow.current;
+    controller?.abort();
+    // Settle only once an `addDeviceKey` in flight has resolved.
+    await confirming.current;
+    const linked = await cancelLink(confirmed.link, confirmed.offer.deviceId);
+    if (linked && confirmFlow.current === controller) {
+      setStep({ kind: "linked", name: confirmed.name.trim() });
+    }
+    void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
   }
 
   async function copyCode(code: string) {
@@ -169,6 +200,7 @@ export function LinkDevicePanel({
                 value={step.link.code}
                 level="M"
                 boostLevel={false}
+                marginSize={4}
                 size={176}
                 bgColor="transparent"
                 fgColor="currentColor"
@@ -211,12 +243,9 @@ export function LinkDevicePanel({
           <p className="text-sm text-rim-text">A device asks to join your account.</p>
           <div>
             <p className="text-xs text-rim-text-muted">Check that the new device shows</p>
-            <p
-              aria-label="Fingerprint"
-              className="mt-1 font-mono text-2xl tracking-widest text-rim-text"
-            >
-              {step.offer.fingerprint}
-            </p>
+            <div className="mt-1">
+              <Fingerprint value={step.offer.fingerprint} />
+            </div>
           </div>
           <p className="text-xs text-rim-text-muted">
             {step.offer.platform === "web"
@@ -239,7 +268,7 @@ export function LinkDevicePanel({
             <Button
               size="sm"
               disabled={!name.trim()}
-              onClick={() => void confirm(step.link, step.offer)}
+              onClick={() => void confirm({ link: step.link, offer: step.offer, name })}
             >
               Confirm
             </Button>
@@ -275,9 +304,20 @@ export function LinkDevicePanel({
           <p role="alert" className="text-sm text-rim-danger">
             {step.message}
           </p>
-          <Button variant="secondary" size="sm" onClick={() => setStep({ kind: "idle" })}>
-            Start again
-          </Button>
+          {step.retry ? (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => step.retry && void confirm(step.retry)}>
+                Retry
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void cancel()}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setStep({ kind: "idle" })}>
+              Start again
+            </Button>
+          )}
         </div>
       )}
     </section>

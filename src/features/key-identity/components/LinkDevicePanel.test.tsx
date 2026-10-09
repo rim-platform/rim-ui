@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -120,14 +120,72 @@ describe("LinkDevicePanel", () => {
 
   it("cancels a confirmed link with the device it certified", async () => {
     api.waitForOffer.mockResolvedValue(offer);
-    api.confirmLink.mockReturnValue(new Promise(() => undefined));
+    const events: string[] = [];
+    api.confirmLink.mockImplementation(
+      (_link: StartedLink, _name: string, _display: string, options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) =>
+          options.signal.addEventListener("abort", () => {
+            events.push("confirm settled");
+            reject(new DeviceLinkError("aborted"));
+          }),
+        ),
+    );
+    api.cancelLink.mockImplementation(async () => {
+      events.push("cancelLink");
+      return false;
+    });
     wrap(<LinkDevicePanel identity={identity} displayName="Alice" />);
     await userEvent.click(screen.getByRole("button", { name: /link a device/i }));
     await userEvent.click(await screen.findByRole("button", { name: /^confirm$/i }));
     expect(await screen.findByText(/waiting for it to sign in/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(api.cancelLink).toHaveBeenCalledWith(link, "d-new");
+    await waitFor(() => expect(api.cancelLink).toHaveBeenCalledWith(link, "d-new"));
+    // The confirm flow settles before the link is cancelled and its device revoked.
+    expect(events).toEqual(["confirm settled", "cancelLink"]);
+  });
+
+  it("keeps a confirmed link going when the panel closes", async () => {
+    api.waitForOffer.mockResolvedValue(offer);
+    let signal: AbortSignal | undefined;
+    api.confirmLink.mockImplementation(
+      (_link: StartedLink, _name: string, _display: string, options: { signal: AbortSignal }) => {
+        signal = options.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const { unmount } = wrap(<LinkDevicePanel identity={identity} displayName="Alice" />);
+    await userEvent.click(screen.getByRole("button", { name: /link a device/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^confirm$/i }));
+    unmount();
+    expect(signal?.aborted).toBe(false);
+    expect(api.declineLink).not.toHaveBeenCalled();
+    expect(api.cancelLink).not.toHaveBeenCalled();
+  });
+
+  it("declines an offer still waiting for confirmation when the panel closes", async () => {
+    api.waitForOffer.mockResolvedValue(offer);
+    const { unmount } = wrap(<LinkDevicePanel identity={identity} displayName="Alice" />);
+    await userEvent.click(screen.getByRole("button", { name: /link a device/i }));
+    await screen.findByLabelText("Fingerprint");
+    unmount();
+    expect(api.declineLink).toHaveBeenCalledWith(link);
+  });
+
+  it("offers a retry after a network failure past Confirm", async () => {
+    api.waitForOffer.mockResolvedValue(offer);
+    api.confirmLink
+      .mockRejectedValueOnce(new DeviceLinkError("failed", "fetch failed"))
+      .mockResolvedValueOnce(undefined);
+    wrap(<LinkDevicePanel identity={identity} displayName="Alice" />);
+    await userEvent.click(screen.getByRole("button", { name: /link a device/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^confirm$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("fetch failed");
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(api.confirmLink).toHaveBeenCalledTimes(2);
+    expect(api.confirmLink.mock.calls[1].slice(0, 3)).toEqual([link, "Laptop", "Alice"]);
+    expect(await screen.findByText("Laptop is linked.")).toBeInTheDocument();
   });
 
   it("shows why a link failed and starts again", async () => {

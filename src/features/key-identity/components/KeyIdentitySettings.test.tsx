@@ -221,6 +221,7 @@ describe("KeyIdentitySettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /remove device/i }));
 
     expect(api.revokeDevice).toHaveBeenCalledWith(enrolled, "d-other");
+    expect(screen.getByRole("button", { name: /link a device/i })).toBeInTheDocument();
   });
 
   it("replaces the identity key after a confirmation", async () => {
@@ -270,6 +271,7 @@ describe("KeyIdentitySettings", () => {
     expect(await screen.findByText(/signs in with its own key/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /replace identity key/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /link a device/i })).toBeNull();
   });
 
   it("only explains key sign-in in the web app", async () => {
