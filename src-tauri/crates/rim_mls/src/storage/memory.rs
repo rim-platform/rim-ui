@@ -43,13 +43,22 @@ impl MemoryStore {
 
     /// Keep everything written since the last commit, and return those entries.
     pub fn commit(&self) -> Vec<Change> {
-        let mut inner = self.lock();
-        let journal = std::mem::take(&mut inner.journal);
-        journal
-            .into_keys()
-            .map(|(label, key)| {
-                let value = inner.entries.get(&(label.clone(), key.clone())).cloned();
-                Change { label, key, value }
+        let changes = self.pending();
+        self.lock().journal.clear();
+        changes
+    }
+
+    /// The entries written since the last commit, without committing them: what to persist
+    /// before calling [`MemoryStore::commit`] (or [`MemoryStore::rollback`] if that fails).
+    pub fn pending(&self) -> Vec<Change> {
+        let inner = self.lock();
+        inner
+            .journal
+            .keys()
+            .map(|(label, key)| Change {
+                label: label.clone(),
+                key: key.clone(),
+                value: inner.entries.get(&(label.clone(), key.clone())).cloned(),
             })
             .collect()
     }
@@ -156,6 +165,9 @@ impl Store for MemoryStore {}
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use super::*;
 
     #[test]
@@ -175,6 +187,8 @@ mod tests {
         assert_eq!(store.get("b", b"3").unwrap(), None);
 
         store.delete("a", b"2").unwrap();
+        assert_eq!(store.pending().len(), 1);
+        assert_eq!(store.pending().len(), 1);
         let changes = store.commit();
         assert_eq!(
             changes,

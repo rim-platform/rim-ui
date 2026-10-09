@@ -1,0 +1,6 @@
+# The browser build of `rim_mls` (`crates/rim_mls_wasm`): getrandom 0.3 takes its randomness from
+# WebCrypto only when this backend is selected; `cargo test --target wasm32-unknown-unknown`
+# runs the tests in a headless browser through `wasm-bindgen-test-runner` (wasm-bindgen-cli).
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+runner = "wasm-bindgen-test-runner"

@@ -1,7 +1,6 @@
 //! Test devices: an engine, a memory store, a device key, and the directory that vouches for them.
 
 use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2::{Digest, Sha256};
@@ -27,10 +26,18 @@ pub(crate) fn engine(provider: Provider) -> Mls {
 }
 
 pub(crate) fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+    chrono::Utc::now().timestamp() as u64
+}
+
+/// Let `duration` pass. A browser cannot block a thread, so the wasm build waits on the clock.
+pub(crate) fn wait(duration: std::time::Duration) {
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::sleep(duration);
+    #[cfg(target_arch = "wasm32")]
+    {
+        let until = chrono::Utc::now() + duration;
+        while chrono::Utc::now() < until {}
+    }
 }
 
 /// A principal id for test user `n`.

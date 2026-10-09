@@ -1,6 +1,9 @@
 //! Both providers run suite 0x004F, frame the authenticated data into every message, and read
 //! each other's groups.
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use openmls::prelude::tls_codec::DeserializeBytes as _;
 use openmls::prelude::{MlsMessageBodyIn, MlsMessageIn};
 use uuid::Uuid;

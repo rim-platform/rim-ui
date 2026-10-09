@@ -2,6 +2,9 @@
 //! X25519 (RFC 7748), HPKE base mode (RFC 9180 A.1), HKDF (RFC 5869), HMAC (RFC 4231), AES-GCM
 //! (Wycheproof), X-Wing (draft-connolly-cfrg-xwing-kem) and ML-KEM-768 (NIST ACVP).
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use hpke_rs_crypto::types::KemAlgorithm;
 use hpke_rs_crypto::HpkeCrypto;
 use hpke_rs_libcrux::HpkeLibcrux;
