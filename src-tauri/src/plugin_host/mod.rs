@@ -1,10 +1,8 @@
-pub mod backend_client;
 pub mod broker;
 pub mod capability;
 pub mod command_exec;
 pub mod commands;
 pub mod discovery;
-pub mod event_forwarder;
 pub mod git_install;
 pub mod git_source;
 pub mod handshake;
@@ -12,7 +10,6 @@ pub mod host_events;
 pub mod lifecycle;
 pub mod local_install;
 pub mod manifest;
-pub mod panel_registry;
 pub mod panel_relay;
 pub mod plugin_protocol;
 pub mod post_install;
@@ -26,7 +23,6 @@ pub mod wire;
 
 use commands::PendingUiEvent;
 use manifest::PluginManifest;
-use panel_registry::PanelRegistry;
 use panel_relay::PanelRelay;
 use state::{state_file_path, PluginStateStore, PluginStatus};
 use std::collections::HashMap;
@@ -46,8 +42,6 @@ pub struct PluginHostState {
     pub clients: Arc<Mutex<HashMap<String, broker::PluginClient>>>,
     /// Arc so the broker loop tasks can hold a shared reference after `start_plugin` returns.
     pub panel_relay: Arc<PanelRelay>,
-    #[allow(dead_code)]
-    pub panel_registry: PanelRegistry,
     pub pending_ui_events: Mutex<Vec<PendingUiEvent>>,
     /// The signed-in user as plugins see it; the UI sets it on sign-in and sign-out.
     /// Arc so a broker task can read it when its plugin finishes the handshake.
@@ -94,7 +88,6 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
         clients: Arc::new(Mutex::new(HashMap::new())),
         panel_relay: Arc::new(PanelRelay::new()),
-        panel_registry: PanelRegistry::new(),
         pending_ui_events: Mutex::new(Vec::new()),
         principal: Arc::new(Mutex::new(None)),
         principal_ids: Arc::new(Mutex::new(principal_ids)),
@@ -202,7 +195,6 @@ impl PluginHostState {
             shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
             clients: Arc::new(Mutex::new(HashMap::new())),
             panel_relay: Arc::new(PanelRelay::new()),
-            panel_registry: PanelRegistry::new(),
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
             principal_ids: Arc::new(Mutex::new(Vec::new())),

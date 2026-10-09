@@ -1,17 +1,15 @@
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 // JSON-RPC 2.0 error codes
-pub const PARSE_ERROR: i32 = -32700;
-pub const INVALID_REQUEST: i32 = -32600;
 pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
 pub const INTERNAL_ERROR: i32 = -32603;
 // Application error codes (plugin host specific)
 pub const CAPABILITY_DENIED: i32 = -32000;
 pub const RATE_LIMITED: i32 = -32001;
+// Sent by plugins; the host passes it through without matching on it, except in tests.
+#[allow(dead_code)]
 pub const PLUGIN_ERROR: i32 = -32002;
 
 /// Largest frame payload either side may send, in bytes (4 MiB).

@@ -386,7 +386,6 @@ mod tests {
     use crate::plugin_host::capability::CapabilityGate;
     use crate::plugin_host::lifecycle;
     use crate::plugin_host::manifest::RuntimeKind;
-    use crate::plugin_host::panel_registry::PanelRegistry;
     use crate::plugin_host::panel_relay::PanelRelay;
     use crate::plugin_host::protocol::Principal;
     use crate::plugin_host::state::PluginStateStore;
@@ -445,7 +444,6 @@ mod tests {
             shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
             clients: Arc::new(Mutex::new(HashMap::new())),
             panel_relay: Arc::new(PanelRelay::new()),
-            panel_registry: PanelRegistry::new(),
             pending_ui_events: Mutex::new(Vec::new()),
             principal: Arc::new(Mutex::new(None)),
             principal_ids: Arc::new(Mutex::new(Vec::new())),

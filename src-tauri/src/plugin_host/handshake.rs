@@ -1,10 +1,7 @@
-#![allow(dead_code)]
-
 use crate::plugin_host::protocol::{
     method, HandshakeParams, HandshakeResult, Principal, PROTOCOL_VERSION, SUPPORTED_VERSIONS,
 };
-use crate::plugin_host::wire::{self, JsonRpcRequest, JsonRpcResponse, WireError};
-use tokio::io::{AsyncRead, AsyncWrite};
+use crate::plugin_host::wire::WireError;
 
 const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const HANDSHAKE_METHOD: &str = method::HANDSHAKE;
@@ -76,160 +73,62 @@ pub fn validate_handshake_result(
     Ok(result)
 }
 
-/// Perform the host-side handshake: send request, read response, validate.
-///
-/// Reads the very next frame as the response, so it only suits a connection
-/// nothing else is reading yet. The runtime handshakes through
-/// [`crate::plugin_host::broker::PluginClient`] instead, which tolerates a
-/// plugin that logs before it answers.
-pub async fn perform_handshake<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    plugin_id: &str,
-    granted_capabilities: &[String],
-) -> Result<HandshakeResult, HandshakeError>
-where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
-    let request = JsonRpcRequest::new(
-        HANDSHAKE_METHOD,
-        Some(handshake_params(plugin_id, granted_capabilities, None)?),
-        0,
-    );
-
-    wire::write_frame(writer, &request).await?;
-
-    let response: JsonRpcResponse = wire::read_frame(reader).await?;
-
-    if let Some(err) = &response.error {
-        return Err(HandshakeError::Rejected(err.message.clone()));
-    }
-
-    let result = response
-        .result
-        .ok_or_else(|| HandshakeError::InvalidResponse("missing result field".into()))?;
-    validate_handshake_result(result, plugin_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_host::wire;
 
-    #[tokio::test]
-    async fn successful_handshake() {
-        // Simulate plugin response
-        let mut response_buf = Vec::new();
-        let response = JsonRpcResponse::success(
-            serde_json::json!(0),
-            serde_json::json!({
-                "accepted": true,
-                "protocolVersion": 1,
-                "pluginId": "dev.example.test",
-                "error": null
-            }),
-        );
-        wire::write_frame(&mut response_buf, &response)
-            .await
-            .unwrap();
+    fn result(
+        accepted: bool,
+        version: u32,
+        plugin_id: &str,
+        error: Option<&str>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "accepted": accepted,
+            "protocolVersion": version,
+            "pluginId": plugin_id,
+            "error": error,
+        })
+    }
 
-        let mut request_buf = Vec::new();
-        let mut reader = std::io::Cursor::new(response_buf);
-
-        let result = perform_handshake(
-            &mut reader,
-            &mut request_buf,
+    #[test]
+    fn successful_handshake() {
+        let result = validate_handshake_result(
+            result(true, 1, "dev.example.test", None),
             "dev.example.test",
-            &["chat.read".into()],
         )
-        .await
         .unwrap();
-
         assert!(result.accepted);
         assert_eq!(result.protocol_version, 1);
-
-        // Verify the request was written correctly
-        let mut req_cursor = std::io::Cursor::new(request_buf);
-        let sent: JsonRpcRequest = wire::read_frame(&mut req_cursor).await.unwrap();
-        assert_eq!(sent.method, "rim.handshake");
     }
 
-    #[tokio::test]
-    async fn rejected_handshake() {
-        let mut response_buf = Vec::new();
-        let response = JsonRpcResponse::success(
-            serde_json::json!(0),
-            serde_json::json!({
-                "accepted": false,
-                "protocolVersion": 1,
-                "pluginId": "dev.example.test",
-                "error": "incompatible host"
-            }),
-        );
-        wire::write_frame(&mut response_buf, &response)
-            .await
-            .unwrap();
-
-        let mut request_buf = Vec::new();
-        let mut reader = std::io::Cursor::new(response_buf);
-
-        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, HandshakeError::Rejected(_)));
+    #[test]
+    fn rejected_handshake() {
+        let err = validate_handshake_result(
+            result(false, 1, "dev.example.test", Some("incompatible host")),
+            "dev.example.test",
+        )
+        .unwrap_err();
+        assert!(matches!(err, HandshakeError::Rejected(reason) if reason == "incompatible host"));
     }
 
-    #[tokio::test]
-    async fn version_mismatch() {
-        let mut response_buf = Vec::new();
-        let response = JsonRpcResponse::success(
-            serde_json::json!(0),
-            serde_json::json!({
-                "accepted": true,
-                "protocolVersion": 99,
-                "pluginId": "dev.example.test",
-                "error": null
-            }),
-        );
-        wire::write_frame(&mut response_buf, &response)
-            .await
-            .unwrap();
-
-        let mut request_buf = Vec::new();
-        let mut reader = std::io::Cursor::new(response_buf);
-
-        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
-            .await
-            .unwrap_err();
-
+    #[test]
+    fn version_mismatch() {
+        let err = validate_handshake_result(
+            result(true, 99, "dev.example.test", None),
+            "dev.example.test",
+        )
+        .unwrap_err();
         assert!(matches!(err, HandshakeError::VersionMismatch(99)));
     }
 
-    #[tokio::test]
-    async fn plugin_id_mismatch() {
-        let mut response_buf = Vec::new();
-        let response = JsonRpcResponse::success(
-            serde_json::json!(0),
-            serde_json::json!({
-                "accepted": true,
-                "protocolVersion": 1,
-                "pluginId": "dev.example.wrong",
-                "error": null
-            }),
-        );
-        wire::write_frame(&mut response_buf, &response)
-            .await
-            .unwrap();
-
-        let mut request_buf = Vec::new();
-        let mut reader = std::io::Cursor::new(response_buf);
-
-        let err = perform_handshake(&mut reader, &mut request_buf, "dev.example.test", &[])
-            .await
-            .unwrap_err();
-
+    #[test]
+    fn plugin_id_mismatch() {
+        let err = validate_handshake_result(
+            result(true, 1, "dev.example.wrong", None),
+            "dev.example.test",
+        )
+        .unwrap_err();
         assert!(matches!(err, HandshakeError::PluginIdMismatch { .. }));
     }
 }

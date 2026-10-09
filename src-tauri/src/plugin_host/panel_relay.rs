@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -24,8 +22,6 @@ pub struct PanelStateChange {
 pub enum PanelRelayError {
     #[error("state size exceeds limit ({0} bytes, max {MAX_STATE_SIZE_BYTES})")]
     StateTooLarge(usize),
-    #[error("panel '{panel_id}' not declared in manifest of plugin '{plugin_id}'")]
-    PanelNotOwned { plugin_id: String, panel_id: String },
     #[error("lock poisoned")]
     LockPoisoned,
 }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{BufReader, BufWriter};
@@ -15,8 +13,6 @@ const TERM_GRACE: Duration = Duration::from_secs(2);
 pub enum ProcessError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("process exited with code: {0:?}")]
-    Exited(Option<i32>),
     #[error("entrypoint not found: {0}")]
     EntrypointNotFound(String),
     #[error("stdin not available")]
@@ -74,6 +70,8 @@ impl PluginProcess {
         ))
     }
 
+    // Only the tests wait on a plugin process by polling.
+    #[cfg(test)]
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
     }
@@ -143,6 +141,7 @@ impl PluginProcess {
     }
 
     /// Check if the process is still running.
+    #[cfg(test)]
     pub fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>, ProcessError> {
         Ok(self.child.try_wait()?)
     }

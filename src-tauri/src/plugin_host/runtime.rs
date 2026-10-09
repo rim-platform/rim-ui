@@ -486,50 +486,12 @@ async fn handshake_through(
     Ok(())
 }
 
-// ─── Spawner trait for testability ───────────────────────────────────────────
-
-/// Abstracts over `PluginProcess::spawn` so tests can inject a fake.
-///
-/// In production the `RealSpawner` impl delegates directly to `PluginProcess::spawn`.
-/// Test code can implement `Spawner` with a fake that succeeds without touching
-/// the filesystem.
-// The trait and its production impl are not yet threaded through `start_plugin`.
-// Wiring deferred to a future phase — leave the dead-code allowance rather than
-// plumbing it through before it has callers.
-#[allow(dead_code)]
-pub trait Spawner: Send + Sync {
-    /// Spawn the plugin and return its IO pipes.
-    fn spawn(
-        &self,
-        plugin_id: &str,
-        plugin_dir: &std::path::Path,
-        entrypoint: &str,
-    ) -> Result<crate::plugin_host::process::PluginPipes, crate::plugin_host::process::ProcessError>;
-}
-
-/// Production spawner: thin wrapper over `PluginProcess::spawn`.
-#[allow(dead_code)]
-pub struct RealSpawner;
-
-impl Spawner for RealSpawner {
-    fn spawn(
-        &self,
-        plugin_id: &str,
-        plugin_dir: &std::path::Path,
-        entrypoint: &str,
-    ) -> Result<crate::plugin_host::process::PluginPipes, crate::plugin_host::process::ProcessError>
-    {
-        PluginProcess::spawn(plugin_id, plugin_dir, entrypoint).map(|(_proc, pipes)| pipes)
-    }
-}
-
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
-    use crate::plugin_host::panel_registry::PanelRegistry;
     use crate::plugin_host::panel_relay::PanelRelay;
     use crate::plugin_host::state::{state_file_path, PluginStateStore};
     use crate::plugin_host::PluginHostState;
@@ -568,7 +530,6 @@ mod tests {
             shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             clients: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
-            panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -721,7 +682,6 @@ mod tests {
             shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             clients: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             panel_relay: std::sync::Arc::new(PanelRelay::new()),
-            panel_registry: PanelRegistry::new(),
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
