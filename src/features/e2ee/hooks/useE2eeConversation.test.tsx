@@ -20,6 +20,7 @@ vi.mock("../runtime/groups", () => ({
   createGroup: runtime.createGroup,
   refreshGroups: runtime.refreshGroups,
 }));
+vi.mock("../runtime/membership", () => ({ syncMembership: vi.fn(async () => undefined) }));
 vi.mock("../runtime/members", () => ({
   conversationMembers: runtime.conversationMembers,
   notReadyMembers: runtime.notReadyMembers,

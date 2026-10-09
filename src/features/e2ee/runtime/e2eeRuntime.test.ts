@@ -9,10 +9,11 @@ const groups = vi.hoisted(() => ({
   verifyLeaves: vi.fn(),
 }));
 const fetchConversationGroup = vi.hoisted(() => vi.fn());
+const fetchCommits = vi.hoisted(() => vi.fn());
 const requestCacheSync = vi.hoisted(() => vi.fn());
 const syncMembership = vi.hoisted(() => vi.fn());
 vi.mock("./groups", () => groups);
-vi.mock("../api/e2eeApi", () => ({ fetchConversationGroup }));
+vi.mock("../api/e2eeApi", () => ({ fetchConversationGroup, fetchCommits }));
 vi.mock("../../messages/runtime/messageCacheSync", () => ({
   requestCacheSync,
   setE2eeNoteHandler: vi.fn(),
@@ -87,6 +88,21 @@ describe("handleSyncNotes", () => {
     ]);
     expect(groups.askToBeReadded).not.toHaveBeenCalled();
     expect(requestCacheSync).toHaveBeenCalledWith("ws", ["c"]);
+  });
+
+  it("syncs again when the missing Commit is there now, else asks to be re-added", async () => {
+    fetchCommits.mockResolvedValueOnce([{ epoch: 4 }]);
+    await handleSyncNotes(session.account, "ws", [
+      note({ stopped: { kind: "needCommits", incarnation: 1, epoch: 4 } }),
+    ]);
+    expect(requestCacheSync).toHaveBeenCalledWith("ws", ["c"]);
+    expect(groups.askToBeReadded).not.toHaveBeenCalled();
+
+    fetchCommits.mockResolvedValueOnce([]);
+    await handleSyncNotes(session.account, "ws", [
+      note({ stopped: { kind: "needCommits", incarnation: 1, epoch: 4 } }),
+    ]);
+    expect(groups.askToBeReadded).toHaveBeenCalledWith(session, "ws", "c", 1);
   });
 
   it("sends a re-add request once when a Commit cannot be processed", async () => {

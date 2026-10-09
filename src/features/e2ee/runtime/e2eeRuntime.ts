@@ -18,7 +18,7 @@ import { fetchNotificationSettings } from "../../notifications/api/useNotificati
 import { showMessageNotification } from "../../notifications/runtime/desktopNotification";
 import { isWatching } from "../../notifications/runtime/useNotificationEventHandler";
 import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
-import { fetchConversationGroup } from "../api/e2eeApi";
+import { fetchCommits, fetchConversationGroup } from "../api/e2eeApi";
 import { matchingKeyword, mentionedPrincipals } from "../utils/content";
 import { noteAbsentFromGroup } from "./feedInputs";
 import {
@@ -54,9 +54,19 @@ async function resolveStop(
   if (!stop) return;
   const { conversationId } = note;
   switch (stop.kind) {
-    case "needCommits":
+    case "needCommits": {
+      // Fetched before the page and arrived since, or gone past the server's retention: then
+      // only a re-add brings this device back.
+      const commits = await fetchCommits(workspaceId, conversationId, stop.incarnation, stop.epoch);
+      if (commits.some((c) => c.epoch === stop.epoch)) {
+        requestCacheSync(workspaceId, [conversationId]);
+      } else {
+        await askToBeReadded(session, workspaceId, conversationId, stop.incarnation);
+      }
+      return;
+    }
     case "needThreadRoot":
-      // Fetched before the page; something arrived in between. The next sync fetches again.
+      // Fetched before the page; the next sync fetches again.
       requestCacheSync(workspaceId, [conversationId]);
       return;
     case "noGroupState": {

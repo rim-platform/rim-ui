@@ -17,6 +17,7 @@ import { fetchPrincipalDevices } from "../api/e2eeApi";
 import type { GroupView } from "../api/e2eeCommands";
 import { createGroup, refreshGroups } from "../runtime/groups";
 import { conversationMembers, notReadyMembers } from "../runtime/members";
+import { syncMembership } from "../runtime/membership";
 import { e2eeSession } from "../runtime/session";
 import { useE2eeStore } from "../state/useE2eeStore";
 
@@ -102,10 +103,18 @@ export function useE2eeConversation(
   const encryptedAt = conversation?.encryptedAt ?? null;
   const conversationType = conversation?.conversationType;
 
+  // An encrypted conversation this device holds no group for: its group may not exist yet (the
+  // creator crashed), or wait for changes this device should commit.
   useEffect(() => {
     if (!desktop || !workspaceId || !conversationId || !userId) return;
-    void e2eeSession().then((session) => {
-      if (session) void refreshGroups(session, workspaceId, [conversationId]).catch(() => []);
+    void e2eeSession().then(async (session) => {
+      if (!session) return;
+      const [local] = await refreshGroups(session, workspaceId, [conversationId]).catch(() => []);
+      if (encryptedAt && !local?.hasGroup) {
+        await syncMembership(session, workspaceId, conversationId).catch((err: unknown) =>
+          logger.warn("[RIM:e2ee] membership sync failed:", err),
+        );
+      }
     });
   }, [desktop, workspaceId, conversationId, userId, encryptedAt]);
 
