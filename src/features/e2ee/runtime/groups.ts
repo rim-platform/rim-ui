@@ -340,10 +340,7 @@ export async function commitPendingLocked(
       return false;
     }
 
-    const claimed = await claimKeyPackages(workspaceId, conversationId, [
-      ...adds.map(({ principalId, deviceId }) => ({ principalId, deviceId })),
-      ...readds,
-    ]);
+    const claimed = await claimWithReadds(workspaceId, conversationId, adds, readds);
     const readdsClaimed = readds.filter((r) => claimed.some((c) => sameDevice(c, r)));
     const commit = await e2eeCommands.commit(
       session.account,
@@ -365,6 +362,27 @@ export async function commitPendingLocked(
     if (result === "refused") return false;
   }
   return false;
+}
+
+/**
+ * Claim key packages for the adds and the re-adds. A re-add target that has not uploaded a
+ * package since its request fails the whole claim (`VALIDATION`); the adds are claimed alone
+ * then, and the re-add waits for a later round.
+ */
+async function claimWithReadds(
+  workspaceId: string,
+  conversationId: string,
+  adds: DeviceRefView[],
+  readds: DeviceRefView[],
+): Promise<ClaimedPackage[]> {
+  const addRefs = adds.map(({ principalId, deviceId }) => ({ principalId, deviceId }));
+  try {
+    return await claimKeyPackages(workspaceId, conversationId, [...addRefs, ...readds]);
+  } catch (err) {
+    if (readds.length === 0 || graphqlErrorCode(err) !== VALIDATION) throw err;
+    logger.warn("[RIM:e2ee] a re-add target has no fresh key package yet:", err);
+    return claimKeyPackages(workspaceId, conversationId, addRefs);
+  }
 }
 
 /** The re-add requests of the group this device may act on, verified on the Tauri side. */

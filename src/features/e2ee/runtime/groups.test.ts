@@ -138,6 +138,40 @@ describe("commitPendingChanges", () => {
     );
   });
 
+  it("claims the adds alone when a re-add target has no fresh key package yet", async () => {
+    api.fetchConversationGroup.mockResolvedValue({
+      memberIds: ["u-me", "u-a"],
+      mlsGroup: serverGroup({
+        pendingAdds: [
+          { principalId: "rimp1_a", deviceId: "dev-a", userId: "u-a", hasKeyPackage: true },
+        ],
+        readdRequests: [
+          {
+            principalId: "rimp1_b",
+            deviceId: "dev-b",
+            request: { payload: "p", signature: "s" },
+            createdAt: "2026-10-09T00:00:00Z",
+          },
+        ],
+      }),
+    });
+    commands.readdCheck.mockResolvedValue([{ principalId: "rimp1_b", deviceId: "dev-b" }]);
+    api.claimKeyPackages
+      .mockRejectedValueOnce(graphqlError("VALIDATION"))
+      .mockResolvedValueOnce([
+        { principalId: "rimp1_a", deviceId: "dev-a", keyPackage: "kp", userId: "u-a" },
+      ]);
+    api.submitCommit.mockResolvedValue(undefined);
+
+    expect(await commitPendingChanges(session, "ws", "c")).toBe(true);
+    expect(api.claimKeyPackages.mock.calls[1][2]).toEqual([
+      { principalId: "rimp1_a", deviceId: "dev-a" },
+    ]);
+    // The re-add is neither removed nor added in this Commit.
+    expect(commands.commit.mock.calls[0][4]).toEqual([]);
+    expect(commands.settleCommit.mock.calls[0][5]).toEqual([]);
+  });
+
   it("drops its Commit on STALE_EPOCH, catches up and tries again", async () => {
     api.fetchConversationGroup.mockResolvedValue({
       memberIds: [],
