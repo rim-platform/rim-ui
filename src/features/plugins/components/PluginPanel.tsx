@@ -3,7 +3,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
-import { createPluginBridge, fetchAndRelayPanelState } from "../runtime/pluginBridge";
+import { createPluginBridge, followPanelState } from "../runtime/pluginBridge";
 import { createThemeChangeMessage, onThemeChange } from "../runtime/pluginThemeBridge";
 import { usePluginFocusManager } from "../runtime/pluginFocusManager";
 import type { PluginCapability } from "../types";
@@ -52,6 +52,8 @@ type LoadState = "idle" | "loading" | "slow" | "timeout" | "loaded" | "error";
 interface PluginPanelProps {
   pluginId: string;
   panelId: string;
+  /** The plugin's name, shown with its notifications. */
+  pluginName?: string;
   approvedCapabilities: PluginCapability[];
   onClose: () => void;
 }
@@ -59,6 +61,7 @@ interface PluginPanelProps {
 export function PluginPanel({
   pluginId,
   panelId,
+  pluginName,
   approvedCapabilities,
   onClose,
 }: PluginPanelProps) {
@@ -88,6 +91,8 @@ export function PluginPanel({
     <PluginPanelInner
       src={src}
       pluginId={pluginId}
+      panelId={panelId}
+      pluginName={pluginName}
       approvedCapabilities={approvedCapabilities}
       iframeRef={iframeRef}
       focusIframe={focusIframe}
@@ -100,6 +105,8 @@ export function PluginPanel({
 interface PluginPanelInnerProps {
   src: string;
   pluginId: string;
+  panelId: string;
+  pluginName?: string;
   approvedCapabilities: PluginCapability[];
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   focusIframe: () => void;
@@ -110,6 +117,8 @@ interface PluginPanelInnerProps {
 function PluginPanelInner({
   src,
   pluginId,
+  panelId,
+  pluginName,
   approvedCapabilities,
   iframeRef,
   focusIframe,
@@ -139,16 +148,18 @@ function PluginPanelInner({
 
     const bridge = createPluginBridge({
       pluginId,
+      pluginName,
       approvedCapabilities,
       iframe,
     });
+    // Every change the plugin makes to this panel's state reaches the page.
+    const panelState = followPanelState(pluginId, panelId, bridge.sendToPlugin);
 
-    // Send initial theme and cached state when iframe loads
+    // Send the theme and the plugin's stored state each time the page (re)loads.
     function handleLoad() {
       setLoadState("loaded");
       bridge.sendToPlugin(createThemeChangeMessage());
-      // Fetch and relay cached panel state on (re)open
-      fetchAndRelayPanelState(pluginId, bridge.sendToPlugin);
+      void panelState.load();
     }
     iframe.addEventListener("load", handleLoad);
 
@@ -158,9 +169,10 @@ function PluginPanelInner({
     return () => {
       iframe.removeEventListener("load", handleLoad);
       unsubTheme();
+      panelState.stop();
       bridge.destroy();
     };
-  }, [pluginId, approvedCapabilities, iframeRef, setLoadState]);
+  }, [pluginId, panelId, pluginName, approvedCapabilities, iframeRef, setLoadState]);
 
   const handleRetry = useCallback(() => {
     setLoadState("idle");

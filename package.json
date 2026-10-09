@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "sdk:generate": "node sdk/plugin-sdk/scripts/generate-protocol.ts",
-    "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts",
+    "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods",
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs"
   },
   "dependencies": {

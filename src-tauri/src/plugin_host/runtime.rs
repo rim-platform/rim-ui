@@ -27,6 +27,7 @@ use crate::plugin_host::broker::{
 };
 use crate::plugin_host::capability::CapabilityGate;
 use crate::plugin_host::handshake::{self, HandshakeError};
+use crate::plugin_host::host_events::PluginEventKind;
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::process::{self, PluginProcess};
 use crate::plugin_host::protocol::{method, Principal, PrincipalChangedParams};
@@ -136,6 +137,8 @@ pub fn start_plugin(
     let shutdown_txs = state.shutdown_txs.clone();
     let principal = state.principal.clone();
     let pids = state.pids.clone();
+    let panel_relay = state.panel_relay.clone();
+    let events = state.events.clone();
     let own_shutdown_tx = shutdown_tx.clone();
     let pid_str = plugin_id.to_string();
 
@@ -183,6 +186,7 @@ pub fn start_plugin(
             if let Ok(mut map) = clients.lock() {
                 map.insert(pid_str.clone(), client.clone());
             }
+            events.publish(&pid_str, PluginEventKind::PluginStarted);
             // A sign-in or sign-out during the handshake reached every client but this one.
             let current = principal.lock().ok().and_then(|p| p.clone());
             if current != sent_principal {
@@ -202,12 +206,26 @@ pub fn start_plugin(
 
         // Deregister so a crashed plugin (or one that failed the handshake) can be
         // started again; stop_plugin or a restart may already have replaced the entry.
+        // The lock is held to the end, so a restart cannot register in between and
+        // lose its fresh panel state, or be announced as stopped after it started.
         if let Ok(mut txs) = shutdown_txs.lock() {
             if txs
                 .get(&pid_str)
                 .is_some_and(|tx| tx.same_channel(&own_shutdown_tx))
             {
                 txs.remove(&pid_str);
+            }
+            // An open panel should not keep showing what a crashed plugin last said;
+            // a newer process of the same plugin keeps its own state.
+            if !txs.contains_key(&pid_str) {
+                if let Err(e) = panel_relay.cleanup_plugin(&pid_str) {
+                    log::warn!(
+                        "[plugin_host] panel state cleanup of {} failed: {}",
+                        pid_str,
+                        e
+                    );
+                }
+                events.publish(&pid_str, PluginEventKind::PluginStopped);
             }
         }
 
@@ -265,6 +283,13 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
         // kill_on_drop on the child process ensures OS-level cleanup.
         timeout(STOP_TIMEOUT, tx.closed()).await.ok();
 
+        if let Err(e) = state.panel_relay.cleanup_plugin(plugin_id) {
+            log::warn!(
+                "[plugin_host] panel state cleanup of {} failed: {}",
+                plugin_id,
+                e
+            );
+        }
         log::info!("[plugin_host] plugin {} stopped", plugin_id);
     } else {
         log::debug!("[plugin_host] stop_plugin: {} was not running", plugin_id);
@@ -459,6 +484,7 @@ mod tests {
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         }
     }
 
@@ -610,6 +636,7 @@ mod tests {
             pending_ui_events: std::sync::Mutex::new(Vec::new()),
             principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");
         let err = start_plugin("dev.example.test", &manifest, &state).unwrap_err();

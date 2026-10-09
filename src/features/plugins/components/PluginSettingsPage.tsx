@@ -64,6 +64,13 @@ export function PluginSettingsPage() {
   const trustFingerprint = usePluginTrustFingerprint();
 
   const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
+  // A plugin just installed: its permission prompt opens once it is in the list,
+  // so the user reads what it does and what it asks for before turning it on.
+  const [installedId, setInstalledId] = useState<string | null>(null);
+  const installedPlugin = installedId
+    ? (plugins?.find((p) => p.plugin_id === installedId) ?? null)
+    : null;
+  const promptTarget = permissionsTarget ?? installedPlugin;
   const [gitUrl, setGitUrl] = useState("");
   const [gitUrlOpen, setGitUrlOpen] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -96,6 +103,7 @@ export function PluginSettingsPage() {
         const folderPath = parts.join("/");
         setInstallError(null);
         installFromLocal.mutate(folderPath, {
+          onSuccess: (result) => setInstalledId(result?.plugin_id ?? null),
           onError: (err) => {
             setInstallError("message" in err ? err.message : "Install failed");
           },
@@ -115,7 +123,8 @@ export function PluginSettingsPage() {
       installFromGit.mutate(
         { url, allowPostInstall },
         {
-          onSuccess: () => {
+          onSuccess: (result) => {
+            setInstalledId(result?.plugin_id ?? null);
             setConsentRequest(null);
             setGitUrl("");
             setGitUrlOpen(false);
@@ -286,11 +295,14 @@ export function PluginSettingsPage() {
         />
       )}
 
-      {permissionsTarget && (
+      {promptTarget && (
         <PluginCapabilityPrompt
           open={true}
-          onClose={() => setPermissionsTarget(null)}
-          plugin={permissionsTarget}
+          onClose={() => {
+            setPermissionsTarget(null);
+            setInstalledId(null);
+          }}
+          plugin={promptTarget}
         />
       )}
     </div>

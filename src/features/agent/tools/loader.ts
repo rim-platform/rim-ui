@@ -14,7 +14,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
-import type { PluginInfo } from "../../plugins/types";
+import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
 import type { AiToolDefinition } from "../providers/types";
 import { ConfirmationRequiredError } from "../runtime/confirmationGate";
 import { getCurrentCommandContext } from "./commandContext";
@@ -272,41 +272,87 @@ async function fetchAiCommands(): Promise<Command[]> {
   return res.commands;
 }
 
-function buildPluginToolDefinition(
-  pluginId: string,
-  commandId: string,
-  title: string,
-  description: string,
+/** Model APIs accept tool names matching this; plugin ids have dots. */
+const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+const ARGUMENT_TYPES = new Set(["string", "integer", "number", "boolean", "object", "array"]);
+
+/**
+ * The agent's tool name for a plugin command. Plugin ids may not contain
+ * underscores, so turning their dots into underscores keeps names distinct.
+ * `null` when the name would still be one a model API refuses.
+ */
+export function pluginToolName(pluginId: string, commandId: string): string | null {
+  const name = `plugin__${pluginId.replace(/\./g, "_")}__${commandId}`;
+  return TOOL_NAME_PATTERN.test(name) ? name : null;
+}
+
+export function buildPluginToolDefinition(
+  name: string,
+  pluginName: string,
+  command: PluginCommandInfo,
 ): AiToolDefinition {
+  const properties: Record<string, Record<string, unknown>> = {};
+  const required: string[] = [];
+  for (const argument of command.arguments) {
+    properties[argument.name] = {
+      ...(argument.type && ARGUMENT_TYPES.has(argument.type) ? { type: argument.type } : {}),
+      ...(argument.description ? { description: argument.description } : {}),
+    };
+    if (argument.required) required.push(argument.name);
+  }
+  const description = [
+    `${command.title} (${pluginName} plugin). ${command.description}`.trim(),
+    command.dangerous
+      ? "This command is dangerous: you cannot run it. Calling it only proposes it to the user, who must run and confirm it themselves."
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return {
-    name: `plugin__${pluginId}__${commandId}`,
+    name,
     description,
-    input_schema: {
-      type: "object",
-      properties: {
-        input: {
-          type: "string",
-          description: `Free-form input passed to ${title}`,
-        },
-      },
-      required: [],
-      additionalProperties: false,
-    },
+    input_schema: { type: "object", properties, required, additionalProperties: false },
   };
 }
 
-function makePluginToolHandler(pluginId: string, commandId: string): AiToolHandler {
+/** What the agent learns when it calls a dangerous plugin command: it was proposed, not run. */
+function proposalForUser(pluginName: string, command: PluginCommandInfo): string {
+  return JSON.stringify({
+    status: "not_run",
+    reason: "needs_user_confirmation",
+    message:
+      `"${command.title}" is dangerous, so only the user can run it, after confirming. ` +
+      `Tell them what you propose and why; they can run it from the ${pluginName} panel.`,
+  });
+}
+
+function makePluginToolHandler(
+  pluginId: string,
+  pluginName: string,
+  command: PluginCommandInfo,
+): AiToolHandler {
   return async (input) => {
     try {
-      const result = await invoke<unknown>("plugin_run_ai_command", { pluginId, commandId, input });
+      const result = await invoke<unknown>("plugin_run_ai_command", {
+        pluginId,
+        commandId: command.id,
+        input,
+      });
       return payloadToString(result);
     } catch (err) {
+      // The host refuses every dangerous command the agent starts: the agent
+      // can propose one, never confirm it.
+      if (typeof err === "object" && err !== null && "kind" in err) {
+        if ((err as { kind: unknown }).kind === "CONFIRMATION_REQUIRED") {
+          return proposalForUser(pluginName, command);
+        }
+      }
       // The host rejects with `{ kind, message }`; String() would print "[object Object]".
       const reason =
         typeof err === "object" && err !== null && "message" in err
           ? String((err as { message: unknown }).message)
           : String(err);
-      throw new Error(`Plugin command ${pluginId}/${commandId} failed: ${reason}`, {
+      throw new Error(`Plugin command ${pluginId}/${command.id} failed: ${reason}`, {
         cause: err,
       });
     }
@@ -325,13 +371,25 @@ function injectPluginTools(plugins: ReadonlyArray<PluginInfo>): void {
     for (const commandId of plugin.ai_callable_commands) {
       if (!approvedSet.has(commandId)) continue;
 
-      const definition = buildPluginToolDefinition(
-        plugin.manifest_id,
-        commandId,
-        commandId,
-        `Plugin command ${commandId} from ${plugin.display_name}`,
+      const command: PluginCommandInfo = plugin.commands?.find((c) => c.id === commandId) ?? {
+        id: commandId,
+        qualified_id: `plugin.${plugin.manifest_id}.${commandId}`,
+        title: commandId,
+        description: "",
+        keybind_capable: false,
+        dangerous: false,
+        ai_callable: true,
+        arguments: [],
+      };
+      const name = pluginToolName(plugin.manifest_id, commandId);
+      if (!name) {
+        console.warn(`[agent.loader] ${command.qualified_id} has no valid tool name; not offered`);
+        continue;
+      }
+      registerTool(
+        buildPluginToolDefinition(name, plugin.display_name, command),
+        makePluginToolHandler(plugin.manifest_id, plugin.display_name, command),
       );
-      registerTool(definition, makePluginToolHandler(plugin.manifest_id, commandId));
     }
   }
 }

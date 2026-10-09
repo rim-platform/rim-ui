@@ -9,6 +9,7 @@ const THEME_VARIABLES = [
   "--color-rim-accent-strong",
   "--color-rim-warm",
   "--color-rim-danger",
+  "--color-rim-success",
   "--color-rim-text",
   "--color-rim-text-muted",
   "--color-rim-text-faint",
