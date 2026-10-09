@@ -187,7 +187,7 @@ function SetupArchive({
   const afterRestore = useAfterRestore();
   const cloudServices = useCloudServices();
 
-  // A cloud sign-in that was not used is dropped (and its access revoked) when another place
+  // A cloud sign-in that was not used is dropped (a Dropbox one revoked) when another place
   // is chosen or the panel closes; a sign-in still waiting for the browser is cancelled.
   const pendingCloud = useRef<string | null>(null);
   const mounted = useRef(true);

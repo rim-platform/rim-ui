@@ -126,7 +126,6 @@ impl CloudSettings {
             drive: DriveEndpoints {
                 api: "https://www.googleapis.com/drive/v3".into(),
                 upload: "https://www.googleapis.com/upload/drive/v3".into(),
-                revoke: "https://oauth2.googleapis.com/revoke".into(),
             },
             dropbox: ServiceSettings {
                 client_id: setting(
@@ -432,7 +431,8 @@ impl CloudConnections {
         Ok(())
     }
 
-    /// Drop a pending connection the user did not use, revoking its grant.
+    /// Drop a pending connection the user did not use, revoking its grant where that is
+    /// this device's alone (see [`Self::revoke`]).
     pub(crate) fn discard(&self, connection_id: &str) {
         if let Some(pending) = lock(&self.pending).remove(connection_id) {
             self.revoke(pending.kind, pending.tokens);
@@ -449,13 +449,17 @@ impl CloudConnections {
         Ok(self.provider(kind, tokens, connection.account.clone()))
     }
 
-    /// Sign a kept connection out: revoke its grant and forget its refresh token.
+    /// Sign a kept connection out: forget its refresh token, then revoke its grant where that
+    /// is this device's alone (see [`Self::revoke`]). The local wipe comes first, so a revoke
+    /// that hangs or fails, or the app quitting meanwhile, cannot leave the token behind.
     pub(crate) fn forget(&self, kind: CloudKind, connection_id: &str) -> Result<(), ArchiveError> {
-        if let Ok(tokens) = self.live_tokens(kind, connection_id) {
+        let tokens = self.live_tokens(kind, connection_id).ok();
+        lock(&self.live).remove(connection_id);
+        let deleted = self.credentials.delete(&credential_name(connection_id));
+        if let Some(tokens) = tokens {
             self.revoke(kind, tokens);
         }
-        lock(&self.live).remove(connection_id);
-        self.credentials.delete(&credential_name(connection_id))
+        deleted
     }
 
     fn live_tokens(
@@ -519,21 +523,23 @@ impl CloudConnections {
         }
     }
 
-    /// Best effort and tried once: the user is disconnecting either way.
+    /// Revoke a connection's grant at the provider: best effort and tried once, since the
+    /// user is disconnecting either way.
+    ///
+    /// Only Dropbox is revoked. Google revokes per project, not per token: revoking any one
+    /// token removes the user's whole grant to the OAuth client and invalidates the refresh
+    /// tokens of every other device signed in to that account, so stopping backups on one
+    /// device would stop them on all. A Google sign-in is only forgotten locally; the user
+    /// removes RIM's access everywhere in their Google account settings.
     fn revoke(&self, kind: CloudKind, tokens: Arc<TokenSource>) {
+        if kind == CloudKind::GoogleDrive {
+            return;
+        }
         let http = match self.settings.http(kind, RetryPolicy::ONCE) {
             Ok(http) => http,
             Err(e) => return log::warn!("[history_archive] cannot revoke: {e}"),
         };
-        let result = match kind {
-            CloudKind::GoogleDrive => {
-                GoogleDriveProvider::revoke(&http, &tokens, &self.settings.drive)
-            }
-            CloudKind::Dropbox => {
-                DropboxProvider::revoke(&http, &tokens, &self.settings.dropbox_api)
-            }
-        };
-        if let Err(e) = result {
+        if let Err(e) = DropboxProvider::revoke(&http, &tokens, &self.settings.dropbox_api) {
             log::warn!("[history_archive] {} revoke failed: {e}", kind.service());
         }
     }

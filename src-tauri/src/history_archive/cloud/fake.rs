@@ -310,7 +310,6 @@ impl FakeCloud {
         settings.dropbox.client_secret = None;
         settings.drive.api = format!("{url}/drive/v3");
         settings.drive.upload = format!("{url}/upload/drive/v3");
-        settings.drive.revoke = format!("{url}/revoke");
         settings.dropbox_api.api = format!("{url}/dbx/api/2");
         settings.dropbox_api.content = format!("{url}/dbx/content/2");
         settings.retry = RetryPolicy {
@@ -383,8 +382,10 @@ fn handle(state: &mut CloudState, req: Request) -> Response {
 
     match (req.method.as_str(), req.path.as_str()) {
         ("POST", "/token") => return token(state, &req),
+        // Google's revoke ends the user's whole grant to the client, on every device.
         ("POST", "/revoke") => {
             state.revoked += 1;
+            state.refresh_revoked = true;
             return Response::json(200, json!({}));
         }
         _ => {}

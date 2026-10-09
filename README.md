@@ -81,6 +81,10 @@ without registering it.
    `RIM_DROPBOX_REDIRECT_PORT`), and allow public clients (PKCE). Set the **App key** as
    `RIM_DROPBOX_APP_KEY`. The app secret is not used.
 
+Stopping backups on a device forgets its sign-in. RIM revokes a Dropbox sign-in too, but not a
+Google one: Google revokes an app's access on every device at once, so the user removes RIM under
+Google account settings, Security, Third-party apps with account access, when they want that.
+
 An archive belongs to the OAuth client that wrote it: a build with a different Google client id
 sees a different `appDataFolder`, and a different Dropbox app a different `Apps/` folder.
 

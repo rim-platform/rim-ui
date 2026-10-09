@@ -233,6 +233,11 @@ impl TokenSource {
 
     /// A current access token, refreshed when it is about to expire.
     pub(crate) fn access_token(&self) -> Result<Zeroizing<String>, ArchiveError> {
+        self.access_token_via(&self.http)
+    }
+
+    /// [`Self::access_token`], refreshing through `http` (another retry policy).
+    pub(crate) fn access_token_via(&self, http: &Http) -> Result<Zeroizing<String>, ArchiveError> {
         let mut access = lock(&self.access);
         if let Some((token, expires)) = access.as_ref() {
             if *expires > Instant::now() + EXPIRY_MARGIN {
@@ -240,7 +245,7 @@ impl TokenSource {
             }
         }
         let refresh = self.refresh_token();
-        let grant = self.app.refresh(&self.http, &refresh)?;
+        let grant = self.app.refresh(http, &refresh)?;
         if let Some(rotated) = grant.refresh_token {
             if *rotated != *refresh {
                 if let Some((store, name)) = lock(&self.persist).as_ref() {

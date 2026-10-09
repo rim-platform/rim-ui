@@ -292,9 +292,17 @@ temporary file (or an exclusive open where there are no hard links).
   The account's archive settings file names the provider, the connection id and the signed-in
   email address, never a token. Access tokens live in memory and are refreshed shortly before
   they expire, or once when the service refuses one.
-- A sign-in is kept only when the user connects the archive with its passphrase; one left
-  unused is revoked. Stopping backups on a device revokes its grant and deletes the refresh
-  token. The archive itself stays.
+- A sign-in is kept only when the user connects the archive with its passphrase. Stopping
+  backups on a device, or leaving a sign-in unused, deletes its refresh token from the keyring
+  first and then, for Dropbox only, revokes it (once, best effort; a failed revoke is logged
+  and does not undo the sign-out). Dropbox revokes one token and leaves the user's other
+  devices signed in. Google cannot: revoking any token removes the user's whole grant to the
+  OAuth client and invalidates every device's refresh tokens, so RIM never calls Google's
+  revoke endpoint, and a user who wants RIM's access gone everywhere removes it in their
+  Google account settings (Security, Third-party apps with account access). Google keeps a
+  limited number of refresh tokens per user and client and silently drops the oldest beyond
+  it, so a device that has been signed in very many times may need to sign in again. The
+  archive itself stays.
 - Client ids are build configuration (the README says how to get them); none is committed.
 
 ### Retries and interrupted backups

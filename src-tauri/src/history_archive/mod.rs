@@ -492,13 +492,18 @@ impl HistoryArchiveState {
         if let ConnectTarget::Cloud { connection_id } = target {
             self.cloud.keep(connection_id)?;
         }
-        self.save_config(
+        let saved = self.save_config(
             account,
             &AccountConfig {
-                provider: provider_config,
+                provider: provider_config.clone(),
                 archive_id: archive.id().to_string(),
             },
-        )?;
+        );
+        if let Err(e) = saved {
+            // No settings name the connection, so nothing would ever sign it out again.
+            self.forget_cloud(&provider_config);
+            return Err(e);
+        }
         if let Some(previous) = previous {
             self.forget_cloud(&previous.provider);
         }

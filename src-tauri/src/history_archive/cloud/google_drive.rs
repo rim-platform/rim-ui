@@ -17,7 +17,7 @@ use serde_json::json;
 use super::super::crypto::random_bytes;
 use super::super::provider::{check_path, ArchiveProvider};
 use super::super::ArchiveError;
-use super::http::{Http, Reply};
+use super::http::Reply;
 use super::oauth::TokenSource;
 use super::Authorized;
 
@@ -36,8 +36,6 @@ pub(crate) struct DriveEndpoints {
     pub api: String,
     /// `https://www.googleapis.com/upload/drive/v3`
     pub upload: String,
-    /// `https://oauth2.googleapis.com/revoke`
-    pub revoke: String,
 }
 
 /// Drive answers 403 to some rate limits.
@@ -131,24 +129,6 @@ impl GoogleDriveProvider {
             .email_address
             .or(about.user.display_name)
             .unwrap_or_else(|| "Google account".into()))
-    }
-
-    /// Revoke the grant: its refresh token and every access token from it.
-    pub(crate) fn revoke(
-        http: &Http,
-        tokens: &TokenSource,
-        endpoints: &DriveEndpoints,
-    ) -> Result<(), ArchiveError> {
-        let refresh = tokens.refresh_token();
-        let reply = http.send(|c| {
-            c.post(&endpoints.revoke)
-                .form(&[("token", refresh.as_str())])
-        })?;
-        if reply.ok() {
-            Ok(())
-        } else {
-            Err(http.failure("revoke", &reply))
-        }
     }
 
     fn cache(&self) -> std::sync::MutexGuard<'_, HashMap<String, DriveFile>> {

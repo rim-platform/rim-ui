@@ -140,7 +140,7 @@ export function cancelCloudSignIn(): Promise<SafeInvokeResult<null>> {
   return safeInvoke<null>("history_archive_cloud_cancel");
 }
 
-/** Drop a cloud sign-in the user did not go on with; its access is revoked. */
+/** Drop a cloud sign-in the user did not go on with (a Dropbox one is also revoked). */
 export function discardCloudSignIn(connectionId: string): Promise<SafeInvokeResult<null>> {
   return safeInvoke<null>("history_archive_cloud_discard", { connectionId });
 }

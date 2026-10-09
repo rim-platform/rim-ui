@@ -32,6 +32,14 @@ fn sign_in(connections: &CloudConnections, kind: CloudKind) -> (String, Box<dyn 
     (auth.connection_id, provider)
 }
 
+/// How many provider revokes `n` sign-outs make: Dropbox revokes, Google does not.
+fn expected_revokes(kind: CloudKind, n: usize) -> usize {
+    match kind {
+        CloudKind::GoogleDrive => 0,
+        CloudKind::Dropbox => n,
+    }
+}
+
 fn events(conversation: &str, from: i64, to: i64) -> Vec<Event> {
     (from..=to)
         .map(|v| {
@@ -69,9 +77,11 @@ fn sign_in_uses_pkce_and_keeps_nothing_until_connected() {
         assert!(cloud.state().drive.is_empty() && cloud.state().dropbox.is_empty());
         assert!(credentials.0.lock().unwrap().is_empty());
 
-        // A discarded sign-in is revoked.
+        // A discarded Dropbox sign-in is revoked. A Google one is only dropped: Google
+        // revokes per account, which would sign out the user's other devices too.
         connections.discard(&auth.connection_id);
-        assert_eq!(cloud.state().revoked, 1);
+        assert_eq!(cloud.state().revoked, expected_revokes(kind, 1));
+        assert!(!cloud.state().refresh_revoked);
         assert!(matches!(
             connections.pending_provider(&auth.connection_id),
             Err(ArchiveError::CloudAuth(_))
@@ -485,12 +495,17 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
         assert_eq!(report.messages, 12);
         assert_eq!(phone.timeline("c1").unwrap(), expected);
 
-        // Disconnecting revokes the grant and forgets the refresh token.
+        // Disconnecting forgets the refresh token and revokes this device's Dropbox grant;
+        // the laptop stays signed in.
         let revoked = cloud.state().revoked;
         phone.archive.disconnect(&account("alice")).unwrap();
-        assert_eq!(cloud.state().revoked, revoked + 1);
+        assert_eq!(cloud.state().revoked, revoked + expected_revokes(kind, 1));
+        assert!(!cloud.state().refresh_revoked);
         assert!(phone_credentials.0.lock().unwrap().is_empty());
         assert!(!phone.archive.status(&account("alice")).unwrap().configured);
+        feed.send_many("c1", 3);
+        laptop.sync(&mut feed);
+        assert_eq!(laptop.export().messages, 3);
     }
 }
 
@@ -518,7 +533,7 @@ fn moving_from_the_cloud_to_a_folder_signs_out_of_the_cloud() {
     let folder = tempfile::tempdir().unwrap();
     assert!(device.connect(folder.path()));
     assert!(credentials.0.lock().unwrap().is_empty());
-    assert_eq!(cloud.state().revoked, 1);
+    assert_eq!(cloud.state().revoked, 0);
     let status = device.archive.status(&account("alice")).unwrap();
     assert_eq!(status.provider, Some("localFolder"));
 }

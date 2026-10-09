@@ -83,13 +83,16 @@ impl DropboxProvider {
             .to_string())
     }
 
-    /// Revoke the grant. Revoking an access token revokes the refresh token it came from.
+    /// Revoke this device's grant. Revoking an access token revokes the refresh token it came
+    /// from, and only that one: other devices signed in to the same account keep theirs.
     pub(crate) fn revoke(
         http: &Http,
         tokens: &TokenSource,
         endpoints: &DropboxEndpoints,
     ) -> Result<(), ArchiveError> {
-        let token = tokens.access_token()?;
+        // Refreshing goes through `http` too, so an offline disconnect is not held up by
+        // retries.
+        let token = tokens.access_token_via(http)?;
         let url = format!("{}/auth/token/revoke", endpoints.api);
         let reply = http.send(|c| c.post(&url).bearer_auth(token.as_str()))?;
         if reply.ok() {
