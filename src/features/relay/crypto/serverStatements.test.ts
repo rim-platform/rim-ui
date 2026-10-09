@@ -129,6 +129,22 @@ describe("device requests", () => {
     });
   });
 
+  it("signs the conformance cases the desktop signs, byte for byte", async () => {
+    const device = await keyFromSeed(vectors.device.seed);
+    for (const conformance of vectors.deviceRequestConformance) {
+      expect(await sha256Text(utf8(conformance.body))).toBe(conformance.bodySha256);
+      const input = {
+        ...conformance.input,
+        method: conformance.input.method as "GET" | "POST",
+        principalId: vectors.device.principalId,
+        deviceId: vectors.device.deviceId,
+        bodySha256: conformance.bodySha256,
+      };
+      const signed = await signDeviceRequest(device.privateKey, input);
+      expect(signed).toEqual({ payload: conformance.payload, signature: conformance.signature });
+    }
+  });
+
   it("refuses a seq outside the safe integers", () => {
     expect(() => deviceRequestPayload({ ...requestInput, seq: 2 ** 53 })).toThrow(/seq/);
   });

@@ -574,6 +574,38 @@ mod tests {
     }
 
     #[test]
+    fn the_conformance_cases_sign_what_the_web_app_signs() {
+        let v = vectors();
+        let device = SecretKey::from_seed(Zeroizing::new([20u8; 32]));
+        let cases = v["deviceRequestConformance"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let input = &case["input"];
+            assert_eq!(
+                sha256_text(text(&case["body"]).as_bytes()),
+                text(&case["bodySha256"])
+            );
+            let request = DeviceRequestInput {
+                host: text(&input["host"]).into(),
+                method: text(&input["method"]).into(),
+                path: text(&input["path"]).into(),
+                seq: input["seq"].as_u64().unwrap(),
+                body_sha256: text(&case["bodySha256"]).into(),
+                issued_at: text(&input["issuedAt"]).into(),
+            };
+            let signed = device_request(
+                &device,
+                text(&v["device"]["principalId"]),
+                text(&v["device"]["deviceId"]),
+                &request,
+            )
+            .unwrap();
+            assert_eq!(signed.payload, text(&case["payload"]));
+            assert_eq!(signed.signature, text(&case["signature"]));
+        }
+    }
+
+    #[test]
     fn the_host_response_vector_answers_the_vector_request_only() {
         let v = vectors();
         let r = &v["hostResponse"];
