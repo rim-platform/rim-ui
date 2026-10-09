@@ -22,12 +22,12 @@
 
 mod archive;
 pub(crate) mod commands;
-mod feed;
+pub(crate) mod feed;
 mod key;
 mod search;
 mod snapshot;
-mod store;
-mod sync;
+pub(crate) mod store;
+pub(crate) mod sync;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

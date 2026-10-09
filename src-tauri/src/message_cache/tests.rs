@@ -1291,7 +1291,10 @@ fn mls_group_state_lives_in_the_cache_and_follows_its_transactions() {
         let store = store.lock().unwrap();
         store
             .conn
-            .execute_batch("DROP TABLE mls_storage; PRAGMA user_version = 4;")
+            .execute_batch(&format!(
+                "{} DROP TABLE mls_storage; PRAGMA user_version = 4;",
+                crate::e2ee::DROP_SCHEMA
+            ))
             .unwrap();
     }
     let state = state(dir.path(), 1);

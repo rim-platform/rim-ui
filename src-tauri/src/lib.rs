@@ -1,4 +1,5 @@
 mod agent_proxy;
+mod e2ee;
 mod history_archive;
 mod identity_backup;
 mod key_identity;
@@ -112,6 +113,7 @@ pub fn run() {
             app.manage(history_archive::init(&app_data_dir, vault.clone()));
             app.manage(offline_session::init(vault.clone()));
             app.manage(key_identity::init(vault.clone()));
+            app.manage(e2ee::attachment_state());
             app.manage(vault);
             Ok(())
         })
@@ -159,6 +161,26 @@ pub fn run() {
             message_cache::commands::message_cache_sync_apply,
             message_cache::commands::message_cache_timeline,
             message_cache::commands::message_cache_search,
+            message_cache::commands::message_cache_thread,
+            message_cache::commands::message_cache_message,
+            e2ee::commands::e2ee_status,
+            e2ee::commands::e2ee_ensure_identity,
+            e2ee::commands::e2ee_key_packages,
+            e2ee::commands::e2ee_create_group,
+            e2ee::commands::e2ee_commit,
+            e2ee::commands::e2ee_settle_commit,
+            e2ee::commands::e2ee_process_commits,
+            e2ee::commands::e2ee_join,
+            e2ee::commands::e2ee_verify,
+            e2ee::commands::e2ee_readd_request,
+            e2ee::commands::e2ee_readd_check,
+            e2ee::commands::e2ee_encrypt_message,
+            e2ee::commands::e2ee_reencrypt_message,
+            e2ee::commands::e2ee_settle_message,
+            e2ee::commands::e2ee_forget,
+            e2ee::attachment::e2ee_attachment_encrypt,
+            e2ee::attachment::e2ee_attachment_decrypt,
+            e2ee::link_preview::e2ee_link_preview,
             history_archive::commands::history_archive_pick_folder,
             history_archive::commands::history_archive_inspect_folder,
             history_archive::commands::history_archive_status,

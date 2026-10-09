@@ -177,6 +177,27 @@ attachments, link previews or reactions in `payload`).
   and are **unsigned**: readers accept them and must not treat them as a failed verification.
   Until then, integrity comes from the AEAD: nobody without the archive key can forge or alter a
   file.
+- `payload.e2ee` (additive, optional): set on a message of an end-to-end encrypted DM or group
+  (rim-server `docs/specs/e2ee-mls-v1.md`) that the writing device decrypted. `text` is its
+  decrypted body; the server holds only ciphertext, so the archive is the only way another device
+  of the user gets it back. The object's fields:
+
+  | Field | Value |
+  |---|---|
+  | `status` | `decrypted`, or `invalid` (decrypted but broke a rule: no content, no `text`) |
+  | `incarnation`, `epoch` | The group incarnation and epoch the message was sent in |
+  | `senderDeviceId` | The sending device |
+  | `senderPrincipalId` | The sending principal, as the MLS credential named it |
+  | `frankingKey` | The message's 32-byte franking key, base64url |
+  | `receipt`, `receiptKeyId`, `sentAtUs` | The server's franking receipt (base64url), its key id, and `sent_at` in decimal microseconds |
+  | `rev` | The content's revision (0, +1 per edit) |
+  | `content` | The exact decrypted content JSON, as signed: what a report reveals, and where the attachments' secrets are |
+  | `reason` | For `invalid`: why |
+
+  Group state and MLS keys are never archived. Messages this device could not decrypt (sent
+  before it joined) and its own messages the server has not acknowledged are not archived
+  either. A restored row with `payload.e2ee` replaces the cache's "could not decrypt here"
+  placeholder of the same message whatever their versions, and a placeholder never replaces it.
 
 ### `conv`: where a device's sync of a conversation stood
 

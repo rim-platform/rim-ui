@@ -58,6 +58,10 @@ function sameMessage(a: MessageItemMessage, b: MessageItemMessage): boolean {
     a.isDeleted === b.isDeleted &&
     a.forwardedFromMessageId === b.forwardedFromMessageId &&
     a.forwardedFrom?.id === b.forwardedFrom?.id &&
+    a.e2ee?.status === b.e2ee?.status &&
+    a.e2ee?.rev === b.e2ee?.rev &&
+    Boolean(a.encryption) === Boolean(b.encryption) &&
+    a.beforeEncryption === b.beforeEncryption &&
     sameList(a.reactions, b.reactions, sameReaction) &&
     sameList(a.attachments, b.attachments, (x, y) => x.id === y.id && x.status === y.status) &&
     sameList(a.linkPreviews, b.linkPreviews, (x, y) => x.id === y.id)

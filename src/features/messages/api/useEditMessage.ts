@@ -3,6 +3,10 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import type { MessageItem } from "../../../core/types/messages";
+import { editEncrypted } from "../../e2ee/runtime/send";
+import { toPrincipalMentions } from "../../e2ee/utils/content";
+import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import type { MessagesPage } from "./useMessages";
 
 const EDIT_MESSAGE = gql`
@@ -26,16 +30,42 @@ interface EditMessageVars {
 export function useEditMessageMutation() {
   const qc = useQueryClient();
 
+  /** The cached message, when it is an encrypted one this device can read. */
+  function encryptedMessage(vars: EditMessageVars): MessageItem | undefined {
+    const data = qc.getQueryData<InfiniteData<MessagesPage>>(
+      queryKeys.messages(vars.serverId, vars.conversationId),
+    );
+    const item = data?.pages.flatMap((p) => p.items).find((m) => m.id === vars.messageId);
+    return item?.e2ee?.status === "decrypted" ? item : undefined;
+  }
+
   return useMutation({
-    mutationFn: (vars: EditMessageVars) =>
-      graphqlClient.request(EDIT_MESSAGE, {
+    mutationFn: async (vars: EditMessageVars) => {
+      const encrypted = encryptedMessage(vars);
+      if (encrypted) {
+        // The edit form shows mentions as user tokens; the content names principals.
+        const members = qc.getQueryData<ServerMember[]>(queryKeys.serverMembers(vars.serverId));
+        const principalOf = (userId: string) =>
+          members?.find((m) => m.userId === userId)?.principalId;
+        const body = toPrincipalMentions(vars.text, new Map(), principalOf);
+        const author = encrypted.author ?? {
+          id: encrypted.authorId,
+          username: "",
+          displayName: null,
+          avatarUrl: null,
+        };
+        await editEncrypted(vars.serverId, vars.conversationId, vars.messageId, body, author);
+        return null;
+      }
+      return graphqlClient.request(EDIT_MESSAGE, {
         input: {
           serverId: vars.serverId,
           conversationId: vars.conversationId,
           messageId: vars.messageId,
           text: vars.text,
         },
-      }),
+      });
+    },
     onMutate: async (vars) => {
       const messagesKey = queryKeys.messages(vars.serverId, vars.conversationId);
       await qc.cancelQueries({ queryKey: messagesKey });

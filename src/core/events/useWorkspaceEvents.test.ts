@@ -533,3 +533,53 @@ describe("useWorkspaceEvents workspace roles and removal (Track 1.2)", () => {
     expect(toast.info).toHaveBeenCalledWith("You were removed from this workspace");
   });
 });
+
+describe("useWorkspaceEvents encrypted conversations", () => {
+  beforeEach(() => {
+    subscribeObserver = null;
+    vi.clearAllMocks();
+  });
+
+  it("does not put an encrypted message's empty text into the timeline", () => {
+    const qc = new QueryClient();
+    const key = queryKeys.messages("ws-1", "c-enc");
+    qc.setQueryData(key, {
+      pages: [{ items: [], next: null, prev: null, pageInfo: { hasNext: false, hasPrev: false } }],
+      pageParams: [null],
+    });
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+
+    emitWorkspaceEvent({
+      type: "NewMessage",
+      workspace_id: "ws-1",
+      conversation_id: "c-enc",
+      message: {
+        id: "m-1",
+        server_id: "ws-1",
+        conversation_id: "c-enc",
+        thread_id: null,
+        root_thread_id: null,
+        author_id: "u-2",
+        text: null,
+        has_attachments: false,
+        parent_message_id: null,
+        forwarded_from_message_id: null,
+        is_deleted: false,
+        sent_at: "2026-10-09T10:00:00Z",
+        reactions: [],
+        encryption: {
+          incarnation: 1,
+          epoch: 2,
+          sender_device_id: "d-2",
+          ciphertext: "AAEC",
+          franking_receipt: "cmVjZWlwdA",
+          franking_key_id: 1,
+          sent_at_us: "1791504000123456",
+        },
+      },
+    });
+
+    const data = qc.getQueryData<{ pages: { items: unknown[] }[] }>(key);
+    expect(data?.pages[0].items).toEqual([]);
+  });
+});

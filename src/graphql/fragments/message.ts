@@ -7,6 +7,19 @@ export const ATTACHMENT_FIELDS = gql`
     contentType
     sizeBytes
     status
+    blobSha256
+  }
+`;
+
+/** The envelope facts of an encrypted message, without the ciphertext (the feed asks for it). */
+export const ENCRYPTION_FIELDS = gql`
+  fragment EncryptionFields on MessageEncryption {
+    incarnation
+    epoch
+    senderDeviceId
+    frankingReceipt
+    frankingKeyId
+    sentAtUs
   }
 `;
 
@@ -23,6 +36,7 @@ export const MESSAGE_FIELDS = gql`
       username
       displayName
       avatarUrl
+      principalId
     }
     text
     hasAttachments
@@ -52,8 +66,12 @@ export const MESSAGE_FIELDS = gql`
       imageUrl
       siteName
     }
+    encryption {
+      ...EncryptionFields
+    }
   }
   ${ATTACHMENT_FIELDS}
+  ${ENCRYPTION_FIELDS}
 `;
 
 export const REACTION_FIELDS = gql`

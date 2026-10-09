@@ -29,7 +29,7 @@ export function useNotificationEventHandler(workspaceId: string | null) {
 }
 
 /** Whether the viewer is looking at the conversation right now (no toast needed). */
-function isWatching(conversationId: string): boolean {
+export function isWatching(conversationId: string): boolean {
   const shell = useShellStore.getState();
   return (
     shell.mainSurface.kind === "conversation" &&

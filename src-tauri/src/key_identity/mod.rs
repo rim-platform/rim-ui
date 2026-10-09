@@ -683,6 +683,53 @@ impl KeyIdentityState {
         ))
     }
 
+    /// This device's id and device key (tagged text) for `principal_id`.
+    pub(crate) fn device(&self, principal_id: &str) -> Result<(String, String)> {
+        let record = {
+            let _guard = self.guard()?;
+            self.record(principal_id)?
+        };
+        Ok((
+            record.device_id.clone(),
+            key(&record.device_seed)?.public_key(),
+        ))
+    }
+
+    /// Sign an end-to-end encryption statement with this device's key: an `mls-key` statement
+    /// certifying its MLS key, or a re-add request. Nothing else is signed here, and only
+    /// statements naming this principal and device.
+    pub(crate) fn sign_mls(
+        &self,
+        principal_id: &str,
+        context: &[u8],
+        payload: String,
+    ) -> Result<Statement> {
+        let expected_type = match context {
+            c if c == rim_mls::MLS_KEY_CONTEXT => "mls-key",
+            c if c == rim_mls::READD_CONTEXT => "mls-readd",
+            _ => {
+                return Err(KeyIdentityError::Invalid(
+                    "not an end-to-end encryption statement".into(),
+                ))
+            }
+        };
+        let record = {
+            let _guard = self.guard()?;
+            self.record(principal_id)?
+        };
+        let fields: serde_json::Value = serde_json::from_str(&payload)
+            .map_err(|_| KeyIdentityError::Invalid("the statement is not JSON".into()))?;
+        let names_this = fields.get("type").and_then(|v| v.as_str()) == Some(expected_type)
+            && fields.get("principalId").and_then(|v| v.as_str()) == Some(principal_id)
+            && fields.get("deviceId").and_then(|v| v.as_str()) == Some(record.device_id.as_str());
+        if !names_this {
+            return Err(KeyIdentityError::Invalid(
+                "the statement is not about this device".into(),
+            ));
+        }
+        Ok(key(&record.device_seed)?.sign(context, payload))
+    }
+
     /// Verify the server's key log for `principal_id`, settle a pending rotation against it,
     /// and say whether this device holds the head's identity key.
     pub(crate) fn sync_log(&self, principal_id: &str, log: &[Statement]) -> Result<LogStatus> {

@@ -13,6 +13,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 import { clearLeaving, markLeaving } from "../state/pendingLeaves";
 import type { ConversationSummary } from "../types";
+import { commitOwnMembershipChange } from "../../e2ee/runtime/membership";
 
 const JOIN_CHANNEL = gql`
   mutation JoinChannel($serverId: ID!, $conversationId: ID!) {
@@ -89,6 +90,7 @@ export function useJoinChannelMutation() {
     onSuccess: (conversation, vars) => {
       qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
       invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
     },
   });
 }
@@ -128,6 +130,7 @@ export function useAddConversationMembersMutation() {
     onSuccess: (conversation, vars) => {
       qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
       invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
     },
   });
 }
@@ -145,6 +148,7 @@ export function useRemoveConversationMemberMutation() {
     },
     onSuccess: (_data, vars) => {
       invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+      commitOwnMembershipChange(vars.serverId, vars.conversationId);
     },
   });
 }
@@ -163,6 +167,7 @@ export function useSetConversationArchivedMutation() {
     onSuccess: (conversation, vars) => {
       qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
       invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
     },
   });
 }

@@ -37,6 +37,10 @@ import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { ComposerInput } from "./ComposerInput";
 import { OfflineComposerNotice, SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import type { SendBlock } from "../../e2ee/hooks/useE2eeConversation";
+import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
+import { toPrincipalMentions } from "../../e2ee/utils/content";
 
 interface PendingFile {
   file: File;
@@ -46,13 +50,15 @@ interface PendingFile {
 interface ComposerProps {
   workspaceId: string;
   conversationId: string;
+  /** Set in an end-to-end encrypted conversation: messages go through the encrypted path. */
+  encryption?: { sendBlock: SendBlock };
 }
 
 /**
  * The composer, or the bar that replaces it: an archived conversation is read-only, and a
  * public channel the viewer has not joined offers Join instead.
  */
-export function Composer({ workspaceId, conversationId }: ComposerProps) {
+export function Composer({ workspaceId, conversationId, encryption }: ComposerProps) {
   const { data: conversation } = useConversation(workspaceId, conversationId);
 
   if (conversation?.isArchived) {
@@ -65,10 +71,16 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
   ) {
     return <JoinChannelBar workspaceId={workspaceId} conversation={conversation} />;
   }
-  return <MessageComposer workspaceId={workspaceId} conversationId={conversationId} />;
+  return (
+    <MessageComposer
+      workspaceId={workspaceId}
+      conversationId={conversationId}
+      encryption={encryption}
+    />
+  );
 }
 
-function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
+function MessageComposer({ workspaceId, conversationId, encryption }: ComposerProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef(pendingFiles);
@@ -89,6 +101,8 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   const executeCommand = useExecuteCommandMutation();
   const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
+  const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const { data: conversation } = useConversation(workspaceId, conversationId);
   // Track 1.2: a timed-out viewer reads but cannot write; slow mode spaces out members'
@@ -216,6 +230,11 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
       }
     }
 
+    if (encryption) {
+      await submitEncrypted(unsentText, trimmed ? replaceShortcodes(trimmed) : "");
+      return;
+    }
+
     let processed = trimmed ? replaceShortcodes(trimmed) : "";
     // Replace @username with <@userId> using the mention map
     for (const [username, userId] of mentionMapRef.current) {
@@ -302,6 +321,53 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
     }
   }
 
+  /** Send through the encrypted path: mentions as principal tokens, files encrypted first. */
+  async function submitEncrypted(unsentText: string, text: string) {
+    if (sendBlocked) return;
+    const members = serverMembers ?? [];
+    const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
+    const body = toPrincipalMentions(text, mentionMapRef.current, principalOf);
+    const files = pendingFiles.map((pf) => pf.file);
+    pendingFiles.forEach((pf) => {
+      if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
+    });
+    useUnreadStore.getState().clearWatermark(conversationId);
+    setText("");
+    setPendingFiles([]);
+    mentionMapRef.current = new Map();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    draftStore.getState().clearDraft(conversationId);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    const me = members.find((m) => m.userId === currentUserId);
+    setIsUploading(files.length > 0);
+    try {
+      await sendEncrypted(workspaceId, conversationId, {
+        body,
+        files,
+        author: {
+          id: currentUserId ?? "",
+          username: me?.username ?? "",
+          displayName: me?.displayName ?? null,
+          avatarUrl: me?.avatarUrl ?? null,
+          principalId: me?.principalId ?? null,
+        },
+      });
+      noteSent();
+    } catch (err) {
+      const fallback = "Failed to send the encrypted message";
+      if (err instanceof EncryptedSendError) {
+        toast.error(err.message || fallback);
+        restoreText(unsentText);
+      } else {
+        handleSendError(err, fallback, unsentText);
+      }
+    } finally {
+      setIsUploading(false);
+      textareaRef.current?.focus();
+    }
+  }
+
   function addFiles(files: FileList | File[]) {
     const arr = Array.from(files).map((file) => ({
       file,
@@ -380,7 +446,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
       />
 
       <fieldset
-        disabled={Boolean(timedOutUntil)}
+        disabled={Boolean(timedOutUntil) || sendBlocked}
         aria-label={timedOutUntil ? "Composer (disabled while timed out)" : undefined}
         className="m-0 min-w-0 border-0 p-0 disabled:opacity-50"
       >

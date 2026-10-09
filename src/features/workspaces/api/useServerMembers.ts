@@ -38,6 +38,17 @@ export interface ServerMember {
   principalId?: string | null;
 }
 
+/** The workspace's members, from the server or (offline, on the desktop) its saved copy. */
+export function fetchServerMembers(serverId: string): Promise<ServerMember[]> {
+  return withOfflineSnapshot("members", serverId, async () => {
+    const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(
+      SERVER_MEMBERS_QUERY,
+      { serverId },
+    );
+    return res.serverMembers;
+  });
+}
+
 export function useServerMembers(serverId?: string) {
   return useQuery({
     queryKey: queryKeys.serverMembers(serverId),
@@ -45,13 +56,6 @@ export function useServerMembers(serverId?: string) {
     staleTime: 60_000,
     // Runs offline too: the desktop app answers from its saved copy (offlineSnapshot.ts).
     networkMode: "offlineFirst",
-    queryFn: () =>
-      withOfflineSnapshot("members", serverId!, async () => {
-        const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(
-          SERVER_MEMBERS_QUERY,
-          { serverId: serverId! },
-        );
-        return res.serverMembers;
-      }),
+    queryFn: () => fetchServerMembers(serverId!),
   });
 }

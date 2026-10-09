@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { Hash, MessageCircle, Users } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
@@ -9,6 +10,13 @@ import { useInboxConversations } from "../../conversations/api/useInboxConversat
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useForwardMessageMutation } from "../api/useForwardMessage";
+import { useSendMessageMutation, type MessagesPage } from "../api/useMessages";
+import { queryKeys } from "../../../core/query/keys";
+import type { MessageItem } from "../../../core/types/messages";
+import { detectPlatform } from "../../../core/runtime/runtime";
+import { sendEncrypted } from "../../e2ee/runtime/send";
+import { toUserMentions } from "../../e2ee/utils/content";
+import { useServerMembers } from "../../workspaces/api/useServerMembers";
 
 interface ForwardDialogProps {
   open: boolean;
@@ -41,13 +49,19 @@ export function ForwardDialog({
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId);
   const forwardMessage = useForwardMessageMutation();
+  const sendMessage = useSendMessageMutation();
+  const qc = useQueryClient();
+  const { data: serverMembers } = useServerMembers(workspaceId);
+  /** An encrypted message forwarded into a plaintext conversation waits for a confirmation. */
+  const [confirmPlaintext, setConfirmPlaintext] = useState<string | null>(null);
 
   const { data: channelsData } = useChannels(workspaceId);
   const { data: inboxData } = useInboxConversations(workspaceId);
 
-  const channels = channelsData?.items ?? [];
-  const directs = inboxData?.items ?? [];
-  const allConversations = [...channels, ...directs];
+  const allConversations = useMemo(
+    () => [...(channelsData?.items ?? []), ...(inboxData?.items ?? [])],
+    [channelsData?.items, inboxData?.items],
+  );
 
   const filtered = allConversations.filter((c) => {
     let title = c.title;
@@ -70,27 +84,96 @@ export function ForwardDialog({
     setFocusedIndex(0);
   }, [search]);
 
+  /** The forwarded message as the timeline holds it (decrypted, for an encrypted one). */
+  const sourceItem = useCallback((): MessageItem | undefined => {
+    const data = qc.getQueryData<InfiniteData<MessagesPage>>(
+      queryKeys.messages(workspaceId, sourceConversationId),
+    );
+    return data?.pages.flatMap((p) => p.items).find((m) => m.id === messageId);
+  }, [qc, workspaceId, sourceConversationId, messageId]);
+
   const handleForward = useCallback(
-    (targetConversationId: string) => {
-      forwardMessage.mutate(
-        {
-          serverId: workspaceId,
-          sourceConversationId,
-          targetConversationId,
-          messageId,
-        },
-        {
-          onSuccess: () => {
-            toast.success("Message forwarded");
-            onClose();
-          },
-          onError: () => {
-            toast.error("Failed to forward message");
-          },
-        },
-      );
+    async (targetConversationId: string, confirmed = false) => {
+      const target = allConversations.find((c) => c.id === targetConversationId);
+      const source = sourceItem();
+      const sourceEncrypted = Boolean(source?.e2ee || source?.encryption);
+      const targetEncrypted = Boolean(target?.encryptedAt);
+      try {
+        if (targetEncrypted) {
+          // Encrypted conversations take new content: the text, and an encrypted source's files.
+          if (detectPlatform() !== "desktop") throw new Error("Forward from the desktop app");
+          const authorPrincipalId = source?.e2ee?.senderPrincipalId ?? source?.author?.principalId;
+          const me = serverMembers?.find((m) => m.userId === currentUserId);
+          await sendEncrypted(workspaceId, targetConversationId, {
+            body: source?.text ?? messageText,
+            author: {
+              id: currentUserId ?? "",
+              username: me?.username ?? "",
+              displayName: me?.displayName ?? null,
+              avatarUrl: me?.avatarUrl ?? null,
+              principalId: me?.principalId ?? null,
+            },
+            forwardedFrom:
+              source && authorPrincipalId
+                ? {
+                    messageId,
+                    conversationId: sourceConversationId,
+                    authorPrincipalId,
+                    sentAt: source.sentAt,
+                  }
+                : null,
+            forwardAttachments:
+              source?.e2ee && source.attachments.length > 0
+                ? {
+                    messageId,
+                    conversationId: sourceConversationId,
+                    blobSha256: source.attachments.flatMap((a) =>
+                      a.blobSha256 ? [a.blobSha256] : [],
+                    ),
+                  }
+                : undefined,
+          });
+        } else if (sourceEncrypted) {
+          if (!confirmed) {
+            setConfirmPlaintext(targetConversationId);
+            return;
+          }
+          const userOf = (principalId: string) =>
+            serverMembers?.find((m) => m.principalId === principalId)?.userId;
+          await sendMessage.mutateAsync({
+            workspaceId,
+            conversationId: targetConversationId,
+            text: toUserMentions(source?.text ?? messageText, userOf),
+            forwardedFromMessageId: messageId,
+          });
+        } else {
+          await forwardMessage.mutateAsync({
+            serverId: workspaceId,
+            sourceConversationId,
+            targetConversationId,
+            messageId,
+          });
+        }
+        toast.success("Message forwarded");
+        setConfirmPlaintext(null);
+        onClose();
+      } catch {
+        toast.error("Failed to forward message");
+      }
     },
-    [forwardMessage, workspaceId, sourceConversationId, messageId, onClose],
+    [
+      allConversations,
+      sourceItem,
+      serverMembers,
+      currentUserId,
+      workspaceId,
+      sourceConversationId,
+      messageId,
+      messageText,
+      sendMessage,
+      forwardMessage,
+      onClose,
+    ],
   );
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -103,7 +186,7 @@ export function ForwardDialog({
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (filtered[focusedIndex]) {
-        handleForward(filtered[focusedIndex].id);
+        void handleForward(filtered[focusedIndex].id);
       }
     }
   }
@@ -126,6 +209,34 @@ export function ForwardDialog({
         {messageText || "(no text)"}
       </div>
 
+      {confirmPlaintext && (
+        <div
+          role="alertdialog"
+          className="mb-3 rounded-lg border border-rim-warm/30 bg-rim-warm/10 px-3 py-2 text-xs text-rim-text"
+        >
+          <p>
+            This message is end-to-end encrypted. Forwarding it posts its text unencrypted in the
+            other conversation.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleForward(confirmPlaintext, true)}
+              className="rounded bg-rim-accent px-2 py-1 text-rim-void"
+            >
+              Forward unencrypted
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmPlaintext(null)}
+              className="rounded px-2 py-1 text-rim-text-muted hover:bg-white/5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <input
         ref={inputRef}
         type="text"
@@ -147,7 +258,7 @@ export function ForwardDialog({
               <button
                 key={conv.id}
                 type="button"
-                onClick={() => handleForward(conv.id)}
+                onClick={() => void handleForward(conv.id)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition",
                   i === focusedIndex

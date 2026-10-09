@@ -24,6 +24,10 @@ type Attachment {
 	filename: String!
 	contentType: String!
 	sizeBytes: Int!
+	"""
+	Unpadded base64url SHA-256 of an encrypted conversation's blob.
+	"""
+	blobSha256: String
 }
 
 enum AttachmentStatusEnum {
@@ -144,6 +148,21 @@ type ChannelPage {
 	next: ChannelCursorOutput
 	prev: ChannelCursorOutput
 	pageInfo: PageInfo!
+}
+
+input ClaimMlsKeyPackagesInput {
+	serverId: ID!
+	conversationId: ID!
+	devices: [MlsDeviceRefInput!]!
+}
+
+type ClaimedKeyPackage {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	keyPackage: String!
+	keyPackageRef: String!
+	lastResort: Boolean!
 }
 
 type Command {
@@ -426,6 +445,11 @@ type Conversation {
 	member; `0` when off.
 	"""
 	slowModeSeconds: Int!
+	"""
+	When the conversation became end-to-end encrypted; null for plaintext. Messages from
+	then on are encrypted.
+	"""
+	encryptedAt: DateTime
 	isMuted: Boolean!
 	"""
 	Whether the viewer is a member (for channels: has joined it).
@@ -441,6 +465,10 @@ type Conversation {
 	else the workspace default.
 	"""
 	effectiveNotificationLevel: NotificationLevel!
+	"""
+	The conversation's current MLS group; null for plaintext and before the first Commit.
+	"""
+	mlsGroup: MlsGroup
 }
 
 """
@@ -516,6 +544,10 @@ input CreateAttachmentInput {
 	filename: String!
 	contentType: String!
 	sizeBytes: Int!
+	"""
+	Required in an encrypted conversation: unpadded base64url SHA-256 of the blob.
+	"""
+	blobSha256: String
 }
 
 input CreateChannelLensInput {
@@ -545,6 +577,11 @@ input CreateConversationInput {
 	Channels only: visible to invited members alone. Cannot be changed later.
 	"""
 	isPrivate: Boolean! = false
+	"""
+	DMs and groups only: end-to-end encrypted from creation. Every member needs a device set
+	up for encryption. Defaults to false.
+	"""
+	encrypted: Boolean
 }
 
 input CreateCustomEmojiInput {
@@ -782,6 +819,13 @@ input DndWindowInput {
 	IANA timezone name, e.g. `Europe/Prague`.
 	"""
 	timezone: String!
+}
+
+input EditEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	envelope: String!
 }
 
 input EditMessageInput {
@@ -1426,6 +1470,11 @@ type Message {
 	mentionedUserIds: [ID!]!
 	linkPreviews: [LinkPreview!]!
 	mentions: [User!]!
+	"""
+	The MLS envelope of an encrypted message, whose `text` is always null; null for
+	plaintext messages.
+	"""
+	encryption: MessageEncryption
 }
 
 """
@@ -1493,6 +1542,28 @@ input MessageCursorInput {
 type MessageCursorOutput {
 	sentAt: DateTime!
 	messageId: ID!
+}
+
+"""
+The MLS envelope of an encrypted message.
+"""
+type MessageEncryption {
+	incarnation: Int!
+	"""
+	The epoch the message was sent in.
+	"""
+	epoch: Int!
+	senderDeviceId: ID!
+	"""
+	The `MLSMessage`; null once the message is deleted.
+	"""
+	ciphertext: String
+	frankingReceipt: String!
+	frankingKeyId: Int!
+	"""
+	`sentAt` in microseconds since the Unix epoch, as decimal text, as the receipt covers it.
+	"""
+	sentAtUs: String!
 }
 
 type MessagePage {
@@ -1563,6 +1634,110 @@ enum MessageTagTypeGql {
 	ACTION_ITEM
 	ROOT_CAUSE
 	TIMELINE_EVENT
+}
+
+type MlsCommit {
+	id: ID!
+	incarnation: Int!
+	"""
+	The epoch the Commit was created in; the group moved to the next.
+	"""
+	epoch: Int!
+	senderPrincipalId: String
+	senderDeviceId: ID
+	message: String!
+	createdAt: DateTime!
+}
+
+type MlsCommitPage {
+	commits: [MlsCommit!]!
+	hasMore: Boolean!
+}
+
+type MlsDevice {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	addedEpoch: Int!
+}
+
+input MlsDeviceRefInput {
+	principalId: String!
+	deviceId: ID!
+}
+
+"""
+A conversation's current MLS group and the changes it waits for.
+"""
+type MlsGroup {
+	groupId: String!
+	incarnation: Int!
+	cipherSuite: Int!
+	"""
+	The epoch the next Commit must be created in.
+	"""
+	epoch: Int!
+	devices: [MlsDevice!]!
+	"""
+	MLS-active devices of members that are not in the group yet.
+	"""
+	pendingAdds: [MlsPendingDevice!]!
+	"""
+	Devices in the group that no longer belong: their member left, they were revoked, or
+	they uploaded no key package for 60 days.
+	"""
+	pendingRemoves: [MlsDevice!]!
+	readdRequests: [MlsReaddRequest!]!
+}
+
+"""
+What the session's device has stored for one cipher suite.
+"""
+type MlsKeyPackageStatus {
+	cipherSuite: Int!
+	"""
+	Unclaimed one-time key packages that can still be handed out (valid for 14 more days).
+	"""
+	available: Int!
+	lastResortNotAfter: DateTime
+	"""
+	How often the last-resort key package was handed out; past 5 the device replaces it.
+	"""
+	lastResortClaims: Int!
+	"""
+	The earliest expiry among the available one-time key packages.
+	"""
+	oldestNotAfter: DateTime
+}
+
+type MlsPendingDevice {
+	userId: ID!
+	principalId: String!
+	deviceId: ID!
+	hasKeyPackage: Boolean!
+}
+
+type MlsReaddRequest {
+	principalId: String!
+	deviceId: ID!
+	"""
+	The `mls-readd` statement as the device signed it.
+	"""
+	request: SignedStatement!
+	createdAt: DateTime!
+}
+
+type MlsWelcome {
+	id: ID!
+	serverId: ID!
+	conversationId: ID!
+	incarnation: Int!
+	"""
+	The epoch the device joins at.
+	"""
+	epoch: Int!
+	message: String!
+	expiresAt: DateTime!
 }
 
 type Mutation {
@@ -1914,6 +2089,42 @@ type Mutation {
 	Remove an entry from the workspace's registry. Owner or Moderator.
 	"""
 	removeWorkspacePlugin(serverId: ID!, pluginId: String!): Boolean!
+	"""
+	Store key packages of the session's device, all or none. A last-resort package replaces
+	the device's previous one.
+	"""
+	uploadMlsKeyPackages(keyPackages: [String!]!): MlsKeyPackageStatus!
+	"""
+	One key package per device waiting to be added; devices with none usable are left out.
+	"""
+	claimMlsKeyPackages(input: ClaimMlsKeyPackagesInput!): [ClaimedKeyPackage!]!
+	"""
+	A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
+	`STALE_EPOCH` names the current incarnation and epoch when another Commit came first.
+	"""
+	submitMlsCommit(input: SubmitMlsCommitInput!): MlsCommit!
+	"""
+	An encrypted message under a client-chosen id, in the group's current epoch. Sending
+	the same id and envelope again answers the stored message.
+	"""
+	sendEncryptedMessage(input: SendEncryptedMessageInput!): Message!
+	"""
+	A new envelope carrying an encrypted message's complete new content.
+	"""
+	editEncryptedMessage(input: EditEncryptedMessageInput!): Message!
+	"""
+	Acknowledge Welcomes of the session's device; answers how many were acknowledged now.
+	"""
+	ackMlsWelcomes(ids: [ID!]!): Int!
+	"""
+	Ask the group's other devices to remove and add the session's device again.
+	"""
+	requestMlsReadd(input: RequestMlsReaddInput!): Boolean!
+	"""
+	Report an encrypted message by revealing its content and franking key; the server checks
+	them against its receipt before the moderators see them.
+	"""
+	reportEncryptedMessage(input: ReportEncryptedMessageInput!): Boolean!
 }
 
 input MuteConversationInput {
@@ -2216,6 +2427,27 @@ enum PresenceStatus {
 	OFFLINE
 }
 
+"""
+A certified device of a principal, revoked or not.
+"""
+type PrincipalDevice {
+	deviceId: ID!
+	name: String!
+	certificate: SignedStatement!
+	revokedAt: DateTime
+	revocation: SignedStatement
+	"""
+	Not revoked and uploaded key packages in the last 60 days: the device is set up for
+	encryption and belongs in its member's encrypted groups.
+	"""
+	mlsActive: Boolean!
+}
+
+type PrincipalDevices {
+	principalId: String!
+	devices: [PrincipalDevice!]!
+}
+
 type ProfileCard {
 	version: Int!
 	statement: SignedStatement!
@@ -2411,6 +2643,24 @@ type Query {
 	The workspace's plugin registry, ordered by plugin id. Any member, guests included.
 	"""
 	workspacePlugins(serverId: ID!): [WorkspacePlugin!]!
+	"""
+	The session device's stored key packages, per cipher suite.
+	"""
+	myMlsKeyPackageStatus: [MlsKeyPackageStatus!]!
+	"""
+	The session device's unacknowledged Welcomes, oldest first.
+	"""
+	myMlsWelcomes: [MlsWelcome!]!
+	"""
+	Accepted Commits of an incarnation after `afterEpoch` (exclusive; from 0 when null),
+	oldest first. `limit` is 1 to 100, 50 by default.
+	"""
+	mlsCommits(serverId: ID!, conversationId: ID!, incarnation: Int!, afterEpoch: Int, limit: Int): MlsCommitPage!
+	"""
+	The certified devices of principals who share a workspace with the caller; an empty
+	list for any other principal. At most 100 ids.
+	"""
+	principalDevices(principalIds: [String!]!): [PrincipalDevices!]!
 }
 
 type ReactionGroup {
@@ -2445,12 +2695,41 @@ input ReplyToMessageInput {
 	parentMessageId: ID
 }
 
+input ReportEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	messageId: ID!
+	reason: String!
+	"""
+	The decrypted content, exactly as committed to.
+	"""
+	content: String!
+	frankingKey: String!
+	receipt: String!
+	receiptKeyId: Int!
+	senderUserId: ID!
+	senderDeviceId: ID!
+	"""
+	Decimal microseconds.
+	"""
+	sentAtUs: String!
+}
+
 """
 How a moderator closes a report.
 """
 enum ReportOutcome {
 	RESOLVED
 	DISMISSED
+}
+
+input RequestMlsReaddInput {
+	serverId: ID!
+	conversationId: ID!
+	"""
+	The `mls-readd` statement, signed by the session's device key.
+	"""
+	request: SignedStatementInput!
 }
 
 input RotateIdentityKeyInput {
@@ -2593,11 +2872,29 @@ type SearchResultPage {
 	pageInfo: PageInfo!
 }
 
+input SendEncryptedMessageInput {
+	serverId: ID!
+	conversationId: ID!
+	"""
+	Chosen by the client (UUID v7).
+	"""
+	messageId: ID!
+	envelope: String!
+	threadRootMessageId: ID
+	forwardedFromMessageId: ID
+}
+
 input SendMessageInput {
 	serverId: ID!
 	conversationId: ID!
 	text: String!
 	parentMessageId: ID
+	"""
+	The message this one forwards by sending its content again (an encrypted message's
+	content, after the person confirmed it is posted unencrypted). The caller must be able
+	to read it.
+	"""
+	forwardedFromMessageId: ID
 }
 
 type Server {
@@ -2794,6 +3091,22 @@ type StartedDeviceLink {
 	"""
 	linkId: String!
 	expiresAt: DateTime!
+}
+
+input SubmitMlsCommitInput {
+	serverId: ID!
+	conversationId: ID!
+	incarnation: Int!
+	epoch: Int!
+	"""
+	Required for an incarnation's first Commit (epoch 0).
+	"""
+	cipherSuite: Int
+	commit: String!
+	"""
+	Required when the Commit adds devices.
+	"""
+	welcome: String
 }
 
 type Subscription {

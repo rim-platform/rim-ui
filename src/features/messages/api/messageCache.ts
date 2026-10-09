@@ -65,6 +65,9 @@ export const MESSAGE_CHANGES_QUERY = gql`
         editedAt
         message {
           ...MessageWithReactions
+          encryption {
+            ciphertext
+          }
         }
       }
     }
@@ -147,17 +150,85 @@ export function beginCacheSync(
   });
 }
 
-/** Store a feed answer; returns the next feed input, or `null` when the sync is done. */
+/** What an encrypted conversation's feed page needs: its Commits and thread roots. */
+export interface MlsSyncInput {
+  conversationId: string;
+  serverIncarnation?: number | null;
+  inGroup?: boolean | null;
+  commits: { incarnation: number; epoch: number; message: string }[];
+  threadRoots: Record<string, string>;
+}
+
+/** Why the cache stopped an encrypted conversation's sync, and what it needs to go on. */
+export type MlsStopReason =
+  | { kind: "needCommits"; incarnation: number; epoch: number }
+  | { kind: "noGroupState"; incarnation: number }
+  | { kind: "awaitingReadd"; incarnation: number; epoch: number | null }
+  | { kind: "needThreadRoot"; threadId: string };
+
+/** What a feed page did in one encrypted conversation. */
+export interface MlsSyncNote {
+  conversationId: string;
+  stopped: MlsStopReason | null;
+  verify: boolean;
+  removed: boolean;
+  misbehaved: boolean;
+  /** Messages decrypted by this page, for local keyword notifications. */
+  decrypted: {
+    messageId: string;
+    authorId: string;
+    threadId: string | null;
+    sentAt: string;
+    body: string;
+  }[];
+}
+
+export interface CacheSyncStep {
+  next: MessageChangesInput | null;
+  e2ee: MlsSyncNote[];
+}
+
+/**
+ * Store a feed answer, decrypting the entries of encrypted conversations with what `mls`
+ * hands in for them. `null` when there is no cache.
+ */
 export function applyCacheChanges(
   account: CacheAccount,
   workspaceId: string,
   changes: FeedConversationChanges[],
-): Promise<MessageChangesInput | null> {
-  return invokeCache<MessageChangesInput>("message_cache_sync_apply", {
+  mls: MlsSyncInput[] = [],
+): Promise<CacheSyncStep | null> {
+  return invokeCache<CacheSyncStep>("message_cache_sync_apply", {
     account,
     workspaceId,
     changes,
+    mls,
   });
+}
+
+/** A thread's cached replies after its cached root message (the encrypted thread view). */
+export function readCachedThread(
+  account: CacheAccount,
+  workspaceId: string,
+  conversationId: string,
+  threadId: string,
+  rootMessageId: string | null,
+): Promise<MessageItem[] | null> {
+  return invokeCache<MessageItem[]>("message_cache_thread", {
+    account,
+    workspaceId,
+    conversationId,
+    threadId,
+    rootMessageId,
+  });
+}
+
+/** One cached message, or `null`. */
+export function readCachedMessage(
+  account: CacheAccount,
+  messageId: string,
+): Promise<MessageItem | null> {
+  return invokeCache<MessageItem | null>("message_cache_message", { account, messageId });
 }
 
 interface CachedTimelinePage {

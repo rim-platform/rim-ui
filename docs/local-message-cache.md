@@ -107,6 +107,9 @@ A user who signed in on this device before can open the app without a connection
 - Schema v5 adds `mls_storage`, the MLS group state of end-to-end encrypted conversations
   (`rim_mls`, see `rim-mls.md`): in the same encrypted file, so decrypting a message, storing its
   plaintext and advancing the group's ratchet commit in one transaction. It is never archived.
+- Schema v6 adds what the desktop keeps about encrypted conversations beside that state
+  (`message.e2ee_state`, `e2ee_conversation`, `e2ee_outgoing`, `e2ee_verified_device`,
+  `e2ee_readd_honored`); see `e2ee-desktop.md`.
 - While offline a banner says so and sending is off (typing still works). Writes fail at once
   instead of waiting to be replayed: mutations run with the `always` network mode.
 - Offline mode re-checks the session on a timer that starts at 15 seconds and doubles after each

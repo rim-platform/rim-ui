@@ -41,20 +41,23 @@ interface CreateAttachmentVars {
   messageId?: string;
 }
 
-export function useCreateAttachmentMutation() {
-  return useMutation({
-    mutationFn: (vars: CreateAttachmentVars) =>
-      graphqlClient.request<{ createAttachment: UploadTicket }>(CREATE_ATTACHMENT_MUTATION, {
-        input: {
-          serverId: vars.serverId,
-          conversationId: vars.conversationId,
-          filename: vars.filename,
-          contentType: vars.contentType,
-          sizeBytes: vars.sizeBytes,
-          messageId: vars.messageId,
-        },
-      }),
+/** Ask for an upload ticket. `blobSha256` is required in an encrypted conversation. */
+export function createAttachment(vars: CreateAttachmentVars & { blobSha256?: string }) {
+  return graphqlClient.request<{ createAttachment: UploadTicket }>(CREATE_ATTACHMENT_MUTATION, {
+    input: {
+      serverId: vars.serverId,
+      conversationId: vars.conversationId,
+      filename: vars.filename,
+      contentType: vars.contentType,
+      sizeBytes: vars.sizeBytes,
+      messageId: vars.messageId,
+      ...(vars.blobSha256 ? { blobSha256: vars.blobSha256 } : {}),
+    },
   });
+}
+
+export function useCreateAttachmentMutation() {
+  return useMutation({ mutationFn: (vars: CreateAttachmentVars) => createAttachment(vars) });
 }
 
 interface FinalizeAttachmentVars {
@@ -62,16 +65,17 @@ interface FinalizeAttachmentVars {
   serverId: string;
 }
 
-export function useFinalizeAttachmentMutation() {
-  return useMutation({
-    mutationFn: (vars: FinalizeAttachmentVars) =>
-      graphqlClient.request(FINALIZE_ATTACHMENT_MUTATION, {
-        input: {
-          attachmentId: vars.attachmentId,
-          serverId: vars.serverId,
-        },
-      }),
+export function finalizeAttachment(vars: FinalizeAttachmentVars) {
+  return graphqlClient.request(FINALIZE_ATTACHMENT_MUTATION, {
+    input: {
+      attachmentId: vars.attachmentId,
+      serverId: vars.serverId,
+    },
   });
+}
+
+export function useFinalizeAttachmentMutation() {
+  return useMutation({ mutationFn: (vars: FinalizeAttachmentVars) => finalizeAttachment(vars) });
 }
 
 const DELETE_ATTACHMENT_MUTATION = gql`

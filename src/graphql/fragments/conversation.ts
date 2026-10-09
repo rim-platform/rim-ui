@@ -17,5 +17,6 @@ export const CONVERSATION_FIELDS = gql`
     slowModeSeconds
     notificationLevel
     effectiveNotificationLevel
+    encryptedAt
   }
 `;
