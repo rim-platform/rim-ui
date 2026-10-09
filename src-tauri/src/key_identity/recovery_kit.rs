@@ -194,8 +194,8 @@ fn check_bytes(seed: &[u8; 32]) -> [u8; CHECK_LEN] {
     check
 }
 
-#[cfg(test)]
-fn base32(bytes: &[u8]) -> Zeroizing<String> {
+/// RFC 4648 base32, uppercase, no padding. Also the device link fingerprint's encoding.
+pub(crate) fn base32(bytes: &[u8]) -> Zeroizing<String> {
     let mut out = Zeroizing::new(String::with_capacity(bytes.len() * 8 / 5 + 1));
     let (mut buffer, mut bits) = (0u32, 0u32);
     for &byte in bytes {

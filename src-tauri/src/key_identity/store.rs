@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use super::statement::Statement;
 use super::KeyIdentityError;
 
 /// Keyring user name of the account index.
@@ -20,8 +21,15 @@ const INDEX_NAME: &str = "key-identity-accounts-v1";
 /// Where an unreadable index is kept instead of being overwritten.
 const UNREADABLE_INDEX_NAME: &str = "key-identity-accounts-v1.unreadable";
 
+/// Keyring user name of the list of pending device links (link ids).
+const PENDING_LINKS_NAME: &str = "device-links-v1";
+
 fn record_name(principal_id: &str) -> String {
     format!("key-identity-v1:{principal_id}")
+}
+
+fn pending_link_name(link_id: &str) -> String {
+    format!("device-link-v1:{link_id}")
 }
 
 /// Raw secret storage, by name.
@@ -140,6 +148,23 @@ pub(crate) struct AccountLink {
     pub(crate) username: Option<String>,
 }
 
+/// A device link this device confirmed as the old device (`device-linking-v1.md`, old device
+/// rule 5), written before `addDeviceKey` is sent. It survives a restart, so a link whose
+/// answer was never sent is resumed, and a certified device nobody used is revoked.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingLink {
+    pub(crate) v: u8,
+    pub(crate) link_id: String,
+    /// base64url of the link secret.
+    pub(crate) secret: Zeroizing<String>,
+    pub(crate) endpoint: String,
+    pub(crate) principal_id: String,
+    pub(crate) device_id: String,
+    pub(crate) device_key: String,
+    pub(crate) certificate: Statement,
+}
+
 /// The endpoint as compared: surrounding whitespace and a trailing slash do not matter.
 pub(crate) fn same_endpoint(a: &str, b: &str) -> bool {
     a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
@@ -191,6 +216,63 @@ impl Keys<'_> {
         let raw = serde_json::to_string(links)
             .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode index: {e}")))?;
         self.0.write(INDEX_NAME, &raw)
+    }
+
+    /// The pending device links. One that cannot be read is skipped and kept, so a later
+    /// version can still read it.
+    pub(crate) fn pending_links(&self) -> Result<Vec<PendingLink>, KeyIdentityError> {
+        let mut out = Vec::new();
+        for link_id in self.pending_link_ids()? {
+            let Some(raw) = self.0.read(&pending_link_name(&link_id))? else {
+                continue;
+            };
+            match serde_json::from_str(&raw) {
+                Ok(link) => out.push(link),
+                Err(e) => log::warn!("[key_identity] a pending device link is not readable: {e}"),
+            }
+        }
+        Ok(out)
+    }
+
+    pub(crate) fn put_pending_link(&self, link: &PendingLink) -> Result<(), KeyIdentityError> {
+        let raw = Zeroizing::new(
+            serde_json::to_string(link)
+                .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode a link: {e}")))?,
+        );
+        self.0.write(&pending_link_name(&link.link_id), &raw)?;
+        let mut ids = self.pending_link_ids()?;
+        if !ids.contains(&link.link_id) {
+            ids.push(link.link_id.clone());
+            self.put_pending_link_ids(&ids)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete_pending_link(&self, link_id: &str) -> Result<(), KeyIdentityError> {
+        self.0.delete(&pending_link_name(link_id))?;
+        let mut ids = self.pending_link_ids()?;
+        if ids.iter().any(|id| id == link_id) {
+            ids.retain(|id| id != link_id);
+            self.put_pending_link_ids(&ids)?;
+        }
+        Ok(())
+    }
+
+    /// An unreadable list reads as empty: the records it named stay in the keyring, unused.
+    fn pending_link_ids(&self) -> Result<Vec<String>, KeyIdentityError> {
+        let Some(raw) = self.0.read(PENDING_LINKS_NAME)? else {
+            return Ok(Vec::new());
+        };
+        Ok(serde_json::from_str(&raw).unwrap_or_else(|e| {
+            log::warn!("[key_identity] the pending device link list is not readable: {e}");
+            Vec::new()
+        }))
+    }
+
+    fn put_pending_link_ids(&self, ids: &[String]) -> Result<(), KeyIdentityError> {
+        let raw = serde_json::to_string(ids)
+            .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode the links: {e}")))?;
+        self.0.write(PENDING_LINKS_NAME, &raw)
     }
 
     /// Delete a principal's keys and every link to them.

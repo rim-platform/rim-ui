@@ -4,6 +4,10 @@
 use tauri::State;
 use zeroize::Zeroizing;
 
+use super::device_link::{
+    KnownDevice, LinkAnswer, LinkedDevice, OfferReview, OpenedAnswer, PendingLinkView, Sealed,
+    SentOffer, StartedLink,
+};
 use super::statement::Statement;
 use super::{
     CardContent, Challenge, EnrollmentDraft, EnrollmentStatements, KeyIdentityError,
@@ -179,4 +183,112 @@ pub async fn key_identity_forget(
     principal_id: String,
 ) -> Result<(), KeyIdentityError> {
     blocking(&state, move |s| s.forget(&principal_id)).await
+}
+
+// ─── Device linking (`device_link`) ─────────────────────────────────────────
+
+/// Old device: make the code for the link `startDeviceLink` opened. The secret stays here.
+#[tauri::command]
+pub async fn key_identity_link_begin(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+    endpoint: String,
+    link_id: String,
+) -> Result<StartedLink, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.begin_link(&principal_id, &endpoint, &link_id)
+    })
+    .await
+}
+
+/// Old device: open the offer and check it against `myKeyIdentity`'s log and devices.
+#[tauri::command]
+pub async fn key_identity_link_review_offer(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+    key_log: Vec<Statement>,
+    devices: Vec<KnownDevice>,
+    offer: Sealed,
+) -> Result<OfferReview, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.review_offer(&link_id, &key_log, &devices, &offer)
+    })
+    .await
+}
+
+/// Old device: the person confirmed. Signs the certificate, seals the answer and writes the
+/// pending link record, before `addDeviceKey` is sent.
+#[tauri::command]
+pub async fn key_identity_link_confirm(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+    key_log: Vec<Statement>,
+    device_name: String,
+) -> Result<LinkAnswer, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.confirm_link(&link_id, &key_log, &device_name)
+    })
+    .await
+}
+
+/// Old device: pending links on `endpoint` left by an earlier run.
+#[tauri::command]
+pub async fn key_identity_link_pending(
+    state: State<'_, KeyIdentityState>,
+    endpoint: String,
+) -> Result<Vec<PendingLinkView>, KeyIdentityError> {
+    blocking(&state, move |s| s.pending_links(&endpoint)).await
+}
+
+/// Old device: carry on a pending link; returns its certificate and sealed answer.
+#[tauri::command]
+pub async fn key_identity_link_resume(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+) -> Result<LinkAnswer, KeyIdentityError> {
+    blocking(&state, move |s| s.resume_link(&link_id)).await
+}
+
+/// Either side: forget a link, its secret, an unsaved device key and its pending record.
+#[tauri::command]
+pub async fn key_identity_link_end(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| s.end_link(&link_id)).await
+}
+
+/// New device: read a pasted code, create this device's key in memory and seal the offer.
+#[tauri::command]
+pub async fn key_identity_link_offer(
+    state: State<'_, KeyIdentityState>,
+    endpoint: String,
+    code: Zeroizing<String>,
+    device_name: String,
+) -> Result<SentOffer, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.offer_link(&endpoint, &code, &device_name)
+    })
+    .await
+}
+
+/// New device: open the answer; returns the account whose key log must verify it.
+#[tauri::command]
+pub async fn key_identity_link_open_answer(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+    answer: Sealed,
+) -> Result<OpenedAnswer, KeyIdentityError> {
+    blocking(&state, move |s| s.open_link_answer(&link_id, &answer)).await
+}
+
+/// New device: verify the certificate against the account's key log and store this device's
+/// keys for it.
+#[tauri::command]
+pub async fn key_identity_link_accept(
+    state: State<'_, KeyIdentityState>,
+    link_id: String,
+    key_log: Vec<Statement>,
+) -> Result<LinkedDevice, KeyIdentityError> {
+    blocking(&state, move |s| s.accept_link(&link_id, &key_log)).await
 }
