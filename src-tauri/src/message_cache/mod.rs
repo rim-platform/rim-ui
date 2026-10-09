@@ -14,6 +14,8 @@
 //!   ([`search`], PR 10).
 //! - Every change is numbered so the history archive can export incrementally, and a restore
 //!   from the archive writes back through the sync's own upsert ([`archive`]).
+//! - Last-known copies of the user, workspaces and sidebar lists let the app open offline
+//!   ([`snapshot`]).
 //!
 //! The webview performs the HTTP call (it holds the session cookie) and passes the answer
 //! in; see `sync.rs` for the loop and `commands.rs` for the Tauri surface.
@@ -23,6 +25,7 @@ pub(crate) mod commands;
 mod feed;
 mod key;
 mod search;
+mod snapshot;
 mod store;
 mod sync;
 

@@ -17,6 +17,9 @@ vi.mock("../../features/auth/api/useSessionHydration", () => ({
   useSessionHydration: () => ({ isHydrating: false }),
 }));
 vi.mock("../../core/events/useWorkspaceEvents", () => ({ useWorkspaceEvents: () => {} }));
+vi.mock("../../features/offline/runtime/useOfflineReconnect", () => ({
+  useOfflineReconnect: () => {},
+}));
 vi.mock("../../features/conversations/api/useUnreadCounts", () => ({
   useUnreadCounts: () => {},
 }));

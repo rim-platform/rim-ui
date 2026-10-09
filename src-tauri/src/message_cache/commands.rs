@@ -7,6 +7,7 @@ use tauri::State;
 
 use super::feed::{ChangesRequest, ConversationChanges};
 use super::search::{LocalSearchPage, LocalSearchQuery};
+use super::snapshot::{Snapshot, SnapshotKind};
 use super::store::{TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
 
@@ -101,6 +102,37 @@ pub async fn message_cache_search(
 ) -> Result<LocalSearchPage, CacheError> {
     with_store(state, account, move |store| {
         store.search(&workspace_id, &query, after.as_ref(), limit)
+    })
+    .await
+}
+
+/// Keep the latest copy of a list the app needs offline (see `snapshot.rs`). `workspaceId` is
+/// null for the account-wide kinds.
+#[tauri::command]
+pub async fn message_cache_snapshot_put(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    kind: SnapshotKind,
+    workspace_id: Option<String>,
+    value: serde_json::Value,
+) -> Result<(), CacheError> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    with_store(state, account, move |store| {
+        store.put_snapshot(kind, workspace_id.as_deref(), &value, now_ms)
+    })
+    .await
+}
+
+/// The latest copy of a list, or null when none was saved on this device.
+#[tauri::command]
+pub async fn message_cache_snapshot_get(
+    state: State<'_, MessageCacheState>,
+    account: AccountId,
+    kind: SnapshotKind,
+    workspace_id: Option<String>,
+) -> Result<Option<Snapshot>, CacheError> {
+    with_store(state, account, move |store| {
+        store.get_snapshot(kind, workspace_id.as_deref())
     })
     .await
 }

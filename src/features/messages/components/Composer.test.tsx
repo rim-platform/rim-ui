@@ -11,6 +11,7 @@ import { timedOutMessage } from "../../../core/graphql/errors";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useTimeoutStore } from "../../workspaces/state/useTimeoutStore";
 import { useSlowModeStore } from "../state/useSlowModeStore";
+import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import type { ConversationSummary } from "../../conversations/types";
 import {
   baseReadHandlers,
@@ -333,5 +334,33 @@ describe("Composer — slow mode and timeouts (Track 1.2)", () => {
     expect(await screen.findByTestId("timed-out-banner")).toHaveTextContent(timedOutMessage(until));
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("textbox")).toHaveValue("hi there");
+  });
+});
+
+describe("Composer — offline", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useOfflineStore.setState({ offline: true });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useOfflineStore.setState({ offline: false });
+  });
+
+  it("says sending is off, keeps typing, and sends nothing", async () => {
+    serve(makeConversation());
+    renderComposer();
+
+    expect(await screen.findByTestId("offline-composer-notice")).toBeInTheDocument();
+    const textbox = await screen.findByRole("textbox");
+    expect(textbox).toBeEnabled();
+    fireEvent.change(textbox, { target: { value: "written offline" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
+    expect(textbox).toHaveValue("written offline");
   });
 });

@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
 
 const SERVER_MEMBERS_QUERY = gql`
   query ServerMembers($serverId: ID!) {
@@ -39,12 +40,15 @@ export function useServerMembers(serverId?: string) {
     queryKey: queryKeys.serverMembers(serverId),
     enabled: Boolean(serverId),
     staleTime: 60_000,
-    queryFn: async () => {
-      const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(
-        SERVER_MEMBERS_QUERY,
-        { serverId: serverId! },
-      );
-      return res.serverMembers;
-    },
+    // Runs offline too: the desktop app answers from its saved copy (offlineSnapshot.ts).
+    networkMode: "offlineFirst",
+    queryFn: () =>
+      withOfflineSnapshot("members", serverId!, async () => {
+        const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(
+          SERVER_MEMBERS_QUERY,
+          { serverId: serverId! },
+        );
+        return res.serverMembers;
+      }),
   });
 }
