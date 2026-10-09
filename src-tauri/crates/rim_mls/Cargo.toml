@@ -1,0 +1,51 @@
+[package]
+name = "rim_mls"
+version = "0.1.0"
+description = "End-to-end encryption for RIM DMs and groups: MLS (RFC 9420) behind RIM's own types"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = ["sqlite"]
+# Group state in SQLite (the desktop's cache database). The web build keeps it in memory.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+# Exact pins: group state written by one release must load in the next, so every upgrade is its
+# own change that reruns the storage and vector tests.
+openmls = "=0.9.1"
+# The post-quantum suites are enabled on the traits and the provider, not on `openmls`: its
+# feature also names `openmls_sqlite_storage?/…`, which makes cargo count that crate's `rusqlite`
+# 0.37 in the `links = "sqlite3"` check against the app's `rusqlite` 0.40.
+openmls_traits = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+openmls_libcrux_crypto = { version = "=0.4.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher"], optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+base64 = "0.22"
+uuid = "1"
+zeroize = { version = "1", features = ["derive"] }
+getrandom = "0.3"
+chrono = "0.4"
+sha2 = "0.10"
+hmac = "0.12"
+hkdf = "0.12"
+aes-gcm = "0.10"
+ed25519-dalek = "2"
+
+[target.'cfg(windows)'.dependencies]
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
+
+[dev-dependencies]
+# The named fallback provider, and the second implementation the cross-provider tests compare.
+openmls_rust_crypto = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+# The HPKE and KEM backends the two providers link, driven directly by the known-answer tests.
+hpke-rs-crypto = "=0.7.0"
+hpke-rs-libcrux = "=0.7.0"
+hpke-rs-rust-crypto = { version = "=0.7.0", features = ["experimental"] }
+libcrux-ml-kem = "=0.0.10"
+ml-kem = { version = "=0.3.2", features = ["hazmat"] }
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "v7"] }
