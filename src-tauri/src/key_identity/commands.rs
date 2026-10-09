@@ -10,7 +10,7 @@ use super::device_link::{
     Sealed, SentOffer,
 };
 use super::plugin_manifest::{self, KeyHistory, PluginManifestInput, VerifiedPluginManifest};
-use super::statement::Statement;
+use super::statement::{DeviceRequestInput, Statement};
 use super::{
     CardContent, Challenge, EnrollmentDraft, EnrollmentStatements, KeyIdentityError,
     KeyIdentityState, LocalAccount, LogStatus, RecoveryStatements, ServerAccount,
@@ -142,6 +142,19 @@ pub async fn key_identity_sign_login(
 ) -> Result<Statement, KeyIdentityError> {
     blocking(&state, move |s| {
         s.sign_login(&endpoint, &principal_id, &challenge)
+    })
+    .await
+}
+
+/// Sign a device request for a space hosted elsewhere with this device's key.
+#[tauri::command]
+pub async fn key_identity_sign_device_request(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+    request: DeviceRequestInput,
+) -> Result<Statement, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.sign_device_request(&principal_id, &request)
     })
     .await
 }

@@ -47,7 +47,7 @@ async function openAttachment(
   const account = encryptedStoreAccount();
   const id = await uploadedId(props, attachment);
   if (!account || !id || !attachment.blobSha256) throw new Error("The file is not uploaded yet");
-  const blob = await downloadBlob(id);
+  const blob = await downloadBlob(props.serverId, id);
   const plain = await decryptAttachment(account, props.messageId, attachment.blobSha256, blob);
   return URL.createObjectURL(new Blob([plain as BlobPart], { type: attachment.contentType }));
 }

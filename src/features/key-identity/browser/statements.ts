@@ -219,9 +219,11 @@ export function signLogin(deviceKey: CryptoKey, input: LoginInput): Promise<Stat
 
 // ─── Reading payloads ───────────────────────────────────────────────────────
 
-type Fields = Record<string, unknown>;
+/** A JSON object's fields, read before anything in them is trusted. */
+export type Fields = Record<string, unknown>;
 
-function parseObject(payload: string): Fields | null {
+/** `payload` as a JSON object, or `null` when it is not one. */
+export function parseObject(payload: string): Fields | null {
   try {
     const value: unknown = JSON.parse(payload);
     return value && typeof value === "object" && !Array.isArray(value) ? (value as Fields) : null;
@@ -231,14 +233,15 @@ function parseObject(payload: string): Fields | null {
 }
 
 /** An unsigned integer field of at most `max`. */
-function uint(fields: Fields, name: string, max: number): number | null {
+export function uint(fields: Fields, name: string, max: number): number | null {
   const value = fields[name];
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= max
     ? value
     : null;
 }
 
-function text(fields: Fields, name: string): string | null {
+/** A string field. */
+export function text(fields: Fields, name: string): string | null {
   const value = fields[name];
   return typeof value === "string" ? value : null;
 }
@@ -251,12 +254,12 @@ function optionalText(fields: Fields, name: string): string | null | undefined {
 }
 
 /** Whether `fields` has a field outside `allowed`. */
-function unknownField(fields: Fields, allowed: readonly string[]): boolean {
+export function unknownField(fields: Fields, allowed: readonly string[]): boolean {
   return Object.keys(fields).some((name) => !allowed.includes(name));
 }
 
 /** An RFC 3339 timestamp field. */
-function timestamp(fields: Fields, name: string): string | null {
+export function timestamp(fields: Fields, name: string): string | null {
   const value = text(fields, name);
   return value !== null && !Number.isNaN(Date.parse(value)) ? value : null;
 }
@@ -549,4 +552,88 @@ export async function verifiedRevocation(
     if (await verify(revocation, CONTEXT.deviceRevoke, key, v)) return true;
   }
   return false;
+}
+
+// ─── Profile cards ──────────────────────────────────────────────────────────
+
+const CARD_FIELDS = [
+  "v",
+  "type",
+  "principalId",
+  "version",
+  "keySeq",
+  "displayName",
+  "relays",
+  "devices",
+  "issuedAt",
+];
+
+const CARD_CONTEXT = utf8("rim.profile-card.v1\0");
+
+/** What a verified profile card says. */
+export interface VerifiedCard {
+  version: number;
+  keySeq: number;
+  displayName: string;
+  /** Relay origins, preferred first. */
+  relays: string[];
+  /** Devices as the card lists them; each still needs its certificate to be trusted. */
+  devices: CertifiedDevice[];
+}
+
+/** A relay URL a card may list: `http(s)`, at most 256 bytes. */
+function cardRelay(value: unknown): string | null {
+  if (typeof value !== "string" || utf8(value).length > 256) return null;
+  return /^https?:\/\/[^\s]+$/.test(value) ? value : null;
+}
+
+/**
+ * The profile card `card` of the log's principal, once it verifies: signed by the identity key
+ * at its `keySeq` with no recovery after it, 1 to 80 characters of name, at most 8 unique
+ * `http(s)` relays and 32 unique devices.
+ */
+export async function verifiedCard(card: Statement, head: KeyHead): Promise<VerifiedCard> {
+  const refused = (why: string) => new StatementError(`profile card: ${why}`);
+  const fields = parseObject(card.payload);
+  if (!fields || unknownField(fields, CARD_FIELDS)) throw refused("not a profile card");
+  const v = uint(fields, "v", U8);
+  const version = uint(fields, "version", 0x7fffffff);
+  const keySeq = uint(fields, "keySeq", U32);
+  const displayName = text(fields, "displayName");
+  if (
+    (v !== 1 && v !== 2) ||
+    text(fields, "type") !== "profile-card" ||
+    version === null ||
+    version < 1 ||
+    keySeq === null ||
+    displayName === null ||
+    timestamp(fields, "issuedAt") === null
+  ) {
+    throw refused("not a profile card");
+  }
+  if (text(fields, "principalId") !== head.principalId) throw refused("names another account");
+  const signer = head.identityKeys[keySeq];
+  if (signer === undefined || recoveredAfter(head, keySeq)) throw refused("signed by a lost key");
+  if (!(await verify(card, CARD_CONTEXT, signer, v))) throw refused("signature does not verify");
+  const name = displayName.trim();
+  if (name.length === 0 || Array.from(name).length > 80) throw refused("name is not allowed");
+  const relays = Array.isArray(fields.relays) ? fields.relays.map(cardRelay) : null;
+  if (!relays || relays.length > 8 || relays.some((r) => r === null)) {
+    throw refused("relays are not allowed");
+  }
+  if (new Set(relays).size !== relays.length) throw refused("relays repeat");
+  const devices: CertifiedDevice[] = [];
+  const listed = Array.isArray(fields.devices) ? (fields.devices as unknown[]) : null;
+  if (!listed || listed.length > 32) throw refused("devices are not allowed");
+  for (const entry of listed) {
+    const device = entry && typeof entry === "object" ? (entry as Fields) : null;
+    const deviceId = device ? text(device, "deviceId") : null;
+    const deviceKey = device ? text(device, "deviceKey") : null;
+    if (!deviceId || !deviceKey) throw refused("devices are not allowed");
+    devices.push({ deviceId, deviceKey: canonicalKey(deviceKey, v) });
+  }
+  if (new Set(devices.map((d) => d.deviceId.toLowerCase())).size !== devices.length) {
+    throw refused("devices repeat");
+  }
+  return { version, keySeq, displayName: name, relays: relays as string[], devices };
 }

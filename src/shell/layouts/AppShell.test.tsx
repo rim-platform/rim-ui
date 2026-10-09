@@ -34,6 +34,7 @@ vi.mock("../../features/plugins/runtime/pluginEventBus", () => ({ usePluginEvent
 vi.mock("../../features/key-identity/runtime/useResumeDeviceLinks", () => ({
   useResumeDeviceLinks: () => {},
 }));
+vi.mock("../../features/relay/runtime/relayRuntime", () => ({ useRelayRuntime: () => {} }));
 vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
   usePluginPrincipalSync: () => {},
 }));

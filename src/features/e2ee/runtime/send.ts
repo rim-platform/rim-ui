@@ -12,6 +12,8 @@ import { getApiOrigin } from "../../../core/graphql/config";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import type { MessageAuthor, MessageItem } from "../../../core/types/messages";
+import { hostOf } from "../../relay/state/useRelayStore";
+import { remoteFetch } from "../../relay/transport/remoteFetch";
 import {
   createAttachment,
   finalizeAttachment,
@@ -170,6 +172,7 @@ async function uploadEncrypted(
       file,
       ticket.createAttachment.uploadToken,
       ticket.createAttachment.attachmentId,
+      workspaceId,
     );
     await finalizeAttachment({
       attachmentId: ticket.createAttachment.attachmentId,
@@ -178,11 +181,19 @@ async function uploadEncrypted(
   }
 }
 
-/** Download an attachment's blob as stored on the server (still encrypted). */
-export async function downloadBlob(attachmentId: string): Promise<Uint8Array> {
-  const res = await fetch(`${getApiOrigin()}/api/attachments/${attachmentId}/download`, {
-    credentials: "include",
-  });
+/**
+ * Download an attachment's blob as stored on the server (still encrypted): from this server,
+ * or through the relay from the host of a space elsewhere.
+ */
+export async function downloadBlob(workspaceId: string, attachmentId: string): Promise<Uint8Array> {
+  const path = `/api/attachments/${attachmentId}/download`;
+  const host = hostOf(workspaceId);
+  if (host) {
+    const res = await remoteFetch(host, path, { method: "GET" });
+    if (res.status < 200 || res.status >= 300) throw new Error(`Download failed: ${res.status}`);
+    return res.body;
+  }
+  const res = await fetch(`${getApiOrigin()}${path}`, { credentials: "include" });
   if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
 }
@@ -214,7 +225,7 @@ async function forwardedBlobs(
   const out: { blob: Uint8Array; blobSha256: string }[] = [];
   for (const hash of source.blobSha256) {
     const upload = uploads.find((u) => u.blobSha256 === hash);
-    if (upload) out.push({ blob: await downloadBlob(upload.id), blobSha256: hash });
+    if (upload) out.push({ blob: await downloadBlob(workspaceId, upload.id), blobSha256: hash });
   }
   return out;
 }

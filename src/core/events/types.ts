@@ -230,7 +230,7 @@ export type WorkspaceEvent =
    * build the subscription filter), never actually present in the JSON the
    * client receives — so it's deliberately **not** in this type. If the
    * backend shape changes again, re-verify — a mismatch makes
-   * `handleEvent`'s case a silent no-op, since `JSON.parse` + a `switch`
+   * `applyWorkspaceEvent`'s case a silent no-op, since `JSON.parse` + a `switch`
    * won't throw on an unknown shape.
    */
   | {
@@ -315,4 +315,16 @@ export type WorkspaceEvent =
       conversation_id: string;
       user_id: string;
       device_id: string;
+    }
+  /**
+   * Someone added this person to a DM or group homed in another relay's direct space; it
+   * arrives only through the relay, on the person's own stream.
+   */
+  | {
+      type: "DmInvite";
+      workspace_id: string;
+      conversation_id: string;
+      from_principal_id: string;
+      from_card: { payload: string; signature: string };
+      member_principal_ids: string[];
     };

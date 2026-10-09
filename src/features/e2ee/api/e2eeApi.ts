@@ -20,6 +20,8 @@ import type {
   SubmitMlsCommitInput,
 } from "../../../core/graphql/generated/schema-types";
 import type { MessageItem } from "../../../core/types/messages";
+import { remoteHosts } from "../../relay/state/spaces";
+import { hostClient } from "../../relay/transport/remoteFetch";
 import {
   ACK_WELCOMES_MUTATION,
   CLAIM_KEY_PACKAGES_MUTATION,
@@ -148,14 +150,45 @@ export async function fetchCommits(
   }
 }
 
+/** The server each fetched Welcome came from: `null` for this relay, else the host's id. */
+const welcomeHosts = new Map<string, string | null>();
+
+/**
+ * Welcomes waiting for this device: on this relay, and on each host of a space on another
+ * server this account uses (a DM homed on another relay). A host that does not answer is
+ * asked again next time.
+ */
 export async function fetchWelcomes(): Promise<ServerWelcome[]> {
   const res = await graphqlClient.request<{ myMlsWelcomes: ServerWelcome[] }>(MY_WELCOMES_QUERY);
-  return res.myMlsWelcomes;
+  const remote = await Promise.all(
+    remoteHosts().map(async (host) => {
+      try {
+        const answer = await hostClient(host).request<{ myMlsWelcomes: ServerWelcome[] }>(
+          MY_WELCOMES_QUERY,
+        );
+        return answer.myMlsWelcomes.map((welcome) => ({ welcome, host }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const all = [...res.myMlsWelcomes.map((welcome) => ({ welcome, host: null })), ...remote.flat()];
+  for (const { welcome, host } of all) welcomeHosts.set(welcome.id, host);
+  return all.map(({ welcome }) => welcome);
 }
 
+/** Acknowledge Welcomes, each on the server it came from. */
 export async function ackWelcomes(ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await graphqlClient.request(ACK_WELCOMES_MUTATION, { ids });
+  const byHost = new Map<string | null, string[]>();
+  for (const id of ids) {
+    const host = welcomeHosts.get(id) ?? null;
+    byHost.set(host, [...(byHost.get(host) ?? []), id]);
+    welcomeHosts.delete(id);
+  }
+  for (const [host, hostIds] of byHost) {
+    const client = host ? hostClient(host) : graphqlClient;
+    await client.request(ACK_WELCOMES_MUTATION, { ids: hostIds });
+  }
 }
 
 /** Device lists of principals, at most 100 per call. */

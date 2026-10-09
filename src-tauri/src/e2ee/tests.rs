@@ -73,7 +73,26 @@ impl Principal {
             principal_id: self.id.clone(),
             key_log: self.log.clone(),
             devices: self.devices.clone(),
+            card: None,
         }
+    }
+
+    /// A profile card listing `relays`, signed by the current identity key.
+    fn card(&self, relays: &[&str]) -> Statement {
+        let head = statement::replay(&self.log).unwrap();
+        let relays: Vec<String> = relays.iter().map(|r| r.to_string()).collect();
+        statement::profile_card(
+            &self.identity,
+            &statement::ProfileCardInput {
+                principal_id: &self.id,
+                version: 1,
+                key_seq: head.seq,
+                display_name: "Ada",
+                relays: &relays,
+                devices: &[],
+                issued_at: AT,
+            },
+        )
     }
 }
 
@@ -1409,4 +1428,75 @@ fn finding_2_a_signed_revocation_is_verified_and_remembered() {
     assert_eq!(check(pa.input()), ["revokedDevice"]);
     let remembered = bob.run(|tx, _| directory::load_peers(tx));
     assert!(remembered[&pa.id].revoked.contains(&device_id));
+}
+
+#[test]
+fn a_principal_from_another_relay_is_held_to_its_card_the_pin_and_revocations() {
+    let (mut pa, pb, _alice, bob, _server) = alice_and_bob();
+    let members = vec![pa.id.clone(), pb.id.clone()];
+    let check = |a: PrincipalInput| -> Vec<String> {
+        bob.run(|tx, mls| {
+            directory::verify(
+                tx,
+                mls,
+                WS,
+                CONV,
+                &DirectoryInput {
+                    members: members.clone(),
+                    principals: vec![a, pb.input()],
+                },
+            )
+        })
+        .unverified
+        .into_iter()
+        .map(|u| u.reason)
+        .collect()
+    };
+    let remote = |p: &Principal, card: Statement| PrincipalInput {
+        card: Some(card),
+        ..p.input()
+    };
+
+    // As `remoteIdentity` serves it: the log, the devices and a card that verifies.
+    let card = pa.card(&["https://relay-a.example"]);
+    assert!(check(remote(&pa, card.clone())).is_empty());
+
+    // A card the identity key did not sign, or one for another account, refuses the lot.
+    let stranger = SecretKey::from_seed(Zeroizing::new([91; 32]));
+    let forged = stranger.sign(statement::context::PROFILE_CARD, card.payload.clone());
+    assert_eq!(check(remote(&pa, forged)), ["keyLogInvalid"]);
+    let other = remote(&pa, pb.card(&["https://relay-b.example"]));
+    assert_eq!(check(other), ["keyLogInvalid"]);
+
+    // The head pin and the revocation memory hold whichever relay answered.
+    let head = statement::replay(&pa.log).unwrap();
+    let original = pa.input();
+    pa.log.push(statement::rotation(
+        &head,
+        statement::RotationSigner::Identity,
+        &pa.identity,
+        &SecretKey::from_seed(Zeroizing::new([79; 32])).public_key(),
+        AT,
+    ));
+    // The card was signed at seq 0, before the rotation; it still verifies against the head.
+    assert!(check(remote(&pa, card.clone())).is_empty());
+    assert_eq!(check(remote_of(&original, card.clone())), ["keyLogForked"]);
+    let device_id = pa.devices[0].device_id.clone();
+    let mut revoked = remote(&pa, card.clone());
+    revoked.devices[0].revocation = Some(statement::revocation(
+        &pa.identity,
+        false,
+        &pa.id,
+        &device_id,
+        AT,
+    ));
+    assert_eq!(check(revoked), ["revokedDevice"]);
+    assert_eq!(check(remote(&pa, card)), ["revokedDevice"]);
+}
+
+fn remote_of(input: &PrincipalInput, card: Statement) -> PrincipalInput {
+    PrincipalInput {
+        card: Some(card),
+        ..input.clone()
+    }
 }

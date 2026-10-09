@@ -28,6 +28,7 @@ pub(crate) mod context {
     pub(crate) const PROFILE_CARD: &[u8] = b"rim.profile-card.v1\0";
     pub(crate) const LOGIN: &[u8] = b"rim.login.v1\0";
     pub(crate) const PLUGIN_MANIFEST: &[u8] = b"rim.plugin-manifest.v1\0";
+    pub(crate) const DEVICE_REQUEST: &[u8] = b"rim.device-request.v1\0";
 }
 
 const PRINCIPAL_DOMAIN: &[u8] = b"rim.principal.v1\0";
@@ -137,7 +138,7 @@ pub(crate) fn b64(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn unb64(text: &str) -> Result<Vec<u8>, KeyIdentityError> {
+pub(crate) fn unb64(text: &str) -> Result<Vec<u8>, KeyIdentityError> {
     URL_SAFE_NO_PAD
         .decode(text)
         .map_err(|_| KeyIdentityError::Invalid("not unpadded base64url".into()))
@@ -489,6 +490,76 @@ pub(crate) fn login(device: &SecretKey, input: &LoginInput<'_>) -> Statement {
     device.sign(context::LOGIN, payload)
 }
 
+/// What a device request says: a request to a space hosted elsewhere, for `host`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeviceRequestInput {
+    pub(crate) host: String,
+    pub(crate) method: String,
+    pub(crate) path: String,
+    pub(crate) seq: u64,
+    pub(crate) body_sha256: String,
+    pub(crate) issued_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceRequest<'a> {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: &'a str,
+    principal_id: &'a str,
+    device_id: &'a str,
+    host: &'a str,
+    method: &'a str,
+    path: &'a str,
+    seq: u64,
+    body_sha256: &'a str,
+    issued_at: &'a str,
+}
+
+/// The largest `seq` a device request may carry: below 2^53, so JSON readers keep it exact.
+pub(crate) const MAX_REQUEST_SEQ: u64 = (1 << 53) - 1;
+
+/// A device request signed by the device key: what the host checks before it runs a request
+/// the relay forwarded. Refuses fields that could not belong to such a request.
+pub(crate) fn device_request(
+    device: &SecretKey,
+    principal_id: &str,
+    device_id: &str,
+    input: &DeviceRequestInput,
+) -> Result<Statement, KeyIdentityError> {
+    let refused = |why: &str| KeyIdentityError::Invalid(format!("device request: {why}"));
+    if !input.host.starts_with("rims1_") {
+        return Err(refused("not a server id"));
+    }
+    if input.method != "GET" && input.method != "POST" {
+        return Err(refused("only GET and POST are forwarded"));
+    }
+    if !input.path.starts_with('/') {
+        return Err(refused("the path must start with /"));
+    }
+    if input.seq > MAX_REQUEST_SEQ {
+        return Err(refused("seq is out of range"));
+    }
+    if unb64(&input.body_sha256).map(|b| b.len()).ok() != Some(32) {
+        return Err(refused("the body hash is malformed"));
+    }
+    let payload = json(&DeviceRequest {
+        v: WRITE_VERSION,
+        kind: "device-request",
+        principal_id,
+        device_id,
+        host: &input.host,
+        method: &input.method,
+        path: &input.path,
+        seq: input.seq,
+        body_sha256: &input.body_sha256,
+        issued_at: &input.issued_at,
+    });
+    Ok(device.sign(context::DEVICE_REQUEST, payload))
+}
+
 // ─── Replaying a key log ─────────────────────────────────────────────────────
 
 /// Where a verified key log ends.
@@ -758,6 +829,92 @@ pub(crate) fn verified_revocation(
         "device" => verify(revocation, context::DEVICE_REVOKE, device_key, entry.v),
         _ => false,
     }
+}
+
+/// A profile card as signed. Unknown fields are refused.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CardEntry {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: String,
+    principal_id: String,
+    version: u32,
+    key_seq: u32,
+    display_name: String,
+    relays: Vec<String>,
+    devices: Vec<CardDevice>,
+    #[allow(dead_code)]
+    issued_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// What a verified profile card says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VerifiedCard {
+    pub(crate) version: u32,
+    pub(crate) display_name: String,
+    pub(crate) relays: Vec<String>,
+}
+
+/// The profile card of the log's principal, once it verifies: signed by the identity key at its
+/// `keySeq` with no recovery after it, 1 to 80 characters of name, at most 8 unique `http(s)`
+/// relays of at most 256 bytes and 32 unique devices.
+pub(crate) fn verified_card(
+    card: &Statement,
+    head: &KeyHead,
+) -> Result<VerifiedCard, KeyIdentityError> {
+    let refused = |why: &str| KeyIdentityError::Invalid(format!("profile card: {why}"));
+    let entry: CardEntry =
+        serde_json::from_str(&card.payload).map_err(|_| refused("not a profile card"))?;
+    if !(1..=2).contains(&entry.v) || entry.kind != "profile-card" || entry.version == 0 {
+        return Err(refused("not a profile card"));
+    }
+    if entry.version > i32::MAX as u32 {
+        return Err(refused("not a profile card"));
+    }
+    if entry.principal_id != head.principal_id {
+        return Err(refused("names another account"));
+    }
+    let signer = head
+        .identity_keys
+        .get(entry.key_seq as usize)
+        .ok_or_else(|| refused("signed by a lost key"))?;
+    if head.recovered_after(entry.key_seq) {
+        return Err(refused("signed by a lost key"));
+    }
+    if !verify(card, context::PROFILE_CARD, signer, entry.v) {
+        return Err(refused("signature does not verify"));
+    }
+    let display_name = entry.display_name.trim().to_string();
+    if display_name.is_empty() || display_name.chars().count() > 80 {
+        return Err(refused("name is not allowed"));
+    }
+    let relay_ok = |r: &String| {
+        r.len() <= 256
+            && (r.starts_with("https://") || r.starts_with("http://"))
+            && !r.chars().any(char::is_whitespace)
+    };
+    let unique_relays: std::collections::HashSet<_> = entry.relays.iter().collect();
+    if entry.relays.len() > 8
+        || !entry.relays.iter().all(relay_ok)
+        || unique_relays.len() != entry.relays.len()
+    {
+        return Err(refused("relays are not allowed"));
+    }
+    let unique_devices: std::collections::HashSet<_> = entry
+        .devices
+        .iter()
+        .map(|d| d.device_id.to_lowercase())
+        .collect();
+    if entry.devices.len() > 32 || unique_devices.len() != entry.devices.len() {
+        return Err(refused("devices are not allowed"));
+    }
+    Ok(VerifiedCard {
+        version: entry.version,
+        display_name,
+        relays: entry.relays,
+    })
 }
 
 fn log_error(error: KeyIdentityError) -> KeyIdentityError {

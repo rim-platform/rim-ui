@@ -11,6 +11,7 @@ import { BUS_EVENTS } from "./busEvents";
 import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
 import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
+import { hostOf } from "../../features/relay/state/useRelayStore";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
@@ -95,7 +96,8 @@ export function useWorkspaceEvents(workspaceId: string | null) {
   }, [qc]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    // A space on another server reaches this app through the relay's `relayStream` instead.
+    if (!workspaceId || hostOf(workspaceId)) return;
 
     logger.debug("[RIM:WS] Subscribing to workspace events for:", workspaceId);
 
@@ -113,7 +115,7 @@ export function useWorkspaceEvents(workspaceId: string | null) {
 
           try {
             const event: WorkspaceEvent = JSON.parse(result.data.workspaceEvents);
-            handleEvent(event, qc, workspaceId, executeCommandRef.current.mutate);
+            applyWorkspaceEvent(event, qc, workspaceId, executeCommandRef.current.mutate);
           } catch (err) {
             logger.warn("[RIM:WS] Failed to parse event:", err);
           }
@@ -160,9 +162,13 @@ function eventMessageToCache(msg: MessageEventData): MessageItem {
   };
 }
 
-type AckMutate = ReturnType<typeof useExecuteCommandMutation>["mutate"];
+export type AckMutate = ReturnType<typeof useExecuteCommandMutation>["mutate"];
 
-function handleEvent(
+/**
+ * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
+ * this server hosts, or a verified host event from the relay for a space elsewhere.
+ */
+export function applyWorkspaceEvent(
   event: WorkspaceEvent,
   qc: ReturnType<typeof useQueryClient>,
   workspaceId: string,

@@ -64,6 +64,11 @@ const KeyIdentitySettings = lazy(() =>
     default: m.KeyIdentitySettings,
   })),
 );
+const ContactsSettings = lazy(() =>
+  import("../../relay/components/ContactsSettings").then((m) => ({
+    default: m.ContactsSettings,
+  })),
+);
 const IngestTokenSettings = lazy(() =>
   import("../../integrations/components/IngestTokenSettings").then((m) => ({
     default: m.IngestTokenSettings,
@@ -184,6 +189,7 @@ type SettingsTab =
   | "workspace"
   | "integrations"
   | "security"
+  | "contacts"
   | "account"
   | "about";
 
@@ -203,6 +209,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "workspace", label: "Workspace" },
   { key: "integrations", label: "Integrations" },
   { key: "security", label: "Security" },
+  { key: "contacts", label: "Contacts" },
   { key: "account", label: "Account" },
   { key: "about", label: "About" },
 ];
@@ -311,6 +318,7 @@ export function SettingsPage() {
             )}
             {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
             {shownTab === "security" && <KeyIdentitySettings />}
+            {shownTab === "contacts" && <ContactsSettings />}
             {shownTab === "account" && (
               <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
             )}

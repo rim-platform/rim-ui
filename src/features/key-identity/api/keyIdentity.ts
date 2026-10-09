@@ -27,6 +27,7 @@ import type {
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
+import { MAX_CARD_RELAYS } from "../../relay/contacts/contactLink";
 import { keyBackend, keyCommand, type LocalKeyAccount } from "./keyBackend";
 
 export { keyCommand, type LocalKeyAccount } from "./keyBackend";
@@ -618,14 +619,31 @@ export async function rotateIdentityKey(identity: MyKeyIdentity): Promise<void> 
   }
 }
 
-/** Where this account can be reached: this server, as the card's one relay. */
-export function profileCardRelays(): string[] {
-  return [getApiOrigin()];
+/** The relays the published card lists, in its order; empty when there is no readable card. */
+export function publishedRelays(identity: MyKeyIdentity): string[] {
+  const card = identity.profileCard;
+  if (!card) return [];
+  try {
+    const relays = (JSON.parse(card.statement.payload) as { relays?: unknown }).relays;
+    return Array.isArray(relays) ? relays.filter((r): r is string => typeof r === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Where this account can be reached, preferred first: the published card's relays, with this
+ * server put first when the card does not list it (a new card lists this server alone).
+ */
+export function profileCardRelays(identity?: MyKeyIdentity): string[] {
+  const here = getApiOrigin();
+  const listed = identity ? publishedRelays(identity) : [];
+  return listed.includes(here) ? listed : [here, ...listed].slice(0, MAX_CARD_RELAYS);
 }
 
 /**
  * Whether the published card is missing or no longer says what it should: the display name,
- * the relays, the active devices, or the identity key that signed it.
+ * the relays (this server must be one), the active devices, or the identity key that signed it.
  */
 export function profileCardIsStale(identity: MyKeyIdentity, displayName: string): boolean {
   const card = identity.profileCard;
@@ -649,15 +667,19 @@ export function profileCardIsStale(identity: MyKeyIdentity, displayName: string)
   return (
     payload.displayName !== displayName.trim() ||
     payload.keySeq !== identity.keySeq ||
-    JSON.stringify(payload.relays) !== JSON.stringify(profileCardRelays()) ||
+    JSON.stringify(payload.relays) !== JSON.stringify(profileCardRelays(identity)) ||
     JSON.stringify(active) !== JSON.stringify(listed)
   );
 }
 
-/** Sign and publish a new profile card: display name, this server, the active devices. */
+/**
+ * Sign and publish a new profile card: display name, relays (`relays`, or the card's current
+ * ones with this server among them), the active devices.
+ */
 export async function publishProfileCard(
   identity: MyKeyIdentity,
   displayName: string,
+  relays: string[] = profileCardRelays(identity),
 ): Promise<void> {
   const card = await keyCommand<SignedStatementInput>("key_identity_sign_profile_card", {
     principalId: identity.principalId,
@@ -665,7 +687,7 @@ export async function publishProfileCard(
     card: {
       version: (identity.profileCard?.version ?? 0) + 1,
       displayName: displayName.trim(),
-      relays: profileCardRelays(),
+      relays,
       // The Tauri side lists a device only if its certificate verifies against the key log.
       certificates: identity.devices
         .filter((d) => !d.revokedAt)

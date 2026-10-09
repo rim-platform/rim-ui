@@ -1,0 +1,221 @@
+/**
+ * The relay for the signed-in account: started once `relayInfo` answers (a server without it
+ * runs as before, with the relay off). It learns the account's principal and this device's key,
+ * loads the spaces it uses on other servers, routes their requests through the relay, and reads
+ * `relayStream` on the existing WebSocket from the last item acknowledged.
+ */
+
+import { useEffect, useRef } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+
+import { applyWorkspaceEvent, type AckMutate } from "../../../core/events/useWorkspaceEvents";
+import type { WorkspaceEvent } from "../../../core/events/types";
+import { setSpaceRouter } from "../../../core/graphql/client";
+import { getGraphqlEndpoint } from "../../../core/graphql/config";
+import { onWsConnected, wsClient } from "../../../core/graphql/wsClient";
+import { logger } from "../../../core/logger";
+import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { keyBackend } from "../../key-identity/api/keyBackend";
+import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
+import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
+import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
+import { relayCrypto } from "../crypto/relayCrypto";
+import { rememberRelays } from "../contacts/knownRelays";
+import { useContactStore } from "../contacts/useContactStore";
+import { acceptWorkspaceMembers } from "../inbox/autoAccept";
+import { getRecord, putRecord } from "../state/relayDb";
+import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
+import { loadSpaces, registerSpace } from "../state/spaces";
+import { hostOf, useRelayStore } from "../state/useRelayStore";
+import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
+import { loadRelayHealth } from "../transport/relayHealth";
+import { sendGraphql } from "../transport/remoteFetch";
+
+const HELD_CHECK_MS = 5_000;
+const CURSOR = "relayCursor";
+
+interface StreamRecord {
+  account: string;
+  host: string;
+  workspaceId: string;
+  stream: string;
+  last: number;
+}
+
+interface CursorRecord {
+  account: string;
+  name: string;
+  after: string;
+}
+
+let processor: RelayStreamProcessor | null = null;
+
+/** The running stream processor, for the request inbox and the "messages missing" retry. */
+export function relayProcessor(): RelayStreamProcessor | null {
+  return processor;
+}
+
+function streamRecordKey(account: string, key: string): IDBValidKey {
+  const [host, workspaceId, stream] = key.split("|");
+  return [account, host, workspaceId, stream];
+}
+
+/** Refetch what a space shows, after a gap: its lists through host-signed answers, its feed. */
+async function refetchSpace(qc: QueryClient, spaceId: string, conversationIds: string[]) {
+  for (const root of VOLATILE_WORKSPACE_KEY_ROOTS) {
+    await qc.invalidateQueries({ queryKey: [root, spaceId] });
+  }
+  await qc.invalidateQueries({ queryKey: queryKeys.serverMembers(spaceId) });
+  requestCacheSync(spaceId, conversationIds.length > 0 ? conversationIds : undefined);
+}
+
+function applyRelayEvent(
+  qc: QueryClient,
+  ack: AckMutate,
+  event: WorkspaceEvent,
+  spaceId: string,
+): void {
+  if (event.type === "DmInvite") {
+    rememberRelays(event.from_principal_id, cardRelays(event.from_card));
+    void qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
+    return;
+  }
+  applyWorkspaceEvent(event, qc, spaceId, ack);
+}
+
+async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Promise<() => void> {
+  const info = await fetchRelayInfo();
+  const me = await fetchRelayMe();
+  if (me.id !== userId || !me.principalId) {
+    logger.debug("[RIM:relay] this account has no principal id; the relay stays off");
+    return () => undefined;
+  }
+  const endpoint = getGraphqlEndpoint();
+  const local = (await keyBackend().accounts(endpoint)).find(
+    (a) => a.principalId === me.principalId,
+  );
+  const account = {
+    endpoint,
+    userId,
+    principalId: me.principalId,
+    deviceId: local?.deviceId ?? null,
+  };
+  const key = `${endpoint}|${me.principalId}`;
+  const spaces = await loadSpaces(key).catch(() => []);
+  useRelayStore.getState().setStarted(info, account, spaces);
+  await loadRelayHealth(key).catch(() => undefined);
+  await loadPins([...new Set(spaces.map((s) => s.hostServerId))]);
+  await useContactStore
+    .getState()
+    .load()
+    .catch(() => undefined);
+  setSpaceRouter({ hostOf, send: sendGraphql });
+
+  const active = new RelayStreamProcessor({
+    crypto: relayCrypto(),
+    principalId: me.principalId,
+    hostOf,
+    registerSpace: (spaceId, host) => registerSpace(spaceId, host, "direct"),
+    ensurePinned: async (host, origins) => {
+      await ensurePinned(host, origins);
+    },
+    hostKeyAt,
+    loadLast: async (streamKey) =>
+      (await getRecord<StreamRecord>("streams", streamRecordKey(key, streamKey)))?.last ?? null,
+    saveLast: async (streamKey, last) => {
+      const [host, workspaceId, stream] = streamKey.split("|");
+      await putRecord<StreamRecord>("streams", { account: key, host, workspaceId, stream, last });
+    },
+    streamHeads: fetchStreamHeads,
+    refetchSpace: (spaceId, conversations) => refetchSpace(qc, spaceId, conversations),
+    apply: (event, spaceId) => applyRelayEvent(qc, ack(), event, spaceId),
+    ack: async (upTo) => {
+      await ackRelayItems(upTo);
+      await putRecord<CursorRecord>("meta", { account: key, name: CURSOR, after: upTo });
+    },
+    onMissing: (spaceId, host) =>
+      useRelayStore.getState().setMissing({ spaceId, hostServerId: host, since: Date.now() }),
+    onReconciled: (spaceId) => useRelayStore.getState().clearMissing(spaceId),
+    onDmRequest: () => {
+      void qc.invalidateQueries({ queryKey: ["dmRequests"] });
+      void acceptWorkspaceMembers()
+        .then((accepted) => {
+          if (accepted.length === 0) {
+            toast.info("New message request", {
+              id: "dm-request",
+              description: "Someone you have not talked to yet wants to message you.",
+            });
+          }
+        })
+        .catch((err: unknown) => logger.warn("[RIM:relay] checking a request failed:", err));
+    },
+    onForked: (host) => useRelayStore.getState().markForked(host),
+    now: () => Date.now(),
+  });
+  processor = active;
+
+  const cursor = await getRecord<CursorRecord>("meta", [key, CURSOR]).catch(() => null);
+  const unsubscribe = wsClient.subscribe<{ relayStream: string }>(
+    { query: RELAY_STREAM_SUBSCRIPTION, variables: { after: cursor?.after ?? null } },
+    {
+      next: (result) => {
+        if (result.data?.relayStream) void active.push(result.data.relayStream);
+      },
+      error: (err) => logger.warn("[RIM:relay] relayStream failed:", err),
+      complete: () => logger.debug("[RIM:relay] relayStream completed"),
+    },
+  );
+  const timer = setInterval(() => void active.checkHeld(), HELD_CHECK_MS);
+  void acceptWorkspaceMembers().catch(() => undefined);
+
+  return () => {
+    unsubscribe();
+    clearInterval(timer);
+    if (processor === active) processor = null;
+  };
+}
+
+/** Run the relay for the signed-in account. */
+export function useRelayRuntime() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const qc = useQueryClient();
+  const execute = useExecuteCommandMutation();
+  const ackRef = useRef(execute.mutate);
+  useEffect(() => {
+    ackRef.current = execute.mutate;
+  });
+
+  useEffect(() => {
+    if (!userId) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    const boot = () => {
+      stop?.();
+      stop = null;
+      start(userId, qc, () => ackRef.current)
+        .then((stopper) => {
+          if (cancelled) stopper();
+          else stop = stopper;
+        })
+        .catch((err: unknown) => {
+          logger.debug("[RIM:relay] the relay is off:", err);
+        });
+    };
+    boot();
+    // A server that came back may run a newer version with the relay on.
+    const unsubscribe = onWsConnected(() => {
+      if (!useRelayStore.getState().info) boot();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      stop?.();
+      setSpaceRouter(null);
+      useRelayStore.getState().reset();
+      resetPinCache();
+    };
+  }, [userId, qc]);
+}

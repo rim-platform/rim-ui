@@ -25,6 +25,7 @@ import {
   type KeyAccount,
   type MyKeyIdentity,
 } from "../api/keyIdentity";
+import { CardRelays } from "./CardRelays";
 import { IdentityKeyBackup } from "./IdentityKeyBackup";
 import { SaveRecoveryKit } from "./SaveRecoveryKit";
 import { LinkDevicePanel } from "./LinkDevicePanel";
@@ -446,6 +447,12 @@ function KeyIdentityOverview({
               {cardError}
             </p>
           )}
+          <CardRelays
+            key={identity.profileCard?.version ?? 0}
+            identity={identity}
+            displayName={me.displayName}
+            onPublished={() => void refresh()}
+          />
         </section>
       )}
 

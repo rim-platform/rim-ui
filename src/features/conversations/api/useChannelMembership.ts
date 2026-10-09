@@ -96,6 +96,14 @@ export function useJoinChannelMutation() {
 }
 
 /** Leave a channel or group (not a DM). */
+/** Leave a conversation, outside React: as a person blocking whoever started it. */
+export async function leaveConversation(serverId: string, conversationId: string): Promise<void> {
+  await graphqlClient.request<{ leaveConversation: boolean }>(LEAVE_CONVERSATION, {
+    serverId,
+    conversationId,
+  });
+}
+
 export function useLeaveConversationMutation() {
   const qc = useQueryClient();
   return useMutation({

@@ -18,6 +18,7 @@ import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationReason } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { DmRequestInbox } from "../../relay/components/DmRequestInbox";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import {
   useMarkNotificationsRead,
@@ -151,6 +152,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
+        <DmRequestInbox />
         {isPending && <p className="px-2 py-4 text-sm text-rim-text-muted">Loading…</p>}
         {isError && (
           <p role="alert" className="px-2 py-4 text-sm text-rim-danger">

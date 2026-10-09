@@ -411,6 +411,12 @@ export type ConfirmationProofInput = {
   outOfBand?: InputMaybe<OutOfBandProofInput>;
 };
 
+export type Contact = {
+  addedAt: Scalars['DateTime']['output'];
+  principalId: Scalars['String']['output'];
+  relayUrls: Array<Scalars['String']['output']>;
+};
+
 export type Conversation = {
   archivedAt?: Maybe<Scalars['DateTime']['output']>;
   conversationType: ConversationTypeEnum;
@@ -441,6 +447,7 @@ export type Conversation = {
    * the workspace default.
    */
   notificationLevel?: Maybe<NotificationLevel>;
+  predecessor?: Maybe<ConversationPredecessor>;
   serverId: Scalars['ID']['output'];
   /**
    * Slow mode (Track 1.2): minimum seconds between two messages of the same non-moderator
@@ -495,6 +502,11 @@ export type ConversationPage = {
   prev?: Maybe<InboxCursorOutput>;
 };
 
+export type ConversationPredecessor = {
+  conversationId: Scalars['ID']['output'];
+  hostServerId: Scalars['String']['output'];
+};
+
 export enum ConversationTypeEnum {
   CHANNEL = 'CHANNEL',
   DIRECT = 'DIRECT',
@@ -534,6 +546,8 @@ export type CreateConversationInput = {
   memberIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** For DM conversations. */
   otherUserId?: InputMaybe<Scalars['ID']['input']>;
+  predecessor?: InputMaybe<PredecessorInput>;
+  remoteMembers?: InputMaybe<Array<RemoteMemberInput>>;
   serverId: Scalars['ID']['input'];
   title?: InputMaybe<Scalars['String']['input']>;
 };
@@ -727,6 +741,24 @@ export enum DigestFrequency {
   DAILY = 'DAILY',
   HOURLY = 'HOURLY',
   OFF = 'OFF'
+}
+
+export type DmRequest = {
+  card: SignedStatement;
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  fromPrincipalId: Scalars['String']['output'];
+  heldItems: Array<RelayItem>;
+  hostServerId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  status: DmRequestStatus;
+};
+
+export enum DmRequestStatus {
+  ACCEPTED = 'ACCEPTED',
+  IGNORED = 'IGNORED',
+  PENDING = 'PENDING'
 }
 
 /**
@@ -1597,14 +1629,17 @@ export type MlsWelcome = {
 };
 
 export type Mutation = {
+  acceptDmRequest: DmRequest;
   /** Acknowledge Welcomes of the session's device; answers how many were acknowledged now. */
   ackMlsWelcomes: Scalars['Int']['output'];
+  ackRelayItems: Scalars['Boolean']['output'];
   /**
    * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
    * responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
    * Cancels the incident's active escalation run, if any.
    */
   acknowledgeIncident: IncidentGql;
+  addContact: Contact;
   /** Add (invite) workspace members to a channel or group the caller belongs to. */
   addConversationMembers: Conversation;
   /** Add a device certified by the current identity key. */
@@ -1619,6 +1654,7 @@ export type Mutation = {
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
   banMember: ServerBan;
+  blockPrincipal: Scalars['Boolean']['output'];
   /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
   /** One key package per device waiting to be added; devices with none usable are left out. */
@@ -1689,6 +1725,7 @@ export type Mutation = {
   forwardMessage: Message;
   generatePostmortem: IncidentGql;
   heartbeat: Scalars['Boolean']['output'];
+  ignoreDmRequest: DmRequest;
   incrementWorkspaceState: WorkspaceStateEntryGql;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
@@ -1702,6 +1739,7 @@ export type Mutation = {
   kickMember: Scalars['Boolean']['output'];
   /** Leave a channel or group (not a DM). */
   leaveConversation: Scalars['Boolean']['output'];
+  leaveRelay: Scalars['Boolean']['output'];
   login: LoginPayload;
   /**
    * Sign in with a `login` statement signed by an enrolled device key. Sets the same session
@@ -1724,6 +1762,7 @@ export type Mutation = {
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
   recordFeatureUsage: SkillProfileGql;
+  removeContact: Scalars['Boolean']['output'];
   /**
    * Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
    * themselves.
@@ -1734,6 +1773,7 @@ export type Mutation = {
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
   replyToMessage: Message;
+  reportDmRequest: Scalars['Boolean']['output'];
   /**
    * Report an encrypted message by revealing its content and franking key; the server checks
    * them against its receipt before the moderators see them.
@@ -1862,6 +1902,7 @@ export type Mutation = {
   toggleReaction: Array<ReactionGroup>;
   /** Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited. */
   unbanMember: Scalars['Boolean']['output'];
+  unblockPrincipal: Scalars['Boolean']['output'];
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
   updateChannelLens: ChannelLens;
@@ -1924,13 +1965,29 @@ export type Mutation = {
 };
 
 
+export type MutationAcceptDmRequestArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationAckMlsWelcomesArgs = {
   ids: Array<Scalars['ID']['input']>;
 };
 
 
+export type MutationAckRelayItemsArgs = {
+  upTo: Scalars['ID']['input'];
+};
+
+
 export type MutationAcknowledgeIncidentArgs = {
   incidentId: Scalars['ID']['input'];
+};
+
+
+export type MutationAddContactArgs = {
+  principalId: Scalars['String']['input'];
+  relayUrls: Array<Scalars['String']['input']>;
 };
 
 
@@ -1970,6 +2027,11 @@ export type MutationBanMemberArgs = {
   reason?: InputMaybe<Scalars['String']['input']>;
   serverId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
+};
+
+
+export type MutationBlockPrincipalArgs = {
+  principalId: Scalars['String']['input'];
 };
 
 
@@ -2182,6 +2244,11 @@ export type MutationHeartbeatArgs = {
 };
 
 
+export type MutationIgnoreDmRequestArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationIncrementWorkspaceStateArgs = {
   input: IncrementWorkspaceStateInput;
 };
@@ -2263,6 +2330,11 @@ export type MutationRecordFeatureUsageArgs = {
 };
 
 
+export type MutationRemoveContactArgs = {
+  principalId: Scalars['String']['input'];
+};
+
+
 export type MutationRemoveConversationMemberArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -2283,6 +2355,12 @@ export type MutationRemoveWorkspacePluginArgs = {
 
 export type MutationReplyToMessageArgs = {
   input: ReplyToMessageInput;
+};
+
+
+export type MutationReportDmRequestArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
 };
 
 
@@ -2487,6 +2565,11 @@ export type MutationToggleReactionArgs = {
 export type MutationUnbanMemberArgs = {
   serverId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
+};
+
+
+export type MutationUnblockPrincipalArgs = {
+  principalId: Scalars['String']['input'];
 };
 
 
@@ -2848,6 +2931,11 @@ export enum PluginSourceKind {
   GIT = 'GIT'
 }
 
+export type PredecessorInput = {
+  conversationId: Scalars['ID']['input'];
+  hostServerId: Scalars['String']['input'];
+};
+
 export enum PresenceStatus {
   AWAY = 'AWAY',
   OFFLINE = 'OFFLINE',
@@ -2901,6 +2989,7 @@ export type Query = {
    */
   commandDiscover: Array<Command>;
   commands: Array<Command>;
+  contacts: Array<Contact>;
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
   defaultKeybinds: Array<DefaultKeybind>;
@@ -2914,6 +3003,7 @@ export type Query = {
    * needed: the link id is the capability.
    */
   deviceLinkAnswer?: Maybe<SealedMessage>;
+  dmRequests: Array<DmRequest>;
   /** List a server's escalation policies. Any workspace member may read. */
   escalationPolicies: Array<EscalationPolicyGql>;
   inboxConversations: ConversationPage;
@@ -3021,6 +3111,10 @@ export type Query = {
    * No authentication required — this is public configuration metadata.
    */
   registrationMode: RegistrationModeGql;
+  relayInfo: RelayInfo;
+  relayItems: RelayItemPage;
+  remoteIdentity: RemoteIdentity;
+  remoteServer: RemoteServer;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
   /**
@@ -3050,6 +3144,7 @@ export type Query = {
    * individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
    */
   serverOnCall: Array<OnCallNowGql>;
+  streamHeads: Array<StreamHead>;
   thread: Thread;
   threadByRootMessage?: Maybe<Thread>;
   threadMessages: MessagePage;
@@ -3144,6 +3239,11 @@ export type QueryDeviceLinkArgs = {
 
 export type QueryDeviceLinkAnswerArgs = {
   linkId: Scalars['String']['input'];
+};
+
+
+export type QueryDmRequestsArgs = {
+  status?: InputMaybe<DmRequestStatus>;
 };
 
 
@@ -3342,6 +3442,23 @@ export type QueryPrincipalDevicesArgs = {
 };
 
 
+export type QueryRelayItemsArgs = {
+  after?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryRemoteIdentityArgs = {
+  principalId: Scalars['String']['input'];
+  relayUrl?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryRemoteServerArgs = {
+  origin: Scalars['String']['input'];
+};
+
+
 export type QueryResolveKeybindArgs = {
   context: KeybindContext;
   keystroke: Scalars['String']['input'];
@@ -3381,6 +3498,12 @@ export type QueryServerMembersArgs = {
 
 export type QueryServerOnCallArgs = {
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryStreamHeadsArgs = {
+  serverId: Scalars['ID']['input'];
+  streams: Array<Scalars['String']['input']>;
 };
 
 
@@ -3477,6 +3600,50 @@ export enum RegistrationModeGql {
   /** `RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited. */
   OPEN = 'OPEN'
 }
+
+export type RelayInfo = {
+  directSpaceId: Scalars['ID']['output'];
+  roles: Array<Scalars['String']['output']>;
+  serverId: Scalars['String']['output'];
+};
+
+export type RelayItem = {
+  envelope: SignedStatement;
+  hostServerId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  workspaceId: Scalars['ID']['output'];
+};
+
+export type RelayItemPage = {
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<RelayItem>;
+};
+
+export type RemoteIdentity = {
+  card?: Maybe<SignedStatement>;
+  devices: Array<RemotePrincipalDevice>;
+  keyLog: Array<SignedStatement>;
+  principalId: Scalars['String']['output'];
+  servedBy: Scalars['String']['output'];
+};
+
+export type RemoteMemberInput = {
+  principalId: Scalars['String']['input'];
+  relayUrls: Array<Scalars['String']['input']>;
+};
+
+export type RemotePrincipalDevice = {
+  certificate: SignedStatement;
+  deviceId: Scalars['ID']['output'];
+  mlsActive: Scalars['Boolean']['output'];
+  revocation?: Maybe<SignedStatement>;
+};
+
+export type RemoteServer = {
+  discovery: Scalars['String']['output'];
+  origin: Scalars['String']['output'];
+  serverId: Scalars['String']['output'];
+};
 
 export type ReplyToMessageInput = {
   conversationId: Scalars['ID']['input'];
@@ -3795,6 +3962,7 @@ export type SignupWithKeyInput = {
   keyLog: Array<SignedStatementInput>;
   /** A `login` statement signed by that device over a fresh `keyLoginChallenge`. */
   proof: SignedStatementInput;
+  proofOfWork?: InputMaybe<Scalars['String']['input']>;
   username: Scalars['String']['input'];
   workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
 };
@@ -3830,6 +3998,11 @@ export type StartedDeviceLink = {
   linkId: Scalars['String']['output'];
 };
 
+export type StreamHead = {
+  seq: Scalars['String']['output'];
+  stream: Scalars['String']['output'];
+};
+
 export type SubmitMlsCommitInput = {
   /** Required for an incarnation's first Commit (epoch 0). */
   cipherSuite?: InputMaybe<Scalars['Int']['input']>;
@@ -3843,11 +4016,17 @@ export type SubmitMlsCommitInput = {
 };
 
 export type Subscription = {
+  relayStream: Scalars['String']['output'];
   /**
    * Subscribe to all real-time events for a workspace.
    * Returns events as JSON strings — the client parses the `type` field to determine the event kind.
    */
   workspaceEvents: Scalars['String']['output'];
+};
+
+
+export type SubscriptionRelayStreamArgs = {
+  after?: InputMaybe<Scalars['ID']['input']>;
 };
 
 

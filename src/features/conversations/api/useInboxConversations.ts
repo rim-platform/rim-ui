@@ -26,6 +26,18 @@ interface InboxConversationsResponse {
   inboxConversations: ConversationSummaryPage;
 }
 
+/** A space's DMs and groups, newest first; the desktop app keeps a copy for offline starts. */
+export function fetchInboxConversations(workspaceId: string): Promise<ConversationSummaryPage> {
+  return withOfflineSnapshot("inbox", workspaceId, async () => {
+    const res = await graphqlClient.request<InboxConversationsResponse>(INBOX_CONVERSATIONS_QUERY, {
+      serverId: workspaceId,
+      dir: "AFTER",
+      limit: 50,
+    });
+    return res.inboxConversations;
+  });
+}
+
 /** The sidebar's DMs. The desktop app keeps a copy for offline starts (offlineSnapshot.ts). */
 export function useInboxConversations(workspaceId?: string) {
   return useQuery({
@@ -33,17 +45,6 @@ export function useInboxConversations(workspaceId?: string) {
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     networkMode: "offlineFirst",
-    queryFn: () =>
-      withOfflineSnapshot("inbox", workspaceId!, async () => {
-        const res = await graphqlClient.request<InboxConversationsResponse>(
-          INBOX_CONVERSATIONS_QUERY,
-          {
-            serverId: workspaceId!,
-            dir: "AFTER",
-            limit: 50,
-          },
-        );
-        return res.inboxConversations;
-      }),
+    queryFn: () => fetchInboxConversations(workspaceId!),
   });
 }

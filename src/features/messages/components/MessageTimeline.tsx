@@ -14,6 +14,7 @@ import { MessageContextMenu } from "./MessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
+import { ConversationContinuity } from "../../relay/components/ConversationContinuity";
 import {
   useDeviceNames,
   useE2eeConversation,
@@ -182,6 +183,9 @@ export function MessageTimeline() {
           conditionCount={activeLens.filterSpec.conditions.length}
           onClear={() => clearLens(conversationId, null)}
         />
+      )}
+      {workspaceId && (
+        <ConversationContinuity workspaceId={workspaceId} conversationId={conversationId} />
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {timeline.isFetchingNextPage && <OlderMessagesLoader />}

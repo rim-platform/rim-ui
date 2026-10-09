@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
 
@@ -19,6 +20,8 @@ type MemberInfo = {
 export function useMemberLookup(serverId?: string) {
   const { data: me } = useCurrentUser();
   const { data: members } = useServerMembers(serverId ?? undefined);
+  // A name the person gave a contact wins over the name the member published.
+  const aliases = useContactStore((s) => s.aliases);
 
   return useMemo(() => {
     const map = new Map<string, MemberInfo>();
@@ -72,6 +75,12 @@ export function useMemberLookup(serverId?: string) {
       }
     }
 
+    for (const member of members ?? []) {
+      const alias = member.principalId ? aliases[member.principalId] : undefined;
+      const info = map.get(member.userId);
+      if (alias && info && !info.isCurrentUser) info.displayName = alias;
+    }
+
     function resolve(userId: string): MemberInfo {
       return (
         map.get(userId) ?? {
@@ -82,5 +91,5 @@ export function useMemberLookup(serverId?: string) {
     }
 
     return { resolve, map };
-  }, [me, members]);
+  }, [me, members, aliases]);
 }

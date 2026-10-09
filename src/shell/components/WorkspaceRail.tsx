@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { MessagesSquare, Plus } from "lucide-react";
 
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
+import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { cn } from "../../shared/ui/cn";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
@@ -13,6 +14,12 @@ export function WorkspaceRail() {
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
   const { data: servers } = useMyServers();
   const [showCreate, setShowCreate] = useState(false);
+  const directSpaceId = useRelayStore((s) => s.info?.directSpaceId ?? null);
+  const inDirectSpace = useRelayStore(
+    (s) =>
+      Boolean(workspaceId) &&
+      (s.info?.directSpaceId === workspaceId || s.spaces[workspaceId ?? ""]?.kind === "direct"),
+  );
 
   return (
     <aside
@@ -21,6 +28,24 @@ export function WorkspaceRail() {
       onFocus={() => useShellStore.getState().setFocusedSurface("workspaceRail")}
       className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2 outline-none"
     >
+      {directSpaceId && (
+        <button
+          type="button"
+          title="Direct messages"
+          aria-label="Direct messages"
+          aria-pressed={inDirectSpace}
+          onClick={() => setWorkspaceId(directSpaceId)}
+          className={cn(
+            "flex h-9 w-9 items-center justify-center rounded-xl transition",
+            inDirectSpace
+              ? "bg-gradient-to-br from-rim-accent to-rim-accent text-rim-void"
+              : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
+          )}
+        >
+          <MessagesSquare className="h-4 w-4" />
+        </button>
+      )}
+
       {servers?.map((server) => {
         const active = server.id === workspaceId;
         return (

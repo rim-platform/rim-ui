@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { AddContactButton } from "../../relay/components/AddContactButton";
 import { useServerMembers, type ServerMember } from "../api/useServerMembers";
 import { ServerMemberRoleGql } from "../role";
 import { MemberActionsMenu } from "./MemberActionsMenu";
@@ -101,6 +102,7 @@ export function WorkspaceMemberDirectory({ workspaceId, onClose }: WorkspaceMemb
                   </span>
                   <TimeoutMarker until={member.timeoutUntil} />
                 </span>
+                <AddContactButton principalId={member.principalId} name={name} />
                 <MemberActionsMenu
                   workspaceId={workspaceId}
                   member={{
