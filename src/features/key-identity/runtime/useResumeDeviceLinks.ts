@@ -6,7 +6,7 @@ import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { resumePendingDeviceLinks } from "../api/deviceLink";
 
 /**
- * Once per signed-in account and run, carry on device links left pending in the keyring.
+ * Once per signed-in account and run, carry on device links left pending in the secret vault.
  * Desktop only, and only while the server can be reached.
  */
 export function useResumeDeviceLinks() {

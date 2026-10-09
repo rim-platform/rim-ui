@@ -52,7 +52,7 @@ const PROVIDERS: ProviderMeta[] = [
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Check whether a key is stored in the OS keyring for the given provider.
+ * Check whether a key is stored in the secret vault for the given provider.
  * Returns false on any IPC error so the UI gracefully falls back to
  * "No key configured" instead of crashing.
  */
@@ -65,7 +65,7 @@ async function tauriIsProviderKeyConfigured(provider: string): Promise<boolean> 
 }
 
 /**
- * Persist a validated API key to the OS keyring.
+ * Persist a validated API key to the secret vault.
  * Only call this after `tauriValidateProvidedKey` returns `{ kind: "valid" }`.
  */
 async function tauriSetProviderKey(provider: string, apiKey: string): Promise<void> {
@@ -73,7 +73,7 @@ async function tauriSetProviderKey(provider: string, apiKey: string): Promise<vo
 }
 
 /**
- * Remove the API key for `provider` from the OS keyring.
+ * Remove the API key for `provider` from the secret vault.
  */
 async function tauriClearProviderKey(provider: string): Promise<void> {
   await invoke<void>("clear_provider_key", { provider });
@@ -96,7 +96,7 @@ async function tauriValidateProvidedKey(
 
 /**
  * Fetch the list of models for `provider` from the live API.
- * The Rust command reads the key from the OS keyring — only call this
+ * The Rust command reads the key from the secret vault — only call this
  * after a key has been persisted via `tauriSetProviderKey`.
  */
 async function tauriFetchModels(provider: string): Promise<AiModelDef[]> {
@@ -338,7 +338,7 @@ export function AgentSettingsPanel() {
       <div>
         <h2 className="text-base font-semibold text-rim-text">AI Agent</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Configure an AI provider to use the agent. Keys are stored in your OS keyring and never
+          Configure an AI provider to use the agent. Keys are stored in your secret vault and never
           leave your device.
         </p>
       </div>
@@ -354,7 +354,7 @@ export function AgentSettingsPanel() {
 
       {!capabilities.agent ? (
         <p className="text-sm text-rim-text-muted">
-          Keyring-backed key storage is only available in the desktop app.
+          Key storage is only available in the desktop app.
         </p>
       ) : (
         <>

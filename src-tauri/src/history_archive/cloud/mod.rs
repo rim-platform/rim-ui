@@ -3,8 +3,8 @@
 //! their history).
 //!
 //! - [`oauth`]: the desktop sign-in (system browser, loopback redirect, PKCE) and the access
-//!   tokens refreshed from a refresh token. Refresh tokens live in the OS keyring, never in a
-//!   file.
+//!   tokens refreshed from a refresh token. Refresh tokens live in the secret vault, never in
+//!   the settings file.
 //! - [`http`]: retries with backoff for rate limits and transient failures.
 //! - [`google_drive`], [`dropbox`]: the [`ArchiveProvider`] implementations.
 //!
@@ -35,8 +35,10 @@ use reqwest::blocking::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::secret_store::SecretVault;
+
 use super::provider::ArchiveProvider;
-use super::ArchiveError;
+use super::{vault_error, ArchiveError};
 use dropbox::{DropboxEndpoints, DropboxProvider};
 use google_drive::{DriveEndpoints, GoogleDriveProvider};
 use http::{Http, Reply, RetryPolicy};
@@ -195,46 +197,30 @@ pub(crate) struct CloudService {
 
 // ─── Credentials ────────────────────────────────────────────────────────────
 
-/// Where refresh tokens are kept: the OS keyring in the app, memory in tests.
+/// Where refresh tokens are kept: the secret vault in the app, memory in tests.
 pub(crate) trait CredentialStore: Send + Sync {
     fn get(&self, name: &str) -> Result<Option<Zeroizing<String>>, ArchiveError>;
     fn set(&self, name: &str, secret: &str) -> Result<(), ArchiveError>;
     fn delete(&self, name: &str) -> Result<(), ArchiveError>;
 }
 
-pub(crate) struct KeyringCredentials;
+pub(crate) struct VaultCredentials(pub(crate) Arc<SecretVault>);
 
-impl KeyringCredentials {
-    fn entry(name: &str) -> Result<keyring::Entry, ArchiveError> {
-        crate::secret_store::entry(name)
-            .map_err(|e| ArchiveError::Key(format!("keyring init failed: {e}")))
-    }
-}
-
-impl CredentialStore for KeyringCredentials {
+impl CredentialStore for VaultCredentials {
     fn get(&self, name: &str) -> Result<Option<Zeroizing<String>>, ArchiveError> {
-        match Self::entry(name)?.get_password() {
-            Ok(secret) => Ok(Some(Zeroizing::new(secret))),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(ArchiveError::Key(format!("keyring read failed: {e}"))),
-        }
+        self.0.read(name).map_err(vault_error)
     }
 
     fn set(&self, name: &str, secret: &str) -> Result<(), ArchiveError> {
-        Self::entry(name)?
-            .set_password(secret)
-            .map_err(|e| ArchiveError::Key(format!("keyring store failed: {e}")))
+        self.0.write(name, secret).map_err(vault_error)
     }
 
     fn delete(&self, name: &str) -> Result<(), ArchiveError> {
-        match Self::entry(name)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(ArchiveError::Key(format!("keyring delete failed: {e}"))),
-        }
+        self.0.delete(name).map_err(vault_error)
     }
 }
 
-/// The keyring name of a connection's refresh token.
+/// The secret name of a connection's refresh token.
 fn credential_name(connection_id: &str) -> String {
     format!("history-archive-cloud-v1:{connection_id}")
 }
@@ -274,7 +260,7 @@ impl Authorized {
 // ─── Connections ────────────────────────────────────────────────────────────
 
 /// A signed-in cloud account an archive is kept in, as saved in the account's settings. The
-/// refresh token is in the keyring under the connection id.
+/// refresh token is in the secret vault under the connection id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CloudConnection {
@@ -301,7 +287,7 @@ struct Pending {
 }
 
 /// Signed-in connections: the ones still waiting for a passphrase (in memory only, so an
-/// abandoned sign-in leaves nothing in the keyring), and live token sources of kept ones.
+/// abandoned sign-in leaves nothing in the secret vault), and live token sources of kept ones.
 pub(crate) struct CloudConnections {
     settings: CloudSettings,
     credentials: Arc<dyn CredentialStore>,
@@ -417,7 +403,7 @@ impl CloudConnections {
         ))
     }
 
-    /// Keep a pending connection: its refresh token goes to the keyring.
+    /// Keep a pending connection: its refresh token goes to the secret vault.
     pub(crate) fn keep(&self, connection_id: &str) -> Result<(), ArchiveError> {
         let Some(pending) = lock(&self.pending).remove(connection_id) else {
             return Err(ArchiveError::CloudAuth(

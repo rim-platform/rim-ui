@@ -38,7 +38,7 @@ function ensureToolsRegistered(): Promise<void> {
 }
 
 // Providers are registered once per providerId. The provider never holds the
-// key: the Rust proxy reads it from the OS keyring on every request, so
+// key: the Rust proxy reads it from the secret vault on every request, so
 // switching the key in Settings is invisible at this layer and the next
 // `chat()` uses whatever the keyring currently holds.
 const registeredProviders = new Set<string>();
@@ -181,7 +181,7 @@ export function AgentOverlay() {
     );
 
     void (async () => {
-      // Presence-check the OS keyring before spinning up runAgent. The keyring
+      // Presence-check the secret vault before spinning up runAgent. The keyring
       // is the single source of truth for provider keys
       // (agent-settings-consolidation decision §3). We do NOT hold any key
       // bytes here — the Rust proxy reads from the keyring inline per-request.

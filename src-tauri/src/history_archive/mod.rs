@@ -4,7 +4,7 @@
 //! The format is specified in `docs/specs/history-archive-v1.md`. In short:
 //!
 //! - One random archive key per archive, wrapped under the user's passphrase (Argon2id) in
-//!   the archive's manifest. This device keeps the unwrapped key in the OS keyring so exports
+//!   the archive's manifest. This device keeps the unwrapped key in the secret vault so exports
 //!   run without asking; a new device needs only the folder and the passphrase.
 //! - Each device appends immutable, sealed segments under its own folder and lists them in
 //!   its own head file, so devices sharing a folder never write the same file.
@@ -35,10 +35,11 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::message_cache::{AccountId, CacheError, CacheStore};
+use crate::secret_store::{SecretVault, VaultError};
 use archive::Archive;
 use cloud::{
     CloudAuthorization, CloudConnection, CloudConnections, CloudKind, CloudService, CloudSettings,
-    KeyringCredentials,
+    VaultCredentials,
 };
 use crypto::{ArchiveKey, KdfCost};
 use provider::{ArchiveProvider, LocalFolderProvider};
@@ -126,53 +127,50 @@ impl Serialize for ArchiveError {
 
 // ─── Key storage ────────────────────────────────────────────────────────────
 
-/// Where this device keeps unwrapped archive keys. The OS keyring in the app; memory in tests.
+/// Where this device keeps unwrapped archive keys. The secret vault in the app; memory in tests.
 pub(crate) trait KeyStore: Send + Sync {
     fn get(&self, archive_id: &str) -> Result<Option<ArchiveKey>, ArchiveError>;
     fn set(&self, archive_id: &str, key: &ArchiveKey) -> Result<(), ArchiveError>;
     fn delete(&self, archive_id: &str) -> Result<(), ArchiveError>;
 }
 
-struct KeyringKeyStore;
+struct VaultKeyStore(Arc<SecretVault>);
 
-impl KeyringKeyStore {
-    fn entry(archive_id: &str) -> Result<keyring::Entry, ArchiveError> {
-        crate::secret_store::entry(&format!("history-archive-key-v1:{archive_id}"))
-            .map_err(|e| ArchiveError::Key(format!("keyring init failed: {e}")))
-    }
+/// The secret name of an archive's key.
+fn key_name(archive_id: &str) -> String {
+    format!("history-archive-key-v1:{archive_id}")
 }
 
-impl KeyStore for KeyringKeyStore {
+impl KeyStore for VaultKeyStore {
     fn get(&self, archive_id: &str) -> Result<Option<ArchiveKey>, ArchiveError> {
-        match Self::entry(archive_id)?.get_password() {
-            Ok(stored) => {
-                let bytes = Zeroizing::new(
-                    URL_SAFE_NO_PAD
-                        .decode(stored)
-                        .map_err(|_| ArchiveError::Key("stored key is not base64".into()))?,
-                );
-                let key = ArchiveKey::from_slice(&bytes)
-                    .ok_or_else(|| ArchiveError::Key("stored key has the wrong length".into()))?;
-                Ok(Some(key))
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(ArchiveError::Key(format!("keyring read failed: {e}"))),
-        }
+        let Some(stored) = self.0.read(&key_name(archive_id)).map_err(vault_error)? else {
+            return Ok(None);
+        };
+        let bytes = Zeroizing::new(
+            URL_SAFE_NO_PAD
+                .decode(stored.as_bytes())
+                .map_err(|_| ArchiveError::Key("stored key is not base64".into()))?,
+        );
+        let key = ArchiveKey::from_slice(&bytes)
+            .ok_or_else(|| ArchiveError::Key("stored key has the wrong length".into()))?;
+        Ok(Some(key))
     }
 
     fn set(&self, archive_id: &str, key: &ArchiveKey) -> Result<(), ArchiveError> {
         let encoded = Zeroizing::new(URL_SAFE_NO_PAD.encode(key.as_bytes()));
-        Self::entry(archive_id)?
-            .set_password(&encoded)
-            .map_err(|e| ArchiveError::Key(format!("keyring store failed: {e}")))
+        self.0
+            .write(&key_name(archive_id), &encoded)
+            .map_err(vault_error)
     }
 
     fn delete(&self, archive_id: &str) -> Result<(), ArchiveError> {
-        match Self::entry(archive_id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(ArchiveError::Key(format!("keyring delete failed: {e}"))),
-        }
+        self.0.delete(&key_name(archive_id)).map_err(vault_error)
     }
+}
+
+/// A secret vault failure, as an archive key error.
+fn vault_error(e: VaultError) -> ArchiveError {
+    ArchiveError::Key(e.to_string())
 }
 
 // ─── Per-account settings ───────────────────────────────────────────────────
@@ -515,7 +513,7 @@ impl HistoryArchiveState {
         })
     }
 
-    /// Put the archive key back on this device (the keyring lost it) with the passphrase.
+    /// Put the archive key back on this device (the secret vault lost it) with the passphrase.
     pub(crate) fn unlock(
         &self,
         account: &AccountId,
@@ -649,12 +647,12 @@ impl HistoryArchiveState {
 }
 
 /// The archive's settings live in `<app data>/history-archive/`.
-pub(crate) fn init(app_data_dir: &Path) -> HistoryArchiveState {
+pub(crate) fn init(app_data_dir: &Path, vault: Arc<SecretVault>) -> HistoryArchiveState {
     HistoryArchiveState::new(
         app_data_dir.join("history-archive"),
-        Arc::new(KeyringKeyStore),
+        Arc::new(VaultKeyStore(vault.clone())),
         KdfCost::DEFAULT,
-        CloudConnections::new(CloudSettings::from_env(), Arc::new(KeyringCredentials)),
+        CloudConnections::new(CloudSettings::from_env(), Arc::new(VaultCredentials(vault))),
     )
 }
 

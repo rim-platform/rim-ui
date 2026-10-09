@@ -117,7 +117,7 @@ export function useMacroAgent(): UseMacroAgentResult {
         const settings = useAgentStore.getState().settings;
         const { providerId, modelId } = settings;
 
-        // Presence-check the OS keyring — the single source of truth for
+        // Presence-check the secret vault, the single source of truth for
         // provider keys (agent-settings-consolidation §3).
         const hasKey = await invoke<boolean>("is_provider_key_configured", {
           provider: providerId,

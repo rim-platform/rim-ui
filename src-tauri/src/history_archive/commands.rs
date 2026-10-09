@@ -119,7 +119,7 @@ pub async fn history_archive_connect(
     blocking(move || state.connect(&account, &target, &passphrase)).await
 }
 
-/// Give this device the archive key again (the OS keyring lost it).
+/// Give this device the archive key again (the secret vault lost it).
 #[tauri::command]
 pub async fn history_archive_unlock(
     state: State<'_, HistoryArchiveState>,

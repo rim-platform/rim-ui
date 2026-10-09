@@ -16,7 +16,7 @@ how to try it.
 
 | What | Where |
 |---|---|
-| Identity key, backup key | This computer's keyring record for the account (`key-identity-v1:<account id>`). The backup key is derived from the recovery phrase at enrollment, key-only signup, recovery or takeover; the phrase itself is never stored. |
+| Identity key, backup key | This computer's secret vault record for the account (`key-identity-v1:<account id>`, see `secret-vault.md`). The backup key is derived from the recovery phrase at enrollment, key-only signup, recovery or takeover; the phrase itself is never stored. |
 | Backup record | `accounts/<account tag>/devices/<device id>/identity-backup.rimx` in the archive, one per computer that holds the identity key, sealed under the backup key. |
 | Archive key wrap | `devices/<device id>/key-wraps.json` in the archive, one `identity-v1` entry per account, under a key derived from the identity key. |
 
@@ -47,7 +47,7 @@ recovery phrase once ("Turn on backup") and keeps the backup key from then on.
 
 ## Trying it
 
-Two computers (or two OS users, each with its own keyring), the same server, and an archive
+Two computers (or two OS users, each with its own secret vault), the same server, and an archive
 both can reach (a shared folder, or the same Google Drive or Dropbox account):
 
 1. On computer A, sign in and set up key sign-in in Settings > Security. Save the recovery kit.
@@ -62,9 +62,9 @@ both can reach (a shared folder, or the same Google Drive or Dropbox account):
 If A replaces its identity key while its archive is out of reach (a drive unplugged), B's
 takeover says the copy is of an older key until A, with the archive back, backs up the new one.
 
-To try the unlock path, remove the archive key from A's keyring (the
-`history-archive-key-v1:<archive id>` entry); Settings > History then offers "Unlock with this
-device's keys" beside the passphrase.
+To try the unlock path, quit A and remove the archive key from its secret vault (the
+`history-archive-key-v1:<archive id>` record in `secrets.vault`; the other records still open);
+Settings > History then offers "Unlock with this device's keys" beside the passphrase.
 
 ## Limits
 

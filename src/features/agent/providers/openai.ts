@@ -171,7 +171,7 @@ type ChatStreamEvent =
 /**
  * Construct an OpenAI provider that dispatches `chat()` calls to the
  * Tauri `agent_chat_completion` command. The API key is read directly from
- * the OS keyring by the Rust proxy on every request — the JS side never
+ * the secret vault by the Rust proxy on every request — the JS side never
  * holds or transmits the key bytes (Phase 5 / Option B). See
  * `anthropic.ts::createAnthropicProvider` for the full rationale.
  */
@@ -180,7 +180,7 @@ export function createOpenAiProvider(): AiProvider {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      // The Rust proxy reads the API key from the OS keyring on every request.
+      // The Rust proxy reads the API key from the secret vault on every request.
       // Do NOT send api_key — ChatCompletionRequest uses deny_unknown_fields.
       // Command ids contain dots, which the API refuses in function names;
       // tool calls come back under the API name and are translated back below.

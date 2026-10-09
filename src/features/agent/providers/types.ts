@@ -64,7 +64,7 @@ export type ValidationOutcome =
 export interface AiProvider {
   readonly config: AiProviderConfig;
   /**
-   * Stream a chat completion. The API key is read from the OS keyring by the
+   * Stream a chat completion. The API key is read from the secret vault by the
    * Rust proxy on every request — the JS side never holds the key bytes.
    * (Phase 5 / Option B, agent-settings-consolidation §3.)
    */

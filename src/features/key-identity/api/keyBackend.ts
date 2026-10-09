@@ -1,6 +1,6 @@
 /**
  * Where this app's device keys live, behind one interface for the key work that signing in and
- * linking this device need: the Tauri side's OS keyring on the desktop, WebCrypto and IndexedDB
+ * linking this device need: the Tauri side's secret vault on the desktop, WebCrypto and IndexedDB
  * in the web app. Enrollment, key-only signup, recovery and linking other devices hold the
  * identity key and stay on the Tauri side (`keyCommand`).
  */
@@ -102,7 +102,7 @@ export async function keyCommand<T>(
   throw new Error(result.error.message);
 }
 
-/** The desktop app's keys, in the OS keyring behind the Tauri side's `key_identity` commands. */
+/** The desktop app's keys, in the secret vault behind the Tauri side's `key_identity` commands. */
 export const tauriKeyBackend: KeyBackend = {
   async accounts(endpoint) {
     const result = await safeInvoke<LocalKeyAccount[]>("key_identity_accounts", { endpoint });

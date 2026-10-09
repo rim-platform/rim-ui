@@ -1,4 +1,4 @@
-//! Tauri commands of the identity key backup. Keyring and archive work runs on the blocking
+//! Tauri commands of the identity key backup. Key storage and archive work runs on the blocking
 //! pool.
 
 use tauri::State;

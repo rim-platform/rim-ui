@@ -199,7 +199,7 @@ impl TokenSource {
         })
     }
 
-    /// From a refresh token kept in the keyring.
+    /// From a refresh token kept in the secret vault.
     pub(crate) fn from_refresh_token(
         app: OAuthApp,
         http: Arc<Http>,

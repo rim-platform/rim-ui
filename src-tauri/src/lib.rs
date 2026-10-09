@@ -7,6 +7,8 @@ mod offline_session;
 mod plugin_host;
 mod secret_store;
 
+use std::sync::Arc;
+
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -105,10 +107,12 @@ pub fn run() {
             plugin_host::forward_to_ui(app.handle().clone(), &plugin_state);
             app.manage(plugin_state);
 
-            app.manage(message_cache::init(&app_data_dir));
-            app.manage(history_archive::init(&app_data_dir));
-            app.manage(offline_session::init());
-            app.manage(key_identity::init());
+            let vault = Arc::new(secret_store::SecretVault::open(&app_data_dir));
+            app.manage(message_cache::init(&app_data_dir, vault.clone()));
+            app.manage(history_archive::init(&app_data_dir, vault.clone()));
+            app.manage(offline_session::init(vault.clone()));
+            app.manage(key_identity::init(vault.clone()));
+            app.manage(vault);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

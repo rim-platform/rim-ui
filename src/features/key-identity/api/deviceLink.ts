@@ -683,7 +683,7 @@ export async function cancelLink(link: StartedLink, certifiedDeviceId?: string):
 }
 
 /**
- * Carry on confirmed links left in the keyring by a previous run: `OFFERED`
+ * Carry on confirmed links left in the secret vault by a previous run: `OFFERED`
  * sends the answer again, adding the device first if needed; `ANSWERED` waits for the new
  * device; anything else settles the link. Runs in the background after sign-in; never throws.
  */

@@ -1,28 +1,22 @@
-//! Tauri-side LLM proxy (P4-A3 / closes C2 from Black Widow's
-//! ai-reframe-review-2026-04-22.md §C2) and OS-keyring key store (P5-A5
-//! Option B).
+//! Tauri-side LLM proxy and the AI provider key store.
 //!
-//! Before this module landed, the webview made `fetch()` calls directly to
-//! `api.anthropic.com` / `api.openai.com` with the API key in HTTP headers.
-//! Any markdown-render escape, malicious browser extension, dev-tools-attached
-//! attacker, or XSS-via-plugin-panel had a clear path to exfiltrate the key.
-//!
-//! After (Option B): API keys live exclusively in the OS keyring (see
-//! `secret_store`), namespaced as `provider:{provider}`. The webview
-//! never sees the raw key bytes — it calls `set_provider_key` to store and the
-//! proxy reads inline from keyring on every request. The CSP block + IPC
-//! channel close C2; keyring ownership closes the JS-heap exposure window.
+//! The webview never holds a provider API key: `set_provider_key` stores it in the secret
+//! vault (`secret_store`) as `provider:{provider}`, and the proxy reads it from there on every
+//! request and calls `api.anthropic.com` / `api.openai.com` itself. A markdown-render escape,
+//! a malicious browser extension or a plugin panel finds no key in the JS heap or in the
+//! webview's requests.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
+use tauri::State;
 use zeroize::Zeroizing;
 
-use crate::secret_store;
+use crate::secret_store::SecretVault;
 
 const ANTHROPIC_MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODELS_URL: &str = "https://api.anthropic.com/v1/models";
@@ -91,7 +85,7 @@ impl Provider {
 /// so we don't have to keep two copies of the provider wire schemas in
 /// sync — the JS side already speaks the provider's native shape.
 ///
-/// No `api_key` field — Option B reads the key from the OS keyring inline.
+/// No `api_key` field — the proxy reads the key from the secret vault.
 /// `deny_unknown_fields` forces atomic cutover: any caller still sending
 /// the old `api_key` field gets a deserialization error instead of silently
 /// hitting `KeyNotConfigured` (Pete's #8 must remove `api_key` from the
@@ -146,8 +140,8 @@ pub enum ProxyError {
     Stream(String),
     #[error("no API key configured for provider {provider} — set one in Agent Settings")]
     KeyNotConfigured { provider: String },
-    #[error("keyring error: {0}")]
-    Keyring(String),
+    #[error("secret storage error: {0}")]
+    Secrets(String),
 }
 
 /// Outcome of `agent_validate_credentials`. Distinguishes "provider said no"
@@ -169,73 +163,71 @@ impl serde::Serialize for ProxyError {
     }
 }
 
-/// Read the API key for a provider from the OS keyring. Wraps
-/// `keyring::Error::NoEntry` into `ProxyError::KeyNotConfigured` so callers
-/// get an actionable error message.
-fn keyring_get(provider: Provider) -> Result<Zeroizing<String>, ProxyError> {
-    let user = format!("provider:{}", provider.as_str());
-    let entry = secret_store::entry(&user)
-        .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
-    let key = Zeroizing::new(entry.get_password().map_err(|e| match e {
-        keyring::Error::NoEntry => {
-            log::warn!(
-                target: "audit",
-                "event=provider_key_missing provider={}",
-                provider.as_str()
-            );
-            ProxyError::KeyNotConfigured {
-                provider: provider.as_str().to_string(),
-            }
-        }
-        other => ProxyError::Keyring(other.to_string()),
-    })?);
-    Ok(key)
+/// The secret name of a provider's API key.
+fn secret_name(provider: Provider) -> String {
+    format!("provider:{}", provider.as_str())
 }
 
-/// Store or replace the API key for a provider in the OS keyring.
+/// Read the API key for a provider from the secret vault. A missing key is
+/// `ProxyError::KeyNotConfigured` so callers get an actionable error message.
+fn stored_key(vault: &SecretVault, provider: Provider) -> Result<Zeroizing<String>, ProxyError> {
+    let stored = vault
+        .read(&secret_name(provider))
+        .map_err(|e| ProxyError::Secrets(e.to_string()))?;
+    stored.ok_or_else(|| {
+        log::warn!(
+            target: "audit",
+            "event=provider_key_missing provider={}",
+            provider.as_str()
+        );
+        ProxyError::KeyNotConfigured {
+            provider: provider.as_str().to_string(),
+        }
+    })
+}
+
+/// Store or replace the API key for a provider in the secret vault.
 ///
-/// This and the other sync keyring commands run off the main thread (`async`): on Linux a
-/// keyring call is a D-Bus round trip and can wait on the keyring's unlock prompt.
+/// This and the other sync key commands run off the main thread (`async`): they read and
+/// write the vault file, and on Linux the vault key's first read can wait on the keyring's
+/// unlock prompt.
 #[tauri::command(async)]
-pub fn set_provider_key(provider: Provider, api_key: Zeroizing<String>) -> Result<(), ProxyError> {
-    let user = format!("provider:{}", provider.as_str());
-    let entry = secret_store::entry(&user)
-        .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
-    entry
-        .set_password(api_key.as_str())
-        .map_err(|e| ProxyError::Keyring(e.to_string()))?;
+pub fn set_provider_key(
+    vault: State<'_, Arc<SecretVault>>,
+    provider: Provider,
+    api_key: Zeroizing<String>,
+) -> Result<(), ProxyError> {
+    vault
+        .write(&secret_name(provider), api_key.as_str())
+        .map_err(|e| ProxyError::Secrets(e.to_string()))?;
     log::warn!(target: "audit", "event=provider_key_set provider={}", provider.as_str());
     Ok(())
 }
 
-/// Remove the API key for a provider from the OS keyring. Idempotent — no
-/// error if the entry was already absent.
+/// Remove the API key for a provider from the secret vault. Idempotent — no
+/// error if the key was already absent.
 #[tauri::command(async)]
-pub fn clear_provider_key(provider: Provider) -> Result<(), ProxyError> {
-    let user = format!("provider:{}", provider.as_str());
-    let entry = secret_store::entry(&user)
-        .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
-    match entry.delete_credential() {
-        Ok(()) => {}
-        Err(keyring::Error::NoEntry) => {}
-        Err(e) => return Err(ProxyError::Keyring(e.to_string())),
-    }
+pub fn clear_provider_key(
+    vault: State<'_, Arc<SecretVault>>,
+    provider: Provider,
+) -> Result<(), ProxyError> {
+    vault
+        .delete(&secret_name(provider))
+        .map_err(|e| ProxyError::Secrets(e.to_string()))?;
     log::warn!(target: "audit", "event=provider_key_cleared provider={}", provider.as_str());
     Ok(())
 }
 
-/// Check whether an API key is present in the OS keyring for a provider.
-/// Does NOT return the key.
+/// Check whether an API key is stored for a provider. Does NOT return the key.
 #[tauri::command(async)]
-pub fn is_provider_key_configured(provider: Provider) -> Result<bool, ProxyError> {
-    let user = format!("provider:{}", provider.as_str());
-    let entry = secret_store::entry(&user)
-        .map_err(|e| ProxyError::Keyring(format!("keyring init: {e}")))?;
-    match entry.get_password() {
-        Ok(_) => Ok(true),
-        Err(keyring::Error::NoEntry) => Ok(false),
-        Err(e) => Err(ProxyError::Keyring(e.to_string())),
-    }
+pub fn is_provider_key_configured(
+    vault: State<'_, Arc<SecretVault>>,
+    provider: Provider,
+) -> Result<bool, ProxyError> {
+    vault
+        .read(&secret_name(provider))
+        .map(|stored| stored.is_some())
+        .map_err(|e| ProxyError::Secrets(e.to_string()))
 }
 
 /// Tauri command: stream a chat completion. Errors that occur before the
@@ -245,10 +237,11 @@ pub fn is_provider_key_configured(provider: Provider) -> Result<bool, ProxyError
 /// (the consumer's loop ends on either kind: "error" or kind: "done").
 #[tauri::command]
 pub async fn agent_chat_completion(
+    vault: State<'_, Arc<SecretVault>>,
     request: ChatCompletionRequest,
     on_event: Channel<ChatStreamEvent>,
 ) -> Result<(), ProxyError> {
-    let api_key = keyring_get(request.provider)?;
+    let api_key = stored_key(&vault, request.provider)?;
 
     let client = http_client();
     let result = match request.provider {
@@ -280,15 +273,16 @@ pub async fn agent_chat_completion(
 /// and the same shape that's already tested green in the TS providers.
 #[tauri::command]
 pub async fn agent_validate_credentials(
+    vault: State<'_, Arc<SecretVault>>,
     provider: Provider,
 ) -> Result<ValidationOutcome, ProxyError> {
-    let api_key = keyring_get(provider)?;
+    let api_key = stored_key(&vault, provider)?;
     validate_key_against_provider(provider, &api_key).await
     // api_key Zeroizing<String> is wiped when it drops here.
 }
 
 /// Tauri command: verify-then-store flow — validate a candidate key BEFORE
-/// writing it to the OS keyring. This is the secure path for the "Verify &
+/// writing it to the secret vault. This is the secure path for the "Verify &
 /// Save" button: the caller passes the key directly, we probe the provider,
 /// and only if `Valid` does the frontend call `set_provider_key`.
 ///
@@ -305,7 +299,7 @@ pub async fn agent_validate_provided_key(
 }
 
 /// Internal: hit the provider's cheapest authenticated endpoint and map the
-/// HTTP outcome to [`ValidationOutcome`]. Shared by both the keyring-backed
+/// HTTP outcome to [`ValidationOutcome`]. Shared by both the stored-key
 /// and provided-key variants so the probe logic lives in exactly one place.
 async fn validate_key_against_provider(
     provider: Provider,
@@ -340,8 +334,11 @@ async fn validate_key_against_provider(
 /// the TS-side static list if this fails (the TS provider already does
 /// this fallback).
 #[tauri::command]
-pub async fn agent_list_models(provider: Provider) -> Result<serde_json::Value, ProxyError> {
-    let api_key = keyring_get(provider)?;
+pub async fn agent_list_models(
+    vault: State<'_, Arc<SecretVault>>,
+    provider: Provider,
+) -> Result<serde_json::Value, ProxyError> {
+    let api_key = stored_key(&vault, provider)?;
     let client = sidecar_client();
 
     let req = match provider {
@@ -624,7 +621,7 @@ mod tests {
 
     #[test]
     fn provider_as_str_matches_serde_rename() {
-        // keyring_get builds the keyring USER from provider.as_str(). If this
+        // secret_name builds the secret's name from provider.as_str(). If this
         // diverges from the serde rename, keys written under one name can't be
         // read under another. Keep both in sync.
         assert_eq!(Provider::Anthropic.as_str(), "anthropic");
@@ -632,18 +629,20 @@ mod tests {
     }
 
     #[test]
-    fn keyring_user_format_is_namespaced() {
-        // The keyring USER must be prefixed with "provider:" so it can't
-        // collide with the app's other secrets under the same service (secret_store).
+    fn secret_name_is_namespaced() {
+        // The secret's name must be prefixed with "provider:" so it can't
+        // collide with the app's other secrets in the vault (secret_store).
         for provider in [Provider::Anthropic, Provider::Openai] {
-            let user = format!("provider:{}", provider.as_str());
-            assert!(user.starts_with("provider:"), "must be namespaced");
+            assert!(
+                secret_name(provider).starts_with("provider:"),
+                "must be namespaced"
+            );
         }
     }
 
     #[test]
     fn api_key_is_zeroized_on_drop() {
-        // keyring_get returns Zeroizing<String> — this bound ensures the key
+        // stored_key returns Zeroizing<String> — this bound ensures the key
         // bytes are wiped when the returned value drops. If a future refactor
         // changes the return type to plain String this test will fail to compile.
         fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
