@@ -89,6 +89,8 @@ pub struct CommandInfo {
     pub dangerous: bool,
     pub ai_callable: bool,
     pub arguments: Vec<serde_json::Value>,
+    /// Capabilities the user must have approved before the command runs.
+    pub required_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +242,7 @@ impl PluginManifest {
                 dangerous: c.dangerous,
                 ai_callable: c.ai_callable,
                 arguments: c.arguments.clone(),
+                required_capabilities: c.required_capabilities.clone(),
             })
             .collect()
     }

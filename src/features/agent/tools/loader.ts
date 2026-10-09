@@ -14,7 +14,10 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
-import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
+import { runtimeKind, type PluginCommandInfo, type PluginInfo } from "../../plugins/types";
+import { pluginServices } from "../../plugins/web/webPluginEnvironment";
+import { webPluginHost } from "../../plugins/web/webPluginHost";
+import { detectPlatform } from "../../../core/runtime/runtime";
 import type { AiToolDefinition } from "../providers/types";
 import { ConfirmationRequiredError } from "../runtime/confirmationGate";
 import { getCurrentCommandContext } from "./commandContext";
@@ -326,18 +329,38 @@ function proposalForUser(pluginName: string, command: PluginCommandInfo): string
   });
 }
 
+/**
+ * Run a plugin command for the agent: through the Rust host's consent gates for
+ * a local process, or, for a web plugin, those same gates and then the web
+ * plugin host in this page.
+ */
+async function runAiCommand(
+  pluginId: string,
+  command: PluginCommandInfo,
+  input: unknown,
+  web: boolean,
+) {
+  if (!web)
+    return invoke<unknown>("plugin_run_ai_command", { pluginId, commandId: command.id, input });
+  await pluginServices(detectPlatform()).checkAiConsent(pluginId, command.id);
+  const output = await webPluginHost.execute({
+    pluginId,
+    commandId: command.id,
+    args: input,
+    initiator: "agent",
+  });
+  return output.payload;
+}
+
 function makePluginToolHandler(
   pluginId: string,
   pluginName: string,
   command: PluginCommandInfo,
+  web = false,
 ): AiToolHandler {
   return async (input) => {
     try {
-      const result = await invoke<unknown>("plugin_run_ai_command", {
-        pluginId,
-        commandId: command.id,
-        input,
-      });
+      const result = await runAiCommand(pluginId, command, input, web);
       return payloadToString(result);
     } catch (err) {
       // The host refuses every dangerous command the agent starts: the agent
@@ -388,7 +411,12 @@ function injectPluginTools(plugins: ReadonlyArray<PluginInfo>): void {
       }
       registerTool(
         buildPluginToolDefinition(name, plugin.display_name, command),
-        makePluginToolHandler(plugin.manifest_id, plugin.display_name, command),
+        makePluginToolHandler(
+          plugin.manifest_id,
+          plugin.display_name,
+          command,
+          runtimeKind(plugin) === "WebSandboxed",
+        ),
       );
     }
   }

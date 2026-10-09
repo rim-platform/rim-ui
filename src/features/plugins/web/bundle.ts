@@ -44,6 +44,36 @@ export interface Bundle {
   manifest: PluginManifest;
 }
 
+const MEDIA_TYPES: Record<string, string> = {
+  html: "text/html",
+  js: "text/javascript",
+  mjs: "text/javascript",
+  css: "text/css",
+  json: "application/json",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  ico: "image/x-icon",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  mp3: "audio/mpeg",
+  ogg: "audio/ogg",
+  wav: "audio/wav",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  wasm: "application/wasm",
+  txt: "text/plain",
+};
+
+/** The media type of a bundle file, from its extension. */
+export function mediaTypeOf(path: string): string {
+  const extension = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return MEDIA_TYPES[extension] ?? "application/octet-stream";
+}
+
 const encoder = new TextEncoder();
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useId } from "react";
 import { X } from "lucide-react";
 import { cn } from "./cn";
+import { trackOpenDialog } from "./hostDialogs";
 import { Z } from "./zIndex";
 
 interface DialogProps {
@@ -42,6 +43,12 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
     return () => {
       document.body.style.overflow = "";
     };
+  }, [open]);
+
+  // Plugin frames go inert while a host dialog is open.
+  useEffect(() => {
+    if (!open) return;
+    return trackOpenDialog();
   }, [open]);
 
   // Close on Escape

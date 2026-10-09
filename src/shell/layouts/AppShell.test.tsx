@@ -37,6 +37,9 @@ vi.mock("../../features/key-identity/runtime/useResumeDeviceLinks", () => ({
 vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
   usePluginPrincipalSync: () => {},
 }));
+vi.mock("../../features/plugins/web/useWebPluginRuntime", () => ({
+  useWebPluginRuntime: () => {},
+}));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
   usePluginList: () => ({ data: [] }),
 }));

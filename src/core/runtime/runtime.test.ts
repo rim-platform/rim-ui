@@ -6,6 +6,7 @@ describe("getRuntimeCapabilities", () => {
     const caps = getRuntimeCapabilities("desktop");
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(true);
+    expect(caps.webPlugins).toBe(true);
     expect(caps.agent).toBe(true);
     expect(caps.customTitleBar).toBe(true);
     expect(caps.deviceKeys).toBe(true);
@@ -16,6 +17,7 @@ describe("getRuntimeCapabilities", () => {
     const caps = getRuntimeCapabilities("web");
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(false);
+    expect(caps.webPlugins).toBe(true);
     expect(caps.agent).toBe(false);
     expect(caps.customTitleBar).toBe(false);
     expect(caps.deviceKeys).toBe(false);
@@ -33,6 +35,7 @@ describe("getRuntimeCapabilities", () => {
     const caps = getRuntimeCapabilities("mobile");
     expect(caps.dockedThreadPane).toBe(false);
     expect(caps.pluginHost).toBe(false);
+    expect(caps.webPlugins).toBe(false);
     expect(caps.agent).toBe(false);
     expect(caps.deviceLocalKeybinds).toBe(false);
     expect(caps.customTitleBar).toBe(false);
