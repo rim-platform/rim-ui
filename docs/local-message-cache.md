@@ -10,10 +10,19 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   builds a vendored OpenSSL). Files live in `<app data>/message-cache/`, one per account, named
   after a hash of (GraphQL endpoint, user id). The account is also written inside the file, so a
   database is never served to another account.
-- One random 256-bit key per installation, stored in the OS keyring (`message-cache-key-v1`).
-  All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the key is
-  lost, the unreadable files are deleted and the cache refills from the server. If the keyring
-  cannot be reached, every cache call fails softly and the timeline reads from the server.
+- One random 256-bit key per installation, stored in the OS keyring (`message-cache-key-v1`,
+  through `src-tauri/src/secret_store.rs`; on Linux that is the desktop keyring service, see
+  below). All key handling is in `key.rs`; Stage 3 re-wraps this key under the device key. If the
+  key is lost, the unreadable files are deleted and the cache refills from the server. If the
+  keyring cannot be reached, every cache call fails softly, the timeline reads from the server,
+  and the app says once per run that the local cache is off and why. The failure is kept until
+  the app restarts, so a locked keyring's unlock prompt, once dismissed, is not shown again on
+  every cache call.
+- On Linux the keyring is the Secret Service (GNOME Keyring, KWallet, KeePassXC) over D-Bus.
+  With none running, or with the keyring locked, the cache stays off with an error that says
+  so; nothing falls back to a store that would not survive a reboot. Builds before this one used
+  the kernel keyring, which a reboot clears; a key still there (updated without a reboot in
+  between) moves to the Secret Service on first read.
 - Signing out keeps the account's database on the device (it is encrypted, and history on the
   user's own device is the point of Stage 2); signing back in to the same account reuses it. A
   sync still in flight when the signed-in account changes is discarded before it is applied.
@@ -84,7 +93,8 @@ while input: input = message_cache_sync_apply(await messageChanges(input))
 
 A user who signed in on this device before can open the app without a connection:
 
-- The session record (`src-tauri/src/offline_session.rs`) is kept in the OS keyring: which
+- The session record (`src-tauri/src/offline_session.rs`) is kept in the OS keyring (through
+  `secret_store.rs`, like the cache key): which
   account was signed in to which server, or that the user signed out. No token is stored; the
   session stays in the webview's cookie. When the startup session check cannot reach the
   server, the recorded account opens offline. When the server answers that the session is no
@@ -111,10 +121,5 @@ A user who signed in on this device before can open the app without a connection
 
 - Thread panes, pins, reactions and link previews still read from the server; the feed does not
   version reactions, pins or previews, so cached copies of those are as of the last sync.
-- On Linux the app's keyring backend is the kernel keyring (`keyring`'s `linux-native`), which
-  does not survive a reboot, so the cache key is new after every reboot and the cache refills
-  from the server (and the history archive, locked on this device, asks for its passphrase in
-  Settings > History). Moving the app to the Secret Service (`linux-native-sync-persistent`) fixes
-  that for this key and the agent provider keys alike, and needs libdbus at build time.
 - Local search covers the conversations the cache follows (opened on this device, or restored
   from the history archive), not every conversation of the workspace.

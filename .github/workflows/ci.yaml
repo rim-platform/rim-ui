@@ -40,13 +40,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Tauri's Linux build dependencies (webkit2gtk 4.1 pulls in gtk3 and libsoup3);
-      # libssl-dev also serves the bundled SQLCipher in the message cache.
+      # libssl-dev also serves the bundled SQLCipher in the message cache, and libdbus-1-dev
+      # the keyring's Secret Service backend (src/secret_store.rs).
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libssl-dev \
+            libdbus-1-dev \
+            pkg-config \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev

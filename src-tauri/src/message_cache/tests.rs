@@ -1244,3 +1244,37 @@ fn the_search_index_holds_no_plaintext_on_disk() {
         "{names:?}"
     );
 }
+
+/// A keyring that cannot hand out the key (no Secret Service, a locked keyring, a dismissed
+/// unlock prompt), counting how often it is asked.
+struct UnavailableKey(Arc<Mutex<u32>>);
+
+impl KeySource for UnavailableKey {
+    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
+        *self.0.lock().unwrap() += 1;
+        Err(CacheError::Key(
+            "keyring read failed: the keyring is locked".into(),
+        ))
+    }
+}
+
+#[test]
+fn a_key_failure_is_asked_once_and_leaves_no_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let asked = Arc::new(Mutex::new(0));
+    let state = MessageCacheState::new(
+        dir.path().join("cache"),
+        Box::new(UnavailableKey(asked.clone())),
+    );
+
+    for user in ["u1", "u1", "u2"] {
+        let Err(err) = state.store(&account(user)) else {
+            panic!("a cache opened without its key");
+        };
+        assert_eq!(err.code(), "CACHE_KEY");
+        assert!(err.to_string().contains("locked"), "{err}");
+    }
+    assert_eq!(*asked.lock().unwrap(), 1);
+    let files = std::fs::read_dir(dir.path().join("cache")).unwrap().count();
+    assert_eq!(files, 0);
+}

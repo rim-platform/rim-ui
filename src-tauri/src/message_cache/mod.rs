@@ -127,7 +127,8 @@ impl AccountId {
 pub(crate) struct MessageCacheState {
     dir: PathBuf,
     key_source: Box<dyn KeySource>,
-    key: Mutex<Option<CacheKey>>,
+    /// The key, or why it could not be had, as read from the keyring the first time.
+    key: Mutex<Option<Result<CacheKey, String>>>,
     stores: Mutex<HashMap<String, Arc<Mutex<CacheStore>>>>,
 }
 
@@ -163,15 +164,20 @@ impl MessageCacheState {
     }
 
     /// The key is read from the keyring once per run. Callers hold the `stores` lock, so two
-    /// first opens cannot each create a different key.
+    /// first opens cannot each create a different key. A failure is kept for the run too: on
+    /// Linux a locked keyring answers with an unlock prompt, and a dismissed one must not come
+    /// back on every cache call. The cache stays off until the app restarts.
     fn key(&self) -> Result<CacheKey, CacheError> {
         let mut key = self.key.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(key) = key.as_ref() {
-            return Ok(key.clone());
+        if let Some(known) = key.as_ref() {
+            return known.clone().map_err(CacheError::Key);
         }
-        let loaded = self.key_source.load_or_create()?;
+        let loaded = match self.key_source.load_or_create() {
+            Err(CacheError::Key(reason)) => Err(reason),
+            other => Ok(other?),
+        };
         *key = Some(loaded.clone());
-        Ok(loaded)
+        loaded.map_err(CacheError::Key)
     }
 }
 

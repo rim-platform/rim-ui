@@ -16,7 +16,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-/// Keyring user name of the record (service is the app's `KEYRING_SERVICE`).
+/// Keyring user name of the record (service is `secret_store::SERVICE`).
 const KEYRING_USER: &str = "offline-session-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,8 +67,7 @@ pub(crate) struct KeyringRecordStore;
 
 impl KeyringRecordStore {
     fn entry() -> Result<keyring::Entry, String> {
-        keyring::Entry::new(crate::agent_proxy::KEYRING_SERVICE, KEYRING_USER)
-            .map_err(|e| format!("keyring init failed: {e}"))
+        crate::secret_store::entry(KEYRING_USER).map_err(|e| format!("keyring init failed: {e}"))
     }
 }
 
