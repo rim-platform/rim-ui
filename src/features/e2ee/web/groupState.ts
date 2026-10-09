@@ -3,9 +3,18 @@
  * runtime drives with the server's data (create, commit, settle, join, process Commits, re-add
  * requests, forget). Each runs inside the caller's unit of work; a Commit is stored as pending
  * before the caller submits it.
+ *
+ * A conversation this browser keeps state for, or saw encrypted, is pinned as encrypted (`pins`)
+ * for good, and a direct message keeps the two principals it was pinned to.
  */
 
-import type { DeviceRefView, GroupView, OutgoingCommit, Reset } from "../api/e2eeCommands";
+import type {
+  DeviceRefView,
+  GroupView,
+  MembershipEvent,
+  OutgoingCommit,
+  Reset,
+} from "../api/e2eeCommands";
 import { mlsCode, type MlsEngine } from "./mlsModule";
 import type { Work } from "./store";
 
@@ -30,7 +39,12 @@ export interface GroupState {
   lastUpdateAt: number | null;
   /** The devices that started each incarnation after the first, as far as this browser saw. */
   resets: Reset[];
+  /** The principals processed Commits added and removed, oldest first. */
+  membership: MembershipEvent[];
 }
+
+/** How many membership events a conversation keeps. */
+const MEMBERSHIP_EVENTS_KEPT = 200;
 
 interface GroupRecord extends GroupState {
   endpoint: string;
@@ -53,6 +67,7 @@ export function emptyState(): GroupState {
     readdRequestedAt: null,
     lastUpdateAt: null,
     resets: [],
+    membership: [],
   };
 }
 
@@ -86,15 +101,71 @@ export async function loadState(
     readdRequestedAt: record.readdRequestedAt,
     lastUpdateAt: record.lastUpdateAt,
     resets: record.resets,
+    membership: record.membership ?? [],
   };
 }
 
+/** What this browser pinned about a conversation (`pins`). */
+export interface PinRecord {
+  endpoint: string;
+  principalId: string;
+  workspaceId: string;
+  conversationId: string;
+  /** The server's `encryptedAt` as first seen, when it was. */
+  encryptedAt: string | null;
+  /** A direct message's two principals, sorted. */
+  dmPrincipals: string[] | null;
+}
+
+export function loadPin(
+  work: Work,
+  workspaceId: string,
+  conversationId: string,
+): Promise<PinRecord | undefined> {
+  return work.get<PinRecord>("pins", groupKey(work, workspaceId, conversationId));
+}
+
+/**
+ * Pin the conversation as encrypted. The first `encryptedAt` and the first pair of
+ * `dmPrincipals` handed in stay; later values change nothing.
+ */
+export async function pin(
+  work: Work,
+  workspaceId: string,
+  conversationId: string,
+  encryptedAt: string | null = null,
+  dmPrincipals: string[] | null = null,
+): Promise<void> {
+  const dm = dmPrincipals ? [...new Set(dmPrincipals)].sort() : null;
+  if (dm && dm.length !== 2) {
+    throw invalid("a direct message is pinned to exactly two principals");
+  }
+  const current = await loadPin(work, workspaceId, conversationId);
+  const next: PinRecord = {
+    endpoint: work.account.endpoint,
+    principalId: work.account.principalId,
+    workspaceId,
+    conversationId,
+    encryptedAt: current?.encryptedAt ?? encryptedAt,
+    dmPrincipals: current?.dmPrincipals ?? dm,
+  };
+  if (
+    current?.encryptedAt === next.encryptedAt &&
+    current.dmPrincipals?.join() === next.dmPrincipals?.join()
+  ) {
+    return;
+  }
+  work.put("pins", next);
+}
+
+/** Save the conversation's state; a conversation this browser keeps state for is pinned. */
 export async function saveState(
   work: Work,
   workspaceId: string,
   conversationId: string,
   state: GroupState,
 ): Promise<void> {
+  await pin(work, workspaceId, conversationId);
   const record = await loadRecord(work, workspaceId, conversationId);
   work.put("groups", {
     endpoint: work.account.endpoint,
@@ -106,13 +177,13 @@ export async function saveState(
   } satisfies GroupRecord);
 }
 
-/** The conversations of the workspace this browser keeps group state about. */
+/** The conversations of the workspace this browser keeps group state about or pinned. */
 export async function conversations(work: Work, workspaceId: string): Promise<string[]> {
-  const records = await work.all<GroupRecord>("groups", (r) => r.workspaceId === workspaceId);
-  return records
-    .filter((r) => r.workspaceId === workspaceId)
-    .map((r) => r.conversationId)
-    .sort();
+  const inWorkspace = (r: { workspaceId: string }) => r.workspaceId === workspaceId;
+  const records = await work.all<GroupRecord>("groups", inWorkspace);
+  const pins = await work.all<PinRecord>("pins", inWorkspace);
+  const ids = [...records, ...pins].filter(inWorkspace).map((r) => r.conversationId);
+  return [...new Set(ids)].sort();
 }
 
 /** Every conversation of the account with group state, in any workspace. */
@@ -155,6 +226,8 @@ export async function view(
   conversationId: string,
 ): Promise<GroupView> {
   const state = await loadState(work, workspaceId, conversationId);
+  const pinned = await loadPin(work, workspaceId, conversationId);
+  const held = await loadRecord(work, workspaceId, conversationId);
   const out: GroupView = {
     conversationId,
     ...state,
@@ -162,6 +235,9 @@ export async function view(
     epoch: null,
     commitPending: false,
     awaitingReadd: null,
+    pinned: Boolean(pinned ?? held),
+    pinnedEncryptedAt: pinned?.encryptedAt ?? null,
+    dmPrincipals: pinned?.dmPrincipals ?? null,
   };
   if (state.incarnation > 0) {
     const status = groupStatus(engine, conversationId, state.incarnation);
@@ -254,6 +330,28 @@ function noteReset(state: GroupState, incarnation: number, by: DeviceRefView) {
   }
 }
 
+/** The principals a Commit brought into the group or took out of it. */
+interface MembershipChange {
+  added: string[];
+  removed: string[];
+}
+
+/** Note what a Commit of `incarnation` that moved the group to `epoch` changed. */
+function noteMembership(
+  state: GroupState,
+  incarnation: number,
+  epoch: number,
+  change: MembershipChange,
+) {
+  for (const principalId of change.added) {
+    state.membership.push({ incarnation, epoch, kind: "added", principalId });
+  }
+  for (const principalId of change.removed) {
+    state.membership.push({ incarnation, epoch, kind: "removed", principalId });
+  }
+  state.membership.splice(0, Math.max(0, state.membership.length - MEMBERSHIP_EVENTS_KEPT));
+}
+
 /** Make `incarnation`, whose first Commit this browser made, the current one. */
 function promote(
   engine: MlsEngine,
@@ -293,6 +391,7 @@ export async function settle(
     const next = state.nextIncarnation;
     if (groupStatus(engine, conversationId, next)?.commitPending) {
       if (accepted) {
+        // The first Commit of an incarnation: its adds are the group, not changes to it.
         engine.commitAccepted(conversationId, next);
         promote(engine, state, conversationId, next, me);
       } else {
@@ -308,7 +407,11 @@ export async function settle(
     throw new GroupError("E2EE_NO_PENDING_COMMIT", "no commit of this device is pending");
   }
   if (accepted) {
-    engine.commitAccepted(conversationId, state.incarnation);
+    const merged = JSON.parse(engine.commitAccepted(conversationId, state.incarnation)) as {
+      epoch: number;
+      membership: MembershipChange;
+    };
+    noteMembership(state, state.incarnation, merged.epoch, merged.membership);
     state.verifyPending = true;
     state.lastUpdateAt = Date.now();
   } else {
@@ -324,7 +427,9 @@ interface Joined {
 
 /**
  * Join `incarnation` of the conversation's group from a Welcome. An older incarnation's state
- * goes; every leaf waits for verification.
+ * goes; every leaf waits for verification. A Welcome to an epoch the held state of the same
+ * incarnation already reached is refused (`E2EE_STALE_WELCOME`) unless the group waits for a
+ * re-add.
  */
 export async function join(
   work: Work,
@@ -372,13 +477,14 @@ export type CommitStep = "applied" | "skipped" | "gap" | "cannotProcess";
 type Outcome =
   | {
       kind: "applied";
+      epoch: number;
       committer: DeviceRefView | null;
-      summaryMatches: boolean;
+      membership: MembershipChange;
       toVerify: number;
       selfRemoved: boolean;
     }
-  | { kind: "ownMerged" }
-  | { kind: "cannotProcess"; reason: string };
+  | { kind: "ownMerged"; epoch: number; membership: MembershipChange }
+  | { kind: "cannotProcess"; reason: string; committer: DeviceRefView | null };
 
 /** Apply a fetched Commit to the group it names, if this browser holds it at that epoch. */
 export function applyCommit(
@@ -416,6 +522,7 @@ export function applyCommit(
     if (creating) {
       promote(engine, state, conversationId, commit.incarnation, null);
     } else {
+      noteMembership(state, commit.incarnation, outcome.epoch, outcome.membership);
       state.verifyPending = true;
       state.lastUpdateAt = Date.now();
     }
@@ -428,13 +535,15 @@ export function applyCommit(
     state.nextIncarnation = null;
     return "skipped";
   }
-  if (outcome.kind === "cannotProcess") return "cannotProcess";
-  if (outcome.selfRemoved) state.removed = true;
-  if (outcome.toVerify > 0) state.verifyPending = true;
-  if (!outcome.summaryMatches) {
-    state.misbehaved = outcome.committer;
-    state.verifyPending = true;
+  if (outcome.kind === "cannotProcess") {
+    // A Commit that broke a rule (proposals other than Add and Remove, or a summary that does
+    // not name them) was not merged: its committer misbehaved.
+    if (outcome.committer) state.misbehaved = outcome.committer;
+    return "cannotProcess";
   }
+  if (outcome.selfRemoved) state.removed = true;
+  else noteMembership(state, commit.incarnation, outcome.epoch, outcome.membership);
+  if (outcome.toVerify > 0) state.verifyPending = true;
   return "applied";
 }
 
@@ -483,13 +592,16 @@ export async function prepareReadd(
   return payload;
 }
 
-/** Forget the conversation's group state and what the store keeps about it. */
+/** Forget the conversation's group state and what the store keeps about it, but its pin. */
 export async function forget(
   work: Work,
   engine: MlsEngine,
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
+  if (await loadRecord(work, workspaceId, conversationId)) {
+    await pin(work, workspaceId, conversationId);
+  }
   const state = await loadState(work, workspaceId, conversationId);
   for (const incarnation of [state.incarnation, state.nextIncarnation]) {
     if (incarnation) engine.deleteGroup(conversationId, incarnation);

@@ -13,13 +13,17 @@
  * - `outgoing`: messages and edits until the server acknowledges them.
  * - `devices`: devices whose certificate verified, with the certified key.
  * - `accounts`: when this browser last used the account, and this device's public key.
+ * - `pins`: conversations this browser knows are encrypted, kept whatever the server says
+ *   later and when their group state goes; a direct message's two principals.
+ * - `peers`: per principal, the head of the longest key log verified here and the devices seen
+ *   revoked.
  */
 
 export const DB_NAME = "rim-e2ee";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export type StoreName =
-  "mls" | "messages" | "groups" | "sync" | "outgoing" | "devices" | "accounts";
+  "mls" | "messages" | "groups" | "sync" | "outgoing" | "devices" | "accounts" | "pins" | "peers";
 
 /** Each store's key path. */
 export const KEY_PATHS: Record<StoreName, string[]> = {
@@ -30,6 +34,8 @@ export const KEY_PATHS: Record<StoreName, string[]> = {
   outgoing: ["endpoint", "principalId", "messageId"],
   devices: ["endpoint", "principalId", "peerPrincipalId", "deviceId"],
   accounts: ["endpoint", "principalId"],
+  pins: ["endpoint", "principalId", "workspaceId", "conversationId"],
+  peers: ["endpoint", "principalId", "peerPrincipalId"],
 };
 
 /** Index of the timeline: a conversation's messages by `(sentAtUs, id)`. */
@@ -41,9 +47,11 @@ export const BY_ACCOUNT = "byAccount";
 
 let opened: { factory: IDBFactory; db: Promise<IDBDatabase> } | null = null;
 
+/** Create the stores a database of an older version lacks. */
 function upgrade(db: IDBDatabase) {
   const stores = new Map<string, IDBObjectStore>();
   for (const [name, keyPath] of Object.entries(KEY_PATHS)) {
+    if (db.objectStoreNames.contains(name)) continue;
     const store = db.createObjectStore(name, { keyPath });
     store.createIndex(BY_ACCOUNT, ["endpoint", "principalId"]);
     stores.set(name, store);

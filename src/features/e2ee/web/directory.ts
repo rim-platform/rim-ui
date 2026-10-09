@@ -2,11 +2,20 @@
  * Who a group's leaves are, in the web app: the key logs and device lists the runtime fetched
  * (`keyLog`, `principalDevices`) are replayed and checked here with WebCrypto, and the engine
  * checks every leaf against the answers; devices verified before are remembered (`devices`).
+ *
+ * What the server answers is held to what this browser saw before (`peers`): a key log must
+ * extend the head pinned for its principal (the first log verified here pins it), and a device
+ * once seen revoked stays revoked. A direct message's members are its two pinned principals.
  */
 
-import { certifiedDevice, replay } from "../../key-identity/browser/statements";
+import {
+  certifiedDevice,
+  replay,
+  verifiedRevocation,
+  type KeyHead,
+} from "../../key-identity/browser/statements";
 import type { DeviceRefView, DirectoryInput, VerifyOutcome } from "../api/e2eeCommands";
-import { loadState, readdHonoredAt, saveState } from "./groupState";
+import { loadPin, loadState, readdHonoredAt, saveState } from "./groupState";
 import type { MlsEngine, MlsModule } from "./mlsModule";
 import type { Work } from "./store";
 
@@ -31,24 +40,62 @@ interface DeviceRecord {
   deviceKey: string;
 }
 
-/** The engine's view of what the runtime fetched: replayed logs and verified certificates. */
-export async function answers(input: DirectoryInput) {
+/** What this browser keeps about a principal (`peers`). */
+interface PeerRecord {
+  endpoint: string;
+  principalId: string;
+  peerPrincipalId: string;
+  /** The seq and payload hash of the head of the longest key log verified here. */
+  headSeq: number;
+  headHash: string;
+  /** Device ids seen revoked, lowercase. */
+  revoked: string[];
+}
+
+function peerKey(work: Work, peerPrincipalId: string): IDBValidKey {
+  return [work.account.endpoint, work.account.principalId, peerPrincipalId];
+}
+
+/** Whether `head` is the pinned head or a log that extends it. */
+function extendsPin(pin: PeerRecord, head: KeyHead): boolean {
+  return head.hashes[pin.headSeq] === pin.headHash;
+}
+
+/**
+ * The engine's view of what the runtime fetched: replayed logs, verified certificates, revoked
+ * devices, held to the heads and revocations pinned in `peers`. With `save`, pins that moved and
+ * revocations seen are stored. `forked` names the principals whose log does not extend its pin.
+ */
+export async function answers(
+  work: Work,
+  input: DirectoryInput,
+  { save, dmPrincipals }: { save: boolean; dmPrincipals: string[] | null },
+) {
   const fetched: string[] = [];
   const invalidLogs: string[] = [];
+  const forked: string[] = [];
   const devices: DeviceAnswer[] = [];
   for (const principal of input.principals) {
-    fetched.push(principal.principalId);
-    let head;
+    const { principalId } = principal;
+    fetched.push(principalId);
+    let head: KeyHead;
     try {
       head = await replay(principal.keyLog);
     } catch {
-      invalidLogs.push(principal.principalId);
+      invalidLogs.push(principalId);
       continue;
     }
-    if (head.principalId !== principal.principalId) {
-      invalidLogs.push(principal.principalId);
+    if (head.principalId !== principalId) {
+      invalidLogs.push(principalId);
       continue;
     }
+    const pinned = await work.get<PeerRecord>("peers", peerKey(work, principalId));
+    if (pinned && !extendsPin(pinned, head)) {
+      invalidLogs.push(principalId);
+      forked.push(principalId);
+      continue;
+    }
+    const revoked = new Set(pinned?.revoked ?? []);
     for (const device of principal.devices) {
       let card;
       try {
@@ -57,19 +104,50 @@ export async function answers(input: DirectoryInput) {
         continue;
       }
       if (card.deviceId !== device.deviceId) continue;
+      const deviceId = device.deviceId.toLowerCase();
+      const signed = device.revocation
+        ? await verifiedRevocation(device.revocation, head, device.deviceId, card.deviceKey)
+        : null;
+      if (device.revokedAt || signed === true) revoked.add(deviceId);
+      // An unverifiable revocation still keeps the device out, but is not remembered.
       devices.push(
-        device.revokedAt || device.revocation
-          ? { principalId: principal.principalId, deviceId: device.deviceId, status: "revoked" }
+        revoked.has(deviceId) || signed !== null
+          ? { principalId, deviceId: device.deviceId, status: "revoked" }
           : {
-              principalId: principal.principalId,
+              principalId,
               deviceId: device.deviceId,
               status: "certified",
               deviceKey: card.deviceKey,
             },
       );
     }
+    const next: PeerRecord = {
+      endpoint: work.account.endpoint,
+      principalId: work.account.principalId,
+      peerPrincipalId: principalId,
+      headSeq: head.seq,
+      headHash: head.hash,
+      revoked: [...revoked].sort(),
+    };
+    const moved =
+      pinned?.headSeq !== next.headSeq ||
+      pinned.headHash !== next.headHash ||
+      pinned.revoked.join() !== next.revoked.join();
+    if (save && moved) work.put("peers", next);
   }
-  return { members: input.members, fetched, invalidLogs, devices };
+  // Devices remembered as revoked stay revoked whatever the server answers now.
+  for (const peer of await work.all<PeerRecord>("peers")) {
+    for (const deviceId of peer.revoked) {
+      const known = devices.some(
+        (d) => d.principalId === peer.peerPrincipalId && d.deviceId.toLowerCase() === deviceId,
+      );
+      if (!known) devices.push({ principalId: peer.peerPrincipalId, deviceId, status: "revoked" });
+    }
+  }
+  const members = dmPrincipals
+    ? input.members.filter((m) => dmPrincipals.includes(m))
+    : input.members;
+  return { members, fetched, invalidLogs, devices, forked };
 }
 
 async function remembered(work: Work): Promise<KnownDevice[]> {
@@ -100,7 +178,19 @@ export async function verify(
     await saveState(work, workspaceId, conversationId, state);
     return { missing: [], unverified: [] };
   }
-  const directory = { ...(await answers(input)), remembered: await remembered(work) };
+  const dmPrincipals = (await loadPin(work, workspaceId, conversationId))?.dmPrincipals ?? null;
+  const { forked, ...found } = await answers(work, input, { save: true, dmPrincipals });
+  const revokedHere = new Set(
+    found.devices
+      .filter((d) => d.status === "revoked")
+      .map((d) => `${d.principalId}\n${d.deviceId.toLowerCase()}`),
+  );
+  const directory = {
+    ...found,
+    remembered: (await remembered(work)).filter(
+      (d) => !revokedHere.has(`${d.principalId}\n${d.deviceId.toLowerCase()}`),
+    ),
+  };
   let outcome: VerifyOutcome & { verified: KnownDevice[] };
   try {
     outcome = JSON.parse(
@@ -128,7 +218,9 @@ export async function verify(
       deviceKey: device.deviceKey,
     } satisfies DeviceRecord);
   }
-  state.unverified = outcome.unverified;
+  state.unverified = outcome.unverified.map((u) =>
+    forked.includes(u.principalId) ? { ...u, reason: "keyLogForked" } : u,
+  );
   state.verifyPending = false;
   if (state.unverified.length === 0) state.misbehaved = null;
   await saveState(work, workspaceId, conversationId, state);
@@ -161,7 +253,8 @@ export async function honorableReadds(
   input: DirectoryInput,
 ): Promise<DeviceRefView[]> {
   const state = await loadState(work, workspaceId, conversationId);
-  const { devices } = await answers(input);
+  const dmPrincipals = (await loadPin(work, workspaceId, conversationId))?.dmPrincipals ?? null;
+  const { devices } = await answers(work, input, { save: false, dmPrincipals });
   const honorable: DeviceRefView[] = [];
   for (const request of requests) {
     const device = devices.find(

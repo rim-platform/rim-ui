@@ -11,6 +11,7 @@ import type { MessageChangesInput } from "../core/graphql/generated/schema-types
 import { insert } from "../features/key-identity/browser/keyStore";
 import {
   CONTEXT,
+  payloadHash,
   principalId,
   sign,
   type Statement,
@@ -51,7 +52,8 @@ export class TestPrincipal {
   private constructor(
     readonly principalId: string,
     readonly keyLog: Statement[],
-    private readonly identity: CryptoKey,
+    private identity: CryptoKey,
+    private readonly recoveryKey: string,
   ) {}
 
   static async create(seed: number): Promise<TestPrincipal> {
@@ -66,7 +68,49 @@ export class TestPrincipal {
       createdAt: "2026-10-09T00:00:00Z",
     });
     const inception = await sign(identity.privateKey, CONTEXT.keyLog, payload);
-    return new TestPrincipal(await principalId(payload), [inception], identity.privateKey);
+    return new TestPrincipal(
+      await principalId(payload),
+      [inception],
+      identity.privateKey,
+      recovery.publicKey,
+    );
+  }
+
+  /** An identity rotation to the key of `seed`, extending `log` (the key log by default). */
+  async rotation(seed: number, log: Statement[] = this.keyLog): Promise<Statement> {
+    const next = await keyFromSeed(seed);
+    const head = log[log.length - 1];
+    const payload = JSON.stringify({
+      v: 2,
+      type: "rotate",
+      principalId: this.principalId,
+      seq: log.length,
+      prev: await payloadHash(head.payload),
+      identityKey: next.publicKey,
+      recoveryKey: this.recoveryKey,
+      signer: "identity",
+      createdAt: "2026-10-09T00:00:00Z",
+    });
+    return sign(this.identity, CONTEXT.keyLog, payload);
+  }
+
+  /** Rotate the identity key to the key of `seed`; devices certified before stay. */
+  async rotate(seed: number) {
+    this.keyLog.push(await this.rotation(seed));
+    this.identity = (await keyFromSeed(seed)).privateKey;
+  }
+
+  /** A revocation of `deviceId` signed by the current identity key. */
+  signedRevocation(deviceId: string): Promise<Statement> {
+    const payload = JSON.stringify({
+      v: 2,
+      type: "device-revoke",
+      principalId: this.principalId,
+      deviceId,
+      signer: "identity",
+      issuedAt: "2026-10-09T01:00:00Z",
+    });
+    return sign(this.identity, CONTEXT.deviceRevoke, payload);
   }
 
   async certify(deviceId: string, deviceKey: string) {
@@ -154,6 +198,17 @@ export class TestDevice {
       1,
     );
     return { ...this.ref, keyPackage };
+  }
+
+  /** A last-resort key package: its private key stays after a join. */
+  async lastResortKeyPackage() {
+    const packages = await webE2eeCommands.keyPackages(this.account, {
+      cipherSuite: 0x4f,
+      available: 20,
+      lastResortNotAfter: null,
+      lastResortClaims: 0,
+    });
+    return { ...this.ref, keyPackage: packages[packages.length - 1] };
   }
 
   author() {
@@ -306,6 +361,16 @@ export class TestServer {
         encryption: null,
       },
     });
+  }
+
+  /** Change a row's message in place, as a misbehaving server might, with a new version. */
+  tamper(id: string, change: (message: Record<string, unknown>) => void) {
+    const row = this.rows.get(id);
+    if (!row) return;
+    const message = structuredClone(row.message);
+    change(message);
+    this.version += 1;
+    this.rows.set(id, { version: this.version, message });
   }
 
   delete(id: string) {
