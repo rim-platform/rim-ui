@@ -65,7 +65,8 @@ and follows restored conversations from the archive's cursor. Restored rows are 
 the archive they came from (`restored_from`), so they are not exported back into it but are
 exported to any other archive the device moves to. The format and the rules are in
 `docs/specs/history-archive-v1.md`; the code is `src-tauri/src/history_archive/` and
-`message_cache/archive.rs`.
+`message_cache/archive.rs`. The archive also keeps a sealed copy of the identity key and a wrap
+of the archive key under it: `docs/identity-key-backup.md`.
 
 ## Sync
 

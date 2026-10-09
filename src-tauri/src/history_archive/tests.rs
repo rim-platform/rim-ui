@@ -152,6 +152,11 @@ impl Device {
     pub(crate) fn device_id(&self) -> String {
         self.archive.device_id().unwrap()
     }
+
+    /// Lose the archive key, as when the OS keyring is reset.
+    pub(crate) fn forget_key(&self, archive_id: &str) {
+        self.keys.delete(archive_id).unwrap();
+    }
 }
 
 /// Every file under `dir`, relative, `/`-separated, with its bytes.

@@ -93,7 +93,8 @@ the next start finishes the link, or revokes the device if the link expired mean
 ## Not in v1
 
 QR scanning, the archive key in the answer, moving the identity key, short typed codes, and a
-subscription instead of polling: see the spec's "Deferred" section.
+subscription instead of polling: see the spec's "Deferred" section. A linked device can take the
+identity key over from its backup in the history archive instead: `identity-key-backup.md`.
 
 ## Web client
 

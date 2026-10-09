@@ -14,7 +14,8 @@
 //!
 //! [`provider`] holds the storage trait and the local folder provider, which also covers
 //! folders kept in sync by Dropbox, Google Drive or Syncthing clients. [`cloud`] holds the
-//! Google Drive and Dropbox API providers and their sign-in.
+//! Google Drive and Dropbox API providers and their sign-in. [`identity`] keeps each device's
+//! backup of the identity key and its wraps of the archive key under the identity key.
 
 pub(crate) mod commands;
 
@@ -22,6 +23,7 @@ mod archive;
 mod cloud;
 mod crypto;
 pub(crate) mod format;
+pub(crate) mod identity;
 pub(crate) mod merge;
 mod provider;
 
@@ -71,6 +73,8 @@ pub(crate) enum ArchiveError {
     NotConfigured,
     #[error("the history archive is locked on this device; enter its passphrase")]
     Locked,
+    #[error("the archive holds no copy of its key that this device's identity key opens")]
+    NoIdentityWrap,
     #[error("archive key storage: {0}")]
     Key(String),
     #[error("invalid archive input: {0}")]
@@ -98,6 +102,7 @@ impl ArchiveError {
             Self::Mismatch => "ARCHIVE_MISMATCH",
             Self::NotConfigured => "ARCHIVE_NOT_CONFIGURED",
             Self::Locked => "ARCHIVE_LOCKED",
+            Self::NoIdentityWrap => "ARCHIVE_NO_IDENTITY_WRAP",
             Self::Key(_) => "ARCHIVE_KEY",
             Self::Invalid(_) => "INVALID_ARGS",
             Self::CloudAuth(_) => "ARCHIVE_CLOUD_AUTH",
@@ -654,4 +659,4 @@ pub(crate) fn init(app_data_dir: &Path) -> HistoryArchiveState {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

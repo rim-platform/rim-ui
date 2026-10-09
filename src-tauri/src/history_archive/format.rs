@@ -6,6 +6,8 @@
 //!   accounts/<account tag>/devices/<device id>/
 //!     head.rimx                            the device's list of its segments (sealed JSON)
 //!     seg-0000000001.rimx                  immutable segments (sealed JSON lines)
+//!     identity-backup.rimx                 the identity key, sealed under the backup key
+//!   devices/<device id>/key-wraps.json     the archive key wrapped under identity keys
 //! ```
 //!
 //! A device writes only inside its own `devices/<device id>/` folder, and never changes a
@@ -197,6 +199,8 @@ fn b64(value: &str) -> Result<Vec<u8>, ArchiveError> {
 pub(crate) enum FileKind {
     Segment = 1,
     Head = 2,
+    /// A device's backup of an account's identity key, sealed under the backup key.
+    IdentityBackup = 3,
 }
 
 /// Where a sealed file belongs. It is part of the authenticated data, so a file copied or
@@ -231,17 +235,39 @@ fn file_aad(header: &[u8], place: &FilePlace<'_>) -> Vec<u8> {
     aad
 }
 
-/// `RIMX | envelope version | kind | nonce | ciphertext`, the first 30 bytes authenticated.
+/// `RIMX | envelope version | kind | nonce | ciphertext`, the first 30 bytes authenticated,
+/// sealed under the archive's file key.
 pub(crate) fn seal_file(
     key: &ArchiveKey,
     kind: FileKind,
     place: &FilePlace<'_>,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ArchiveError> {
+    seal_file_under(&key.file_key(), kind, place, plaintext)
+}
+
+/// [`seal_file`] under another cipher key, with a fresh random nonce.
+pub(crate) fn seal_file_under(
+    cipher_key: &[u8; 32],
+    kind: FileKind,
+    place: &FilePlace<'_>,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, ArchiveError> {
     let nonce = crypto::random_bytes::<NONCE_LEN>()?;
-    let header = header(kind, &nonce);
+    seal_file_with_nonce(cipher_key, &nonce, kind, place, plaintext)
+}
+
+/// [`seal_file_under`] with a nonce the caller drew (and must never reuse under the same key).
+pub(crate) fn seal_file_with_nonce(
+    cipher_key: &[u8; 32],
+    nonce: &[u8; NONCE_LEN],
+    kind: FileKind,
+    place: &FilePlace<'_>,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, ArchiveError> {
+    let header = header(kind, nonce);
     let aad = file_aad(&header, place);
-    let ciphertext = crypto::seal_with_nonce(&key.file_key(), &nonce, &aad, plaintext)?;
+    let ciphertext = crypto::seal_with_nonce(cipher_key, nonce, &aad, plaintext)?;
     let mut out = header;
     out.extend_from_slice(&ciphertext);
     Ok(out)
@@ -249,6 +275,16 @@ pub(crate) fn seal_file(
 
 pub(crate) fn open_file(
     key: &ArchiveKey,
+    kind: FileKind,
+    place: &FilePlace<'_>,
+    bytes: &[u8],
+) -> Result<zeroize::Zeroizing<Vec<u8>>, ArchiveError> {
+    open_file_under(&key.file_key(), kind, place, bytes)
+}
+
+/// [`open_file`] under another cipher key.
+pub(crate) fn open_file_under(
+    cipher_key: &[u8; 32],
     kind: FileKind,
     place: &FilePlace<'_>,
     bytes: &[u8],
@@ -267,7 +303,7 @@ pub(crate) fn open_file(
     }
     let (header, ciphertext) = bytes.split_at(HEADER_LEN);
     let aad = file_aad(header, place);
-    crypto::open(&key.file_key(), &header[6..], &aad, ciphertext)
+    crypto::open(cipher_key, &header[6..], &aad, ciphertext)
 }
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
@@ -277,6 +313,9 @@ pub(crate) fn devices_dir(account_tag: &str) -> String {
 }
 
 pub(crate) const HEAD_NAME: &str = "head.rimx";
+
+/// A device's backup of the account's identity key, next to its head.
+pub(crate) const IDENTITY_BACKUP_NAME: &str = "identity-backup.rimx";
 
 pub(crate) fn segment_name(seq: u64) -> String {
     format!("seg-{seq:010}.rimx")

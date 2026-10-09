@@ -98,6 +98,10 @@ impl Archive {
         &self.key
     }
 
+    pub(crate) fn provider(&self) -> &dyn ArchiveProvider {
+        self.provider.as_ref()
+    }
+
     /// One account's part of the archive. `account_label` is the cache's account label.
     pub(crate) fn account(&self, account_label: &str) -> AccountArchive<'_> {
         AccountArchive {

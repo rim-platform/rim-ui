@@ -15,6 +15,13 @@ vi.mock("../../messages/runtime/messageCacheSync", () => ({
   requestCacheSync: (...args: unknown[]) => mockRequestCacheSync(...args),
 }));
 
+const identityBackup = vi.hoisted(() => ({
+  backUpIdentityKeyQuietly: vi.fn(),
+  canUnlockArchiveWithKeys: vi.fn(),
+  unlockArchiveWithKeys: vi.fn(),
+}));
+vi.mock("../../key-identity/api/identityBackup", () => identityBackup);
+
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { ArchiveStatus } from "../api/historyArchive";
@@ -85,6 +92,9 @@ describe("HistoryArchiveSettings", () => {
     tauri.available = true;
     mockInvoke.mockReset();
     mockRequestCacheSync.mockReset();
+    Object.values(identityBackup).forEach((fn) => fn.mockReset());
+    identityBackup.backUpIdentityKeyQuietly.mockResolvedValue(undefined);
+    identityBackup.canUnlockArchiveWithKeys.mockResolvedValue(false);
     useAuthStore.setState({ session: { userId: "ada" } });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
   });
@@ -132,6 +142,7 @@ describe("HistoryArchiveSettings", () => {
     // A new archive has nothing to restore; this device's first backup starts at once.
     expect(mockInvoke).not.toHaveBeenCalledWith("history_archive_restore", expect.anything());
     expect(mockInvoke).toHaveBeenCalledWith("history_archive_export", expect.anything());
+    expect(identityBackup.backUpIdentityKeyQuietly).toHaveBeenCalled();
   });
 
   it("joins an existing archive with its passphrase and restores from it", async () => {
@@ -280,6 +291,35 @@ describe("HistoryArchiveSettings", () => {
     type("Passphrase", "correct horse battery staple");
     fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
     expect(await screen.findByText("Backing up to")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Unlock with this device's keys" }),
+    ).not.toBeInTheDocument();
+    // The identity key is backed up to the archive it can now write to.
+    expect(identityBackup.backUpIdentityKeyQuietly).toHaveBeenCalled();
+  });
+
+  it("unlocks with this device's keys when its identity key opens the archive", async () => {
+    backend({ history_archive_status: { ...connected, unlocked: false } });
+    identityBackup.canUnlockArchiveWithKeys.mockResolvedValue(true);
+    identityBackup.unlockArchiveWithKeys
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "backend_error", code: "ARCHIVE_NO_IDENTITY_WRAP", message: "no wrap" },
+      })
+      .mockResolvedValueOnce({ ok: true, value: connected });
+    renderSettings();
+
+    const withKeys = await screen.findByRole("button", { name: "Unlock with this device's keys" });
+    expect(identityBackup.canUnlockArchiveWithKeys).toHaveBeenCalledWith({
+      endpoint: expect.any(String),
+      userId: "ada",
+    });
+    fireEvent.click(withKeys);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/keys do not open this archive/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with this device's keys" }));
+    expect(await screen.findByText("Backing up to")).toBeInTheDocument();
+    expect(identityBackup.unlockArchiveWithKeys).toHaveBeenCalledTimes(2);
   });
 
   it("stops backing up and offers the setup again", async () => {

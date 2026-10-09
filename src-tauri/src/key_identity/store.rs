@@ -122,6 +122,10 @@ pub(crate) struct KeyRecord {
     /// A new identity key sent in a rotation the server has not confirmed yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pending_identity_seed: Option<Zeroizing<String>>,
+    /// base64url of the identity backup key, on a device that saw the recovery kit's secret
+    /// (it enrolled, recovered or took over the account) or was given it later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) backup_key: Option<Zeroizing<String>>,
     /// The key log seq the pending rotation creates. Until a verified log reaches it, the
     /// pending key is kept: a log older than the rotation says nothing about it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -305,6 +309,7 @@ mod tests {
             identity_seed: None,
             pending_identity_seed: None,
             pending_identity_seq: None,
+            backup_key: None,
             confirmed: false,
             replaced: None,
         }
