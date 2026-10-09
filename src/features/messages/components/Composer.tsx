@@ -33,8 +33,9 @@ import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { useMyTimeout } from "../../workspaces/hooks/useMyTimeout";
 import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import { useSlowModeStore } from "../state/useSlowModeStore";
+import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { ComposerInput } from "./ComposerInput";
-import { SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
+import { OfflineComposerNotice, SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
 
 interface PendingFile {
@@ -93,6 +94,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   // Track 1.2: a timed-out viewer reads but cannot write; slow mode spaces out members'
   // messages (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);
+  const offline = useOfflineStore((s) => s.offline);
   const isModerator = useCanModerate(workspaceId);
   const slowModeSeconds = conversation?.slowModeSeconds ?? 0;
   const slowModeBlockedUntil = useSlowModeStore((s) => s.blockedUntil[conversationId]);
@@ -169,7 +171,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
   }
 
   async function handleSubmit() {
-    if (timedOutUntil) return;
+    if (timedOutUntil || offline) return;
     const unsentText = text;
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
@@ -358,6 +360,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
       )}
     >
       {timedOutUntil && <TimedOutBanner until={timedOutUntil} />}
+      {offline && !timedOutUntil && <OfflineComposerNotice />}
       <SlowModeIndicator
         seconds={slowModeSeconds}
         blockedUntil={slowModeBlockedUntil}
@@ -389,7 +392,7 @@ function MessageComposer({ workspaceId, conversationId }: ComposerProps) {
           saveDraftDebounced={saveDraftDebounced}
           isSubmitting={send.isPending}
           isUploading={isUploading}
-          canSubmit={!!(text.trim() || pendingFiles.length > 0)}
+          canSubmit={!offline && !!(text.trim() || pendingFiles.length > 0)}
           textareaRef={textareaRef}
           mentionMapRef={mentionMapRef}
           serverMembers={serverMembers}

@@ -36,10 +36,11 @@ sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libdbus-1-dev pkg-config \
 
 On Fedora: `webkit2gtk4.1-devel openssl-devel dbus-devel pkgconf-pkg-config libappindicator-gtk3-devel librsvg2-devel libxdo-devel`.
 
-At run time the app keeps its secrets (the message cache key, history archive keys, AI provider
-keys) in the desktop keyring service, the Secret Service provided by GNOME Keyring, KWallet or
-KeePassXC. Without one running in the session, saving an AI key fails and the local message
-cache stays off, each with an error that says so.
+At run time the app keeps its secrets (the message cache key, history archive keys, the offline
+session record, AI provider keys) in the desktop keyring service, the Secret Service provided by
+GNOME Keyring, KWallet or KeePassXC. Without one running in the session, saving an AI key fails
+and the local message cache stays off, each with an error that says so, and the app cannot open
+offline.
 
 ## Commands
 

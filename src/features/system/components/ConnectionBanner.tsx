@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { useConnectionStore } from "../state/useConnectionStore";
 import { onWsConnected, onWsDisconnected } from "../../../core/graphql/wsClient";
+import { useOfflineStore } from "../../offline/state/useOfflineStore";
 
 export function ConnectionBanner() {
   const status = useConnectionStore((s) => s.status);
+  // While the app runs offline, `OfflineBanner` says so instead.
+  const offline = useOfflineStore((s) => s.offline);
   const setStatus = useConnectionStore((s) => s.setStatus);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hadDisconnectRef = useRef(false);
@@ -41,6 +44,8 @@ export function ConnectionBanner() {
       }
     };
   }, [setStatus]);
+
+  if (offline) return null;
 
   if (status === "disconnected") {
     return (

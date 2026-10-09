@@ -58,6 +58,8 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
     staleTime: Infinity,
     gcTime: 60_000,
     retry: false,
+    // A local read: it runs whatever the network state.
+    networkMode: "always",
     queryFn: async () => {
       const account = currentCacheAccount();
       if (!account) return null;
@@ -70,6 +72,8 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
     queryKey: queryKeys.messages(workspaceId, conversationId),
     enabled: hasConversation,
     staleTime: 10_000,
+    // Runs offline too, so a page the server cannot be reached for comes from the cache.
+    networkMode: "offlineFirst",
     initialPageParam: null as MessageCursor | null,
     placeholderData: cachedPage
       ? ({ pages: [cachedPage], pageParams: [null] } as InfiniteData<

@@ -7,10 +7,11 @@ use rusqlite::{params, Connection, ErrorCode, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::key::CacheKey;
+use super::snapshot::SCHEMA_SNAPSHOT;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 
 /// Schema v1: the cache (PR 9).
 ///
@@ -246,7 +247,12 @@ impl CacheStore {
             )));
         }
         // Each step commits with its version, so an interrupted upgrade resumes at that step.
-        for (target, sql) in [(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)] {
+        for (target, sql) in [
+            (1, SCHEMA_V1),
+            (2, SCHEMA_V2),
+            (3, SCHEMA_V3),
+            (4, SCHEMA_SNAPSHOT),
+        ] {
             if version < target {
                 let tx = self.conn.unchecked_transaction()?;
                 tx.execute_batch(sql)?;
