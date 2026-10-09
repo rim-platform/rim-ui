@@ -557,3 +557,142 @@ fn a_settle_never_removes_the_keys_of_an_enrollment_still_in_flight() {
         .unwrap();
     assert!(local.confirmed && local.has_identity_key);
 }
+
+#[test]
+fn a_signup_stores_the_keys_before_the_account_exists_and_settles_with_its_user_id() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    let statements = state
+        .sign_signup(&draft.draft_id, ENDPOINT, "  ada  ", &challenge())
+        .unwrap();
+
+    let head = replay(&statements.key_log).unwrap();
+    assert_eq!(head.principal_id, draft.principal_id);
+    assert!(verify(
+        &statements.device,
+        context::DEVICE,
+        &head.identity_key,
+        2
+    ));
+    let device_key = payload_field(&statements.device, "deviceKey");
+    assert!(verify(
+        &statements.proof,
+        context::LOGIN,
+        device_key.as_str().unwrap(),
+        2
+    ));
+    assert_eq!(
+        payload_field(&statements.proof, "principalId"),
+        draft.principal_id.as_str()
+    );
+    assert_eq!(
+        payload_field(&statements.proof, "audience"),
+        "localhost:8080"
+    );
+
+    // Stored and listed before the server answers, with no user id yet, so an answer that is
+    // lost still leaves a key to sign in with.
+    let accounts = state.accounts(ENDPOINT).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].user_id, None);
+    assert_eq!(accounts[0].username.as_deref(), Some("ada"));
+    assert!(accounts[0].has_identity_key && !accounts[0].confirmed);
+
+    // The server answered with the new user id: settling links and confirms the keys and
+    // finishes the draft.
+    let ada = ServerAccount {
+        endpoint: ENDPOINT.into(),
+        user_id: "u-ada".into(),
+        username: "ada".into(),
+    };
+    let local = state
+        .settle(&ada, Some(draft.principal_id.as_str()))
+        .unwrap()
+        .unwrap();
+    assert!(local.confirmed && local.has_identity_key);
+    assert_eq!(local.user_id.as_deref(), Some("u-ada"));
+    assert_eq!(state.accounts(ENDPOINT).unwrap().len(), 1);
+    assert!(matches!(
+        state.sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge()),
+        Err(KeyIdentityError::NoDraft)
+    ));
+}
+
+#[test]
+fn a_refused_signup_removes_its_keys_and_a_retry_signs_the_same_keys_again() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    let first = state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+
+    state.remove_draft_keys(&draft.draft_id).unwrap();
+    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
+    assert!(matches!(
+        state.record(&draft.principal_id),
+        Err(KeyIdentityError::NoKeys)
+    ));
+
+    // Another username, the same keys: the recovery kit already shown stays theirs.
+    let second = state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada2", &challenge())
+        .unwrap();
+    assert_eq!(first.key_log, second.key_log);
+    assert_eq!(first.device, second.device);
+    let accounts = state.accounts(ENDPOINT).unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].username.as_deref(), Some("ada2"));
+
+    // Discarding drops the draft with its keys.
+    state.discard_enrollment(&draft.draft_id).unwrap();
+    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
+    assert!(matches!(
+        state.remove_draft_keys(&draft.draft_id),
+        Err(KeyIdentityError::NoDraft)
+    ));
+}
+
+#[test]
+fn removing_a_drafts_keys_never_touches_confirmed_keys() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    // An earlier attempt landed and was confirmed while this draft is still held.
+    let ada = ServerAccount {
+        endpoint: ENDPOINT.into(),
+        user_id: "u-ada".into(),
+        username: "ada".into(),
+    };
+    let drafts_before = state.drafts.lock().unwrap().len();
+    state
+        .keys()
+        .put_record(&KeyRecord {
+            confirmed: true,
+            ..state.record(&draft.principal_id).unwrap()
+        })
+        .unwrap();
+    state.remove_draft_keys(&draft.draft_id).unwrap();
+    assert!(state.record(&draft.principal_id).is_ok());
+    assert_eq!(state.drafts.lock().unwrap().len(), drafts_before);
+    assert!(state
+        .settle(&ada, Some(draft.principal_id.as_str()))
+        .unwrap()
+        .is_some());
+}
+
+#[test]
+fn a_signup_needs_a_username_and_a_server_url() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    assert!(matches!(
+        state.sign_signup(&draft.draft_id, ENDPOINT, "   ", &challenge()),
+        Err(KeyIdentityError::Invalid(_))
+    ));
+    assert!(matches!(
+        state.sign_signup(&draft.draft_id, "/api", "ada", &challenge()),
+        Err(KeyIdentityError::Invalid(_))
+    ));
+    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
+}

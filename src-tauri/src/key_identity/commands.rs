@@ -59,6 +59,31 @@ pub async fn key_identity_sign_enrollment(
     .await
 }
 
+/// Store a draft's keys for a new account and sign what `signupWithKey` needs over
+/// `challenge`.
+#[tauri::command]
+pub async fn key_identity_sign_signup(
+    state: State<'_, KeyIdentityState>,
+    draft_id: String,
+    endpoint: String,
+    username: String,
+    challenge: Challenge,
+) -> Result<EnrollmentStatements, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.sign_signup(&draft_id, &endpoint, &username, &challenge)
+    })
+    .await
+}
+
+/// Remove the keys a refused attempt stored, keeping the draft for a retry.
+#[tauri::command]
+pub async fn key_identity_remove_draft_keys(
+    state: State<'_, KeyIdentityState>,
+    draft_id: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| s.remove_draft_keys(&draft_id)).await
+}
+
 /// Cancel an enrollment, removing its keys unless the server confirmed them.
 #[tauri::command]
 pub async fn key_identity_discard_enrollment(
