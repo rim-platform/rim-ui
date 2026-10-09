@@ -21,8 +21,10 @@ const api = vi.hoisted(() => ({
   profileCardIsStale: vi.fn(),
 }));
 const deviceKeys = vi.hoisted(() => ({ value: true }));
+const sessions = vi.hoisted(() => ({ logoutOtherSessions: vi.fn() }));
 
 vi.mock("../api/keyIdentity", () => api);
+vi.mock("../../auth/api/sessions", () => sessions);
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
 }));
@@ -106,6 +108,7 @@ describe("KeyIdentitySettings", () => {
   beforeEach(() => {
     deviceKeys.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
+    sessions.logoutOtherSessions.mockReset();
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.abandonEnrollment.mockResolvedValue(undefined);
@@ -137,6 +140,34 @@ describe("KeyIdentitySettings", () => {
     // Once enrolled, the phrase is no longer on screen.
     await waitFor(() => expect(screen.queryByLabelText("Recovery phrase")).toBeNull());
     expect(screen.queryByText("liar")).toBeNull();
+  });
+
+  it("offers to sign out the other sessions once key sign-in is on", async () => {
+    api.fetchMyKeyIdentity.mockResolvedValueOnce(notEnrolled).mockResolvedValue(enrolled);
+    api.beginEnrollment.mockResolvedValue(draft);
+    api.completeEnrollment.mockResolvedValue(undefined);
+    api.syncKeyLog.mockResolvedValue({
+      principalId: "rimp1_alice",
+      seq: 0,
+      holdsIdentityKey: true,
+    });
+    api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
+    sessions.logoutOtherSessions.mockResolvedValue(2);
+    renderSettings();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /create keys/i }));
+    await userEvent.click(await screen.findByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: /turn on key sign-in/i }));
+
+    expect(await screen.findByText("rimp1_alice")).toBeInTheDocument();
+    expect(screen.getByText(/password sessions opened before the key/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /sign out other sessions/i }));
+
+    expect(sessions.logoutOtherSessions).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("status")).toHaveTextContent("Signed out 2 other sessions.");
   });
 
   it("shows the phrase as 12 numbered words with the account id, and copies the whole kit", async () => {
@@ -290,6 +321,8 @@ describe("KeyIdentitySettings", () => {
     expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /replace identity key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /link a device/i })).toBeNull();
+    // The offer to sign out other sessions follows an enrollment made here, not every visit.
+    expect(screen.queryByRole("button", { name: /sign out other sessions/i })).toBeNull();
   });
 
   it("only explains key sign-in in the web app", async () => {
