@@ -130,6 +130,34 @@ New DMs and groups are created with `encrypted: true` when every member has a de
 for encryption (`PrincipalDevice.mlsActive`); existing ones are upgraded by an eligible member's
 desktop when it opens them and everyone is ready.
 
+## Plugins, the agent, pipelines and lenses
+
+The server cannot read an encrypted conversation, so whatever reads its text does it on this
+device, and only when the person allowed it.
+
+- **Plugins** read and post through the client message service (`docs/plugin-chat-methods.md`):
+  reads come from the cache, posts go through the encrypted send path. An encrypted DM or group
+  needs `chat.read.encrypted` or `chat.write.encrypted` on top of the plain capability, each
+  with its own consent line, and the plugin's Activity in Settings counts the encrypted
+  messages it read per day. A plugin never sees franking keys, attachment secrets, MLS state or
+  ciphertext, nor placeholders or messages that could not be verified.
+- **The agent** is off in every encrypted conversation until the person turns it on from the
+  conversation's menu ("Agent: off in this conversation"), after the warning that the text of
+  the conversation goes to the model provider; the switch is per conversation and kept on this
+  device (`useAgentEncryptedStore`). When it is on, `chat.get_recent_messages` and
+  `chat.search_messages` read the cache instead of the server, and `chat.post_message` sends
+  through the encrypted send path after the person confirms each post
+  (`src/features/agent/encrypted/`). A server-wide `chat.search_messages` adds this device's
+  hits in the conversations the agent is on in. `chat.create_group` still creates a plaintext
+  group on the server; this desktop then upgrades it as any plaintext group
+  (`runtime/upgrade.ts`), once every member is ready.
+- **Pipelines** run on the server on metadata only: a "Message contains" condition never
+  matches an encrypted message, and the editor says so under the pattern.
+- **Lenses** are applied on this device in an encrypted conversation, over the loaded pages:
+  "Text contains" and "Has links" never match an encrypted message; author, attachments and
+  pins match as usual (`src/features/lenses/utils/localLens.ts`). The lens editor says so
+  under a text condition.
+
 ## Trying it with two desktops
 
 Needs rim-server with the e2ee server work (S4-1) merged and running locally, and two accounts
@@ -150,4 +178,5 @@ that signed in with device keys (key-only signup or enrollment, `docs/device-lin
    delay; it shows earlier messages as one line and restores them from the history archive.
 
 Tests: `cd src-tauri && cargo test e2ee` (against `rim_mls` and real cache databases, with an
-in-process server), `npx vitest run src/features/e2ee`.
+in-process server), `cargo test plugin_view`, `npx vitest run src/features/e2ee
+src/features/plugins/chat src/features/agent/encrypted`.

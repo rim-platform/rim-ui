@@ -65,6 +65,8 @@ beforeEach(() => {
 describe("LensEditor create", () => {
   it("starts with one 'Has Links = Yes' condition and AND logic", () => {
     renderEditor();
+    // Links are read from the text, so the condition says encrypted messages never match.
+    expect(screen.getByText(/^Text and link conditions never match messages/)).toBeInTheDocument();
     expect(screen.getByText("Create Lens")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Has Links")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Yes")).toBeInTheDocument();

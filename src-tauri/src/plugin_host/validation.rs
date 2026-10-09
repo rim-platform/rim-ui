@@ -2,7 +2,9 @@
 //! server-side mirror (`rim_services::plugin_host::validation`) was removed on
 //! 2026-10-04 as dead code, so there is nothing to keep in sync any more.
 
-use crate::plugin_host::capability::{BUILTIN_CAPABILITIES, NETWORK_FETCH};
+use crate::plugin_host::capability::{
+    BUILTIN_CAPABILITIES, ENCRYPTED_CHAT_CAPABILITIES, NETWORK_FETCH,
+};
 use crate::plugin_host::manifest::{ManifestCommand, PluginManifest, RuntimeKind};
 
 const RESERVED_PREFIXES: &[&str] = &["system.", "internal.", "admin.", "audit."];
@@ -205,6 +207,21 @@ pub fn validate_capability(
         }
     }
 
+    Ok(())
+}
+
+/// An encrypted chat capability widens its plain one to encrypted conversations, so a
+/// manifest that asks for it must ask for the plain one too.
+fn validate_encrypted_chat(manifest: &PluginManifest) -> Result<(), ValidationError> {
+    for (encrypted, plain) in ENCRYPTED_CHAT_CAPABILITIES {
+        let has = |name: &str| manifest.capabilities.iter().any(|c| c == name);
+        if has(encrypted) && !has(plain) {
+            return Err(ValidationError::InvalidCapabilityKey {
+                key: (*encrypted).to_string(),
+                reason: format!("{encrypted} requires {plain} as well"),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -567,6 +584,7 @@ pub fn validate_plugin_manifest_for_host(
     for cap in &manifest.capabilities {
         validate_capability(manifest.runtime_kind, &manifest.plugin_id, cap)?;
     }
+    validate_encrypted_chat(manifest)?;
     validate_network_origins(manifest, forbidden_origins)?;
     if manifest.runtime_kind == RuntimeKind::WebSandboxed {
         validate_web_layout(manifest)?;
@@ -709,10 +727,9 @@ mod tests {
             "network",
             "fs.read",
             "fs.write",
-            "chat.read",
-            "chat.write",
             "events.read",
             "chat.admin",
+            "chat.read.all",
             "ui",
         ] {
             assert!(

@@ -170,7 +170,7 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
   });
 }
 
-const SEND_MESSAGE_MUTATION = gql`
+export const SEND_MESSAGE_MUTATION = gql`
   mutation SendMessage($input: SendMessageInput!) {
     sendMessage(input: $input) {
       ...MessageFields

@@ -4,6 +4,7 @@
 // calls (behind capabilities and limits) and shutdown. It touches no DOM, so it
 // runs in Node against a real MessageChannel.
 
+import { isChatMethod } from "../chat/chatTypes";
 import {
   ErrorCode,
   MAX_MESSAGE_BYTES,
@@ -52,6 +53,8 @@ export interface SessionHooks {
   updatePanel(panelId: string, state: unknown, patch: boolean): unknown;
   storageGet(key: string): Promise<unknown>;
   storageSet(key: string, value: unknown): Promise<void>;
+  /** A `rim.chat.*` call, already past the capability gate and its rate limit. */
+  chat?(method: string, params: unknown): Promise<unknown>;
   /** The session ended on its own: a failed handshake, a flood, missed heartbeats. */
   stopped(reason: string): void;
 }
@@ -555,6 +558,7 @@ export class PluginSession {
         return { ok: true };
       }
       default:
+        if (isChatMethod(method) && this.hooks.chat) return this.hooks.chat(method, params);
         throw new RpcError(ErrorCode.METHOD_NOT_FOUND, `method not found: ${method}`);
     }
   }

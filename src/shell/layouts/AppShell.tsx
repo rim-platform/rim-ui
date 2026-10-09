@@ -22,6 +22,7 @@ import { useHeartbeat } from "../../features/presence/runtime/useHeartbeat";
 import { usePluginEvents } from "../../features/plugins/runtime/pluginEventBus";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { usePluginPrincipalSync } from "../../features/plugins/api/usePluginPrincipalSync";
+import { usePluginChatRelay } from "../../features/plugins/chat/usePluginChatRelay";
 import { useWebPluginRuntime } from "../../features/plugins/web/useWebPluginRuntime";
 import { useStatusExpiration } from "../../features/settings/hooks/useStatusExpiration";
 import { useUnreadEventHandler } from "../../features/conversations/state/useUnreadEventHandler";
@@ -71,6 +72,7 @@ export function AppShell() {
   useOfflineReconnect();
   useResumeDeviceLinks();
   usePluginPrincipalSync();
+  usePluginChatRelay();
   useWebPluginRuntime();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { capabilities } = useRuntime();

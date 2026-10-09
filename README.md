@@ -123,5 +123,5 @@ The backend repository (`../rim-server`) is the source of truth for product cont
 
 ## License
 
-Apache License 2.0, see `LICENSE`. The license does not cover the RIM name or logo; see
-`TRADEMARK.md`. To contribute, see `CONTRIBUTING.md` (commits need a DCO sign-off).
+Apache License 2.0, see `LICENSE` and `NOTICE`. The license does not cover the RIM name, so
+forks should use a different name. To contribute, see `CONTRIBUTING.md`.

@@ -11,9 +11,10 @@ use crate::plugin_host::manifest::{
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
-use crate::plugin_host::state::{InstallSource, PluginRecord, PluginStatus};
+use crate::plugin_host::state::{InstallSource, PluginAudit, PluginRecord, PluginStatus};
 use crate::plugin_host::storage::StorageError;
 use crate::plugin_host::validation::validate_plugin_manifest_for_host;
+use crate::plugin_host::wire::JsonRpcError;
 use crate::plugin_host::PluginHostState;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
@@ -64,6 +65,9 @@ pub struct PluginInfo {
     /// The app died while starting this `WebSandboxed` plugin, so it waits for the
     /// user to enable it again.
     pub starting: bool,
+    /// When each capability was given and revoked, and the encrypted messages the
+    /// plugin read per day.
+    pub audit: PluginAudit,
 }
 
 #[tauri::command]
@@ -136,6 +140,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .unwrap_or_default(),
             source: record.source.clone(),
             starting: record.starting,
+            audit: store.audit.get(id).cloned().unwrap_or_default(),
         });
     }
     Ok(plugins)
@@ -1286,4 +1291,40 @@ pub fn plugin_check_ai_consent(
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
     check_ai_consent(&state, &plugin_id, &command_id)
+}
+
+/// The UI's message service answers a local-process plugin's `rim.chat.*` call:
+/// `result`, or the JSON-RPC `error` the plugin gets. False when the call no
+/// longer waits (it timed out).
+#[tauri::command]
+pub fn plugin_chat_respond(
+    request_id: u64,
+    result: Option<serde_json::Value>,
+    error: Option<JsonRpcError>,
+    state: State<'_, PluginHostState>,
+) -> bool {
+    let reply = match error {
+        Some(error) => Err(error),
+        None => Ok(result.unwrap_or(serde_json::Value::Null)),
+    };
+    state.chat_relay.respond(request_id, reply)
+}
+
+/// Count `count` encrypted messages the message service gave `plugin_id` today.
+#[tauri::command]
+pub fn plugin_record_encrypted_reads(
+    plugin_id: String,
+    count: u64,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    if store.get(&plugin_id).is_none() {
+        return Err(LifecycleError::NotFound(plugin_id));
+    }
+    store.record_encrypted_reads(&plugin_id, count, chrono::Utc::now());
+    store.save(&state.state_path)?;
+    Ok(())
 }

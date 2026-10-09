@@ -4,11 +4,14 @@ import { withEncryptionNotices, type EncryptionContext } from "../../../e2ee/uti
 import { useConversationMessages } from "../../api/useMessages";
 import { useApplyLens, useLenses } from "../../../lenses/api/useLenses";
 import { useLensStore } from "../../../lenses/state/useLensStore";
+import { applyLensLocally } from "../../../lenses/utils/localLens";
 
 /**
  * The messages the timeline shows: the conversation's loaded pages flattened
  * oldest -> newest, or the active lens's results when a lens is applied. An encrypted
- * conversation's items carry its encryption notices (see `withEncryptionNotices`).
+ * conversation's items carry its encryption notices (see `withEncryptionNotices`), and a
+ * lens there is applied on this device to the loaded pages, matching encrypted messages
+ * on metadata only.
  */
 export function useTimelineItems(
   workspaceId: string | null,
@@ -26,7 +29,7 @@ export function useTimelineItems(
   const lensQuery = useApplyLens(
     workspaceId ?? undefined,
     conversationId ?? undefined,
-    activeLensId,
+    encryption ? null : activeLensId,
   );
 
   const { data, isPending, isError, hasNextPage, fetchNextPage, isFetchingNextPage } =
@@ -35,23 +38,26 @@ export function useTimelineItems(
   // Backend returns items oldest-first within each page; pages are in load
   // order (newest first), so reverse the pages for display.
   const isLensActive = Boolean(activeLensId);
+  const serverLens = isLensActive && !encryption;
   const lensItems = lensQuery.data?.items;
   const pages = data?.pages;
   const items = useMemo(() => {
-    if (isLensActive) return lensItems ?? [];
+    if (serverLens) return lensItems ?? [];
     if (!pages) return [];
     const flat = [...pages].reverse().flatMap((p) => p.items);
-    return encryption ? withEncryptionNotices(flat, encryption) : flat;
-  }, [isLensActive, lensItems, pages, encryption]);
+    if (!encryption) return flat;
+    if (isLensActive) return activeLens ? applyLensLocally(flat, activeLens.filterSpec) : [];
+    return withEncryptionNotices(flat, encryption);
+  }, [serverLens, isLensActive, activeLens, lensItems, pages, encryption]);
 
   return {
     items,
     isLensActive,
     activeLens,
-    isPending: isLensActive ? lensQuery.isPending : isPending,
-    isError: isLensActive ? lensQuery.isError : isError,
-    hasNextPage: !isLensActive && hasNextPage,
-    isFetchingNextPage: !isLensActive && isFetchingNextPage,
+    isPending: serverLens ? lensQuery.isPending : isPending,
+    isError: serverLens ? lensQuery.isError : isError,
+    hasNextPage: !serverLens && hasNextPage,
+    isFetchingNextPage: !serverLens && isFetchingNextPage,
     fetchNextPage,
   };
 }

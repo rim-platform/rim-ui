@@ -120,6 +120,7 @@ yourself.
 | `log`                 | Lines for the RIM log.                                       |
 | `panels`              | Panel state, below.                                          |
 | `storage`             | A WebSandboxed plugin's small store, below.                  |
+| `chat`                | The person's messages, below.                                |
 
 ### Panels (experimental)
 
@@ -142,14 +143,32 @@ rejects with `INVALID_PARAMS` and `data: { reason: "quota" }`, and with nobody s
 in both reject with `INVALID_PARAMS`. `rim.storage.*` is not frozen in v1. A
 local-process host answers both with `METHOD_NOT_FOUND`: a process has its own files.
 
-Not in v1: reading or sending chat messages. Those host methods exist but are not
-frozen, and the SDK does not expose them.
+### Chat (experimental)
+
+`host.chat` reads and posts the person's messages through the app's message service, the
+same for both kinds of plugin ([the method reference](../../docs/plugin-chat-methods.md)):
+
+```ts
+const { messages, hasOlder } = await host.chat.listMessages(conversationId, { limit: 50 });
+const message = await host.chat.getMessage(messageId); // or null
+const hits = await host.chat.searchMessages("deploy", { conversationId });
+const { id } = await host.chat.postMessage(conversationId, "on it", { threadId });
+```
+
+A message is `{ id, conversationId, threadId, author, text, sentAt, editedAt, encrypted,
+attachments }`, with `author` a `Principal` and attachments as name, type and size only.
+Reads come from what the person's device stores. The calls need `"chat.read"` or
+`"chat.write"` approved, and in an encrypted DM or group also `"chat.read.encrypted"` or
+`"chat.write.encrypted"` (a manifest asking for an encrypted one must ask for the plain one
+too); otherwise they reject with `CAPABILITY_DENIED`. `rim.chat.*` is routed by both hosts
+but not frozen in v1, so the shapes may still change.
 
 ## Testing without the app
 
 `@rim/plugin-sdk/testing` runs a plugin against an in-memory host. Like the app, it
 refuses `host.panels` calls with `CAPABILITY_DENIED` unless `grantedCapabilities`
-includes `"ui.panel"`, and `onRequest` answers the rest:
+includes `"ui.panel"` (and `host.chat` calls without `"chat.read"` or `"chat.write"`),
+and `onRequest` answers the rest:
 
 ```ts
 import { startTestHost } from "@rim/plugin-sdk/testing";
@@ -164,7 +183,9 @@ await host.shutdown();
 
 `startTestHost(plugin, { transport: "port" })` runs the plugin over a Node
 `MessageChannel`, as a web plugin's frame does, with the same assertions. `onRequest`
-can answer `rim.storage.get` and `rim.storage.set` to test a plugin's store.
+can answer `rim.storage.get` and `rim.storage.set` to test a plugin's store, and the
+`rim.chat.*` calls, which the test host refuses with `CAPABILITY_DENIED` unless
+`grantedCapabilities` has `"chat.read"` (or `"chat.write"` for posting).
 
 ## Installing a plugin
 

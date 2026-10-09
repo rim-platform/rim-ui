@@ -4,7 +4,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { writeBundle, type BundleFile } from "./bundle";
+import { sha256Hex, writeBundle, type BundleFile } from "./bundle";
 import { BrowserPluginStore } from "./browserPluginStore";
 import { hostMessageDef, schemaProblems } from "./testing/protocolSchema";
 import { HELLO_WEB_MAIN, HELLO_WEB_MANIFEST } from "./testing/helloWeb";
@@ -12,6 +12,7 @@ import {
   SAFE_START_MESSAGE,
   WebCommandError,
   WebPluginHost,
+  type ChatHandler,
   type FrameHandle,
   type HostEnvironment,
   type HostServices,
@@ -243,11 +244,12 @@ async function startScripted(
   options: Parameters<typeof scriptedPlugin>[1] = {},
   plugin: Partial<InstalledWebPlugin> = {},
   manifest = webManifest(),
+  chat: ChatHandler | null = null,
 ) {
   const t = testEnvironment();
   const s = testServices(manifest);
   const host = new WebPluginHost();
-  host.configure(t.env, s.services, ["https://api.rim.example/api"]);
+  host.configure(t.env, s.services, ["https://api.rim.example/api"], chat);
   host.setPrincipal(PRINCIPAL);
   host.reconcile([installed(plugin)]);
   await flush();
@@ -434,7 +436,8 @@ describe("web plugin frames", () => {
       "rim.fs.read_file",
       "rim.process.spawn",
       "rim.network.http_request",
-      "rim.chat.get_messages",
+      "rim.chat.list_messages",
+      "rim.chat.post_message",
     ]) {
       expect((await t.remote.call(method, {})).error).toMatchObject({ code: -32000 });
     }
@@ -446,6 +449,45 @@ describe("web plugin frames", () => {
       ok: true,
     });
     expect(t.logs).toContain("info: hi");
+  });
+
+  it("hands chat calls to the message service with the start-time grants", async () => {
+    const calls: unknown[][] = [];
+    const chat: ChatHandler = async (...args) => {
+      calls.push(args);
+      return { messages: [], hasOlder: false };
+    };
+    const t = await startScripted({}, { approvedCapabilities: ["chat.read"] }, webManifest(), chat);
+    expect(
+      (await t.remote.call("rim.chat.list_messages", { conversationId: "c-1" })).result,
+    ).toEqual({ messages: [], hasOlder: false });
+    expect(calls).toEqual([
+      ["dev.example.scripted", "rim.chat.list_messages", { conversationId: "c-1" }, ["chat.read"]],
+    ]);
+    // Posting needs chat.write, which the gate checks before the service.
+    expect(
+      (await t.remote.call("rim.chat.post_message", { conversationId: "c-1", body: "hi" })).error,
+    ).toEqual({ code: -32000, message: "capability denied: chat.write" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses chat calls with only an encrypted grant, before the message service", async () => {
+    const chat = vi.fn<ChatHandler>(async () => ({}));
+    const t = await startScripted(
+      {},
+      { approvedCapabilities: ["chat.read.encrypted", "chat.write.encrypted"] },
+      webManifest(),
+      chat,
+    );
+    for (const method of [
+      "rim.chat.list_messages",
+      "rim.chat.get_message",
+      "rim.chat.search_messages",
+      "rim.chat.post_message",
+    ]) {
+      expect((await t.remote.call(method, {})).error).toMatchObject({ code: -32000 });
+    }
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it("relays panel state with ui.panel, for the plugin's own panels only", async () => {
@@ -753,5 +795,41 @@ describe("browser plugin storage", () => {
     await store.uninstall("dev.example.hello-web");
     expect(await store.list()).toEqual([]);
     expect(await store.storageGet("dev.example.hello-web", "k")).toBeNull();
+  });
+  it("audits grants, revocations and encrypted reads, and keeps the history through an update", async () => {
+    vi.useRealTimers();
+    const store = await storeWith("rimp0_storage-audit");
+    const manifest = webManifest({
+      capabilities: ["chat.read", "chat.read.encrypted", "plugin.dev.example.scripted.key"],
+    });
+    const bytes = writeBundle([file("rim-plugin.json", manifest), file("main.mjs", "")]);
+    const sha256 = await sha256Hex(bytes);
+    const source = { kind: "link" as const, url: "https://example.com/s.rimbundle", sha256 };
+    await store.installBundle({ bytes, sha256, source, replace: false });
+    const id = "dev.example.scripted";
+
+    await store.approveCapabilities(id, ["chat.read", "chat.read.encrypted"]);
+    await store.approveCapabilities(id, ["chat.read"]);
+    await store.enable(id);
+    await store.recordEncryptedReads(id, 3);
+    await store.recordEncryptedReads(id, 2);
+    await store.revokeCapability(id, "chat.read.encrypted");
+    await store.revokeCapability(id, "chat.read.encrypted");
+
+    const [info] = await store.list();
+    expect(info.enabled).toBe(false);
+    expect(info.approved_capabilities).toEqual(["chat.read"]);
+    expect(info.audit?.grants.map((g) => [g.capability, g.action])).toEqual([
+      ["chat.read", "granted"],
+      ["chat.read.encrypted", "granted"],
+      ["chat.read.encrypted", "revoked"],
+    ]);
+    expect(info.audit?.grants[0].at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(Object.values(info.audit?.encrypted_reads ?? {})).toEqual([5]);
+
+    await store.installBundle({ bytes, sha256, source, replace: true, keepApprovals: true });
+    const [updated] = await store.list();
+    expect(updated.audit).toEqual(info.audit);
+    await store.uninstall(id);
   });
 });

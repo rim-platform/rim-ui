@@ -974,7 +974,7 @@
     },
     {
       "name": "web plugin asking for chat.read",
-      "valid": false,
+      "valid": true,
       "manifest": {
         "manifest_version": 1,
         "plugin_id": "dev.example.hello-web",
@@ -995,7 +995,7 @@
     },
     {
       "name": "web plugin asking for chat.write",
-      "valid": false,
+      "valid": true,
       "manifest": {
         "manifest_version": 1,
         "plugin_id": "dev.example.hello-web",
@@ -1093,7 +1093,7 @@
     },
     {
       "name": "desktop plugin asking for chat.read",
-      "valid": false,
+      "valid": true,
       "manifest": {
         "manifest_version": 1,
         "plugin_id": "dev.example.greeter",
@@ -1117,6 +1117,174 @@
           }
         ],
         "capabilities": ["chat.read"]
+      }
+    },
+    {
+      "name": "web plugin asking for chat.read.encrypted without chat.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.read.encrypted"]
+      }
+    },
+    {
+      "name": "web plugin asking for chat.write.encrypted without chat.write",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.read", "chat.write.encrypted"]
+      }
+    },
+    {
+      "name": "desktop plugin asking for chat.read.encrypted without chat.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["chat.write", "chat.read.encrypted"]
+      }
+    },
+    {
+      "name": "desktop plugin asking for chat.write.encrypted without chat.write",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["chat.write.encrypted"]
+      }
+    },
+    {
+      "name": "web plugin asking for a chat capability that does not exist",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.read", "chat.read.all"]
+      }
+    },
+    {
+      "name": "web plugin reading and writing encrypted conversations",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.read", "chat.read.encrypted", "chat.write", "chat.write.encrypted"]
+      }
+    },
+    {
+      "name": "desktop plugin reading encrypted conversations",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["chat.read", "chat.read.encrypted"]
       }
     },
     {

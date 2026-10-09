@@ -17,6 +17,7 @@ import {
   FilterLogic as FL,
 } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
+import { ENCRYPTED_TEXT_NOTE, TEXT_FIELDS } from "../utils/localLens";
 
 interface LensEditorProps {
   open: boolean;
@@ -219,6 +220,9 @@ export function LensEditor({
               />
             ))}
           </div>
+          {conditions.some((c) => TEXT_FIELDS.includes(c.field)) && (
+            <p className="mt-2 text-[11px] text-rim-text-faint">{ENCRYPTED_TEXT_NOTE}</p>
+          )}
           {conditions.length < MAX_CONDITIONS && (
             <button
               type="button"
