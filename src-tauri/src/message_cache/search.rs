@@ -25,6 +25,19 @@ const SNIPPET_TOKENS: i32 = 16;
 /// Most hits per page.
 pub(crate) const MAX_SEARCH_LIMIT: u32 = 100;
 
+/// The columns of a hit, `m` being the message. The thread root is looked up through the
+/// `message_thread_root` index; the `+` drops `thread_id`'s TEXT affinity, without which SQLite
+/// cannot compare through that expression index.
+pub(super) const HIT_COLUMNS: &str = "
+    m.id, m.conversation_id, m.thread_id, m.author_id, m.text, m.payload,
+    (SELECT r.id FROM message r
+     WHERE m.thread_id IS NOT NULL
+       AND r.workspace_id = m.workspace_id
+       AND r.conversation_id = m.conversation_id
+       AND r.thread_id IS NULL
+       AND json_extract(r.payload, '$.rootThreadId') = +m.thread_id
+     LIMIT 1)";
+
 /// A search as the UI parsed it. Every field narrows the result; at least one must be set.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -141,19 +154,10 @@ impl CacheStore {
             AND (?6 = 0 OR m.text LIKE '%http://%' OR m.text LIKE '%https://%')
             AND (?7 = 0 OR json_extract(m.payload, '$.hasAttachments') = 1)
             AND (m.sent_at_us, m.id) < (?8, ?9)";
-        const COLUMNS: &str = "
-            m.id, m.conversation_id, m.thread_id, m.author_id, m.text, m.payload,
-            (SELECT r.id FROM message r
-             WHERE m.thread_id IS NOT NULL
-               AND r.workspace_id = m.workspace_id
-               AND r.conversation_id = m.conversation_id
-               AND r.thread_id IS NULL
-               AND json_extract(r.payload, '$.rootThreadId') = m.thread_id
-             LIMIT 1)";
 
         let sql = if fts.is_some() {
             format!(
-                "SELECT {COLUMNS}, -bm25(message_fts),
+                "SELECT {HIT_COLUMNS}, -bm25(message_fts),
                         snippet(message_fts, 0, ?11, ?12, '…', ?13)
                  FROM message_fts JOIN message m ON m.seq = message_fts.rowid
                  WHERE message_fts MATCH ?14 AND {FILTERS}
@@ -162,7 +166,7 @@ impl CacheStore {
             )
         } else {
             format!(
-                "SELECT {COLUMNS}, 0.0, NULL
+                "SELECT {HIT_COLUMNS}, 0.0, NULL
                  FROM message m
                  WHERE {FILTERS}
                  ORDER BY m.sent_at_us DESC, m.id DESC

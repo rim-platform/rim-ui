@@ -74,6 +74,9 @@ CREATE INDEX message_timeline
 /// text is NULL, which indexes no words, so a message deleted on the server leaves no searchable
 /// trace. The `'delete'` command must be handed exactly what was indexed, which `old.text` is.
 ///
+/// `message_thread_root` finds a thread's root message by the thread id in its payload, which
+/// search does for each hit inside a thread; without it, that is a scan of the conversation.
+///
 /// The last statement is the one-time backfill of a cache created by an earlier build.
 const SCHEMA_V2: &str = "
 CREATE VIRTUAL TABLE message_fts USING fts5(
@@ -95,6 +98,10 @@ CREATE TRIGGER message_fts_update AFTER UPDATE OF text ON message BEGIN
     INSERT INTO message_fts (message_fts, rowid, text) VALUES ('delete', old.seq, old.text);
     INSERT INTO message_fts (rowid, text) VALUES (new.seq, new.text);
 END;
+
+CREATE INDEX message_thread_root
+    ON message (workspace_id, conversation_id, json_extract(payload, '$.rootThreadId'))
+    WHERE thread_id IS NULL;
 
 INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 ";

@@ -1047,6 +1047,24 @@ fn a_thread_reply_hit_names_its_cached_root_message() {
     assert_eq!(hit.thread_id.as_deref(), Some("thread-1"));
     assert_eq!(hit.root_message_id.as_deref(), Some("root"));
     assert_eq!(search(&store, "kickoff").items[0].root_message_id, None);
+
+    // The root is found through its index, not by scanning the conversation.
+    let plan: Vec<String> = store
+        .conn
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN SELECT {} FROM message m",
+            super::search::HIT_COLUMNS
+        ))
+        .unwrap()
+        .query_map([], |row| row.get(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("USING INDEX message_thread_root")),
+        "{plan:?}"
+    );
 }
 
 #[test]
