@@ -12,6 +12,7 @@ import { fetchConversation, findCachedConversation } from "../../conversations/a
 import { fetchThreadRoot } from "../../e2ee/api/e2eeApi";
 import { workspaceMembers } from "../../e2ee/runtime/members";
 import { sendEncrypted } from "../../e2ee/runtime/send";
+import { e2eeSession } from "../../e2ee/runtime/session";
 import type * as PluginViewModule from "../../e2ee/web/pluginView";
 import { webStoreAccount, type WebAccount } from "../../e2ee/web/webAccount";
 import { currentCacheAccount, trackConversation } from "../../messages/api/messageCache";
@@ -110,7 +111,7 @@ export function webChatCache(account: WebAccount): ChatCache {
 }
 
 /** The store the service reads: the desktop's cache, or a set-up browser's encrypted store. */
-function chatCache(): ChatCache | null {
+export function chatCache(): ChatCache | null {
   if (detectPlatform() === "desktop") return desktopChatCache;
   const account = webStoreAccount();
   return account ? webChatCache(account) : null;
@@ -130,7 +131,10 @@ export async function conversationEncrypted(
   }
 }
 
-/** Post as the person: the encrypted send path in an encrypted conversation, else the server. */
+/**
+ * Post as the person: the encrypted send path in an encrypted conversation (on a device with an
+ * encryption session: the desktop, or a browser set up as a linked device), else the server.
+ */
 export async function postAsUser({
   workspaceId,
   conversationId,
@@ -157,10 +161,10 @@ export async function postAsUser({
   }
 
   if (encrypted) {
-    if (detectPlatform() !== "desktop") {
+    if (!(await e2eeSession())) {
       throw new RpcError(
         ErrorCode.INTERNAL_ERROR,
-        "encrypted conversations can be written only from the desktop app",
+        "this device cannot write encrypted conversations; use the desktop app or a browser set up as a linked device",
         { reason: "noEncryption" },
       );
     }

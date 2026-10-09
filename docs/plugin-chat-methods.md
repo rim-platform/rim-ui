@@ -67,8 +67,9 @@ refused.
 
 Params `{ conversationId, body, threadId? }`: posts `body` (1 to 10,000 characters) as the
 person, as a reply in the thread `threadId` when given. In an encrypted conversation the
-message goes through the encrypted send path (desktop only). Mentions are written as
-`<@principalId>` tokens. Answers `{ id }`, the new message's id.
+message goes through the encrypted send path, on the desktop or in a browser set up as a
+linked device. Mentions are written as `<@principalId>` tokens. Answers `{ id }`, the new
+message's id.
 
 ### The message
 
@@ -107,7 +108,7 @@ against the shared vector `protocol/plugin-chat-vectors.json`.
 | `CAPABILITY_DENIED` (-32000) | The plain capability is missing, or the conversation is encrypted and the encrypted one is |
 | `RATE_LIMITED` (-32001) | More than 120 calls a minute on the capability |
 | `INVALID_PARAMS` (-32602) | A param is missing or out of range, the conversation or thread is unknown, `before` names no message of the conversation, no workspace is open |
-| `INTERNAL_ERROR` (-32603) | `data.reason` `notCached`: the conversation is not fully stored on this device yet (the app starts caching it; try again shortly). `noCache`: the app keeps no messages here (a browser not set up as a linked device). `noEncryption`: an encrypted conversation cannot be written from here. Otherwise the app failed |
+| `INTERNAL_ERROR` (-32603) | `data.reason` `notCached`: the conversation is not fully stored on this device yet (the app starts caching it; try again shortly). `noCache`: the app keeps no messages here (a browser not set up as a linked device). `noEncryption`: an encrypted conversation cannot be written from here (a browser not set up as a linked device). Otherwise the app failed |
 
 ## Audit
 

@@ -184,7 +184,8 @@ over `web/pluginView.ts`, which gives the desktop cache's plugin shape and leave
 (checked against `protocol/plugin-chat-vectors.json`). A conversation a plugin asks for that the
 store does not hold yet is followed and answers `notCached` until its history is read; a browser
 not set up answers `noCache`. Search is a case-insensitive substring match over the stored rows,
-newest first, not the desktop's word-prefix index.
+newest first, not the desktop's word-prefix index. A web plugin's `rim.chat.post_message` into an encrypted
+conversation goes through the same encrypted send path as the person's own messages.
 
 ## Trying it against a desktop
 
