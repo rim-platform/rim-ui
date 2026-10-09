@@ -666,10 +666,12 @@ export type DeviceKey = {
 
 export type DeviceLink = {
   expiresAt: Scalars['DateTime']['output'];
+  /** The new device's sealed offer, while `OFFERED` or `ANSWERED`. */
   offer?: Maybe<SealedMessage>;
   state: DeviceLinkState;
 };
 
+/** `EXPIRED` is a link that was still open, offered or answered when it expired. */
 export enum DeviceLinkState {
   ANSWERED = 'ANSWERED',
   CANCELLED = 'CANCELLED',
@@ -1442,9 +1444,11 @@ export type Mutation = {
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
   banMember: ServerBan;
+  /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
+  /** Called by the new device right after its first `loginWithKey`. */
   completeDeviceLink: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
   createChannelLens: ChannelLens;
@@ -1576,7 +1580,12 @@ export type Mutation = {
    * session, revokes every device and session, and enrolls the device given with it.
    */
   rotateIdentityKey: KeyIdentity;
+  /**
+   * The old device's sealed answer, carrying the new device's certificate. The link then
+   * lives another 10 minutes.
+   */
   sendDeviceLinkAnswer: DeviceLink;
+  /** The new device's sealed offer. No session needed: the link id is the capability. */
   sendDeviceLinkOffer: Scalars['Boolean']['output'];
   sendMessage: Message;
   /**
@@ -1636,6 +1645,10 @@ export type Mutation = {
    * session and CSRF cookies as `signupWithInvite`.
    */
   signupWithKey: SignupWithInvitePayloadGql;
+  /**
+   * Start linking a new device to the signed-in account. Cancels the account's previous
+   * live link. The link lives 10 minutes.
+   */
   startDeviceLink: StartedDeviceLink;
   startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
@@ -2575,7 +2588,15 @@ export type Query = {
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
   defaultKeybinds: Array<DefaultKeybind>;
+  /**
+   * One of the signed-in account's device links: its state, expiry and, once the new device
+   * sent it, the sealed offer.
+   */
   deviceLink: DeviceLink;
+  /**
+   * The sealed answer for the new device, `null` until the old device sends it. No session
+   * needed: the link id is the capability.
+   */
   deviceLinkAnswer?: Maybe<SealedMessage>;
   /** List a server's escalation policies. Any workspace member may read. */
   escalationPolicies: Array<EscalationPolicyGql>;
@@ -3157,11 +3178,16 @@ export type RotationLayerGql = {
   scheduleId: Scalars['ID']['output'];
 };
 
+/** A sealed message exactly as it was sent. */
 export type SealedMessage = {
   ciphertext: Scalars['String']['output'];
   nonce: Scalars['String']['output'];
 };
 
+/**
+ * A sealed offer or answer: the 12-byte nonce and the AES-GCM ciphertext with its 16-byte tag
+ * appended, both unpadded base64url. The server checks only the encoding and the size.
+ */
 export type SealedMessageInput = {
   ciphertext: Scalars['String']['input'];
   nonce: Scalars['String']['input'];
@@ -3396,6 +3422,7 @@ export type StartIncidentInput = {
 
 export type StartedDeviceLink = {
   expiresAt: Scalars['DateTime']['output'];
+  /** 16 bytes, unpadded base64url. The server keeps only its hash, so it is shown once. */
   linkId: Scalars['String']['output'];
 };
 

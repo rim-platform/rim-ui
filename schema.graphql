@@ -718,9 +718,15 @@ type DeviceKey {
 type DeviceLink {
 	state: DeviceLinkState!
 	expiresAt: DateTime!
+	"""
+	The new device's sealed offer, while `OFFERED` or `ANSWERED`.
+	"""
 	offer: SealedMessage
 }
 
+"""
+`EXPIRED` is a link that was still open, offered or answered when it expired.
+"""
 enum DeviceLinkState {
 	OPEN
 	OFFERED
@@ -728,21 +734,6 @@ enum DeviceLinkState {
 	CONSUMED
 	CANCELLED
 	EXPIRED
-}
-
-type SealedMessage {
-	nonce: String!
-	ciphertext: String!
-}
-
-input SealedMessageInput {
-	nonce: String!
-	ciphertext: String!
-}
-
-type StartedDeviceLink {
-	linkId: String!
-	expiresAt: DateTime!
 }
 
 """
@@ -1871,10 +1862,27 @@ type Mutation {
 	session and CSRF cookies as `signupWithInvite`.
 	"""
 	signupWithKey(input: SignupWithKeyInput!): SignupWithInvitePayloadGql!
+	"""
+	Start linking a new device to the signed-in account. Cancels the account's previous
+	live link. The link lives 10 minutes.
+	"""
 	startDeviceLink: StartedDeviceLink!
+	"""
+	The new device's sealed offer. No session needed: the link id is the capability.
+	"""
 	sendDeviceLinkOffer(linkId: String!, offer: SealedMessageInput!): Boolean!
+	"""
+	The old device's sealed answer, carrying the new device's certificate. The link then
+	lives another 10 minutes.
+	"""
 	sendDeviceLinkAnswer(linkId: String!, answer: SealedMessageInput!): DeviceLink!
+	"""
+	Called by the new device right after its first `loginWithKey`.
+	"""
 	completeDeviceLink(linkId: String!): Boolean!
+	"""
+	Cancel a link from either device, with or without a session.
+	"""
 	cancelDeviceLink(linkId: String!): Boolean!
 }
 
@@ -2323,7 +2331,15 @@ type Query {
 	recovery rotation (`rotateIdentityKey`).
 	"""
 	keyLog(principalId: String!): [KeyLogEntry!]!
+	"""
+	One of the signed-in account's device links: its state, expiry and, once the new device
+	sent it, the sealed offer.
+	"""
 	deviceLink(linkId: String!): DeviceLink!
+	"""
+	The sealed answer for the new device, `null` until the old device sends it. No session
+	needed: the link id is the capability.
+	"""
 	deviceLinkAnswer(linkId: String!): SealedMessage
 }
 
@@ -2430,6 +2446,23 @@ type RotationLayerGql {
 	Ordered by shift position.
 	"""
 	participants: [ID!]!
+}
+
+"""
+A sealed message exactly as it was sent.
+"""
+type SealedMessage {
+	nonce: String!
+	ciphertext: String!
+}
+
+"""
+A sealed offer or answer: the 12-byte nonce and the AES-GCM ciphertext with its 16-byte tag
+appended, both unpadded base64url. The server checks only the encoding and the size.
+"""
+input SealedMessageInput {
+	nonce: String!
+	ciphertext: String!
 }
 
 """
@@ -2679,6 +2712,14 @@ input StartIncidentInput {
 	all if none is set).
 	"""
 	escalationPolicyId: ID
+}
+
+type StartedDeviceLink {
+	"""
+	16 bytes, unpadded base64url. The server keeps only its hash, so it is shown once.
+	"""
+	linkId: String!
+	expiresAt: DateTime!
 }
 
 type Subscription {
