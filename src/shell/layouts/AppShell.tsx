@@ -48,6 +48,7 @@ import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
+import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
 import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
 import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
@@ -122,6 +123,7 @@ export function AppShell() {
       {capabilities.customTitleBar && <TitleBar />}
       <OfflineBanner />
       <ConnectionBanner />
+      <RelayNotices />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>

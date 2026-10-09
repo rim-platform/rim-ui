@@ -43,12 +43,16 @@ async function loadPin(serverId: string): Promise<ServerPin | null> {
   const cached = cache.get(serverId);
   if (cached) return cached;
   const stored = await getRecord<ServerPin>("servers", serverId);
-  if (stored) cache.set(serverId, stored);
+  if (stored) {
+    cache.set(serverId, stored);
+    useRelayStore.getState().setOrigin(serverId, stored.origin);
+  }
   return stored;
 }
 
 async function savePin(pin: ServerPin): Promise<void> {
   cache.set(pin.serverId, pin);
+  useRelayStore.getState().setOrigin(pin.serverId, pin.origin);
   await putRecord("servers", pin);
 }
 
@@ -183,4 +187,12 @@ export async function hostKeyAt(serverId: string, keySeq: number): Promise<strin
 /** Whether this app stopped using `serverId` because its identity forked. */
 export async function isForked(serverId: string): Promise<boolean> {
   return (await loadPin(serverId))?.status === "forked";
+}
+
+/** Read the pins of `serverIds` at start: their origins for the UI, and which forked. */
+export async function loadPins(serverIds: readonly string[]): Promise<void> {
+  for (const serverId of serverIds) {
+    const pin = await loadPin(serverId).catch(() => null);
+    if (pin?.status === "forked") useRelayStore.getState().markForked(serverId);
+  }
 }

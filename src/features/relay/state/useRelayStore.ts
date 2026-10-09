@@ -40,11 +40,14 @@ interface RelayState {
   /** Server ids whose key log forked: the app no longer uses them. */
   forked: string[];
   missing: Record<string, MissingNotice>;
+  /** Where each pinned server was fetched from, by server id. */
+  origins: Record<string, string>;
   setStarted: (info: RelayInfo, account: RelayAccount, spaces: SpaceRecord[]) => void;
   addSpace: (space: SpaceRecord) => void;
   markForked: (serverId: string) => void;
   setMissing: (notice: MissingNotice) => void;
   clearMissing: (spaceId: string) => void;
+  setOrigin: (serverId: string, origin: string) => void;
   reset: () => void;
 }
 
@@ -54,6 +57,7 @@ export const useRelayStore = create<RelayState>((set) => ({
   spaces: {},
   forked: [],
   missing: {},
+  origins: {},
   setStarted: (info, account, spaces) =>
     set({ info, account, spaces: Object.fromEntries(spaces.map((s) => [s.spaceId, s])) }),
   addSpace: (space) => set((s) => ({ spaces: { ...s.spaces, [space.spaceId]: space } })),
@@ -70,7 +74,11 @@ export const useRelayStore = create<RelayState>((set) => ({
       delete missing[spaceId];
       return { missing };
     }),
-  reset: () => set({ info: null, account: null, spaces: {}, forked: [], missing: {} }),
+  setOrigin: (serverId, origin) =>
+    set((s) =>
+      s.origins[serverId] === origin ? s : { origins: { ...s.origins, [serverId]: origin } },
+    ),
+  reset: () => set({ info: null, account: null, spaces: {}, forked: [], missing: {}, origins: {} }),
 }));
 
 /** Whether `spaceId` is a direct space: this relay's or one on another relay. */

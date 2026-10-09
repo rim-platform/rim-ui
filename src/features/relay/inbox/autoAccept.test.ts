@@ -21,11 +21,13 @@ beforeEach(() => {
   api.acceptDmRequest.mockReset();
   members.fetchServerMembers.mockReset();
   useRelayStore.getState().reset();
-  useRelayStore.getState().setStarted(
-    { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
-    { endpoint: "e", userId: "u1", principalId: "rimp1_me", deviceId: "d1" },
-    [],
-  );
+  useRelayStore
+    .getState()
+    .setStarted(
+      { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
+      { endpoint: "e", userId: "u1", principalId: "rimp1_me", deviceId: "d1" },
+      [],
+    );
   queryClient.setQueryData(queryKeys.myServers(), [{ id: "ws-1" }, { id: "direct-1" }]);
 });
 

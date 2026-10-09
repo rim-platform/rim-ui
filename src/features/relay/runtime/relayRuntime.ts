@@ -27,7 +27,7 @@ import { rememberRelays } from "../contacts/knownRelays";
 import { useContactStore } from "../contacts/useContactStore";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
 import { getRecord, putRecord } from "../state/relayDb";
-import { ensurePinned, hostKeyAt, resetPinCache } from "../state/serverPins";
+import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
 import { loadSpaces, registerSpace } from "../state/spaces";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
 import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
@@ -107,6 +107,7 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
   const spaces = await loadSpaces(key).catch(() => []);
   useRelayStore.getState().setStarted(info, account, spaces);
   await loadRelayHealth(key).catch(() => undefined);
+  await loadPins([...new Set(spaces.map((s) => s.hostServerId))]);
   await useContactStore
     .getState()
     .load()

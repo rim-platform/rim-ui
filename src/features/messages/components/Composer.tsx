@@ -20,6 +20,7 @@ import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useConversation } from "../../conversations/api/useConversation";
 import { JoinChannelBar } from "../../conversations/components/JoinChannelBar";
 import { ArchivedConversationBar } from "../../conversations/components/ArchivedConversationBar";
+import { SuccessorOffer } from "../../relay/components/SuccessorOffer";
 import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
 import {
   graphqlErrorCode,
@@ -72,11 +73,14 @@ export function Composer({ workspaceId, conversationId, encryption }: ComposerPr
     return <JoinChannelBar workspaceId={workspaceId} conversation={conversation} />;
   }
   return (
-    <MessageComposer
-      workspaceId={workspaceId}
-      conversationId={conversationId}
-      encryption={encryption}
-    />
+    <>
+      <SuccessorOffer workspaceId={workspaceId} conversationId={conversationId} />
+      <MessageComposer
+        workspaceId={workspaceId}
+        conversationId={conversationId}
+        encryption={encryption}
+      />
+    </>
   );
 }
 
