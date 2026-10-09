@@ -52,12 +52,30 @@ export function useConversation(workspaceId?: string | null, conversationId?: st
     enabled: Boolean(ws && id),
     staleTime: 30_000,
     placeholderData: () => findCachedConversation(qc, ws, id),
-    queryFn: async () => {
-      const res = await graphqlClient.request<{ conversation: ConversationSummary }>(
-        CONVERSATION_QUERY,
-        { serverId: ws!, conversationId: id! },
-      );
-      return res.conversation;
-    },
+    queryFn: () => requestConversation(ws!, id!),
+  });
+}
+
+async function requestConversation(
+  workspaceId: string,
+  conversationId: string,
+): Promise<ConversationSummary> {
+  const res = await graphqlClient.request<{ conversation: ConversationSummary }>(
+    CONVERSATION_QUERY,
+    { serverId: workspaceId, conversationId },
+  );
+  return res.conversation;
+}
+
+/** One conversation by id outside React, through the same query cache as {@link useConversation}. */
+export function fetchConversation(
+  qc: QueryClient,
+  workspaceId: string,
+  conversationId: string,
+): Promise<ConversationSummary> {
+  return qc.fetchQuery({
+    queryKey: queryKeys.conversation(workspaceId, conversationId),
+    staleTime: 30_000,
+    queryFn: () => requestConversation(workspaceId, conversationId),
   });
 }
