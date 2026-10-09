@@ -6,6 +6,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import {
   abandonEnrollment,
@@ -58,6 +59,9 @@ export function KeyIdentitySettings() {
   const me: Me | null = user
     ? { userId: user.id, username: user.username, displayName: user.displayName || user.username }
     : null;
+  // Set when this panel enrolled the account, so the overview that replaces the enrollment
+  // offers to sign out the sessions opened before the key.
+  const [justEnrolled, setJustEnrolled] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -82,9 +86,10 @@ export function KeyIdentitySettings() {
           principalId={identity.data.principalId}
           me={me}
           canSign={capabilities.identityKeys}
+          justEnrolled={justEnrolled}
         />
       ) : capabilities.identityKeys ? (
-        <EnrollKeyIdentity me={me} />
+        <EnrollKeyIdentity me={me} onEnrolled={() => setJustEnrolled(true)} />
       ) : (
         <p className="text-sm text-rim-text-muted">Key sign-in is set up from the desktop app.</p>
       )}
@@ -96,7 +101,7 @@ export function KeyIdentitySettings() {
 
 type EnrollStep = "intro" | "kit" | "done";
 
-function EnrollKeyIdentity({ me }: { me: Me }) {
+function EnrollKeyIdentity({ me, onEnrolled }: { me: Me; onEnrolled: () => void }) {
   const qc = useQueryClient();
   const [step, setStep] = useState<EnrollStep>("intro");
   const [deviceName, setDeviceName] = useState("");
@@ -149,6 +154,7 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
       // The kit is saved and the keys are enrolled: the phrase leaves memory here.
       setDraft(null);
       setStep("done");
+      onEnrolled();
       void qc.invalidateQueries({ queryKey: queryKeys.me });
       void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
     } catch (err) {
@@ -241,11 +247,13 @@ function KeyIdentityOverview({
   principalId,
   me,
   canSign,
+  justEnrolled,
 }: {
   identity: MyKeyIdentity;
   principalId: string;
   me: Me;
   canSign: boolean;
+  justEnrolled: boolean;
 }) {
   const qc = useQueryClient();
   const local = useQuery({
@@ -323,6 +331,11 @@ function KeyIdentityOverview({
           <p role="alert" className="mt-2 text-xs text-rim-danger">
             {errorText(local.error, "Could not check this computer's keys.")}
           </p>
+        )}
+        {justEnrolled && (
+          <div className="mt-4 border-t border-rim-line pt-4">
+            <SignOutOtherSessions description="Password sessions opened before the key stay valid until they expire. Sign them out so only your keys get in." />
+          </div>
         )}
       </div>
 

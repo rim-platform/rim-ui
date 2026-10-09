@@ -1554,6 +1554,10 @@ enum MessageTagTypeGql {
 type Mutation {
 	login(input: LoginInput!): LoginPayload!
 	logout: Boolean!
+	"""
+	End every session of the signed-in account except this one. Returns how many ended.
+	"""
+	logoutOtherSessions: Int!
 	createInvite(input: CreateInviteInput!): CreateInvitePayload!
 	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
 	revokeInvite(inviteId: ID!): Boolean!

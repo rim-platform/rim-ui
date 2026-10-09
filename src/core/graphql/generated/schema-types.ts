@@ -1530,6 +1530,8 @@ export type Mutation = {
    */
   loginWithKey: LoginPayload;
   logout: Scalars['Boolean']['output'];
+  /** End every session of the signed-in account except this one. Returns how many ended. */
+  logoutOtherSessions: Scalars['Int']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
   markAsRead: Scalars['Boolean']['output'];
   /**
