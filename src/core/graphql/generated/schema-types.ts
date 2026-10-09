@@ -447,6 +447,33 @@ export type Conversation = {
   topic?: Maybe<Scalars['String']['output']>;
 };
 
+/** How one conversation of a `messageChanges` request was answered. */
+export enum ConversationChangesStatus {
+  /**
+   * The caller cannot read this conversation (removed from it, not a member of a private one,
+   * or it does not exist). No changes; the cursor is echoed. Stop syncing it.
+   */
+  NO_ACCESS = 'NO_ACCESS',
+  /** The changes after the requested cursor. */
+  OK = 'OK',
+  /**
+   * The stored cursor is ahead of the server (its counters were reset). The changes start
+   * from the beginning: drop the cached copy of this conversation, then apply them.
+   */
+  RESET = 'RESET'
+}
+
+/** The changes of one conversation after the requested cursor, oldest first. */
+export type ConversationMessageChanges = {
+  changes: Array<MessageChange>;
+  conversationId: Scalars['ID']['output'];
+  /** Store this and pass it as `after` next time. Opaque. */
+  cursor: Scalars['String']['output'];
+  /** More changes follow `cursor`; ask again with it right away. */
+  hasMore: Scalars['Boolean']['output'];
+  status: ConversationChangesStatus;
+};
+
 /** The viewer's level for one conversation, as returned by `setConversationNotificationLevel`. */
 export type ConversationNotificationLevel = {
   conversationId: Scalars['ID']['output'];
@@ -1250,6 +1277,49 @@ export type Message = {
   serverId: Scalars['ID']['output'];
   text?: Maybe<Scalars['String']['output']>;
   threadId?: Maybe<Scalars['ID']['output']>;
+};
+
+/** A message as it is now, at its newest change. A message appears at most once per page. */
+export type MessageChange = {
+  /** When the text last changed; null for a never-edited message. */
+  editedAt?: Maybe<Scalars['DateTime']['output']>;
+  kind: MessageChangeKind;
+  /** The message. Deleted messages come back with `isDeleted: true` and null `text`. */
+  message: Message;
+  /**
+   * The message's position in its conversation's change sequence, as a decimal string.
+   * Increases with every change; compare it to a cached copy to keep the newer one.
+   */
+  version: Scalars['String']['output'];
+};
+
+/** One conversation to read in `messageChanges`, with the cursor the client stored for it. */
+export type MessageChangeCursorInput = {
+  /**
+   * The `cursor` a previous `messageChanges` call returned for this conversation. Opaque.
+   * Omit (or pass null) to read the conversation's whole history from the beginning.
+   */
+  after?: InputMaybe<Scalars['String']['input']>;
+  conversationId: Scalars['ID']['input'];
+};
+
+/**
+ * What happened to a message, judged from its state at its newest change. `DELETED` wins over
+ * `EDITED`; a message whose text never changed is `CREATED`.
+ */
+export enum MessageChangeKind {
+  CREATED = 'CREATED',
+  DELETED = 'DELETED',
+  EDITED = 'EDITED'
+}
+
+/** Input for `messageChanges`. */
+export type MessageChangesInput = {
+  /** At most 100 conversations. One the caller cannot read comes back with status `NO_ACCESS`. */
+  conversations: Array<MessageChangeCursorInput>;
+  /** Maximum changes per conversation. Clamped to 1..=200; defaults to 100. */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  serverId: Scalars['ID']['input'];
 };
 
 export type MessageCursorInput = {
@@ -2424,6 +2494,13 @@ export type Query = {
   macroByName?: Maybe<MacroDef>;
   me: User;
   message: Message;
+  /**
+   * The message change feed: for each conversation, the messages created, edited or deleted
+   * after its cursor (timeline and thread replies alike), oldest change first. A client cache
+   * stores each returned `cursor` and passes it back as `after`. Contract (frozen):
+   * `docs/message-change-feed.md`.
+   */
+  messageChanges: Array<ConversationMessageChanges>;
   messageReference: MessageReference;
   /**
    * Message reports of the workspace (all statuses when `status` is omitted), ordered
@@ -2652,6 +2729,11 @@ export type QueryMessageArgs = {
   conversationId: Scalars['ID']['input'];
   messageId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMessageChangesArgs = {
+  input: MessageChangesInput;
 };
 
 

@@ -1,0 +1,283 @@
+//! The encrypted SQLite database behind the cache: opening it, its schema, and timeline reads.
+//! Writes from the change feed live in `sync.rs`.
+
+use std::path::Path;
+
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension};
+use serde::{Deserialize, Serialize};
+
+use super::key::CacheKey;
+use super::{AccountId, CacheError};
+
+/// Bump with a new arm in [`migrate`] when the schema changes.
+const SCHEMA_VERSION: i32 = 1;
+
+/// Schema v1.
+///
+/// `message` has the body in its own `text` column and an explicit `INTEGER PRIMARY KEY`
+/// (`seq`, an alias of the rowid), so PR 10 can add an external-content FTS5 index
+/// (`content='message', content_rowid='seq'`) without moving data. The alias matters: `VACUUM`
+/// may renumber the rowids of a table without one, which would leave the index pointing at the
+/// wrong rows. Writes upsert by `id` and never `REPLACE`, which keeps each message's `seq`.
+const SCHEMA_V1: &str = "
+CREATE TABLE meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- One row per conversation the cache follows: opened or recently viewed in this workspace.
+CREATE TABLE conversation_sync (
+    workspace_id    TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    -- Opaque change-feed cursor; NULL reads the conversation from the beginning.
+    cursor          TEXT,
+    -- 1 while the feed has more changes to fetch for this conversation.
+    pending         INTEGER NOT NULL DEFAULT 0,
+    -- 1 once the cache holds the whole history (a sync reached hasMore = false).
+    complete        INTEGER NOT NULL DEFAULT 0,
+    -- Unix milliseconds; picks which conversations a full sync covers.
+    last_viewed_at  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (workspace_id, conversation_id)
+);
+
+CREATE TABLE message (
+    seq             INTEGER PRIMARY KEY,
+    id              TEXT NOT NULL UNIQUE,
+    workspace_id    TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    thread_id       TEXT,
+    author_id       TEXT NOT NULL,
+    -- The feed's version; an upsert only replaces a row with a higher one.
+    version         INTEGER NOT NULL,
+    sent_at_us      INTEGER NOT NULL,
+    edited_at       TEXT,
+    is_deleted      INTEGER NOT NULL,
+    -- The body. NULL for a tombstone.
+    text            TEXT,
+    -- The rest of the message as the UI renders it (JSON, without `text`).
+    payload         TEXT NOT NULL
+);
+
+CREATE INDEX message_timeline
+    ON message (workspace_id, conversation_id, thread_id, sent_at_us, id);
+";
+
+/// An open cache database of one account.
+pub(crate) struct CacheStore {
+    pub(super) conn: Connection,
+}
+
+/// A page of a conversation's timeline served from the cache, oldest first.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TimelinePage {
+    pub items: Vec<serde_json::Value>,
+    /// Older messages than the first item are cached too.
+    pub has_older: bool,
+}
+
+/// The UI's `MessageCursor`: page from messages older than this one.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TimelineCursor {
+    pub sent_at: String,
+    pub message_id: String,
+}
+
+impl CacheStore {
+    /// Open (or create) the database at `path` with `key`. A file the key cannot read (the
+    /// keyring entry was reset, or the file is damaged) is a cache with nothing worth
+    /// keeping: it is deleted and created again, and the feed refills it.
+    pub(crate) fn open(
+        path: &Path,
+        key: &CacheKey,
+        account: &AccountId,
+    ) -> Result<Self, CacheError> {
+        let conn = match open_keyed(path, key) {
+            Ok(conn) => conn,
+            Err(CacheError::Unreadable) => {
+                log::warn!(
+                    "[message_cache] cache file is unreadable with the current key; recreating it"
+                );
+                remove_database_files(path)?;
+                open_keyed(path, key)?
+            }
+            Err(e) => return Err(e),
+        };
+        let store = Self { conn };
+        store.migrate()?;
+        store.check_account(account)?;
+        Ok(store)
+    }
+
+    fn migrate(&self) -> Result<(), CacheError> {
+        let version: i32 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version > SCHEMA_VERSION {
+            return Err(CacheError::Schema(format!(
+                "cache schema {version} is newer than this build ({SCHEMA_VERSION})"
+            )));
+        }
+        if version < 1 {
+            self.conn.execute_batch(SCHEMA_V1)?;
+            self.conn.pragma_update(None, "user_version", 1)?;
+        }
+        Ok(())
+    }
+
+    /// The file is named after a hash of the account; the account is also written inside it,
+    /// so a file can never be served to a different account.
+    fn check_account(&self, account: &AccountId) -> Result<(), CacheError> {
+        let stored: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM meta WHERE key = 'account'", [], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        match stored {
+            Some(stored) if stored == account.label() => Ok(()),
+            Some(_) => Err(CacheError::AccountMismatch),
+            None => {
+                self.conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('account', ?1)",
+                    params![account.label()],
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Start following a conversation, or note that it was viewed again.
+    pub(crate) fn track(
+        &self,
+        workspace_id: &str,
+        conversation_id: &str,
+        now_ms: i64,
+    ) -> Result<(), CacheError> {
+        self.conn.execute(
+            "INSERT INTO conversation_sync (workspace_id, conversation_id, last_viewed_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT (workspace_id, conversation_id)
+             DO UPDATE SET last_viewed_at = excluded.last_viewed_at",
+            params![workspace_id, conversation_id, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// The newest `limit` timeline messages (no thread replies, no tombstones) older than
+    /// `before`, oldest first. `None` until the conversation's history is fully cached: a
+    /// partial initial sync holds the *oldest* messages, which must not pass for the latest.
+    pub(crate) fn timeline(
+        &self,
+        workspace_id: &str,
+        conversation_id: &str,
+        before: Option<&TimelineCursor>,
+        limit: u32,
+    ) -> Result<Option<TimelinePage>, CacheError> {
+        let complete: Option<bool> = self
+            .conn
+            .query_row(
+                "SELECT complete FROM conversation_sync
+                 WHERE workspace_id = ?1 AND conversation_id = ?2",
+                params![workspace_id, conversation_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if complete != Some(true) {
+            return Ok(None);
+        }
+
+        let (before_us, before_id) = match before {
+            Some(cursor) => (
+                parse_timestamp_us(&cursor.sent_at)?,
+                cursor.message_id.clone(),
+            ),
+            None => (i64::MAX, String::new()),
+        };
+        let limit = limit.clamp(1, 200);
+
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT text, payload FROM message
+             WHERE workspace_id = ?1 AND conversation_id = ?2 AND thread_id IS NULL
+               AND is_deleted = 0
+               AND (sent_at_us, id) < (?3, ?4)
+             ORDER BY sent_at_us DESC, id DESC
+             LIMIT ?5",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                workspace_id,
+                conversation_id,
+                before_us,
+                before_id,
+                limit + 1
+            ],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )?;
+
+        let mut items = Vec::new();
+        for row in rows {
+            let (text, payload) = row?;
+            items.push(render(text, &payload)?);
+        }
+        let has_older = items.len() > limit as usize;
+        items.truncate(limit as usize);
+        items.reverse();
+        Ok(Some(TimelinePage { items, has_older }))
+    }
+}
+
+/// The stored payload with its text put back, as the UI's `MessageItem`.
+fn render(text: Option<String>, payload: &str) -> Result<serde_json::Value, CacheError> {
+    let mut value: serde_json::Value = serde_json::from_str(payload)?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "text".into(),
+            serde_json::Value::String(text.unwrap_or_default()),
+        );
+    }
+    Ok(value)
+}
+
+/// RFC 3339 to microseconds since the epoch, the precision the server stores.
+pub(super) fn parse_timestamp_us(value: &str) -> Result<i64, CacheError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|t| t.timestamp_micros())
+        .map_err(|_| CacheError::Invalid(format!("not an RFC 3339 timestamp: {value}")))
+}
+
+fn open_keyed(path: &Path, key: &CacheKey) -> Result<Connection, CacheError> {
+    let conn = Connection::open(path)?;
+    // Must be the first statement on the connection.
+    conn.execute_batch(&format!(
+        "PRAGMA key = \"{}\";",
+        key.sqlcipher_literal().as_str()
+    ))?;
+    // The first read is where SQLCipher finds out whether the key fits.
+    match conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    }) {
+        Ok(_) => {}
+        Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == ErrorCode::NotADatabase => {
+            return Err(CacheError::Unreadable)
+        }
+        Err(e) => return Err(e.into()),
+    }
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    Ok(conn)
+}
+
+fn remove_database_files(path: &Path) -> Result<(), CacheError> {
+    for suffix in ["", "-wal", "-shm"] {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        match std::fs::remove_file(&name) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(CacheError::Io(e.to_string())),
+        }
+    }
+    Ok(())
+}
