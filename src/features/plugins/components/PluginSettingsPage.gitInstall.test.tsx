@@ -96,7 +96,15 @@ describe("PluginSettingsPage — git install consent flow", () => {
     expect(screen.getByText("npm install --production")).toBeInTheDocument();
     expect(screen.getByText("/home/u/.rim/plugins/dev.acme.weather")).toBeInTheDocument();
     expect(installCalls()).toEqual([
-      ["plugin_install_from_git", { url: URL, branch: null, allowPostInstall: false }],
+      [
+        "plugin_install_from_git",
+        {
+          url: URL,
+          branch: null,
+          allowPostInstall: false,
+          forbiddenOrigins: expect.any(Array),
+        },
+      ],
     ]);
   });
 
@@ -126,8 +134,24 @@ describe("PluginSettingsPage — git install consent flow", () => {
       expect(screen.queryByRole("dialog", { name: "Run plugin install scripts?" })).toBeNull(),
     );
     expect(installCalls()).toEqual([
-      ["plugin_install_from_git", { url: URL, branch: null, allowPostInstall: false }],
-      ["plugin_install_from_git", { url: URL, branch: null, allowPostInstall: true }],
+      [
+        "plugin_install_from_git",
+        {
+          url: URL,
+          branch: null,
+          allowPostInstall: false,
+          forbiddenOrigins: expect.any(Array),
+        },
+      ],
+      [
+        "plugin_install_from_git",
+        {
+          url: URL,
+          branch: null,
+          allowPostInstall: true,
+          forbiddenOrigins: expect.any(Array),
+        },
+      ],
     ]);
     expect(screen.queryByRole("alert")).toBeNull();
   });

@@ -1,0 +1,54 @@
+{
+  "manifest_version": 1,
+  "plugin_id": "chat.rim.github-prs",
+  "display_name": "GitHub Pull Requests",
+  "version": "0.1.0",
+  "author": "RIM team",
+  "runtime_kind": "WebSandboxed",
+  "entrypoint": "main.ts",
+  "description": "Lists the open pull requests of public GitHub repositories you choose. Talks only to GitHub, without a token.",
+  "capabilities": ["ui.panel", "network.fetch"],
+  "network_origins": ["https://api.github.com", "https://avatars.githubusercontent.com"],
+  "commands": [
+    {
+      "id": "refresh",
+      "title": "Pull requests: Refresh",
+      "description": "Fetches the open pull requests again.",
+      "keybind_capable": true
+    },
+    {
+      "id": "add_repo",
+      "title": "Pull requests: Add repository",
+      "description": "Adds a public GitHub repository to the list, at most 10.",
+      "arguments": [
+        {
+          "name": "repo",
+          "type": "string",
+          "required": true,
+          "description": "The repository as owner/name, such as rust-lang/rust."
+        }
+      ]
+    },
+    {
+      "id": "remove_repo",
+      "title": "Pull requests: Remove repository",
+      "description": "Removes a repository from the list.",
+      "arguments": [
+        {
+          "name": "repo",
+          "type": "string",
+          "required": true,
+          "description": "The repository as owner/name."
+        }
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "prs",
+      "title": "Pull requests",
+      "description": "Open pull requests of the repositories you added.",
+      "slot": "tool_panel"
+    }
+  ]
+}

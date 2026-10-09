@@ -45,6 +45,10 @@ static METHOD_CAPABILITY_MAP: LazyLock<HashMap<&'static str, &'static str>> = La
 /// wired, so the approval prompt never asks for a permission that does nothing.
 pub const BUILTIN_CAPABILITIES: &[&str] = &["ui.panel", "ui.notify"];
 
+/// Lets a `WebSandboxed` plugin connect to the origins its manifest lists. No
+/// host method needs it: the frame's content security policy enforces it.
+pub const NETWORK_FETCH: &str = "network.fetch";
+
 /// Methods that are always allowed without capability approval.
 const ALWAYS_ALLOWED: &[&str] = &["rim.log", "rim.heartbeat_response"];
 

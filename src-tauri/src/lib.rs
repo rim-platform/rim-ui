@@ -20,7 +20,8 @@ pub fn run() {
         // Register the rim-plugin:// URI scheme for serving plugin panel assets.
         // The handler resolves rim-plugin://<plugin_id>/<panel_id>/<rest> to
         // ~/.rim/plugins/<plugin_id>/panels/<panel_id>/<rest> with full
-        // path-traversal validation.  See plugin_protocol.rs for the resolver
+        // path-traversal validation, and rim-plugin://shell/v1/ to the frame
+        // shell web plugins load.  See plugin_protocol.rs for the resolver
         // and its security model.
         .register_asynchronous_uri_scheme_protocol("rim-plugin", |_app, request, responder| {
             use plugin_host::plugin_protocol::{resolve_plugin_uri, ResolveResult};
@@ -31,6 +32,23 @@ pub fn run() {
             let path_part = uri
                 .strip_prefix("rim-plugin://")
                 .unwrap_or(&uri);
+
+            // The frame shell web plugins' frames load: fixed files compiled in.
+            if let Some((bytes, mime)) = plugin_host::plugin_protocol::shell_asset(path_part) {
+                let response = tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", mime)
+                    .header(
+                        "Content-Security-Policy",
+                        plugin_host::plugin_protocol::SHELL_POLICY,
+                    )
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Referrer-Policy", "no-referrer")
+                    .body(bytes.to_vec())
+                    .expect("failed to build response");
+                responder.respond(response);
+                return;
+            }
 
             let plugins_root = plugin_host::discovery::plugins_dir();
 
@@ -113,6 +131,13 @@ pub fn run() {
             plugin_host::commands::plugin_panel_state,
             plugin_host::commands::plugin_relay_ui_event,
             plugin_host::commands::plugin_set_principal,
+            plugin_host::commands::plugin_install_bundle,
+            plugin_host::commands::plugin_web_files,
+            plugin_host::commands::plugin_set_starting,
+            plugin_host::commands::plugin_storage_get,
+            plugin_host::commands::plugin_storage_set,
+            plugin_host::commands::plugin_principal_mappings,
+            plugin_host::commands::plugin_check_ai_consent,
             agent_proxy::agent_chat_completion,
             agent_proxy::agent_validate_credentials,
             agent_proxy::agent_validate_provided_key,

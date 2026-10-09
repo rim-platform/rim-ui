@@ -36,7 +36,7 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
 // to keep the selected/highlighted row visible. Provide a no-op so those
 // effects don't throw; tests that care about scroll position should assert
 // on it via a spy, not this global stub.
-if (typeof Element.prototype.scrollIntoView !== "function") {
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
 

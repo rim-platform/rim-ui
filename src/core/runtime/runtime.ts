@@ -4,7 +4,10 @@ export type OsType = "macos" | "windows" | "linux" | "unknown";
 
 export type RuntimeCapabilities = {
   dockedThreadPane: boolean;
+  /** Plugins that run as local processes. Desktop only. */
   pluginHost: boolean;
+  /** WebSandboxed plugins, which run in sandboxed frames of the app: desktop and web. */
+  webPlugins: boolean;
   agent: boolean;
   deviceLocalKeybinds: boolean;
   customTitleBar: boolean;
@@ -57,6 +60,7 @@ export function getRuntimeCapabilities(
     return {
       dockedThreadPane: true,
       pluginHost: true,
+      webPlugins: true,
       agent: true,
       deviceLocalKeybinds: true,
       customTitleBar: true,
@@ -69,6 +73,7 @@ export function getRuntimeCapabilities(
     return {
       dockedThreadPane: true,
       pluginHost: false,
+      webPlugins: true,
       agent: false,
       deviceLocalKeybinds: true,
       customTitleBar: false,
@@ -80,6 +85,7 @@ export function getRuntimeCapabilities(
   return {
     dockedThreadPane: false,
     pluginHost: false,
+    webPlugins: false,
     agent: false,
     deviceLocalKeybinds: false,
     customTitleBar: false,

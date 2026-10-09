@@ -27,6 +27,9 @@ pub enum LifecycleError {
     /// Bundle fingerprint changed since TOFU install — user must trust new version.
     #[error("plugin bundle fingerprint changed since install: {0}")]
     FingerprintChanged(String),
+    /// A `WebSandboxed` plugin's installed files break the bundle rules.
+    #[error("plugin files: {0}")]
+    Bundle(String),
 }
 
 impl serde::Serialize for LifecycleError {
@@ -82,6 +85,8 @@ pub fn install(
         bundle_fingerprint: String::new(),
         fingerprint_changed: false,
         last_error: None,
+        source: None,
+        starting: false,
     });
     Ok(())
 }
@@ -254,9 +259,11 @@ pub fn enable(store: &mut PluginStateStore, plugin_id: &str) -> Result<(), Lifec
         PluginStatus::Error => {}
     }
 
+    // Enabling is the user retrying, so a start the app died in no longer blocks it.
     store.upsert(PluginRecord {
         status: PluginStatus::Enabled,
         last_error: None,
+        starting: false,
         ..record
     });
     Ok(())
@@ -317,6 +324,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main.js".into(),
             capabilities: vec![cap1, cap2],
+            network_origins: None,
             commands: vec![],
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -440,6 +448,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main.js".into(),
             capabilities: vec!["system.evil".into()],
+            network_origins: None,
             commands: vec![],
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -478,6 +487,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main.js".into(),
             capabilities: vec![cap],
+            network_origins: None,
             commands: vec![ManifestCommand {
                 id: "expose_id".into(),
                 title: "Expose".into(),
@@ -525,6 +535,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main.js".into(),
             capabilities: vec![cap],
+            network_origins: None,
             commands: vec![ManifestCommand {
                 id: "search".into(),
                 title: "Search".into(),

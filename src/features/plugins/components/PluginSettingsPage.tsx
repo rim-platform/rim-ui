@@ -21,10 +21,13 @@ import {
   usePluginInstallFromGit,
   usePluginTrustFingerprint,
 } from "../api/usePluginActions";
+import { InstallFromLink } from "./InstallFromLink";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
+import { kindLabel, trustBadge } from "./pluginTrust";
 import {
   parsePostInstallConsent,
+  runtimeKind,
   type PluginInfo,
   type PluginHealth,
   type PostInstallConsentRequest,
@@ -38,11 +41,14 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
 };
 
 /**
- * The full plugin settings page, shown on desktop when `capabilities.pluginHost` is true.
+ * The plugin settings page. The desktop lists both kinds of plugin; the web,
+ * which runs only WebSandboxed plugins, lists those and shows any local-process
+ * entry as needing the desktop app.
  *
  * Surfaces:
- * - Install from local folder button (webkitdirectory input, works in Tauri webview)
- * - Install from git URL button + text input
+ * - Install from local folder button (webkitdirectory input, works in Tauri webview), desktop only
+ * - Install from git URL button + text input, desktop only
+ * - Install from link (a `.rimbundle` link pinned by its SHA-256), desktop and web
  * - List of installed plugins with enable/disable/uninstall + fingerprint trust action
  * - Empty state with onboarding copy when no plugins are installed
  *
@@ -151,9 +157,11 @@ export function PluginSettingsPage() {
     runGitInstall(trimmed, false);
   }, [gitUrl, runGitInstall]);
 
-  if (!capabilities.pluginHost) {
+  if (!capabilities.pluginHost && !capabilities.webPlugins) {
     return <PluginDesktopOnlyCard />;
   }
+  // Only the desktop runs plugins as local processes.
+  const desktop = capabilities.pluginHost;
 
   if (isLoading) {
     return <p className="text-sm text-rim-text-muted">Loading plugins...</p>;
@@ -164,6 +172,7 @@ export function PluginSettingsPage() {
       // Fingerprint check: block enable until user trusts the new version.
       return;
     }
+    if (!desktop && runtimeKind(plugin) !== "WebSandboxed") return;
     if (plugin.enabled) {
       disable.mutate(plugin.plugin_id);
     } else {
@@ -194,33 +203,48 @@ export function PluginSettingsPage() {
     <div className="space-y-4">
       {/* Install affordances */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Hidden folder picker — see module docblock */}
-        <input
-          ref={folderInputRef}
-          type="file"
-          // @ts-expect-error webkitdirectory is not in the standard TS types but works in all Tauri-supported browsers
-          webkitdirectory=""
-          className="hidden"
-          onChange={handleFolderSelected}
-          aria-hidden
-        />
-        <Button variant="secondary" size="sm" onClick={handleFolderPick} disabled={isInstalling}>
-          <FolderOpen className="mr-1.5 h-4 w-4" />
-          Install from local folder
-        </Button>
+        {desktop && (
+          <>
+            {/* Hidden folder picker — see module docblock */}
+            <input
+              ref={folderInputRef}
+              type="file"
+              // @ts-expect-error webkitdirectory is not in the standard TS types but works in all Tauri-supported browsers
+              webkitdirectory=""
+              className="hidden"
+              onChange={handleFolderSelected}
+              aria-hidden
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleFolderPick}
+              disabled={isInstalling}
+            >
+              <FolderOpen className="mr-1.5 h-4 w-4" />
+              Install from local folder
+            </Button>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setGitUrlOpen((v) => !v)}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setGitUrlOpen((v) => !v)}
+              disabled={isInstalling}
+            >
+              <GitBranch className="mr-1.5 h-4 w-4" />
+              Install from git URL
+            </Button>
+          </>
+        )}
+
+        <InstallFromLink
+          installed={plugins ?? []}
           disabled={isInstalling}
-        >
-          <GitBranch className="mr-1.5 h-4 w-4" />
-          Install from git URL
-        </Button>
+          onInstalled={(pluginId) => setInstalledId(pluginId)}
+        />
       </div>
 
-      {gitUrlOpen && (
+      {desktop && gitUrlOpen && (
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -264,7 +288,7 @@ export function PluginSettingsPage() {
 
       {/* Plugin list or empty state */}
       {!plugins || plugins.length === 0 ? (
-        <PluginEmptyState />
+        <PluginEmptyState desktop={desktop} />
       ) : (
         <>
           <h2 className="text-sm font-medium text-rim-text">Installed Plugins</h2>
@@ -273,6 +297,7 @@ export function PluginSettingsPage() {
               <PluginRow
                 key={plugin.plugin_id}
                 plugin={plugin}
+                needsDesktop={!desktop && runtimeKind(plugin) !== "WebSandboxed"}
                 onToggle={handleToggle}
                 onUninstall={handleUninstall}
                 onPermissions={setPermissionsTarget}
@@ -313,6 +338,8 @@ export function PluginSettingsPage() {
 
 interface PluginRowProps {
   plugin: PluginInfo;
+  /** A local-process plugin seen on the web, which cannot run it. */
+  needsDesktop?: boolean;
   onToggle: (plugin: PluginInfo) => void;
   onUninstall: (pluginId: string) => void;
   onPermissions: (plugin: PluginInfo) => void;
@@ -332,6 +359,7 @@ interface PluginRowProps {
  */
 function PluginRow({
   plugin,
+  needsDesktop = false,
   onToggle,
   onUninstall,
   onPermissions,
@@ -339,6 +367,7 @@ function PluginRow({
   trustPending,
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
+  const blocked = plugin.fingerprint_changed || needsDesktop;
 
   return (
     <div className="rounded-lg border border-rim-line bg-rim-void">
@@ -358,18 +387,30 @@ function PluginRow({
             )}
           </div>
           <p className="text-xs text-rim-text-muted">{plugin.description}</p>
+          <p className="text-[11px] text-rim-text-faint">
+            {kindLabel(plugin)} · {trustBadge(plugin)}
+          </p>
           <div className="flex items-center gap-3 text-[11px] text-rim-text-muted">
             <span>
               v{plugin.version}
               {plugin.author ? ` by ${plugin.author}` : ""}
             </span>
-            {healthState && (
-              <span className="flex items-center gap-1">
-                <span className={cn("h-1.5 w-1.5 rounded-full", healthState.color)} />
-                {healthState.label}
-              </span>
+            {needsDesktop ? (
+              <span className="text-rim-warm">Needs the desktop app</span>
+            ) : (
+              healthState && (
+                <span className="flex items-center gap-1">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", healthState.color)} />
+                  {healthState.label}
+                </span>
+              )
             )}
           </div>
+          {plugin.enabled && plugin.last_error && (
+            <p className="mt-0.5 text-[11px] text-rim-danger" role="status">
+              {plugin.last_error}
+            </p>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -380,28 +421,16 @@ function PluginRow({
           <button
             type="button"
             onClick={() => onToggle(plugin)}
-            disabled={plugin.fingerprint_changed}
+            disabled={blocked}
             className={cn(
               "relative inline-flex h-5 w-9 items-center rounded-full transition",
-              plugin.fingerprint_changed && "cursor-not-allowed opacity-40",
+              blocked && "cursor-not-allowed opacity-40",
             )}
             style={{
               backgroundColor: plugin.enabled ? "var(--color-rim-accent)" : "var(--color-rim-line)",
             }}
-            title={
-              plugin.fingerprint_changed
-                ? "Trust the new version before enabling"
-                : plugin.enabled
-                  ? "Disable plugin"
-                  : "Enable plugin"
-            }
-            aria-label={
-              plugin.fingerprint_changed
-                ? "Trust the new version before enabling"
-                : plugin.enabled
-                  ? "Disable plugin"
-                  : "Enable plugin"
-            }
+            title={toggleLabel(plugin, needsDesktop)}
+            aria-label={toggleLabel(plugin, needsDesktop)}
           >
             <span
               className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
@@ -464,6 +493,12 @@ function PluginRow({
   );
 }
 
+function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
+  if (needsDesktop) return "Needs the desktop app";
+  if (plugin.fingerprint_changed) return "Trust the new version before enabling";
+  return plugin.enabled ? "Disable plugin" : "Enable plugin";
+}
+
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 /**
@@ -473,13 +508,15 @@ function PluginRow({
  * affordances above.  Marketplace is deferred — copy says "coming soon" to
  * set expectations without blocking the install flow.
  */
-function PluginEmptyState() {
+function PluginEmptyState({ desktop }: { desktop: boolean }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
       <Puzzle className="h-8 w-8 text-rim-text-muted" />
       <p className="text-sm font-medium text-rim-text">No plugins installed</p>
       <p className="max-w-xs text-xs text-rim-text-muted">
-        Install from a local folder or git URL to get started. Marketplace coming soon.
+        {desktop
+          ? "Install from a local folder or git URL to get started. Marketplace coming soon."
+          : "Install a web plugin from a link to get started. Plugins that run programs on your computer need the desktop app."}
       </p>
     </div>
   );
@@ -488,11 +525,9 @@ function PluginEmptyState() {
 // ─── Desktop-only card ────────────────────────────────────────────────────────
 
 /**
- * Placeholder card shown in the web build when `runtime.pluginHost === false`.
- *
- * Plugins require OS-level subprocess access that the browser sandbox does not
- * permit, so they are desktop-only for v1.  This card explains why and points
- * the user to the desktop download.
+ * Placeholder card shown where no kind of plugin can run (`pluginHost` and
+ * `webPlugins` both false, as on mobile). It points the user to the desktop
+ * download.
  *
  * Detection goes through the runtime capability abstraction (`useRuntime`) rather
  * than branching on `import.meta.env.TAURI` directly, preserving the capability
@@ -507,8 +542,8 @@ export function PluginDesktopOnlyCard() {
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-semibold text-rim-text">Plugins require the desktop app</h3>
         <p className="max-w-xs text-xs text-rim-text-muted">
-          Plugins need OS-level subprocess access that the browser sandbox does not permit. Install
-          the RIM desktop app to use plugins.
+          This device cannot run plugins yet. Install the RIM desktop app, or use the web app on a
+          computer for plugins that run sandboxed in the browser.
         </p>
       </div>
       <a

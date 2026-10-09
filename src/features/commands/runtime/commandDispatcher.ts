@@ -10,7 +10,8 @@ import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
 import type { PluginCommandResult } from "../../plugins/types";
-import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
+import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { useIncidentStore } from "../../incidents/state/useIncidentStore";
@@ -504,6 +505,53 @@ export async function dispatchCommand(
   return result.executeCommand;
 }
 
+/**
+ * Send a plugin command to its host: the web plugin host in this page for an
+ * installed WebSandboxed plugin, else the desktop's Rust host (which the web
+ * does not have, so a local-process command there needs the desktop app).
+ * Both answer in the same shape.
+ */
+async function runPluginCommand(
+  pluginId: string,
+  command: string,
+  args: Record<string, unknown>,
+  confirmed: boolean,
+  callerPluginId?: string,
+): Promise<SafeInvokeResult<PluginCommandResult>> {
+  const web = webPluginHost.resolve(pluginId, command) !== null || webPluginHost.knows(pluginId);
+  if (!web) {
+    return safeInvoke<PluginCommandResult>("plugin_execute_command", {
+      pluginId,
+      command,
+      args,
+      confirmedDangerous: confirmed,
+      callerPluginId: callerPluginId ?? null,
+    });
+  }
+  try {
+    const output = await webPluginHost.execute({
+      pluginId,
+      commandId: command,
+      args,
+      confirmed,
+      callerPluginId,
+      initiator: "user",
+    });
+    return { ok: true, value: { status: "ok", payload: output.payload, message: output.message } };
+  } catch (error) {
+    const code = error instanceof WebCommandError ? error.kind : "INTERNAL_ERROR";
+    const message = error instanceof Error ? error.message : String(error);
+    const data = error instanceof WebCommandError ? error.data : undefined;
+    return {
+      ok: false,
+      error:
+        data === undefined
+          ? { kind: "backend_error", code, message }
+          : { kind: "backend_error", code, message, data },
+    };
+  }
+}
+
 async function dispatchPluginCommand(
   pluginId: string,
   command: string,
@@ -512,15 +560,9 @@ async function dispatchPluginCommand(
   callerPluginId?: string,
 ): Promise<CommandResult> {
   // The host resolves the id against installed manifests, gates `dangerous`
-  // commands on `confirmedDangerous`, and sends the command to the plugin process.
+  // commands on `confirmedDangerous`, and sends the command to the plugin.
   const run = (confirmed: boolean) =>
-    safeInvoke<PluginCommandResult>("plugin_execute_command", {
-      pluginId,
-      command,
-      args: args ?? {},
-      confirmedDangerous: confirmed,
-      callerPluginId: callerPluginId ?? null,
-    });
+    runPluginCommand(pluginId, command, args ?? {}, confirmed, callerPluginId);
   let result = await run(confirmedDangerous ?? false);
 
   // The host refused a dangerous command nobody confirmed. Ask the user here,

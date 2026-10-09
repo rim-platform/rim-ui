@@ -6,7 +6,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "browser": "./src/index.browser.ts",
+      "default": "./src/index.ts"
+    },
     "./testing": "./src/testing.ts"
   },
   "bin": {

@@ -16,6 +16,8 @@ vi.mock("../api/usePluginActions", () => ({
   usePluginDisable: vi.fn(() => ({ mutate: vi.fn() })),
   usePluginUninstall: vi.fn(() => ({ mutate: vi.fn() })),
   usePluginInstallFromLocal: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  usePluginInstallFromLink: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  fetchLinkBundle: vi.fn(),
   usePluginInstallFromGit: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   usePluginTrustFingerprint: vi.fn(() => ({
     mutate: vi.fn(),
@@ -57,10 +59,10 @@ function makePlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("PluginSettingsPage — web build (pluginHost: false)", () => {
+describe("PluginSettingsPage — no plugin runtime (pluginHost and webPlugins false)", () => {
   it("renders PluginDesktopOnlyCard and not the plugin list", () => {
     vi.mocked(useRuntime).mockReturnValue({
-      platform: "web",
+      platform: "mobile",
       osType: "unknown",
       capabilities: {
         dockedThreadPane: true,
@@ -77,11 +79,67 @@ describe("PluginSettingsPage — web build (pluginHost: false)", () => {
 
     // Desktop-only card must be present
     expect(screen.getByText("Plugins require the desktop app")).toBeInTheDocument();
-    expect(screen.getByText(/browser sandbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot run plugins yet/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /get the desktop app/i })).toBeInTheDocument();
 
     // Normal plugin list UI must NOT be present
     expect(screen.queryByText("Installed Plugins")).not.toBeInTheDocument();
+  });
+});
+
+describe("PluginSettingsPage — web build (webPlugins only)", () => {
+  beforeEach(() => {
+    vi.mocked(useRuntime).mockReturnValue({
+      platform: "web",
+      osType: "linux",
+      capabilities: {
+        dockedThreadPane: true,
+        pluginHost: false,
+        webPlugins: true,
+        agent: false,
+        deviceLocalKeybinds: true,
+        customTitleBar: false,
+        deviceKeys: true,
+        identityKeys: false,
+      },
+    } as ReturnType<typeof useRuntime>);
+  });
+
+  it("offers only Install from link", () => {
+    vi.mocked(usePluginList).mockReturnValue({ data: [], isLoading: false } as ReturnType<
+      typeof usePluginList
+    >);
+    render(<PluginSettingsPage />);
+    expect(screen.getByRole("button", { name: /install from link/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /install from local folder/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /install from git url/i })).toBeNull();
+    expect(screen.getByText(/install a web plugin from a link/i)).toBeInTheDocument();
+  });
+
+  it("lists web plugins with their source, and local-process ones as needing the desktop app", () => {
+    vi.mocked(usePluginList).mockReturnValue({
+      data: [
+        makePlugin({
+          plugin_id: "chat.rim.github-prs",
+          display_name: "GitHub Pull Requests",
+          runtime_kind: "WebSandboxed",
+          source: { kind: "link", url: "https://plugins.example.com/prs.rimbundle", sha256: "ab" },
+        }),
+        makePlugin({ plugin_id: "chat.rim.k8s-pods", display_name: "Kubernetes Pods" }),
+      ],
+      isLoading: false,
+    } as ReturnType<typeof usePluginList>);
+    render(<PluginSettingsPage />);
+
+    const web = screen.getByText("GitHub Pull Requests").closest(".rounded-lg") as HTMLElement;
+    expect(
+      within(web).getByText("Sandboxed · Unsigned · installed from a link (plugins.example.com)"),
+    ).toBeInTheDocument();
+    expect(within(web).getByRole("button", { name: "Enable plugin" })).toBeEnabled();
+
+    const local = screen.getByText("Kubernetes Pods").closest(".rounded-lg") as HTMLElement;
+    expect(within(local).getAllByText("Needs the desktop app").length).toBeGreaterThan(0);
+    expect(within(local).getByRole("button", { name: "Needs the desktop app" })).toBeDisabled();
   });
 });
 
@@ -110,6 +168,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
 
     expect(screen.getByRole("button", { name: /install from local folder/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /install from git url/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /install from link/i })).toBeInTheDocument();
   });
 
   it("renders empty state with marketplace copy when no plugins installed", () => {
@@ -224,9 +283,7 @@ describe("PluginDesktopOnlyCard", () => {
     render(<PluginDesktopOnlyCard />);
 
     expect(screen.getByText("Plugins require the desktop app")).toBeInTheDocument();
-    expect(
-      screen.getByText(/OS-level subprocess access that the browser sandbox does not permit/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/cannot run plugins yet/i)).toBeInTheDocument();
 
     const link = screen.getByRole("link", { name: /get the desktop app/i });
     expect(link).toHaveAttribute("href", "https://rim.dev/download");

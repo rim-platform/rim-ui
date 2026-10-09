@@ -24,10 +24,11 @@
 //! [`crate::plugin_host::state::PluginRecord::bundle_fingerprint`] and recomputed
 //! at enable time to detect tampering or silent updates.
 
+use crate::plugin_host::bundle::{self, BundleError};
 use crate::plugin_host::git_install::{detect_manifest, GitInstallError, PluginInstallResult};
-use crate::plugin_host::manifest::{ManifestError, PluginManifest};
+use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::plugin_protocol::is_safe_segment;
-use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
+use crate::plugin_host::validation::{validate_plugin_manifest_for_host, ValidationError};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -53,6 +54,9 @@ pub enum LocalInstallError {
     /// Lifecycle rejection forwarded from `lifecycle::install`.
     #[error("lifecycle error: {0}")]
     LifecycleFailure(String),
+    /// A bundle, or a `WebSandboxed` folder, that breaks the bundle rules.
+    #[error("{0}")]
+    Bundle(#[from] BundleError),
     /// IO failure.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -281,6 +285,7 @@ fn copy_dir_recursive(
 pub async fn install_from_local(
     source_path: &Path,
     existing_plugin_ids: &[String],
+    forbidden_origins: &[String],
 ) -> Result<(PluginManifest, PathBuf, PluginInstallResult, String), LocalInstallError> {
     // Step 1: validate path components.
     check_path_safe(source_path)?;
@@ -314,14 +319,19 @@ pub async fn install_from_local(
         other => LocalInstallError::Io(std::io::Error::other(other.to_string())),
     })?;
 
-    // Step 4: N1 + F2 validation.
-    if let Err(e) = validate_plugin_manifest(&manifest) {
+    // Step 4: N1 + F2 validation, and the kind's rules.
+    if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=local_install_rejected plugin_id={} reason={}",
             manifest.plugin_id,
             e
         );
         return Err(LocalInstallError::InvalidManifest(e));
+    }
+
+    // A web plugin's folder must be what a bundle of it would hold.
+    if manifest.runtime_kind == RuntimeKind::WebSandboxed {
+        bundle::check_dir(&canonical_source)?;
     }
 
     // Step 5: reserved-prefix check.
@@ -499,7 +509,7 @@ mod tests {
         std::fs::write(tmp_src.path().join("main.js"), b"console.log('hi')").unwrap();
 
         let existing_ids: Vec<String> = vec![];
-        let result = install_from_local(tmp_src.path(), &existing_ids).await;
+        let result = install_from_local(tmp_src.path(), &existing_ids, &[]).await;
 
         // This test touches the real ~/.rim/plugins/ directory.  We clean up after
         // asserting regardless of outcome.
@@ -529,7 +539,7 @@ mod tests {
         // No rim-plugin.json and no simple-mode file.
         std::fs::write(tmp.path().join("random.txt"), b"not a plugin").unwrap();
 
-        let err = install_from_local(tmp.path(), &[]).await.unwrap_err();
+        let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
         assert!(
             matches!(err, LocalInstallError::NoManifest),
             "expected NoManifest, got {err:?}"
@@ -540,7 +550,9 @@ mod tests {
     async fn path_traversal_in_source_path_is_rejected() {
         // The traversal is caught at check_path_safe before any disk access.
         let traversal_path = Path::new("/home/user/../etc/passwd");
-        let err = install_from_local(traversal_path, &[]).await.unwrap_err();
+        let err = install_from_local(traversal_path, &[], &[])
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, LocalInstallError::PathTraversal(_)),
             "expected PathTraversal, got {err:?}"
@@ -553,7 +565,7 @@ mod tests {
         write_manifest(tmp_src.path(), "dev.example.collision");
         let existing = vec!["dev.example.collision".to_string()];
 
-        let err = install_from_local(tmp_src.path(), &existing)
+        let err = install_from_local(tmp_src.path(), &existing, &[])
             .await
             .unwrap_err();
         assert!(

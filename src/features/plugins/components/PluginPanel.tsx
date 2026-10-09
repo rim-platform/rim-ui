@@ -3,6 +3,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { useHostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { createPluginBridge, followPanelState } from "../runtime/pluginBridge";
 import { createThemeChangeMessage, onThemeChange } from "../runtime/pluginThemeBridge";
 import { usePluginFocusManager } from "../runtime/pluginFocusManager";
@@ -126,6 +127,7 @@ function PluginPanelInner({
   onClose,
 }: PluginPanelInnerProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
+  const inert = useHostDialogOpen();
   // Timer-based loading states
   useEffect(() => {
     setLoadState("idle");
@@ -234,6 +236,7 @@ function PluginPanelInner({
         ref={iframeRef}
         src={src}
         sandbox="allow-scripts"
+        inert={inert}
         title={`Plugin: ${pluginId}`}
         className="h-full w-full border-0"
         onFocus={focusIframe}

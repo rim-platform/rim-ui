@@ -11,7 +11,8 @@ export type PluginCapability =
   | "fs.read"
   | "fs.write"
   | "ui.notify"
-  | "ui.panel";
+  | "ui.panel"
+  | "network.fetch";
 
 /** Exhaustive tuple of all valid PluginCapability values — used for runtime validation. */
 export const PLUGIN_CAPABILITIES: readonly PluginCapability[] = [
@@ -24,6 +25,7 @@ export const PLUGIN_CAPABILITIES: readonly PluginCapability[] = [
   "fs.write",
   "ui.notify",
   "ui.panel",
+  "network.fetch",
 ] as const;
 
 /** Type guard: returns true when `v` is a known PluginCapability string. */
@@ -99,6 +101,8 @@ export interface PluginCommandInfo {
   dangerous: boolean;
   ai_callable: boolean;
   arguments: PluginCommandArgument[];
+  /** Capabilities the user must have approved before the command runs. */
+  required_capabilities?: string[];
 }
 
 export interface PluginManifest {
@@ -114,6 +118,26 @@ export interface PluginManifest {
 }
 
 export type PluginHealth = "running" | "stopped" | "crashed" | "timeout";
+
+/** How a plugin runs: a program on the desktop, or sandboxed in the app's frames. */
+export type PluginRuntimeKind = "DesktopLocalProcess" | "WebSandboxed";
+
+/**
+ * Where an installed plugin came from. Mirror of the Rust `InstallSource`; the
+ * web app keeps the same shape in its install records.
+ */
+export type PluginInstallSource =
+  | { kind: "local" }
+  | { kind: "git"; url: string }
+  | { kind: "link"; url: string; sha256: string }
+  | {
+      kind: "registry";
+      endpoint: string;
+      serverId: string;
+      pluginId: string;
+      statementSha256: string;
+      publisherPrincipalId: string;
+    };
 
 /**
  * Mirror of the Rust `PluginInfo` struct returned by `plugin_list`.
@@ -149,8 +173,22 @@ export interface PluginInfo {
   panels?: PluginPanelDef[];
   /** Every manifest command, for the palette, the keybind picker and the agent. */
   commands?: PluginCommandInfo[];
-  /** `running` once the plugin process finished its handshake. */
+  /** `running` once the plugin process (or, for a web plugin, its frame) finished its handshake. */
   health?: PluginHealth;
+  /** Left out by older hosts, which only ran local processes. */
+  runtime_kind?: PluginRuntimeKind;
+  /** Origins a web plugin may reach once `network.fetch` is approved. */
+  network_origins?: string[];
+  source?: PluginInstallSource | null;
+  /** The app died while starting this web plugin; it waits for the user to enable it again. */
+  starting?: boolean;
+  /** Why a web plugin stopped on its own, or was not started. */
+  last_error?: string | null;
+}
+
+/** The runtime kind of `plugin`; hosts before web plugins only reported local processes. */
+export function runtimeKind(plugin: Pick<PluginInfo, "runtime_kind">): PluginRuntimeKind {
+  return plugin.runtime_kind ?? "DesktopLocalProcess";
 }
 
 /**

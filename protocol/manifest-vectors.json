@@ -1,0 +1,1702 @@
+{
+  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and src/features/plugins/web/manifestRules.ts run every entry and must agree with `valid`. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
+  "forbiddenOrigins": ["https://api.rim.example/api", "https://rim.example"],
+  "vectors": [
+    {
+      "name": "web plugin without the SDK",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web showcase with network.fetch and two origins",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "chat.rim.github-prs",
+        "display_name": "GitHub Pull Requests",
+        "version": "0.1.0",
+        "author": "RIM team",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "description": "Lists the open pull requests of public GitHub repositories you choose. Talks only to GitHub, without a token.",
+        "capabilities": ["ui.panel", "network.fetch"],
+        "network_origins": ["https://api.github.com", "https://avatars.githubusercontent.com"],
+        "commands": [
+          {
+            "id": "refresh",
+            "title": "Pull requests: Refresh",
+            "description": "Fetches the open pull requests again.",
+            "keybind_capable": true
+          }
+        ],
+        "panels": [
+          {
+            "id": "prs",
+            "title": "Pull requests",
+            "slot": "tool_panel"
+          }
+        ]
+      }
+    },
+    {
+      "name": "web plugin with a wss origin and a port",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["wss://stream.example.com:8443", "https://api.example.com"]
+      }
+    },
+    {
+      "name": "web plugin with 16 origins",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": [
+          "https://h0.example.com",
+          "https://h1.example.com",
+          "https://h2.example.com",
+          "https://h3.example.com",
+          "https://h4.example.com",
+          "https://h5.example.com",
+          "https://h6.example.com",
+          "https://h7.example.com",
+          "https://h8.example.com",
+          "https://h9.example.com",
+          "https://h10.example.com",
+          "https://h11.example.com",
+          "https://h12.example.com",
+          "https://h13.example.com",
+          "https://h14.example.com",
+          "https://h15.example.com"
+        ]
+      }
+    },
+    {
+      "name": "web plugin with ui.notify, its own keys and a panel",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["ui.notify", "ui.panel", "plugin.dev.example.hello-web.greet"],
+        "panels": [
+          {
+            "id": "main",
+            "title": "Main"
+          }
+        ]
+      }
+    },
+    {
+      "name": "web plugin with a .js entrypoint in a folder",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "dist/main.js",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "desktop plugin",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "desktop plugin with its own capability and a dangerous command",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["plugin.dev.example.greeter.reset"]
+          }
+        ],
+        "capabilities": ["ui.panel", "plugin.dev.example.greeter.reset"]
+      }
+    },
+    {
+      "name": "desktop plugin with an AI command and a clean output schema",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list",
+            "title": "List",
+            "description": "Lists.",
+            "ai_callable": true,
+            "output_schema": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "desktop plugin with a null author and null output_schema",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "a",
+            "title": "A",
+            "description": "a",
+            "output_schema": null
+          }
+        ],
+        "author": null
+      }
+    },
+    {
+      "name": "network_origins with http:",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["http://api.example.com"]
+      }
+    },
+    {
+      "name": "network_origins with ws:",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["ws://api.example.com"]
+      }
+    },
+    {
+      "name": "network_origins with a path",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.github.com/repos"]
+      }
+    },
+    {
+      "name": "network_origins with a trailing slash",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.github.com/"]
+      }
+    },
+    {
+      "name": "network_origins with a query",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.github.com?x=1"]
+      }
+    },
+    {
+      "name": "network_origins with a fragment",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.github.com#x"]
+      }
+    },
+    {
+      "name": "network_origins with userinfo",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://user@api.github.com"]
+      }
+    },
+    {
+      "name": "network_origins with a wildcard",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://*.github.com"]
+      }
+    },
+    {
+      "name": "network_origins with uppercase",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://API.github.com"]
+      }
+    },
+    {
+      "name": "network_origins with an uppercase scheme",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["HTTPS://api.github.com"]
+      }
+    },
+    {
+      "name": "network_origins with port 0",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com:0"]
+      }
+    },
+    {
+      "name": "network_origins with port 65536",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com:65536"]
+      }
+    },
+    {
+      "name": "network_origins with a port with a leading zero",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com:0443"]
+      }
+    },
+    {
+      "name": "network_origins with an empty port",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com:"]
+      }
+    },
+    {
+      "name": "network_origins with an empty label",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api..example.com"]
+      }
+    },
+    {
+      "name": "network_origins with 17 origins",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": [
+          "https://h0.example.com",
+          "https://h1.example.com",
+          "https://h2.example.com",
+          "https://h3.example.com",
+          "https://h4.example.com",
+          "https://h5.example.com",
+          "https://h6.example.com",
+          "https://h7.example.com",
+          "https://h8.example.com",
+          "https://h9.example.com",
+          "https://h10.example.com",
+          "https://h11.example.com",
+          "https://h12.example.com",
+          "https://h13.example.com",
+          "https://h14.example.com",
+          "https://h15.example.com",
+          "https://h16.example.com"
+        ]
+      }
+    },
+    {
+      "name": "network_origins empty",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": []
+      }
+    },
+    {
+      "name": "network_origins with a duplicate",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com", "https://api.example.com"]
+      }
+    },
+    {
+      "name": "network_origins naming the API's origin",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.rim.example"]
+      }
+    },
+    {
+      "name": "network_origins naming the API's origin with its default port",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.rim.example:443"]
+      }
+    },
+    {
+      "name": "network_origins naming the API's origin over wss",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["wss://api.rim.example"]
+      }
+    },
+    {
+      "name": "network_origins naming the app's origin",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://rim.example"]
+      }
+    },
+    {
+      "name": "network_origins without network.fetch",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "network_origins": ["https://api.example.com"]
+      }
+    },
+    {
+      "name": "network.fetch without network_origins",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"]
+      }
+    },
+    {
+      "name": "network_origins that is not a list",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": "https://api.example.com"
+      }
+    },
+    {
+      "name": "desktop plugin with network.fetch",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com"]
+      }
+    },
+    {
+      "name": "desktop plugin with network_origins",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "network_origins": ["https://api.example.com"]
+      }
+    },
+    {
+      "name": "web plugin asking for local.process",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["local.process"]
+      }
+    },
+    {
+      "name": "web plugin asking for fs.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["fs.read"]
+      }
+    },
+    {
+      "name": "web plugin asking for fs.write",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["fs.write"]
+      }
+    },
+    {
+      "name": "web plugin asking for network",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["network"]
+      }
+    },
+    {
+      "name": "web plugin asking for chat.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.read"]
+      }
+    },
+    {
+      "name": "web plugin asking for chat.write",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["chat.write"]
+      }
+    },
+    {
+      "name": "web plugin asking for events.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["events.read"]
+      }
+    },
+    {
+      "name": "desktop plugin asking for local.process",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["local.process"]
+      }
+    },
+    {
+      "name": "desktop plugin asking for network",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["network"]
+      }
+    },
+    {
+      "name": "desktop plugin asking for chat.read",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "capabilities": ["chat.read"]
+      }
+    },
+    {
+      "name": "capability of another plugin",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["plugin.dev.example.other.greet"]
+      }
+    },
+    {
+      "name": "capability with a reserved segment",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["plugin.dev.example.hello-web.admin"]
+      }
+    },
+    {
+      "name": "web entrypoint that is TypeScript",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.ts",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web entrypoint escaping the bundle",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "../main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web entrypoint that is a dotfile",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": ".main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web entrypoint with an absolute path",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "/main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web entrypoint under panels/",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "panels/main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "web panel id with a slash",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "panels": [
+          {
+            "id": "a/b",
+            "title": "A"
+          }
+        ]
+      }
+    },
+    {
+      "name": "web panel id starting with a dot",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "panels": [
+          {
+            "id": ".main",
+            "title": "Main"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown runtime kind",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "Native",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "manifest_version 2",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 2,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing plugin_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "plugin id with two segments",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "example.hello",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "plugin id with an underscore",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello_web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "reserved plugin id prefix",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.rim.hello",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty display_name",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing description",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ]
+      }
+    },
+    {
+      "name": "capabilities that is not a list",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": "ui.panel"
+      }
+    },
+    {
+      "name": "capabilities that is null",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": null
+      }
+    },
+    {
+      "name": "command without a title",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "description": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dangerous that is not a boolean",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "G",
+            "description": "x",
+            "dangerous": "yes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "panel slot that does not exist",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "panels": [
+          {
+            "id": "main",
+            "title": "Main",
+            "slot": "sidebar"
+          }
+        ]
+      }
+    },
+    {
+      "name": "keybind suggestion for an undeclared command",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "keybind_suggestions": [
+          {
+            "keystroke": "Ctrl+G",
+            "command_id": "nope",
+            "context": "GLOBAL"
+          }
+        ]
+      }
+    },
+    {
+      "name": "context action for an undeclared command",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Greeter: Greet",
+            "description": "Greets someone by name.",
+            "arguments": [
+              {
+                "name": "name",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ],
+        "context_actions": [
+          {
+            "id": "a",
+            "title": "A",
+            "command_id": "nope"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AI command without an output schema",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "G",
+            "description": "x",
+            "ai_callable": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "AI command leaking an install id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "G",
+            "description": "x",
+            "ai_callable": true,
+            "output_schema": {
+              "type": "object",
+              "properties": {
+                "installId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

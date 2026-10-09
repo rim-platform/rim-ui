@@ -28,7 +28,7 @@ use crate::plugin_host::broker::{
 use crate::plugin_host::capability::CapabilityGate;
 use crate::plugin_host::handshake::{self, HandshakeError};
 use crate::plugin_host::host_events::PluginEventKind;
-use crate::plugin_host::manifest::PluginManifest;
+use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
 use crate::plugin_host::process::{self, PluginProcess};
 use crate::plugin_host::protocol::{
     method, Principal, PrincipalChangedParams, PrincipalMapping, PrincipalsRemappedParams,
@@ -88,6 +88,12 @@ pub fn start_plugin(
     manifest: &PluginManifest,
     state: &PluginHostState,
 ) -> Result<(), RuntimeError> {
+    // A web plugin runs in the app's frames, which the UI starts; there is no process.
+    if manifest.runtime_kind == RuntimeKind::WebSandboxed {
+        log::debug!("[plugin_host] {plugin_id} is WebSandboxed: the UI runs it");
+        return Ok(());
+    }
+
     // Idempotency guard — do not spawn a second process.
     {
         let txs = state
@@ -510,6 +516,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: entrypoint.into(),
             capabilities: vec![],
+            network_origins: None,
             commands: vec![],
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -535,6 +542,10 @@ mod tests {
             principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
+            storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
+                "/nonexistent",
+            )),
+            account: std::sync::Mutex::new(None),
         }
     }
 
@@ -687,6 +698,10 @@ mod tests {
             principal_ids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             pids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             events: std::sync::Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
+            storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
+                "/nonexistent",
+            )),
+            account: std::sync::Mutex::new(None),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");
         let err = start_plugin("dev.example.test", &manifest, &state).unwrap_err();

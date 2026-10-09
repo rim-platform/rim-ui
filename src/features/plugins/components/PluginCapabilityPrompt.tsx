@@ -4,7 +4,13 @@ import { Shield } from "lucide-react";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { useApproveCapabilities } from "../api/usePluginCapabilities";
-import { parsePluginCapabilities, type PluginInfo, type PluginCapability } from "../types";
+import {
+  parsePluginCapabilities,
+  runtimeKind,
+  type PluginInfo,
+  type PluginCapability,
+} from "../types";
+import { KIND_CONSENT_TEXT, networkFetchText } from "./consentText";
 
 const capabilityLabels: Record<PluginCapability, string> = {
   "chat.read": "Read Chat Messages",
@@ -16,6 +22,7 @@ const capabilityLabels: Record<PluginCapability, string> = {
   "fs.write": "Write Files",
   "ui.notify": "Show Notifications",
   "ui.panel": "Render UI Panels",
+  "network.fetch": "Connect to listed sites",
 };
 
 const capabilityDescriptions: Record<PluginCapability, string> = {
@@ -28,6 +35,7 @@ const capabilityDescriptions: Record<PluginCapability, string> = {
   "fs.write": "Create, modify, and delete files on your device",
   "ui.notify": "Show desktop notifications",
   "ui.panel": "Render custom UI panels inside the workspace",
+  "network.fetch": "Send and receive data from the sites the plugin lists",
 };
 
 /** How much of a plugin's description the permission prompt shows. */
@@ -98,6 +106,10 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           </figure>
         )}
 
+        <p className="rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-xs text-rim-text">
+          {KIND_CONSENT_TEXT[runtimeKind(plugin)]}
+        </p>
+
         <p className="text-xs text-rim-text-muted">
           {parsedCapabilities.length > 0
             ? "This plugin requests the following permissions. Uncheck any you want to deny."
@@ -116,10 +128,19 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
                 onChange={() => toggleCapability(cap)}
                 className="mt-0.5 accent-rim-accent"
               />
-              <div>
-                <p className="text-sm text-rim-text">{capabilityLabels[cap] ?? cap}</p>
-                <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
-              </div>
+              {cap === "network.fetch" ? (
+                <p className="text-sm text-rim-text">
+                  <span className="font-medium">{capabilityLabels[cap]}:</span>{" "}
+                  <span className="text-rim-text-muted">
+                    {networkFetchText(plugin.network_origins ?? [])}
+                  </span>
+                </p>
+              ) : (
+                <div>
+                  <p className="text-sm text-rim-text">{capabilityLabels[cap] ?? cap}</p>
+                  <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
+                </div>
+              )}
             </label>
           ))}
         </div>

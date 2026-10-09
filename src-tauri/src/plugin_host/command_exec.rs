@@ -421,6 +421,7 @@ mod tests {
             runtime_kind: RuntimeKind::DesktopLocalProcess,
             entrypoint: "main.sh".into(),
             capabilities: vec![],
+            network_origins: None,
             commands,
             keybind_suggestions: vec![],
             context_actions: vec![],
@@ -449,6 +450,10 @@ mod tests {
             principal_ids: Arc::new(Mutex::new(Vec::new())),
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(crate::plugin_host::host_events::PluginEvents::new()),
+            storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
+                "/nonexistent",
+            )),
+            account: std::sync::Mutex::new(None),
         }
     }
 
