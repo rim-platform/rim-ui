@@ -94,11 +94,50 @@ describe("EncryptionNotices", () => {
     ).toBeInTheDocument();
   });
 
-  it("sends the web app to the desktop app", () => {
-    renderWithProviders(
-      <EncryptionNotices workspaceId="ws" e2ee={e2ee({ desktop: false, sendBlock: "web" })} />,
+  it("tells a browser that is not set up what it needs", () => {
+    const { unmount } = renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({ desktop: false, group: undefined, sendBlock: "noDeviceKey" })}
+      />,
     );
-    expect(screen.getByText(/Open it in the RIM desktop app/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Set up this browser as a linked device to read encrypted conversations"),
+    ).toBeInTheDocument();
+    unmount();
+    renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({ desktop: false, group: undefined, sendBlock: "unsupported" })}
+      />,
+    );
+    expect(screen.getByText("This browser cannot run encrypted conversations")).toBeInTheDocument();
+  });
+
+  it("says another tab runs encryption", () => {
+    renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({ desktop: false, group: undefined, sendBlock: "otherTab" })}
+      />,
+    );
+    expect(screen.getByText(/open in another tab of this browser/)).toBeInTheDocument();
+  });
+
+  it("says a browser does not turn encryption on", () => {
+    renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({
+          encryptedAt: null,
+          encrypted: false,
+          desktop: false,
+          group: undefined,
+          upgradeOnDesktop: true,
+        })}
+      />,
+    );
+    expect(screen.getByText(/desktop app turns encryption on here/)).toBeInTheDocument();
   });
 
   it("shows nothing when all is well", () => {

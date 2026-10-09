@@ -75,3 +75,11 @@ jsonschema = { version = "0.58", default-features = false }
 # are tested against.
 tiny_http = "0.12"
 
+
+# The browser build of `rim_mls` (`crates/rim_mls_wasm`, `npm run build:wasm`): smaller than
+# `release`, which the desktop app keeps.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1

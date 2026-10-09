@@ -1,5 +1,8 @@
 //! Message sizes on the wire, against the server's limits. Run with `--nocapture` to see them.
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use uuid::Uuid;
 
 use super::support::{Provider, TestDevice};

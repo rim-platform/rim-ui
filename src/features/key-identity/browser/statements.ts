@@ -21,6 +21,8 @@ export const CONTEXT = {
   device: utf8("rim.device.v1\0"),
   login: utf8("rim.login.v1\0"),
   pluginManifest: utf8("rim.plugin-manifest.v1\0"),
+  mlsKey: utf8("rim.mls-key.v1\0"),
+  mlsReadd: utf8("rim.mls-readd.v1\0"),
 } as const;
 
 const PRINCIPAL_DOMAIN = utf8("rim.principal.v1\0");

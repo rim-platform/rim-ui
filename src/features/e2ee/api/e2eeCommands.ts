@@ -1,15 +1,17 @@
 /**
- * The Tauri side of end-to-end encryption (`src-tauri/src/e2ee`): group state, decryption and
- * the device's MLS identity live there, in the account's encrypted cache database. Every
- * command names the cache account; a failure throws an {@link E2eeCommandError} with the
- * backend's code.
+ * Where end-to-end encryption runs: the Tauri side on the desktop (`src-tauri/src/e2ee`), where
+ * group state, decryption and the device's MLS identity live in the account's encrypted cache
+ * database, or the web app's encrypted store (`../web/`) for a web account. Every command names
+ * the account and goes to the backend it belongs to; a failure throws an
+ * {@link E2eeCommandError} with the backend's code.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 import type { SignedStatementInput } from "../../../core/graphql/generated/schema-types";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import type { CacheAccount } from "../../messages/api/messageCache";
+import { isWebAccount } from "../web/webAccount";
 import type { DirectoryPrincipal, KeyPackageStatus } from "./e2eeApi";
 
 export class E2eeCommandError extends Error {
@@ -129,7 +131,8 @@ export interface OutgoingMessage {
   forwardedFromMessageId: string | null;
 }
 
-export const e2eeCommands = {
+/** The Tauri side's commands. */
+const tauriE2eeCommands = {
   status: (account: CacheAccount, workspaceId: string, conversationIds: string[]) =>
     command<GroupView[]>("e2ee_status", { account, workspaceId, conversationIds }),
   ensureIdentity: (account: CacheAccount, principalId: string) =>
@@ -267,8 +270,46 @@ export const e2eeCommands = {
     command<null>("e2ee_forget", { account, workspaceId, conversationId }),
 };
 
-/** A link's preview, fetched by this device (the sender); `null` when the page has none. */
+/** The encryption commands, whichever backend runs them. */
+export type E2eeCommands = typeof tauriE2eeCommands;
+
+function webCommands() {
+  return import("../web/webCommands").then((m) => m.webE2eeCommands);
+}
+
+/** `name` of the account's backend: the web store for a web account, the Tauri side otherwise. */
+function routed<K extends keyof E2eeCommands>(name: K): E2eeCommands[K] {
+  type Command = (account: CacheAccount, ...rest: unknown[]) => Promise<unknown>;
+  return ((account: CacheAccount, ...rest: unknown[]) =>
+    isWebAccount(account)
+      ? webCommands().then((web) => (web[name] as Command)(account, ...rest))
+      : (tauriE2eeCommands[name] as Command)(account, ...rest)) as E2eeCommands[K];
+}
+
+export const e2eeCommands: E2eeCommands = {
+  status: routed("status"),
+  ensureIdentity: routed("ensureIdentity"),
+  keyPackages: routed("keyPackages"),
+  createGroup: routed("createGroup"),
+  commit: routed("commit"),
+  settleCommit: routed("settleCommit"),
+  processCommits: routed("processCommits"),
+  join: routed("join"),
+  verify: routed("verify"),
+  readdRequest: routed("readdRequest"),
+  readdCheck: routed("readdCheck"),
+  encryptMessage: routed("encryptMessage"),
+  reencryptMessage: routed("reencryptMessage"),
+  settleMessage: routed("settleMessage"),
+  forget: routed("forget"),
+};
+
+/**
+ * A link's preview, fetched by this device (the sender); `null` when the page has none. A
+ * browser cannot read other sites' pages, so the web app sends no previews.
+ */
 export function fetchLinkPreview(url: string): Promise<LinkPreviewInput | null> {
+  if (!isTauri()) return Promise.resolve(null);
   return command<LinkPreviewInput | null>("e2ee_link_preview", { url });
 }
 
@@ -289,12 +330,25 @@ export interface EncryptedFile {
   blobSha256: string;
 }
 
-/** Encrypt a file on the Tauri side, which keeps its secret until the message is encrypted. */
+/**
+ * Encrypt a file on the Tauri side, or with WebCrypto in the web app; either keeps its secret
+ * until the message is encrypted.
+ */
 export async function encryptAttachment(
   bytes: Uint8Array,
   name: string,
   mime: string,
 ): Promise<EncryptedFile> {
+  if (!isTauri()) {
+    const { encryptFile, keepPending } = await import("../web/attachments");
+    try {
+      const { entry, blob } = await encryptFile(bytes, name, mime);
+      keepPending(entry);
+      return { blob, blobSha256: entry.blobSha256 };
+    } catch (err) {
+      throw new E2eeCommandError("E2EE_ATTACHMENT", errorText(err));
+    }
+  }
   try {
     const out = new Uint8Array(
       await invoke<ArrayBuffer>("e2ee_attachment_encrypt", bytes, {
@@ -314,6 +368,19 @@ export async function decryptAttachment(
   blobSha256: string,
   blob: Uint8Array,
 ): Promise<Uint8Array> {
+  if (isWebAccount(account)) {
+    const [{ webMessageStore }, { decryptFile }] = await Promise.all([
+      import("../web/webCommands"),
+      import("../web/attachments"),
+    ]);
+    const entry = await webMessageStore.attachmentEntry(account, messageId, blobSha256);
+    if (!entry) throw new E2eeCommandError("E2EE_ATTACHMENT", "the message has no such file");
+    try {
+      return await decryptFile(entry, blob);
+    } catch (err) {
+      throw new E2eeCommandError("E2EE_ATTACHMENT", errorText(err));
+    }
+  }
   try {
     return new Uint8Array(
       await invoke<ArrayBuffer>("e2ee_attachment_decrypt", blob, {

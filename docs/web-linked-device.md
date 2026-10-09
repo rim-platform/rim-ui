@@ -66,6 +66,12 @@ ends). `FORBIDDEN` at the first sign-in
 removes the keys, as on the desktop; other failures keep them for the sign-in screen. Nothing logs
 the code, the secret or a key.
 
+## Encrypted conversations
+
+A linked browser also reads and sends in end-to-end encrypted DMs and groups: its device key signs
+the `mls-key` statement of an MLS key the browser keeps, and the decrypted messages live in an
+encrypted-conversation store in IndexedDB (`rim-e2ee`). See `e2ee-web.md`.
+
 ## Keys in a browser are weaker
 
 The key cannot be exported (the browser holds its bytes; the page only holds a handle), but:
@@ -73,7 +79,9 @@ The key cannot be exported (the browser holds its bytes; the page only holds a h
 - any script that runs in the page (a malicious extension, an XSS bug, a compromised dependency)
   can ask the browser to sign with it while the page is open, so it can sign in as this device;
 - clearing the site's data, or a browser that evicts storage, deletes it;
-- private windows may not keep IndexedDB, or keep it only for the session.
+- private windows may not keep IndexedDB, or keep it only for the session;
+- encrypted conversations in this browser are only as safe as this browser profile: their MLS
+  keys and decrypted messages are in its IndexedDB (`e2ee-web.md`, "Limits").
 
 The sign-in page says so next to both key actions, and the desktop's confirmation card says so for
 a `web` offer. Revoke a browser you no longer use from the desktop's device list.

@@ -3,6 +3,9 @@
 //! authenticated data, the receipt, the re-add request; and the recorded key package and
 //! PrivateMessage fixtures.
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use ed25519_dalek::SigningKey;
 use openmls::prelude::tls_codec::DeserializeBytes as _;
 use openmls::prelude::{

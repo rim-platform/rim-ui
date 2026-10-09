@@ -7,7 +7,8 @@
  * runs here because the webview holds the session cookie.
  *
  * Everything is best-effort: in the web app, or if the cache fails, callers get `null` and
- * carry on with the server as before.
+ * carry on with the server as before. The web app keeps the encrypted conversations it follows
+ * in its own encrypted store (`features/e2ee/web/`): calls made with its account go there.
  */
 
 import { isTauri } from "@tauri-apps/api/core";
@@ -26,6 +27,7 @@ import type { MessageCursor, MessageItem, MessagesPage } from "../../../core/typ
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { isWebAccount, webStoreAccount } from "../../e2ee/web/webAccount";
 
 /** Whose cache: the server the app talks to and the signed-in user on it. */
 export interface CacheAccount {
@@ -39,6 +41,28 @@ export function currentCacheAccount(): CacheAccount | null {
   const userId = useAuthStore.getState().session?.userId;
   if (!userId) return null;
   return { endpoint: getGraphqlEndpoint(), userId };
+}
+
+/**
+ * Where this app keeps the messages of encrypted conversations: the desktop's cache, or the web
+ * app's encrypted store once this browser is set up for encrypted conversations.
+ */
+export function encryptedStoreAccount(): CacheAccount | null {
+  return currentCacheAccount() ?? webStoreAccount();
+}
+
+function webStore() {
+  return import("../../e2ee/web/webCommands").then((m) => m.webMessageStore);
+}
+
+/** A web store call that, like the cache, answers `null` when it fails. */
+async function inWebStore<T>(what: string, call: () => Promise<T>): Promise<T | null> {
+  try {
+    return await call();
+  } catch (err) {
+    logger.warn(`[RIM:e2ee] ${what} failed:`, err);
+    return null;
+  }
 }
 
 /**
@@ -131,6 +155,12 @@ export async function trackConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
+  if (isWebAccount(account)) {
+    await inWebStore("following a conversation", async () =>
+      (await webStore()).track(account, workspaceId, conversationId),
+    );
+    return;
+  }
   await invokeCache<null>("message_cache_track", { account, workspaceId, conversationId });
 }
 
@@ -143,6 +173,11 @@ export function beginCacheSync(
   workspaceId: string,
   conversationIds?: string[],
 ): Promise<MessageChangesInput | null> {
+  if (isWebAccount(account)) {
+    return inWebStore("starting a sync", async () =>
+      (await webStore()).begin(account, workspaceId, conversationIds),
+    );
+  }
   return invokeCache<MessageChangesInput>("message_cache_sync_begin", {
     account,
     workspaceId,
@@ -198,6 +233,11 @@ export function applyCacheChanges(
   changes: FeedConversationChanges[],
   mls: MlsSyncInput[] = [],
 ): Promise<CacheSyncStep | null> {
+  if (isWebAccount(account)) {
+    return inWebStore("storing a feed page", async () =>
+      (await webStore()).apply(account, workspaceId, changes, mls),
+    );
+  }
   return invokeCache<CacheSyncStep>("message_cache_sync_apply", {
     account,
     workspaceId,
@@ -214,6 +254,11 @@ export function readCachedThread(
   threadId: string,
   rootMessageId: string | null,
 ): Promise<MessageItem[] | null> {
+  if (isWebAccount(account)) {
+    return inWebStore("reading a thread", async () =>
+      (await webStore()).thread(account, workspaceId, conversationId, threadId, rootMessageId),
+    );
+  }
   return invokeCache<MessageItem[]>("message_cache_thread", {
     account,
     workspaceId,
@@ -228,6 +273,11 @@ export function readCachedMessage(
   account: CacheAccount,
   messageId: string,
 ): Promise<MessageItem | null> {
+  if (isWebAccount(account)) {
+    return inWebStore("reading a message", async () =>
+      (await webStore()).message(account, messageId),
+    );
+  }
   return invokeCache<MessageItem | null>("message_cache_message", { account, messageId });
 }
 
@@ -247,13 +297,17 @@ export async function readCachedTimeline(
   before: MessageCursor | null,
   limit: number,
 ): Promise<MessagesPage | null> {
-  const page = await invokeCache<CachedTimelinePage | null>("message_cache_timeline", {
-    account,
-    workspaceId,
-    conversationId,
-    before,
-    limit,
-  });
+  const page = isWebAccount(account)
+    ? await inWebStore("reading a timeline", async () =>
+        (await webStore()).timeline(account, workspaceId, conversationId, before, limit),
+      )
+    : await invokeCache<CachedTimelinePage | null>("message_cache_timeline", {
+        account,
+        workspaceId,
+        conversationId,
+        before,
+        limit,
+      });
   if (!page) return null;
   return cachedPageToMessagesPage(page);
 }

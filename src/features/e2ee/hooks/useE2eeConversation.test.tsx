@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 const conversation = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+const platform = vi.hoisted(() => ({ current: "desktop" }));
 const runtime = vi.hoisted(() => ({
   createGroup: vi.fn(),
   refreshGroups: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock("../../conversations/api/useConversation", () => ({
 }));
 vi.mock("../../../core/runtime/runtime", async (importActual) => ({
   ...(await importActual<typeof import("../../../core/runtime/runtime")>()),
-  detectPlatform: () => "desktop",
+  detectPlatform: () => platform.current,
 }));
 vi.mock("../runtime/groups", () => ({
   createGroup: runtime.createGroup,
@@ -53,7 +54,9 @@ function dm(overrides: Record<string, unknown> = {}) {
 describe("useE2eeConversation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    platform.current = "desktop";
     useE2eeStore.getState().clear();
+    useE2eeStore.getState().setWebEncryption("checking");
     useAuthStore.getState().setSession({ userId: "u-me" });
     runtime.refreshGroups.mockResolvedValue([]);
     runtime.conversationMembers.mockResolvedValue([]);
@@ -113,5 +116,33 @@ describe("useE2eeConversation", () => {
       wrapper: TestProviders,
     });
     expect(result.current.sendBlock).toBe("unverified");
+  });
+
+  it("never upgrades from a browser, and says a desktop does", async () => {
+    platform.current = "web";
+    useE2eeStore.getState().setWebEncryption("ready");
+    conversation.current = dm();
+    runtime.notReadyMembers.mockResolvedValue({ names: [], directory: [] });
+    const { result } = renderHook(() => useE2eeConversation("ws", "c"), {
+      wrapper: TestProviders,
+    });
+    await waitFor(() => expect(result.current.upgradeOnDesktop).toBe(true));
+    expect(runtime.createGroup).not.toHaveBeenCalled();
+  });
+
+  it("tells a browser that cannot take part why", () => {
+    platform.current = "web";
+    conversation.current = dm({ encryptedAt: "2026-10-09T00:00:00Z" });
+    useE2eeStore.getState().setWebEncryption("noDeviceKey");
+    const { result, rerender } = renderHook(() => useE2eeConversation("ws", "c"), {
+      wrapper: TestProviders,
+    });
+    expect(result.current.sendBlock).toBe("noDeviceKey");
+    useE2eeStore.getState().setWebEncryption("unsupported");
+    rerender();
+    expect(result.current.sendBlock).toBe("unsupported");
+    useE2eeStore.getState().setWebEncryption("ready");
+    rerender();
+    expect(result.current.sendBlock).toBeNull();
   });
 });

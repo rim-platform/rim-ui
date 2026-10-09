@@ -45,6 +45,9 @@ pub fn commit_delay(rank: usize, jitter: Duration) -> Duration {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use super::*;
 
     fn id(n: u128) -> Uuid {

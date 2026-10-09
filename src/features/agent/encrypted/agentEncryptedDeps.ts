@@ -36,7 +36,9 @@ export const agentEncryptedDeps: EncryptedToolDeps = {
       : Promise.resolve([]),
   post: postAsUser,
   confirmPost: confirmEncryptedPost,
+  // Only a desktop upgrades a conversation; a browser leaves it plaintext for one to find.
   async upgrade(workspaceId, conversationId) {
+    if (!desktop()) return;
     const session = await e2eeSession();
     if (session) await upgradeNewConversation(session, workspaceId, conversationId);
   },

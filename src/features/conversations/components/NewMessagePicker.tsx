@@ -10,6 +10,7 @@ import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { logger } from "../../../core/logger";
 import { createGroup, shouldEncryptNewConversation } from "../../e2ee/runtime/groups";
 import { e2eeSession } from "../../e2ee/runtime/session";
+import { isWebAccount } from "../../e2ee/web/webAccount";
 import { MemberPicker } from "./MemberPicker";
 
 interface NewMessagePickerProps {
@@ -43,8 +44,8 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
 
   const handleConfirm = useCallback(async () => {
     if (!workspaceId || selectedUserIds.length === 0) return;
-    // New DMs and groups are encrypted when every member is ready; this desktop then creates
-    // the group (and upgrades an existing plaintext DM the server hands back).
+    // New DMs and groups are encrypted when every member is ready; this device then creates
+    // the group. An existing plaintext DM the server hands back is upgraded only by a desktop.
     const session = await e2eeSession();
     const encrypted = await shouldEncryptNewConversation(
       session,
@@ -58,7 +59,8 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     createMutation.mutate(encrypted ? { ...base, encrypted: true } : base, {
       onSuccess: (data) => {
         const conversationId = data.createConversation.id;
-        if (session && encrypted) {
+        const upgrade = !data.createConversation.encryptedAt;
+        if (session && encrypted && (!upgrade || !isWebAccount(session.account))) {
           void createGroup(session, workspaceId, conversationId).catch((err: unknown) =>
             logger.warn("[RIM:e2ee] creating the group failed:", err),
           );
