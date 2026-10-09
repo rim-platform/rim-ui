@@ -92,7 +92,7 @@ export function KeyIdentitySettings() {
 
 // ─── Enrollment ─────────────────────────────────────────────────────────────
 
-type EnrollStep = "intro" | "kit";
+type EnrollStep = "intro" | "kit" | "done";
 
 function EnrollKeyIdentity({ me }: { me: Me }) {
   const qc = useQueryClient();
@@ -145,6 +145,9 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
     try {
       await completeEnrollment(draft, me);
       pending.current = null;
+      // The kit is saved and the keys are enrolled: the phrase leaves memory here.
+      setDraft(null);
+      setStep("done");
       void qc.invalidateQueries({ queryKey: queryKeys.me });
       void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
     } catch (err) {
@@ -172,6 +175,10 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
     } catch {
       setError("Could not copy. Select the kit and copy it by hand.");
     }
+  }
+
+  if (step === "done") {
+    return <p className="text-sm text-rim-text-muted">Key sign-in is on. Loading your keys...</p>;
   }
 
   if (step === "intro") {
@@ -220,15 +227,11 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
     <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
       <p className="text-sm font-medium text-rim-text">Save your recovery kit</p>
       <p className="text-sm text-rim-text-muted">
-        This is the only time RIM shows it. Store it somewhere safe that is not this computer: a
-        password manager, or printed on paper. Anyone who has it can take over your account.
+        This is the only time RIM shows it. Write down the 12 words in order with your account id,
+        or copy the kit into a password manager. Keep it somewhere safe that is not this computer.
+        Anyone who has it can take over your account.
       </p>
-      <pre
-        aria-label="Recovery kit"
-        className="select-all whitespace-pre-wrap break-all rounded-md border border-rim-line bg-rim-void p-3 font-mono text-xs text-rim-text"
-      >
-        {draft?.recoveryKit}
-      </pre>
+      {draft && <RecoveryKitView draft={draft} />}
       <Button variant="secondary" size="sm" onClick={() => void copyKit()}>
         <span className="flex items-center gap-1.5">
           <Copy className="h-3.5 w-3.5" />
@@ -252,6 +255,35 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
           Cancel
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The recovery kit of a started enrollment, as the person saves it: the account id and the
+ * recovery phrase as a numbered grid of 12 words. Copying takes the whole kit text.
+ */
+function RecoveryKitView({ draft }: { draft: EnrollmentDraft }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs text-rim-text-muted">Account id</p>
+        <code className="mt-1 block select-all break-all font-mono text-xs text-rim-text">
+          {draft.principalId}
+        </code>
+      </div>
+      <ol aria-label="Recovery phrase" className="grid grid-cols-3 gap-2">
+        {draft.recoveryPhrase.map((word, i) => (
+          // A phrase may repeat a word, so its position is the key.
+          <li
+            key={i}
+            className="flex items-baseline gap-2 rounded-md border border-rim-line bg-rim-void px-2 py-1.5 font-mono text-sm text-rim-text"
+          >
+            <span className="w-5 shrink-0 text-right text-xs text-rim-text-faint">{i + 1}.</span>
+            <span>{word}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

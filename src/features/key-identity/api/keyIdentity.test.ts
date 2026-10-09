@@ -162,7 +162,12 @@ describe("resumeWithDeviceKey", () => {
 });
 
 describe("enrollment", () => {
-  const draft: EnrollmentDraft = { draftId: "draft-1", principalId: PRINCIPAL, recoveryKit: "kit" };
+  const draft: EnrollmentDraft = {
+    draftId: "draft-1",
+    principalId: PRINCIPAL,
+    recoveryKit: "kit",
+    recoveryPhrase: [],
+  };
   const statements = { keyLog: [STATEMENT], device: STATEMENT, proof: STATEMENT };
   const identity = {
     myKeyIdentity: {

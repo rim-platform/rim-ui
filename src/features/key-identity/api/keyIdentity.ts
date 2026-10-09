@@ -45,7 +45,10 @@ export interface LocalKeyAccount {
 export interface EnrollmentDraft {
   draftId: string;
   principalId: string;
+  /** The whole kit text (`RIM recovery kit (v2)` …), to copy. */
   recoveryKit: string;
+  /** The kit's 12 recovery phrase words in order, to show as a numbered grid. */
+  recoveryPhrase: string[];
 }
 
 /** The server's key log, verified on this device. */
@@ -493,7 +496,8 @@ export function accountIdInKit(kit: string): string | null {
  * Take an account back with its recovery kit, signed out, after losing every device: read the
  * account's public key log, sign a recovery rotation and a new device on the Tauri side, send
  * them, and sign in with the new device key. The server signs out every other device.
- * Returns the account's user id.
+ * `kit` is a whole kit of either version, a bare 12-word phrase or a bare `RK1-` key; the
+ * Tauri side reads it. Returns the account's user id.
  */
 export async function recoverAccount(
   kit: string,

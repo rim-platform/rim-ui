@@ -110,8 +110,9 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 }
 
 /**
- * "Recover an account" on the sign-in screen: a link that opens the recovery kit form.
- * Desktop only; renders nothing in the web app.
+ * "Recover an account" on the sign-in screen: a link that opens the recovery kit form, which
+ * takes a whole kit (either version), a bare 12-word recovery phrase or a bare `RK1-` key, and
+ * the account id, filled in from a pasted kit. Desktop only; renders nothing in the web app.
  */
 export function RecoverAccount({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();
@@ -143,7 +144,6 @@ function RecoverAccountForm({
   const [deviceName, setDeviceName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const idInKit = accountIdInKit(kit);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,13 +155,19 @@ function RecoverAccountForm({
     };
   }, []);
 
+  function changeKit(text: string) {
+    setKit(text);
+    // A pasted kit names its account: its id wins over one typed before.
+    const idInKit = accountIdInKit(text);
+    if (idInKit) setAccountId(idInKit);
+  }
+
   async function recover(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      // The kit's own account id wins over one typed before the whole kit was pasted.
-      onSuccess(await recoverAccount(kit, idInKit ? null : accountId.trim() || null, deviceName));
+      onSuccess(await recoverAccount(kit, accountId.trim() || null, deviceName));
     } catch (err) {
       setError(graphqlErrorMessage(err, "Recovery failed."));
     } finally {
@@ -178,33 +184,32 @@ function RecoverAccountForm({
     >
       <p className="text-sm font-medium text-rim-text">Recover an account</p>
       <p className="text-xs text-rim-text-muted">
-        Paste the recovery kit you saved when you set up key sign-in. This computer becomes the
-        account&apos;s new device with a new identity key, and every other device and session of the
-        account is signed out.
+        Paste the recovery kit you saved when you set up key sign-in, or type its 12-word recovery
+        phrase (an older kit has a recovery key starting with RK1- instead). This computer becomes
+        the account&apos;s new device with a new identity key, and every other device and session of
+        the account is signed out.
       </p>
       <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
-        Recovery kit
+        Recovery kit or phrase
         <textarea
           value={kit}
-          onChange={(e) => setKit(e.target.value)}
+          onChange={(e) => changeKit(e.target.value)}
           rows={4}
           spellCheck={false}
-          placeholder={"RIM recovery kit (v1)\nAccount id: rimp1_…\nRecovery key: RK1-…"}
+          placeholder={"RIM recovery kit (v2)\nAccount id: rimp1_…\nRecovery phrase: 12 words"}
           className={`mt-1 font-mono ${inputClass}`}
         />
       </label>
-      {!idInKit && (
-        <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
-          Account id
-          <input
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            placeholder="rimp1_…"
-            spellCheck={false}
-            className={`mt-1 font-mono ${inputClass}`}
-          />
-        </label>
-      )}
+      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+        Account id
+        <input
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          placeholder="rimp1_…"
+          spellCheck={false}
+          className={`mt-1 font-mono ${inputClass}`}
+        />
+      </label>
       <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
         Name of this device
         <input
@@ -226,7 +231,7 @@ function RecoverAccountForm({
         <Button
           type="submit"
           isLoading={busy}
-          disabled={!kit.trim() || !deviceName.trim() || (!idInKit && !accountId.trim())}
+          disabled={!kit.trim() || !deviceName.trim() || !accountId.trim()}
         >
           Recover account
         </Button>

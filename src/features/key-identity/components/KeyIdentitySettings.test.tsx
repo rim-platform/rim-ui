@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 
@@ -73,6 +73,26 @@ const enrolled: MyKeyIdentity = {
 
 const me = { userId: "u-alice", username: "alice" };
 
+const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer".split(
+  " ",
+);
+const KIT = `RIM recovery kit (v2)\nAccount id: rimp1_alice\nRecovery phrase: ${PHRASE.join(" ")}\n`;
+const draft = {
+  draftId: "draft-1",
+  principalId: "rimp1_alice",
+  recoveryKit: KIT,
+  recoveryPhrase: PHRASE,
+};
+
+/** jsdom has no Clipboard API; stub it so the copy button is testable. */
+function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+    writable: true,
+  });
+}
+
 function renderSettings() {
   const qc = createTestQueryClient();
   return render(
@@ -95,7 +115,6 @@ describe("KeyIdentitySettings", () => {
 
   it("shows the recovery kit once and turns on key sign-in after the user saved it", async () => {
     api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
-    const draft = { draftId: "draft-1", principalId: "rimp1_alice", recoveryKit: "KIT-TEXT" };
     api.beginEnrollment.mockResolvedValue(draft);
     api.completeEnrollment.mockResolvedValue(undefined);
     renderSettings();
@@ -107,7 +126,7 @@ describe("KeyIdentitySettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /create keys/i }));
 
     expect(api.beginEnrollment).toHaveBeenCalledWith("Laptop");
-    expect(await screen.findByLabelText("Recovery kit")).toHaveTextContent("KIT-TEXT");
+    expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
     const turnOn = screen.getByRole("button", { name: /turn on key sign-in/i });
     expect(turnOn).toBeDisabled();
 
@@ -115,11 +134,40 @@ describe("KeyIdentitySettings", () => {
     await userEvent.click(turnOn);
 
     expect(api.completeEnrollment).toHaveBeenCalledWith(draft, expect.objectContaining(me));
+    // Once enrolled, the phrase is no longer on screen.
+    await waitFor(() => expect(screen.queryByLabelText("Recovery phrase")).toBeNull());
+    expect(screen.queryByText("liar")).toBeNull();
+  });
+
+  it("shows the phrase as 12 numbered words with the account id, and copies the whole kit", async () => {
+    api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
+    api.beginEnrollment.mockResolvedValue(draft);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    renderSettings();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /create keys/i }));
+
+    const grid = await screen.findByLabelText("Recovery phrase");
+    const items = within(grid).getAllByRole("listitem");
+    expect(items).toHaveLength(12);
+    items.forEach((item, i) => {
+      expect(item).toHaveTextContent(`${i + 1}.`);
+      expect(item).toHaveTextContent(PHRASE[i]);
+    });
+    expect(screen.getByText("rimp1_alice")).toBeInTheDocument();
+
+    // userEvent installs its own clipboard; stub after it, and click without it.
+    stubClipboard(writeText);
+    fireEvent.click(screen.getByRole("button", { name: /copy kit/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(KIT));
+    expect(await screen.findByRole("button", { name: /copied/i })).toBeInTheDocument();
   });
 
   it("gives up on the started keys when the user cancels", async () => {
     api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
-    const draft = { draftId: "draft-1", principalId: "rimp1_alice", recoveryKit: "KIT-TEXT" };
     api.beginEnrollment.mockResolvedValue(draft);
     renderSettings();
 
@@ -135,7 +183,6 @@ describe("KeyIdentitySettings", () => {
 
   it("keeps the draft when the server refuses, so a retry uses the same keys", async () => {
     api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
-    const draft = { draftId: "draft-1", principalId: "rimp1_alice", recoveryKit: "KIT-TEXT" };
     api.beginEnrollment.mockResolvedValue(draft);
     api.completeEnrollment.mockRejectedValueOnce(new Error("Server busy"));
     renderSettings();
@@ -148,7 +195,9 @@ describe("KeyIdentitySettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /turn on key sign-in/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/server busy/i);
-    expect(screen.getByLabelText("Recovery kit")).toHaveTextContent("KIT-TEXT");
+    expect(within(screen.getByLabelText("Recovery phrase")).getAllByRole("listitem")).toHaveLength(
+      12,
+    );
     expect(api.abandonEnrollment).not.toHaveBeenCalled();
   });
 
