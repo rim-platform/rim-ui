@@ -1,4 +1,5 @@
 mod agent_proxy;
+mod history_archive;
 mod message_cache;
 mod plugin_host;
 mod terminal;
@@ -131,6 +132,7 @@ pub fn run() {
             app.manage(plugin_state);
 
             app.manage(message_cache::init(&app_data_dir));
+            app.manage(history_archive::init(&app_data_dir));
 
             let terminal_state = terminal::init();
             app.manage(terminal_state);
@@ -177,6 +179,14 @@ pub fn run() {
             message_cache::commands::message_cache_sync_apply,
             message_cache::commands::message_cache_timeline,
             message_cache::commands::message_cache_search,
+            history_archive::commands::history_archive_pick_folder,
+            history_archive::commands::history_archive_inspect_folder,
+            history_archive::commands::history_archive_status,
+            history_archive::commands::history_archive_connect,
+            history_archive::commands::history_archive_unlock,
+            history_archive::commands::history_archive_disconnect,
+            history_archive::commands::history_archive_export,
+            history_archive::commands::history_archive_restore,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
