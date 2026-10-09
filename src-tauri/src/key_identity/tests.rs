@@ -831,10 +831,9 @@ fn a_confirmed_link_resumes_after_a_restart_with_the_same_certificate() {
     assert_eq!(pending[0].device_key, answer.device_key);
 
     let resumed = restarted.resume_link(LINK_ID).unwrap();
-    assert_eq!(resumed.certificate, answer.certificate);
+    assert_eq!(resumed, answer);
     assert_eq!(restarted.resume_link(LINK_ID).unwrap(), resumed);
     assert!(restarted.pending_links(ENDPOINT).unwrap().is_empty());
-    // The answer sealed again opens on the new device like the first.
     new.open_link_answer(LINK_ID, &resumed.answer).unwrap();
     new.accept_link(LINK_ID, &old.key_log).unwrap();
 

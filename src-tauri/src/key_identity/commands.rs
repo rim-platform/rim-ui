@@ -5,8 +5,8 @@ use tauri::State;
 use zeroize::Zeroizing;
 
 use super::device_link::{
-    KnownDevice, LinkAnswer, LinkedDevice, OfferReview, OpenedAnswer, PendingLinkView, Sealed,
-    SentOffer, StartedLink,
+    IssuedCode, KnownDevice, LinkAnswer, LinkedDevice, OfferReview, OpenedAnswer, PendingLinkView,
+    Sealed, SentOffer,
 };
 use super::statement::Statement;
 use super::{
@@ -194,7 +194,7 @@ pub async fn key_identity_link_begin(
     principal_id: String,
     endpoint: String,
     link_id: String,
-) -> Result<StartedLink, KeyIdentityError> {
+) -> Result<IssuedCode, KeyIdentityError> {
     blocking(&state, move |s| {
         s.begin_link(&principal_id, &endpoint, &link_id)
     })
@@ -231,7 +231,7 @@ pub async fn key_identity_link_confirm(
     .await
 }
 
-/// Old device: pending links on `endpoint` left by an earlier run.
+/// Old device: pending links on `endpoint` not live in this run.
 #[tauri::command]
 pub async fn key_identity_link_pending(
     state: State<'_, KeyIdentityState>,

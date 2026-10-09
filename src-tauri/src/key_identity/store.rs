@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use super::device_link::Sealed;
 use super::statement::Statement;
 use super::KeyIdentityError;
 
@@ -148,9 +149,8 @@ pub(crate) struct AccountLink {
     pub(crate) username: Option<String>,
 }
 
-/// A device link this device confirmed as the old device (`device-linking-v1.md`, old device
-/// rule 5), written before `addDeviceKey` is sent. It survives a restart, so a link whose
-/// answer was never sent is resumed, and a certified device nobody used is revoked.
+/// A device link this device confirmed as the old device, written before `addDeviceKey`. A
+/// restart uses it to send the answer again or revoke a certified device nobody used.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PendingLink {
@@ -163,6 +163,8 @@ pub(crate) struct PendingLink {
     pub(crate) device_id: String,
     pub(crate) device_key: String,
     pub(crate) certificate: Statement,
+    /// The sealed answer, resent byte for byte.
+    pub(crate) answer: Sealed,
 }
 
 /// The endpoint as compared: surrounding whitespace and a trailing slash do not matter.
@@ -234,6 +236,7 @@ impl Keys<'_> {
         Ok(out)
     }
 
+    /// Write a pending link and add it to the list.
     pub(crate) fn put_pending_link(&self, link: &PendingLink) -> Result<(), KeyIdentityError> {
         let raw = Zeroizing::new(
             serde_json::to_string(link)
@@ -248,6 +251,7 @@ impl Keys<'_> {
         Ok(())
     }
 
+    /// Delete a pending link and drop it from the list.
     pub(crate) fn delete_pending_link(&self, link_id: &str) -> Result<(), KeyIdentityError> {
         self.0.delete(&pending_link_name(link_id))?;
         let mut ids = self.pending_link_ids()?;

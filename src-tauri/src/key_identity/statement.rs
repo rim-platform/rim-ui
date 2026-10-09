@@ -201,9 +201,8 @@ pub(crate) fn verify(statement: &Statement, context: &[u8], public_key: &str, ve
     .is_ok()
 }
 
-/// A device key another device offers to be certified (device linking): version 2 tagged text,
-/// spelled canonically, of an algorithm this device can verify, and not a weak key. Returns it
-/// unchanged.
+/// A device key offered for certification: canonical version 2 tagged text of an algorithm this
+/// device can verify, and not a weak key. Returns it unchanged.
 pub(crate) fn usable_device_key(text: &str) -> Result<String, KeyIdentityError> {
     let refused = || {
         KeyIdentityError::Invalid(
@@ -602,6 +601,7 @@ pub(crate) struct CertificateClaim {
     pub(crate) name: String,
 }
 
+/// Read what a device certificate claims, without verifying it.
 pub(crate) fn certificate_claim(
     certificate: &Statement,
 ) -> Result<CertificateClaim, KeyIdentityError> {

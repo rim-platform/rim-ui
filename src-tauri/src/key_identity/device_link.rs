@@ -1,18 +1,16 @@
-//! Device linking (`rim-server/docs/specs/device-linking-v1.md`): giving a new device its own
-//! certified device key with a code shown on a device that holds the identity key.
+//! Device linking: a code shown on a device that holds the identity key gives a new device its
+//! own certified device key.
 //!
-//! The code carries a 32-byte secret the server never sees. Both devices derive one AES-256-GCM
-//! key per direction from it and seal exactly one message each through the server: the new
-//! device's **offer** (its device id, device key and name) and the old device's **answer** (the
-//! certificate it signed for that key). The secret, the device key and the identity key stay on
-//! this side; the webview sees the code text, the fingerprint, names and the sealed bytes.
+//! The code carries a 32-byte secret the server never sees. Each side derives an AES-256-GCM key
+//! per direction from it and seals one message: the new device's **offer** (device id, device
+//! key, name) and the old device's **answer** (the certificate for that key). Secrets stay here;
+//! the webview sees the code text, the fingerprint, names and sealed bytes.
 //!
-//! - **Old device** ([`KeyIdentityState::begin_link`] …): holds the secret in memory, opens and
-//!   checks the offer against the replayed key log, signs the certificate once the person
-//!   confirms, and writes a [`PendingLink`] to the keyring before `addDeviceKey`, so a restart
-//!   can finish the link or revoke a device nobody used.
-//! - **New device** ([`KeyIdentityState::offer_link`] …): creates its device key in memory and
-//!   writes nothing to the keyring until the answer's certificate verifies against the log.
+//! - **Old device** ([`KeyIdentityState::begin_link`] …): keeps the secret in memory, checks the
+//!   offer against the replayed key log, signs the certificate, and writes a [`PendingLink`]
+//!   before `addDeviceKey`.
+//! - **New device** ([`KeyIdentityState::offer_link`] …): keeps its device key in memory until
+//!   the answer's certificate verifies against the log.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -42,14 +40,14 @@ const TAG_LEN: usize = 16;
 const AAD_LABEL: &[u8] = b"rim.device-link.v1\0";
 const FINGERPRINT_DOMAIN: &[u8] = b"rim.device-link.v1 fingerprint\0";
 
-/// The wording of a message that failed to open, or opened to a plaintext that breaks the
-/// rules: both mean someone without the secret wrote it, or wrote it wrong.
+/// Error for a message that did not open or whose plaintext is malformed; the two read alike.
 const NOT_OPENED: &str = "the message could not be opened";
 
 // ─── Link code ───────────────────────────────────────────────────────────────
 
 /// A parsed link code: `rim-link:1:<link id>:<secret>:<endpoint>`.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct LinkCode {
     pub(crate) link_id: [u8; LINK_ID_LEN],
     secret: Zeroizing<[u8; SECRET_LEN]>,
@@ -90,7 +88,7 @@ pub(crate) fn parse_link_id(text: &str) -> Result<[u8; LINK_ID_LEN]> {
         .ok_or_else(|| KeyIdentityError::Invalid("the server's link id is malformed".into()))
 }
 
-/// Reader rule 5: `http://` or `https://`, 1 to 256 bytes of printable ASCII, no `?`, `#`, `@`.
+/// `http://` or `https://`, 1 to 256 bytes of printable ASCII, no `?`, `#` or `@`.
 fn valid_endpoint(endpoint: &str) -> bool {
     (endpoint.starts_with("http://") || endpoint.starts_with("https://"))
         && (1..=MAX_ENDPOINT_LEN).contains(&endpoint.len())
@@ -119,7 +117,7 @@ impl LinkCode {
         })
     }
 
-    /// Read a code as typed or pasted (the spec's reader rules 1 to 5).
+    /// Read a code as typed or pasted: whitespace removed, scheme case ignored, strict decoding.
     pub(crate) fn parse(text: &str) -> Result<Self> {
         let compact: Zeroizing<String> =
             Zeroizing::new(text.chars().filter(|c| !c.is_ascii_whitespace()).collect());
@@ -136,10 +134,12 @@ impl LinkCode {
         else {
             return Err(not_a_code());
         };
-        if version.is_empty() || !version.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(not_a_code());
-        }
-        if version != VERSION.to_string() {
+        let version = version
+            .parse::<u32>()
+            .ok()
+            .filter(|v| v.to_string() == version && *v > 0)
+            .ok_or_else(not_a_code)?;
+        if version > VERSION {
             return Err(KeyIdentityError::Invalid(
                 "this code was made by a newer app; update this device".into(),
             ));
@@ -168,6 +168,7 @@ impl LinkCode {
         ))
     }
 
+    /// The link id as 22 characters of base64url.
     pub(crate) fn link_id_text(&self) -> String {
         b64(&self.link_id)
     }
@@ -253,6 +254,7 @@ fn cipher(code: &LinkCode, direction: Direction) -> Aes256Gcm {
     Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_slice()))
 }
 
+/// Seal `plaintext` under the given nonce.
 pub(crate) fn seal_with_nonce(
     code: &LinkCode,
     direction: Direction,
@@ -334,8 +336,8 @@ pub(crate) fn fingerprint(offer_plaintext: &[u8]) -> String {
 
 // ─── Plaintexts ──────────────────────────────────────────────────────────────
 
-/// The new device's offer. Fields in the spec's order, so the bytes are reproducible. Unknown
-/// and duplicate fields are refused (serde's derive refuses a field named twice).
+/// The new device's offer. Field order fixes the serialized bytes. Unknown and duplicate fields
+/// are refused (serde's derive refuses a field named twice).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Offer {
@@ -375,6 +377,7 @@ fn to_json<T: Serialize>(value: &T) -> Zeroizing<Vec<u8>> {
 }
 
 impl Offer {
+    /// An offer from this desktop app.
     pub(crate) fn new(device_id: &str, device_key: &str, name: &str) -> Self {
         Self {
             v: VERSION,
@@ -387,12 +390,12 @@ impl Offer {
         }
     }
 
+    /// The plaintext as sealed.
     pub(crate) fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
         to_json(self)
     }
 
-    /// Read an opened offer. A plaintext that breaks the JSON rules reads like one that did
-    /// not open.
+    /// Read an opened offer. A malformed plaintext reads like one that did not open.
     pub(crate) fn parse(plaintext: &[u8]) -> Result<Self> {
         let offer: Self = serde_json::from_slice(plaintext)
             .map_err(|_| KeyIdentityError::Invalid(NOT_OPENED.into()))?;
@@ -402,7 +405,7 @@ impl Offer {
         Ok(offer)
     }
 
-    /// The field rules that do not need the account (old device rule 3, first half).
+    /// Checks of the offer's fields that do not need the account.
     fn check_fields(&self) -> Result<()> {
         let refuse = |why: &str| Err(KeyIdentityError::Invalid(why.into()));
         let canonical_uuid = uuid::Uuid::parse_str(&self.device_id)
@@ -429,6 +432,7 @@ impl Offer {
 }
 
 impl Answer {
+    /// An answer carrying `certificate`.
     pub(crate) fn new(certificate: &Statement) -> Self {
         Self {
             v: VERSION,
@@ -440,10 +444,12 @@ impl Answer {
         }
     }
 
+    /// The plaintext as sealed.
     pub(crate) fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
         to_json(self)
     }
 
+    /// Read an opened answer. A malformed plaintext reads like one that did not open.
     pub(crate) fn parse(plaintext: &[u8]) -> Result<Self> {
         let answer: Self = serde_json::from_slice(plaintext)
             .map_err(|_| KeyIdentityError::Invalid(NOT_OPENED.into()))?;
@@ -467,7 +473,7 @@ impl Answer {
 /// logged).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct StartedLink {
+pub(crate) struct IssuedCode {
     pub(crate) link_id: String,
     pub(crate) code: Zeroizing<String>,
 }
@@ -574,6 +580,7 @@ impl NewLink {
 }
 
 impl KeyIdentityState {
+    /// The links this run takes part in, by link id.
     pub(crate) fn live_links(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, std::collections::HashMap<String, LiveLink>>> {
@@ -610,14 +617,14 @@ impl KeyIdentityState {
         principal_id: &str,
         endpoint: &str,
         link_id: &str,
-    ) -> Result<StartedLink> {
+    ) -> Result<IssuedCode> {
         let link_id_bytes = parse_link_id(link_id)?;
         {
             let _guard = self.guard()?;
             self.record(principal_id)?;
         }
         let code = LinkCode::generate(link_id_bytes, endpoint)?;
-        let started = StartedLink {
+        let started = IssuedCode {
             link_id: link_id.to_string(),
             code: code.format(),
         };
@@ -633,9 +640,8 @@ impl KeyIdentityState {
         Ok(started)
     }
 
-    /// Open the offer `deviceLink` returned and check it against the account (old device rules
-    /// 2 and 3): `key_log` and `devices` are `myKeyIdentity`'s. Any error means the link must be
-    /// cancelled.
+    /// Open the offer and check it against the account: `key_log` and `devices` are
+    /// `myKeyIdentity`'s. Any error means the link must be cancelled.
     pub(crate) fn review_offer(
         &self,
         link_id: &str,
@@ -686,15 +692,17 @@ impl KeyIdentityState {
         Ok(review)
     }
 
-    /// The person confirmed the offer as `name`: sign its certificate at the head's `keySeq`,
-    /// seal the answer, and write the pending link record before the webview sends
-    /// `addDeviceKey` (old device rule 5). A retry returns the same certificate and bytes.
+    /// Sign the confirmed offer's certificate as `name` at the head's `keySeq`, seal the answer
+    /// and write the pending link record. A retry returns the same certificate and bytes.
     pub(crate) fn confirm_link(
         &self,
         link_id: &str,
         key_log: &[Statement],
         name: &str,
     ) -> Result<LinkAnswer> {
+        let name = device_name(name)?;
+        // Held until the answer is stored, so two confirmations never sign twice.
+        let _guard = self.guard()?;
         let mut link = self.old_link(link_id)?;
         if let Some(answer) = &link.answer {
             return Ok(answer.clone());
@@ -704,9 +712,7 @@ impl KeyIdentityState {
                 "there is no offer to confirm yet".into(),
             ));
         };
-        let name = device_name(name)?;
         let head = Self::head(&link.principal_id, key_log)?;
-        let _guard = self.guard()?;
         let (_, identity) = self.identity(&link.principal_id, &head)?;
         let certificate = statement::device_cert(
             &identity,
@@ -738,13 +744,14 @@ impl KeyIdentityState {
             device_id: answer.device_id.clone(),
             device_key: answer.device_key.clone(),
             certificate: answer.certificate.clone(),
+            answer: answer.answer.clone(),
         })?;
         link.answer = Some(answer.clone());
         self.put_link(link_id, LiveLink::Old(link))?;
         Ok(answer)
     }
 
-    /// Pending links on `endpoint` that this run is not already carrying on (old device rule 8).
+    /// Pending links on `endpoint` that are not live in this run.
     pub(crate) fn pending_links(&self, endpoint: &str) -> Result<Vec<PendingLinkView>> {
         let pending = {
             let _guard = self.guard()?;
@@ -763,9 +770,7 @@ impl KeyIdentityState {
             .collect())
     }
 
-    /// Carry on a pending link after a restart: its certificate, and its answer sealed again
-    /// (the server never stored the first one, or the link would not still need it). Later calls
-    /// in this run return the same bytes.
+    /// Load a pending link into this run: its certificate and the answer exactly as sealed.
     pub(crate) fn resume_link(&self, link_id: &str) -> Result<LinkAnswer> {
         if let Ok(OldLink {
             answer: Some(answer),
@@ -786,11 +791,7 @@ impl KeyIdentityState {
         let answer = LinkAnswer {
             device_id: pending.device_id.clone(),
             device_key: pending.device_key.clone(),
-            answer: seal(
-                &code,
-                Direction::Answer,
-                &Answer::new(&pending.certificate).to_bytes(),
-            )?,
+            answer: pending.answer,
             certificate: pending.certificate,
         };
         self.put_link(
@@ -808,15 +809,18 @@ impl KeyIdentityState {
     /// Forget a link on this side: its secret, a new device's unsaved key, and the pending
     /// record, if any. Ending what is not there is not an error.
     pub(crate) fn end_link(&self, link_id: &str) -> Result<()> {
-        self.live_links()?.remove(link_id);
+        // A new device's link never has a record.
+        if let Some(LiveLink::New(_)) = self.live_links()?.remove(link_id) {
+            return Ok(());
+        }
         let _guard = self.guard()?;
         self.keys().delete_pending_link(link_id)
     }
 
     // ─── New device ──────────────────────────────────────────────────────────
 
-    /// Read a pasted code for this app's server `endpoint`, create this device's key and id in
-    /// memory, and seal the offer (new device rules 1 and 2). Nothing is written to the keyring.
+    /// Read a pasted code for this app's `endpoint`, create this device's key and id in memory,
+    /// and seal the offer. Nothing is written to the keyring.
     pub(crate) fn offer_link(&self, endpoint: &str, code: &str, name: &str) -> Result<SentOffer> {
         let code = LinkCode::parse(code)?;
         if !same_endpoint(&code.endpoint, endpoint) {
@@ -850,9 +854,8 @@ impl KeyIdentityState {
         Ok(sent)
     }
 
-    /// Open the answer and check that its certificate names exactly this offer's device (new
-    /// device rule 5, first half). Returns the account whose key log must verify it. A failure
-    /// drops the link and its key.
+    /// Open the answer and check that its certificate names exactly this offer's device. Returns
+    /// the account whose key log must verify it. A failure drops the link and its key.
     pub(crate) fn open_link_answer(&self, link_id: &str, sealed: &Sealed) -> Result<OpenedAnswer> {
         let mut link = self.new_link(link_id)?;
         let checked: Result<(Statement, statement::CertificateClaim)> = (|| {
@@ -882,10 +885,9 @@ impl KeyIdentityState {
         Ok(opened)
     }
 
-    /// Verify the opened certificate against the account's key log at its `keySeq`, and only
-    /// then store this device's key, id and name for the account (new device rules 5 and 6),
-    /// unconfirmed and with the user id unknown, as after a recovery. The next key sign-in
-    /// confirms them. A failure drops the link and its key.
+    /// Verify the opened certificate against the account's key log at its `keySeq`, then store
+    /// this device's key, id and name, unconfirmed and with the user id unknown, as after a
+    /// recovery. A failure drops the link and its key.
     pub(crate) fn accept_link(&self, link_id: &str, key_log: &[Statement]) -> Result<LinkedDevice> {
         let link = self.new_link(link_id)?;
         let result = Self::verify_linked_device(&link, key_log)
@@ -971,7 +973,7 @@ fn answer_refused(error: KeyIdentityError) -> KeyIdentityError {
 mod tests {
     use super::*;
 
-    // Appendix A of device-linking-v1.md.
+    // Known-answer vectors.
     const LINK_ID: &str = "AAECAwQFBgcICQoLDA0ODw";
     const SECRET: &str = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8";
     const ENDPOINT: &str = "http://localhost:8080/api";
@@ -1215,9 +1217,12 @@ mod tests {
     }
 
     #[test]
-    fn the_code_reader_refuses_what_the_spec_refuses() {
+    fn the_code_reader_refuses_malformed_codes() {
         assert!(message(LinkCode::parse(&CODE.replacen(":1:", ":2:", 1))).contains("newer app"));
-        assert!(LinkCode::parse(&CODE.replacen(":1:", ":x:", 1)).is_err());
+        for version in [":x:", ":0:", ":01:", "::", ":99999999999:"] {
+            let err = message(LinkCode::parse(&CODE.replacen(":1:", version, 1)));
+            assert!(err.contains("not a device link code"), "{version}: {err}");
+        }
         assert!(LinkCode::parse("rim-link:1").is_err());
         assert!(LinkCode::parse(&CODE.replacen("rim-link:", "rim-lnk:", 1)).is_err());
         // 334 characters pass the length rule; 335 do not.
