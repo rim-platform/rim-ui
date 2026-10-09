@@ -17,6 +17,8 @@ npm install                  # Install dependencies
 npm run dev                  # Vite dev server (port 1420)
 npm run build                # TypeScript check + Vite build (primary frontend validation)
 npm run codegen              # Generate GraphQL types from schema.graphql (see below)
+npm run build:wasm           # Rebuild the web app's MLS module (docs/e2ee-web.md); commit the result
+npm run test:wasm            # rim_mls and its wasm facade in headless Chromium (needs chromedriver)
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
 

@@ -82,6 +82,14 @@ export interface HostServices {
   storageSet(pluginId: string, key: string, value: unknown): Promise<void>;
 }
 
+/** Answers a plugin's `rim.chat.*` call with the capabilities it started with. */
+export type ChatHandler = (
+  pluginId: string,
+  method: string,
+  params: unknown,
+  granted: readonly string[],
+) => Promise<unknown>;
+
 /** A manifest command, as far as the gates need it. */
 export interface GatedCommand {
   id: string;
@@ -166,16 +174,19 @@ export class WebPluginHost {
   private readonly listeners = new Set<() => void>();
   private principal: Principal | null = null;
   private mappings: readonly PrincipalMapping[] = [];
+  private chat: ChatHandler | null = null;
 
-  /** Connect the host to the page and the store. */
+  /** Connect the host to the page, the store and, when given, the message service. */
   configure(
     env: HostEnvironment,
     services: HostServices,
     forbiddenOrigins: readonly string[] = [],
+    chat: ChatHandler | null = null,
   ) {
     this.env = env;
     this.services = services;
     this.forbiddenOrigins = forbiddenOrigins;
+    this.chat = chat;
   }
 
   /** Called on every status change. Returns the unsubscribe function. */
@@ -291,6 +302,7 @@ export class WebPluginHost {
 
     const channel = env.createChannel();
     const frame = env.createFrame(`Plugin: ${plugin.displayName}`);
+    const chat = this.chat;
     entry.frame = frame;
     const session = new PluginSession(
       channel.host,
@@ -307,6 +319,12 @@ export class WebPluginHost {
         updatePanel: (panelId, state, patch) => this.updatePanel(id, panelId, state, patch),
         storageGet: (key) => services.storageGet(id, key),
         storageSet: (key, value) => services.storageSet(id, key, value),
+        ...(chat
+          ? {
+              chat: (method: string, params: unknown) =>
+                chat(id, method, params, plugin.approvedCapabilities),
+            }
+          : {}),
         stopped: (reason) => this.kill(id, reason),
       },
     );

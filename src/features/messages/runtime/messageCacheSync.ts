@@ -7,7 +7,8 @@
  *
  *   input = begin(conversations); while (input) input = apply(await feed(input))
  *
- * A sync runs on startup and on every WebSocket (re)connect for the recently viewed
+ * The web app runs the same loop over its encrypted store, for the encrypted conversations it
+ * follows. A sync runs on startup and on every WebSocket (re)connect for the recently viewed
  * conversations, and for one conversation when a real-time message event for it arrives:
  * events carry no version, so they are only a signal to ask the feed. Requests that arrive
  * while a sync runs are coalesced into the next run.
@@ -21,10 +22,11 @@ import { logger } from "../../../core/logger";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { requestArchiveExport } from "../../history-archive/runtime/archiveExport";
 import { mlsInputsFor } from "../../e2ee/runtime/feedInputs";
+import { isWebAccount } from "../../e2ee/web/webAccount";
 import {
   applyCacheChanges,
   beginCacheSync,
-  currentCacheAccount,
+  encryptedStoreAccount,
   fetchMessageChanges,
   type CacheAccount,
   type ChangeFeed,
@@ -177,10 +179,11 @@ export function setE2eeNoteHandler(handler: E2eeNoteHandler | null) {
 }
 
 /**
- * The cache on the Tauri side. Encrypted conversations of a page get their Commits and thread
- * roots fetched first; the cache decrypts their entries while storing the page.
+ * The account's store: the cache on the Tauri side, or the web app's encrypted store.
+ * Encrypted conversations of a page get their Commits and thread roots fetched first; the store
+ * decrypts their entries while storing the page.
  */
-export function tauriBackend(account: CacheAccount): CacheSyncBackend {
+export function storeBackend(account: CacheAccount): CacheSyncBackend {
   return {
     begin: (workspaceId, conversationIds) => beginCacheSync(account, workspaceId, conversationIds),
     apply: async (workspaceId, changes) => {
@@ -197,22 +200,28 @@ export function tauriBackend(account: CacheAccount): CacheSyncBackend {
  * encrypted send or Commit runs first. Returns false when there is no cache.
  */
 export async function syncNow(workspaceId: string, conversationIds: string[]): Promise<boolean> {
-  const account = currentCacheAccount();
+  const account = encryptedStoreAccount();
   if (!account) return false;
-  await runCacheSync(tauriBackend(account), fetchMessageChanges, workspaceId, conversationIds);
+  await runCacheSync(storeBackend(account), fetchMessageChanges, workspaceId, conversationIds);
   return true;
 }
 
 const scheduler = createCacheSyncScheduler({
-  getAccount: currentCacheAccount,
-  backendFor: tauriBackend,
+  getAccount: encryptedStoreAccount,
+  backendFor: storeBackend,
   feed: fetchMessageChanges,
   debounceMs: 250,
   resumeDelayMs: 5_000,
-  onSynced: requestArchiveExport,
+  // The history archive is the desktop's; the web store is not archived.
+  onSynced: (account) => {
+    if (!isWebAccount(account)) requestArchiveExport(account);
+  },
 });
 
-/** See {@link createCacheSyncScheduler}'s `request`. A no-op outside the desktop app. */
+/**
+ * See {@link createCacheSyncScheduler}'s `request`. A no-op outside the desktop app until the
+ * web app's encrypted store is ready.
+ */
 export function requestCacheSync(workspaceId: string, conversationIds?: string[]) {
   scheduler.request(workspaceId, conversationIds);
 }

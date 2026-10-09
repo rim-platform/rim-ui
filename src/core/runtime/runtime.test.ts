@@ -31,6 +31,14 @@ describe("getRuntimeCapabilities", () => {
     expect(getRuntimeCapabilities("web", "unsupported").deviceKeys).toBe(false);
   });
 
+  it("runs encrypted conversations on the desktop, and on the web once the browser is set up", () => {
+    expect(getRuntimeCapabilities("desktop").encryptedConversations).toBe(true);
+    expect(getRuntimeCapabilities("web", "browser").encryptedConversations).toBe(false);
+    expect(getRuntimeCapabilities("web", "browser", true).encryptedConversations).toBe(true);
+    expect(getRuntimeCapabilities("web", "unsupported", true).encryptedConversations).toBe(false);
+    expect(getRuntimeCapabilities("mobile", "none", true).encryptedConversations).toBe(false);
+  });
+
   it("returns all capabilities disabled for mobile", () => {
     const caps = getRuntimeCapabilities("mobile");
     expect(caps.dockedThreadPane).toBe(false);

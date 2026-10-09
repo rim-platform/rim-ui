@@ -77,6 +77,10 @@ export interface TestHost {
  */
 const GATED_METHODS: Readonly<Record<string, string>> = Object.freeze({
   "rim.ui.update_panel": "ui.panel",
+  "rim.chat.list_messages": "chat.read",
+  "rim.chat.get_message": "chat.read",
+  "rim.chat.search_messages": "chat.read",
+  "rim.chat.post_message": "chat.write",
 });
 
 /** The principal the test host signs in as, unless told otherwise. */

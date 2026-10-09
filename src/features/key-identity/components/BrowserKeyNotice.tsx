@@ -4,7 +4,8 @@ export function BrowserKeyNotice() {
     <p className="text-xs text-rim-text-faint">
       Keys kept in a browser are weaker than on a desktop: the key cannot be copied out, but a
       malicious extension or a compromised page can sign in with it while the page is open, and
-      clearing this site&apos;s data deletes it.
+      clearing this site&apos;s data deletes it. Encrypted conversations in this browser are only as
+      safe as this browser profile.
     </p>
   );
 }

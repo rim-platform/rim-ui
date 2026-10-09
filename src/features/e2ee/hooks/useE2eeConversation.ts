@@ -1,7 +1,8 @@
 /**
  * A conversation's encryption as the UI shows it: whether it is encrypted, this device's
  * group state, the names behind principals and devices, the upgrade of an existing DM or group
- * once every member is ready, and whether sending is stopped.
+ * once every member is ready (by a desktop; a browser never upgrades), and whether sending is
+ * stopped.
  */
 
 import { useEffect, useMemo } from "react";
@@ -15,11 +16,11 @@ import { useConversation } from "../../conversations/api/useConversation";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { fetchPrincipalDevices } from "../api/e2eeApi";
 import type { GroupView } from "../api/e2eeCommands";
-import { createGroup, refreshGroups } from "../runtime/groups";
-import { conversationMembers, notReadyMembers } from "../runtime/members";
+import { refreshGroups } from "../runtime/groups";
 import { syncMembership } from "../runtime/membership";
 import { e2eeSession } from "../runtime/session";
-import { useE2eeStore } from "../state/useE2eeStore";
+import { upgradeIfReady } from "../runtime/upgrade";
+import { useE2eeStore, type WebEncryption } from "../state/useE2eeStore";
 
 export function isEncryptable(conversationType: string | undefined): boolean {
   return (
@@ -49,12 +50,22 @@ export function usePrincipalNames(workspaceId: string | null | undefined) {
   }, [members]);
 }
 
+/**
+ * Whether this device runs encrypted conversations: the desktop app, or the web app in a browser
+ * set up as a linked device (`desktop` for the former, else the browser's state).
+ */
+export function useEncryptionSupport(): "desktop" | WebEncryption {
+  const web = useE2eeStore((s) => s.webEncryption);
+  return detectPlatform() === "desktop" ? "desktop" : web;
+}
+
 /** Device names of principals, for "<name>'s <device>". */
 export function useDeviceNames(principalIds: string[]) {
   const key = [...new Set(principalIds)].sort();
+  const support = useEncryptionSupport();
   const { data } = useQuery({
     queryKey: ["principalDevices", ...key],
-    enabled: key.length > 0 && detectPlatform() === "desktop",
+    enabled: key.length > 0 && (support === "desktop" || support === "ready"),
     staleTime: 5 * 60_000,
     queryFn: () => fetchPrincipalDevices(key),
   });
@@ -65,25 +76,31 @@ export function useDeviceNames(principalIds: string[]) {
   }, [data]);
 }
 
-/** Whether the conversation is end-to-end encrypted and this is the desktop app. */
-export function useEncryptedOnDesktop(
+/** Whether the conversation is end-to-end encrypted and this device can read it. */
+export function useEncryptedHere(
   workspaceId: string | null | undefined,
   conversationId: string | null | undefined,
 ): boolean {
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  return Boolean(conversation?.encryptedAt) && detectPlatform() === "desktop";
+  const support = useEncryptionSupport();
+  return Boolean(conversation?.encryptedAt) && (support === "desktop" || support === "ready");
 }
 
-/** Why this device cannot send in an encrypted conversation, if it cannot. */
-export type SendBlock = "web" | "unverified" | "awaitingReadd" | "removed" | null;
+/**
+ * Why this device cannot send in an encrypted conversation, if it cannot: a browser that is not
+ * set up for it (`noDeviceKey`, `otherTab`, `unsupported`, or still `checking`), a device that
+ * does not verify, a wait for a re-add, a removal.
+ */
+export type SendBlock =
+  Exclude<WebEncryption, "ready"> | "unverified" | "awaitingReadd" | "removed" | null;
 
 function sendBlockOf(
   encryptedAt: string | null,
-  desktop: boolean,
+  support: "desktop" | WebEncryption,
   group: GroupView | undefined,
 ): SendBlock {
   if (!encryptedAt) return null;
-  if (!desktop) return "web";
+  if (support !== "desktop" && support !== "ready") return support;
   if (!group) return null;
   if (group.unverified.length > 0) return "unverified";
   if (group.readdRequestedAt !== null || group.awaitingReadd !== null) return "awaitingReadd";
@@ -97,7 +114,9 @@ export function useE2eeConversation(
 ) {
   const userId = useAuthStore((s) => s.session?.userId);
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  const desktop = detectPlatform() === "desktop";
+  const support = useEncryptionSupport();
+  const desktop = support === "desktop";
+  const ready = desktop || support === "ready";
   const group = useE2eeStore((s) => (conversationId ? s.groups[conversationId] : undefined));
   const notReady = useE2eeStore((s) => (conversationId ? s.notReady[conversationId] : undefined));
   const encryptedAt = conversation?.encryptedAt ?? null;
@@ -106,7 +125,7 @@ export function useE2eeConversation(
   // An encrypted conversation this device holds no group for: its group may not exist yet (the
   // creator crashed), or wait for changes this device should commit.
   useEffect(() => {
-    if (!desktop || !workspaceId || !conversationId || !userId) return;
+    if (!ready || !workspaceId || !conversationId || !userId) return;
     void e2eeSession().then(async (session) => {
       if (!session) return;
       const [local] = await refreshGroups(session, workspaceId, [conversationId]).catch(() => []);
@@ -116,34 +135,38 @@ export function useE2eeConversation(
         );
       }
     });
-  }, [desktop, workspaceId, conversationId, userId, encryptedAt]);
+  }, [ready, workspaceId, conversationId, userId, encryptedAt]);
 
   // An existing DM or group is upgraded by an eligible member's desktop once every member is
-  // ready; until then the conversation says who is not.
+  // ready; until then the conversation says who is not. A browser only says so.
   const memberIds = conversation?.memberIds;
   const createdBy = conversation?.createdBy ?? null;
   useEffect(() => {
-    if (!desktop || !workspaceId || !conversationId || !userId || !memberIds) return;
+    if (!ready || !workspaceId || !conversationId || !userId || !memberIds) return;
     if (encryptedAt || !isEncryptable(conversationType)) return;
     let cancelled = false;
     void (async () => {
       const session = await e2eeSession();
       if (!session || cancelled) return;
-      const members = await conversationMembers(workspaceId, memberIds);
-      const { names } = await notReadyMembers(members);
-      if (cancelled) return;
-      useE2eeStore.getState().setNotReady(conversationId, names);
-      const eligible =
-        conversationType === ConversationTypeEnum.DIRECT ||
-        createdBy === userId ||
-        !createdBy ||
-        !memberIds.includes(createdBy);
-      if (names.length === 0 && eligible) await createGroup(session, workspaceId, conversationId);
+      const candidate = {
+        id: conversationId,
+        conversationType: conversationType ?? "",
+        memberIds,
+        createdBy,
+        encryptedAt,
+      };
+      // A browser records who is not ready but leaves the upgrade to a desktop.
+      await upgradeIfReady(session, workspaceId, candidate, (names) => {
+        if (cancelled) return false;
+        useE2eeStore.getState().setNotReady(conversationId, names);
+        return desktop;
+      });
     })().catch((err: unknown) => logger.warn("[RIM:e2ee] upgrade check failed:", err));
     return () => {
       cancelled = true;
     };
   }, [
+    ready,
     desktop,
     workspaceId,
     conversationId,
@@ -154,13 +177,16 @@ export function useE2eeConversation(
     createdBy,
   ]);
 
+  const upgradable = !encryptedAt && isEncryptable(conversationType);
   return {
     encryptedAt,
     encrypted: Boolean(encryptedAt),
     conversationType,
     desktop,
     group,
-    notReady: !encryptedAt && isEncryptable(conversationType) ? (notReady ?? []) : [],
-    sendBlock: sendBlockOf(encryptedAt, desktop, group),
+    notReady: upgradable ? (notReady ?? []) : [],
+    /** Everyone is ready, but this browser does not upgrade conversations: a desktop does. */
+    upgradeOnDesktop: upgradable && !desktop && notReady?.length === 0,
+    sendBlock: sendBlockOf(encryptedAt, support, group),
   };
 }

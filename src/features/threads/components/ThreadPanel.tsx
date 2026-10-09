@@ -13,7 +13,7 @@ import { MessageItem } from "../../messages/components/MessageItem";
 import type { MessageItemHandlers } from "../../messages/components/MessageItem";
 import { logger } from "../../../core/logger";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
-import { useEncryptedOnDesktop, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
+import { useEncryptedHere, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
 import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
 import { toPrincipalMentions, toUserMentions } from "../../e2ee/utils/content";
@@ -38,7 +38,7 @@ export function ThreadPanel() {
   const thread = threadByRoot.data;
 
   const threadId = thread?.id;
-  const encrypted = useEncryptedOnDesktop(workspaceId, conversationId);
+  const encrypted = useEncryptedHere(workspaceId, conversationId);
   const { userOf } = usePrincipalNames(workspaceId);
 
   const threadMsgs = useThreadMessages(

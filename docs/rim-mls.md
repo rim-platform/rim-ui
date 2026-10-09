@@ -80,14 +80,23 @@ The same holds for sending: the outgoing envelope and the state it advanced comm
 A transaction (rather than a connection) is the type so that a store can only exist inside one.
 
 `MemoryStore` is the same in memory, for tests and for the web build: writes are journaled,
-`commit()` returns the changed entries (to write through to IndexedDB), `rollback()` undoes
-them, `export()` / `import()` copy a whole store.
+`pending()` lists the changed entries without committing them (to write through to IndexedDB),
+`commit()` keeps them (and returns them), `rollback()` undoes them, `export()` / `import()` copy
+a whole store.
+
+## In the browser
+
+`crates/rim_mls_wasm` is the web app's facade over this crate, built with the `sqlite` feature
+off; on wasm32 the crate enables `openmls`'s `js` feature and getrandom's WebCrypto backends.
+The test suite runs in headless Chromium with `wasm-bindgen-test` (`npm run test:wasm`). See
+`e2ee-web.md`.
 
 ## Tests
 
 ```sh
 cd src-tauri
 cargo test -p rim_mls                       # everything
+cargo test -p rim_mls --no-default-features --target wasm32-unknown-unknown  # in a browser
 cargo test -p rim_mls simulation            # the multi-device simulations
 cargo test -p rim_mls sizes -- --nocapture  # message sizes
 cargo test -p rim_mls write_appendix_a_fixtures -- --ignored  # re-record the fixtures

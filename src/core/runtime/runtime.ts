@@ -21,6 +21,11 @@ export type RuntimeCapabilities = {
    * devices. Desktop only.
    */
   identityKeys: boolean;
+  /**
+   * Reading and sending in end-to-end encrypted conversations: the desktop, and the web once
+   * the browser holds a device key for the account and the MLS module has loaded.
+   */
+  encryptedConversations: boolean;
 };
 
 /**
@@ -55,6 +60,7 @@ export function getDeviceKeyStore(platform: AppPlatform, browserKeys?: boolean):
 export function getRuntimeCapabilities(
   platform: AppPlatform,
   deviceKeyStore: DeviceKeyStore = getDeviceKeyStore(platform),
+  webEncryptionReady = false,
 ): RuntimeCapabilities {
   if (platform === "desktop") {
     return {
@@ -66,6 +72,7 @@ export function getRuntimeCapabilities(
       customTitleBar: true,
       deviceKeys: true,
       identityKeys: true,
+      encryptedConversations: true,
     };
   }
 
@@ -79,6 +86,7 @@ export function getRuntimeCapabilities(
       customTitleBar: false,
       deviceKeys: deviceKeyStore === "browser",
       identityKeys: false,
+      encryptedConversations: deviceKeyStore === "browser" && webEncryptionReady,
     };
   }
 
@@ -91,5 +99,6 @@ export function getRuntimeCapabilities(
     customTitleBar: false,
     deviceKeys: false,
     identityKeys: false,
+    encryptedConversations: false,
   };
 }

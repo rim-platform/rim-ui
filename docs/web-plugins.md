@@ -18,6 +18,8 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | Panel state | `src/features/plugins/web/webPanelRelay.ts`; panels render in `WebPluginPanel.tsx` and use the panel bridge in `runtime/pluginBridge.ts` |
 | Installs | desktop: the Rust `PluginStateStore` and `~/.rim/plugins/<id>/`, through `pluginServices.ts`; web: IndexedDB `rim-plugins` (`browserPluginStore.ts`) |
 | `rim.storage.*` | desktop: `src-tauri/src/plugin_host/storage.rs` (app data directory); web: the `storage` store of `rim-plugins` |
+| `rim.chat.*`, the client message service | `src/features/plugins/chat/`, shared with local processes, which the Rust broker relays to it; see `docs/plugin-chat-methods.md` |
+| Grant history and encrypted reads | desktop: the `audit` of the Rust `PluginStateStore`; web: the install record's `audit`; shown by `components/PluginAuditPanel.tsx` |
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |
 | Install from link, Settings, consent text, panel chrome | `components/InstallFromLink.tsx`, `PluginSettingsPage.tsx`, `PluginCapabilityPrompt.tsx`, `PluginSlotContainer.tsx`, `pluginTrust.ts` |
 | SDK transports and browser build | `sdk/plugin-sdk/src/transport.ts`, `index.browser.ts`, `scripts/bundle-plugin.mjs`, `scripts/browser-build.mjs` |
@@ -112,6 +114,21 @@ real browser shows them.
    keeps it from starting again after a reload).
 8. **Sign-out on the web.** Signing out removes every plugin frame; signing in again
    starts the plugins that account enabled.
+
+## Host methods
+
+| Method | Capability | Notes |
+|---|---|---|
+| `rim.log` | none | 120 lines a minute |
+| `rim.ui.update_panel` | `ui.panel` | Routed, not frozen |
+| `rim.storage.get`, `rim.storage.set` | none | Routed, not frozen; 120 calls a minute |
+| `rim.chat.list_messages`, `get_message`, `search_messages` | `chat.read` (+ `chat.read.encrypted` in encrypted DMs and groups) | Routed, not frozen; `docs/plugin-chat-methods.md`. Reads come from the browser's encrypted store once it is set up as a linked device (`e2ee-web.md`, "Plugins"); otherwise `INTERNAL_ERROR` with `data.reason: "noCache"` |
+| `rim.chat.post_message` | `chat.write` (+ `chat.write.encrypted`) | Routed, not frozen; encrypted conversations only from a browser set up as a linked device (`e2ee-web.md`), otherwise `noEncryption` |
+| `rim.events.subscribe`, `rim.process.*`, `rim.fs.*`, `rim.network.*` | `events.read`, `local.process`, `fs.*`, `network` | `CAPABILITY_DENIED`: no web plugin can hold them |
+
+`chat.read`, `chat.write` and their encrypted forms are prompted for both kinds of plugin, each
+on its own line; an encrypted one is refused at install without its plain one. Revoking any
+capability (Settings > Plugins > Activity) stops the plugin.
 
 ## Limits
 

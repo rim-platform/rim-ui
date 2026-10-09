@@ -440,6 +440,9 @@ pub(crate) fn split_application_data(data: &[u8]) -> Result<(Zeroizing<[u8; 32]>
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     use super::*;
 
     const P1: &str = "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo";

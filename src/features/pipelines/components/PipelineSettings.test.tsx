@@ -192,6 +192,10 @@ describe("PipelineSettings create flow", () => {
       target: { value: "conv-7" },
     });
     fireEvent.click(screen.getByText("Add filter"));
+    // The text condition says it never matches encrypted messages.
+    expect(
+      screen.getByText(/^Never matches messages in end-to-end encrypted DMs and groups/),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Pattern (e.g. urgent)"), {
       target: { value: "sev1" },
     });

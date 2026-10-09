@@ -1,6 +1,9 @@
 //! Multi-device simulations against the in-process sequencer: the client loop, membership and
 //! device changes, races, re-adds, incarnations, and decrypt-once.
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use std::collections::HashMap;
 
 use uuid::Uuid;
@@ -845,7 +848,7 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
         .mls
         .commit_accepted(&clients[0].dev.store, group)
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(2100));
+    super::support::wait(std::time::Duration::from_millis(2100));
 
     // A device that processes the Commit later refuses it (OpenMLS checks an added key
     // package's lifetime when it processes the Commit) and needs a re-add.

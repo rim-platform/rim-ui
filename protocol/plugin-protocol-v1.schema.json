@@ -40,15 +40,146 @@
   "x-confirmationGate": "A command whose manifest entry is dangerous runs only after the user confirmed that run. The host refuses an unconfirmed dangerous command before anything reaches the plugin, sends confirmed: true with a confirmed one, and never lets the AI agent confirm. A plugin should still refuse a dangerous command that arrives with confirmed: false.",
   "x-principals": "Plugins see people only as Principal objects. principalId is opaque and stable: plugins may store and compare it but must not parse it. It is never the user's account UUID and never a name@domain, and it does not change when the user's keys change. Until key identity ships, ids are provisional (prefix rimp0_): a one-way hash of the account id, the same for one account on every device and in every session. When a person enrolls a key identity, their id becomes a hash of the first entry of their key log (prefix rimp1_), which survives key rotation. That switch happens once: every rimp0_ id maps to exactly one key-based id, the new ids never start with rimp0_, and the host tells running plugins with rim.principal.changed. It also sends the old-to-new mapping in rim.principals.remapped (added within v1 under x-versioning), after every handshake and whenever it learns a new mapping, so a plugin that stored rimp0_ ids can rewrite them. Plugins should keep stored principal ids somewhere they can rewrite.",
   "x-notFrozen": {
-    "description": "Methods whose shapes are not part of v1 yet. No plugin can be granted the capabilities of rim.chat.* and rim.events.subscribe, so the host answers them with CAPABILITY_DENIED. They will be frozen, camelCase and with Principal for every person, when the host wires them end to end.",
+    "description": "Methods whose shapes are not part of v1 yet: the hosts route them, and their shapes may still change. The rim.chat.* methods are the client message service; their shapes are in definitions. rim.events.subscribe guards nothing a manifest may ask for (events.read), so the host answers it with CAPABILITY_DENIED.",
     "methods": [
-      "rim.chat.send_message",
-      "rim.chat.get_messages",
+      "rim.chat.list_messages",
+      "rim.chat.get_message",
       "rim.chat.search_messages",
+      "rim.chat.post_message",
       "rim.events.subscribe",
       "rim.event.<type>",
       "rim.ui.update_panel"
-    ]
+    ],
+    "definitions": {
+      "ChatMessage": {
+        "description": "A message as the client message service returns it, read from the device's local cache. Never franking keys, attachment secrets or hashes, MLS state, ciphertext or keys; mentions in text are <@principalId> tokens.",
+        "type": "object",
+        "required": [
+          "id",
+          "conversationId",
+          "threadId",
+          "author",
+          "text",
+          "sentAt",
+          "editedAt",
+          "encrypted",
+          "attachments"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "conversationId": { "type": "string", "minLength": 1 },
+          "threadId": {
+            "description": "The thread the message replies in, or null.",
+            "type": ["string", "null"]
+          },
+          "author": { "$ref": "#/$defs/Principal" },
+          "text": { "type": "string" },
+          "sentAt": { "description": "RFC 3339.", "type": "string", "minLength": 1 },
+          "editedAt": { "type": ["string", "null"] },
+          "encrypted": {
+            "description": "The message itself was end-to-end encrypted.",
+            "type": "boolean"
+          },
+          "attachments": {
+            "description": "Names, types and sizes only.",
+            "type": "array",
+            "items": { "$ref": "#/x-notFrozen/definitions/ChatAttachment" }
+          }
+        }
+      },
+      "ChatAttachment": {
+        "type": "object",
+        "required": ["name", "mime", "size"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "mime": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "ChatListMessagesParams": {
+        "type": "object",
+        "required": ["conversationId"],
+        "properties": {
+          "conversationId": { "type": "string", "minLength": 1 },
+          "before": {
+            "description": "A message id: list the messages before it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "ChatListMessagesResult": {
+        "description": "Oldest first.",
+        "type": "object",
+        "required": ["messages", "hasOlder"],
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/x-notFrozen/definitions/ChatMessage" }
+          },
+          "hasOlder": { "type": "boolean" }
+        }
+      },
+      "ChatGetMessageParams": {
+        "type": "object",
+        "required": ["messageId"],
+        "properties": {
+          "messageId": { "type": "string", "minLength": 1 }
+        }
+      },
+      "ChatGetMessageResult": {
+        "type": "object",
+        "required": ["message"],
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "anyOf": [{ "$ref": "#/x-notFrozen/definitions/ChatMessage" }, { "type": "null" }]
+          }
+        }
+      },
+      "ChatSearchMessagesParams": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string", "minLength": 1 },
+          "conversationId": { "type": "string", "minLength": 1 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "ChatSearchMessagesResult": {
+        "description": "Newest first.",
+        "type": "object",
+        "required": ["messages"],
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/x-notFrozen/definitions/ChatMessage" }
+          }
+        }
+      },
+      "ChatPostMessageParams": {
+        "type": "object",
+        "required": ["conversationId", "body"],
+        "properties": {
+          "conversationId": { "type": "string", "minLength": 1 },
+          "body": { "type": "string", "minLength": 1 },
+          "threadId": { "type": "string", "minLength": 1 }
+        }
+      },
+      "ChatPostMessageResult": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
   },
   "$defs": {
     "JsonRpcVersion": {

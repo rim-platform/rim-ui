@@ -19,6 +19,8 @@ export default tseslint.config(
       "src-tauri/**",
       "src/core/graphql/generated/**",
       "sdk/plugin-sdk/src/generated/**",
+      // wasm-bindgen's output (`npm run build:wasm`).
+      "src/features/e2ee/wasm/**",
       "*.config.js",
     ],
   },

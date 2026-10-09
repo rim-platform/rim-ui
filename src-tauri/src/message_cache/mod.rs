@@ -24,6 +24,7 @@ mod archive;
 pub(crate) mod commands;
 pub(crate) mod feed;
 mod key;
+pub(crate) mod plugin_view;
 mod search;
 mod snapshot;
 pub(crate) mod store;
@@ -58,6 +59,9 @@ pub(crate) enum CacheError {
     Io(String),
     #[error("cache json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// A plugin without `chat.read.encrypted` asked for an encrypted conversation.
+    #[error("capability denied: chat.read.encrypted")]
+    EncryptedDenied,
 }
 
 impl CacheError {
@@ -69,6 +73,7 @@ impl CacheError {
             }
             Self::AccountMismatch => "CACHE_ACCOUNT_MISMATCH",
             Self::Invalid(_) => "INVALID_ARGS",
+            Self::EncryptedDenied => "CAPABILITY_DENIED",
         }
     }
 }

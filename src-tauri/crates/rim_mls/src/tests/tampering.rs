@@ -1,6 +1,9 @@
 //! Every leaf-verification failure, and messages and Commits whose authenticated data does not
 //! match what they carry.
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 use uuid::Uuid;
 
 use super::raw::{commit_raw, key_package_ref, send_raw};

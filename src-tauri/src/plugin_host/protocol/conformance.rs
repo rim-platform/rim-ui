@@ -434,7 +434,7 @@ async fn host_errors_are_error_responses() {
     for request in [
         JsonRpcRequest::new("rim.nonexistent", None, 7),
         JsonRpcRequest::new(method::LOG, Some(json!({"level": "loud"})), 8),
-        JsonRpcRequest::new("rim.chat.send_message", None, 9),
+        JsonRpcRequest::new("rim.chat.post_message", None, 9),
     ] {
         let response = serde_json::to_value(broker.handle_request(&request).await).unwrap();
         assert_valid("ErrorResponse", &response);

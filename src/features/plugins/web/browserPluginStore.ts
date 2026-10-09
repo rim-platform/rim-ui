@@ -5,7 +5,9 @@
 // Bundles are hashed again at every start; a damaged or evicted one is fetched
 // again from its link and must hash the same.
 
+import { EMPTY_AUDIT, withEncryptedReads, withGrant } from "../audit";
 import type {
+  PluginAudit,
   PluginCommandInfo,
   PluginContextAction,
   PluginInfo,
@@ -48,6 +50,8 @@ export interface InstallRecord {
   /** Set while the page starts the plugin; see safe start in the host. */
   starting: boolean;
   installedAt: string;
+  /** Grant history and encrypted reads; absent on records older than the audit. */
+  audit?: PluginAudit;
 }
 
 interface StoredBundle {
@@ -187,6 +191,7 @@ export function toPluginInfo(record: InstallRecord): PluginInfo {
     network_origins: manifest.network_origins ?? [],
     source: record.source,
     starting: record.starting,
+    audit: record.audit ?? EMPTY_AUDIT,
   };
 }
 
@@ -243,10 +248,15 @@ export class BrowserPluginStore implements PluginServices {
       const unknown = capabilities.find((c) => !asked.includes(c));
       if (unknown !== undefined) throw new Error(`capability not requested by plugin: ${unknown}`);
       const approved = [...r.approvedCapabilities];
+      let audit = r.audit;
+      const now = new Date();
       for (const capability of capabilities) {
-        if (!approved.includes(capability)) approved.push(capability);
+        if (!approved.includes(capability)) {
+          approved.push(capability);
+          audit = withGrant(audit, capability, "granted", now);
+        }
       }
-      return { ...r, approvedCapabilities: approved };
+      return { ...r, approvedCapabilities: approved, ...(audit ? { audit } : {}) };
     });
   }
 
@@ -256,6 +266,17 @@ export class BrowserPluginStore implements PluginServices {
       ...r,
       status: r.status === "enabled" ? "disabled" : r.status,
       approvedCapabilities: r.approvedCapabilities.filter((c) => c !== capability),
+      ...(r.approvedCapabilities.includes(capability)
+        ? { audit: withGrant(r.audit, capability, "revoked", new Date()) }
+        : {}),
+    }));
+  }
+
+  /** Count `count` encrypted messages the message service gave the plugin today. */
+  recordEncryptedReads(pluginId: string, count: number): Promise<void> {
+    return this.update(pluginId, (r) => ({
+      ...r,
+      audit: withEncryptedReads(r.audit, count, new Date()),
     }));
   }
 
@@ -316,6 +337,8 @@ export class BrowserPluginStore implements PluginServices {
       approvedAiCommands: (kept?.approvedAiCommands ?? []).filter((c) => aiCommands.includes(c)),
       starting: false,
       installedAt: new Date().toISOString(),
+      // An update keeps the plugin's history; a fresh install starts its own.
+      ...(existing?.audit ? { audit: existing.audit } : {}),
     };
     const tx = (await database()).transaction([BUNDLES, INSTALLS], "readwrite");
     tx.objectStore(BUNDLES).put({ sha256, bytes } satisfies StoredBundle);

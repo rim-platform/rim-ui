@@ -1,6 +1,7 @@
 pub mod broker;
 pub mod bundle;
 pub mod capability;
+pub mod chat_relay;
 pub mod command_exec;
 pub mod commands;
 pub mod discovery;
@@ -62,6 +63,9 @@ pub struct PluginHostState {
     /// The signed-in account's provisional principal id, which names its plugin
     /// stores; `None` when nobody is signed in.
     pub account: Mutex<Option<String>>,
+    /// Local-process plugins' `rim.chat.*` calls on their way to the UI's message
+    /// service. Arc for the broker tasks.
+    pub chat_relay: Arc<chat_relay::ChatRelay>,
 }
 
 pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
@@ -103,6 +107,7 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         events: Arc::new(host_events::PluginEvents::new()),
         storage: storage::PluginStorage::new(app_data_dir),
         account: Mutex::new(None),
+        chat_relay: Arc::new(chat_relay::ChatRelay::default()),
     };
 
     // Re-spawn any plugins that were Enabled on last shutdown.
@@ -142,7 +147,8 @@ pub const PANEL_STATE_EVENT: &str = "plugin-panel-state";
 
 /// Push what the plugin host does to the UI: every panel state change as
 /// [`PANEL_STATE_EVENT`], so an open panel shows a plugin's updates as they
-/// happen, and plugins starting and stopping as [`host_events::PLUGIN_EVENT`].
+/// happen, plugins starting and stopping as [`host_events::PLUGIN_EVENT`], and
+/// local-process plugins' chat calls as [`chat_relay::PLUGIN_CHAT_EVENT`].
 /// Called once at app start; a panel that opens later asks for the stored state
 /// with `plugin_panel_state`.
 pub fn forward_to_ui<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: &PluginHostState) {
@@ -150,6 +156,11 @@ pub fn forward_to_ui<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: &Plugin
         app.clone(),
         state.panel_relay.subscribe(),
         PANEL_STATE_EVENT,
+    );
+    forward(
+        app.clone(),
+        state.chat_relay.subscribe(),
+        chat_relay::PLUGIN_CHAT_EVENT,
     );
     forward(app, state.events.subscribe(), host_events::PLUGIN_EVENT);
 }
@@ -212,6 +223,7 @@ impl PluginHostState {
             events: Arc::new(host_events::PluginEvents::new()),
             storage: storage::PluginStorage::new(std::path::Path::new("/nonexistent")),
             account: Mutex::new(None),
+            chat_relay: Arc::new(chat_relay::ChatRelay::default()),
         }
     }
 }
