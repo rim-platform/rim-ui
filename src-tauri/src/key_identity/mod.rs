@@ -462,13 +462,23 @@ impl KeyIdentityState {
     /// Reconcile this device's keys with what the server says about the signed-in account:
     /// its `principalId` (`null` before enrollment). Keys the server shows are confirmed and
     /// linked to the account; unconfirmed keys for the same account it does not show are
-    /// removed. Returns this device's keys for the account, if any.
+    /// removed, unless an enrollment of this run still holds them (its answer may come after
+    /// the server's). Returns this device's keys for the account, if any.
     pub(crate) fn settle(
         &self,
         account: &ServerAccount,
         server_principal_id: Option<&str>,
     ) -> Result<Option<LocalAccount>> {
         let guard = self.guard()?;
+        // Read under the store lock, after any `sign_enrollment` that got there first: a draft
+        // still held here may be in flight to the server, so its keys are never leftovers.
+        let drafting: Vec<String> = self
+            .drafts
+            .lock()
+            .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
+            .values()
+            .map(|d| d.principal_id.clone())
+            .collect();
         let keys = self.keys();
         let mut links = keys.links()?;
         let mut result = None;
@@ -500,7 +510,8 @@ impl KeyIdentityState {
         for link in &links {
             let same_account = same_endpoint(&link.endpoint, &account.endpoint)
                 && link.user_id.as_deref() == Some(account.user_id.as_str())
-                && Some(link.principal_id.as_str()) != server_principal_id;
+                && Some(link.principal_id.as_str()) != server_principal_id
+                && !drafting.contains(&link.principal_id);
             if !same_account {
                 continue;
             }

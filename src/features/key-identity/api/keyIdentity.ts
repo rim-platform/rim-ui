@@ -527,8 +527,8 @@ export async function recoverAccount(
       const fresh = await graphqlClient.request<{ keyLog: StatementOnly[] }>(KEY_LOG_QUERY, {
         principalId: statements.principalId,
       });
-      landed =
-        fresh.keyLog[fresh.keyLog.length - 1]?.statement.payload === statements.entry.payload;
+      // Anywhere in the log, not only at its head: a later rotation does not undo this one.
+      landed = fresh.keyLog.some((e) => e.statement.payload === statements.entry.payload);
     } catch {
       // No answer either way: keep the keys for the next try.
       throw err;

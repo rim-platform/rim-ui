@@ -142,21 +142,25 @@ fn keys_the_server_never_accepted_are_cleaned_up() {
         Err(KeyIdentityError::NoKeys)
     ));
 
-    // The app quit before the answer, and the server never enrolled it.
+    // The app quit before the answer, and the server never enrolled it: the next run, which
+    // holds no draft, cleans up.
+    let store = Arc::new(MemorySecretStore::default());
+    let state = KeyIdentityState::new(store.clone());
     let draft = state.begin_enrollment("Laptop").unwrap();
     state
         .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
         .unwrap();
-    assert_eq!(state.settle(&account("u1"), None).unwrap(), None);
-    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
+    let restarted = KeyIdentityState::new(store);
+    assert_eq!(restarted.settle(&account("u1"), None).unwrap(), None);
+    assert!(restarted.accounts(ENDPOINT).unwrap().is_empty());
 
     // Another account's unconfirmed keys are left alone.
     let draft = state.begin_enrollment("Laptop").unwrap();
     state
         .sign_enrollment(&draft.draft_id, &account("u2"), &challenge())
         .unwrap();
-    state.settle(&account("u1"), None).unwrap();
-    assert_eq!(state.accounts(ENDPOINT).unwrap().len(), 1);
+    restarted.settle(&account("u1"), None).unwrap();
+    assert_eq!(restarted.accounts(ENDPOINT).unwrap().len(), 1);
 }
 
 #[test]
@@ -496,4 +500,23 @@ fn device_names_are_trimmed_and_bounded() {
     assert_eq!(device_name(&"x".repeat(80)).unwrap().chars().count(), 64);
     assert!(device_name(" \n ").is_err());
     assert!(!default_device_name().is_empty());
+}
+
+#[test]
+fn a_settle_never_removes_the_keys_of_an_enrollment_still_in_flight() {
+    // The server answered "not enrolled" before the enrollment it is about to accept.
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    state
+        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .unwrap();
+    assert_eq!(state.settle(&account("u1"), None).unwrap(), None);
+    assert!(state.record(&draft.principal_id).is_ok());
+
+    // The enrollment lands: the keys are there to confirm.
+    let local = state
+        .settle(&account("u1"), Some(draft.principal_id.as_str()))
+        .unwrap()
+        .unwrap();
+    assert!(local.confirmed && local.has_identity_key);
 }
