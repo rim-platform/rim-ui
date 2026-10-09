@@ -18,7 +18,7 @@ export interface VerifiedIdentity {
   card: CardView | null;
 }
 
-async function fetchVerified(
+export async function fetchVerifiedIdentity(
   principalId: string,
   relayUrls: readonly string[],
 ): Promise<VerifiedIdentity> {
@@ -47,7 +47,7 @@ export function resolveIdentity(
 ): Promise<VerifiedIdentity> {
   return queryClient.fetchQuery({
     queryKey: queryKeys.remoteIdentity(principalId),
-    queryFn: () => fetchVerified(principalId, relayUrls),
+    queryFn: () => fetchVerifiedIdentity(principalId, relayUrls),
     staleTime: IDENTITY_STALE_MS,
   });
 }
