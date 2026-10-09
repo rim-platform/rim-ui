@@ -25,6 +25,10 @@ const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
   { value: PipelineTriggerKindGql.WORKSPACE_STATE_CHANGED, label: "Workspace State Changed" },
 ];
 
+/** Shown under a text condition: the server cannot read encrypted messages. */
+const MESSAGE_CONTAINS_NOTE =
+  "Never matches messages in end-to-end encrypted DMs and groups: the server cannot read them. Other triggers still fire there, on metadata only.";
+
 const CONDITION_TYPES = [
   { value: "MessageContains", label: "Message contains pattern" },
   { value: "MessageFromUser", label: "Message from user" },
@@ -301,13 +305,16 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
                   <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-rim-text-muted" />
                 </div>
                 {cond.conditionType === "MessageContains" && (
-                  <input
-                    type="text"
-                    value={cond.pattern}
-                    onChange={(e) => updateCondition(index, "pattern", e.target.value)}
-                    placeholder="Pattern (e.g. urgent)"
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
-                  />
+                  <>
+                    <input
+                      type="text"
+                      value={cond.pattern}
+                      onChange={(e) => updateCondition(index, "pattern", e.target.value)}
+                      placeholder="Pattern (e.g. urgent)"
+                      className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
+                    />
+                    <p className="text-[11px] text-rim-text-faint">{MESSAGE_CONTAINS_NOTE}</p>
+                  </>
                 )}
                 {cond.conditionType === "MessageFromUser" && (
                   <input
