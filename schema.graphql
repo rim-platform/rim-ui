@@ -730,6 +730,9 @@ type DeviceKey {
 	The client-chosen device id from the certificate.
 	"""
 	deviceId: ID!
+	"""
+	The device key in tagged form, `<algorithm>:<base64url>` (today always `ed25519:…`).
+	"""
 	publicKey: String!
 	name: String!
 	"""
@@ -2608,7 +2611,7 @@ type SignedStatement {
 
 """
 A signed statement as the client sends it: the exact JSON text that was signed, and its
-unpadded base64url Ed25519 signature.
+signature (`ed25519:<base64url>` in version 2 statements, bare base64url in version 1).
 """
 input SignedStatementInput {
 	payload: String!

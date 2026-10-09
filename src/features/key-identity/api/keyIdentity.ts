@@ -22,7 +22,6 @@ import type {
   SignedStatement,
   SignedStatementInput,
 } from "../../../core/graphql/generated/schema-types";
-import { graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 
@@ -65,6 +64,7 @@ interface EnrollmentStatements {
 
 interface RecoveryStatements {
   principalId: string;
+  deviceId: string;
   entry: SignedStatementInput;
   device: SignedStatementInput;
 }
@@ -101,6 +101,7 @@ export const MY_KEY_IDENTITY_QUERY = gql`
         publicKey
         name
         keySeq
+        certificate { ${STATEMENT_FIELDS} }
         addedAt
         lastUsedAt
         revokedAt
@@ -183,7 +184,7 @@ type StatementOnly = { statement: Pick<SignedStatement, "payload" | "signature">
 export type KeyIdentityDevice = Pick<
   DeviceKey,
   "deviceId" | "publicKey" | "name" | "keySeq" | "addedAt" | "lastUsedAt" | "revokedAt"
->;
+> & { certificate: StatementOnly["statement"] };
 
 /** `myKeyIdentity` as this module selects it. */
 export interface MyKeyIdentity {
@@ -206,11 +207,12 @@ export async function fetchMyKeyIdentity(): Promise<MyKeyIdentity> {
   return res.myKeyIdentity;
 }
 
+function statementInput(statement: StatementOnly["statement"]): SignedStatementInput {
+  return { payload: statement.payload, signature: statement.signature };
+}
+
 function logStatements(log: StatementOnly[]): SignedStatementInput[] {
-  return log.map(({ statement }) => ({
-    payload: statement.payload,
-    signature: statement.signature,
-  }));
+  return log.map(({ statement }) => statementInput(statement));
 }
 
 async function challenge(): Promise<Pick<KeyLoginChallenge, "challengeId" | "nonce">> {
@@ -251,6 +253,8 @@ export async function settleDeviceKeys(
  * keys of an account that is enrolled).
  */
 export async function reconcileDeviceKeys(account: KeyAccount): Promise<LocalKeyAccount | null> {
+  // An enrollment in flight may land after the server's answer: its keys are not leftovers.
+  if (enrollmentsInFlight > 0) return null;
   return settleDeviceKeys(account, await serverPrincipalId());
 }
 
@@ -311,6 +315,12 @@ export async function resumeWithDeviceKey(userId: string): Promise<string | null
 
 // ─── Enrollment ─────────────────────────────────────────────────────────────
 
+/**
+ * Enrollments sent to the server and not answered yet. While one is in flight, the server
+ * saying "not enrolled" proves nothing, so nothing removes keys on that basis.
+ */
+let enrollmentsInFlight = 0;
+
 /** Create the keys of a new identity; the recovery kit in the result is shown once. */
 export async function beginEnrollment(deviceName: string): Promise<EnrollmentDraft> {
   return keyCommand<EnrollmentDraft>("key_identity_begin_enrollment", { deviceName });
@@ -332,6 +342,7 @@ export async function abandonEnrollment(
   draft: EnrollmentDraft,
   account: KeyAccount,
 ): Promise<void> {
+  if (enrollmentsInFlight > 0) return;
   let principalId: string | null;
   try {
     principalId = await serverPrincipalId();
@@ -361,11 +372,14 @@ export async function completeEnrollment(
     challenge: { challengeId, nonce },
   });
   const input: EnrollIdentityKeyInput = statements;
+  enrollmentsInFlight += 1;
   try {
     await graphqlClient.request(ENROLL_MUTATION, { input });
   } catch (err) {
     // An earlier attempt whose answer was lost may have enrolled the account already.
     if ((await serverPrincipalId().catch(() => null)) !== draft.principalId) throw err;
+  } finally {
+    enrollmentsInFlight -= 1;
   }
   await settleDeviceKeys(account, draft.principalId);
   // Best-effort: the card can be published later from Settings.
@@ -459,9 +473,10 @@ export async function publishProfileCard(
       version: (identity.profileCard?.version ?? 0) + 1,
       displayName: displayName.trim(),
       relays: profileCardRelays(),
-      devices: identity.devices
+      // The Tauri side lists a device only if its certificate verifies against the key log.
+      certificates: identity.devices
         .filter((d) => !d.revokedAt)
-        .map((d) => ({ deviceId: d.deviceId, deviceKey: d.publicKey })),
+        .map((d) => statementInput(d.certificate)),
     },
   });
   await graphqlClient.request(PUBLISH_CARD_MUTATION, { card });
@@ -505,12 +520,27 @@ export async function recoverAccount(
   try {
     await graphqlClient.request(ROTATE_MUTATION, { input });
   } catch (err) {
-    // The server refused it, so nothing changed there: drop the keys made for this attempt.
-    // Without an answer the rotation may have landed, so the keys stay for the next try.
-    if (graphqlErrorCode(err) !== undefined) {
-      await forgetDeviceKeys(statements.principalId).catch(() => undefined);
+    // Whether the rotation landed is in the key log, not in the error: an error can come
+    // after the server committed it, or before it ever arrived.
+    let landed: boolean;
+    try {
+      const fresh = await graphqlClient.request<{ keyLog: StatementOnly[] }>(KEY_LOG_QUERY, {
+        principalId: statements.principalId,
+      });
+      landed =
+        fresh.keyLog[fresh.keyLog.length - 1]?.statement.payload === statements.entry.payload;
+    } catch {
+      // No answer either way: keep the keys for the next try.
+      throw err;
     }
-    throw err;
+    if (!landed) {
+      // Refused: drop the keys made for this attempt, putting back any it replaced.
+      await keyCommand<null>("key_identity_discard_recovery", {
+        principalId: statements.principalId,
+        deviceId: statements.deviceId,
+      }).catch(() => undefined);
+      throw err;
+    }
   }
   return signInWithDeviceKey(statements.principalId);
 }

@@ -689,6 +689,7 @@ export type DeviceKey = {
   keySeq: Scalars['Int']['output'];
   lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
   name: Scalars['String']['output'];
+  /** The device key in tagged form, `<algorithm>:<base64url>` (today always `ed25519:…`). */
   publicKey: Scalars['String']['output'];
   revokedAt?: Maybe<Scalars['DateTime']['output']>;
 };
@@ -3308,7 +3309,7 @@ export type SignedStatement = {
 
 /**
  * A signed statement as the client sends it: the exact JSON text that was signed, and its
- * unpadded base64url Ed25519 signature.
+ * signature (`ed25519:<base64url>` in version 2 statements, bare base64url in version 1).
  */
 export type SignedStatementInput = {
   payload: Scalars['String']['input'];

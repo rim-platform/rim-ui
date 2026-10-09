@@ -16,6 +16,7 @@ import {
   accountIdInKit,
   completeEnrollment,
   profileCardIsStale,
+  reconcileDeviceKeys,
   recoverAccount,
   resumeWithDeviceKey,
   signInWithDeviceKey,
@@ -199,7 +200,12 @@ describe("enrollment", () => {
     ]);
     const card = invokeMock.mock.calls.find((c) => c[0] === "key_identity_sign_profile_card");
     expect(card?.[1]).toMatchObject({
-      card: { version: 1, displayName: "Ada", relays: ["http://localhost:8080"], devices: [] },
+      card: {
+        version: 1,
+        displayName: "Ada",
+        relays: ["http://localhost:8080"],
+        certificates: [],
+      },
     });
   });
 
@@ -231,6 +237,34 @@ describe("enrollment", () => {
     expect(commands()).toEqual(["key_identity_sign_enrollment"]);
   });
 
+  it("removes nothing while an enrollment is still in flight", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        EnrollIdentityKey: () => new Promise((resolve) => (answer = resolve)),
+        MeKeyAccount: ME(null),
+        MyKeyIdentity: new TypeError("Failed to fetch"),
+      },
+      { key_identity_sign_enrollment: statements },
+    );
+    const enrolling = completeEnrollment(draft, ACCOUNT);
+    await vi.waitFor(() => expect(answer).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(requestMock.mock.calls.some((c) => operation(c) === "EnrollIdentityKey")).toBe(true),
+    );
+
+    // The settings panel closes now: the server still says "not enrolled".
+    await abandonEnrollment(draft, ACCOUNT);
+    expect(await reconcileDeviceKeys(ACCOUNT)).toBeNull();
+    expect(commands()).toEqual(["key_identity_sign_enrollment"]);
+
+    answer({ enrollIdentityKey: true });
+    await enrolling;
+    expect(commands()).toContain("key_identity_settle");
+    expect(commands()).not.toContain("key_identity_discard_enrollment");
+  });
+
   it("abandoning removes the keys only when the server is known not to use them", async () => {
     backend({ MeKeyAccount: ME(null) });
     await abandonEnrollment(draft, ACCOUNT);
@@ -249,7 +283,15 @@ describe("enrollment", () => {
 });
 
 describe("recoverAccount", () => {
-  const recovery = { principalId: PRINCIPAL, entry: STATEMENT, device: STATEMENT };
+  const ENTRY = { payload: '{"type":"rotate","seq":1}', signature: "ed25519:r" };
+  const recovery = { principalId: PRINCIPAL, deviceId: "d-new", entry: ENTRY, device: STATEMENT };
+  const before = { keyLog: [{ seq: 0, statement: STATEMENT }] };
+  const after = {
+    keyLog: [
+      { seq: 0, statement: STATEMENT },
+      { seq: 1, statement: ENTRY },
+    ],
+  };
   const kit = `RIM recovery kit (v1)\nAccount id: ${PRINCIPAL}\nRecovery key: RK1-AAAA`;
 
   it("reads the public log, rotates with the recovery key and signs in with the new device", async () => {
@@ -276,29 +318,49 @@ describe("recoverAccount", () => {
       deviceName: "New laptop",
     });
     const rotate = requestMock.mock.calls.find((c) => operation(c) === "RotateIdentityKey");
-    expect(rotate?.[1]).toEqual({ input: { entry: STATEMENT, device: STATEMENT } });
+    expect(rotate?.[1]).toEqual({ input: { entry: ENTRY, device: STATEMENT } });
   });
 
-  it("drops the new keys when the server refuses, and keeps them without an answer", async () => {
+  it("undoes the attempt when the log shows the server refused it", async () => {
     backend(
-      {
-        KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] },
-        RotateIdentityKey: serverError("VALIDATION"),
-      },
+      { KeyLog: before, RotateIdentityKey: serverError("VALIDATION") },
       { key_identity_begin_recovery: recovery },
     );
     await expect(recoverAccount(kit, null, "New")).rejects.toBeInstanceOf(ClientError);
-    expect(invokeMock).toHaveBeenCalledWith("key_identity_forget", { principalId: PRINCIPAL });
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_discard_recovery", {
+      principalId: PRINCIPAL,
+      deviceId: "d-new",
+    });
+    expect(commands()).not.toContain("key_identity_forget");
+  });
 
-    invokeMock.mockClear();
+  it("signs in when the rotation landed although its answer was an error", async () => {
+    let logReads = 0;
     backend(
       {
-        KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] },
+        KeyLog: () => (logReads++ === 0 ? before : after),
+        RotateIdentityKey: serverError("INTERNAL"),
+        KeyLoginChallenge: CHALLENGE,
+        LoginWithKey: { loginWithKey: { userId: "user-1" } },
+        MeKeyAccount: ME(PRINCIPAL),
+      },
+      { key_identity_begin_recovery: recovery, key_identity_sign_login: STATEMENT },
+    );
+    await expect(recoverAccount(kit, null, "New")).resolves.toBe("user-1");
+    expect(commands()).not.toContain("key_identity_discard_recovery");
+  });
+
+  it("keeps the keys when the server cannot say what happened", async () => {
+    let logReads = 0;
+    backend(
+      {
+        KeyLog: () => (logReads++ === 0 ? before : new TypeError("Failed to fetch")),
         RotateIdentityKey: new TypeError("Failed to fetch"),
       },
       { key_identity_begin_recovery: recovery },
     );
     await expect(recoverAccount(kit, null, "New")).rejects.toBeInstanceOf(TypeError);
+    expect(commands()).not.toContain("key_identity_discard_recovery");
     expect(commands()).not.toContain("key_identity_forget");
   });
 
@@ -340,6 +402,7 @@ describe("helpers", () => {
       publicKey: "k",
       name: "Laptop",
       keySeq: 0,
+      certificate: STATEMENT,
       addedAt: "2026-10-09T00:00:00Z",
       lastUsedAt: null,
       revokedAt: null,

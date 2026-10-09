@@ -4,6 +4,8 @@ export const queryKeys = {
   // Stage 3 key identity: the signed-in account's key log, devices and profile card, and the
   // accounts on a server this desktop holds device keys for.
   myKeyIdentity: ["myKeyIdentity"] as const,
+  deviceKeyStatus: (principalId: string, keySeq: number | null) =>
+    ["deviceKeyStatus", principalId, keySeq] as const,
   deviceKeyAccounts: (endpoint: string) => ["deviceKeyAccounts", endpoint] as const,
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,

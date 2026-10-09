@@ -212,6 +212,7 @@ pub fn run() {
             key_identity::commands::key_identity_begin_rotation,
             key_identity::commands::key_identity_sign_profile_card,
             key_identity::commands::key_identity_begin_recovery,
+            key_identity::commands::key_identity_discard_recovery,
             key_identity::commands::key_identity_forget,
         ])
         .build(tauri::generate_context!())

@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use statement::{CardDevice, KeyHead, RotationSigner, SecretKey, Statement};
+use statement::{KeyHead, RotationSigner, SecretKey, Statement};
 use store::{same_endpoint, AccountLink, KeyRecord, Keys, SecretStore};
 
 #[derive(Debug, thiserror::Error)]
@@ -111,6 +111,8 @@ pub(crate) struct EnrollmentStatements {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RecoveryStatements {
     pub(crate) principal_id: String,
+    /// The new device, to undo the recovery with if the server refuses it.
+    pub(crate) device_id: String,
     pub(crate) entry: Statement,
     pub(crate) device: Statement,
 }
@@ -141,7 +143,9 @@ pub(crate) struct CardContent {
     pub(crate) version: u32,
     pub(crate) display_name: String,
     pub(crate) relays: Vec<String>,
-    pub(crate) devices: Vec<CardDevice>,
+    /// The certificates of the devices to list. Only those that verify against the key log
+    /// make it into the card.
+    pub(crate) certificates: Vec<Statement>,
 }
 
 /// Who a key sign-in or enrollment is for on the server.
@@ -225,16 +229,24 @@ fn local_account(link: &AccountLink, record: &KeyRecord) -> LocalAccount {
 }
 
 /// The identity key of `record` that is the head's, promoting a pending one the head names.
-/// Returns `None` when this device holds neither.
+/// A pending key is dropped only once the log reaches the seq its rotation creates with
+/// another key; a log that ends before it (a stale copy, or the rotation still in flight)
+/// leaves it pending. Returns `None` when this device holds no key the head names.
 fn identity_at_head(record: &mut KeyRecord, head: &KeyHead) -> Result<(Option<SecretKey>, bool)> {
     let mut changed = false;
     if let Some(pending) = record.pending_identity_seed.take() {
-        let pending_key = key(&pending)?;
-        if pending_key.public_key() == head.identity_key {
+        let target = record.pending_identity_seq.unwrap_or(0);
+        if key(&pending)?.public_key() == head.identity_key {
             record.identity_seed = Some(pending);
+            record.pending_identity_seq = None;
+            changed = true;
+        } else if head.seq >= target {
+            // That seq holds another key: the rotation never landed.
+            record.pending_identity_seq = None;
+            changed = true;
+        } else {
+            record.pending_identity_seed = Some(pending);
         }
-        // Either way the pending key is settled: promoted, or never accepted.
-        changed = true;
     }
     match &record.identity_seed {
         Some(text) => {
@@ -394,7 +406,9 @@ impl KeyIdentityState {
             device_seed: draft.device_seed.to_text(),
             identity_seed: Some(draft.identity_seed.to_text()),
             pending_identity_seed: None,
+            pending_identity_seq: None,
             confirmed: false,
+            replaced: None,
         })?;
         let mut links = keys.links()?;
         links.retain(|l| {
@@ -461,8 +475,9 @@ impl KeyIdentityState {
 
         if let Some(principal_id) = server_principal_id {
             if let Some(mut record) = keys.record(principal_id)? {
-                if !record.confirmed {
+                if !record.confirmed || record.replaced.is_some() {
                     record.confirmed = true;
+                    record.replaced = None;
                     keys.put_record(&record)?;
                 }
                 links.retain(|l| {
@@ -623,9 +638,18 @@ impl KeyIdentityState {
         let head = Self::head(principal_id, log)?;
         let _guard = self.guard()?;
         let (mut record, identity) = self.identity(principal_id, &head)?;
-        let next = SecretKey::generate()?;
-        record.pending_identity_seed = Some(next.to_text());
-        self.keys().put_record(&record)?;
+        // A rotation already pending for this seq (its answer lost, or a retry) is signed again
+        // with the same key: if the first one landed, a new key would be lost with it.
+        let next = match (&record.pending_identity_seed, record.pending_identity_seq) {
+            (Some(pending), Some(seq)) if seq == head.seq + 1 => key(pending)?,
+            _ => {
+                let next = SecretKey::generate()?;
+                record.pending_identity_seed = Some(next.to_text());
+                record.pending_identity_seq = Some(head.seq + 1);
+                self.keys().put_record(&record)?;
+                next
+            }
+        };
         Ok(statement::rotation(
             &head,
             RotationSigner::Identity,
@@ -651,6 +675,11 @@ impl KeyIdentityState {
                 "a profile card needs a name".into(),
             ));
         }
+        let devices = card
+            .certificates
+            .iter()
+            .map(|certificate| statement::certified_device(certificate, &head))
+            .collect::<Result<Vec<_>>>()?;
         Ok(statement::profile_card(
             &identity,
             &statement::ProfileCardInput {
@@ -659,7 +688,7 @@ impl KeyIdentityState {
                 key_seq: head.seq,
                 display_name,
                 relays: &card.relays,
-                devices: &card.devices,
+                devices: &devices,
                 issued_at: &statement::now(),
             },
         ))
@@ -691,7 +720,8 @@ impl KeyIdentityState {
         }
 
         let _guard = self.guard()?;
-        if let Some(mut record) = self.keys().record(&principal_id)? {
+        let existing = self.keys().record(&principal_id)?;
+        if let Some(mut record) = existing.clone() {
             if identity_at_head(&mut record, &head)?.0.is_some() {
                 return Err(KeyIdentityError::Invalid(
                     "this computer still holds the account's identity key: sign in with it \
@@ -700,6 +730,15 @@ impl KeyIdentityState {
                 ));
             }
         }
+        // Keys the server confirmed stay recoverable until the server takes the recovery.
+        let replaced = match existing {
+            Some(record) if record.confirmed => Some(Box::new(KeyRecord {
+                replaced: None,
+                ..record
+            })),
+            Some(record) => record.replaced,
+            None => None,
+        };
 
         let identity_seed = SecretKey::generate()?;
         let device_seed = SecretKey::generate()?;
@@ -729,6 +768,7 @@ impl KeyIdentityState {
         );
 
         let keys = self.keys();
+        let new_device_id = device_id.clone();
         keys.put_record(&KeyRecord {
             v: 1,
             principal_id: principal_id.clone(),
@@ -737,7 +777,9 @@ impl KeyIdentityState {
             device_seed: device_seed.to_text(),
             identity_seed: Some(identity_seed.to_text()),
             pending_identity_seed: None,
+            pending_identity_seq: None,
             confirmed: false,
+            replaced,
         })?;
         let mut links = keys.links()?;
         if !links
@@ -754,9 +796,26 @@ impl KeyIdentityState {
         }
         Ok(RecoveryStatements {
             principal_id,
+            device_id: new_device_id,
             entry,
             device,
         })
+    }
+
+    /// Undo a recovery the server refused: the keys it made go, and the confirmed keys it
+    /// replaced, if any, come back. Keys the server has confirmed since are left alone.
+    pub(crate) fn discard_recovery(&self, principal_id: &str, device_id: &str) -> Result<()> {
+        let _guard = self.guard()?;
+        let keys = self.keys();
+        match keys.record(principal_id)? {
+            Some(record) if !record.confirmed && record.device_id == device_id => {
+                match record.replaced {
+                    Some(previous) => keys.put_record(&previous),
+                    None => keys.forget(principal_id),
+                }
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Remove a principal's keys from this device.

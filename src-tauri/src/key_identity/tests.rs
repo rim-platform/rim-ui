@@ -44,7 +44,7 @@ fn enrolled(state: &KeyIdentityState) -> (EnrollmentDraft, EnrollmentStatements)
 
 #[test]
 fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
-    let state = state();
+    let state = self::state();
     let draft = state.begin_enrollment("  Laptop  ").unwrap();
     let statements = state
         .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
@@ -55,7 +55,8 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
     assert!(verify(
         &statements.device,
         context::DEVICE,
-        &head.identity_key
+        &head.identity_key,
+        2
     ));
     assert_eq!(payload_field(&statements.device, "name"), "Laptop");
     assert_eq!(payload_field(&statements.device, "keySeq"), 0);
@@ -63,7 +64,8 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
     assert!(verify(
         &statements.proof,
         context::LOGIN,
-        device_key.as_str().unwrap()
+        device_key.as_str().unwrap(),
+        2
     ));
     assert_eq!(
         payload_field(&statements.proof, "audience"),
@@ -86,7 +88,7 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
 
 #[test]
 fn a_retried_enrollment_reuses_the_keys_the_kit_belongs_to() {
-    let state = state();
+    let state = self::state();
     let draft = state.begin_enrollment("Laptop").unwrap();
     let first = state
         .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
@@ -100,7 +102,7 @@ fn a_retried_enrollment_reuses_the_keys_the_kit_belongs_to() {
 
 #[test]
 fn a_confirmed_enrollment_is_listed_and_survives_a_server_that_forgets_it() {
-    let state = state();
+    let state = self::state();
     let (draft, _) = enrolled(&state);
     let accounts = state.accounts(ENDPOINT).unwrap();
     assert_eq!(accounts.len(), 1);
@@ -128,7 +130,7 @@ fn a_confirmed_enrollment_is_listed_and_survives_a_server_that_forgets_it() {
 #[test]
 fn keys_the_server_never_accepted_are_cleaned_up() {
     // Refused: the enrollment is discarded.
-    let state = state();
+    let state = self::state();
     let draft = state.begin_enrollment("Laptop").unwrap();
     state
         .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
@@ -159,7 +161,7 @@ fn keys_the_server_never_accepted_are_cleaned_up() {
 
 #[test]
 fn a_confirmed_account_signs_login_proofs_for_the_endpoint() {
-    let state = state();
+    let state = self::state();
     let (draft, statements) = enrolled(&state);
     let proof = state
         .sign_login(
@@ -169,7 +171,12 @@ fn a_confirmed_account_signs_login_proofs_for_the_endpoint() {
         )
         .unwrap();
     let device_key = payload_field(&statements.device, "deviceKey");
-    assert!(verify(&proof, context::LOGIN, device_key.as_str().unwrap()));
+    assert!(verify(
+        &proof,
+        context::LOGIN,
+        device_key.as_str().unwrap(),
+        2
+    ));
     assert_eq!(payload_field(&proof, "audience"), "rim.example.com");
     assert_eq!(payload_field(&proof, "nonce"), "bm9uY2U");
     assert!(matches!(
@@ -179,27 +186,30 @@ fn a_confirmed_account_signs_login_proofs_for_the_endpoint() {
 }
 
 #[test]
-fn a_rotation_is_pending_until_the_log_names_it() {
-    let state = state();
+fn a_rotation_is_pending_until_the_log_moves_past_it() {
+    let state = self::state();
     let (draft, statements) = enrolled(&state);
     let log = statements.key_log;
     let old_identity = replay(&log).unwrap().identity_key;
 
     let entry = state.begin_rotation(&draft.principal_id, &log).unwrap();
     assert_eq!(payload_field(&entry, "signer"), "identity");
-    assert!(verify(&entry, context::KEY_LOG, &old_identity));
+    assert!(verify(&entry, context::KEY_LOG, &old_identity, 2));
 
-    // The server refused it: the pending key is dropped and the old one still signs.
+    // A log that ends before the rotation (a stale copy, or the rotation still in flight)
+    // keeps the pending key, and a retry signs the same rotation key again.
     let status = state.sync_log(&draft.principal_id, &log).unwrap();
     assert!(status.holds_identity_key);
-    assert!(state
-        .record(&draft.principal_id)
-        .unwrap()
-        .pending_identity_seed
-        .is_none());
+    let record = state.record(&draft.principal_id).unwrap();
+    assert!(record.pending_identity_seed.is_some());
+    assert_eq!(record.pending_identity_seq, Some(1));
+    let retry = state.begin_rotation(&draft.principal_id, &log).unwrap();
+    assert_eq!(
+        payload_field(&retry, "identityKey"),
+        payload_field(&entry, "identityKey")
+    );
 
     // Accepted: the log ends at the new key, which is promoted.
-    let entry = state.begin_rotation(&draft.principal_id, &log).unwrap();
     let rotated = [log.clone(), vec![entry]].concat();
     let status = state.sync_log(&draft.principal_id, &rotated).unwrap();
     assert_eq!(status.seq, 1);
@@ -214,12 +224,16 @@ fn a_rotation_is_pending_until_the_log_names_it() {
                 version: 2,
                 display_name: "Ada".into(),
                 relays: vec!["http://localhost:8080".into()],
-                devices: vec![],
+                certificates: vec![statements.device.clone()],
             },
         )
         .unwrap();
-    assert!(verify(&card, context::PROFILE_CARD, &new_identity));
+    assert!(verify(&card, context::PROFILE_CARD, &new_identity, 2));
     assert_eq!(payload_field(&card, "keySeq"), 1);
+    assert_eq!(
+        payload_field(&card, "devices")[0]["deviceKey"],
+        payload_field(&statements.device, "deviceKey")
+    );
 
     // The old log no longer matches any key here.
     assert!(matches!(
@@ -229,8 +243,58 @@ fn a_rotation_is_pending_until_the_log_names_it() {
 }
 
 #[test]
+fn a_rotation_that_lost_its_seq_to_another_is_dropped() {
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let log = statements.key_log;
+    state.begin_rotation(&draft.principal_id, &log).unwrap();
+
+    // Seq 1 went to a recovery with another key: the pending key will never be the head's.
+    let other = self::state();
+    let recovered = other
+        .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &log, "Other")
+        .unwrap();
+    let moved = [log, vec![recovered.entry]].concat();
+    let status = state.sync_log(&draft.principal_id, &moved).unwrap();
+    assert!(!status.holds_identity_key);
+    let record = state.record(&draft.principal_id).unwrap();
+    assert!(record.pending_identity_seed.is_none());
+    assert!(record.pending_identity_seq.is_none());
+}
+
+#[test]
+fn a_profile_card_lists_only_certified_devices() {
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let log = statements.key_log;
+    let card = |certificates: Vec<Statement>| {
+        state.sign_profile_card(
+            &draft.principal_id,
+            &log,
+            &CardContent {
+                version: 1,
+                display_name: "Ada".into(),
+                relays: vec![],
+                certificates,
+            },
+        )
+    };
+    assert!(card(vec![statements.device.clone()]).is_ok());
+
+    // A device row whose key the identity key never certified.
+    let mut swapped = statements.device.clone();
+    let real = payload_field(&statements.device, "deviceKey");
+    let intruder = statement::SecretKey::generate().unwrap().public_key();
+    swapped.payload = swapped.payload.replace(real.as_str().unwrap(), &intruder);
+    assert!(matches!(
+        card(vec![statements.device.clone(), swapped]),
+        Err(KeyIdentityError::Invalid(_))
+    ));
+}
+
+#[test]
 fn revocation_uses_the_device_key_for_itself_and_the_identity_key_for_others() {
-    let state = state();
+    let state = self::state();
     let (draft, statements) = enrolled(&state);
     let log = &statements.key_log;
     let own_device = payload_field(&statements.device, "deviceId");
@@ -243,7 +307,8 @@ fn revocation_uses_the_device_key_for_itself_and_the_identity_key_for_others() {
     assert!(verify(
         &own,
         context::DEVICE_REVOKE,
-        own_key.as_str().unwrap()
+        own_key.as_str().unwrap(),
+        2
     ));
 
     let other = state
@@ -255,12 +320,12 @@ fn revocation_uses_the_device_key_for_itself_and_the_identity_key_for_others() {
         .unwrap();
     assert_eq!(payload_field(&other, "signer"), "identity");
     let identity = replay(log).unwrap().identity_key;
-    assert!(verify(&other, context::DEVICE_REVOKE, &identity));
+    assert!(verify(&other, context::DEVICE_REVOKE, &identity, 2));
 }
 
 #[test]
 fn a_log_for_another_account_is_refused() {
-    let state = state();
+    let state = self::state();
     let (draft, _) = enrolled(&state);
     let other = state.begin_enrollment("Other").unwrap();
     let other_log = state
@@ -279,7 +344,7 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
     let old = state();
     let (draft, statements) = enrolled(&old);
     let log = statements.key_log;
-    let fresh = state();
+    let fresh = self::state();
 
     let recovered = fresh
         .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &log, "New laptop")
@@ -292,7 +357,8 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
     assert!(verify(
         &recovered.device,
         context::DEVICE,
-        &head.identity_key
+        &head.identity_key,
+        2
     ));
     assert_eq!(payload_field(&recovered.device, "keySeq"), 1);
 
@@ -318,11 +384,67 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
 }
 
 #[test]
+fn a_refused_recovery_puts_back_the_keys_it_replaced() {
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let log = statements.key_log;
+    let original = state.record(&draft.principal_id).unwrap();
+
+    // This device lost the identity key (another device rotated) but keeps its device key.
+    let other = self::state();
+    let rotated_elsewhere = other
+        .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &log, "Other")
+        .unwrap();
+    let moved = [log, vec![rotated_elsewhere.entry]].concat();
+
+    let attempt = state
+        .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &moved, "Again")
+        .unwrap();
+    assert_ne!(
+        state.record(&draft.principal_id).unwrap().device_id,
+        original.device_id
+    );
+    state
+        .discard_recovery(&draft.principal_id, &attempt.device_id)
+        .unwrap();
+    let restored = state.record(&draft.principal_id).unwrap();
+    assert_eq!(restored.device_id, original.device_id);
+    assert!(restored.confirmed);
+
+    // A refused recovery on a fresh install leaves nothing behind.
+    let fresh = self::state();
+    let attempt = fresh
+        .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &moved, "New")
+        .unwrap();
+    fresh
+        .discard_recovery(&draft.principal_id, &attempt.device_id)
+        .unwrap();
+    assert!(matches!(
+        fresh.record(&draft.principal_id),
+        Err(KeyIdentityError::NoKeys)
+    ));
+
+    // A recovery the server took is confirmed by the next settle and is not undone.
+    let taken = state
+        .begin_recovery(ENDPOINT, &draft.recovery_kit, None, &moved, "Again")
+        .unwrap();
+    state
+        .settle(&account("u1"), Some(draft.principal_id.as_str()))
+        .unwrap();
+    state
+        .discard_recovery(&draft.principal_id, &taken.device_id)
+        .unwrap();
+    let kept = state.record(&draft.principal_id).unwrap();
+    assert_eq!(kept.device_id, taken.device_id);
+    assert!(kept.replaced.is_none());
+}
+
+#[test]
 fn recovery_refuses_a_wrong_kit_an_unknown_account_and_a_device_that_still_has_the_key() {
     let old = state();
     let (draft, statements) = enrolled(&old);
     let log = statements.key_log;
-    let fresh = state();
+    let fresh = self::state();
 
     let wrong = recovery_kit::format_kit(
         &draft.principal_id,
@@ -344,7 +466,7 @@ fn recovery_refuses_a_wrong_kit_an_unknown_account_and_a_device_that_still_has_t
 
 #[test]
 fn forget_removes_the_keys() {
-    let state = state();
+    let state = self::state();
     let (draft, _) = enrolled(&state);
     state.forget(&draft.principal_id).unwrap();
     assert!(state.accounts(ENDPOINT).unwrap().is_empty());

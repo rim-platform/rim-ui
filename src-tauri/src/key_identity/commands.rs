@@ -159,6 +159,19 @@ pub async fn key_identity_begin_recovery(
     .await
 }
 
+/// Undo a recovery the server refused, putting back any keys it replaced.
+#[tauri::command]
+pub async fn key_identity_discard_recovery(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+    device_id: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.discard_recovery(&principal_id, &device_id)
+    })
+    .await
+}
+
 /// Remove an account's keys from this device.
 #[tauri::command]
 pub async fn key_identity_forget(

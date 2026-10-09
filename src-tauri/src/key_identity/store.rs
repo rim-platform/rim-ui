@@ -17,6 +17,8 @@ use super::KeyIdentityError;
 
 /// Keyring user name of the account index.
 const INDEX_NAME: &str = "key-identity-accounts-v1";
+/// Where an unreadable index is kept instead of being overwritten.
+const UNREADABLE_INDEX_NAME: &str = "key-identity-accounts-v1.unreadable";
 
 fn record_name(principal_id: &str) -> String {
     format!("key-identity-v1:{principal_id}")
@@ -111,10 +113,18 @@ pub(crate) struct KeyRecord {
     /// A new identity key sent in a rotation the server has not confirmed yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pending_identity_seed: Option<Zeroizing<String>>,
+    /// The key log seq the pending rotation creates. Until a verified log reaches it, the
+    /// pending key is kept: a log older than the rotation says nothing about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) pending_identity_seq: Option<u32>,
     /// The server has shown this principal on the account. Until then the keys may belong to
     /// an enrollment or recovery that never happened, and may be cleaned up.
     #[serde(default)]
     pub(crate) confirmed: bool,
+    /// The confirmed keys an unconfirmed recovery replaced, put back if the server refuses
+    /// the recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) replaced: Option<Box<KeyRecord>>,
 }
 
 /// Which account on which server a principal signs in to.
@@ -160,15 +170,21 @@ impl Keys<'_> {
         self.0.delete(&record_name(principal_id))
     }
 
-    /// The index. An unreadable index is empty: it holds no secret, only where keys are used.
+    /// The index. An unreadable index is moved aside and read as empty: it holds no secret,
+    /// only where keys are used, and the copy keeps what it said for a later repair.
     pub(crate) fn links(&self) -> Result<Vec<AccountLink>, KeyIdentityError> {
         let Some(raw) = self.0.read(INDEX_NAME)? else {
             return Ok(Vec::new());
         };
-        Ok(serde_json::from_str(&raw).unwrap_or_else(|e| {
-            log::warn!("[key_identity] account index is not readable, starting over: {e}");
-            Vec::new()
-        }))
+        match serde_json::from_str(&raw) {
+            Ok(links) => Ok(links),
+            Err(e) => {
+                log::warn!("[key_identity] account index is not readable, starting over: {e}");
+                self.0.write(UNREADABLE_INDEX_NAME, &raw)?;
+                self.0.delete(INDEX_NAME)?;
+                Ok(Vec::new())
+            }
+        }
     }
 
     pub(crate) fn put_links(&self, links: &[AccountLink]) -> Result<(), KeyIdentityError> {
@@ -202,7 +218,9 @@ mod tests {
             device_seed: Zeroizing::new("seed".into()),
             identity_seed: None,
             pending_identity_seed: None,
+            pending_identity_seq: None,
             confirmed: false,
+            replaced: None,
         }
     }
 
@@ -238,6 +256,14 @@ mod tests {
         let store = MemorySecretStore::default();
         store.write(INDEX_NAME, "not json").unwrap();
         assert!(Keys(&store).links().unwrap().is_empty());
+        assert_eq!(
+            store
+                .read(UNREADABLE_INDEX_NAME)
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("not json")
+        );
     }
 
     #[test]

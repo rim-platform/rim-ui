@@ -10,6 +10,10 @@
 //! The recovery key is the base32 of the 32-byte recovery seed and 3 check bytes, so a typo
 //! is caught before anything is signed. The 12-word recovery phrase of a later PR replaces this
 //! format; readers keep accepting it.
+//!
+//! This module and `statement.rs` are the only places that see a raw 32-byte seed: the v1 kit
+//! is an Ed25519 seed by definition. A recovery key of another algorithm needs a new kit
+//! version, with its own prefix.
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -74,7 +78,7 @@ pub(crate) fn format_recovery_key(seed: &[u8; 32]) -> Zeroizing<String> {
     let mut bytes = Zeroizing::new(Vec::with_capacity(32 + CHECK_LEN));
     bytes.extend_from_slice(seed);
     bytes.extend_from_slice(&check_bytes(seed));
-    let encoded = base32(&bytes);
+    let encoded = Zeroizing::new(base32(&bytes));
     let mut out = Zeroizing::new(String::from(KEY_PREFIX));
     for chunk in encoded.as_bytes().chunks(4) {
         out.push('-');
@@ -113,6 +117,7 @@ pub(crate) fn parse_recovery_key(text: &str) -> Result<Seed, KeyIdentityError> {
             .collect(),
     );
     let bytes = unbase32(&body)
+        .map(Zeroizing::new)
         .filter(|b| b.len() == 32 + CHECK_LEN)
         .ok_or_else(|| {
             KeyIdentityError::Invalid("this recovery key is incomplete or mistyped".into())
@@ -148,7 +153,7 @@ pub(crate) fn parse_kit(
         .lines()
         .find_map(|line| {
             let line = line.trim();
-            let upper = line.to_ascii_uppercase();
+            let upper = Zeroizing::new(line.to_ascii_uppercase());
             upper
                 .find(KEY_PREFIX)
                 .filter(|_| !line.contains(PRINCIPAL_PREFIX))

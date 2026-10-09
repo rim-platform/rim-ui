@@ -75,7 +75,12 @@ export function KeyIdentitySettings() {
       ) : !identity.data || !me ? (
         <p className="text-sm text-rim-text-muted">Loading...</p>
       ) : identity.data.principalId ? (
-        <KeyIdentityOverview identity={identity.data} me={me} canSign={capabilities.deviceKeys} />
+        <KeyIdentityOverview
+          identity={identity.data}
+          principalId={identity.data.principalId}
+          me={me}
+          canSign={capabilities.deviceKeys}
+        />
       ) : capabilities.deviceKeys ? (
         <EnrollKeyIdentity me={me} />
       ) : (
@@ -255,17 +260,18 @@ function EnrollKeyIdentity({ me }: { me: Me }) {
 
 function KeyIdentityOverview({
   identity,
+  principalId,
   me,
   canSign,
 }: {
   identity: MyKeyIdentity;
+  principalId: string;
   me: Me;
   canSign: boolean;
 }) {
   const qc = useQueryClient();
-  const principalId = identity.principalId!;
   const local = useQuery({
-    queryKey: ["deviceKeyStatus", principalId, identity.keySeq],
+    queryKey: queryKeys.deviceKeyStatus(principalId, identity.keySeq),
     enabled: canSign,
     retry: false,
     queryFn: async () => {
@@ -306,10 +312,12 @@ function KeyIdentityOverview({
     try {
       await action();
       setConfirm(null);
-      await refresh();
     } catch (err) {
       setError(errorText(err, fallback));
     } finally {
+      // Also after a failure: an answer that was lost may hide a change that landed, and a
+      // retry must sign against the server's current log.
+      await refresh().catch(() => undefined);
       setBusy(false);
     }
   }

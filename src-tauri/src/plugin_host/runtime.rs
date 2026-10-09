@@ -404,6 +404,9 @@ pub fn mappings_of(store: &PluginStateStore) -> Vec<PrincipalMapping> {
         .collect()
 }
 
+/// Most id switches one `rim.principals.remapped` notice carries.
+const MAX_PRINCIPAL_MAPPINGS: usize = 1000;
+
 /// Record that the provisional id `from` became `to`, in memory and in the state file.
 /// Returns whether that is news (a new or changed mapping).
 pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) -> bool {
@@ -412,6 +415,13 @@ pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) ->
             return false;
         };
         if store.principal_ids.get(from).map(String::as_str) == Some(to) {
+            return false;
+        }
+        // The notice carries at most this many mappings (protocol schema, `maxItems`).
+        if store.principal_ids.len() >= MAX_PRINCIPAL_MAPPINGS
+            && !store.principal_ids.contains_key(from)
+        {
+            log::warn!("[plugin_host] principal id switch list is full; not recording more");
             return false;
         }
         store.principal_ids.insert(from.to_string(), to.to_string());

@@ -137,6 +137,7 @@ function RecoverAccountForm({
   onSuccess: (userId: string) => void;
   onCancel: () => void;
 }) {
+  const qc = useQueryClient();
   const [kit, setKit] = useState("");
   const [accountId, setAccountId] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -159,11 +160,14 @@ function RecoverAccountForm({
     setBusy(true);
     setError(null);
     try {
-      onSuccess(await recoverAccount(kit, accountId.trim() || null, deviceName));
+      // The kit's own account id wins over one typed before the whole kit was pasted.
+      onSuccess(await recoverAccount(kit, idInKit ? null : accountId.trim() || null, deviceName));
     } catch (err) {
       setError(graphqlErrorMessage(err, "Recovery failed."));
     } finally {
       setBusy(false);
+      // A recovery that landed but could not sign in leaves keys to sign in with.
+      void qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(getGraphqlEndpoint()) });
     }
   }
 
