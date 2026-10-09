@@ -152,18 +152,6 @@ pub fn plugin_suggested_keybinds(
 }
 
 #[tauri::command]
-pub fn plugin_context_actions(
-    plugin_id: String,
-    state: State<'_, PluginHostState>,
-) -> Result<Vec<ContextAction>, String> {
-    let manifests = state.manifests.lock().map_err(|e| e.to_string())?;
-    let manifest = manifests
-        .get(&plugin_id)
-        .ok_or_else(|| format!("plugin not found: {plugin_id}"))?;
-    Ok(manifest.qualified_context_actions())
-}
-
-#[tauri::command]
 pub fn plugin_install(
     plugin_id: String,
     state: State<'_, PluginHostState>,

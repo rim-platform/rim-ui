@@ -9,12 +9,6 @@ mod terminal;
 
 use tauri::Manager;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -103,7 +97,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             plugin_host::commands::plugin_list,
             plugin_host::commands::plugin_install,
             plugin_host::commands::plugin_enable,
@@ -116,7 +109,6 @@ pub fn run() {
             plugin_host::commands::plugin_run_ai_command,
             plugin_host::commands::plugin_execute_command,
             plugin_host::commands::plugin_suggested_keybinds,
-            plugin_host::commands::plugin_context_actions,
             plugin_host::commands::plugin_install_from_git,
             plugin_host::commands::plugin_install_from_local,
             plugin_host::commands::plugin_trust_fingerprint,
