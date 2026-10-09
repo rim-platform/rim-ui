@@ -531,10 +531,13 @@ async function dispatchPluginCommand(
     result.error.code === "CONFIRMATION_REQUIRED" &&
     !confirmedDangerous
   ) {
-    const info = findPluginCommand(`plugin.${pluginId}.${command}`);
+    const qualifiedId = `plugin.${pluginId}.${command}`;
+    const info = findPluginCommand(qualifiedId);
     const confirmed = await usePluginConfirmStore.getState().ask({
-      pluginName: info?.pluginName ?? pluginId,
-      commandTitle: info?.title ?? command,
+      // Without the plugin list the id cannot be split reliably (plugin ids
+      // have dots), so the dialog names the whole command id.
+      pluginName: info?.pluginName ?? "A plugin",
+      commandTitle: info?.title ?? qualifiedId,
       description: info?.description ?? "",
       args: args ?? {},
     });

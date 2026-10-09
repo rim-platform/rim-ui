@@ -64,6 +64,20 @@ describe("usePluginCommands", () => {
     expect(commands.every((c) => c.visibleInPalette && c.sourceKind === "PLUGIN")).toBe(true);
   });
 
+  it("keeps a command that needs arguments out of the palette and keybinds", () => {
+    const commands = commandsOf([
+      plugin({
+        commands: [
+          command("restart_pod", {
+            dangerous: true,
+            arguments: [{ name: "pod", type: "string", required: true }],
+          }),
+        ],
+      }),
+    ]);
+    expect(commands[0]).toMatchObject({ visibleInPalette: false, keybindCapable: false });
+  });
+
   it("leaves out a disabled plugin's commands", () => {
     expect(commandsOf([plugin({ enabled: false })])).toEqual([]);
   });

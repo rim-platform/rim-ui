@@ -322,8 +322,7 @@ function proposalForUser(pluginName: string, command: PluginCommandInfo): string
     reason: "needs_user_confirmation",
     message:
       `"${command.title}" is dangerous, so only the user can run it, after confirming. ` +
-      `Tell them what you propose and why; they can run "${command.title}" from the ` +
-      `command palette or from the ${pluginName} panel.`,
+      `Tell them what you propose and why; they can run it from the ${pluginName} panel.`,
   });
 }
 

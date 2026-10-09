@@ -25,6 +25,9 @@ export function usePluginCommands() {
     for (const plugin of plugins) {
       if (!plugin.enabled) continue;
       for (const command of plugin.commands ?? []) {
+        // The palette runs a command without arguments, so one that needs them
+        // is run from its plugin's panel instead.
+        const needsArguments = command.arguments.some((argument) => argument.required);
         commands.push({
           id: command.qualified_id,
           title: command.title,
@@ -34,9 +37,9 @@ export function usePluginCommands() {
           executionTarget: "DESKTOP_LOCAL",
           requiredContext: [],
           requiredCapabilities: [],
-          visibleInPalette: true,
+          visibleInPalette: !needsArguments,
           visibleInContextMenus: false,
-          keybindCapable: command.keybind_capable,
+          keybindCapable: command.keybind_capable && !needsArguments,
           dangerous: command.dangerous,
           contextTypes: [],
         });

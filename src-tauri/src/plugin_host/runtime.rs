@@ -206,29 +206,27 @@ pub fn start_plugin(
 
         // Deregister so a crashed plugin (or one that failed the handshake) can be
         // started again; stop_plugin or a restart may already have replaced the entry.
-        let replaced = match shutdown_txs.lock() {
-            Ok(mut txs) => {
-                if txs
-                    .get(&pid_str)
-                    .is_some_and(|tx| tx.same_channel(&own_shutdown_tx))
-                {
-                    txs.remove(&pid_str);
+        // The lock is held to the end, so a restart cannot register in between and
+        // lose its fresh panel state, or be announced as stopped after it started.
+        if let Ok(mut txs) = shutdown_txs.lock() {
+            if txs
+                .get(&pid_str)
+                .is_some_and(|tx| tx.same_channel(&own_shutdown_tx))
+            {
+                txs.remove(&pid_str);
+            }
+            // An open panel should not keep showing what a crashed plugin last said;
+            // a newer process of the same plugin keeps its own state.
+            if !txs.contains_key(&pid_str) {
+                if let Err(e) = panel_relay.cleanup_plugin(&pid_str) {
+                    log::warn!(
+                        "[plugin_host] panel state cleanup of {} failed: {}",
+                        pid_str,
+                        e
+                    );
                 }
-                txs.contains_key(&pid_str)
+                events.publish(&pid_str, PluginEventKind::PluginStopped);
             }
-            Err(_) => true,
-        };
-        // An open panel should not keep showing what a crashed plugin last said;
-        // a newer process of the same plugin keeps its own state.
-        if !replaced {
-            if let Err(e) = panel_relay.cleanup_plugin(&pid_str) {
-                log::warn!(
-                    "[plugin_host] panel state cleanup of {} failed: {}",
-                    pid_str,
-                    e
-                );
-            }
-            events.publish(&pid_str, PluginEventKind::PluginStopped);
         }
 
         log::info!("[plugin_host] broker loop exited for {}", pid_str);

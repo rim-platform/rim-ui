@@ -63,6 +63,17 @@ describe("useDeviceKeybindStore", () => {
     expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
   });
 
+  it("keeps one binding per keystroke and context when one is changed", () => {
+    const store = useDeviceKeybindStore.getState();
+    store.add({ keystroke: "Ctrl+Alt+P", commandId: REFRESH, context: "GLOBAL" });
+    store.add({ keystroke: "Ctrl+Alt+R", commandId: "plugin.x.y.z.go", context: "GLOBAL" });
+    const second = useDeviceKeybindStore.getState().keybinds[1].id;
+    store.update(second, { keystroke: "Ctrl+Alt+P" });
+    expect(useDeviceKeybindStore.getState().keybinds).toMatchObject([
+      { id: second, keystroke: "Ctrl+Alt+P", commandId: "plugin.x.y.z.go" },
+    ]);
+  });
+
   it("binds only plugin commands on the device", () => {
     expect(bindsOnDevice(REFRESH)).toBe(true);
     expect(bindsOnDevice("workspace.open_settings")).toBe(false);

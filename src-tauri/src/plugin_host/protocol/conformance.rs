@@ -947,9 +947,11 @@ async fn k8s_pods_runs_through_the_host_and_fills_its_panel() {
         Err(command_exec::PluginCommandError::ConfirmationRequired(_))
     ));
     assert!(
-        run("restart_pod", pod.clone(), true, Initiator::Agent)
-            .await
-            .is_err(),
+        // Refused by the host itself, before the plugin hears of it.
+        matches!(
+            run("restart_pod", pod.clone(), true, Initiator::Agent).await,
+            Err(command_exec::PluginCommandError::ConfirmationRequired(_))
+        ),
         "the agent can never confirm a restart"
     );
     assert!(!std::fs::read_to_string(log.path())

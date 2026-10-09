@@ -27,12 +27,13 @@ function settle(confirmed: boolean): void {
 /**
  * The confirmation the host asks for before a dangerous plugin command runs.
  * Only the dialog, which the user answers, settles it: no panel, plugin or
- * agent can. One request at a time; a new one cancels the one before.
+ * agent can. One request at a time: while the user reads one, any other is
+ * declined, so the dialog never changes under the user's click.
  */
 export const usePluginConfirmStore = create<PluginConfirmState>((set) => ({
   request: null,
   ask: (request) => {
-    settle(false);
+    if (pending) return Promise.resolve(false);
     const answer = new Promise<boolean>((resolve) => {
       pending = resolve;
     });

@@ -61,9 +61,22 @@ export const useDeviceKeybindStore = create<DeviceKeybindState>()(
           ],
         })),
       update: (keybindId, patch) =>
-        set((state) => ({
-          keybinds: state.keybinds.map((kb) => (kb.id === keybindId ? { ...kb, ...patch } : kb)),
-        })),
+        set((state) => {
+          const current = state.keybinds.find((kb) => kb.id === keybindId);
+          if (!current) return state;
+          const next = { ...current, ...patch };
+          return {
+            keybinds: state.keybinds
+              // Like `add`, a keystroke and context bind one command only.
+              .filter(
+                (kb) =>
+                  kb.id === keybindId ||
+                  kb.keystroke !== next.keystroke ||
+                  kb.context !== next.context,
+              )
+              .map((kb) => (kb.id === keybindId ? next : kb)),
+          };
+        }),
       remove: (keybindId) =>
         set((state) => ({ keybinds: state.keybinds.filter((kb) => kb.id !== keybindId) })),
     }),

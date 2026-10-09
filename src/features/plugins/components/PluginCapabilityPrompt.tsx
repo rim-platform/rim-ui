@@ -30,6 +30,13 @@ const capabilityDescriptions: Record<PluginCapability, string> = {
   "ui.panel": "Render custom UI panels inside the workspace",
 };
 
+/** How much of a plugin's description the permission prompt shows. */
+const MAX_DESCRIPTION_LENGTH = 600;
+
+function clipDescription(text: string): string {
+  return text.length > MAX_DESCRIPTION_LENGTH ? `${text.slice(0, MAX_DESCRIPTION_LENGTH)}…` : text;
+}
+
 interface PluginCapabilityPromptProps {
   open: boolean;
   onClose: () => void;
@@ -78,9 +85,17 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           </div>
         </div>
 
-        {/* The plugin's own account of what it does, e.g. where its data goes. */}
+        {/* The plugin's own account of what it does, e.g. where its data goes. It is
+            the author's claim, so it is labelled and set apart from the app's words. */}
         {plugin.description && (
-          <p className="whitespace-pre-line text-xs text-rim-text">{plugin.description}</p>
+          <figure className="space-y-1">
+            <figcaption className="text-[11px] text-rim-text-faint">
+              From the plugin author:
+            </figcaption>
+            <blockquote className="whitespace-pre-line border-l-2 border-rim-line pl-3 text-xs text-rim-text-muted">
+              {clipDescription(plugin.description)}
+            </blockquote>
+          </figure>
         )}
 
         <p className="text-xs text-rim-text-muted">

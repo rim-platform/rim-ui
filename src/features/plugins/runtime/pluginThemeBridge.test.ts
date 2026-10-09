@@ -34,9 +34,10 @@ describe("pluginThemeBridge", () => {
       expect(vars).toHaveProperty("--color-rim-accent-strong");
     });
 
-    it("returns 11 theme variables", () => {
+    it("returns 12 theme variables, the success color included", () => {
       const vars = getThemeVariables();
-      expect(Object.keys(vars)).toHaveLength(11);
+      expect(Object.keys(vars)).toHaveLength(12);
+      expect(vars).toHaveProperty("--color-rim-success");
     });
 
     it("trims whitespace from values", () => {

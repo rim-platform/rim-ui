@@ -514,8 +514,8 @@ describe("plugin commands", () => {
     const pending = dispatchCommand(command, mockExecuteBackend, { args: { pod: "web-1" } });
     await vi.waitFor(() => expect(usePluginConfirmStore.getState().request).not.toBeNull());
     expect(usePluginConfirmStore.getState().request).toEqual({
-      pluginName: "dev",
-      commandTitle: "example.hello-world.greet",
+      pluginName: "A plugin",
+      commandTitle: "plugin.dev.example.hello-world.greet",
       description: "",
       args: { pod: "web-1" },
     });
