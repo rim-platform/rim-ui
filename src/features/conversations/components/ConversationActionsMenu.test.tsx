@@ -18,6 +18,7 @@ import {
   routeRequests,
 } from "../__fixtures__/conversations";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
+import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
 
 const requestMock = vi.fn();
 
@@ -25,6 +26,11 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
     request: (...args: unknown[]) => requestMock(...args),
   },
+}));
+const platform = vi.hoisted(() => ({ current: "web" }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => platform.current,
 }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
@@ -300,5 +306,60 @@ describe("ConversationActionsMenu — slow mode", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "10 seconds" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("slow mode is for channels only");
+  });
+});
+
+describe("ConversationActionsMenu — the agent in an encrypted conversation", () => {
+  const encrypted = () =>
+    makeConversation({
+      conversationType: ConversationTypeEnum.GROUP,
+      title: "crew",
+      encryptedAt: "2026-10-01T09:00:00Z",
+    });
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    platform.current = "desktop";
+    useAgentEncryptedStore.setState({ allowed: {} });
+  });
+
+  afterEach(() => {
+    platform.current = "web";
+  });
+
+  it("is off by default and turns on only after the warning", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    const conversation = encrypted();
+    await openMenu(conversation, ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()).toContain("Agent: off in this conversation");
+    fireEvent.click(screen.getByRole("menuitem", { name: /Agent: off/ }));
+    expect(
+      screen.getByText(/^The text of this conversation goes to the model provider\./),
+    ).toBeInTheDocument();
+    expect(useAgentEncryptedStore.getState().allowed).toEqual({});
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    expect(Object.keys(useAgentEncryptedStore.getState().allowed)).toEqual([conversation.id]);
+  });
+
+  it("turns off without a warning", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    const conversation = encrypted();
+    useAgentEncryptedStore.getState().setAllowed(conversation.id, true);
+    await openMenu(conversation, ServerMemberRoleGql.MEMBER);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Agent: on/ }));
+    expect(useAgentEncryptedStore.getState().allowed).toEqual({});
+  });
+
+  it("is not offered for a plaintext conversation", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels().some((l) => l.startsWith("Agent"))).toBe(false);
+  });
+
+  it("is not offered outside the desktop app, which runs the agent", async () => {
+    platform.current = "web";
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(encrypted(), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels().some((l) => l.startsWith("Agent"))).toBe(false);
   });
 });

@@ -1,11 +1,27 @@
 import { useState } from "react";
-import { Archive, ArchiveRestore, Bell, LogOut, MoreHorizontal, Timer, Users } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Bell,
+  Bot,
+  LogOut,
+  MoreHorizontal,
+  Timer,
+  Users,
+} from "lucide-react";
 
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { detectPlatform } from "../../../core/runtime/runtime";
+import { AgentEncryptedWarning } from "../../agent/encrypted/AgentEncryptedSwitch";
+import {
+  agentSwitchLabel,
+  useAgentAllowedIn,
+  useAgentEncryptedStore,
+} from "../../agent/state/useAgentEncryptedStore";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { useConversationNotificationMenu } from "../../notifications/hooks/useConversationNotificationMenu";
 import { useSetConversationArchivedMutation } from "../api/useChannelMembership";
@@ -22,12 +38,13 @@ interface ConversationActionsMenuProps {
   conversation: ConversationSummary;
 }
 
-type PendingConfirm = "archive" | "leave" | "slow-mode" | null;
+type PendingConfirm = "archive" | "leave" | "slow-mode" | "agent" | null;
 
 /**
  * The conversation header's menu: Members, the Notifications submenu (the viewer's level and
- * timed mutes), Leave (channels and groups), and for channels, Owner/Moderator only, Slow mode
- * and Archive/Unarchive (the server re-checks the role).
+ * timed mutes), the agent's switch in an encrypted conversation, Leave (channels and groups),
+ * and for channels, Owner/Moderator only, Slow mode and Archive/Unarchive (the server
+ * re-checks the role).
  */
 export function ConversationActionsMenu({
   workspaceId,
@@ -40,6 +57,8 @@ export function ConversationActionsMenu({
   const toggleMembers = useMembersPanelStore((s) => s.toggle);
   const setArchived = useSetConversationArchivedMutation();
   const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
+  const agentAllowed = useAgentAllowedIn(conversation.id);
+  const setAgentAllowed = useAgentEncryptedStore((s) => s.setAllowed);
 
   const closeMenu = () => {
     setMenuPosition(null);
@@ -94,6 +113,19 @@ export function ConversationActionsMenu({
       label: `Notifications: ${notificationMenu.summary}`,
       icon: <Bell className="h-4 w-4" />,
       onSelect: () => setMenuView("notifications"),
+    });
+  }
+  // The agent runs in the desktop app only.
+  if (detectPlatform() === "desktop" && conversation.encryptedAt) {
+    items.push({
+      id: "agent",
+      label: agentSwitchLabel(agentAllowed),
+      icon: <Bot className="h-4 w-4" />,
+      onSelect: () => {
+        setMenuPosition(null);
+        if (agentAllowed) setAgentAllowed(conversation.id, false);
+        else setConfirm("agent");
+      },
     });
   }
   if (isChannel && canModerate && !conversation.isArchived) {
@@ -188,6 +220,10 @@ export function ConversationActionsMenu({
           onConfirm={() => runSetArchived(true)}
           onClose={() => setConfirm(null)}
         />
+      )}
+
+      {confirm === "agent" && (
+        <AgentEncryptedWarning conversationId={conversation.id} onClose={() => setConfirm(null)} />
       )}
 
       {confirm === "slow-mode" && (
