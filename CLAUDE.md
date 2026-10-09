@@ -116,11 +116,18 @@ backend schema. Check `schema.graphql` or the per-domain modules under `rim_api/
 (e.g. `rim_api/src/types/conversation.rs`). Frontend requesting non-existent fields causes
 silent query failures.
 
-## Code Review (MANDATORY)
+## Code Review
 
-Every code change (fix, feature, refactor) MUST be reviewed by the Hawkeye agent (code-reviewer) before being reported as done. No exceptions.
+Every code change is reviewed by the session that coordinates the work, not by a separate
+review agent: it reads the whole diff, fixes what it finds, checks the implementer's gate
+output (build, vitest, lint, format, and the Tauri fmt/clippy/test set), and only then opens
+and merges the PR. Subagents implement and run the gates; they never spawn reviewers.
 
-Review covers: React 19 patterns, TypeScript strict compliance, component separation of concerns, GraphQL query/schema alignment, import consistency, copy-paste detection. BLOCK findings must be fixed before shipping.
+Review covers: React 19 patterns, TypeScript strict compliance, component separation of concerns, GraphQL query/schema alignment, import consistency, copy-paste detection.
+
+Comments say what the item is and what it does, briefly: no history, no spec section numbers,
+no references to docs, plans, stages or PR numbers. Commit messages: a plain imperative first
+line (≤ 72 chars) and a body that says why; no trailers (no `Co-Authored-By`).
 
 ## Also Read
 
