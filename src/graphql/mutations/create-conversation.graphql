@@ -1,9 +1,0 @@
-mutation CreateConversation($input: CreateConversationInput!) {
-  createConversation(input: $input) {
-    id
-    title
-    conversationType
-    memberIds
-    serverId
-  }
-}

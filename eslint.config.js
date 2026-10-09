@@ -19,8 +19,6 @@ export default tseslint.config(
       "src-tauri/**",
       "src/core/graphql/generated/**",
       "sdk/plugin-sdk/src/generated/**",
-      "vite.config.js",
-      "vite.config.d.ts",
       "*.config.js",
     ],
   },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, lazy, Suspense } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
@@ -60,14 +60,6 @@ import { cn } from "../../shared/ui/cn";
 import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
 import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
-import { useTerminalStore } from "../../features/terminal/state/useTerminalStore";
-
-// Lazy-load terminal pane — xterm.js is ~300KB, only loaded when first opened
-const TerminalPane = lazy(() =>
-  import("../../features/terminal/components/TerminalPane").then((m) => ({
-    default: m.TerminalPane,
-  })),
-);
 
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
@@ -463,17 +455,6 @@ function WorkspaceShell() {
           <ToastContainer />
         </div>
 
-        {/* Terminal pane — below main content, above status bar, hidden in zen mode */}
-        <div
-          onTransitionEnd={handleZenTransitionEnd}
-          className={cn(
-            "transition-opacity duration-300",
-            zenMode ? "pointer-events-none h-0 overflow-hidden opacity-0" : "opacity-100",
-          )}
-        >
-          {!zenContentHidden && <TerminalPaneSlot />}
-        </div>
-
         <div
           onTransitionEnd={handleZenTransitionEnd}
           className={cn(
@@ -486,19 +467,5 @@ function WorkspaceShell() {
         <FocusPulse />
       </div>
     </KeybindProvider>
-  );
-}
-
-/** Renders the terminal pane only when the feature is enabled and open. */
-function TerminalPaneSlot() {
-  const enabled = useTerminalStore((s) => s.enabled);
-  const isOpen = useTerminalStore((s) => s.isOpen);
-
-  if (!enabled || !isOpen) return null;
-
-  return (
-    <Suspense fallback={null}>
-      <TerminalPane />
-    </Suspense>
   );
 }

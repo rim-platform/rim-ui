@@ -1,8 +1,4 @@
-#![allow(dead_code)]
-
-use crate::plugin_host::backend_client::{self, AuditEntry, BackendClient};
 use crate::plugin_host::capability::{self, CapabilityGate};
-use crate::plugin_host::event_forwarder::EventForwarder;
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::protocol::{method, LogLevel, LogParams};
 use crate::plugin_host::wire::{
@@ -74,8 +70,6 @@ pub struct PluginBroker {
     rate_buckets: HashMap<String, RateLimitBucket>,
     next_heartbeat_id: i64,
     pub responsive: bool,
-    backend_client: Option<Arc<BackendClient>>,
-    event_forwarder: Option<Arc<EventForwarder>>,
     panel_relay: Option<Arc<PanelRelay>>,
     /// Panel IDs declared in this plugin's manifest — for ownership verification.
     manifest_panel_ids: Vec<String>,
@@ -90,8 +84,6 @@ impl PluginBroker {
             rate_buckets: HashMap::new(),
             next_heartbeat_id: -1,
             responsive: true,
-            backend_client: None,
-            event_forwarder: None,
             panel_relay: None,
             manifest_panel_ids: vec![],
         }
@@ -100,16 +92,6 @@ impl PluginBroker {
     pub fn with_panel_relay(mut self, relay: Arc<PanelRelay>, panel_ids: Vec<String>) -> Self {
         self.panel_relay = Some(relay);
         self.manifest_panel_ids = panel_ids;
-        self
-    }
-
-    pub fn with_backend(mut self, client: Arc<BackendClient>) -> Self {
-        self.backend_client = Some(client);
-        self
-    }
-
-    pub fn with_event_forwarder(mut self, forwarder: Arc<EventForwarder>) -> Self {
-        self.event_forwarder = Some(forwarder);
         self
     }
 
@@ -166,10 +148,6 @@ impl PluginBroker {
         let method = request.method.as_str();
         match method {
             method::LOG => self.handle_log(request),
-            "rim.chat.send_message" => self.handle_backend_call(request, method).await,
-            "rim.chat.get_messages" => self.handle_backend_call(request, method).await,
-            "rim.chat.search_messages" => self.handle_backend_call(request, method).await,
-            "rim.events.subscribe" => self.handle_events_subscribe(request).await,
             "rim.ui.update_panel" => self.handle_update_panel(request),
             _ => JsonRpcResponse::error(
                 request.id.clone(),
@@ -199,175 +177,6 @@ impl PluginBroker {
         };
         log::log!(level, "[plugin:{}] {}", self.plugin_id, params.message);
         JsonRpcResponse::success(request.id.clone(), serde_json::json!({"ok": true}))
-    }
-
-    async fn handle_backend_call(&self, request: &JsonRpcRequest, method: &str) -> JsonRpcResponse {
-        let client = match &self.backend_client {
-            Some(c) => c,
-            None => {
-                return JsonRpcResponse::error(
-                    request.id.clone(),
-                    INTERNAL_ERROR,
-                    "backend client not configured",
-                );
-            }
-        };
-
-        let params = request
-            .params
-            .as_ref()
-            .cloned()
-            .unwrap_or(serde_json::json!({}));
-        let capability = capability::capability_for_method(method)
-            .unwrap_or("unknown")
-            .to_string();
-
-        let result = match method {
-            "rim.chat.send_message" => {
-                let server_id = params
-                    .get("server_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let conversation_id = params
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                let parent_message_id = params.get("parent_message_id").and_then(|v| v.as_str());
-
-                if server_id.is_empty() || conversation_id.is_empty() || text.is_empty() {
-                    return JsonRpcResponse::error(
-                        request.id.clone(),
-                        wire::INVALID_PARAMS,
-                        "missing required params: server_id, conversation_id, text",
-                    );
-                }
-
-                client
-                    .send_message(server_id, conversation_id, text, parent_message_id)
-                    .await
-            }
-            "rim.chat.get_messages" => {
-                let server_id = params
-                    .get("server_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let conversation_id = params
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(50) as i32;
-                let cursor = params.get("cursor").and_then(|v| v.as_str());
-
-                if server_id.is_empty() || conversation_id.is_empty() {
-                    return JsonRpcResponse::error(
-                        request.id.clone(),
-                        wire::INVALID_PARAMS,
-                        "missing required params: server_id, conversation_id",
-                    );
-                }
-
-                client
-                    .get_messages(server_id, conversation_id, limit, cursor)
-                    .await
-            }
-            "rim.chat.search_messages" => {
-                let server_id = params
-                    .get("server_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let conversation_id = params
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(20) as i32;
-
-                if server_id.is_empty() || conversation_id.is_empty() || query.is_empty() {
-                    return JsonRpcResponse::error(
-                        request.id.clone(),
-                        wire::INVALID_PARAMS,
-                        "missing required params: server_id, conversation_id, query",
-                    );
-                }
-
-                client
-                    .search_messages(server_id, conversation_id, query, limit)
-                    .await
-            }
-            _ => unreachable!(),
-        };
-
-        let (success, error_msg) = match &result {
-            Ok(_) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-
-        backend_client::log_audit(&AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            plugin_id: self.plugin_id.clone(),
-            method: method.to_string(),
-            capability: capability.clone(),
-            success,
-            error: error_msg.clone(),
-        });
-
-        match result {
-            Ok(data) => JsonRpcResponse::success(request.id.clone(), data),
-            Err(e) => JsonRpcResponse::error(request.id.clone(), INTERNAL_ERROR, e.to_string()),
-        }
-    }
-
-    async fn handle_events_subscribe(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
-        let forwarder = match &self.event_forwarder {
-            Some(f) => f,
-            None => {
-                return JsonRpcResponse::error(
-                    request.id.clone(),
-                    INTERNAL_ERROR,
-                    "event forwarder not configured",
-                );
-            }
-        };
-
-        let params = request
-            .params
-            .as_ref()
-            .cloned()
-            .unwrap_or(serde_json::json!({}));
-        let event_types: Vec<String> = params
-            .get("event_types")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-
-        if event_types.is_empty() {
-            return JsonRpcResponse::error(
-                request.id.clone(),
-                wire::INVALID_PARAMS,
-                "event_types array must not be empty",
-            );
-        }
-
-        if let Err(e) = forwarder
-            .subscribe(&self.plugin_id, event_types.clone())
-            .await
-        {
-            return JsonRpcResponse::error(request.id.clone(), wire::INVALID_PARAMS, e.to_string());
-        }
-
-        backend_client::log_audit(&AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            plugin_id: self.plugin_id.clone(),
-            method: "rim.events.subscribe".to_string(),
-            capability: "events.read".to_string(),
-            success: true,
-            error: None,
-        });
-
-        JsonRpcResponse::success(
-            request.id.clone(),
-            serde_json::json!({"subscribed": event_types}),
-        )
     }
 
     fn handle_update_panel(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -451,10 +260,6 @@ impl PluginBroker {
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
     }
-
-    pub fn update_capabilities(&mut self, approved: Vec<String>) {
-        self.gate.update_capabilities(approved);
-    }
 }
 
 /// A host → plugin message waiting for the broker loop to send it.
@@ -482,7 +287,7 @@ pub enum RequestError {
 ///
 /// Requests are written by the broker loop that owns the plugin's stdio, and the
 /// plugin's response is matched back by JSON-RPC id, so a plugin may call the
-/// broker (e.g. `rim.chat.get_messages`) while it is still working on a host request.
+/// broker (e.g. `rim.ui.update_panel`) while it is still working on a host request.
 #[derive(Debug, Clone)]
 pub struct PluginClient {
     tx: mpsc::Sender<OutboundRequest>,
@@ -795,109 +600,29 @@ mod tests {
         assert_eq!(resp.error.unwrap().code, CAPABILITY_DENIED);
     }
 
+    /// No manifest can be granted `chat.*` or `events.read` (see `BUILTIN_CAPABILITIES`),
+    /// but if a grant ever got through, the unwired methods still do nothing.
     #[tokio::test]
-    async fn backend_call_without_client_returns_error() {
+    async fn granted_but_unwired_methods_are_method_not_found() {
         let mut broker = PluginBroker::new(
             "dev.example.test".into(),
-            CapabilityGate::new(vec!["chat.write".into()]),
+            CapabilityGate::new(vec![
+                "chat.read".into(),
+                "chat.write".into(),
+                "events.read".into(),
+            ]),
             BrokerConfig::default(),
         );
-        // No backend client configured
-        let req = JsonRpcRequest::new(
+        for method in [
             "rim.chat.send_message",
-            Some(serde_json::json!({
-                "server_id": "abc",
-                "conversation_id": "def",
-                "text": "hello"
-            })),
-            1,
-        );
-        let resp = broker.handle_request(&req).await;
-        assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, INTERNAL_ERROR);
-    }
-
-    #[tokio::test]
-    async fn events_subscribe_without_forwarder_returns_error() {
-        let mut broker = PluginBroker::new(
-            "dev.example.test".into(),
-            CapabilityGate::new(vec!["events.read".into()]),
-            BrokerConfig::default(),
-        );
-        let req = JsonRpcRequest::new(
+            "rim.chat.get_messages",
+            "rim.chat.search_messages",
             "rim.events.subscribe",
-            Some(serde_json::json!({"event_types": ["message.created"]})),
-            1,
-        );
-        let resp = broker.handle_request(&req).await;
-        assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, INTERNAL_ERROR);
-    }
-
-    #[tokio::test]
-    async fn events_subscribe_with_forwarder() {
-        let forwarder = Arc::new(EventForwarder::new());
-        let mut broker = PluginBroker::new(
-            "dev.example.test".into(),
-            CapabilityGate::new(vec!["events.read".into()]),
-            BrokerConfig::default(),
-        )
-        .with_event_forwarder(forwarder.clone());
-
-        let req = JsonRpcRequest::new(
-            "rim.events.subscribe",
-            Some(serde_json::json!({"event_types": ["message.created", "message.deleted"]})),
-            1,
-        );
-        let resp = broker.handle_request(&req).await;
-        assert!(resp.result.is_some());
-        assert!(resp.error.is_none());
-
-        // Verify the subscription was registered (public channel events)
-        let subs = forwarder
-            .subscribers_for("message.created", None, true)
-            .await;
-        assert_eq!(subs, vec!["dev.example.test"]);
-    }
-
-    #[tokio::test]
-    async fn events_subscribe_empty_types_rejected() {
-        let forwarder = Arc::new(EventForwarder::new());
-        let mut broker = PluginBroker::new(
-            "dev.example.test".into(),
-            CapabilityGate::new(vec!["events.read".into()]),
-            BrokerConfig::default(),
-        )
-        .with_event_forwarder(forwarder);
-
-        let req = JsonRpcRequest::new(
-            "rim.events.subscribe",
-            Some(serde_json::json!({"event_types": []})),
-            1,
-        );
-        let resp = broker.handle_request(&req).await;
-        assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, wire::INVALID_PARAMS);
-    }
-
-    #[tokio::test]
-    async fn events_subscribe_wildcard_rejected() {
-        let forwarder = Arc::new(EventForwarder::new());
-        let mut broker = PluginBroker::new(
-            "dev.example.test".into(),
-            CapabilityGate::new(vec!["events.read".into()]),
-            BrokerConfig::default(),
-        )
-        .with_event_forwarder(forwarder);
-
-        let req = JsonRpcRequest::new(
-            "rim.events.subscribe",
-            Some(serde_json::json!({"event_types": ["*"]})),
-            1,
-        );
-        let resp = broker.handle_request(&req).await;
-        assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, wire::INVALID_PARAMS);
+        ] {
+            let req = JsonRpcRequest::new(method, Some(serde_json::json!({})), 1);
+            let resp = broker.handle_request(&req).await;
+            assert_eq!(resp.error.unwrap().code, METHOD_NOT_FOUND, "{method}");
+        }
     }
 
     #[test]
@@ -926,7 +651,7 @@ mod tests {
             },
         );
 
-        // No backend client, so the call will fail at dispatch, but rate limiting
+        // No handler serves the method, so the call fails at dispatch, but rate limiting
         // happens before dispatch. First two calls should pass capability + rate check.
         let req = JsonRpcRequest::new(
             "rim.chat.send_message",
@@ -934,12 +659,12 @@ mod tests {
             1,
         );
 
-        // Call 1 and 2 — should pass rate limit (fail at dispatch with INTERNAL_ERROR)
+        // Call 1 and 2 — should pass rate limit (fail at dispatch with METHOD_NOT_FOUND)
         let resp1 = broker.handle_request(&req).await;
-        assert_eq!(resp1.error.as_ref().unwrap().code, INTERNAL_ERROR);
+        assert_eq!(resp1.error.as_ref().unwrap().code, METHOD_NOT_FOUND);
 
         let resp2 = broker.handle_request(&req).await;
-        assert_eq!(resp2.error.as_ref().unwrap().code, INTERNAL_ERROR);
+        assert_eq!(resp2.error.as_ref().unwrap().code, METHOD_NOT_FOUND);
 
         // Call 3 — should be rate limited
         let resp3 = broker.handle_request(&req).await;

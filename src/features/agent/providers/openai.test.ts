@@ -39,14 +39,14 @@ describe("createOpenAiProvider", () => {
   });
 
   it("returns a provider with correct config", () => {
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     expect(provider.config.id).toBe("openai");
     expect(provider.config.name).toBe("OpenAI");
     expect(provider.config.models.length).toBeGreaterThan(0);
   });
 
   it("config contains expected models", () => {
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const modelIds = provider.config.models.map((m) => m.id);
     expect(modelIds).toContain("gpt-4.1");
     expect(modelIds).toContain("gpt-4o");
@@ -60,7 +60,7 @@ describe("createOpenAiProvider", () => {
     // regression test in agent_proxy.rs:749 locks this in).
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createOpenAiProvider(async () => "sk-my-key");
+    const provider = createOpenAiProvider();
     const messages: AiMessage[] = [{ role: "user", content: "Hi" }];
 
     for await (const _ of provider.chat({
@@ -88,7 +88,7 @@ describe("createOpenAiProvider", () => {
   it("chat omits tools when not provided", async () => {
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     for await (const _ of provider.chat({
       model: "gpt-4o",
       messages: [{ role: "user", content: "Hi" }],
@@ -102,7 +102,7 @@ describe("createOpenAiProvider", () => {
   it("chat translates AiToolDefinition[] to OpenAI function-tool shape", async () => {
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const tools = [
       {
         name: "search",
@@ -135,7 +135,7 @@ describe("createOpenAiProvider", () => {
   it("chat converts assistant tool_use blocks to OpenAI tool_calls format", async () => {
     mockChatCompletion([{ kind: "done" }]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const messages: AiMessage[] = [
       { role: "user", content: "Search for X" },
       {
@@ -170,7 +170,7 @@ describe("createOpenAiProvider", () => {
   it("chat yields error on ChatStreamEvent::Error", async () => {
     mockChatCompletion([{ kind: "error", message: "provider 429: rate_limit" }]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "gpt-4o",
@@ -184,7 +184,7 @@ describe("createOpenAiProvider", () => {
   it("chat yields error when invoke rejects without firing channel events", async () => {
     invokeMock.mockRejectedValueOnce(new Error("Offline"));
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "gpt-4o",
@@ -218,7 +218,7 @@ describe("createOpenAiProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "gpt-4o",
@@ -275,7 +275,7 @@ describe("createOpenAiProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
       model: "gpt-4o",
@@ -321,7 +321,7 @@ describe("createOpenAiProvider", () => {
       { kind: "done" },
     ]);
 
-    const provider = createOpenAiProvider(async () => "sk-test");
+    const provider = createOpenAiProvider();
     const schema = { type: "object", properties: {} };
     const messages: AiMessage[] = [
       { role: "user", content: "list channels" },

@@ -8,17 +8,11 @@ import {
   type WorkspaceStateEntryGql,
   type SetWorkspaceStateInput,
   type DeleteWorkspaceStateInput,
-  type IncrementWorkspaceStateInput,
 } from "../../../core/graphql/generated/schema-types";
 
 // --- Re-exports for convenience ---
 
-export type {
-  WorkspaceStateEntryGql,
-  SetWorkspaceStateInput,
-  DeleteWorkspaceStateInput,
-  IncrementWorkspaceStateInput,
-};
+export type { WorkspaceStateEntryGql, SetWorkspaceStateInput, DeleteWorkspaceStateInput };
 export { WorkspaceStateScopeGql } from "../../../core/graphql/generated/schema-types";
 
 // --- Documents ---
@@ -85,23 +79,6 @@ const DeleteWorkspaceStateDocument = gql`
   }
 `;
 
-const IncrementWorkspaceStateDocument = gql`
-  mutation IncrementWorkspaceState($input: IncrementWorkspaceStateInput!) {
-    incrementWorkspaceState(input: $input) {
-      id
-      serverId
-      key
-      value
-      scope
-      userId
-      version
-      expiresAt
-      createdAt
-      updatedAt
-    }
-  }
-`;
-
 // --- Response types ---
 
 interface WorkspaceStateResponse {
@@ -114,10 +91,6 @@ interface WorkspaceStateListResponse {
 
 interface SetWorkspaceStateResponse {
   setWorkspaceState: WorkspaceStateEntryGql;
-}
-
-interface IncrementWorkspaceStateResponse {
-  incrementWorkspaceState: WorkspaceStateEntryGql;
 }
 
 // --- Hooks ---
@@ -189,25 +162,6 @@ export function useDeleteWorkspaceState() {
   return useMutation({
     mutationFn: (input: DeleteWorkspaceStateInput) =>
       graphqlClient.request(DeleteWorkspaceStateDocument, { input }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({
-        queryKey: queryKeys.workspaceState(vars.serverId, vars.scope, vars.key),
-      });
-      qc.invalidateQueries({
-        queryKey: queryKeys.workspaceStateList(vars.serverId, vars.scope),
-      });
-    },
-  });
-}
-
-export function useIncrementWorkspaceState() {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: IncrementWorkspaceStateInput) =>
-      graphqlClient.request<IncrementWorkspaceStateResponse>(IncrementWorkspaceStateDocument, {
-        input,
-      }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({
         queryKey: queryKeys.workspaceState(vars.serverId, vars.scope, vars.key),

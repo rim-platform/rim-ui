@@ -165,13 +165,6 @@ type VerifyState =
 // Static model fallback
 // ──────────────────────────────────────────────────────────────
 
-// Dummy loader used only for reading static `config.models`. Never invoked
-// for `chat()` — the factory signature requires a thunk but the panel never
-// calls `chat()`.
-const NEVER_INVOKED_KEY_LOADER = async (): Promise<string> => {
-  throw new Error("loader never invoked — static-models path must not call chat()");
-};
-
 /**
  * Return the static model list for the given provider ID.
  * Falls back to the globally-registered provider if present (avoids
@@ -182,10 +175,10 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
   if (existing) return existing.config.models;
 
   if (providerId === "anthropic") {
-    return createAnthropicProvider(NEVER_INVOKED_KEY_LOADER).config.models;
+    return createAnthropicProvider().config.models;
   }
   if (providerId === "openai") {
-    return createOpenAiProvider(NEVER_INVOKED_KEY_LOADER).config.models;
+    return createOpenAiProvider().config.models;
   }
   return [];
 }
@@ -197,8 +190,7 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
 /**
  * Consolidated "AI Agent" settings panel.
  *
- * Merges the old `AgentSettingsPanel` (Stronghold-backed, on-blur save,
- * optional test) and `AiProviderKeySettings` (keyring-backed, validate-first
+ * Merges the old `AgentSettingsPanel` (on-blur save, optional test) and `AiProviderKeySettings` (keyring-backed, validate-first
  * save) into a single panel per the agent-settings-consolidation decision.
  *
  * Layout (top → bottom):

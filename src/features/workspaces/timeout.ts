@@ -39,6 +39,3 @@ export const BAN_EXPIRY_PRESETS: DurationPreset[] = [
   { id: "7d", label: "7 days", seconds: 7 * 24 * 60 * 60 },
   { id: "30d", label: "30 days", seconds: 30 * 24 * 60 * 60 },
 ];
-
-/** The server refuses timeouts more than 30 days ahead. */
-export const MAX_TIMEOUT_SECONDS = 30 * 24 * 60 * 60;

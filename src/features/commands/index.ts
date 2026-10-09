@@ -4,7 +4,6 @@ export { useCommandStore } from "./state/useCommandStore";
 export { useCommands, useExecuteCommandMutation } from "./api/useCommands";
 export { useResolvedKeybinds } from "./api/useKeybinds";
 export {
-  useKeybindsByScope,
   useCreateKeybindMutation,
   useUpdateKeybindMutation,
   useDeleteKeybindMutation,

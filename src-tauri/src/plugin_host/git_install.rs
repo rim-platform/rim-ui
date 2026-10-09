@@ -45,12 +45,6 @@ pub enum GitInstallError {
     PostInstallFailed(String),
     #[error("git pull failed: {0}")]
     PullFailed(String),
-    #[error("capabilities changed after update")]
-    #[allow(dead_code)]
-    CapabilitiesChanged {
-        added: Vec<String>,
-        removed: Vec<String>,
-    },
 }
 
 impl Serialize for GitInstallError {

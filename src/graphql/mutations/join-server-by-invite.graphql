@@ -1,5 +1,0 @@
-mutation JoinServerByInvite($input: JoinServerByInviteInput!) {
-  joinServerByInvite(input: $input) {
-    serverId
-  }
-}

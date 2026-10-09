@@ -1,6 +1,0 @@
-query Server($serverId: ID!) {
-  server(serverId: $serverId) {
-    id
-    name
-  }
-}

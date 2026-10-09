@@ -69,8 +69,6 @@ export function surfaceToContext(focusedSurface: string | null): KeybindContext 
       return "PANEL";
     case "commandPalette":
       return "COMMAND_PALETTE";
-    case "terminal":
-      return "TERMINAL";
     default:
       return "GLOBAL";
   }

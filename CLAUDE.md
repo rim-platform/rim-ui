@@ -62,7 +62,7 @@ Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vit
 - **GraphQL fragments** for shared field selections — `src/graphql/fragments/`
 - **Nested resolvers** — always request `author { ... }` on messages, never join manually
 - **No batching** — HTTP/2 handles parallelism, each query stays independent
-- **Secrets in Stronghold** (Tauri plugin), never localStorage
+- **Secrets in the OS keyring** through `src-tauri/src/secret_store.rs`, never localStorage
 - **DOMPurify** on all user-generated HTML (markdown rendering)
 - **Design tokens everywhere** — no hardcoded colors (text-red-400, bg-white, etc.)
 - **Shared Avatar component** — never duplicate avatar rendering logic
@@ -110,7 +110,6 @@ silent bugs when enum casing or field names differ from the backend (e.g., `SEV2
 - `schema.graphql` — SDL schema file (source of truth, exported from backend)
 - `codegen.mjs` — codegen configuration
 - `src/core/graphql/generated/schema-types.ts` — generated types (DO NOT EDIT)
-- `src/core/graphql/generated/sdk.ts` — DEAD CODE, do not use (legacy, pending removal)
 
 **ALSO CRITICAL:** Before adding new fields to GraphQL queries, verify they exist in the
 backend schema. Check `schema.graphql` or the per-domain modules under `rim_api/src/types/`
@@ -126,4 +125,3 @@ Review covers: React 19 patterns, TypeScript strict compliance, component separa
 ## Also Read
 
 - `AGENTS.md` in this repo has detailed product direction, naming guidance, security/trust UX expectations, and agent workflow rules.
-- `.claude/status.md` has current feature status and architectural decisions.

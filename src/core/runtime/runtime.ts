@@ -3,15 +3,10 @@ export type AppPlatform = "desktop" | "web" | "mobile";
 export type OsType = "macos" | "windows" | "linux" | "unknown";
 
 export type RuntimeCapabilities = {
-  multiPaneShell: boolean;
   dockedThreadPane: boolean;
   pluginHost: boolean;
   agent: boolean;
   deviceLocalKeybinds: boolean;
-  globalShortcuts: boolean;
-  localProcess: boolean;
-  filesystemAccess: boolean;
-  nativeNotifications: boolean;
   customTitleBar: boolean;
   /** Device keys in the OS keyring: key sign-in, enrollment and recovery (Stage 3). */
   deviceKeys: boolean;
@@ -34,15 +29,10 @@ export function detectOs(): OsType {
 export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabilities {
   if (platform === "desktop") {
     return {
-      multiPaneShell: true,
       dockedThreadPane: true,
       pluginHost: true,
       agent: true,
       deviceLocalKeybinds: true,
-      globalShortcuts: true,
-      localProcess: true,
-      filesystemAccess: true,
-      nativeNotifications: true,
       customTitleBar: true,
       deviceKeys: true,
     };
@@ -50,30 +40,20 @@ export function getRuntimeCapabilities(platform: AppPlatform): RuntimeCapabiliti
 
   if (platform === "web") {
     return {
-      multiPaneShell: true,
       dockedThreadPane: true,
       pluginHost: false,
       agent: false,
       deviceLocalKeybinds: true,
-      globalShortcuts: false,
-      localProcess: false,
-      filesystemAccess: false,
-      nativeNotifications: false,
       customTitleBar: false,
       deviceKeys: false,
     };
   }
 
   return {
-    multiPaneShell: false,
     dockedThreadPane: false,
     pluginHost: false,
     agent: false,
     deviceLocalKeybinds: false,
-    globalShortcuts: false,
-    localProcess: false,
-    filesystemAccess: false,
-    nativeNotifications: false,
     customTitleBar: false,
     deviceKeys: false,
   };

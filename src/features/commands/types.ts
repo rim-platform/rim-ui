@@ -17,8 +17,7 @@ export type KeybindContext =
   | "THREAD_VIEW"
   | "CONVERSATION_VIEW"
   | "PANEL"
-  | "COMMAND_PALETTE"
-  | "TERMINAL";
+  | "COMMAND_PALETTE";
 
 export type KeybindScope = "USER" | "WORKSPACE";
 

@@ -25,8 +25,6 @@ function humanizeContext(ctx: string | null): string | null {
       return "Panel";
     case "CONVERSATION_VIEW":
       return "Conversation";
-    case "TERMINAL":
-      return "Terminal";
     case "GLOBAL":
     case null:
       return null;
@@ -112,7 +110,6 @@ export function StatusBar() {
           )}
         </DisclosureGate>
         {mainSurface.kind === "conversation" &&
-          rawContext !== "TERMINAL" &&
           (navigationMode ? (
             <span className="rounded bg-rim-accent/20 px-1.5 py-px font-medium text-rim-accent">
               NAVIGATE

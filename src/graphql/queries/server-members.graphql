@@ -1,8 +1,0 @@
-query ServerMembers($serverId: ID!) {
-  serverMembers(serverId: $serverId) {
-    userId
-    username
-    memberRole
-    joinedAt
-  }
-}

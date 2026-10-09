@@ -42,7 +42,6 @@ Agents working on non-trivial product work should read the relevant docs in `../
 - `../rim-server/README.md` explains the high-level product and backend workspace.
 - `../rim-server/ROADMAP.md` explains the implementation phases and product priorities.
 - `../rim-server/docs/architecture.md` explains backend-vs-client ownership and extensibility boundaries.
-- `../rim-server/docs/ui.md` explains the intended desktop shell, layout direction, and performance requirements.
 - `../rim-server/docs/messaging.md` explains messaging, threads, attachments, and permalink semantics.
 - `../rim-server/docs/pagination.md` explains cursor-pagination rules that should shape list and infinite-scroll UI.
 - `../rim-server/docs/command_model.md` explains the command system contract.

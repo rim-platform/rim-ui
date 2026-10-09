@@ -4,43 +4,28 @@ import { getRuntimeCapabilities, detectPlatform, detectOs } from "./runtime";
 describe("getRuntimeCapabilities", () => {
   it("returns all capabilities enabled for desktop", () => {
     const caps = getRuntimeCapabilities("desktop");
-    expect(caps.multiPaneShell).toBe(true);
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(true);
     expect(caps.agent).toBe(true);
-    expect(caps.globalShortcuts).toBe(true);
-    expect(caps.localProcess).toBe(true);
-    expect(caps.filesystemAccess).toBe(true);
-    expect(caps.nativeNotifications).toBe(true);
     expect(caps.customTitleBar).toBe(true);
     expect(caps.deviceKeys).toBe(true);
   });
 
   it("returns limited capabilities for web", () => {
     const caps = getRuntimeCapabilities("web");
-    expect(caps.multiPaneShell).toBe(true);
     expect(caps.dockedThreadPane).toBe(true);
     expect(caps.pluginHost).toBe(false);
     expect(caps.agent).toBe(false);
-    expect(caps.globalShortcuts).toBe(false);
-    expect(caps.localProcess).toBe(false);
-    expect(caps.filesystemAccess).toBe(false);
-    expect(caps.nativeNotifications).toBe(false);
     expect(caps.customTitleBar).toBe(false);
     expect(caps.deviceKeys).toBe(false);
   });
 
   it("returns all capabilities disabled for mobile", () => {
     const caps = getRuntimeCapabilities("mobile");
-    expect(caps.multiPaneShell).toBe(false);
     expect(caps.dockedThreadPane).toBe(false);
     expect(caps.pluginHost).toBe(false);
     expect(caps.agent).toBe(false);
     expect(caps.deviceLocalKeybinds).toBe(false);
-    expect(caps.globalShortcuts).toBe(false);
-    expect(caps.localProcess).toBe(false);
-    expect(caps.filesystemAccess).toBe(false);
-    expect(caps.nativeNotifications).toBe(false);
     expect(caps.customTitleBar).toBe(false);
     expect(caps.deviceKeys).toBe(false);
   });

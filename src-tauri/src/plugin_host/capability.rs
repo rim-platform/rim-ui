@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -40,12 +38,11 @@ static METHOD_CAPABILITY_MAP: LazyLock<HashMap<&'static str, &'static str>> = La
 /// bridge, `pluginBridge.ts` (`ui.notify`).
 ///
 /// The other names in [`METHOD_CAPABILITY_MAP`] stay out. `local.process`,
-/// `network` and `fs.*` guard methods nothing implements. `chat.*` and
-/// `events.read` guard methods the broker routes, but `runtime::start_plugin`
-/// gives it no backend client or event forwarder, and protocol v1 does not
-/// include them; a grant approved now would silently start working the day they
-/// are wired. Add them here when they are frozen and wired, so the approval
-/// prompt never asks for a permission that does nothing.
+/// `network`, `fs.*`, `chat.*` and `events.read` guard methods nothing
+/// implements; the `chat.*` and `events.read` methods are listed in the
+/// protocol schema's `x-notFrozen` and are not part of v1, so the gate answers
+/// them with CAPABILITY_DENIED. Add a name here when its methods are frozen and
+/// wired, so the approval prompt never asks for a permission that does nothing.
 pub const BUILTIN_CAPABILITIES: &[&str] = &["ui.panel", "ui.notify"];
 
 /// Methods that are always allowed without capability approval.
@@ -82,10 +79,6 @@ impl CapabilityGate {
             // METHOD_NOT_FOUND, so it never reaches a handler.
             None => Ok(()),
         }
-    }
-
-    pub fn update_capabilities(&mut self, approved: Vec<String>) {
-        self.approved_capabilities = approved;
     }
 }
 
@@ -141,13 +134,5 @@ mod tests {
         let gate = CapabilityGate::new(vec!["chat.read".into()]);
         assert!(gate.check("rim.unknown.method").is_ok());
         assert_eq!(capability_for_method("rim.unknown.method"), None);
-    }
-
-    #[test]
-    fn update_capabilities() {
-        let mut gate = CapabilityGate::new(vec![]);
-        assert!(gate.check("rim.chat.send_message").is_err());
-        gate.update_capabilities(vec!["chat.write".into()]);
-        assert!(gate.check("rim.chat.send_message").is_ok());
     }
 }
