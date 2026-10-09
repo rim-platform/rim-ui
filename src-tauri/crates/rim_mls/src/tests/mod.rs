@@ -1,4 +1,5 @@
 mod formats;
+mod hardening;
 mod providers;
 mod raw;
 mod sequencer;

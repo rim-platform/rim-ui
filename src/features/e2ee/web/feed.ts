@@ -7,7 +7,8 @@
  * staged, in the same unit of work that advanced the ratchet. When the feed is drained, the
  * remaining Commits are applied. An entry this browser cannot read (sent before it joined, in an
  * older incarnation, or too many epochs back) becomes a placeholder; one that decrypts but
- * breaks a rule is stored as "could not be verified", without its content. When a Commit or a
+ * breaks a rule is stored as "could not be verified", without its content, and so is one whose
+ * row names no author principal or a sender other than the MLS sender. When a Commit or a
  * Welcome is missing the conversation stops where it is and the note says why.
  */
 
@@ -28,6 +29,7 @@ import {
   forget,
   groupStatus,
   loadState,
+  pin,
   saveState,
   type GroupState,
 } from "./groupState";
@@ -54,6 +56,8 @@ const PER_CONVERSATION_LIMIT = 200;
 const RECENT_CONVERSATIONS = 50;
 /** Application messages more than this many epochs behind the group cannot be decrypted. */
 const MAX_PAST_EPOCHS = 2;
+/** A device id as the server spells it. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Whether and how far this browser follows a conversation's feed (`sync`). */
 interface SyncRecord {
@@ -252,6 +256,7 @@ class EntryRow {
     }
     const e2ee = {
       ...this.facts("decrypted"),
+      senderDeviceId: message.sender.deviceId,
       senderPrincipalId: message.sender.principalId,
       frankingKey: message.frankingKey,
       rev: content.rev,
@@ -306,6 +311,8 @@ export function parseContent(text: string | null): ParsedContent | null {
 export class FeedApplier {
   private readonly notes = new Map<string, MlsSyncNote>();
   private readonly inputs: Map<string, MlsSyncInput>;
+  /** Conversations pinned as encrypted during this answer. */
+  private readonly pinned = new Set<string>();
 
   constructor(
     private readonly work: Work,
@@ -430,6 +437,10 @@ export class FeedApplier {
     const entry = change.message as unknown as EntryWire;
     const encryption = entry.encryption;
     if (!encryption || entry.conversationId !== conversationId) return "plaintext";
+    if (!this.pinned.has(conversationId)) {
+      this.pinned.add(conversationId);
+      await pin(this.work, this.workspaceId, conversationId);
+    }
     const version = Number(change.version);
     if (!Number.isSafeInteger(version)) return "plaintext";
     const stored = await readRow(this.work, entry.id);
@@ -519,6 +530,17 @@ export class FeedApplier {
       }
       threadRootId = root;
     }
+    // The row must name the author's principal and the sending device: the MLS sender is
+    // checked against both, and the timeline shows the MLS sender.
+    const authorPrincipalId = entry.author?.principalId;
+    if (!authorPrincipalId) {
+      logger.warn("[RIM:e2ee] an encrypted entry whose author has no principal id");
+      return row.invalid("the row names no author principal");
+    }
+    if (!UUID.test(encryption.senderDeviceId ?? "")) {
+      logger.warn("[RIM:e2ee] an encrypted entry whose sender device is not a device id");
+      return row.invalid("the row names no sender device");
+    }
     if (!encryption.ciphertext) {
       logger.warn("[RIM:e2ee] an encrypted entry without a ciphertext");
       return "done";
@@ -526,7 +548,8 @@ export class FeedApplier {
     const expected = JSON.stringify({
       messageId: entry.id,
       threadRootId,
-      authorPrincipalId: entry.author?.principalId ?? null,
+      authorPrincipalId,
+      senderDeviceId: encryption.senderDeviceId,
     });
     let outcome: DecryptOutcome;
     try {

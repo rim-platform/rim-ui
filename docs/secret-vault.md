@@ -59,11 +59,16 @@ read, without the app having to list them:
 
 ## When the vault does not open
 
-- A file that does not parse, is not a `rim-secret-vault`, or has a record that does not open
-  under the key is never overwritten. It is renamed to
+- A file that does not parse, is not a `rim-secret-vault`, or of whose records none opens under
+  the key (the key is not the vault's) is never overwritten. It is renamed to
   `secrets.vault.unreadable-<UTC timestamp>`, a warning is logged, and the call that found it
   fails with "the secret vault could not be opened; the keys it held are lost on this
   computer (…)". The next call starts a fresh vault.
+- A file where some records open and others do not keeps the ones that open. The others are
+  written, as they were, to `secrets.vault.unreadable-records-<UTC timestamp>` (a vault file of
+  their own), the vault is saved without them, and a warning names them. Reading one of them
+  fails for the rest of the run with "the secret <name> could not be opened and is lost on this
+  computer"; writing or deleting it ends that.
 - A vault whose key is missing from the credential store (or is not a 32-byte base64url value)
   is the same case, unless the vault holds no records; a new key is generated on the next call.
 - A vault of a newer version (`v` above 1) is left untouched and every call fails with "the

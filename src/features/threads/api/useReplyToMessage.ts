@@ -5,6 +5,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { logger } from "../../../core/logger";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 
 export const REPLY_TO_MESSAGE_MUTATION = gql`
   mutation ReplyToMessage($input: ReplyToMessageInput!) {
@@ -48,15 +49,17 @@ export function useReplyToMessageMutation() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (vars: ReplyToMessageVars) =>
-      graphqlClient.request<ReplyToMessageResponse>(REPLY_TO_MESSAGE_MUTATION, {
+    mutationFn: async (vars: ReplyToMessageVars) => {
+      await refusePlaintextIfPinned(vars.serverId, vars.conversationId);
+      return graphqlClient.request<ReplyToMessageResponse>(REPLY_TO_MESSAGE_MUTATION, {
         input: {
           serverId: vars.serverId,
           conversationId: vars.conversationId,
           rootMessageId: vars.rootMessageId,
           text: vars.text,
         },
-      }),
+      });
+    },
     onError: (error, vars) => {
       logger.error("[RIM:Thread] Reply mutation failed:", error, "vars:", vars);
     },

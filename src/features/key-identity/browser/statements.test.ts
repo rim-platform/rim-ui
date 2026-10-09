@@ -9,9 +9,11 @@ import {
   CONTEXT,
   payloadHash,
   principalId,
+  recoveredAfter,
   replay,
   sign,
   signLogin,
+  verifiedRevocation,
   verify,
   type Statement,
 } from "./statements";
@@ -108,6 +110,7 @@ describe("key-identity known-answer vectors", () => {
       hash: await payloadHash(INCEPTION),
       identityKeys: [IDENTITY],
       signers: [null],
+      hashes: [await payloadHash(INCEPTION)],
     });
     const device = await certifiedDevice(statement(DEVICE_CERT, DEVICE_CERT_SIG), head);
     expect(device).toEqual({ deviceId: DEVICE_ID, deviceKey: DEVICE });
@@ -173,9 +176,10 @@ describe("replay", () => {
     expect(byIdentity.identityKey).toBe(seed2);
     expect(byIdentity.recoveryKey).toBe(RECOVERY);
     const seed3 = (await keyFromSeed(3)).publicKey;
-    const byRecovery = await replay([first, await rotation(head, 101, "recovery", seed3, seed3)]);
+    const seed4 = (await keyFromSeed(4)).publicKey;
+    const byRecovery = await replay([first, await rotation(head, 101, "recovery", seed3, seed4)]);
     expect(byRecovery.identityKey).toBe(seed3);
-    expect(byRecovery.recoveryKey).toBe(seed3);
+    expect(byRecovery.recoveryKey).toBe(seed4);
   });
 
   it("refuses a rotation by the wrong key, off the head, or breaking the signer rules", async () => {
@@ -195,8 +199,9 @@ describe("replay", () => {
     await expect(replay([first, await rotation(head, 1, "identity", IDENTITY)])).rejects.toThrow(
       "must change the identity key",
     );
+    const seed4 = (await keyFromSeed(4)).publicKey;
     await expect(
-      replay([first, await rotation(head, 1, "identity", seed2, seed2)]),
+      replay([first, await rotation(head, 1, "identity", seed2, seed4)]),
     ).rejects.toThrow("only recovery may change the recovery key");
     await expect(replay([])).rejects.toThrow("empty");
     await expect(replay([statement(INCEPTION, LOGIN_SIG)])).rejects.toThrow(
@@ -360,5 +365,127 @@ describe("canonicalKey", () => {
     expect(() => canonicalKey(DEVICE, 1)).toThrow();
     expect(() => canonicalKey("ED25519:AAAA", 2)).toThrow();
     expect(() => canonicalKey(DEVICE, 3)).toThrow("statement version 3 is not supported");
+  });
+});
+
+describe("against a misbehaving server", () => {
+  /** A certificate of DEVICE at `keySeq`, signed by the key of `seed`. */
+  async function certAt(keySeq: number, seed: number) {
+    const payload = DEVICE_CERT.replace('"keySeq":0', `"keySeq":${keySeq}`);
+    return sign((await keyFromSeed(seed)).privateKey, CONTEXT.device, payload);
+  }
+
+  /** A rotation at `seq` extending `prev`. */
+  async function rotateAt(
+    seq: number,
+    prev: string,
+    signerSeed: number,
+    signer: "identity" | "recovery",
+    next: string,
+  ) {
+    const payload = JSON.stringify({
+      v: 2,
+      type: "rotate",
+      principalId: PRINCIPAL,
+      seq,
+      prev,
+      identityKey: next,
+      recoveryKey: RECOVERY,
+      signer,
+      createdAt: AT,
+    });
+    return sign((await keyFromSeed(signerSeed)).privateKey, CONTEXT.keyLog, payload);
+  }
+
+  it("finding 3: a certificate signed before a recovery is refused", async () => {
+    const first = statement(INCEPTION, INCEPTION_SIG);
+    const seed2 = (await keyFromSeed(2)).publicKey;
+    const seed3 = (await keyFromSeed(3)).publicKey;
+    const byIdentity = await rotateAt(1, await payloadHash(INCEPTION), 1, "identity", seed2);
+    const rotated = await replay([first, byIdentity]);
+    // An identity rotation keeps what the earlier key certified.
+    expect(recoveredAfter(rotated, 0)).toBe(false);
+    await expect(certifiedDevice(await certAt(0, 1), rotated)).resolves.toEqual({
+      deviceId: DEVICE_ID,
+      deviceKey: DEVICE,
+    });
+
+    const byRecovery = await rotateAt(2, rotated.hash, 101, "recovery", seed3);
+    const recovered = await replay([first, byIdentity, byRecovery]);
+    expect(recovered.hashes).toEqual([
+      await payloadHash(INCEPTION),
+      await payloadHash(byIdentity.payload),
+      await payloadHash(byRecovery.payload),
+    ]);
+    await expect(certifiedDevice(await certAt(0, 1), recovered)).rejects.toThrow(
+      "predates a recovery",
+    );
+    await expect(certifiedDevice(await certAt(1, 2), recovered)).rejects.toThrow(
+      "predates a recovery",
+    );
+    await expect(certifiedDevice(await certAt(2, 3), recovered)).resolves.toMatchObject({
+      deviceKey: DEVICE,
+    });
+  });
+
+  it("finding 22: refuses equal identity and recovery keys and unknown fields, as the server", async () => {
+    const same = await sign(
+      (await keyFromSeed(1)).privateKey,
+      CONTEXT.keyLog,
+      INCEPTION.replace(RECOVERY, IDENTITY),
+    );
+    await expect(replay([same])).rejects.toThrow("must differ");
+    // rim-server's test inserts `"x":1` first.
+    const extra = await sign(
+      (await keyFromSeed(1)).privateKey,
+      CONTEXT.keyLog,
+      INCEPTION.replace("{", '{"x":1,'),
+    );
+    await expect(replay([extra])).rejects.toThrow("not a key log entry");
+    const prefixed = await sign(
+      (await keyFromSeed(1)).privateKey,
+      CONTEXT.keyLog,
+      INCEPTION.replace("{", '{"prev":"AA",'),
+    );
+    await expect(replay([prefixed])).rejects.toThrow("not a key log entry");
+    // y = p + 3: a point of large order spelled out of range.
+    const nonCanonical = new Uint8Array(32).fill(0xff);
+    nonCanonical[0] = 0xf0;
+    nonCanonical[31] = 0x7f;
+    const proof = statement(LOGIN_PROOF, LOGIN_SIG);
+    expect(await verify(proof, CONTEXT.login, `ed25519:${b64(nonCanonical)}`, 2)).toBe(false);
+  });
+
+  it("finding 2: a revocation counts only when its signature verifies", async () => {
+    const head = await replay([statement(INCEPTION, INCEPTION_SIG)]);
+    const revocation = (seed: number, signer: string, deviceId = DEVICE_ID) =>
+      keyFromSeed(seed).then((key) =>
+        sign(
+          key.privateKey,
+          CONTEXT.deviceRevoke,
+          JSON.stringify({
+            v: 2,
+            type: "device-revoke",
+            principalId: PRINCIPAL,
+            deviceId,
+            signer,
+            issuedAt: AT,
+          }),
+        ),
+      );
+    expect(await verifiedRevocation(await revocation(1, "identity"), head, DEVICE_ID, DEVICE)).toBe(
+      true,
+    );
+    expect(await verifiedRevocation(await revocation(20, "device"), head, DEVICE_ID, DEVICE)).toBe(
+      true,
+    );
+    for (const forged of [
+      await revocation(66, "identity"),
+      await revocation(20, "identity"),
+      await revocation(1, "identity", "00000000-0000-0000-0000-000000000002"),
+      statement(DEVICE_CERT, DEVICE_CERT_SIG),
+    ]) {
+      expect(await verifiedRevocation(forged, head, DEVICE_ID, DEVICE)).toBe(false);
+    }
   });
 });

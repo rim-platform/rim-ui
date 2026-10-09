@@ -17,6 +17,7 @@ import { useEncryptedHere, usePrincipalNames } from "../../e2ee/hooks/useE2eeCon
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
 import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
 import { toPrincipalMentions, toUserMentions } from "../../e2ee/utils/content";
+import { withSenderAsAuthor } from "../../e2ee/utils/timeline";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { toast } from "../../../shared/toast";
@@ -104,8 +105,9 @@ export function ThreadPanel() {
     if (conversationData?.pages) {
       for (const page of conversationData.pages) {
         const found = page.items.find((m) => m.id === rootMessageId);
-        if (found && encrypted && found.text) {
-          return { ...found, text: toUserMentions(found.text, userOf) };
+        if (found && encrypted) {
+          const shown = withSenderAsAuthor(found, userOf);
+          return found.text ? { ...shown, text: toUserMentions(found.text, userOf) } : shown;
         }
         if (found) return found;
       }
@@ -140,7 +142,10 @@ export function ThreadPanel() {
   const items = useMemo(() => {
     const replies = threadMessages?.items ?? [];
     if (!encrypted) return replies;
-    return replies.map((m) => (m.text ? { ...m, text: toUserMentions(m.text, userOf) } : m));
+    return replies.map((reply) => {
+      const m = withSenderAsAuthor(reply, userOf);
+      return m.text ? { ...m, text: toUserMentions(m.text, userOf) } : m;
+    });
   }, [threadMessages?.items, encrypted, userOf]);
   const replyCount = items.length;
 

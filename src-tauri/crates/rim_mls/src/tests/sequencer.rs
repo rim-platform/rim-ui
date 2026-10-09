@@ -58,6 +58,7 @@ pub(crate) struct Row {
     pub(crate) epoch: u64,
     pub(crate) envelope: Vec<u8>,
     pub(crate) author: String,
+    pub(crate) sender_device: Uuid,
 }
 
 #[derive(Clone)]
@@ -469,6 +470,7 @@ impl Sequencer {
             epoch: group.epoch,
             envelope: message.envelope.clone(),
             author: caller.principal_id.clone(),
+            sender_device: caller.device_id,
         });
         Ok(())
     }

@@ -11,7 +11,7 @@ use super::snapshot::SCHEMA_SNAPSHOT;
 use super::{AccountId, CacheError};
 
 /// Bump with a new arm in [`migrate`] when the schema changes.
-pub(super) const SCHEMA_VERSION: i32 = 6;
+pub(super) const SCHEMA_VERSION: i32 = 7;
 
 /// Schema v1: the cache (PR 9).
 ///
@@ -259,6 +259,7 @@ impl CacheStore {
             (4, SCHEMA_SNAPSHOT),
             (5, SCHEMA_MLS),
             (6, crate::e2ee::SCHEMA),
+            (7, crate::e2ee::SCHEMA_PINS),
         ] {
             if version < target {
                 let tx = self.conn.unchecked_transaction()?;

@@ -35,6 +35,9 @@ pub enum Error {
     /// The group stopped at this epoch on a Commit it could not process; only a re-add helps.
     #[error("the group stopped at epoch {0} and waits for a re-add")]
     AwaitingReadd(u64),
+    /// A Welcome to an epoch this device's state of the group already reached: a replay.
+    #[error("the Welcome is for epoch {welcome}, this device holds the group at epoch {held}")]
+    StaleWelcome { held: u64, welcome: u64 },
     /// This device was removed from the group.
     #[error("this device is no longer a member of the group")]
     Removed,

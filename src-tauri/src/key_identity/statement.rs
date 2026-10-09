@@ -174,16 +174,31 @@ fn split_tagged(text: &str, version: u8) -> Result<(&str, Vec<u8>), KeyIdentityE
     }
 }
 
-/// A key as `version` spells it, in canonical tagged text. The algorithm stays opaque here: an
-/// algorithm this device cannot sign or verify with still has a canonical text.
+/// The Ed25519 public key `bytes` spell, if they are 32 bytes of a point in its canonical
+/// encoding that is not of small order: the server's rule, so both sides agree on which strings
+/// are keys.
+fn ed25519_key(bytes: &[u8]) -> Option<VerifyingKey> {
+    let bytes = <[u8; 32]>::try_from(bytes).ok()?;
+    let key = VerifyingKey::from_bytes(&bytes).ok()?;
+    (!key.is_weak() && key.to_edwards().compress().to_bytes() == bytes).then_some(key)
+}
+
+/// A key as `version` spells it, in canonical tagged text. An algorithm this device cannot sign
+/// or verify with stays opaque and still has a canonical text; an Ed25519 key must be a usable
+/// point in its canonical encoding.
 pub(crate) fn canonical_key(text: &str, version: u8) -> Result<String, KeyIdentityError> {
     let (algorithm, bytes) = split_tagged(text, version)?;
+    if algorithm == ED25519 && ed25519_key(&bytes).is_none() {
+        return Err(KeyIdentityError::Invalid(
+            "an Ed25519 key is weak or not in its canonical encoding".into(),
+        ));
+    }
     Ok(format!("{algorithm}:{}", b64(&bytes)))
 }
 
 /// Whether `statement`, a statement of `version`, is signed by `public_key` (canonical tagged
 /// text) for `context`. A signature only verifies under a key of its own algorithm. Strict:
-/// weak keys and malleable signatures fail, as on the server.
+/// weak or non-canonically encoded keys and malleable signatures fail, as on the server.
 pub(crate) fn verify(statement: &Statement, context: &[u8], public_key: &str, version: u8) -> bool {
     let (Ok((key_algorithm, key_bytes)), Ok((sig_algorithm, sig_bytes))) = (
         split_tagged(public_key, 2),
@@ -194,18 +209,10 @@ pub(crate) fn verify(statement: &Statement, context: &[u8], public_key: &str, ve
     if key_algorithm != sig_algorithm || key_algorithm != ED25519 {
         return false;
     }
-    let (Ok(key_bytes), Ok(sig_bytes)) = (
-        <[u8; 32]>::try_from(key_bytes),
-        <[u8; 64]>::try_from(sig_bytes),
-    ) else {
+    let (Some(key), Ok(sig_bytes)) = (ed25519_key(&key_bytes), <[u8; 64]>::try_from(sig_bytes))
+    else {
         return false;
     };
-    let Ok(key) = VerifyingKey::from_bytes(&key_bytes) else {
-        return false;
-    };
-    if key.is_weak() {
-        return false;
-    }
     key.verify_strict(
         &signed_bytes(context, &statement.payload),
         &Signature::from_bytes(&sig_bytes),
@@ -214,7 +221,8 @@ pub(crate) fn verify(statement: &Statement, context: &[u8], public_key: &str, ve
 }
 
 /// A device key offered for certification: canonical version 2 tagged text of an algorithm this
-/// device can verify, and not a weak key. Returns it unchanged.
+/// device can verify, a point in its canonical encoding, and not a weak key. Returns it
+/// unchanged.
 pub(crate) fn usable_device_key(text: &str) -> Result<String, KeyIdentityError> {
     let refused = || {
         KeyIdentityError::Invalid(
@@ -225,9 +233,7 @@ pub(crate) fn usable_device_key(text: &str) -> Result<String, KeyIdentityError> 
     if algorithm != ED25519 {
         return Err(refused());
     }
-    let bytes = <[u8; 32]>::try_from(bytes).map_err(|_| refused())?;
-    let key = VerifyingKey::from_bytes(&bytes).map_err(|_| refused())?;
-    if key.is_weak() || format!("{ED25519_TAG}{}", b64(&bytes)) != text {
+    if ed25519_key(&bytes).is_none() || format!("{ED25519_TAG}{}", b64(&bytes)) != text {
         return Err(refused());
     }
     Ok(text.to_string())
@@ -498,20 +504,50 @@ pub(crate) struct KeyHead {
     pub(crate) identity_keys: Vec<String>,
     /// Who signed the entry at every seq, oldest first; `None` for the inception.
     pub(crate) signers: Vec<Option<RotationSigner>>,
+    /// base64url(SHA-256(payload)) of the entry at every seq, oldest first.
+    pub(crate) hashes: Vec<String>,
 }
 
+impl KeyHead {
+    /// Whether a recovery rotation follows the entry at `seq`: what that entry's identity key
+    /// signed is void from then on.
+    pub(crate) fn recovered_after(&self, seq: u32) -> bool {
+        self.signers
+            .iter()
+            .skip(seq as usize + 1)
+            .any(|signer| *signer == Some(RotationSigner::Recovery))
+    }
+}
+
+/// An inception entry. Unknown fields are refused, as on the server; serde refuses duplicates.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LogEntry {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InceptionEntry {
     v: u8,
     #[serde(rename = "type")]
     kind: String,
     seq: u32,
-    principal_id: Option<String>,
-    prev: Option<String>,
     identity_key: String,
     recovery_key: String,
-    signer: Option<String>,
+    #[allow(dead_code)]
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A rotation entry, as strictly as [`InceptionEntry`].
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RotationEntry {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: String,
+    principal_id: String,
+    seq: u32,
+    prev: String,
+    identity_key: String,
+    recovery_key: String,
+    signer: String,
+    #[allow(dead_code)]
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 fn invalid(message: impl Into<String>) -> KeyIdentityError {
@@ -524,12 +560,15 @@ fn invalid(message: impl Into<String>) -> KeyIdentityError {
 /// the head's keys are in canonical tagged text whichever version spelled them.
 pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
     let (first, rest) = log.split_first().ok_or_else(|| invalid("empty"))?;
-    let entry: LogEntry =
+    let entry: InceptionEntry =
         serde_json::from_str(&first.payload).map_err(|e| invalid(format!("entry 0: {e}")))?;
     let identity_key = canonical_key(&entry.identity_key, entry.v).map_err(log_error)?;
     let recovery_key = canonical_key(&entry.recovery_key, entry.v).map_err(log_error)?;
     if entry.kind != "inception" || entry.seq != 0 {
         return Err(invalid("entry 0 is not an inception"));
+    }
+    if identity_key == recovery_key {
+        return Err(invalid("the identity and recovery keys must differ"));
     }
     if !verify(first, context::KEY_LOG, &identity_key, entry.v) {
         return Err(invalid("inception signature does not verify"));
@@ -540,13 +579,14 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         seq: 0,
         identity_keys: vec![identity_key.clone()],
         signers: vec![None],
+        hashes: vec![payload_hash(&first.payload)],
         identity_key,
         recovery_key,
         hash: payload_hash(&first.payload),
     };
     for statement in rest {
         let at = head.seq + 1;
-        let entry: LogEntry = serde_json::from_str(&statement.payload)
+        let entry: RotationEntry = serde_json::from_str(&statement.payload)
             .map_err(|e| invalid(format!("entry {at}: {e}")))?;
         let identity_key = canonical_key(&entry.identity_key, entry.v).map_err(log_error)?;
         let recovery_key = canonical_key(&entry.recovery_key, entry.v).map_err(log_error)?;
@@ -559,21 +599,21 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         if entry.kind != "rotate" {
             return Err(invalid(format!("entry {at} is not a rotation")));
         }
-        if entry.principal_id.as_deref() != Some(head.principal_id.as_str())
-            || entry.seq != at
-            || entry.prev.as_deref() != Some(head.hash.as_str())
-        {
+        if entry.principal_id != head.principal_id || entry.seq != at || entry.prev != head.hash {
             return Err(invalid(format!("entry {at} does not extend the log")));
         }
         if identity_key == head.identity_key {
             return Err(invalid("a rotation must change the identity key"));
         }
-        let (signer, signer_key) = match entry.signer.as_deref() {
-            Some("identity") if recovery_key == head.recovery_key => {
+        if identity_key == recovery_key {
+            return Err(invalid("the identity and recovery keys must differ"));
+        }
+        let (signer, signer_key) = match entry.signer.as_str() {
+            "identity" if recovery_key == head.recovery_key => {
                 (RotationSigner::Identity, &head.identity_key)
             }
-            Some("identity") => return Err(invalid("only recovery may change the recovery key")),
-            Some("recovery") => (RotationSigner::Recovery, &head.recovery_key),
+            "identity" => return Err(invalid("only recovery may change the recovery key")),
+            "recovery" => (RotationSigner::Recovery, &head.recovery_key),
             _ => return Err(invalid("unknown rotation signer")),
         };
         if !verify(statement, context::KEY_LOG, signer_key, entry.v) {
@@ -584,14 +624,18 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         identity_keys.push(identity_key.clone());
         let mut signers = head.signers;
         signers.push(Some(signer));
+        let hash = payload_hash(&statement.payload);
+        let mut hashes = head.hashes;
+        hashes.push(hash.clone());
         head = KeyHead {
             principal_id: head.principal_id,
             seq: entry.seq,
             identity_key,
             recovery_key,
-            hash: payload_hash(&statement.payload),
+            hash,
             identity_keys,
             signers,
+            hashes,
         };
     }
     Ok(head)
@@ -639,9 +683,10 @@ pub(crate) fn certificate_claim(
 }
 
 /// The device a certificate vouches for, once the certificate verifies against the log: it
-/// names this log's principal and is signed by the identity key at its `keySeq`. A profile
-/// card lists only devices that pass, so a server cannot slip a key of its own into the card
-/// the identity key signs.
+/// names this log's principal, is signed by the identity key at its `keySeq`, and no recovery
+/// rotation follows that `keySeq` (a recovery voids what the lost key signed). A profile card
+/// lists only devices that pass, so a server cannot slip a key of its own into the card the
+/// identity key signs.
 pub(crate) fn certified_device(
     certificate: &Statement,
     head: &KeyHead,
@@ -655,6 +700,11 @@ pub(crate) fn certified_device(
         .identity_keys
         .get(entry.key_seq as usize)
         .ok_or_else(refused)?;
+    if head.recovered_after(entry.key_seq) {
+        return Err(KeyIdentityError::Invalid(
+            "a device certificate predates a recovery".into(),
+        ));
+    }
     if !verify(certificate, context::DEVICE, signer, entry.v) {
         return Err(refused());
     }
@@ -662,6 +712,52 @@ pub(crate) fn certified_device(
         device_key: canonical_key(&entry.device_key, entry.v)?,
         device_id: entry.device_id,
     })
+}
+
+/// A device revocation as signed.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RevocationEntry {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: String,
+    principal_id: String,
+    device_id: String,
+    signer: String,
+    #[allow(dead_code)]
+    issued_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Whether `revocation` is a signed revocation of `device_id` of the log's principal: by an
+/// identity key of the log (the key current when it was signed), or by the revoked device's
+/// own key `device_key` (canonical tagged text).
+pub(crate) fn verified_revocation(
+    revocation: &Statement,
+    head: &KeyHead,
+    device_id: &str,
+    device_key: &str,
+) -> bool {
+    let Ok(entry) = serde_json::from_str::<RevocationEntry>(&revocation.payload) else {
+        return false;
+    };
+    let same_device = match (
+        uuid::Uuid::parse_str(&entry.device_id),
+        uuid::Uuid::parse_str(device_id),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if entry.kind != "device-revoke" || entry.principal_id != head.principal_id || !same_device {
+        return false;
+    }
+    match entry.signer.as_str() {
+        "identity" => head
+            .identity_keys
+            .iter()
+            .any(|key| verify(revocation, context::DEVICE_REVOKE, key, entry.v)),
+        "device" => verify(revocation, context::DEVICE_REVOKE, device_key, entry.v),
+        _ => false,
+    }
 }
 
 fn log_error(error: KeyIdentityError) -> KeyIdentityError {
@@ -938,6 +1034,178 @@ mod tests {
         assert!(card
             .payload
             .starts_with(r#"{"v":2,"type":"profile-card","principalId":"#));
+    }
+
+    #[test]
+    fn finding_3_a_certificate_before_a_recovery_is_refused() {
+        let cert_at = |seq: u32, signer: &SecretKey| {
+            signer.sign(
+                context::DEVICE,
+                DEVICE_CERT.replace(r#""keySeq":0"#, &format!(r#""keySeq":{seq}"#)),
+            )
+        };
+        let first = inception(&key(1), RECOVERY, AT);
+        let head = replay(std::slice::from_ref(&first)).unwrap();
+
+        // An identity rotation keeps what the earlier key certified.
+        let identity_rotation = rotation(
+            &head,
+            RotationSigner::Identity,
+            &key(1),
+            &key(2).public_key(),
+            AT,
+        );
+        let rotated = replay(&[first.clone(), identity_rotation.clone()]).unwrap();
+        assert!(!rotated.recovered_after(0));
+        assert!(certified_device(&cert_at(0, &key(1)), &rotated).is_ok());
+
+        // A recovery voids it: the certificate at keySeq 0, and the one at keySeq 1, both precede
+        // the recovery at seq 2; only one signed by the recovered key at seq 2 stands.
+        let recovery = rotation(
+            &rotated,
+            RotationSigner::Recovery,
+            &key(101),
+            &key(3).public_key(),
+            AT,
+        );
+        let recovered = replay(&[first, identity_rotation, recovery]).unwrap();
+        assert!(recovered.recovered_after(0) && recovered.recovered_after(1));
+        assert!(!recovered.recovered_after(2));
+        for (seq, signer) in [(0, key(1)), (1, key(2))] {
+            let err = certified_device(&cert_at(seq, &signer), &recovered).unwrap_err();
+            assert!(err.to_string().contains("predates a recovery"), "{err}");
+        }
+        assert!(certified_device(&cert_at(2, &key(3)), &recovered).is_ok());
+    }
+
+    #[test]
+    fn finding_11_the_head_lists_every_entry_hash() {
+        let log = rotated(RotationSigner::Identity, &key(1), &key(2));
+        let head = replay(&log).unwrap();
+        assert_eq!(
+            head.hashes,
+            vec![payload_hash(&log[0].payload), payload_hash(&log[1].payload)]
+        );
+        assert_eq!(head.hashes.last(), Some(&head.hash));
+    }
+
+    /// rim-server's non-canonical vector (y = p + 1, the identity point spelled out of range),
+    /// and y = p + 3, a point of large order spelled the same way.
+    const NON_CANONICAL: [&str; 2] = [
+        "7v_______________________________________38",
+        "8P_______________________________________38",
+    ];
+
+    #[test]
+    fn finding_22_keys_in_a_non_canonical_encoding_are_refused() {
+        for body in NON_CANONICAL {
+            let tagged = format!("{ED25519_TAG}{body}");
+            assert!(usable_device_key(&tagged).is_err(), "{body}");
+            assert!(canonical_key(&tagged, 2).is_err(), "{body}");
+            assert!(canonical_key(body, 1).is_err(), "{body}");
+            let signed = key(1).sign(context::LOGIN, "{}".into());
+            assert!(!verify(&signed, context::LOGIN, &tagged, 2), "{body}");
+        }
+        // y = 3 spelled canonically is a key.
+        let mut canonical = [0u8; 32];
+        canonical[0] = 3;
+        assert!(canonical_key(&format!("{ED25519_TAG}{}", b64(&canonical)), 2).is_ok());
+    }
+
+    #[test]
+    fn finding_22_a_log_whose_identity_and_recovery_keys_match_is_refused() {
+        let same = inception(&key(1), &key(1).public_key(), AT);
+        let err = replay(&[same]).unwrap_err().to_string();
+        assert!(err.contains("must differ"), "{err}");
+
+        let first = inception(&key(1), RECOVERY, AT);
+        let head = replay(std::slice::from_ref(&first)).unwrap();
+        let onto_recovery = rotation(&head, RotationSigner::Identity, &key(1), RECOVERY, AT);
+        let err = replay(&[first, onto_recovery]).unwrap_err().to_string();
+        assert!(err.contains("must differ"), "{err}");
+    }
+
+    #[test]
+    fn finding_22_a_log_entry_with_an_unknown_field_is_refused() {
+        // rim-server's test inserts `"x":1` first.
+        let extra = key(1).sign(context::KEY_LOG, INCEPTION.replacen('{', r#"{"x":1,"#, 1));
+        let err = replay(&[extra]).unwrap_err().to_string();
+        assert!(err.contains("unknown field"), "{err}");
+
+        let first = inception(&key(1), RECOVERY, AT);
+        let head = replay(std::slice::from_ref(&first)).unwrap();
+        let second = rotation(
+            &head,
+            RotationSigner::Identity,
+            &key(1),
+            &key(2).public_key(),
+            AT,
+        );
+        let padded = key(1).sign(
+            context::KEY_LOG,
+            second.payload.replacen('{', r#"{"note":"hi","#, 1),
+        );
+        assert!(replay(&[first.clone(), padded]).is_err());
+        // An inception never names a principal or a previous entry.
+        let prefixed = key(1).sign(
+            context::KEY_LOG,
+            INCEPTION.replacen('{', r#"{"prev":"AA","#, 1),
+        );
+        assert!(replay(&[prefixed]).is_err());
+        // Duplicate fields are refused too.
+        let twice = key(1).sign(
+            context::KEY_LOG,
+            INCEPTION.replacen(
+                '{',
+                &format!(r#"{{"identityKey":"{}","#, key(9).public_key()),
+                1,
+            ),
+        );
+        assert!(replay(&[twice]).is_err());
+    }
+
+    #[test]
+    fn finding_2_a_revocation_counts_only_when_its_signature_verifies() {
+        let head = replay(&[statement(INCEPTION, INCEPTION_SIG)]).unwrap();
+        let by_identity = revocation(&key(1), false, PRINCIPAL, DEVICE_ID, AT);
+        assert!(verified_revocation(&by_identity, &head, DEVICE_ID, DEVICE));
+        let by_device = revocation(&key(20), true, PRINCIPAL, DEVICE_ID, AT);
+        assert!(verified_revocation(&by_device, &head, DEVICE_ID, DEVICE));
+
+        // Signed by a key that is neither, naming another device or principal, or not a
+        // revocation at all.
+        let forged = revocation(&key(66), false, PRINCIPAL, DEVICE_ID, AT);
+        assert!(!verified_revocation(&forged, &head, DEVICE_ID, DEVICE));
+        let device_claims_identity = revocation(&key(20), false, PRINCIPAL, DEVICE_ID, AT);
+        assert!(!verified_revocation(
+            &device_claims_identity,
+            &head,
+            DEVICE_ID,
+            DEVICE
+        ));
+        let other = "00000000-0000-0000-0000-000000000002";
+        assert!(!verified_revocation(&by_identity, &head, other, DEVICE));
+        let elsewhere = revocation(&key(1), false, V1_PRINCIPAL, DEVICE_ID, AT);
+        assert!(!verified_revocation(&elsewhere, &head, DEVICE_ID, DEVICE));
+        let not_one = statement(DEVICE_CERT, DEVICE_CERT_SIG);
+        assert!(!verified_revocation(&not_one, &head, DEVICE_ID, DEVICE));
+
+        // An identity key since rotated away still signed it when it was current.
+        let first = inception(&key(1), RECOVERY, AT);
+        let second = rotation(
+            &replay(std::slice::from_ref(&first)).unwrap(),
+            RotationSigner::Identity,
+            &key(1),
+            &key(2).public_key(),
+            AT,
+        );
+        let rotated = replay(&[first, second]).unwrap();
+        assert!(verified_revocation(
+            &by_identity,
+            &rotated,
+            DEVICE_ID,
+            DEVICE
+        ));
     }
 
     #[test]

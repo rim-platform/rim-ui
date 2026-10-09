@@ -18,7 +18,9 @@
 //!
 //! A secret still in the credential store moves into the vault the first time it is read. A
 //! vault that does not open under its key is moved aside, never overwritten, and the call
-//! that found it fails with [`VaultError::Unreadable`].
+//! that found it fails with [`VaultError::Unreadable`]. A vault where only some records do not
+//! open keeps the others: those records are moved aside on their own, and reading one of them
+//! fails with [`VaultError::RecordUnreadable`] for the rest of the run.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -75,6 +77,13 @@ pub(crate) enum VaultError {
          ({reason}; the old vault was moved to {moved_to})"
     )]
     Unreadable { moved_to: String, reason: String },
+    /// This record did not open under the vault key and was moved aside with any others that
+    /// did not; the rest of the vault is kept.
+    #[error(
+        "the secret {name} could not be opened and is lost on this computer (it was moved to \
+         {moved_to})"
+    )]
+    RecordUnreadable { name: String, moved_to: String },
     /// The vault has a format version this build does not know. It is left as it is.
     #[error("the secret vault was written by a newer version of RIM; update the app")]
     Newer,
@@ -186,6 +195,8 @@ struct State {
     key: Option<Zeroizing<[u8; 32]>>,
     /// Names the credential store is known not to hold this run, so a miss asks it once.
     not_in_store: HashSet<String>,
+    /// Records set aside this run because they did not open, with where they went.
+    unreadable: BTreeMap<String, String>,
 }
 
 /// The encrypted secret file and its key. One lock serializes every call, file access
@@ -218,6 +229,12 @@ impl SecretVault {
         check_name(name)?;
         let mut state = self.lock();
         let mut vault = self.load(&mut state)?;
+        if let Some(moved_to) = state.unreadable.get(name) {
+            return Err(VaultError::RecordUnreadable {
+                name: name.to_string(),
+                moved_to: moved_to.clone(),
+            });
+        }
         if let Some(value) = vault.get(name)? {
             return Ok(Some(value));
         }
@@ -255,7 +272,9 @@ impl SecretVault {
         let mut state = self.lock();
         let mut vault = self.load(&mut state)?;
         vault.put(name, value)?;
-        self.save(&vault.file)
+        self.save(&vault.file)?;
+        state.unreadable.remove(name);
+        Ok(())
     }
 
     /// Delete `name` from the vault, and from the credential store when it may still be
@@ -267,6 +286,7 @@ impl SecretVault {
         if vault.file.records.remove(name).is_some() {
             self.save(&vault.file)?;
         }
+        state.unreadable.remove(name);
         if !state.not_in_store.contains(name) {
             match self.keyring.delete(name) {
                 Ok(()) => {
@@ -286,7 +306,8 @@ impl SecretVault {
     }
 
     /// The vault key and the file, every record of which opens. An unusable file is moved
-    /// aside; the key is created when there is neither a key nor a vault worth keeping.
+    /// aside, and so are records that do not open beside ones that do; the key is created when
+    /// there is neither a key nor a vault worth keeping.
     fn load(&self, state: &mut State) -> Result<Loaded, VaultError> {
         let stored_key = match state.key.as_ref() {
             Some(key) => Some(key.clone()),
@@ -305,13 +326,19 @@ impl SecretVault {
 
         let (key, file) = match (stored_key, raw) {
             (key, None) => (key, VaultFile::empty()),
-            (Some(key), Some(raw)) => {
-                match parse(&raw).and_then(|file| verify(&key, &file).map(|()| file)) {
-                    Ok(file) => (Some(key), file),
-                    Err(Rejected::Newer) => return Err(VaultError::Newer),
-                    Err(Rejected::Unreadable(reason)) => return Err(self.set_aside(reason)),
+            (Some(key), Some(raw)) => match parse(&raw).and_then(|file| split(&key, file)) {
+                Ok((file, unopened)) if unopened.is_empty() => (Some(key), file),
+                Ok((file, unopened)) => {
+                    let moved_to = self.set_aside_records(&unopened)?;
+                    self.save(&file)?;
+                    for name in unopened.keys() {
+                        state.unreadable.insert(name.clone(), moved_to.clone());
+                    }
+                    (Some(key), file)
                 }
-            }
+                Err(Rejected::Newer) => return Err(VaultError::Newer),
+                Err(Rejected::Unreadable(reason)) => return Err(self.set_aside(reason)),
+            },
             (None, Some(raw)) => match parse(&raw) {
                 Ok(file) if file.records.is_empty() => (None, file),
                 Err(Rejected::Newer) => return Err(VaultError::Newer),
@@ -390,6 +417,35 @@ impl SecretVault {
         }
     }
 
+    /// Write `records`, which did not open, to `secrets.vault.unreadable-records-<timestamp>` as
+    /// a vault file of their own, and say where.
+    fn set_aside_records(
+        &self,
+        records: &BTreeMap<String, SealedRecord>,
+    ) -> Result<String, VaultError> {
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
+        let aside = self
+            .path
+            .with_file_name(format!("{FILE_NAME}.unreadable-records-{stamp}"));
+        let json = serde_json::to_vec(&VaultFile {
+            records: records.clone(),
+            ..VaultFile::empty()
+        })
+        .map_err(|e| VaultError::Failed(format!("cannot encode the records set aside: {e}")))?;
+        write_new(&aside, &json).map_err(|e| {
+            VaultError::Failed(format!(
+                "records of the secret vault do not open and could not be moved aside: {e}"
+            ))
+        })?;
+        let names: Vec<&str> = records.keys().map(String::as_str).collect();
+        log::warn!(
+            "[secret_store] vault records that do not open were moved to {}: {}",
+            aside.display(),
+            names.join(", ")
+        );
+        Ok(aside.display().to_string())
+    }
+
     /// Replace the vault file atomically: write a temporary file next to it, flush it to
     /// disk, rename it over the vault. Owner-only on Unix.
     fn save(&self, file: &VaultFile) -> Result<(), VaultError> {
@@ -444,12 +500,29 @@ fn parse(raw: &[u8]) -> Result<VaultFile, Rejected> {
     serde_json::from_slice(raw).map_err(|e| Rejected::Unreadable(format!("it is malformed: {e}")))
 }
 
-/// Every record opens under `key`.
-fn verify(key: &[u8; 32], file: &VaultFile) -> Result<(), Rejected> {
-    for (name, record) in &file.records {
-        open_record(key, name, record).map_err(Rejected::Unreadable)?;
+/// The file with the records that open under `key`, and the records that do not. When none
+/// opens, the key is not the vault's and the whole file is unreadable.
+fn split(
+    key: &[u8; 32],
+    mut file: VaultFile,
+) -> Result<(VaultFile, BTreeMap<String, SealedRecord>), Rejected> {
+    let mut unopened = BTreeMap::new();
+    let mut first_error = None;
+    let names: Vec<String> = file.records.keys().cloned().collect();
+    for name in names {
+        if let Err(e) = open_record(key, &name, &file.records[&name]) {
+            first_error.get_or_insert(e);
+            if let Some(record) = file.records.remove(&name) {
+                unopened.insert(name, record);
+            }
+        }
     }
-    Ok(())
+    if file.records.is_empty() {
+        if let Some(reason) = first_error {
+            return Err(Rejected::Unreadable(reason));
+        }
+    }
+    Ok((file, unopened))
 }
 
 fn aad(name: &str) -> Vec<u8> {
@@ -869,7 +942,7 @@ mod tests {
         assert!(open_record(&key, "b", &record).is_err());
         assert!(open_record(&[8u8; 32], "a", &record).is_err());
 
-        // Copied under another name in the file, it does not open, and the vault is set aside.
+        // Copied under another name in the file, it does not open, and that record is set aside.
         let dir = tempfile::tempdir().unwrap();
         let keyring = MemoryKeyring::default();
         vault(dir.path(), &keyring).write("a", "secret").unwrap();
@@ -882,8 +955,10 @@ mod tests {
         )
         .unwrap();
 
-        let err = vault(dir.path(), &keyring).read("b").unwrap_err();
-        assert!(matches!(err, VaultError::Unreadable { .. }), "{err}");
+        let vault = vault(dir.path(), &keyring);
+        let err = vault.read("b").unwrap_err();
+        assert!(matches!(err, VaultError::RecordUnreadable { .. }), "{err}");
+        assert_eq!(read(&vault, "a").as_deref(), Some("secret"));
     }
 
     #[test]
@@ -978,6 +1053,53 @@ mod tests {
         assert_eq!(read(&vault, "a"), None);
         vault.write("a", "again").unwrap();
         assert_eq!(read(&vault, "a").as_deref(), Some("again"));
+    }
+
+    #[test]
+    fn finding_18_a_record_that_does_not_open_is_set_aside_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let keyring = MemoryKeyring::default();
+        let first = vault(dir.path(), &keyring);
+        first.write("a", "one").unwrap();
+        first.write("b", "two").unwrap();
+        first.write("c", "three").unwrap();
+        // Damage record b alone: its ciphertext no longer opens.
+        let mut file = stored(dir.path());
+        let sealed = &mut file.records.get_mut("b").unwrap().sealed;
+        let flipped = if sealed.starts_with('A') { "B" } else { "A" };
+        sealed.replace_range(0..1, flipped);
+        fs::write(
+            dir.path().join(FILE_NAME),
+            serde_json::to_vec(&file).unwrap(),
+        )
+        .unwrap();
+
+        let vault = vault(dir.path(), &keyring);
+        assert_eq!(read(&vault, "a").as_deref(), Some("one"));
+        assert_eq!(read(&vault, "c").as_deref(), Some("three"));
+        let err = vault.read("b").unwrap_err();
+        assert!(
+            matches!(&err, VaultError::RecordUnreadable { name, .. } if name == "b"),
+            "{err}"
+        );
+        assert_eq!(
+            stored(dir.path()).records.keys().collect::<Vec<_>>(),
+            ["a", "c"]
+        );
+        let aside = set_aside_files(dir.path());
+        assert_eq!(aside.len(), 1);
+        assert!(aside[0].starts_with("secrets.vault.unreadable-records-"));
+        let moved: VaultFile =
+            serde_json::from_slice(&fs::read(dir.path().join(&aside[0])).unwrap()).unwrap();
+        assert_eq!(moved.records.keys().collect::<Vec<_>>(), ["b"]);
+        assert_eq!(moved.records["b"].sealed, file.records["b"].sealed);
+
+        // A new value replaces it; another run never sees the damaged one.
+        vault.write("b", "again").unwrap();
+        assert_eq!(read(&vault, "b").as_deref(), Some("again"));
+        let next = super::SecretVault::new(dir.path(), Box::new(keyring.clone()));
+        assert_eq!(read(&next, "b").as_deref(), Some("again"));
+        assert_eq!(read(&next, "a").as_deref(), Some("one"));
     }
 
     #[test]

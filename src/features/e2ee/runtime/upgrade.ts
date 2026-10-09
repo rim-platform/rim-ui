@@ -8,6 +8,7 @@ import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-typ
 import { fetchConversationGroup } from "../api/e2eeApi";
 import { createGroup } from "./groups";
 import { conversationMembers, notReadyMembers } from "./members";
+import { pinnedEncrypted } from "./pins";
 import type { E2eeSession } from "./session";
 
 /** A conversation as the upgrade needs it. */
@@ -30,7 +31,8 @@ export function upgradeEligible(conversation: UpgradeCandidate, userId: string):
 /**
  * Upgrade `conversation` when it is a plaintext DM or group, this device's user is eligible
  * and every member is ready. `checked` hears who is not ready before the upgrade starts and
- * may stop it by answering false. Returns the names of the members who are not ready yet.
+ * may stop it by answering false. Returns the names of the members who are not ready yet. A
+ * conversation this device pinned as encrypted is never upgraded again, whatever the server says.
  */
 export async function upgradeIfReady(
   session: E2eeSession,
@@ -39,6 +41,7 @@ export async function upgradeIfReady(
   checked: (notReady: string[]) => boolean = () => true,
 ): Promise<string[]> {
   if (conversation.encryptedAt) return [];
+  if (await pinnedEncrypted(workspaceId, conversation.id)) return [];
   const members = await conversationMembers(workspaceId, conversation.memberIds);
   const { names } = await notReadyMembers(members);
   if (!checked(names)) return names;

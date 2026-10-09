@@ -120,13 +120,7 @@ impl Client {
             .unwrap();
         self.dev.store.commit();
         if let CommitOutcome::Applied(applied) = &outcome {
-            let leaves = if applied.summary_matches {
-                applied.to_verify.clone()
-            } else if applied.self_removed {
-                vec![]
-            } else {
-                self.dev.mls.leaves(&self.dev.store, group).unwrap()
-            };
+            let leaves = applied.to_verify.clone();
             let all = if applied.self_removed {
                 vec![]
             } else {
@@ -181,7 +175,8 @@ impl Client {
             let expected = DecryptExpectations {
                 message_id: row.id,
                 thread_root_id: None,
-                author_principal_id: Some(row.author.clone()),
+                author_principal_id: row.author.clone(),
+                sender_device_id: row.sender_device,
             };
             let shown = match self.dev.mls.decrypt(
                 &self.dev.store,
@@ -249,7 +244,8 @@ impl Client {
                     self.dev
                         .mls
                         .commit_accepted(&self.dev.store, group)
-                        .unwrap(),
+                        .unwrap()
+                        .epoch,
                     epoch
                 );
                 if let Some(old) = self.incarnation.filter(|old| *old != group.incarnation) {
@@ -567,7 +563,7 @@ fn a_submit_without_an_answer_is_settled_by_the_commit_at_that_epoch() {
             .mls
             .process_commit(&clients[0].dev.store, group, &at_epoch)
             .unwrap(),
-        CommitOutcome::OwnMerged { epoch: 2 }
+        CommitOutcome::OwnMerged(crate::MergedCommit { epoch: 2, .. })
     ));
     clients[0].dev.store.commit();
     let id = clients[0].send(&mut server, "settled").unwrap();
@@ -919,7 +915,8 @@ fn a_message_decrypts_once() {
     let expected = DecryptExpectations {
         message_id: id,
         thread_root_id: None,
-        author_principal_id: None,
+        author_principal_id: server.feed[0].author.clone(),
+        sender_device_id: server.feed[0].sender_device,
     };
     let group = clients[1].group(&server);
     let receiver = &clients[1].dev;
@@ -993,7 +990,8 @@ fn a_crash_between_decrypt_and_store_leaves_both_undone() {
     let expected = DecryptExpectations {
         message_id: content.id,
         thread_root_id: None,
-        author_principal_id: None,
+        author_principal_id: sender.device.principal_id.clone(),
+        sender_device_id: sender.device.device_id,
     };
     let decrypt_and_store = |conn: &mut Connection, commit: bool| {
         let tx = conn.transaction().unwrap();

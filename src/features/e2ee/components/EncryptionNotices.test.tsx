@@ -27,10 +27,14 @@ function group(overrides: Partial<GroupView> = {}): GroupView {
     readdRequestedAt: null,
     lastUpdateAt: null,
     resets: [],
+    membership: [],
     hasGroup: true,
     epoch: 3,
     commitPending: false,
     awaitingReadd: null,
+    pinned: true,
+    pinnedEncryptedAt: "2026-10-09T00:00:00Z",
+    dmPrincipals: null,
     ...overrides,
   };
 }
@@ -43,6 +47,7 @@ function e2ee(overrides: Record<string, unknown>) {
     desktop: true,
     group: group(),
     notReady: [],
+    foreignMembers: [],
     sendBlock: null,
     ...overrides,
   } as never;
@@ -145,5 +150,42 @@ describe("EncryptionNotices", () => {
       <EncryptionNotices workspaceId="ws" e2ee={e2ee({})} />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("finding 1: says the server reset encryption and that sending stopped", () => {
+    renderWithProviders(
+      <EncryptionNotices workspaceId="ws" e2ee={e2ee({ sendBlock: "encryptionReset" })} />,
+    );
+    expect(screen.getByText("Encryption was reset by the server")).toBeInTheDocument();
+    expect(screen.getByText(/RIM keeps it encrypted on this device/)).toBeInTheDocument();
+  });
+
+  it("finding 4: names whom the server tried to add to a direct message", () => {
+    renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({ foreignMembers: ["Mallory"], sendBlock: "foreignMember" })}
+      />,
+    );
+    expect(
+      screen.getByText("The server tried to add Mallory to this conversation"),
+    ).toBeInTheDocument();
+  });
+
+  it("finding 11: says whose identity changed in a way RIM cannot verify", () => {
+    renderWithProviders(
+      <EncryptionNotices
+        workspaceId="ws"
+        e2ee={e2ee({
+          group: group({
+            unverified: [{ principalId: "rimp1_bob", deviceId: "dev-b", reason: "keyLogForked" }],
+          }),
+          sendBlock: "unverified",
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(/Bob's identity changed in a way RIM cannot verify/),
+    ).toBeInTheDocument();
   });
 });

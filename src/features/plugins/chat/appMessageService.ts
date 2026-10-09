@@ -11,6 +11,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { fetchConversation, findCachedConversation } from "../../conversations/api/useConversation";
 import { fetchThreadRoot } from "../../e2ee/api/e2eeApi";
 import { workspaceMembers } from "../../e2ee/runtime/members";
+import { pinnedEncrypted, refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 import { sendEncrypted } from "../../e2ee/runtime/send";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import type * as PluginViewModule from "../../e2ee/web/pluginView";
@@ -117,11 +118,15 @@ export function chatCache(): ChatCache | null {
   return account ? webChatCache(account) : null;
 }
 
-/** Whether the person's conversation is encrypted, from the server or, offline, the lists. */
+/**
+ * Whether the person's conversation is encrypted: pinned so on this device, or by the server or,
+ * offline, the lists.
+ */
 export async function conversationEncrypted(
   workspaceId: string,
   conversationId: string,
 ): Promise<boolean | null> {
+  if (await pinnedEncrypted(workspaceId, conversationId).catch(() => false)) return true;
   try {
     const conversation = await fetchConversation(queryClient, workspaceId, conversationId);
     return Boolean(conversation.encryptedAt);
@@ -183,6 +188,7 @@ export async function postAsUser({
     });
   }
 
+  await refusePlaintextIfPinned(workspaceId, conversationId);
   if (rootMessageId) {
     const res = await graphqlClient.request<{ replyToMessage: { id: string } }>(
       REPLY_TO_MESSAGE_MUTATION,

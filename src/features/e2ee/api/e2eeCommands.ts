@@ -44,6 +44,17 @@ export interface Reset extends DeviceRefView {
   incarnation: number;
 }
 
+/**
+ * A principal a processed Commit brought into the group or took out of it; the timeline shows
+ * it before the first message of `epoch`, the epoch the Commit made.
+ */
+export interface MembershipEvent {
+  incarnation: number;
+  epoch: number;
+  kind: "added" | "removed";
+  principalId: string;
+}
+
 /** Where a conversation's group stands on this device. */
 export interface GroupView {
   conversationId: string;
@@ -57,10 +68,17 @@ export interface GroupView {
   readdRequestedAt: number | null;
   lastUpdateAt: number | null;
   resets: Reset[];
+  membership: MembershipEvent[];
   hasGroup: boolean;
   epoch: number | null;
   commitPending: boolean;
   awaitingReadd: number | null;
+  /** This device knows the conversation is encrypted, whatever the server says now. */
+  pinned: boolean;
+  /** The server's `encryptedAt` as this device first saw it. */
+  pinnedEncryptedAt: string | null;
+  /** A direct message's two principals, as pinned. */
+  dmPrincipals: string[] | null;
 }
 
 export interface OutgoingCommit {
@@ -268,6 +286,24 @@ const tauriE2eeCommands = {
     }),
   forget: (account: CacheAccount, workspaceId: string, conversationId: string) =>
     command<null>("e2ee_forget", { account, workspaceId, conversationId }),
+  /**
+   * Pin the conversation as encrypted on this device: the server's `encryptedAt`, and a direct
+   * message's two principals. The first values pinned stay.
+   */
+  pin: (
+    account: CacheAccount,
+    workspaceId: string,
+    conversationId: string,
+    encryptedAt: string | null,
+    dmPrincipals: string[] | null,
+  ) =>
+    command<GroupView>("e2ee_pin", {
+      account,
+      workspaceId,
+      conversationId,
+      encryptedAt,
+      dmPrincipals,
+    }),
 };
 
 /** The encryption commands, whichever backend runs them. */
@@ -302,6 +338,7 @@ export const e2eeCommands: E2eeCommands = {
   reencryptMessage: routed("reencryptMessage"),
   settleMessage: routed("settleMessage"),
   forget: routed("forget"),
+  pin: routed("pin"),
 };
 
 /**

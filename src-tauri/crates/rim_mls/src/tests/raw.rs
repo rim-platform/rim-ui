@@ -67,6 +67,19 @@ pub(crate) fn commit_raw(
     removes: &[DeviceRef],
     aad: &[u8],
 ) -> (Vec<u8>, Option<Vec<u8>>) {
+    commit_raw_with(dev, group, adds, removes, aad, false)
+}
+
+/// [`commit_raw`] with, when `extensions` is set, a GroupContextExtensions proposal that
+/// restates the group's extensions.
+pub(crate) fn commit_raw_with(
+    dev: &TestDevice,
+    group: ConversationGroup,
+    adds: &[ClaimedKeyPackage],
+    removes: &[DeviceRef],
+    aad: &[u8],
+    extensions: bool,
+) -> (Vec<u8>, Option<Vec<u8>>) {
     let messages = with_crypto!(&dev.mls.backend, |crypto| {
         let provider = Provider::new(crypto, KvStorage::new(dev.store.backend()));
         let identity = load_identity(dev.store.backend()).unwrap();
@@ -81,10 +94,15 @@ pub(crate) fn commit_raw(
             .collect();
         mls_group.set_aad(aad.to_vec());
         let signer = identity.signer(crypto);
-        let bundle = mls_group
+        let current = mls_group.extensions().clone();
+        let mut builder = mls_group
             .commit_builder()
             .propose_adds(key_packages)
-            .propose_removals(removed)
+            .propose_removals(removed);
+        if extensions {
+            builder = builder.propose_group_context_extensions(current).unwrap();
+        }
+        let bundle = builder
             .load_psks(provider.storage())
             .unwrap()
             .build(provider.rand(), provider.crypto(), &signer, |_| true)

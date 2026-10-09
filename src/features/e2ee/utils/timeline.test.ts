@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MessageE2ee, MessageItem } from "../../../core/types/messages";
-import { withEncryptionNotices, type TimelineMessage } from "./timeline";
+import { withEncryptionNotices, withSenderAsAuthor, type TimelineMessage } from "./timeline";
 
 function message(id: string, sentAt: string, extra: Partial<MessageItem> = {}): MessageItem {
   return {
@@ -25,8 +25,8 @@ function message(id: string, sentAt: string, extra: Partial<MessageItem> = {}): 
   };
 }
 
-function e2ee(status: MessageE2ee["status"], incarnation = 1): MessageE2ee {
-  return { status, incarnation, epoch: 1, senderDeviceId: "d" };
+function e2ee(status: MessageE2ee["status"], incarnation = 1, epoch = 1): MessageE2ee {
+  return { status, incarnation, epoch, senderDeviceId: "d" };
 }
 
 const context = {
@@ -83,5 +83,62 @@ describe("withEncryptionNotices", () => {
   it("places the marker last when every loaded message predates encryption", () => {
     const items = withEncryptionNotices([message("old", "2026-10-09T09:00:00Z")], context);
     expect(shape(items)).toEqual(["old", "[encryptedFrom]"]);
+  });
+
+  it("finding 4: places who was added and removed where their Commits took effect", () => {
+    const at = (n: number) => `2026-10-09T11:00:0${n}Z`;
+    const items = withEncryptionNotices(
+      [
+        message("e1", at(1), { e2ee: e2ee("decrypted", 1, 1) }),
+        message("e2", at(2), { e2ee: e2ee("decrypted", 1, 2) }),
+        message("e3", at(3), { e2ee: e2ee("decrypted", 1, 4) }),
+      ],
+      {
+        ...context,
+        membership: [
+          { incarnation: 1, epoch: 4, kind: "removed", principalId: "rimp1_carol" },
+          { incarnation: 1, epoch: 1, kind: "added", principalId: "rimp1_old" },
+          { incarnation: 1, epoch: 2, kind: "added", principalId: "rimp1_carol" },
+          { incarnation: 1, epoch: 6, kind: "added", principalId: "rimp1_dave" },
+        ],
+      },
+    );
+    const lines = (m: TimelineMessage) =>
+      m.e2eeNotice?.kind === "member"
+        ? `${m.e2eeNotice.principalId} ${m.e2eeNotice.change}`
+        : (m.e2eeNotice?.kind ?? m.id);
+    // An event at the first loaded epoch may belong to an older page: it is left out.
+    expect(items.map(lines)).toEqual([
+      "encryptedFrom",
+      "e1",
+      "rimp1_carol added",
+      "e2",
+      "rimp1_carol removed",
+      "e3",
+      "rimp1_dave added",
+    ]);
+  });
+
+  it("finding 5: shows a decrypted message as its MLS sender's, whoever the row names", () => {
+    const decrypted = { ...e2ee("decrypted"), senderPrincipalId: "rimp1_bob" };
+    const [, shown] = withEncryptionNotices(
+      [message("m", "2026-10-09T11:00:00Z", { authorId: "u-a", e2ee: decrypted })],
+      context,
+    );
+    expect(shown.authorId).toBe("u-b");
+    expect(shown.author).toMatchObject({ id: "u-b", principalId: "rimp1_bob" });
+
+    // A sender who is no member here is shown as such, never as the row's author.
+    const stranger = withSenderAsAuthor(
+      message("m", "2026-10-09T11:00:00Z", {
+        e2ee: { ...decrypted, senderPrincipalId: "rimp1_x" },
+      }),
+      context.userOfPrincipal,
+    );
+    expect(stranger.authorId).toBe("rimp1_x");
+    expect(stranger.author?.displayName).toBe("Unknown member");
+    // A message that could not be verified keeps the row's author: it shows no content.
+    const invalid = message("i", "2026-10-09T11:00:00Z", { e2ee: e2ee("invalid") });
+    expect(withSenderAsAuthor(invalid, context.userOfPrincipal)).toBe(invalid);
   });
 });

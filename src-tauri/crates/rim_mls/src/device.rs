@@ -30,6 +30,9 @@ pub const KEY_PACKAGE_LOW_WATER: u32 = 10;
 pub const KEY_PACKAGE_LIFETIME_SECS: u64 = 90 * 24 * 60 * 60;
 /// How far before now a key package's lifetime starts, for skewed clocks.
 const KEY_PACKAGE_BACKDATE_SECS: u64 = 60 * 60;
+/// How far short of [`KEY_PACKAGE_LIFETIME_SECS`] a key package's lifetime ends, so a server
+/// whose clock is behind this device's still accepts it.
+pub const KEY_PACKAGE_CLOCK_MARGIN_SECS: u64 = 60 * 60;
 const DAY_SECS: u64 = 24 * 60 * 60;
 
 /// The device's MLS identity as stored with the group state.
@@ -219,12 +222,12 @@ struct KeyPackageRecord {
     replaced_at: Option<u64>,
 }
 
-/// The lifetime of key packages generated at `now` (Unix seconds): from an hour before it, for
-/// [`KEY_PACKAGE_LIFETIME_SECS`].
+/// The lifetime of key packages generated at `now` (Unix seconds): from an hour before it to an
+/// hour short of [`KEY_PACKAGE_LIFETIME_SECS`] after it.
 pub(crate) fn key_package_lifetime(now: u64) -> (u64, u64) {
     (
         now.saturating_sub(KEY_PACKAGE_BACKDATE_SECS),
-        now + KEY_PACKAGE_LIFETIME_SECS,
+        now + KEY_PACKAGE_LIFETIME_SECS - KEY_PACKAGE_CLOCK_MARGIN_SECS,
     )
 }
 

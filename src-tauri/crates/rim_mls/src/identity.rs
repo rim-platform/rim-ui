@@ -110,14 +110,15 @@ pub(crate) fn tagged_key(key: &[u8; 32]) -> String {
     format!("{ED25519_TAG}{}", b64(key))
 }
 
-/// A tagged Ed25519 public key: canonical spelling, a valid point, not a weak key.
+/// A tagged Ed25519 public key: canonical spelling, a valid point in its canonical encoding,
+/// not a weak key.
 pub(crate) fn parse_tagged_key(text: &str) -> Result<[u8; 32]> {
     let bad = || Error::malformed("ed25519 key", "not a canonical tagged Ed25519 key");
     let bytes: [u8; 32] = unb64(text.strip_prefix(ED25519_TAG).ok_or_else(bad)?)?
         .try_into()
         .map_err(|_| bad())?;
     let key = VerifyingKey::from_bytes(&bytes).map_err(|_| bad())?;
-    if key.is_weak() {
+    if key.is_weak() || key.to_edwards().compress().to_bytes() != bytes {
         return Err(bad());
     }
     Ok(bytes)

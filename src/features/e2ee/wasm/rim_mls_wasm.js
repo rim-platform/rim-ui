@@ -32,19 +32,31 @@ export class Engine {
         }
     }
     /**
-     * The server accepted the pending Commit: merge it. Returns the new epoch.
+     * The server accepted the pending Commit: merge it. Returns `{epoch, membership: {added,
+     * removed}}`, the principals it brought in and took out.
      * @param {string} conversation_id
      * @param {number} incarnation
-     * @returns {number}
+     * @returns {string}
      */
     commitAccepted(conversation_id, incarnation) {
-        const ptr0 = passStringToWasm0(conversation_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.engine_commitAccepted(this.__wbg_ptr, ptr0, len0, incarnation);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(conversation_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.engine_commitAccepted(this.__wbg_ptr, ptr0, len0, incarnation);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
         }
-        return ret[0];
     }
     /**
      * The server refused the pending Commit: drop it.
@@ -91,7 +103,7 @@ export class Engine {
     }
     /**
      * Decrypt an envelope once and check it against its row (`{messageId, threadRootId,
-     * authorPrincipalId}`).
+     * authorPrincipalId, senderDeviceId}`).
      * @param {string} conversation_id
      * @param {number} incarnation
      * @param {string} envelope
@@ -260,7 +272,8 @@ export class Engine {
         }
     }
     /**
-     * Join `incarnation` of the conversation's group from a Welcome.
+     * Join `incarnation` of the conversation's group from a Welcome. A Welcome to an epoch the
+     * held state already reached fails with `E2EE_STALE_WELCOME`.
      * @param {string} conversation_id
      * @param {number} incarnation
      * @param {string} welcome

@@ -13,9 +13,10 @@ export class Engine {
      */
     changes(): string;
     /**
-     * The server accepted the pending Commit: merge it. Returns the new epoch.
+     * The server accepted the pending Commit: merge it. Returns `{epoch, membership: {added,
+     * removed}}`, the principals it brought in and took out.
      */
-    commitAccepted(conversation_id: string, incarnation: number): number;
+    commitAccepted(conversation_id: string, incarnation: number): string;
     /**
      * The server refused the pending Commit: drop it.
      */
@@ -27,7 +28,7 @@ export class Engine {
     createGroup(conversation_id: string, incarnation: number, claimed: string): string;
     /**
      * Decrypt an envelope once and check it against its row (`{messageId, threadRootId,
-     * authorPrincipalId}`).
+     * authorPrincipalId, senderDeviceId}`).
      */
     decrypt(conversation_id: string, incarnation: number, envelope: string, expected: string): string;
     /**
@@ -60,7 +61,8 @@ export class Engine {
      */
     installMlsKeyStatement(payload: string, signature: string, device_key: string): void;
     /**
-     * Join `incarnation` of the conversation's group from a Welcome.
+     * Join `incarnation` of the conversation's group from a Welcome. A Welcome to an epoch the
+     * held state already reached fails with `E2EE_STALE_WELCOME`.
      */
     join(conversation_id: string, incarnation: number, welcome: string): string;
     /**
@@ -148,7 +150,7 @@ export interface InitOutput {
     readonly buildContent: (a: number, b: number) => [number, number, number, number];
     readonly cipherSuite: () => number;
     readonly engine_changes: (a: number) => [number, number];
-    readonly engine_commitAccepted: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly engine_commitAccepted: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly engine_commitRejected: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engine_createGroup: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly engine_decrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];

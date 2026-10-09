@@ -10,7 +10,8 @@
  *
  * `JSON.parse` keeps the last of two fields with one name, where the Tauri side refuses the
  * payload. Every statement read here was already accepted by a server that refuses duplicates,
- * and its signature still has to verify.
+ * and its signature still has to verify. Key log entries and revocations with fields the spec
+ * does not name are refused, as the server and the Tauri side refuse them.
  */
 
 import { b64, concat, sameBytes, sha256, unb64, utf8 } from "./bytes";
@@ -19,6 +20,7 @@ import { b64, concat, sameBytes, sha256, unb64, utf8 } from "./bytes";
 export const CONTEXT = {
   keyLog: utf8("rim.keylog.v1\0"),
   device: utf8("rim.device.v1\0"),
+  deviceRevoke: utf8("rim.device-revoke.v1\0"),
   login: utf8("rim.login.v1\0"),
   pluginManifest: utf8("rim.plugin-manifest.v1\0"),
   mlsKey: utf8("rim.mls-key.v1\0"),
@@ -248,6 +250,21 @@ function optionalText(fields: Fields, name: string): string | null | undefined {
   return typeof value === "string" ? value : null;
 }
 
+/** Whether `fields` has a field outside `allowed`. */
+function unknownField(fields: Fields, allowed: readonly string[]): boolean {
+  return Object.keys(fields).some((name) => !allowed.includes(name));
+}
+
+/** An RFC 3339 timestamp field. */
+function timestamp(fields: Fields, name: string): string | null {
+  const value = text(fields, name);
+  return value !== null && !Number.isNaN(Date.parse(value)) ? value : null;
+}
+
+const INCEPTION_FIELDS = ["v", "type", "seq", "identityKey", "recoveryKey", "createdAt"];
+const ROTATION_FIELDS = [...INCEPTION_FIELDS, "principalId", "prev", "signer"];
+const REVOCATION_FIELDS = ["v", "type", "principalId", "deviceId", "signer", "issuedAt"];
+
 const U8 = 0xff;
 const U32 = 0xffffffff;
 
@@ -265,6 +282,13 @@ export interface KeyHead {
   identityKeys: string[];
   /** Who signed the entry at every seq, oldest first; `null` for the inception. */
   signers: (RotationSigner | null)[];
+  /** base64url(SHA-256(payload)) of the entry at every seq, oldest first. */
+  hashes: string[];
+}
+
+/** Whether a recovery rotation follows the entry at `seq`: what its identity key signed is void. */
+export function recoveredAfter(head: KeyHead, seq: number): boolean {
+  return head.signers.slice(seq + 1).some((signer) => signer === "recovery");
 }
 
 /** Who signed a rotation. */
@@ -305,7 +329,9 @@ function readLogEntry(payload: string, at: number): LogEntry {
     recoveryKey === null ||
     principal === null ||
     prev === null ||
-    signer === null
+    signer === null ||
+    timestamp(fields, "createdAt") === null ||
+    unknownField(fields, at === 0 ? INCEPTION_FIELDS : ROTATION_FIELDS)
   ) {
     throw unreadable();
   }
@@ -334,6 +360,7 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
   if (entry.kind !== "inception" || entry.seq !== 0) {
     throw logError("entry 0 is not an inception");
   }
+  if (identityKey === recoveryKey) throw logError("the identity and recovery keys must differ");
   if (!(await verify(first, CONTEXT.keyLog, identityKey, entry.v))) {
     throw logError("inception signature does not verify");
   }
@@ -346,6 +373,7 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
     hash: await payloadHash(first.payload),
     identityKeys: [identityKey],
     signers: [null],
+    hashes: [await payloadHash(first.payload)],
   };
   for (const statement of rest) {
     const at = head.seq + 1;
@@ -361,6 +389,9 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
     }
     if (nextIdentity === head.identityKey) {
       throw logError("a rotation must change the identity key");
+    }
+    if (nextIdentity === nextRecovery) {
+      throw logError("the identity and recovery keys must differ");
     }
     let signerKey: string;
     let signer: RotationSigner;
@@ -380,14 +411,16 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
       throw logError(`entry ${at} signature does not verify`);
     }
     version = next.v;
+    const hash = await payloadHash(statement.payload);
     head = {
       principalId: head.principalId,
       seq: next.seq,
       identityKey: nextIdentity,
       recoveryKey: nextRecovery,
-      hash: await payloadHash(statement.payload),
+      hash,
       identityKeys: [...head.identityKeys, nextIdentity],
       signers: [...head.signers, signer],
+      hashes: [...head.hashes, hash],
     };
   }
   return head;
@@ -457,7 +490,8 @@ export interface CertifiedDevice {
 
 /**
  * The device a certificate vouches for, once it verifies against the log: it names this log's
- * principal and is signed by the identity key at its `keySeq`.
+ * principal, is signed by the identity key at its `keySeq`, and no recovery rotation follows that
+ * `keySeq` (a recovery voids what the lost key signed).
  */
 export async function certifiedDevice(
   certificate: Statement,
@@ -468,6 +502,9 @@ export async function certifiedDevice(
   if (!entry || entry.kind !== "device" || entry.principalId !== head.principalId) throw refused();
   const signer = head.identityKeys[entry.keySeq];
   if (signer === undefined) throw refused();
+  if (recoveredAfter(head, entry.keySeq)) {
+    throw new StatementError("a device certificate predates a recovery");
+  }
   if (!(await verify(certificate, CONTEXT.device, signer, entry.v))) throw refused();
   let deviceKey: string;
   try {
@@ -476,4 +513,40 @@ export async function certifiedDevice(
     throw refused();
   }
   return { deviceId: entry.deviceId, deviceKey };
+}
+
+// ─── Device revocations ─────────────────────────────────────────────────────
+
+/**
+ * Whether `revocation` is a signed revocation of `deviceId` of the log's principal: by an
+ * identity key of the log (the key current when it was signed), or by the revoked device's own
+ * key `deviceKey` (canonical tagged text).
+ */
+export async function verifiedRevocation(
+  revocation: Statement,
+  head: KeyHead,
+  deviceId: string,
+  deviceKey: string,
+): Promise<boolean> {
+  const fields = parseObject(revocation.payload);
+  if (!fields || unknownField(fields, REVOCATION_FIELDS)) return false;
+  const v = uint(fields, "v", U8);
+  const named = text(fields, "deviceId");
+  const signer = text(fields, "signer");
+  if (
+    v === null ||
+    text(fields, "type") !== "device-revoke" ||
+    text(fields, "principalId") !== head.principalId ||
+    named === null ||
+    named.toLowerCase() !== deviceId.toLowerCase() ||
+    timestamp(fields, "issuedAt") === null
+  ) {
+    return false;
+  }
+  if (signer === "device") return verify(revocation, CONTEXT.deviceRevoke, deviceKey, v);
+  if (signer !== "identity") return false;
+  for (const key of head.identityKeys) {
+    if (await verify(revocation, CONTEXT.deviceRevoke, key, v)) return true;
+  }
+  return false;
 }
