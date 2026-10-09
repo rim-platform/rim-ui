@@ -84,9 +84,13 @@ A user who signed in on this device before can open the app without a connection
   (and fall back) while the OS reports no network.
 - While offline a banner says so and sending is off (typing still works). Writes fail at once
   instead of waiting to be replayed: mutations run with the `always` network mode.
-- Offline mode re-checks the session every 15 seconds, when the OS reports the network back and
-  when the WebSocket connects; the first answer leaves offline mode and refetches everything,
-  or signs out if the session expired meanwhile.
+- Offline mode re-checks the session on a timer that starts at 15 seconds and doubles after each
+  miss up to two minutes (skipped while the OS reports no network or the window is hidden), and
+  right away when the network, the window or the WebSocket comes back. The first answer leaves
+  offline mode and refetches everything, or signs out when the server refuses the session
+  (`UNAUTHENTICATED`, 401, 403); any other error keeps the app offline.
+- A list served from its snapshot while the app thought it was online (a 5xx, a dropped
+  network) switches the app to offline mode, so saved copies never pass for live ones.
 - An explicit sign-out records `signedOut`, so the next start lands on sign-in without asking
   the server, even if the sign-out request never reached it. The encrypted cache stays.
 
