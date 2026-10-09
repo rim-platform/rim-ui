@@ -62,7 +62,7 @@ Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vit
 - **GraphQL fragments** for shared field selections — `src/graphql/fragments/`
 - **Nested resolvers** — always request `author { ... }` on messages, never join manually
 - **No batching** — HTTP/2 handles parallelism, each query stays independent
-- **Secrets in the OS keyring** through `src-tauri/src/secret_store.rs`, never localStorage
+- **Secrets in the secret vault** (`src-tauri/src/secret_store.rs`: an encrypted file keyed from the OS credential store, see `docs/secret-vault.md`), never localStorage
 - **DOMPurify** on all user-generated HTML (markdown rendering)
 - **Design tokens everywhere** — no hardcoded colors (text-red-400, bg-white, etc.)
 - **Shared Avatar component** — never duplicate avatar rendering logic

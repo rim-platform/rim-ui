@@ -1,7 +1,7 @@
 /**
  * The session record that lets the desktop app open offline (`src-tauri/src/offline_session.rs`).
  *
- * The webview keeps the session cookie; the record, in the OS keyring, says who was signed in
+ * The webview keeps the session cookie; the record, in the secret vault, says who was signed in
  * to which server, so a cold start that cannot reach the server can still open that account's
  * local cache instead of stopping at sign-in. An explicit sign-out is recorded too, so the
  * next start lands on sign-in even if the server never heard of the sign-out.

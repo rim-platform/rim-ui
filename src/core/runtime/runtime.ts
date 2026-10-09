@@ -17,14 +17,14 @@ export type RuntimeCapabilities = {
    */
   deviceKeys: boolean;
   /**
-   * The identity key in the OS keyring: enrollment, key-only signup, recovery and linking other
+   * The identity key in the secret vault: enrollment, key-only signup, recovery and linking other
    * devices. Desktop only.
    */
   identityKeys: boolean;
 };
 
 /**
- * Where this app keeps its device key: the OS keyring (desktop), the browser (web, with
+ * Where this app keeps its device key: the secret vault (desktop), the browser (web, with
  * WebCrypto Ed25519), or nowhere. `checking` while the browser is probed, `unsupported` when it
  * lacks Ed25519 or IndexedDB.
  */

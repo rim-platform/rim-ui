@@ -110,7 +110,7 @@ type ChatStreamEvent =
 /**
  * Construct an Anthropic provider that dispatches `chat()` calls to the
  * Tauri `agent_chat_completion` command. The API key is read directly from
- * the OS keyring by the Rust proxy on every request — the JS side never
+ * the secret vault by the Rust proxy on every request — the JS side never
  * holds or transmits the key bytes (Phase 5 / Option B, §2 of the
  * agent-settings-consolidation decision).
  *
@@ -124,7 +124,7 @@ export function createAnthropicProvider(): AiProvider {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      // The Rust proxy reads the API key from the OS keyring on every request
+      // The Rust proxy reads the API key from the secret vault on every request
       // (agent_proxy.rs:295). Do NOT send api_key here — ChatCompletionRequest
       // uses #[serde(deny_unknown_fields)] and will reject any unknown field,
       // including the legacy api_key (Pete's #8, agent_proxy.rs:96–98).

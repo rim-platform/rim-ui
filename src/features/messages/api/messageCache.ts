@@ -2,7 +2,7 @@
  * The desktop app's encrypted local message cache (master plan Stage 2, PR 9).
  *
  * Storage lives on the Tauri side (`src-tauri/src/message_cache`): an SQLCipher database per
- * account, keyed in the OS keyring. This module is its typed surface plus the one HTTP call it
+ * account, keyed in the secret vault. This module is its typed surface plus the one HTTP call it
  * needs, the server's `messageChanges` feed (rim-server `docs/message-change-feed.md`), which
  * runs here because the webview holds the session cookie.
  *

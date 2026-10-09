@@ -460,7 +460,7 @@ function UnlockArchive({
       <p className="text-sm font-medium text-rim-text">Archive locked on this device</p>
       <p className="text-xs text-rim-text-muted">
         This device no longer has the key to the archive in {archiveLocation(status)} (the system
-        keychain was reset). Enter the passphrase to keep backing up.
+        secret vault was reset). Enter the passphrase to keep backing up.
       </p>
       <label className="block text-sm font-medium text-rim-text">
         Passphrase

@@ -135,7 +135,7 @@ describe("AgentSettingsPanel", () => {
   it("renders heading and subhead", async () => {
     setup();
     expect(screen.getByRole("heading", { name: "AI Agent" })).toBeInTheDocument();
-    expect(screen.getByText(/Keys are stored in your OS keyring/)).toBeInTheDocument();
+    expect(screen.getByText(/Keys are stored in your secret vault/)).toBeInTheDocument();
   });
 
   it("renders the data-leakage security banner", async () => {
