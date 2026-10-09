@@ -33,6 +33,23 @@ describe("E2eeNoticeRow", () => {
     expect(screen.getByText("Encryption was reset by Bob's Laptop")).toBeInTheDocument();
   });
 
+  it("finding 4: says who was added or removed", () => {
+    renderWithProviders(
+      <E2eeNoticeRow
+        notice={{ kind: "member", change: "added", principalId: "rimp1_bob" }}
+        {...names}
+      />,
+    );
+    renderWithProviders(
+      <E2eeNoticeRow
+        notice={{ kind: "member", change: "removed", principalId: "rimp1_bob" }}
+        {...names}
+      />,
+    );
+    expect(screen.getByText("Bob was added")).toBeInTheDocument();
+    expect(screen.getByText("Bob was removed")).toBeInTheDocument();
+  });
+
   it("collapses earlier messages and offers a restore when an archive is set up", async () => {
     archive.getArchiveStatus.mockResolvedValue({
       ok: true,

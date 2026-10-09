@@ -1,4 +1,4 @@
-import { AlertTriangle, Lock, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Lock, RotateCcw, ShieldAlert, UserX } from "lucide-react";
 
 import {
   useDeviceNames,
@@ -79,11 +79,46 @@ export function EncryptionNotices({ workspaceId, e2ee }: EncryptionNoticesProps)
       </Notice>,
     );
   }
+  if (e2ee.sendBlock === "encryptionReset") {
+    notices.push(
+      <Notice key="reset" tone="danger" icon={<RotateCcw className="h-3.5 w-3.5" aria-hidden />}>
+        <p className="font-medium">Encryption was reset by the server</p>
+        <p>
+          The server no longer says this conversation is end-to-end encrypted. RIM keeps it
+          encrypted on this device and has stopped sending here.
+        </p>
+      </Notice>,
+    );
+  }
+  if (e2ee.foreignMembers.length > 0) {
+    notices.push(
+      <Notice key="foreign" tone="danger" icon={<UserX className="h-3.5 w-3.5" aria-hidden />}>
+        <p className="font-medium">
+          The server tried to add {joinNames(e2ee.foreignMembers)} to this conversation
+        </p>
+        <p>
+          A direct message stays between its two people. Sending is stopped here until{" "}
+          {e2ee.foreignMembers.length === 1 ? "they are" : "they are all"} gone.
+        </p>
+      </Notice>,
+    );
+  }
   const browser = BROWSER_NOTICES[e2ee.sendBlock ?? ""];
   if (browser) {
     notices.push(
       <Notice key="browser" tone="muted" icon={<Lock className="h-3.5 w-3.5" aria-hidden />}>
         {browser}
+      </Notice>,
+    );
+  }
+  const forked = [
+    ...new Set(unverified.filter((u) => u.reason === "keyLogForked").map((u) => u.principalId)),
+  ];
+  if (forked.length > 0) {
+    notices.push(
+      <Notice key="forked" tone="danger" icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden />}>
+        {joinNames(forked.map((p) => nameOf(p)))}
+        {forked.length === 1 ? "'s identity" : "'s identities"} changed in a way RIM cannot verify
       </Notice>,
     );
   }

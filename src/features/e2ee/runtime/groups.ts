@@ -9,6 +9,7 @@
  */
 
 import { graphqlErrorCode, VALIDATION } from "../../../core/graphql/errors";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
@@ -39,6 +40,7 @@ import {
 import { useE2eeStore } from "../state/useE2eeStore";
 import { forgetAbsence } from "./feedInputs";
 import { conversationMembers, directoryFor, notReadyMembers } from "./members";
+import { directPair, pinConversation } from "./pins";
 import { serialize } from "./serialize";
 import type { E2eeSession } from "./session";
 
@@ -115,9 +117,34 @@ export async function refreshKeyPackages(session: E2eeSession, minOneTime = 0) {
 
 // ─── Welcomes ───────────────────────────────────────────────────────────────
 
+/** The backend refused a Welcome as older than the state this device holds. */
+const STALE_WELCOME_CODES = new Set(["INVALID_ARGS", "E2EE_STALE_WELCOME"]);
+
+/**
+ * Whether this device holds working state of the Welcome's incarnation: then a Welcome that does
+ * not open is a replay or a leftover, never a reason to ask for a re-add.
+ */
+async function holdsWorkingGroup(
+  session: E2eeSession,
+  workspaceId: string,
+  conversationId: string,
+  incarnation: number,
+): Promise<boolean> {
+  const [local] = await e2eeCommands
+    .status(session.account, workspaceId, [conversationId])
+    .catch(() => []);
+  return Boolean(
+    local?.hasGroup &&
+    local.incarnation === incarnation &&
+    local.awaitingReadd === null &&
+    local.readdRequestedAt === null,
+  );
+}
+
 /**
  * Join every conversation a Welcome waits for: join, catch up with the Commits since, check
- * the leaves, then acknowledge. A Welcome this device cannot open leads to a re-add request.
+ * the leaves, then acknowledge. A Welcome this device cannot open leads to a re-add request,
+ * unless the device already holds working state of that incarnation (a replayed Welcome).
  */
 export async function processWelcomes(session: E2eeSession): Promise<string[]> {
   const welcomes = await fetchWelcomes();
@@ -139,8 +166,12 @@ export async function processWelcomes(session: E2eeSession): Promise<string[]> {
       await catchUp(session, serverId, conversationId);
       joined.push(conversationId);
     } catch (err) {
-      const stale = err instanceof E2eeCommandError && err.code === "INVALID_ARGS";
-      if (!stale) {
+      const stale =
+        (err instanceof E2eeCommandError && STALE_WELCOME_CODES.has(err.code)) ||
+        (await holdsWorkingGroup(session, serverId, conversationId, welcome.incarnation));
+      if (stale) {
+        logger.warn("[RIM:e2ee] ignoring a Welcome older than this device's state:", err);
+      } else {
         logger.warn("[RIM:e2ee] a Welcome could not be opened; asking to be re-added:", err);
         await askToBeReadded(session, serverId, conversationId, welcome.incarnation).catch(
           (e: unknown) => logger.warn("[RIM:e2ee] re-add request failed:", e),
@@ -282,13 +313,36 @@ function sameDevice(a: DeviceRefView, b: DeviceRefView) {
   return a.principalId === b.principalId && a.deviceId.toLowerCase() === b.deviceId.toLowerCase();
 }
 
-/** The pending changes this device can commit in `group`: adds with a key package, removes. */
-export function pendingChanges(group: ServerGroup, me: string) {
-  const adds = group.pendingAdds.filter(
+/**
+ * The principals a conversation's devices may belong to: a direct message's two pinned
+ * principals (none while it has no pin), or anyone (`null`) in a group.
+ */
+export function allowedPrincipals(
+  conversationType: string,
+  local: Pick<GroupView, "dmPrincipals"> | undefined,
+): string[] | null {
+  if (conversationType !== ConversationTypeEnum.DIRECT) return null;
+  return local?.dmPrincipals ?? [];
+}
+
+/**
+ * The pending changes this device can commit in `group`: adds with a key package, removes. In a
+ * direct message, adds of principals other than its two are `refused`, never committed.
+ */
+export function pendingChanges(group: ServerGroup, me: string, allowed: string[] | null = null) {
+  const others = group.pendingAdds.filter(
     (d) => d.hasKeyPackage && d.deviceId.toLowerCase() !== me.toLowerCase(),
   );
+  const adds = others.filter((d) => !allowed || allowed.includes(d.principalId));
+  const refused = [
+    ...new Set(
+      group.pendingAdds
+        .filter((d) => allowed && !allowed.includes(d.principalId))
+        .map((d) => d.principalId),
+    ),
+  ].sort();
   const removes = group.pendingRemoves.filter((d) => d.deviceId.toLowerCase() !== me.toLowerCase());
-  return { adds, removes };
+  return { adds, removes, refused };
 }
 
 interface CommitOptions {
@@ -331,7 +385,12 @@ export async function commitPendingLocked(
       return false;
     }
 
-    const { adds, removes } = pendingChanges(group, session.deviceId);
+    const allowed = allowedPrincipals(info.conversationType, local);
+    const { adds, removes, refused } = pendingChanges(group, session.deviceId, allowed);
+    useE2eeStore.getState().setRefusedAdds(conversationId, refused);
+    if (refused.length > 0) {
+      logger.warn("[RIM:e2ee] the server lists adds outside this direct message:", refused);
+    }
     const extra = (options.extraRemoves ?? []).filter(
       (d) => group.devices.some((g) => sameDevice(g, d)) && !removes.some((r) => sameDevice(r, d)),
     );
@@ -439,7 +498,17 @@ export async function createGroupLocked(
   const info = await fetchConversationGroup(workspaceId, conversationId);
   if (which === "first" && info.mlsGroup) return false;
   const incarnation = (info.mlsGroup?.incarnation ?? 0) + 1;
-  const targets = await groupTargets(session, workspaceId, info);
+  // A direct message holds its two principals: pinned, or (before it is encrypted) the two the
+  // server lists.
+  const local = await pinConversation(session, workspaceId, info);
+  const allowed =
+    local?.dmPrincipals ??
+    (info.conversationType === ConversationTypeEnum.DIRECT
+      ? ((await directPair(session, workspaceId, info)) ?? [])
+      : null);
+  const targets = (await groupTargets(session, workspaceId, info)).filter(
+    (d) => !allowed || allowed.includes(d.principalId),
+  );
   const claimed = await claimKeyPackages(workspaceId, conversationId, targets);
   const commit = await e2eeCommands.createGroup(
     session.account,
