@@ -49,6 +49,11 @@ const ModerationSettings = lazy(() =>
     default: m.ModerationSettings,
   })),
 );
+const WorkspacePluginSettings = lazy(() =>
+  import("../../plugins/registry/components/WorkspacePluginSettings").then((m) => ({
+    default: m.WorkspacePluginSettings,
+  })),
+);
 const HistoryArchiveSettings = lazy(() =>
   import("../../history-archive/components/HistoryArchiveSettings").then((m) => ({
     default: m.HistoryArchiveSettings,
@@ -301,6 +306,7 @@ export function SettingsPage() {
               <div className="space-y-10">
                 {isOwner && <WorkspaceFeatureSettings serverId={workspaceId} />}
                 <ModerationSettings serverId={workspaceId} />
+                <WorkspacePluginSettings serverId={workspaceId} />
               </div>
             )}
             {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}

@@ -55,6 +55,13 @@ export const queryKeys = {
     ["pinnedMessages", workspaceId, conversationId] as const,
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
   plugins: () => ["plugins"] as const,
+  // A workspace's plugin registry, and each entry's verification on this device.
+  workspacePlugins: (serverId?: string | null) => ["workspacePlugins", serverId] as const,
+  // Whether this device holds the identity key that signs plugin manifests.
+  pluginSigning: (principalId: string | null, keySeq: number | null) =>
+    ["pluginSigning", principalId, keySeq] as const,
+  workspacePluginChecks: (serverId?: string | null, hashes: readonly string[] = []) =>
+    ["workspacePluginChecks", serverId, ...hashes] as const,
   macros: (serverId?: string) => ["macros", serverId] as const,
   lenses: (workspaceId?: string, conversationId?: string) =>
     ["lenses", workspaceId, conversationId] as const,

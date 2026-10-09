@@ -18,6 +18,7 @@ const SERVER_MEMBERS_QUERY = gql`
       bio
       displayName
       timeoutUntil
+      principalId
     }
   }
 `;
@@ -33,6 +34,8 @@ export interface ServerMember {
   displayName: string | null;
   /** End of the member's timeout while one is in force, else null (Track 1.2). */
   timeoutUntil?: string | null;
+  /** The member's key identity (`rimp1_…`) once enrolled; null for a password-only account. */
+  principalId?: string | null;
 }
 
 export function useServerMembers(serverId?: string) {

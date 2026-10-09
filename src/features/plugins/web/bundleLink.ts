@@ -1,6 +1,7 @@
 // Pasted links to a bundle: `https://host/path/name.rimbundle#sha256=<64 hex>`.
 // The fragment pins the bytes: the link installs only a bundle with that hash.
 
+import { getApiOrigin } from "../../../core/graphql/config";
 import { MAX_BUNDLE_BYTES, sha256Hex } from "./bundle";
 
 /** A link the host refuses, with the reason. */
@@ -38,19 +39,26 @@ export function parseBundleLink(link: string): BundleLink {
   return { url: url.href, sha256: match[1], host: url.host };
 }
 
+/** Where the RIM server at the configured endpoint serves a workspace's bundle. */
+export function serverBundleUrl(serverId: string, sha256: string): string {
+  return `${getApiOrigin()}/api/plugin-bundles/${encodeURIComponent(serverId)}/${sha256}`;
+}
+
 /**
- * Fetch a bundle without credentials or caches, following redirects, and stop
- * reading past 8 MiB. The bytes must hash to `sha256`.
+ * Fetch a bundle without caches, following redirects, and stop reading past
+ * 8 MiB. The bytes must hash to `sha256`. Credentials go only to the RIM
+ * server's own copy, which needs the session; any other host gets none.
  */
 export async function fetchBundle(
   url: string,
   sha256: string,
   fetchImpl: typeof fetch = fetch,
+  credentials: RequestCredentials = "omit",
 ): Promise<Uint8Array> {
   let response: Response;
   try {
     response = await fetchImpl(url, {
-      credentials: "omit",
+      credentials,
       cache: "no-store",
       redirect: "follow",
       referrerPolicy: "no-referrer",
@@ -68,7 +76,8 @@ export async function fetchBundle(
   return bytes;
 }
 
-async function readCapped(response: Response): Promise<Uint8Array> {
+/** A response's body, refused past 8 MiB without reading further. */
+export async function readCapped(response: Response): Promise<Uint8Array> {
   const tooLarge = () => new BundleLinkError("The bundle is over 8 MiB.");
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_BUNDLE_BYTES) throw tooLarge();

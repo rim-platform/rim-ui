@@ -18,12 +18,15 @@
 //!   a new device.
 //! - **Device linking** (`device_link`) certifies another device's key through a code shown on
 //!   this one, or makes this computer such a device.
+//! - **Plugin manifests** (`plugin_manifest`) are signed with the identity key at the log's
+//!   head, for a workspace's plugin registry, and verified against a publisher's log.
 //! - **Identity key backup** (`backup`) seals the identity key under a key derived from the
 //!   recovery kit's secret, for the history archive, and lets a linked device take it over.
 
 pub(crate) mod backup;
 pub(crate) mod commands;
 pub(crate) mod device_link;
+pub(crate) mod plugin_manifest;
 pub(crate) mod recovery_kit;
 pub(crate) mod statement;
 pub(crate) mod store;
@@ -818,6 +821,20 @@ impl KeyIdentityState {
                 issued_at: &statement::now(),
             },
         ))
+    }
+
+    /// Sign a plugin manifest statement with the identity key at the log's head. The result
+    /// verifies against `log` before it is returned.
+    pub(crate) fn sign_plugin_manifest(
+        &self,
+        principal_id: &str,
+        log: &[Statement],
+        input: &plugin_manifest::PluginManifestInput,
+    ) -> Result<Statement> {
+        let head = Self::head(principal_id, log)?;
+        let _guard = self.guard()?;
+        let (_, identity) = self.identity(principal_id, &head)?;
+        plugin_manifest::sign_plugin_manifest(&identity, &head, input, &statement::now())
     }
 
     /// Take an account back with its recovery kit: verify that the server's log ends at the

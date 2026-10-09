@@ -20,6 +20,7 @@ export const CONTEXT = {
   keyLog: utf8("rim.keylog.v1\0"),
   device: utf8("rim.device.v1\0"),
   login: utf8("rim.login.v1\0"),
+  pluginManifest: utf8("rim.plugin-manifest.v1\0"),
 } as const;
 
 const PRINCIPAL_DOMAIN = utf8("rim.principal.v1\0");
@@ -260,7 +261,12 @@ export interface KeyHead {
   hash: string;
   /** The identity key at every seq, oldest first, to check device certificates against. */
   identityKeys: string[];
+  /** Who signed the entry at every seq, oldest first; `null` for the inception. */
+  signers: (RotationSigner | null)[];
 }
+
+/** Who signed a rotation. */
+export type RotationSigner = "identity" | "recovery";
 
 interface LogEntry {
   v: number;
@@ -337,6 +343,7 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
     recoveryKey,
     hash: await payloadHash(first.payload),
     identityKeys: [identityKey],
+    signers: [null],
   };
   for (const statement of rest) {
     const at = head.seq + 1;
@@ -354,13 +361,16 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
       throw logError("a rotation must change the identity key");
     }
     let signerKey: string;
+    let signer: RotationSigner;
     if (next.signer === "identity") {
       if (nextRecovery !== head.recoveryKey) {
         throw logError("only recovery may change the recovery key");
       }
       signerKey = head.identityKey;
+      signer = "identity";
     } else if (next.signer === "recovery") {
       signerKey = head.recoveryKey;
+      signer = "recovery";
     } else {
       throw logError("unknown rotation signer");
     }
@@ -375,6 +385,7 @@ export async function replay(log: Statement[]): Promise<KeyHead> {
       recoveryKey: nextRecovery,
       hash: await payloadHash(statement.payload),
       identityKeys: [...head.identityKeys, nextIdentity],
+      signers: [...head.signers, signer],
     };
   }
   return head;

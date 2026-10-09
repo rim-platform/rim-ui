@@ -85,6 +85,9 @@ vi.mock("./WorkspaceFeatureSettings", () => ({
   WorkspaceFeatureSettings: () => <div data-testid="workspace-feature-settings">Workspace</div>,
 }));
 
+vi.mock("../../plugins/registry/components/WorkspacePluginSettings", () => ({
+  WorkspacePluginSettings: () => null,
+}));
 vi.mock("./ModerationSettings", () => ({
   ModerationSettings: () => <div data-testid="moderation-settings">Moderation</div>,
 }));

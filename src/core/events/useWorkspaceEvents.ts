@@ -508,6 +508,10 @@ function handleEvent(
       break;
     }
 
+    case "WorkspacePluginChanged":
+      qc.invalidateQueries({ queryKey: queryKeys.workspacePlugins(workspaceId) });
+      break;
+
     case "PipelineSuspended": {
       // Refresh pipeline list so enabled status updates
       qc.invalidateQueries({ queryKey: queryKeys.pipelines(workspaceId) });

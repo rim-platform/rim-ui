@@ -13,7 +13,7 @@ import type {
   PluginInstallSource,
 } from "../types";
 import { readBundle, sha256Hex, type BundleFile } from "./bundle";
-import { fetchBundle } from "./bundleLink";
+import { fetchBundle, serverBundleUrl } from "./bundleLink";
 import { checkInstall, parseManifestText, type PluginManifest } from "./manifestRules";
 import { rimOrigins, type BundleInstall, type PluginServices } from "./pluginServices";
 import { ErrorCode, RpcError, type PrincipalMapping } from "./rpc";
@@ -280,11 +280,16 @@ export class BrowserPluginStore implements PluginServices {
     sha256,
     source,
     replace,
+    manifest: signed,
+    keepApprovals,
   }: BundleInstall): Promise<PluginInstallResult> {
     const account = this.signedIn();
     if ((await sha256Hex(bytes)) !== sha256)
       throw new Error("the bundle does not match its SHA-256");
     const bundle = readBundle(bytes);
+    if (signed !== undefined && signed !== bundle.manifestText) {
+      throw new Error("the bundle's rim-plugin.json is not the signed manifest");
+    }
     const manifest = bundle.manifest;
     if (manifest.runtime_kind !== "WebSandboxed") {
       throw new Error(
@@ -294,6 +299,8 @@ export class BrowserPluginStore implements PluginServices {
     checkInstall(manifest, { forbiddenOrigins: rimOrigins() });
     const existing = await read<InstallRecord>(INSTALLS, [account, manifest.plugin_id]);
     if (existing && !replace) throw new AlreadyInstalledError(manifest.plugin_id);
+    const kept = keepApprovals && existing ? existing : null;
+    const aiCommands = manifest.commands.filter((c) => c.ai_callable).map((c) => c.id);
     const record: InstallRecord = {
       v: 1,
       account,
@@ -302,9 +309,11 @@ export class BrowserPluginStore implements PluginServices {
       bundleSha256: sha256,
       bundleSize: bytes.length,
       source,
-      status: "installed",
-      approvedCapabilities: [],
-      approvedAiCommands: [],
+      status: kept?.status ?? "installed",
+      approvedCapabilities: (kept?.approvedCapabilities ?? []).filter((c) =>
+        manifest.capabilities.includes(c),
+      ),
+      approvedAiCommands: (kept?.approvedAiCommands ?? []).filter((c) => aiCommands.includes(c)),
       starting: false,
       installedAt: new Date().toISOString(),
     };
@@ -335,15 +344,27 @@ export class BrowserPluginStore implements PluginServices {
   }
 
   private async refetch(record: InstallRecord): Promise<Uint8Array> {
-    if (record.source.kind !== "link") throw new Error("bundle damaged or unavailable");
+    const source = record.source;
     let bytes: Uint8Array;
     try {
-      bytes = await fetchBundle(record.source.url, record.bundleSha256);
+      if (source.kind === "link") {
+        bytes = await fetchBundle(source.url, record.bundleSha256);
+      } else if (source.kind === "registry") {
+        const url = serverBundleUrl(source.serverId, record.bundleSha256);
+        bytes = await fetchBundle(url, record.bundleSha256, fetch, "include");
+      } else {
+        throw new Error("no source to fetch from");
+      }
     } catch {
       throw new Error("bundle damaged or unavailable");
     }
     await write(BUNDLES, { sha256: record.bundleSha256, bytes } satisfies StoredBundle);
     return bytes;
+  }
+
+  /** Make a registry install a local one: no registry source and no updates. */
+  detachRegistry(pluginId: string): Promise<void> {
+    return this.update(pluginId, (r) => ({ ...r, source: { kind: "local" } }));
   }
 
   setStarting(pluginId: string, starting: boolean): Promise<void> {

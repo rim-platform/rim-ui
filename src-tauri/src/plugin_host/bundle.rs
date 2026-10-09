@@ -352,12 +352,12 @@ fn write_files(bundle: &Bundle, staging: &Path) -> Result<(), BundleError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use tempfile::TempDir;
 
     /// `main.mjs` of the plugin "A web plugin without the SDK", with its final newline.
-    const HELLO_WEB_MAIN: &str = r#"const port = globalThis.rimPluginPort;
+    pub(crate) const HELLO_WEB_MAIN: &str = r#"const port = globalThis.rimPluginPort;
 const ID = "dev.example.hello-web";
 const send = (m) => port.postMessage(JSON.stringify({ jsonrpc: "2.0", ...m }));
 let who = null;
@@ -388,9 +388,9 @@ port.onmessage = (event) => {
 };
 "#;
 
-    const HELLO_WEB_MANIFEST: &str = r#"{"manifest_version":1,"plugin_id":"dev.example.hello-web","display_name":"Hello Web","version":"0.1.0","description":"Says hello from a sandboxed frame.","runtime_kind":"WebSandboxed","entrypoint":"main.mjs","commands":[{"id":"greet","title":"Hello Web: Greet","description":"Greets the signed-in user."}]}"#;
+    pub(crate) const HELLO_WEB_MANIFEST: &str = r#"{"manifest_version":1,"plugin_id":"dev.example.hello-web","display_name":"Hello Web","version":"0.1.0","description":"Says hello from a sandboxed frame.","runtime_kind":"WebSandboxed","entrypoint":"main.mjs","commands":[{"id":"greet","title":"Hello Web: Greet","description":"Greets the signed-in user."}]}"#;
 
-    const APPENDIX_A_SHA256: &str =
+    pub(crate) const APPENDIX_A_SHA256: &str =
         "5b154b3eb45c3ebc44f6820ba30a389ce85b43dea34bcbf652b9b1a5416fbe85";
 
     fn file(path: &str, text: &str) -> BundleFile {

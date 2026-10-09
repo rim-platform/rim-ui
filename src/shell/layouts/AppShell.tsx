@@ -29,6 +29,7 @@ import { useTypingEventHandler } from "../../features/messages/state/useTypingEv
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
+import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
 import { panelSlot } from "../../features/plugins/types";
 import { SurfaceErrorBoundary } from "../../shared/ui/SurfaceErrorBoundary";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
@@ -444,6 +445,7 @@ function WorkspaceShell() {
           <AgentOverlay />
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
+          <RegistryHost />
           <QuickAccessAssigner />
           {incidentsEnabled && workspaceId && selectedConversationId && (
             <StartIncidentDialog serverId={workspaceId} conversationId={selectedConversationId} />

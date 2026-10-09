@@ -107,6 +107,7 @@ describe("key-identity known-answer vectors", () => {
       recoveryKey: RECOVERY,
       hash: await payloadHash(INCEPTION),
       identityKeys: [IDENTITY],
+      signers: [null],
     });
     const device = await certifiedDevice(statement(DEVICE_CERT, DEVICE_CERT_SIG), head);
     expect(device).toEqual({ deviceId: DEVICE_ID, deviceKey: DEVICE });

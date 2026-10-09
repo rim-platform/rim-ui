@@ -1194,3 +1194,46 @@ fn a_new_device_never_links_over_keys_it_holds_or_for_another_server() {
         .identity_seed
         .is_some());
 }
+
+#[test]
+fn a_plugin_manifest_is_signed_at_the_head_and_verifies() {
+    use super::plugin_manifest::{
+        verify_plugin_manifest, KeyHistory, PluginManifestInput, PluginSource, Validity,
+    };
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let log = statements.key_log;
+    let input = PluginManifestInput {
+        publisher_name: "Ada".into(),
+        manifest: r#"{"manifest_version":1,"plugin_id":"dev.example.pods","display_name":"Pods","version":"0.3.0","runtime_kind":"DesktopLocalProcess","entrypoint":"main.mjs"}"#.into(),
+        source: PluginSource::Git {
+            url: "https://github.com/acme/pods".into(),
+            commit: "1a2b3c4d".repeat(5),
+            tree_sha256: "ab".repeat(32),
+        },
+    };
+    let signed = state
+        .sign_plugin_manifest(&draft.principal_id, &log, &input)
+        .unwrap();
+    assert_eq!(payload_field(&signed, "keySeq"), 0);
+    assert_eq!(payload_field(&signed, "pluginId"), "dev.example.pods");
+    let verified = verify_plugin_manifest(&KeyHistory::replay(&log).unwrap(), &signed).unwrap();
+    assert_eq!(verified.validity, Validity::Valid);
+
+    // A web plugin cannot come from git, so nothing is signed for it.
+    let web = PluginManifestInput {
+        manifest: input
+            .manifest
+            .replace("DesktopLocalProcess", "WebSandboxed"),
+        ..input.clone()
+    };
+    assert!(state
+        .sign_plugin_manifest(&draft.principal_id, &log, &web)
+        .is_err());
+
+    // A device without the identity key cannot sign.
+    let other = self::state();
+    assert!(other
+        .sign_plugin_manifest(&draft.principal_id, &log, &input)
+        .is_err());
+}

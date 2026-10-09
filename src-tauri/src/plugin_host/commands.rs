@@ -9,6 +9,7 @@ use crate::plugin_host::manifest::{
     CommandInfo, ContextAction, KeybindSuggestion, PanelDef, RuntimeKind,
 };
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
+use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
 use crate::plugin_host::state::{InstallSource, PluginRecord, PluginStatus};
 use crate::plugin_host::storage::StorageError;
@@ -1012,14 +1013,20 @@ pub fn plugin_trust_fingerprint(
 /// host, then unpack it into the plugins directory and record its fingerprint.
 ///
 /// `bundle` is the file's bytes in standard base64 and `sha256` the hash the
-/// link or entry names. With `replace`, an installed plugin of the same id is
-/// stopped and replaced by a fresh install that the user approves again.
+/// link or entry names; `manifest`, when given, is the signed manifest the
+/// bundle's `rim-plugin.json` must equal byte for byte. With `replace`, an
+/// installed plugin of the same id is stopped and replaced by a fresh install
+/// that the user approves again, unless `keep_approvals` carries its approvals
+/// and running state over (an update that asks for nothing new).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn plugin_install_bundle(
     bundle: String,
     sha256: String,
     source: InstallSource,
     replace: Option<bool>,
+    manifest: Option<String>,
+    keep_approvals: Option<bool>,
     forbidden_origins: Option<Vec<String>>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginInstallResult, LocalInstallError> {
@@ -1049,6 +1056,11 @@ pub async fn plugin_install_bundle(
         .into());
     }
     let read = bundle::read_bundle(&bytes)?;
+    if manifest.is_some_and(|signed| signed != read.manifest_text) {
+        return Err(io(
+            "the bundle's rim-plugin.json is not the signed manifest".into(),
+        ));
+    }
     let manifest = read.manifest.clone();
     if manifest.has_reserved_prefix() {
         return Err(io(format!(
@@ -1058,54 +1070,33 @@ pub async fn plugin_install_bundle(
     }
     validate_plugin_manifest_for_host(&manifest, &forbidden_origins.unwrap_or_default())?;
 
-    let installed = state
+    let previous = state
         .store
         .lock()
         .map_err(|e| io(e.to_string()))?
         .get(&manifest.plugin_id)
-        .is_some();
-    if installed {
+        .cloned();
+    if previous.is_some() {
         if replace != Some(true) {
             return Err(LocalInstallError::AlreadyExists(manifest.plugin_id.clone()));
         }
         runtime::stop_plugin(&manifest.plugin_id, &state)
             .await
             .map_err(|e| io(e.to_string()))?;
-        state
-            .store
-            .lock()
-            .map_err(|e| io(e.to_string()))?
-            .remove(&manifest.plugin_id);
     }
 
     let final_dir = bundle::unpack(&read, &crate::plugin_host::discovery::plugins_dir(), true)?;
     let fingerprint = local_install::compute_bundle_fingerprint(&final_dir)?;
-    state
-        .manifests
-        .lock()
-        .map_err(|e| io(e.to_string()))?
-        .insert(manifest.plugin_id.clone(), manifest.clone());
-    state
-        .plugin_dirs
-        .lock()
-        .map_err(|e| io(e.to_string()))?
-        .insert(manifest.plugin_id.clone(), final_dir.clone());
-    {
-        let mut store = state.store.lock().map_err(|e| io(e.to_string()))?;
-        lifecycle::install(&mut store, &manifest).map_err(|e| match e {
-            LifecycleError::InvalidManifest(v) => LocalInstallError::InvalidManifest(v),
-            other => LocalInstallError::LifecycleFailure(other.to_string()),
-        })?;
-        if let Some(record) = store.get(&manifest.plugin_id).cloned() {
-            store.upsert(PluginRecord {
-                bundle_fingerprint: fingerprint,
-                fingerprint_changed: false,
-                source: Some(source),
-                ..record
-            });
-        }
-        store.save(&state.state_path)?;
-    }
+    let previous = previous.filter(|_| keep_approvals == Some(true));
+    registry::record_install(
+        &state,
+        &manifest,
+        final_dir.clone(),
+        source,
+        fingerprint,
+        previous.as_ref(),
+    )
+    .map_err(|e| io(e.to_string()))?;
     log::warn!(
         "[AUDIT] event=plugin_bundle_installed plugin_id={} sha256={}",
         manifest.plugin_id,

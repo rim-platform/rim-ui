@@ -1,3 +1,17 @@
+input AddWorkspacePluginInput {
+	serverId: ID!
+	statement: SignedStatementInput!
+	status: WorkspacePluginStatus!
+	"""
+	Only for a bundle source; omitted, this server's copy, which must have been uploaded.
+	"""
+	bundleUrl: String
+	"""
+	Required when the publisher is not enrolled on this server.
+	"""
+	publisherKeyLog: [SignedStatementInput!]
+}
+
 input AdvanceIncidentPhaseInput {
 	incidentId: ID!
 	nextPhase: IncidentPhaseNameGql!
@@ -1888,6 +1902,18 @@ type Mutation {
 	Cancel a link from either device, with or without a session.
 	"""
 	cancelDeviceLink(linkId: String!): Boolean!
+	"""
+	Add the statement's plugin to the workspace's registry. Owner or Moderator.
+	"""
+	addWorkspacePlugin(input: AddWorkspacePluginInput!): WorkspacePlugin!
+	"""
+	Change an entry's statement, status or bundle URL. Owner or Moderator.
+	"""
+	updateWorkspacePlugin(input: UpdateWorkspacePluginInput!): WorkspacePlugin!
+	"""
+	Remove an entry from the workspace's registry. Owner or Moderator.
+	"""
+	removeWorkspacePlugin(serverId: ID!, pluginId: String!): Boolean!
 }
 
 input MuteConversationInput {
@@ -2148,6 +2174,42 @@ enum PipelineTriggerKindGql {
 	WORKSPACE_STATE_CHANGED
 }
 
+enum PluginRuntimeKind {
+	DESKTOP_LOCAL_PROCESS
+	WEB_SANDBOXED
+}
+
+enum PluginSignatureStatus {
+	VALID
+	"""
+	The publisher recovered their key after the statement's `keySeq`: clients refuse new
+	installs and updates of the entry.
+	"""
+	PUBLISHER_RECOVERED
+}
+
+"""
+Where an entry's code comes from: the bundle fields for `BUNDLE`, the git fields for `GIT`.
+Hashes are lowercase hex.
+"""
+type PluginSource {
+	kind: PluginSourceKind!
+	"""
+	Where to fetch the bundle. Not signed: the hash decides whether the bytes are right.
+	"""
+	bundleUrl: String
+	bundleSha256: String
+	bundleSize: Int
+	gitUrl: String
+	gitCommit: String
+	gitTreeSha256: String
+}
+
+enum PluginSourceKind {
+	BUNDLE
+	GIT
+}
+
 enum PresenceStatus {
 	ONLINE
 	AWAY
@@ -2345,6 +2407,10 @@ type Query {
 	needed: the link id is the capability.
 	"""
 	deviceLinkAnswer(linkId: String!): SealedMessage
+	"""
+	The workspace's plugin registry, ordered by plugin id. Any member, guests included.
+	"""
+	workspacePlugins(serverId: ID!): [WorkspacePlugin!]!
 }
 
 type ReactionGroup {
@@ -2587,6 +2653,10 @@ type ServerMember {
 	End of the member's timeout while one is in force (Track 1.2), else null.
 	"""
 	timeoutUntil: DateTime
+	"""
+	The member's key identity (`rimp1_…`), once enrolled; null for a password-only account.
+	"""
+	principalId: String
 }
 
 """
@@ -2892,6 +2962,18 @@ input UpdateUserCommandInput {
 	isEnabled: Boolean!
 }
 
+input UpdateWorkspacePluginInput {
+	serverId: ID!
+	pluginId: String!
+	"""
+	A new version, or a re-signed one, of the same plugin.
+	"""
+	statement: SignedStatementInput
+	status: WorkspacePluginStatus
+	bundleUrl: String
+	publisherKeyLog: [SignedStatementInput!]
+}
+
 type UploadTicket {
 	attachmentId: ID!
 	uploadToken: String!
@@ -2953,6 +3035,48 @@ type WorkspaceInvitePreviewGql {
 	serverId: ID!
 	serverName: String!
 	invitedByDisplayName: String!
+}
+
+type WorkspacePlugin {
+	id: ID!
+	serverId: ID!
+	pluginId: String!
+	version: String!
+	displayName: String!
+	runtimeKind: PluginRuntimeKind!
+	status: WorkspacePluginStatus!
+	source: PluginSource!
+	"""
+	The exact text of `rim-plugin.json` inside the statement.
+	"""
+	manifest: String!
+	statement: SignedStatement!
+	publisherPrincipalId: String!
+	"""
+	Chosen by the publisher: it proves nothing about who they are.
+	"""
+	publisherName: String!
+	publisherKeySeq: Int!
+	"""
+	This server's key log of the publisher when they are enrolled here, else the one stored
+	with the entry.
+	"""
+	publisherKeyLog: [SignedStatement!]!
+	signatureStatus: PluginSignatureStatus!
+	"""
+	Who approved the entry last; null once that account is deleted.
+	"""
+	approvedBy: User
+	approvedAt: DateTime!
+	updatedAt: DateTime!
+}
+
+enum WorkspacePluginStatus {
+	RECOMMENDED
+	"""
+	Offered to every member when the workspace opens; never installed without consent.
+	"""
+	REQUIRED
 }
 
 type WorkspaceStateEntryGql {

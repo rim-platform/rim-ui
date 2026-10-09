@@ -27,6 +27,7 @@ pub(crate) mod context {
     pub(crate) const DEVICE_REVOKE: &[u8] = b"rim.device-revoke.v1\0";
     pub(crate) const PROFILE_CARD: &[u8] = b"rim.profile-card.v1\0";
     pub(crate) const LOGIN: &[u8] = b"rim.login.v1\0";
+    pub(crate) const PLUGIN_MANIFEST: &[u8] = b"rim.plugin-manifest.v1\0";
 }
 
 const PRINCIPAL_DOMAIN: &[u8] = b"rim.principal.v1\0";
@@ -495,6 +496,8 @@ pub(crate) struct KeyHead {
     pub(crate) hash: String,
     /// The identity key at every seq, oldest first, to check device certificates against.
     pub(crate) identity_keys: Vec<String>,
+    /// Who signed the entry at every seq, oldest first; `None` for the inception.
+    pub(crate) signers: Vec<Option<RotationSigner>>,
 }
 
 #[derive(Deserialize)]
@@ -536,6 +539,7 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         principal_id: principal_id(&first.payload),
         seq: 0,
         identity_keys: vec![identity_key.clone()],
+        signers: vec![None],
         identity_key,
         recovery_key,
         hash: payload_hash(&first.payload),
@@ -564,10 +568,12 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         if identity_key == head.identity_key {
             return Err(invalid("a rotation must change the identity key"));
         }
-        let signer_key = match entry.signer.as_deref() {
-            Some("identity") if recovery_key == head.recovery_key => &head.identity_key,
+        let (signer, signer_key) = match entry.signer.as_deref() {
+            Some("identity") if recovery_key == head.recovery_key => {
+                (RotationSigner::Identity, &head.identity_key)
+            }
             Some("identity") => return Err(invalid("only recovery may change the recovery key")),
-            Some("recovery") => &head.recovery_key,
+            Some("recovery") => (RotationSigner::Recovery, &head.recovery_key),
             _ => return Err(invalid("unknown rotation signer")),
         };
         if !verify(statement, context::KEY_LOG, signer_key, entry.v) {
@@ -576,6 +582,8 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
         version = entry.v;
         let mut identity_keys = head.identity_keys;
         identity_keys.push(identity_key.clone());
+        let mut signers = head.signers;
+        signers.push(Some(signer));
         head = KeyHead {
             principal_id: head.principal_id,
             seq: entry.seq,
@@ -583,6 +591,7 @@ pub(crate) fn replay(log: &[Statement]) -> Result<KeyHead, KeyIdentityError> {
             recovery_key,
             hash: payload_hash(&statement.payload),
             identity_keys,
+            signers,
         };
     }
     Ok(head)
