@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen } from "lucide-react";
+import { Cloud, FolderOpen } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import type { SafeInvokeError } from "../../../core/tauri/safeInvoke";
@@ -10,18 +10,25 @@ import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   ArchiveErrorCode,
+  CLOUD_SERVICE_NAMES,
   MIN_PASSPHRASE_LENGTH,
+  archiveLocation,
+  authorizeCloud,
+  cancelCloudSignIn,
   connectArchive,
   disconnectArchive,
+  discardCloudSignIn,
   exportArchive,
   getArchiveStatus,
   inspectArchiveFolder,
+  listCloudServices,
   passphraseLength,
   pickArchiveFolder,
   restoreArchive,
   unlockArchive,
   type ArchiveStatus,
-  type FolderInfo,
+  type CloudKind,
+  type ConnectTarget,
 } from "../api/historyArchive";
 import { describeExport, describeRestore } from "./archiveReports";
 
@@ -34,11 +41,13 @@ function errorText(error: SafeInvokeError): string {
       case ArchiveErrorCode.WRONG_PASSPHRASE:
         return "That passphrase does not open this archive.";
       case ArchiveErrorCode.UNAVAILABLE:
-        return "The archive folder cannot be reached. Is the drive connected?";
+        return "The archive cannot be reached. Is the drive connected, and are you online?";
       case ArchiveErrorCode.NOT_WRITABLE:
         return "RIM cannot write into this folder. Choose a folder you can write to.";
       case ArchiveErrorCode.MISMATCH:
         return "The folder now holds a different archive. Stop backing up here and choose it again.";
+      case ArchiveErrorCode.CLOUD_AUTH:
+        return `The sign-in did not work or is no longer valid (${error.message}). Sign in again; if this archive is already set up, stop backing up here first.`;
     }
   }
   return error.message;
@@ -72,9 +81,9 @@ export function HistoryArchiveSettings() {
       <div>
         <h2 className="text-base font-semibold text-rim-text">History</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Keep an encrypted copy of your message history in a folder you choose, and get it back on
-          another device. A folder that Dropbox, Google Drive, OneDrive or Syncthing keeps in sync
-          carries it to your other computers. RIM has no copy of it.
+          Keep an encrypted copy of your message history in a folder you choose or in your own
+          Google Drive or Dropbox, and get it back on another device. A folder that OneDrive or
+          Syncthing keeps in sync carries it to your other computers too. RIM has no copy of it.
         </p>
       </div>
 
@@ -125,6 +134,43 @@ function useAfterRestore() {
   }, [qc, workspaceId]);
 }
 
+/** Where the archive being set up is: a folder, or a cloud account just signed in to. */
+type Place =
+  | { kind: "localFolder"; path: string; hasArchive: boolean }
+  | {
+      kind: "cloud";
+      service: CloudKind;
+      connectionId: string;
+      account: string;
+      hasArchive: boolean;
+    };
+
+function placeTarget(place: Place): ConnectTarget {
+  return place.kind === "localFolder"
+    ? { kind: "localFolder", path: place.path }
+    : { kind: "cloud", connectionId: place.connectionId };
+}
+
+function placeLabel(place: Place): string {
+  return place.kind === "localFolder"
+    ? place.path
+    : `${CLOUD_SERVICE_NAMES[place.service]} (${place.account})`;
+}
+
+/** The cloud services this build can sign in to. */
+function useCloudServices(): CloudKind[] {
+  const { data } = useQuery({
+    queryKey: ["historyArchiveCloudServices"],
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const result = await listCloudServices();
+      return result.ok ? result.value : [];
+    },
+  });
+  return (data ?? []).filter((s) => s.available).map((s) => s.kind);
+}
+
 function SetupArchive({
   account,
   onDone,
@@ -132,43 +178,100 @@ function SetupArchive({
   account: CacheAccount;
   onDone: (status: ArchiveStatus, restored: Notice | null) => void;
 }) {
-  const [folder, setFolder] = useState<string | null>(null);
-  const [info, setInfo] = useState<FolderInfo | null>(null);
+  const [place, setPlace] = useState<Place | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [signingIn, setSigningIn] = useState<CloudKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const afterRestore = useAfterRestore();
+  const cloudServices = useCloudServices();
 
-  async function choose() {
+  // A cloud sign-in that was not used is dropped (and its access revoked) when another place
+  // is chosen or the panel closes; a sign-in still waiting for the browser is cancelled.
+  const pendingCloud = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const waitingForBrowser = useRef(false);
+  const dropPendingCloud = useCallback(() => {
+    if (pendingCloud.current) void discardCloudSignIn(pendingCloud.current);
+    pendingCloud.current = null;
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (waitingForBrowser.current) void cancelCloudSignIn();
+      dropPendingCloud();
+    };
+  }, [dropPendingCloud]);
+
+  function choosePlace(next: Place) {
+    dropPendingCloud();
+    if (next.kind === "cloud") pendingCloud.current = next.connectionId;
+    setPlace(next);
+    setPassphrase("");
+    setConfirm("");
+  }
+
+  async function chooseFolder() {
     setError(null);
     const picked = await pickArchiveFolder();
     if (!picked.ok) return setError(errorText(picked.error));
     if (!picked.value) return;
     const inspected = await inspectArchiveFolder(picked.value);
     if (!inspected.ok) return setError(errorText(inspected.error));
-    setFolder(picked.value);
-    setInfo(inspected.value);
-    setPassphrase("");
-    setConfirm("");
+    choosePlace({
+      kind: "localFolder",
+      path: picked.value,
+      hasArchive: inspected.value.hasArchive,
+    });
   }
 
-  const joining = info?.hasArchive ?? false;
+  async function signIn(service: CloudKind) {
+    setError(null);
+    setSigningIn(service);
+    waitingForBrowser.current = true;
+    const result = await authorizeCloud(service);
+    waitingForBrowser.current = false;
+    if (!mounted.current) {
+      if (result.ok) void discardCloudSignIn(result.value.connectionId);
+      return;
+    }
+    setSigningIn(null);
+    if (!result.ok) {
+      const cancelled =
+        result.error.kind === "backend_error" && result.error.code === ArchiveErrorCode.CANCELLED;
+      if (!cancelled) setError(errorText(result.error));
+      return;
+    }
+    const auth = result.value;
+    choosePlace({
+      kind: "cloud",
+      service: auth.kind,
+      connectionId: auth.connectionId,
+      account: auth.account,
+      hasArchive: auth.hasArchive,
+    });
+  }
+
+  const joining = place?.hasArchive ?? false;
   const length = passphraseLength(passphrase);
   const tooShort = length < MIN_PASSPHRASE_LENGTH;
   const mismatch = !joining && confirm !== passphrase;
   const canSubmit =
-    folder !== null && passphrase.length > 0 && (joining || (!tooShort && !mismatch));
+    place !== null && passphrase.length > 0 && (joining || (!tooShort && !mismatch));
 
   async function connect() {
-    if (!folder || !canSubmit) return;
+    if (!place || !canSubmit) return;
     setBusy(true);
     setError(null);
-    const connected = await connectArchive(account, folder, passphrase);
+    const connected = await connectArchive(account, placeTarget(place), passphrase);
     if (!connected.ok) {
       setBusy(false);
       return setError(errorText(connected.error));
     }
+    // The sign-in is the archive's now; it is no longer this form's to drop.
+    pendingCloud.current = null;
     let restored: Notice | null = null;
     if (!connected.value.created) {
       const result = await restoreArchive(account);
@@ -185,24 +288,62 @@ function SetupArchive({
     onDone(connected.value.status, restored);
   }
 
+  const choosing = busy || signingIn !== null;
+
   return (
     <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="space-y-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-rim-text">Archive folder</p>
-          <p className="truncate text-xs text-rim-text-muted" title={folder ?? undefined}>
-            {folder ?? "No folder chosen"}
+          <p className="text-sm font-medium text-rim-text">Where to keep it</p>
+          <p
+            className="truncate text-xs text-rim-text-muted"
+            title={place ? placeLabel(place) : undefined}
+          >
+            {place ? placeLabel(place) : "Nothing chosen yet"}
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => void choose()} disabled={busy}>
-          <span className="flex items-center gap-1.5">
-            <FolderOpen className="h-3.5 w-3.5" />
-            Choose folder
-          </span>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void chooseFolder()}
+            disabled={choosing}
+          >
+            <span className="flex items-center gap-1.5">
+              <FolderOpen className="h-3.5 w-3.5" />
+              Choose folder
+            </span>
+          </Button>
+          {cloudServices.map((service) => (
+            <Button
+              key={service}
+              variant="secondary"
+              size="sm"
+              onClick={() => void signIn(service)}
+              disabled={choosing}
+              isLoading={signingIn === service}
+            >
+              <span className="flex items-center gap-1.5">
+                <Cloud className="h-3.5 w-3.5" />
+                {CLOUD_SERVICE_NAMES[service]}
+              </span>
+            </Button>
+          ))}
+        </div>
+        {signingIn && (
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-rim-text-muted">
+              Finish signing in to {CLOUD_SERVICE_NAMES[signingIn]} in your browser. RIM only gets
+              access to its own app folder there, not to your other files.
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => void cancelCloudSignIn()}>
+              Cancel
+            </Button>
+          </div>
+        )}
       </div>
 
-      {folder && info && (
+      {place && (
         <form
           className="space-y-3"
           onSubmit={(e) => {
@@ -212,7 +353,7 @@ function SetupArchive({
         >
           <p className="text-xs text-rim-text-muted">
             {joining
-              ? "This folder already holds a RIM history archive. Enter its passphrase to add this device; your history is restored from it."
+              ? `${place.kind === "localFolder" ? "This folder" : "This account"} already holds a RIM history archive. Enter its passphrase to add this device; your history is restored from it.`
               : `Set a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. Every device needs it to read your history, and nobody can recover it if you forget it.`}
           </p>
           <label className="block text-sm font-medium text-rim-text">
@@ -245,7 +386,12 @@ function SetupArchive({
           {!joining && !tooShort && confirm.length > 0 && mismatch && (
             <p className="text-xs text-rim-text-faint">The passphrases do not match.</p>
           )}
-          <Button type="submit" size="sm" disabled={!canSubmit} isLoading={busy}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!canSubmit || signingIn !== null}
+            isLoading={busy}
+          >
             {joining ? "Connect and restore" : "Create archive"}
           </Button>
         </form>
@@ -292,8 +438,8 @@ function UnlockArchive({
     >
       <p className="text-sm font-medium text-rim-text">Archive locked on this device</p>
       <p className="text-xs text-rim-text-muted">
-        This device no longer has the key to the archive in {status.folder} (the system keychain was
-        reset). Enter the passphrase to keep backing up.
+        This device no longer has the key to the archive in {archiveLocation(status)} (the system
+        keychain was reset). Enter the passphrase to keep backing up.
       </p>
       <label className="block text-sm font-medium text-rim-text">
         Passphrase
@@ -362,7 +508,11 @@ function ConnectedArchive({
     <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
       <div className="space-y-1 text-sm">
         <p className="font-medium text-rim-text">Backing up to</p>
-        <p className="break-all font-mono text-xs text-rim-text-muted">{status.folder}</p>
+        <p
+          className={`break-all text-xs text-rim-text-muted ${status.provider === "localFolder" ? "font-mono" : ""}`}
+        >
+          {archiveLocation(status)}
+        </p>
         <p className="text-xs text-rim-text-faint">
           New history is written every few minutes. This device writes under{" "}
           <span className="font-mono">{status.deviceId.slice(0, 8)}</span>.
@@ -397,7 +547,9 @@ function ConnectedArchive({
         </Button>
       </div>
       <p className="text-xs text-rim-text-faint">
-        Stopping leaves the archive in the folder; other devices keep using it.
+        {status.provider === "googleDrive" || status.provider === "dropbox"
+          ? `Stopping signs this device out of ${CLOUD_SERVICE_NAMES[status.provider]} and leaves the archive there; other devices keep using it.`
+          : "Stopping leaves the archive in the folder; other devices keep using it."}
       </p>
       {message && <p className="text-xs text-rim-success">{message}</p>}
       {error && (

@@ -13,11 +13,13 @@
 //!   wins.
 //!
 //! [`provider`] holds the storage trait and the local folder provider, which also covers
-//! folders kept in sync by Dropbox, Google Drive or Syncthing clients.
+//! folders kept in sync by Dropbox, Google Drive or Syncthing clients. [`cloud`] holds the
+//! Google Drive and Dropbox API providers and their sign-in.
 
 pub(crate) mod commands;
 
 mod archive;
+mod cloud;
 mod crypto;
 pub(crate) mod format;
 pub(crate) mod merge;
@@ -32,6 +34,10 @@ use zeroize::Zeroizing;
 
 use crate::message_cache::{AccountId, CacheError, CacheStore};
 use archive::Archive;
+use cloud::{
+    CloudAuthorization, CloudConnection, CloudConnections, CloudKind, CloudService, CloudSettings,
+    KeyringCredentials,
+};
 use crypto::{ArchiveKey, KdfCost};
 use provider::{ArchiveProvider, LocalFolderProvider};
 
@@ -69,6 +75,12 @@ pub(crate) enum ArchiveError {
     Key(String),
     #[error("invalid archive input: {0}")]
     Invalid(String),
+    #[error("cloud sign-in: {0}")]
+    CloudAuth(String),
+    #[error("sign-in cancelled")]
+    Cancelled,
+    #[error("{0}")]
+    ServiceNotConfigured(String),
     #[error(transparent)]
     Cache(#[from] CacheError),
 }
@@ -88,6 +100,9 @@ impl ArchiveError {
             Self::Locked => "ARCHIVE_LOCKED",
             Self::Key(_) => "ARCHIVE_KEY",
             Self::Invalid(_) => "INVALID_ARGS",
+            Self::CloudAuth(_) => "ARCHIVE_CLOUD_AUTH",
+            Self::Cancelled => "ARCHIVE_CANCELLED",
+            Self::ServiceNotConfigured(_) => "ARCHIVE_SERVICE_NOT_CONFIGURED",
             Self::Cache(e) => e.code(),
         }
     }
@@ -172,21 +187,55 @@ struct AccountConfig {
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum ProviderConfig {
     #[serde(rename_all = "camelCase")]
-    LocalFolder { path: String },
+    LocalFolder {
+        path: String,
+    },
+    GoogleDrive(CloudConnection),
+    Dropbox(CloudConnection),
 }
 
 impl ProviderConfig {
-    fn open(&self) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
-        match self {
-            Self::LocalFolder { path } => Ok(Box::new(LocalFolderProvider::new(path)?)),
+    fn cloud(kind: CloudKind, connection: CloudConnection) -> Self {
+        match kind {
+            CloudKind::GoogleDrive => Self::GoogleDrive(connection),
+            CloudKind::Dropbox => Self::Dropbox(connection),
         }
     }
 
+    fn cloud_connection(&self) -> Option<(CloudKind, &CloudConnection)> {
+        match self {
+            Self::LocalFolder { .. } => None,
+            Self::GoogleDrive(c) => Some((CloudKind::GoogleDrive, c)),
+            Self::Dropbox(c) => Some((CloudKind::Dropbox, c)),
+        }
+    }
+
+    /// `localFolder`, `googleDrive` or `dropbox`, as the settings file names it.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::LocalFolder { .. } => "localFolder",
+            Self::GoogleDrive(_) => "googleDrive",
+            Self::Dropbox(_) => "dropbox",
+        }
+    }
+
+    /// What the user sees as the archive's place: the folder, or the cloud account.
     fn location(&self) -> String {
         match self {
             Self::LocalFolder { path } => path.clone(),
+            Self::GoogleDrive(c) | Self::Dropbox(c) => c.account.clone(),
         }
     }
+}
+
+/// Where to connect an account's archive: a folder, or a cloud account just signed in to.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum ConnectTarget {
+    #[serde(rename_all = "camelCase")]
+    LocalFolder { path: String },
+    #[serde(rename_all = "camelCase")]
+    Cloud { connection_id: String },
 }
 
 // ─── Results ────────────────────────────────────────────────────────────────
@@ -195,6 +244,9 @@ impl ProviderConfig {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ArchiveStatus {
     pub configured: bool,
+    /// `localFolder`, `googleDrive` or `dropbox`.
+    pub provider: Option<&'static str>,
+    /// The folder, or the cloud account's email address.
     pub folder: Option<String>,
     pub archive_id: Option<String>,
     pub device_id: String,
@@ -249,15 +301,64 @@ pub(crate) struct HistoryArchiveState {
     cost: KdfCost,
     /// One archive operation at a time: two exports must not both append segment `n`.
     op: Arc<Mutex<()>>,
+    cloud: Arc<CloudConnections>,
 }
 
 impl HistoryArchiveState {
-    fn new(dir: PathBuf, keys: Arc<dyn KeyStore>, cost: KdfCost) -> Self {
+    fn new(dir: PathBuf, keys: Arc<dyn KeyStore>, cost: KdfCost, cloud: CloudConnections) -> Self {
         Self {
             dir,
             keys,
             cost,
             op: Arc::new(Mutex::new(())),
+            cloud: Arc::new(cloud),
+        }
+    }
+
+    fn open_provider(
+        &self,
+        config: &ProviderConfig,
+    ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
+        match config {
+            ProviderConfig::LocalFolder { path } => Ok(Box::new(LocalFolderProvider::new(path)?)),
+            ProviderConfig::GoogleDrive(c) => self.cloud.open(CloudKind::GoogleDrive, c),
+            ProviderConfig::Dropbox(c) => self.cloud.open(CloudKind::Dropbox, c),
+        }
+    }
+
+    /// Which cloud services this build can keep an archive in.
+    pub(crate) fn cloud_services(&self) -> Vec<CloudService> {
+        self.cloud.services()
+    }
+
+    /// Sign in to a cloud service in the browser and look for an archive in its app folder.
+    /// The connection waits for [`Self::connect`] with its passphrase.
+    pub(crate) fn cloud_authorize(
+        &self,
+        kind: CloudKind,
+        open_browser: impl FnOnce(&str) -> Result<(), ArchiveError>,
+    ) -> Result<CloudAuthorization, ArchiveError> {
+        self.cloud.authorize(kind, open_browser, |provider| {
+            Ok(Archive::inspect(provider)?.map(|m| m.version))
+        })
+    }
+
+    pub(crate) fn cloud_cancel(&self) {
+        self.cloud.cancel();
+    }
+
+    /// Drop a signed-in connection the user did not go on with.
+    pub(crate) fn cloud_discard(&self, connection_id: &str) {
+        self.cloud.discard(connection_id);
+    }
+
+    /// Sign out of a cloud connection this account no longer uses. A failure is logged: the
+    /// account has already moved on.
+    fn forget_cloud(&self, provider: &ProviderConfig) {
+        if let Some((kind, connection)) = provider.cloud_connection() {
+            if let Err(e) = self.cloud.forget(kind, &connection.connection_id) {
+                log::warn!("[history_archive] could not forget a cloud sign-in: {e}");
+            }
         }
     }
 
@@ -307,6 +408,7 @@ impl HistoryArchiveState {
         let Some(config) = self.config(account)? else {
             return Ok(ArchiveStatus {
                 configured: false,
+                provider: None,
                 folder: None,
                 archive_id: None,
                 device_id,
@@ -316,6 +418,7 @@ impl HistoryArchiveState {
         let unlocked = self.keys.get(&config.archive_id)?.is_some();
         Ok(ArchiveStatus {
             configured: true,
+            provider: Some(config.provider.kind()),
             folder: Some(config.provider.location()),
             archive_id: Some(config.archive_id),
             device_id,
@@ -336,21 +439,29 @@ impl HistoryArchiveState {
         })
     }
 
-    /// Use `folder` for the account's archive: unlock the archive in it with `passphrase`, or
+    /// Use `target` for the account's archive: unlock the archive in it with `passphrase`, or
     /// start one there if it has none.
     pub(crate) fn connect(
         &self,
         account: &AccountId,
-        folder: &str,
+        target: &ConnectTarget,
         passphrase: &str,
     ) -> Result<ConnectOutcome, ArchiveError> {
         account.validate()?;
         let _op = self.op.lock().unwrap_or_else(|e| e.into_inner());
-        let provider_config = ProviderConfig::LocalFolder {
-            path: folder.to_string(),
+        let (provider_config, provider) = match target {
+            ConnectTarget::LocalFolder { path } => {
+                let config = ProviderConfig::LocalFolder { path: path.clone() };
+                let provider = self.open_provider(&config)?;
+                provider.check_writable()?;
+                (config, provider)
+            }
+            // The sign-in already checked the cloud folder can be written.
+            ConnectTarget::Cloud { connection_id } => {
+                let (kind, connection, provider) = self.cloud.pending_provider(connection_id)?;
+                (ProviderConfig::cloud(kind, connection), provider)
+            }
         };
-        let provider = provider_config.open()?;
-        provider.check_writable()?;
         let (archive, created) = if Archive::inspect(provider.as_ref())?.is_some() {
             (Archive::unlock(provider, passphrase)?, false)
         } else {
@@ -358,17 +469,29 @@ impl HistoryArchiveState {
                 Ok(archive) => (archive, true),
                 // Another device created one in the meantime: join it instead.
                 Err(ArchiveError::Exists) => {
-                    (Archive::unlock(provider_config.open()?, passphrase)?, false)
+                    let provider = match target {
+                        ConnectTarget::LocalFolder { .. } => {
+                            self.open_provider(&provider_config)?
+                        }
+                        ConnectTarget::Cloud { connection_id } => {
+                            self.cloud.pending_provider(connection_id)?.2
+                        }
+                    };
+                    (Archive::unlock(provider, passphrase)?, false)
                 }
                 Err(e) => return Err(e),
             }
         };
-        if let Some(previous) = self.config(account)? {
+        let previous = self.config(account)?;
+        if let Some(previous) = &previous {
             if previous.archive_id != archive.id() {
                 self.forget_key(account, &previous.archive_id)?;
             }
         }
         self.keys.set(archive.id(), archive.key())?;
+        if let ConnectTarget::Cloud { connection_id } = target {
+            self.cloud.keep(connection_id)?;
+        }
         self.save_config(
             account,
             &AccountConfig {
@@ -376,6 +499,9 @@ impl HistoryArchiveState {
                 archive_id: archive.id().to_string(),
             },
         )?;
+        if let Some(previous) = previous {
+            self.forget_cloud(&previous.provider);
+        }
         Ok(ConnectOutcome {
             status: self.status(account)?,
             created,
@@ -390,7 +516,7 @@ impl HistoryArchiveState {
     ) -> Result<ArchiveStatus, ArchiveError> {
         account.validate()?;
         let config = self.config(account)?.ok_or(ArchiveError::NotConfigured)?;
-        let archive = Archive::unlock(config.provider.open()?, passphrase)?;
+        let archive = Archive::unlock(self.open_provider(&config.provider)?, passphrase)?;
         if archive.id() != config.archive_id {
             return Err(ArchiveError::Mismatch);
         }
@@ -398,11 +524,13 @@ impl HistoryArchiveState {
         self.status(account)
     }
 
-    /// Stop archiving this account on this device. The archive's files stay where they are.
+    /// Stop archiving this account on this device. The archive's files stay where they are;
+    /// a cloud account is signed out of.
     pub(crate) fn disconnect(&self, account: &AccountId) -> Result<(), ArchiveError> {
         let _op = self.op.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(config) = self.config(account)? {
             self.forget_key(account, &config.archive_id)?;
+            self.forget_cloud(&config.provider);
         }
         match std::fs::remove_file(self.config_path(account)) {
             Ok(()) => Ok(()),
@@ -440,7 +568,11 @@ impl HistoryArchiveState {
             .keys
             .get(&config.archive_id)?
             .ok_or(ArchiveError::Locked)?;
-        Archive::open(config.provider.open()?, &config.archive_id, key)
+        Archive::open(
+            self.open_provider(&config.provider)?,
+            &config.archive_id,
+            key,
+        )
     }
 
     /// Write everything the account's cache (`store`) changed since this device's last
@@ -515,6 +647,7 @@ pub(crate) fn init(app_data_dir: &Path) -> HistoryArchiveState {
         app_data_dir.join("history-archive"),
         Arc::new(KeyringKeyStore),
         KdfCost::DEFAULT,
+        CloudConnections::new(CloudSettings::from_env(), Arc::new(KeyringCredentials)),
     )
 }
 

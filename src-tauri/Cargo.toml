@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt",
 log = "0.4"
 libc = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
@@ -60,4 +60,7 @@ rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"]
 tempfile = "3"
 # Validates frames against protocol/plugin-protocol-v1.schema.json in the conformance tests.
 jsonschema = { version = "0.58", default-features = false }
+# A small blocking HTTP server: the fake Google Drive and Dropbox the archive's cloud providers
+# are tested against.
+tiny_http = "0.12"
 

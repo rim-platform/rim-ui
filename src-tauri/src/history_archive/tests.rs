@@ -9,25 +9,43 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::archive::Archive;
+use super::cloud::{CloudConnections, CloudSettings};
 use super::crypto::{ArchiveKey, KdfCost};
 use super::format::{self, ArchivedMessage, Event, FileKind, FilePlace};
 use super::provider::{ArchiveProvider, LocalFolderProvider};
-use super::{ArchiveError, HistoryArchiveState, KeyStore};
+use super::{ArchiveError, ConnectTarget, HistoryArchiveState, KeyStore};
 use crate::message_cache::tests::{
     account, cached_ids, open, state as cache_state, sync, texts, MockFeed, WS,
 };
 use crate::message_cache::{CacheStore, MessageCacheState};
 
 /// Cheap enough for tests; the app uses [`KdfCost::DEFAULT`].
-const TEST_COST: KdfCost = KdfCost {
+pub(crate) const TEST_COST: KdfCost = KdfCost {
     memory_kib: 64,
     iterations: 1,
     parallelism: 1,
 };
-const PASSPHRASE: &str = "correct horse battery staple";
+pub(crate) const PASSPHRASE: &str = "correct horse battery staple";
+
+/// Cloud providers with no client ids: none offered, and nothing reaches the keyring.
+fn no_cloud() -> CloudConnections {
+    let mut settings = CloudSettings::from_env();
+    settings.google.client_id = None;
+    settings.dropbox.client_id = None;
+    CloudConnections::new(
+        settings,
+        Arc::new(super::cloud::fake::MemoryCredentials::default()),
+    )
+}
+
+fn folder_target(folder: &Path) -> ConnectTarget {
+    ConnectTarget::LocalFolder {
+        path: folder.to_str().unwrap().to_string(),
+    }
+}
 
 #[derive(Default)]
-struct MemoryKeys(Mutex<HashMap<String, [u8; 32]>>);
+pub(crate) struct MemoryKeys(Mutex<HashMap<String, [u8; 32]>>);
 
 impl KeyStore for MemoryKeys {
     fn get(&self, archive_id: &str) -> Result<Option<ArchiveKey>, ArchiveError> {
@@ -54,21 +72,30 @@ impl KeyStore for MemoryKeys {
 }
 
 /// One installation of the app: its own data directory, cache and archive settings.
-struct Device {
-    _data: tempfile::TempDir,
-    archive: HistoryArchiveState,
+pub(crate) struct Device {
+    pub(crate) _data: tempfile::TempDir,
+    pub(crate) archive: HistoryArchiveState,
     keys: Arc<MemoryKeys>,
     /// Owns the cache database `store` points into.
     _cache: MessageCacheState,
-    store: Arc<Mutex<CacheStore>>,
+    pub(crate) store: Arc<Mutex<CacheStore>>,
 }
 
 impl Device {
-    fn new(user: &str) -> Self {
+    pub(crate) fn new(user: &str) -> Self {
+        Self::with_cloud(user, no_cloud())
+    }
+
+    /// A device whose cloud providers are `cloud` (a fake Google Drive and Dropbox).
+    pub(crate) fn with_cloud(user: &str, cloud: CloudConnections) -> Self {
         let data = tempfile::tempdir().unwrap();
         let keys = Arc::new(MemoryKeys::default());
-        let archive =
-            HistoryArchiveState::new(data.path().join("history-archive"), keys.clone(), TEST_COST);
+        let archive = HistoryArchiveState::new(
+            data.path().join("history-archive"),
+            keys.clone(),
+            TEST_COST,
+            cloud,
+        );
         let cache = cache_state(&data.path().join("message-cache"), 1);
         let store = open(&cache, user);
         Self {
@@ -80,28 +107,28 @@ impl Device {
         }
     }
 
-    fn connect(&self, folder: &Path) -> bool {
+    pub(crate) fn connect(&self, folder: &Path) -> bool {
         self.archive
-            .connect(&account("alice"), folder.to_str().unwrap(), PASSPHRASE)
+            .connect(&account("alice"), &folder_target(folder), PASSPHRASE)
             .unwrap()
             .created
     }
 
-    fn export(&self) -> super::ExportReport {
+    pub(crate) fn export(&self) -> super::ExportReport {
         self.archive.export(&self.store, &account("alice")).unwrap()
     }
 
-    fn restore(&self) -> super::RestoreReport {
+    pub(crate) fn restore(&self) -> super::RestoreReport {
         self.archive
             .restore(&self.store, &account("alice"))
             .unwrap()
     }
 
-    fn sync(&self, feed: &mut MockFeed) {
+    pub(crate) fn sync(&self, feed: &mut MockFeed) {
         sync(&mut self.store.lock().unwrap(), feed, None);
     }
 
-    fn track(&self, conversation: &str) {
+    pub(crate) fn track(&self, conversation: &str) {
         self.store
             .lock()
             .unwrap()
@@ -109,7 +136,7 @@ impl Device {
             .unwrap();
     }
 
-    fn timeline(&self, conversation: &str) -> Option<Vec<String>> {
+    pub(crate) fn timeline(&self, conversation: &str) -> Option<Vec<String>> {
         self.store
             .lock()
             .unwrap()
@@ -118,11 +145,11 @@ impl Device {
             .map(|page| texts(&page))
     }
 
-    fn ids(&self, conversation: &str) -> Vec<String> {
+    pub(crate) fn ids(&self, conversation: &str) -> Vec<String> {
         cached_ids(&self.store.lock().unwrap(), conversation)
     }
 
-    fn device_id(&self) -> String {
+    pub(crate) fn device_id(&self) -> String {
         self.archive.device_id().unwrap()
     }
 }
@@ -154,7 +181,7 @@ fn names(dir: &Path) -> Vec<String> {
     files(dir).into_iter().map(|(name, _)| name).collect()
 }
 
-fn message(conversation: &str, id: &str, version: i64, text: &str) -> ArchivedMessage {
+pub(crate) fn message(conversation: &str, id: &str, version: i64, text: &str) -> ArchivedMessage {
     ArchivedMessage {
         workspace_id: WS.into(),
         conversation_id: conversation.into(),
@@ -873,7 +900,9 @@ fn a_folder_this_device_cannot_write_is_refused() {
             Err(ArchiveError::NotWritable(_))
         ));
         assert!(matches!(
-            device.archive.connect(&account("alice"), path, PASSPHRASE),
+            device
+                .archive
+                .connect(&account("alice"), &folder_target(folder.path()), PASSPHRASE),
             Err(ArchiveError::NotWritable(_))
         ));
     }

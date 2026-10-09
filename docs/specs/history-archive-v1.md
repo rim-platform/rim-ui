@@ -2,9 +2,9 @@
 
 The desktop app writes the user's message history to a folder the user picks, encrypted, and
 reads it back on another device (master plan Stage 2). There is no RIM server in this picture:
-the folder is the user's own (a local disk, a USB drive, or a folder that Dropbox, Google Drive,
-OneDrive, iCloud Drive or Syncthing keeps in sync), and only someone with the passphrase can
-read it.
+the folder is the user's own (a local disk, a USB drive, a folder that Dropbox, Google Drive,
+OneDrive, iCloud Drive or Syncthing keeps in sync, or the app's own folder in the user's Google
+Drive or Dropbox, reached through their APIs), and only someone with the passphrase can read it.
 
 This document is the format. Anyone may write a reader or writer from it. The implementation is
 `src-tauri/src/history_archive/`; the cache it is written from is `docs/local-message-cache.md`.
@@ -239,10 +239,81 @@ and stops following it.
   previous version. A writer that upgrades an archive must keep it readable by the previous
   release until the archive's manifest says otherwise.
 
+## Providers
+
+The layout above is written through a provider with five operations: read a file, write a file
+whole (replacing it), create a file only if its name is free, list the directories in a
+directory, and check that the place can be written. Nothing appends or renames, so any storage
+with whole-file uploads can hold an archive. The implementation is
+`src-tauri/src/history_archive/provider.rs` and `cloud/`.
+
+### Local folder
+
+Archive paths are paths under the folder. A write goes to a hidden temporary file
+(`.<name>.<random>.tmp`) and is renamed over the target; a create is a hard link of the
+temporary file (or an exclusive open where there are no hard links).
+
+### Google Drive
+
+- **Place**: the app's `appDataFolder`, with the scope `drive.appdata`. It is hidden from the
+  Drive interface and from every other app, and the app cannot see any other file. The user can
+  delete it under Drive settings, Manage apps, "Delete hidden app data". It belongs to the OAuth
+  client: a build with another client id has another `appDataFolder`.
+- **Names**: Drive has file ids, not paths, and allows several files with one name. Every file
+  is stored directly in `appDataFolder` with its whole archive path as its name
+  (`accounts/<tag>/devices/<id>/head.rimx`); directories are the prefixes of those names.
+- **Several files with one name**: the oldest (`createdTime`, then file id) is the file. They
+  arise from two devices creating the manifest at once, or from an upload that is retried after
+  its answer was lost.
+- **Create**: Drive has no exclusive create. The device uploads, then lists the name: when an
+  older file exists, it deletes its own upload and joins that one. Two devices racing see the
+  same two files and agree on the older.
+- **Write**: an existing file's content is replaced in place (a media upload to its id), so a
+  segment left behind by an interrupted export is overwritten, not joined by a second file.
+
+### Dropbox
+
+- **Place**: the app folder (`Apps/<app name>/`) of a Dropbox app with "App folder" access,
+  which sees nothing else in the user's Dropbox. Archive paths are paths under it, so the folder
+  holds exactly the local layout: copied to a disk, it is a local folder archive, and the other
+  way round.
+- **Write**: an upload in `overwrite` mode, which replaces the file whole.
+- **Create**: an upload in `add` mode with `autorename` off and `strict_conflict` on, which fails
+  when the name is taken.
+
+### Sign-in and tokens
+
+- OAuth 2.0 for native apps (RFC 8252): the system browser signs the user in and redirects to a
+  one-shot listener on the loopback interface; PKCE (S256) protects the code, and a random
+  `state` must match. Google redirects to `http://127.0.0.1:<any free port>/callback`; Dropbox
+  only accepts registered redirect URIs, so it uses `http://localhost:<fixed port>/callback`
+  (53241 unless the build says otherwise).
+- The refresh token is kept in the OS keyring as `history-archive-cloud-v1:<connection id>`.
+  The account's archive settings file names the provider, the connection id and the signed-in
+  email address, never a token. Access tokens live in memory and are refreshed shortly before
+  they expire, or once when the service refuses one.
+- A sign-in is kept only when the user connects the archive with its passphrase; one left
+  unused is revoked. Stopping backups on a device revokes its grant and deletes the refresh
+  token. The archive itself stays.
+- Client ids are build configuration (the README says how to get them); none is committed.
+
+### Retries and interrupted backups
+
+A rate limit (HTTP 429, or a 403 naming a rate limit on Drive), a 5xx answer or a network
+failure is retried up to six attempts in all, waiting as `Retry-After` says (at most 60 s) or
+with exponential backoff and jitter from 0.5 s to 16 s. A service that stays busy fails the
+export, which runs again later.
+
+An export interrupted at any point resumes safely, because the head is the commit point:
+segments are written before the head that lists them, readers take segments only from the head,
+and the cache marks a batch archived only after its head is written. The next export writes the
+same batch again under the same sequence numbers, replacing whatever the interrupted one left.
+
 ## Not in version 1
 
-- Cloud API providers (Google Drive, Dropbox): they come later behind the same provider trait
-  as the local folder; a folder kept in sync by their desktop clients works today.
+- OneDrive, iCloud Drive and other cloud APIs: a folder kept in sync by their desktop clients
+  works.
+- Telling a device that a cloud sign-in was revoked elsewhere before the next backup fails.
 - Compaction: every export adds segments. A later writer may merge a device's own segments into
   fewer (only that device may), listing the new ones in its head before deleting the old.
 - Signed messages and rollback detection (a drive restoring an older head) come with Stage 3
