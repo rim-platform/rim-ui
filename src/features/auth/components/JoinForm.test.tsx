@@ -10,6 +10,9 @@
  * Also covers the BOOTSTRAP token variant (added 2026-04-28c):
  * (e) BOOTSTRAP variant routes via `bootstrapToken`, NOT `instanceInviteToken`.
  * (f) INSTANCE variant still routes via `instanceInviteToken` (regression guard).
+ *
+ * And the desktop's "Create account with a key", which hands the page's token to
+ * `KeySignupForm` (tested on its own).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -27,8 +30,36 @@ vi.mock("../api/useSignupWithInviteMutation", () => ({
   }),
 }));
 
+const deviceKeys = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ capabilities: { deviceKeys: deviceKeys.value } }),
+}));
+
+vi.mock("./KeySignupForm", () => ({
+  KeySignupForm: ({
+    tokens,
+    onSuccess,
+  }: {
+    tokens: Record<string, string>;
+    onSuccess: (userId: string, serverId: string | null) => void;
+  }) => (
+    <div data-testid="key-signup">
+      <span data-testid="key-signup-tokens">{JSON.stringify(tokens)}</span>
+      <button type="button" onClick={() => onSuccess("user-key", "server-key")}>
+        finish key signup
+      </button>
+    </div>
+  ),
+}));
+
 import { JoinForm } from "./JoinForm";
 import { InviteTokenType } from "../types";
+
+// The web app, unless a test says otherwise.
+beforeEach(() => {
+  deviceKeys.value = false;
+});
 
 /** Renders `JoinForm` inside a router so any internal Links don't break. */
 function renderWorkspaceJoinForm(onSuccess = vi.fn()) {
@@ -434,5 +465,76 @@ describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
       expect.objectContaining({ displayName: "a".repeat(79) }),
       expect.any(Object),
     );
+  });
+});
+
+describe("JoinForm — create account with a key", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deviceKeys.value = true;
+  });
+
+  function renderVariant(
+    variant: InviteTokenType | "OPEN",
+    token: string | null,
+    onSuccess = vi.fn(),
+  ) {
+    return render(
+      <MemoryRouter>
+        <JoinForm variant={variant} token={token} onSuccess={onSuccess} />
+      </MemoryRouter>,
+    );
+  }
+
+  it("is not offered in the web app", () => {
+    deviceKeys.value = false;
+    renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
+    expect(screen.queryByRole("button", { name: /create account with a key/i })).toBeNull();
+    expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
+  });
+
+  it("is offered next to the password form, which stays the default", () => {
+    renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
+    expect(screen.getByRole("button", { name: /create account with a key/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).toBeNull();
+  });
+
+  it.each([
+    [InviteTokenType.WORKSPACE, "ws-tok", { workspaceInviteToken: "ws-tok" }],
+    [InviteTokenType.INSTANCE, "inst-tok", { instanceInviteToken: "inst-tok" }],
+    [InviteTokenType.BOOTSTRAP, "boot-tok", { bootstrapToken: "boot-tok" }],
+    ["OPEN" as const, null, {}],
+  ])("%s: hands the page's token to the key form", async (variant, token, expected) => {
+    const user = userEvent.setup();
+    renderVariant(variant, token);
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual(expected);
+  });
+
+  it("calls the page's success path when the key signup succeeds", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    renderVariant(InviteTokenType.WORKSPACE, "ws-tok", onSuccess);
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(onSuccess).toHaveBeenCalledWith("user-key", "server-key");
+    expect(mockSignupMutate).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the password form", async () => {
+    const user = userEvent.setup();
+    renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+    await user.click(screen.getByRole("button", { name: /create account with a password/i }));
+
+    expect(screen.queryByTestId("key-signup")).toBeNull();
+    expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
   });
 });

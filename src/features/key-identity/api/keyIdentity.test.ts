@@ -13,6 +13,7 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
 
 import {
   abandonEnrollment,
+  abandonKeySignup,
   accountIdInKit,
   completeEnrollment,
   profileCardIsStale,
@@ -20,6 +21,7 @@ import {
   recoverAccount,
   resumeWithDeviceKey,
   signInWithDeviceKey,
+  signupWithKey,
   type EnrollmentDraft,
   type MyKeyIdentity,
 } from "./keyIdentity";
@@ -284,6 +286,179 @@ describe("enrollment", () => {
     backend({ MeKeyAccount: new TypeError("Failed to fetch") });
     await abandonEnrollment(draft, ACCOUNT);
     expect(commands()).toEqual([]);
+  });
+});
+
+describe("signupWithKey", () => {
+  const draft: EnrollmentDraft = {
+    draftId: "draft-1",
+    principalId: PRINCIPAL,
+    recoveryKit: "kit",
+    recoveryPhrase: [],
+  };
+  const statements = { keyLog: [STATEMENT], device: STATEMENT, proof: STATEMENT };
+  const identity = {
+    myKeyIdentity: {
+      principalId: PRINCIPAL,
+      keySeq: 0,
+      keyLog: [{ seq: 0, statement: STATEMENT }],
+      devices: [],
+      profileCard: null,
+    },
+  };
+  const fields = { username: " ada ", displayName: "Ada", workspaceInviteToken: "ws-tok" };
+  const created = { signupWithKey: { userId: "user-1", serverId: "srv-1" } };
+
+  it("stores and signs the draft's keys, creates the account, settles and publishes the card", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: created,
+        MyKeyIdentity: identity,
+        PublishProfileCard: { publishProfileCard: { version: 1 } },
+      },
+      { key_identity_sign_signup: statements, key_identity_sign_profile_card: STATEMENT },
+    );
+
+    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+      userId: "user-1",
+      serverId: "srv-1",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_sign_signup", {
+      draftId: "draft-1",
+      endpoint: ENDPOINT,
+      username: "ada",
+      challenge: { challengeId: "c-1", nonce: "n-1" },
+    });
+    const signup = requestMock.mock.calls.find((c) => operation(c) === "SignupWithKey");
+    expect(signup?.[1]).toEqual({
+      input: {
+        username: "ada",
+        displayName: "Ada",
+        workspaceInviteToken: "ws-tok",
+        keyLog: [STATEMENT],
+        device: STATEMENT,
+        proof: STATEMENT,
+      },
+    });
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_settle", {
+      account: { endpoint: ENDPOINT, userId: "user-1", username: "ada" },
+      principalId: PRINCIPAL,
+    });
+    expect(commands()).toEqual([
+      "key_identity_sign_signup",
+      "key_identity_settle",
+      "key_identity_sign_profile_card",
+    ]);
+    const card = invokeMock.mock.calls.find((c) => c[0] === "key_identity_sign_profile_card");
+    expect(card?.[1]).toMatchObject({ card: { version: 1, displayName: "Ada" } });
+  });
+
+  it("still succeeds when finishing up fails: the account exists and the session is set", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: created,
+        MyKeyIdentity: new TypeError("Failed to fetch"),
+      },
+      { key_identity_sign_signup: statements, key_identity_settle: new Error("keyring locked") },
+    );
+    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+      userId: "user-1",
+      serverId: "srv-1",
+    });
+  });
+
+  it("removes the keys but keeps the draft when the server refused the signup", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: serverError("CONFLICT"),
+        KeyLog: { keyLog: [] },
+      },
+      { key_identity_sign_signup: statements },
+    );
+    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
+    expect(commands()).toEqual(["key_identity_sign_signup", "key_identity_remove_draft_keys"]);
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_remove_draft_keys", {
+      draftId: "draft-1",
+    });
+  });
+
+  it("signs in with the key when an earlier attempt whose answer was lost created the account", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: serverError("CONFLICT"),
+        KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] },
+        LoginWithKey: { loginWithKey: { userId: "user-1" } },
+        MeKeyAccount: ME(PRINCIPAL),
+      },
+      { key_identity_sign_signup: statements, key_identity_sign_login: STATEMENT },
+    );
+    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+      userId: "user-1",
+      serverId: null,
+    });
+    expect(commands()).toEqual([
+      "key_identity_sign_signup",
+      "key_identity_sign_login",
+      "key_identity_settle",
+    ]);
+  });
+
+  it("keeps the keys when the server cannot say whether the account exists", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: new TypeError("Failed to fetch"),
+        KeyLog: new TypeError("Failed to fetch"),
+      },
+      { key_identity_sign_signup: statements },
+    );
+    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(TypeError);
+    expect(commands()).toEqual(["key_identity_sign_signup"]);
+  });
+
+  it("abandoning removes the keys only when no account here holds them", async () => {
+    backend({ KeyLog: { keyLog: [] } });
+    await abandonKeySignup(draft);
+    expect(commands()).toEqual(["key_identity_discard_enrollment"]);
+
+    invokeMock.mockClear();
+    backend({ KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] } });
+    await abandonKeySignup(draft);
+    expect(commands()).toEqual([]);
+
+    invokeMock.mockClear();
+    backend({ KeyLog: new TypeError("Failed to fetch") });
+    await abandonKeySignup(draft);
+    expect(commands()).toEqual([]);
+  });
+
+  it("abandons nothing while a signup is still in flight", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        SignupWithKey: () => new Promise((resolve) => (answer = resolve)),
+        KeyLog: { keyLog: [] },
+        MyKeyIdentity: new TypeError("Failed to fetch"),
+      },
+      { key_identity_sign_signup: statements },
+    );
+    const signingUp = signupWithKey(draft, fields);
+    await vi.waitFor(() =>
+      expect(requestMock.mock.calls.some((c) => operation(c) === "SignupWithKey")).toBe(true),
+    );
+
+    await abandonKeySignup(draft);
+    expect(commands()).toEqual(["key_identity_sign_signup"]);
+
+    answer(created);
+    await signingUp;
+    expect(commands()).toContain("key_identity_settle");
+    expect(commands()).not.toContain("key_identity_discard_enrollment");
   });
 });
 
