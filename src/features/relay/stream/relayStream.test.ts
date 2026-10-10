@@ -209,8 +209,31 @@ describe("RelayStreamProcessor", () => {
 
   it("passes DM request notices on", async () => {
     const { processor, deps } = setup();
-    await processor.push(JSON.stringify({ type: "DmRequestReceived" }));
+    await processor.push(
+      JSON.stringify({
+        type: "DmRequestReceived",
+        requestId: "0199d1a0-0000-7000-8000-000000000009",
+      }),
+    );
     expect(deps.onDmRequest).toHaveBeenCalled();
+  });
+
+  it("reconciles the spaces a queue overflow names, on the host they are bound to", async () => {
+    const { processor, deps } = setup();
+    await processor.push(await message(1));
+    await processor.push(
+      JSON.stringify({
+        type: "QueueOverflow",
+        spaces: [
+          { hostServerId: HOST, workspaceId: SPACE },
+          { hostServerId: "rims1_other", workspaceId: SPACE },
+          { hostServerId: HOST, workspaceId: "0199d1a0-0000-7000-8000-00000000000f" },
+        ],
+      }),
+    );
+    expect(deps.streamHeads).toHaveBeenCalledTimes(1);
+    expect(deps.streamHeads).toHaveBeenCalledWith(SPACE, [`c:${CONV}`]);
+    expect(deps.onReconciled).toHaveBeenCalledWith(SPACE);
   });
 
   it("verifies a held item without applying or acknowledging it", async () => {
