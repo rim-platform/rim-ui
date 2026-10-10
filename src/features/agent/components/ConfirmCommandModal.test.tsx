@@ -82,31 +82,6 @@ describe("ConfirmCommandModal — subtitle copy source (C2 §4)", () => {
       "Delete a chat message you previously sent.",
     );
   });
-
-  it("C2 regression: incident.ack MUTATING modal visibly contains the ack consequence copy", () => {
-    render(<ConfirmCommandModal />);
-    act(() => {
-      void useConfirmationModalStore.getState().open(
-        makeRequest({
-          commandId: "incident.ack",
-          toolName: "incident.ack",
-          sensitivity: CommandSensitivity.MUTATING,
-          description:
-            "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
-          nlDescription: "Acknowledge the active incident.",
-        }),
-      );
-    });
-    const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveTextContent("cancels the escalation chain");
-    expect(dialog).toHaveTextContent("stops paging on-call");
-    // NOTE (hawkeye C2 nit): this guards DOM *presence*, not visual non-clipping — JSDOM does
-    // not apply `-webkit-line-clamp`. The consequence stays visible because the ack `description`
-    // is short (~103 chars, "stops paging on-call" ends ~char 83), which fits the subtitle's
-    // 2-line clamp at `max-w-lg`/`text-sm`. If that copy grows or the clamp tightens to
-    // `line-clamp-1`, the string could clip while this test still passes — keep the ack
-    // description within the 2-line budget.
-  });
 });
 
 describe("ConfirmCommandModal — chips + sensitivity", () => {
@@ -470,12 +445,12 @@ describe("ConfirmCommandModal — cross-channel chip", () => {
     act(() => {
       void useConfirmationModalStore.getState().open(
         makeRequest({
-          args: { conversation_id: "ops-incidents", message: "hi" },
+          args: { conversation_id: "ops-deploys", message: "hi" },
         }),
       );
     });
     expect(screen.getByTestId("cross-channel-chip")).toBeInTheDocument();
-    expect(screen.getByTestId("cross-channel-chip")).toHaveTextContent("ops-inci");
+    expect(screen.getByTestId("cross-channel-chip")).toHaveTextContent("ops-depl");
   });
 
   it("does NOT render when the destination matches the active conversation", () => {

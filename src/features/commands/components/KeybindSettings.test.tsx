@@ -7,10 +7,6 @@ vi.mock("../api/useKeybinds", () => ({
   useResolvedKeybinds: vi.fn(),
 }));
 
-vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
-  useIsCommandAvailable: () => (commandId: string) => !commandId.startsWith("incident."),
-}));
-
 vi.mock("../api/useCommands", () => ({
   useCommands: vi.fn(),
 }));
@@ -183,26 +179,6 @@ describe("KeybindSettings", () => {
 
     expect(screen.getByText("Ctrl+K")).toBeInTheDocument();
     expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
-  });
-
-  it("hides bindings to commands of a workspace feature that is off", () => {
-    vi.mocked(useResolvedKeybinds).mockReturnValue({
-      data: [
-        makeKeybind(),
-        makeKeybind({ id: "kb-2", keystroke: "Ctrl+Shift+A", commandId: "incident.ack" }),
-      ],
-      isLoading: false,
-    } as ReturnType<typeof useResolvedKeybinds>);
-    vi.mocked(useCommands).mockReturnValue({
-      data: [makeCommand()],
-      isLoading: false,
-    } as ReturnType<typeof useCommands>);
-
-    render(<KeybindSettings />);
-
-    expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
-    expect(screen.queryByText("incident.ack")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ctrl+Shift+A")).not.toBeInTheDocument();
   });
 
   describe("plugin commands", () => {

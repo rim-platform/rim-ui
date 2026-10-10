@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS, VOLATILE_GLOBAL_KEY_ROOTS } from "./keys";
+import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "./keys";
 
 describe("queryKeys", () => {
   it("healthCheck is a static key", () => {
@@ -65,43 +65,8 @@ describe("queryKeys", () => {
     expect(queryKeys.commands("PALETTE", "ws-1")).toEqual(["commands", "PALETTE", "ws-1"]);
   });
 
-  it("workspaceFeatures includes serverId", () => {
-    expect(queryKeys.workspaceFeatures("srv-1")).toEqual(["workspaceFeatures", "srv-1"]);
-  });
-
   it("workspacePresence includes workspaceId", () => {
     expect(queryKeys.workspacePresence("w1")).toEqual(["workspacePresence", "w1"]);
-  });
-
-  it("ingestTokens includes serverId", () => {
-    expect(queryKeys.ingestTokens("srv-1")).toEqual(["ingestTokens", "srv-1"]);
-  });
-
-  it("onCallSchedules includes serverId", () => {
-    expect(queryKeys.onCallSchedules("srv-1")).toEqual(["onCallSchedules", "srv-1"]);
-  });
-
-  it("serverOnCall includes serverId", () => {
-    expect(queryKeys.serverOnCall("srv-1")).toEqual(["serverOnCall", "srv-1"]);
-  });
-
-  it("whoIsOnCall includes scheduleId and normalizes an absent `at` to null", () => {
-    expect(queryKeys.whoIsOnCall("sched-1")).toEqual(["whoIsOnCall", "sched-1", null]);
-    expect(queryKeys.whoIsOnCall("sched-1", "2026-07-01T00:00:00Z")).toEqual([
-      "whoIsOnCall",
-      "sched-1",
-      "2026-07-01T00:00:00Z",
-    ]);
-  });
-
-  it("onCallShifts includes scheduleId/from/to", () => {
-    expect(
-      queryKeys.onCallShifts("sched-1", "2026-07-01T00:00:00Z", "2026-07-15T00:00:00Z"),
-    ).toEqual(["onCallShifts", "sched-1", "2026-07-01T00:00:00Z", "2026-07-15T00:00:00Z"]);
-  });
-
-  it("escalationPolicies includes serverId", () => {
-    expect(queryKeys.escalationPolicies("srv-1")).toEqual(["escalationPolicies", "srv-1"]);
   });
 
   it("notification keys are scoped by serverId, the inbox also by the unread filter", () => {
@@ -132,7 +97,6 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "workspacePresence",
     "serverMembers",
     "server",
-    "workspaceFeatures",
     "serverBans",
     "messageReports",
     "customEmojis",
@@ -141,12 +105,6 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "pipelines",
     "macros",
     "resolvedKeybinds",
-    "activeIncident",
-    "listIncidents",
-    "ingestTokens",
-    "onCallSchedules",
-    "serverOnCall",
-    "escalationPolicies",
     "notificationSettings",
     "notifications",
     "unreadNotificationCount",
@@ -154,10 +112,6 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
 
   it("contains exactly the expected workspace-scoped volatile roots", () => {
     expect([...VOLATILE_WORKSPACE_KEY_ROOTS].sort()).toEqual([...expectedRoots].sort());
-  });
-
-  it("includes ingestTokens (Track B2 reconnect scoping, ahead of the management UI landing)", () => {
-    expect(VOLATILE_WORKSPACE_KEY_ROOTS).toContain("ingestTokens");
   });
 
   it("excludes account-global/static roots (me, plugins, serverConfig)", () => {
@@ -170,16 +124,5 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     expect(VOLATILE_WORKSPACE_KEY_ROOTS).not.toContain("keybinds");
     expect(VOLATILE_WORKSPACE_KEY_ROOTS).not.toContain("listAuditLog");
     expect(VOLATILE_WORKSPACE_KEY_ROOTS).not.toContain("previewInviteToken");
-  });
-});
-
-describe("VOLATILE_GLOBAL_KEY_ROOTS", () => {
-  it("contains incidentTimeline plus the schedule-keyed (not workspace-keyed) on-call roots", () => {
-    // whoIsOnCall/onCallShifts are keyed by scheduleId at position [1], not workspaceId —
-    // a `[root, workspaceId]` prefix would never match them, so they live here instead of
-    // VOLATILE_WORKSPACE_KEY_ROOTS and get invalidated by root name alone on reconnect.
-    expect([...VOLATILE_GLOBAL_KEY_ROOTS].sort()).toEqual(
-      ["incidentTimeline", "whoIsOnCall", "onCallShifts"].sort(),
-    );
   });
 });

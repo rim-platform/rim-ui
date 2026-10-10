@@ -16,8 +16,8 @@ describe("detectCrossChannel", () => {
   });
 
   it("returns mismatch info for conversation_id divergence", () => {
-    expect(detectCrossChannel({ conversation_id: "ops-incidents" }, "general")).toEqual({
-      targetId: "ops-incidents",
+    expect(detectCrossChannel({ conversation_id: "ops-deploys" }, "general")).toEqual({
+      targetId: "ops-deploys",
       argName: "conversation_id",
     });
   });

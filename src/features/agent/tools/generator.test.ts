@@ -177,14 +177,14 @@ describe("buildAiToolRegistrationOptions", () => {
     const opts = buildAiToolRegistrationOptions(
       makeCommand({
         description:
-          "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
-        nlDescription: "Ack the incident",
+          "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
+        nlDescription: "Archive the channel",
       }),
     );
     expect(opts.description).toBe(
-      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+      "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
     );
-    expect(opts.nlDescription).toBe("Ack the incident");
+    expect(opts.nlDescription).toBe("Archive the channel");
   });
 
   it("description is present verbatim on the registration options (C2 §4)", () => {
@@ -313,25 +313,25 @@ describe("buildInputSchema", () => {
   it("composes required + enum + default + description on a single argument", () => {
     const schema = buildInputSchema([
       makeArg({
-        name: "severity",
-        description: "Incident severity level",
+        name: "level",
+        description: "Notification level",
         argumentType: CommandArgumentType.ENUM,
         required: true,
-        allowedValues: ["SEV_1", "SEV_2"],
-        defaultValue: "SEV_2",
+        allowedValues: ["ALL", "MENTIONS"],
+        defaultValue: "MENTIONS",
       }),
     ]);
     expect(schema).toEqual({
       type: "object",
       properties: {
-        severity: {
+        level: {
           type: "string",
-          description: "Incident severity level",
-          enum: ["SEV_1", "SEV_2"],
-          default: "SEV_2",
+          description: "Notification level",
+          enum: ["ALL", "MENTIONS"],
+          default: "MENTIONS",
         },
       },
-      required: ["severity"],
+      required: ["level"],
       additionalProperties: false,
     });
   });

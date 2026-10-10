@@ -11,9 +11,6 @@ vi.mock("../api/useCommands", () => ({
 vi.mock("../../plugins/api/usePluginCommands", () => ({
   usePluginCommands: vi.fn(() => []),
 }));
-vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
-  useIsCommandAvailable: () => (id: string) => !id.startsWith("incident."),
-}));
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
@@ -80,16 +77,6 @@ describe("ShortcutsPanel", () => {
     vi.mocked(useResolvedKeybinds).mockReturnValue({
       data: [
         {
-          id: "srv-1",
-          keystroke: "Ctrl+Shift+I",
-          commandId: "incident.start",
-          context: "GLOBAL",
-          source: "USER",
-          scope: "USER",
-          isEnabled: true,
-          presetArgs: null,
-        },
-        {
           id: "srv-2",
           keystroke: "Ctrl+Shift+U",
           commandId: "workspace.open_settings",
@@ -109,8 +96,6 @@ describe("ShortcutsPanel", () => {
     expect(within(rowFor("Refresh pods")).getByText("Ctrl+Alt+P")).toBeInTheDocument();
     const messageList = screen.getByRole("region", { name: "Message list" });
     expect(within(messageList).getByText("Ctrl+Shift+U")).toBeInTheDocument();
-    // A command of a workspace feature that is off is not listed.
-    expect(screen.queryByText("Ctrl+Shift+I")).not.toBeInTheDocument();
 
     act(() => useKeybindProfileStore.getState().selectBuiltIn("mouse-friendly"));
     expect(screen.queryByText("Ctrl+D")).not.toBeInTheDocument();

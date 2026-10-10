@@ -242,16 +242,16 @@ describe("runWithConfirmation", () => {
 
   it("carries `description` from the challenge into the ConfirmationRequest handed to modal.open (C2 §4)", async () => {
     const challenge = {
-      commandId: "incident.ack",
-      toolName: "incident.ack",
-      args: { incidentId: "inc-1" },
-      token: "tok-ack",
-      argsHash: "hash-ack",
+      commandId: "chat.archive_channel",
+      toolName: "chat.archive_channel",
+      args: { conversationId: "conv-1" },
+      token: "tok-archive",
+      argsHash: "hash-archive",
       expiresAt: "2026-04-24T12:00:05Z",
       sensitivity: "MUTATING" as never,
-      nlDescription: "Acknowledge the active incident.",
+      nlDescription: "Archive the current channel.",
       description:
-        "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+        "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
     };
 
     let capturedDescription: string | undefined;
@@ -269,7 +269,7 @@ describe("runWithConfirmation", () => {
     unsubscribe();
 
     expect(capturedDescription).toBe(
-      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+      "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
     );
   });
 

@@ -18,11 +18,11 @@ describe("buildToolNameMap", () => {
   });
 
   it("replaces dots in command ids and maps the call back to the exact id", () => {
-    const map = buildToolNameMap(["chat.send_message", "incident.ack"]);
+    const map = buildToolNameMap(["chat.send_message", "chat.archive_channel"]);
     expect(map.toApi("chat.send_message")).toBe("chat_send_message");
-    expect(map.toApi("incident.ack")).toBe("incident_ack");
+    expect(map.toApi("chat.archive_channel")).toBe("chat_archive_channel");
     expect(map.fromApi("chat_send_message")).toBe("chat.send_message");
-    expect(map.fromApi("incident_ack")).toBe("incident.ack");
+    expect(map.fromApi("chat_archive_channel")).toBe("chat.archive_channel");
   });
 
   it("never lets a translated id take a name that already exists", () => {
@@ -83,8 +83,8 @@ describe("buildToolNameMap", () => {
       "chat.send_message",
       "chat.list_channels",
       "chat.open_thread",
-      "incident.ack",
-      "incident.declare",
+      "chat.archive_channel",
+      "macro.run",
       "workspace.switch",
       "plugin__chat_rim_k8s-pods__refresh",
     ];

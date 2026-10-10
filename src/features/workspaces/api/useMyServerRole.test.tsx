@@ -15,7 +15,6 @@ vi.mock("../../../core/graphql/client", () => ({
 
 import {
   isModeratorRole,
-  useCanManageOnCall,
   useCanModerate,
   useIsGuest,
   useIsOwner,
@@ -44,22 +43,6 @@ describe("useMyServerRole", () => {
     });
     const { result } = renderHook(() => useMyServerRole("srv-1"), { wrapper });
     await waitFor(() => expect(result.current).toBe(ServerMemberRoleGql.MODERATOR));
-  });
-});
-
-describe("useCanManageOnCall", () => {
-  beforeEach(() => {
-    requestMock.mockReset();
-  });
-
-  it.each([
-    [ServerMemberRoleGql.OWNER, true],
-    [ServerMemberRoleGql.MODERATOR, true],
-    [ServerMemberRoleGql.GUEST, false],
-  ])("role %s -> canManageOnCall %s", async (role, expected) => {
-    requestMock.mockResolvedValue({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
-    const { result } = renderHook(() => useCanManageOnCall("srv-1"), { wrapper });
-    await waitFor(() => expect(result.current).toBe(expected));
   });
 });
 

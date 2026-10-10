@@ -1,12 +1,7 @@
 import type { MessageAttachment, MessageE2ee } from "../../../../core/types/messages";
-import type { MessageTagType } from "../../../incidents/api/useIncident";
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 import type { PresenceStatus } from "../../../../shared/ui/Avatar";
 import type { LinkPreview } from "../LinkPreviewCard";
-
-export interface IncidentTagInfo {
-  tagType: MessageTagType;
-}
 
 export interface Reaction {
   emoji: string;
@@ -94,7 +89,6 @@ export interface MessageViewModel {
   author: MessageAuthorView;
   /** Set when the message replies to another one. */
   replyTo?: ReplyQuoteView | null;
-  incidentTags?: IncidentTagInfo[];
   isSelected?: boolean;
   /** Briefly flashed after a search/permalink jump. */
   isHighlighted?: boolean;

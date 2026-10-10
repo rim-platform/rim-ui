@@ -26,7 +26,6 @@ import {
   useDeviceKeybindStore,
   withDeviceKeybinds,
 } from "../state/useDeviceKeybindStore";
-import { useIsCommandAvailable } from "../../workspaces/hooks/useFeatureEnabled";
 import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { KEYBIND_CONTEXTS as CONTEXTS } from "../profiles/keybindProfile";
@@ -111,7 +110,6 @@ export function KeybindSettings() {
   // that are keybind-capable regardless of palette visibility, so we use it
   // here exclusively to build the title lookup map.
   const { data: commands } = useCommands("KEYBIND_PICKER");
-  const isCommandAvailable = useIsCommandAvailable();
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
@@ -168,13 +166,11 @@ export function KeybindSettings() {
     return pluginSuggestions.filter((s) => !boundCommands.has(s.commandId));
   }, [pluginSuggestions, keybinds]);
 
-  // Filter keybinds by search query. Bindings to commands of a workspace feature that is off
-  // (Track 0.4) are hidden, not deleted — they come back when the feature is turned on.
+  // Filter keybinds by search query
   const filteredKeybinds = useMemo(() => {
-    const available = keybinds.filter((kb) => isCommandAvailable(kb.commandId));
-    if (!searchQuery.trim()) return available;
+    if (!searchQuery.trim()) return keybinds;
     const q = searchQuery.toLowerCase();
-    return available.filter((kb) => {
+    return keybinds.filter((kb) => {
       const title = commandTitleMap.get(kb.commandId) ?? kb.commandId;
       return (
         title.toLowerCase().includes(q) ||
@@ -182,7 +178,7 @@ export function KeybindSettings() {
         kb.commandId.toLowerCase().includes(q)
       );
     });
-  }, [keybinds, searchQuery, commandTitleMap, isCommandAvailable]);
+  }, [keybinds, searchQuery, commandTitleMap]);
 
   // Group keybinds by category
   const categorizedKeybinds = useMemo(() => {

@@ -50,16 +50,6 @@ import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineRe
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
 import { RelayNotices } from "../../features/relay/components/RelayNotices";
-import { StartIncidentDialog } from "../../features/incidents/components/StartIncidentDialog";
-import { IncidentTimelinePanel } from "../../features/incidents/components/IncidentTimeline";
-import { PostmortemPreview } from "../../features/incidents/components/PostmortemPreview";
-import { IncidentsHub } from "../../features/incidents/components/IncidentsHub";
-import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
-import { OverrideModal } from "../../features/oncall/components/OverrideModal";
-import { useOnCallStore } from "../../features/oncall/state/useOnCallStore";
-import { useFeatureStatus } from "../../features/workspaces/hooks/useFeatureEnabled";
-import { FEATURE_OFF_MESSAGE } from "../../features/workspaces/featureCatalog";
-import { WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
@@ -174,34 +164,6 @@ function WorkspaceShell() {
   const { zenContentHidden, handleZenTransitionEnd } = useZenModeTransition(zenMode);
   useAutoFocusComposer(mainSurface.kind);
   useGlobalKeyHandlers();
-
-  // Incidents and on-call are an optional workspace module (Track 0.4): every surface below
-  // mounts only when the feature is on. "loading" counts as off so nothing flashes in.
-  const incidentsStatus = useFeatureStatus(WorkspaceFeature.INCIDENTS);
-  const incidentsEnabled = incidentsStatus === "enabled";
-
-  // Turning the module off mid-session drops any open incident state, so nothing (the
-  // "Tag for incident" context-menu item, a queued dialog) resurfaces from stale store values.
-  useEffect(() => {
-    if (incidentsStatus !== "disabled") return;
-    const incidents = useIncidentStore.getState();
-    incidents.setActiveIncident(null);
-    incidents.setShowStartDialog(false);
-    incidents.setShowTimeline(false);
-    incidents.setShowPostmortem(false);
-    useOnCallStore.getState().closeOverrideModal();
-  }, [incidentsStatus]);
-
-  // Incident mode
-  const showIncidentTimeline = useIncidentStore((s) => s.showTimeline);
-  const setShowIncidentTimeline = useIncidentStore((s) => s.setShowTimeline);
-  const showIncidentPostmortem = useIncidentStore((s) => s.showPostmortem);
-  const setShowIncidentPostmortem = useIncidentStore((s) => s.setShowPostmortem);
-
-  // On-call: "take shift" override modal, opened via the `oncall.take_shift` command
-  const showOverrideModal = useOnCallStore((s) => s.showOverrideModal);
-  const overrideScheduleId = useOnCallStore((s) => s.overrideScheduleId);
-  const closeOverrideModal = useOnCallStore((s) => s.closeOverrideModal);
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 
@@ -359,33 +321,6 @@ function WorkspaceShell() {
                   )}
                 </div>
               )}
-
-              {!mainAreaPlugin && incidentsEnabled && showIncidentTimeline && (
-                <div className="w-80 shrink-0">
-                  <SurfaceErrorBoundary
-                    surface="Incident timeline"
-                    resetKeys={[selectedConversationId]}
-                  >
-                    <IncidentTimelinePanel onClose={() => setShowIncidentTimeline(false)} />
-                  </SurfaceErrorBoundary>
-                </div>
-              )}
-
-              {!mainAreaPlugin &&
-                incidentsEnabled &&
-                showIncidentPostmortem &&
-                workspaceId &&
-                selectedConversationId && (
-                  <div className="w-80 shrink-0">
-                    <SurfaceErrorBoundary surface="Postmortem" resetKeys={[selectedConversationId]}>
-                      <PostmortemPreview
-                        serverId={workspaceId}
-                        conversationId={selectedConversationId}
-                        onClose={() => setShowIncidentPostmortem(false)}
-                      />
-                    </SurfaceErrorBoundary>
-                  </div>
-                )}
             </>
           )}
 
@@ -394,23 +329,6 @@ function WorkspaceShell() {
               <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
                 <SettingsPage />
               </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "incidents" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              {incidentsEnabled && (
-                <SurfaceErrorBoundary surface="Incidents" resetKeys={[]}>
-                  <IncidentsHub />
-                </SurfaceErrorBoundary>
-              )}
-              {incidentsStatus === "disabled" && (
-                <div className="flex flex-1 items-center justify-center">
-                  <p className="text-sm text-rim-text-muted">
-                    {FEATURE_OFF_MESSAGE[WorkspaceFeature.INCIDENTS]}
-                  </p>
-                </div>
-              )}
             </main>
           )}
 
@@ -471,17 +389,6 @@ function WorkspaceShell() {
           <PluginCommandConfirmDialog />
           <RegistryHost />
           <QuickAccessAssigner />
-          {incidentsEnabled && workspaceId && selectedConversationId && (
-            <StartIncidentDialog serverId={workspaceId} conversationId={selectedConversationId} />
-          )}
-          {incidentsEnabled && workspaceId && (
-            <OverrideModal
-              open={showOverrideModal}
-              onClose={closeOverrideModal}
-              serverId={workspaceId}
-              initialScheduleId={overrideScheduleId ?? undefined}
-            />
-          )}
           <ToastContainer />
         </div>
 

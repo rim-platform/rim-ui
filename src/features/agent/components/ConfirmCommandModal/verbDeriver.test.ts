@@ -7,11 +7,11 @@ describe("deriveConfirmationVerb", () => {
     expect(deriveConfirmationVerb("chat.delete_message")).toBe("delete");
     expect(deriveConfirmationVerb("chat.create_channel")).toBe("create");
     expect(deriveConfirmationVerb("workspace.uninstall_plugin")).toBe("uninstall");
-    expect(deriveConfirmationVerb("incidents.start_incident")).toBe("start");
+    expect(deriveConfirmationVerb("pipelines.run_pipeline")).toBe("run");
   });
 
   it("uses the entire second segment for `domain.verb` ids", () => {
-    expect(deriveConfirmationVerb("incidents.start")).toBe("start");
+    expect(deriveConfirmationVerb("macros.run")).toBe("run");
     expect(deriveConfirmationVerb("auth.logout")).toBe("logout");
   });
 

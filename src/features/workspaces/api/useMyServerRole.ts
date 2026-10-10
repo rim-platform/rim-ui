@@ -7,9 +7,8 @@ import { useWorkspace } from "./useWorkspace";
  * already-cached `server(serverId)` query — no extra round-trip.
  *
  * **Display/affordance gate only — never an authorization boundary.** Every mutation the
- * role gates (schedule/policy editing, ingest-token management, emoji deletion, moderation…)
- * independently re-checks the role server-side; this hook only lets the client avoid
- * rendering controls the viewer can't use. See `docs/oncall-ui.md`.
+ * role gates (emoji deletion, moderation…) independently re-checks the role server-side; this
+ * hook only lets the client avoid rendering controls the viewer can't use.
  *
  * Returns `undefined` while the server query is loading/disabled.
  */
@@ -31,12 +30,7 @@ export function useCanModerate(serverId?: string): boolean {
   return canModerate(useMyServerRole(serverId));
 }
 
-/** `true` when the viewer is Owner or Moderator — the gate for schedule/policy/override editing. */
-export function useCanManageOnCall(serverId?: string): boolean {
-  return useCanModerate(serverId);
-}
-
-/** `true` when the viewer is Owner — the gate for owner-only affordances (ingest tokens, B2). */
+/** `true` when the viewer is Owner — the gate for owner-only affordances such as emoji deletion. */
 export function useIsOwner(serverId?: string): boolean {
   return isOwner(useMyServerRole(serverId));
 }

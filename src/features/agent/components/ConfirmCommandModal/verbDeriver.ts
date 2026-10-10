@@ -11,7 +11,7 @@
  * Examples:
  *   chat.delete_message     → "delete"
  *   chat.create_channel     → "create"
- *   incidents.start         → "start"
+ *   chat.pin_message        → "pin"
  *   workspace.uninstall_pl  → "uninstall"
  *   single_segment          → "confirm"  (fallback)
  *

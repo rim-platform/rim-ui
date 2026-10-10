@@ -98,7 +98,7 @@ describe("LensEditor create", () => {
     const { onClose } = renderEditor();
 
     fireEvent.change(screen.getByPlaceholderText("e.g. Messages with links"), {
-      target: { value: " Incidents " },
+      target: { value: " Deploys " },
     });
     fireEvent.click(screen.getByText("Any condition (OR)"));
 
@@ -133,7 +133,7 @@ describe("LensEditor create", () => {
     expect(lastInput()).toEqual({
       serverId: "ws-1",
       conversationId: "conv-1",
-      name: "Incidents",
+      name: "Deploys",
       filterSpec: {
         conditions: [
           { field: FilterField.TEXT_CONTAINS, op: FilterOp.CONTAINS, value: "sev1" },

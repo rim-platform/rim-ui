@@ -3,11 +3,7 @@ import { memo, useCallback } from "react";
 import { cn } from "../../../shared/ui/cn";
 import { areMessageItemPropsEqual } from "./message-item/areMessageItemPropsEqual";
 import { formatShortTime } from "./message-item/formatShortTime";
-import {
-  MessageIncidentTags,
-  MessageLinkPreviews,
-  MessageThreadButton,
-} from "./message-item/MessageAnnotations";
+import { MessageLinkPreviews, MessageThreadButton } from "./message-item/MessageAnnotations";
 import { MessageAttachments } from "./message-item/MessageAttachments";
 import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
@@ -19,7 +15,6 @@ import type { MessageTextVariant } from "./message-item/MessageBody";
 import type { MessageItemProps } from "./message-item/types";
 
 export type {
-  IncidentTagInfo,
   MessageAuthorView,
   MessageItemHandlers,
   MessageItemMessage,
@@ -43,7 +38,6 @@ export const MessageItem = memo(function MessageItem({
     message,
     author,
     replyTo,
-    incidentTags,
     isSelected,
     isHighlighted,
     isDeleteConfirming,
@@ -85,7 +79,6 @@ export const MessageItem = memo(function MessageItem({
 
   const extras = (
     <>
-      <MessageIncidentTags tags={incidentTags} />
       {hasAttachments &&
         (message.e2ee && message.serverId && message.conversationId ? (
           <EncryptedAttachments

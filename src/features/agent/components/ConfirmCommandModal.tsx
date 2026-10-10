@@ -288,10 +288,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               <h2 id={titleId} className="text-xl font-medium text-rim-text">
                 {titlePrefix(request)} <span className="text-rim-accent">{request.toolName}</span>
               </h2>
-              {/* C2 §4: `description` is the ratified human-facing consequence
-                  carrier (e.g. incident.ack's "cancels the escalation chain
-                  and stops paging on-call"), written for humans and not
-                  clamp-prone the way `nlDescription` (model-facing, tuned for
+              {/* `description` is the human-facing consequence line, written
+                  for humans and not clamp-prone the way `nlDescription` (model-facing, tuned for
                   the LLM) can be. `nlDescription` remains the fallback for
                   commands without a `description`. */}
               {(request.description ?? request.nlDescription) && (

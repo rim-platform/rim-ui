@@ -28,7 +28,6 @@ const CommandsDocument = gql`
       visibleInContextMenus
       keybindCapable
       dangerous
-      feature
     }
   }
 `;
@@ -52,9 +51,8 @@ const ExecuteCommandDocument = gql`
 `;
 
 /**
- * The command registry for one surface. Always sent with the active workspace as context:
- * the server drops commands whose workspace feature is off (Track 0.4) and hides
- * feature-gated commands entirely when no workspace is given, so the list is per workspace.
+ * The command registry for one surface, fetched with the active workspace as context and
+ * cached per workspace.
  */
 export function useCommands(surface?: CommandSurface, commandContext?: CommandContextInput) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.workspaceId);

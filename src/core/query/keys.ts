@@ -13,7 +13,6 @@ export const queryKeys = {
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
   server: (serverId?: string) => ["server", serverId] as const,
-  workspaceFeatures: (serverId?: string) => ["workspaceFeatures", serverId] as const,
   // Track 1.2 moderation: active bans, and message reports filtered by status (null = all).
   serverBans: (serverId?: string) => ["serverBans", serverId] as const,
   messageReports: (serverId?: string, status?: string | null) =>
@@ -41,8 +40,7 @@ export const queryKeys = {
   // One conversation by id: the open conversation's header, composer gate and members panel.
   conversation: (workspaceId?: string, conversationId?: string) =>
     ["conversation", workspaceId, conversationId] as const,
-  // Keyed by workspace too: the server filters out commands whose workspace feature is off
-  // (Track 0.4), so the list differs per workspace.
+  // Keyed by workspace too: the list is fetched with the active workspace as context.
   commands: (surface?: string, workspaceId?: string) => ["commands", surface, workspaceId] as const,
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
@@ -71,20 +69,6 @@ export const queryKeys = {
     ["lenses", workspaceId, conversationId] as const,
   lensMessages: (workspaceId?: string, conversationId?: string, lensId?: string) =>
     ["lensMessages", workspaceId, conversationId, lensId] as const,
-  activeIncident: (serverId?: string, conversationId?: string) =>
-    ["activeIncident", serverId, conversationId] as const,
-  incidentTimeline: (incidentId?: string) => ["incidentTimeline", incidentId] as const,
-  listIncidents: (
-    serverId?: string,
-    statusFilter?: readonly string[] | null,
-    severityFilter?: readonly string[] | null,
-  ) =>
-    [
-      "listIncidents",
-      serverId,
-      statusFilter ? [...statusFilter].sort().join(",") : null,
-      severityFilter ? [...severityFilter].sort().join(",") : null,
-    ] as const,
   keybinds: (scope?: string, workspaceId?: string) => ["keybinds", scope, workspaceId] as const,
   unreadCounts: (workspaceId?: string) => ["unreadCounts", workspaceId] as const,
   mutedConversations: (workspaceId?: string) => ["mutedConversations", workspaceId] as const,
@@ -100,18 +84,6 @@ export const queryKeys = {
   serverInfo: ["serverInfo"] as const,
   previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
   workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
-  ingestTokens: (serverId?: string) => ["ingestTokens", serverId] as const,
-  // Track C1 — on-call schedules + escalation (schedule/rotation CRUD landed at C1a/C1c;
-  // escalation-policy keys are added once the backend GraphQL surface lands — see
-  // docs/oncall-ui.md for the current contract gap).
-  onCallSchedules: (serverId?: string) => ["onCallSchedules", serverId] as const,
-  serverOnCall: (serverId?: string) => ["serverOnCall", serverId] as const,
-  // Keyed by scheduleId, not serverId/workspaceId — see VOLATILE_GLOBAL_KEY_ROOTS below.
-  whoIsOnCall: (scheduleId?: string, at?: string) =>
-    ["whoIsOnCall", scheduleId, at ?? null] as const,
-  onCallShifts: (scheduleId?: string, from?: string, to?: string) =>
-    ["onCallShifts", scheduleId, from, to] as const,
-  escalationPolicies: (serverId?: string) => ["escalationPolicies", serverId] as const,
   // Track 1.3 notification rules: the viewer's settings, inbox (keyed by the unread-only filter;
   // the `["notifications", serverId]` prefix covers both lists) and the bell's unread count.
   notificationSettings: (serverId?: string) => ["notificationSettings", serverId] as const,
@@ -147,7 +119,6 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "workspacePresence",
   "serverMembers",
   "server",
-  "workspaceFeatures",
   "serverBans",
   "messageReports",
   "customEmojis",
@@ -156,33 +127,7 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "pipelines",
   "macros",
   "resolvedKeybinds",
-  "activeIncident",
-  "listIncidents",
-  // Ingest tokens (Track B2 §2a management UI) aren't built yet — this root
-  // is added ahead of that feature landing so reconnect scoping already
-  // covers it once `useIngestTokens` exists; harmless no-op until then.
-  "ingestTokens",
-  // Track C1: schedule list + the serverOnCall batch resolver are both keyed by
-  // serverId/workspaceId at position [1], so they fit the same prefix-match scheme.
-  "onCallSchedules",
-  "serverOnCall",
-  "escalationPolicies",
   "notificationSettings",
   "notifications",
   "unreadNotificationCount",
-] as const;
-
-/**
- * Volatile roots NOT scoped by workspace id in their key (e.g. incident timelines are
- * keyed by incidentId). Invalidated by root prefix on reconnect. Safe because a user
- * views one active workspace at a time; worst case is one redundant refetch.
- */
-export const VOLATILE_GLOBAL_KEY_ROOTS = [
-  "incidentTimeline",
-  // Track C1: keyed by scheduleId, not workspaceId — a `[root, workspaceId]` prefix
-  // would never match these (scheduleId !== workspaceId), so they can't share
-  // VOLATILE_WORKSPACE_KEY_ROOTS; invalidate by root name alone on reconnect instead,
-  // same as incidentTimeline above.
-  "whoIsOnCall",
-  "onCallShifts",
 ] as const;

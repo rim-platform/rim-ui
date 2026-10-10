@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
-import { useIsCommandAvailable } from "../../workspaces/hooks/useFeatureEnabled";
 import { useCommands } from "../api/useCommands";
 import { KEYBIND_CONTEXTS } from "../profiles/keybindProfile";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
@@ -53,7 +52,6 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const profileName = useKeybindProfileStore((s) => s.profile.name);
   const { data: commands } = useCommands("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
-  const isCommandAvailable = useIsCommandAvailable();
   const [query, setQuery] = useState("");
 
   const groups = useMemo<ShortcutGroup[]>(() => {
@@ -65,7 +63,7 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     const result: ShortcutGroup[] = KEYBIND_CONTEXTS.map((context) => ({
       label: CONTEXT_LABELS[context],
       rows: keybinds
-        .filter((kb) => kb.context === context && kb.isEnabled && isCommandAvailable(kb.commandId))
+        .filter((kb) => kb.context === context && kb.isEnabled)
         .map((kb) => ({ keys: kb.keystroke, title: titles.get(kb.commandId) ?? kb.commandId }))
         .filter((row) => !needle || matches(row, needle)),
     }));
@@ -78,7 +76,7 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
       });
     }
     return result.filter((group) => group.rows.length > 0);
-  }, [keybinds, commands, pluginCommands, isCommandAvailable, vimMode, query]);
+  }, [keybinds, commands, pluginCommands, vimMode, query]);
 
   return (
     <Dialog open onClose={onClose} title="Keyboard shortcuts" maxWidth="max-w-xl">
