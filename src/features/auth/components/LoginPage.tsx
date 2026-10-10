@@ -8,6 +8,8 @@
  *   text below the form card.
  * - `OPEN`: shows a `─── OR ───` divider and a "Create account" link to
  *   `/join` instead.
+ * - `POW` (a public relay): the same link in the desktop app, which signs up with a key and a
+ *   proof-of-work; in the web app, copy that points to the desktop app or an invite.
  *
  * **Session redirect:** if a session is already restored via
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
@@ -24,6 +26,7 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAuthStore } from "../state/useAuthStore";
 import { useSessionHydration } from "../api/useSessionHydration";
 import { useServerConfig } from "../api/useServerConfig";
@@ -45,6 +48,7 @@ export function LoginPage() {
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const { data: serverConfig } = useServerConfig();
+  const { capabilities } = useRuntime();
 
   // If already authenticated, send directly to the intended destination.
   useEffect(() => {
@@ -68,7 +72,10 @@ export function LoginPage() {
   }
 
   const registrationMode = serverConfig?.registrationMode;
-  const isOpen = registrationMode === RegistrationMode.OPEN;
+  const isPow = registrationMode === RegistrationMode.POW;
+  // A relay in pow mode takes key-only signups without an invite, which the desktop app makes.
+  const canCreate =
+    registrationMode === RegistrationMode.OPEN || (isPow && capabilities.identityKeys);
 
   function handleLoginSuccess(userId: string) {
     setSession({ userId });
@@ -96,7 +103,7 @@ export function LoginPage() {
 
         <RecoverAccount onSuccess={handleLoginSuccess} />
 
-        {isOpen ? (
+        {canCreate ? (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />
@@ -110,6 +117,10 @@ export function LoginPage() {
               Create account
             </Link>
           </div>
+        ) : isPow ? (
+          <p className="text-center text-xs text-rim-text-muted">
+            No account? Create one in the RIM desktop app, or ask for an invite.
+          </p>
         ) : (
           <p className="text-center text-xs text-rim-text-muted">
             No account? Ask your workspace admin for an invite.

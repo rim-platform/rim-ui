@@ -120,6 +120,24 @@ describe("OpenJoinPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
+  it("offers only the key signup in the desktop app when registrationMode is POW", () => {
+    desktop.value = true;
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
+    renderPage();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+  });
+
+  it("points the web app to the desktop app or an invite when registrationMode is POW", () => {
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
+    renderPage();
+    expect(
+      screen.getByText("Signing up here takes the RIM desktop app, or an invite."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).toBeNull();
+  });
+
   it("does not offer a key signup in the web app", () => {
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "OPEN" },

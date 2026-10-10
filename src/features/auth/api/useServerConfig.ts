@@ -1,7 +1,7 @@
 /**
  * `useServerConfig` — fetches deployment-wide server configuration.
  *
- * Currently exposes `registrationMode` (`OPEN | INVITE_ONLY`), which controls
+ * Currently exposes `registrationMode` (`OPEN | INVITE_ONLY | POW`), which controls
  * whether the login page shows a "Create account" link and whether `/join`
  * (no token) is accessible.
  *

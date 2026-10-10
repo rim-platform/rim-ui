@@ -52,6 +52,11 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
+const desktop = vi.hoisted(() => ({ value: false }));
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ capabilities: { identityKeys: desktop.value } }),
+}));
+
 // Device key sign-in and device linking have their own tests; here it renders nothing, as in the web app.
 vi.mock("../../key-identity/components/DeviceKeySignIn", () => ({
   DeviceKeySignIn: () => null,
@@ -66,6 +71,7 @@ import { LoginPage } from "./LoginPage";
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    desktop.value = false;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "INVITE_ONLY" },
       isPending: false,
@@ -105,6 +111,30 @@ describe("LoginPage", () => {
     const link = screen.getByRole("link", { name: "Create account" });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "/join");
+  });
+
+  it("renders the Create account link in the desktop app when registrationMode is POW", () => {
+    desktop.value = true;
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "POW" },
+      isPending: false,
+      isError: false,
+    });
+    renderPage();
+    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
+  });
+
+  it("points the web app to the desktop app or an invite when registrationMode is POW", () => {
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "POW" },
+      isPending: false,
+      isError: false,
+    });
+    renderPage();
+    expect(
+      screen.getByText("No account? Create one in the RIM desktop app, or ask for an invite."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
   });
 
   it("hides the Create account link while registrationMode is loading — defaults to invite-only", () => {

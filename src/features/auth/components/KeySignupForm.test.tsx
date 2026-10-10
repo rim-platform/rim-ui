@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ClientError } from "graphql-request";
@@ -22,7 +22,8 @@ vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
 }));
 
-import { KeyChallengeFailed } from "../../key-identity/api/keyIdentity";
+import { KeyChallengeFailed, type KeySignupOptions } from "../../key-identity/api/keyIdentity";
+import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer".split(
@@ -31,6 +32,7 @@ const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather 
 const draft = {
   draftId: "draft-1",
   principalId: "rimp1_ada",
+  inceptionPayload: "{}",
   recoveryKit: `RIM recovery kit (v2)\nAccount id: rimp1_ada\nRecovery phrase: ${PHRASE.join(" ")}\n`,
   recoveryPhrase: PHRASE,
 };
@@ -134,10 +136,11 @@ describe("KeySignupForm", () => {
     expect(create).toBeEnabled();
     await user.click(create);
 
-    expect(api.signupWithKey).toHaveBeenCalledWith(draft, {
-      username: "ada",
-      instanceInviteToken: "inst-tok",
-    });
+    expect(api.signupWithKey).toHaveBeenCalledWith(
+      draft,
+      { username: "ada", instanceInviteToken: "inst-tok" },
+      expect.anything(),
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
     // The page keeps the form mounted while a step runs.
@@ -157,11 +160,11 @@ describe("KeySignupForm", () => {
     await reachKit(user, "  ada ");
     await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
-    expect(api.signupWithKey).toHaveBeenCalledWith(draft, {
-      username: "ada",
-      displayName: "Ada L.",
-      workspaceInviteToken: "ws-tok",
-    });
+    expect(api.signupWithKey).toHaveBeenCalledWith(
+      draft,
+      { username: "ada", displayName: "Ada L.", workspaceInviteToken: "ws-tok" },
+      expect.anything(),
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-1"));
   });
 
@@ -198,11 +201,86 @@ describe("KeySignupForm", () => {
     await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
     expect(api.beginEnrollment).toHaveBeenCalledTimes(1);
-    expect(api.signupWithKey).toHaveBeenLastCalledWith(draft, {
-      username: "ada2",
-      instanceInviteToken: "inst-tok",
-    });
+    expect(api.signupWithKey).toHaveBeenLastCalledWith(
+      draft,
+      { username: "ada2", instanceInviteToken: "inst-tok" },
+      expect.anything(),
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
+  });
+
+  it("shows the proof-of-work with its time, says why it is slow, and can cancel it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      api.signupWithKey.mockImplementationOnce(
+        (_draft: unknown, _fields: unknown, options: KeySignupOptions) =>
+          new Promise((_resolve, reject) => {
+            options.onProofOfWork?.(24);
+            options.signal?.addEventListener("abort", () => reject(new PowCancelled()));
+          }),
+      );
+      const { onBusyChange } = renderForm({});
+
+      await reachKit(user);
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent(/proving this is a real device/i);
+      expect(status).not.toHaveTextContent(/million/);
+      act(() => {
+        vi.advanceTimersByTime(11_000);
+      });
+      expect(status).toHaveTextContent(/1[12] s/);
+      expect(status).toHaveTextContent(/16\.8 million hashes/);
+      expect(status).toHaveTextContent(/seconds in the desktop app.*tens of seconds in a browser/);
+      expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+      await user.click(within(status).getByRole("button", { name: /cancel/i }));
+
+      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByLabelText("Recovery phrase")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^create account$/i })).toBeEnabled();
+      expect(onBusyChange).toHaveBeenLastCalledWith(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the server's words when it refuses the proof-of-work and offers to try again", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey
+      .mockRejectedValueOnce(
+        serverError("VALIDATION", "proofOfWork does not have the required leading zero bits"),
+      )
+      .mockResolvedValueOnce({ userId: "u-ada", serverId: null });
+    const { onSuccess } = renderForm({});
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("proofOfWork does not have the required leading zero bits");
+    await user.click(within(alert).getByRole("button", { name: /try again/i }));
+
+    expect(api.signupWithKey).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
+  });
+
+  it("offers no retry button for a refusal that is not about the proof-of-work", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey.mockRejectedValueOnce(
+      serverError("FORBIDDEN", "this key identity is blocked on this server"),
+    );
+    renderForm({});
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("this key identity is blocked on this server");
+    expect(within(alert).queryByRole("button")).toBeNull();
   });
 
   it.each([
