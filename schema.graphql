@@ -475,6 +475,9 @@ type Conversation {
 	The conversation's current MLS group; null for plaintext and before the first Commit.
 	"""
 	mlsGroup: MlsGroup
+	"""
+	The conversation this one succeeds, on the host that held it; null for any other.
+	"""
 	predecessor: ConversationPredecessor
 }
 
@@ -538,6 +541,9 @@ type ConversationPage {
 	pageInfo: PageInfo!
 }
 
+"""
+The conversation a successor replaces, on the host that held it.
+"""
 type ConversationPredecessor {
 	hostServerId: String!
 	conversationId: ID!
@@ -594,7 +600,14 @@ input CreateConversationInput {
 	up for encryption. Defaults to false.
 	"""
 	encrypted: Boolean
+	"""
+	People from other servers, in the direct space only. With no `otherUserId` or
+	`memberIds` and one remote member, the conversation is a DM with them.
+	"""
 	remoteMembers: [RemoteMemberInput!]
+	"""
+	The conversation this one succeeds, when its home is gone.
+	"""
 	predecessor: PredecessorInput
 }
 
@@ -810,12 +823,21 @@ enum DigestFrequency {
 	DAILY
 }
 
+"""
+A conversation started by someone outside the caller's contacts.
+"""
 type DmRequest {
 	id: ID!
 	fromPrincipalId: String!
+	"""
+	The sender's profile card as the host sent it.
+	"""
 	card: SignedStatement!
 	hostServerId: String!
 	conversationId: ID!
+	"""
+	Up to three items of the conversation, held while the request is pending.
+	"""
 	heldItems: [RelayItem!]!
 	status: DmRequestStatus!
 	createdAt: DateTime!
@@ -2183,14 +2205,35 @@ type Mutation {
 	them against its receipt before the moderators see them.
 	"""
 	reportEncryptedMessage(input: ReportEncryptedMessageInput!): Boolean!
+	"""
+	Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each).
+	"""
 	addContact(principalId: String!, relayUrls: [String!]!): Contact!
 	removeContact(principalId: String!): Boolean!
+	"""
+	Release the request's held items, let later ones flow, and add the sender as a contact.
+	"""
 	acceptDmRequest(id: ID!): DmRequest!
+	"""
+	Delete the request's held items and drop later items of the conversation.
+	"""
 	ignoreDmRequest(id: ID!): DmRequest!
+	"""
+	Ignore a principal's pending requests and refuse its invites and key package claims.
+	"""
 	blockPrincipal(principalId: String!): Boolean!
 	unblockPrincipal(principalId: String!): Boolean!
+	"""
+	Report a DM request as abuse; a pending one is ignored too.
+	"""
 	reportDmRequest(id: ID!, reason: String!): Boolean!
+	"""
+	Move the session device's cursor up to `upTo`.
+	"""
 	ackRelayItems(upTo: ID!): Boolean!
+	"""
+	Delete the caller's queue, requests, contacts and blocks on this relay.
+	"""
 	leaveRelay: Boolean!
 }
 
@@ -2488,6 +2531,9 @@ enum PluginSourceKind {
 	GIT
 }
 
+"""
+The conversation a successor replaces.
+"""
 input PredecessorInput {
 	hostServerId: String!
 	conversationId: ID!
@@ -2735,16 +2781,40 @@ type Query {
 	"""
 	mlsCommits(serverId: ID!, conversationId: ID!, incarnation: Int!, afterEpoch: Int, limit: Int): MlsCommitPage!
 	"""
-	The certified devices of principals who share a workspace with the caller; an empty
-	list for any other principal. At most 100 ids.
+	The certified devices of principals who share a workspace with the caller (the direct
+	space included); an empty list for any other principal. At most 100 ids.
 	"""
 	principalDevices(principalIds: [String!]!): [PrincipalDevices!]!
+	"""
+	This server's id, roles and direct space. Readable without a session.
+	"""
 	relayInfo: RelayInfo!
+	"""
+	Pin the server at `origin` through this relay and return its discovery document.
+	"""
 	remoteServer(origin: String!): RemoteServer!
+	"""
+	A principal's identity: a local one directly, else fetched from `relayUrl` (pinning it)
+	and cached for 24 hours.
+	"""
 	remoteIdentity(principalId: String!, relayUrl: String): RemoteIdentity!
+	"""
+	The caller's contacts, oldest first.
+	"""
 	contacts: [Contact!]!
+	"""
+	The caller's DM requests, newest first.
+	"""
 	dmRequests(status: DmRequestStatus): [DmRequest!]!
+	"""
+	The session device's queued host events above `after` (its cursor when omitted).
+	`limit` is 1 to 500, 200 by default.
+	"""
 	relayItems(after: ID, limit: Int): RelayItemPage!
+	"""
+	The current `seq` of each named event stream of a space hosted here that the caller can
+	see; streams the caller cannot see are left out.
+	"""
 	streamHeads(serverId: ID!, streams: [String!]!): [StreamHead!]!
 }
 
@@ -2772,12 +2842,27 @@ enum RegistrationModeGql {
 	OPEN
 }
 
+"""
+This server as its users' relay.
+"""
 type RelayInfo {
+	"""
+	This server's id (`rims1_…`).
+	"""
 	serverId: String!
+	"""
+	`host`, `relay` or both.
+	"""
 	roles: [String!]!
+	"""
+	The space holding the DMs and groups this relay's users start with anyone.
+	"""
 	directSpaceId: ID!
 }
 
+"""
+A host event queued for the caller, signed by its host.
+"""
 type RelayItem {
 	id: ID!
 	hostServerId: String!
@@ -2790,29 +2875,54 @@ type RelayItemPage {
 	hasMore: Boolean!
 }
 
+"""
+A principal's identity as their relay serves it. The app verifies the log against the
+principal id, each certificate against the log and the card against the head.
+"""
 type RemoteIdentity {
 	principalId: String!
 	keyLog: [SignedStatement!]!
 	devices: [RemotePrincipalDevice!]!
 	card: SignedStatement
+	"""
+	Server id of the relay that served it.
+	"""
 	servedBy: String!
 }
 
+"""
+Someone from another server to start a conversation with.
+"""
 input RemoteMemberInput {
 	principalId: String!
+	"""
+	Their relays, tried in order to fetch their identity.
+	"""
 	relayUrls: [String!]!
 }
 
+"""
+A device of a principal from another server.
+"""
 type RemotePrincipalDevice {
 	deviceId: ID!
 	certificate: SignedStatement!
 	revocation: SignedStatement
+	"""
+	Whether the device uploaded key packages recently enough to be added to groups.
+	"""
 	mlsActive: Boolean!
 }
 
+"""
+Another server, pinned through this relay.
+"""
 type RemoteServer {
 	serverId: String!
 	origin: String!
+	"""
+	The discovery document as JSON text, for the app to verify and pin.
+	"""
 	discovery: String!
 }
 
@@ -3187,7 +3297,6 @@ input SignupWithKeyInput {
 	bootstrapToken: String
 	instanceInviteToken: String
 	workspaceInviteToken: String
-	proofOfWork: String
 }
 
 type SkillProfileGql {
@@ -3223,6 +3332,9 @@ type StartedDeviceLink {
 	expiresAt: DateTime!
 }
 
+"""
+The current `seq` of a host event stream, as a decimal string.
+"""
 type StreamHead {
 	stream: String!
 	seq: String!
@@ -3250,6 +3362,12 @@ type Subscription {
 	Returns events as JSON strings — the client parses the `type` field to determine the event kind.
 	"""
 	workspaceEvents(workspaceId: ID!): String!
+	"""
+	Host events queued for the session's device on this relay, above `after` (the device's
+	cursor when omitted), then live ones, as JSON strings:
+	`{"type":"RelayItem","id","hostServerId","workspaceId","envelope"}`, and the
+	`DmRequestReceived` and `QueueOverflow` notices.
+	"""
 	relayStream(after: ID): String!
 }
 

@@ -153,19 +153,16 @@ export class RelayStreamProcessor {
 
   private async handleOverflow(notice: Record<string, unknown>): Promise<void> {
     const named = Array.isArray(notice.spaces)
-      ? notice.spaces.flatMap((s) =>
-          s &&
-          typeof s === "object" &&
-          typeof (s as { workspaceId?: unknown }).workspaceId === "string"
-            ? [(s as { workspaceId: string }).workspaceId]
-            : [],
-        )
-      : typeof notice.workspaceId === "string"
-        ? [notice.workspaceId]
-        : [];
-    for (const spaceId of named) {
+      ? notice.spaces.flatMap((s) => {
+          const space = s && typeof s === "object" ? (s as Record<string, unknown>) : {};
+          return typeof space.workspaceId === "string" && typeof space.hostServerId === "string"
+            ? [{ spaceId: space.workspaceId, host: space.hostServerId }]
+            : [];
+        })
+      : [];
+    for (const { spaceId, host: namedHost } of named) {
       const host = this.deps.hostOf(spaceId);
-      if (!host) continue;
+      if (host !== namedHost) continue;
       const streams = [...this.sequencers.keys()]
         .filter((key) => key.startsWith(`${host}|${spaceId}|`))
         .map((key) => key.split("|")[2]);

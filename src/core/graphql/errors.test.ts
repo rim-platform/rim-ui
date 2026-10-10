@@ -11,6 +11,8 @@ import {
   retryAfterSeconds,
   timedOutMessage,
   timedOutUntil,
+  UPSTREAM_UNAVAILABLE,
+  UPSTREAM_UNAVAILABLE_MESSAGE,
 } from "./errors";
 
 const featureDisabled = Object.assign(new Error('Feature disabled: {"response":{}}'), {
@@ -51,6 +53,22 @@ describe("graphqlErrorMessage", () => {
   it("falls back to Error.message, then to the fallback", () => {
     expect(graphqlErrorMessage(new Error("network down"), "fallback")).toBe("network down");
     expect(graphqlErrorMessage(undefined, "fallback")).toBe("fallback");
+  });
+
+  it("words an unreachable peer server without its id", () => {
+    const upstream = Object.assign(new Error("serialized"), {
+      response: {
+        errors: [
+          {
+            message: "server rims1_abc is unavailable",
+            extensions: { code: "UPSTREAM_UNAVAILABLE", hostServerId: "rims1_abc" },
+          },
+        ],
+      },
+    });
+    expect(graphqlErrorCode(upstream)).toBe(UPSTREAM_UNAVAILABLE);
+    expect(graphqlErrorExtension(upstream, "hostServerId")).toBe("rims1_abc");
+    expect(graphqlErrorMessage(upstream, "fallback")).toBe(UPSTREAM_UNAVAILABLE_MESSAGE);
   });
 });
 

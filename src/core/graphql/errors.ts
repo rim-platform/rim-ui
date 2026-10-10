@@ -72,6 +72,13 @@ export const INVALID_TOKEN = "INVALID_TOKEN";
 /** An invite or bootstrap token past its expiry. */
 export const EXPIRED_TOKEN = "EXPIRED_TOKEN";
 
+/** Another server the request needed could not be reached; extension `hostServerId`. */
+export const UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE";
+
+/** The wording for an `UPSTREAM_UNAVAILABLE` failure. */
+export const UPSTREAM_UNAVAILABLE_MESSAGE =
+  "Another server this needs could not be reached. Try again later.";
+
 /**
  * Whether the server answered that the session is not valid: an `UNAUTHENTICATED` error (the
  * server sends it with HTTP 200) or a 401/403 from whatever sits in front of it. Other answers,
@@ -105,11 +112,13 @@ export function timedOutMessage(until: string): string {
 
 /**
  * The server's human-readable message for a failed request, else `err.message`, else
- * `fallback`. A `TIMED_OUT` error reads "You are timed out until …" wherever it surfaces.
+ * `fallback`. A `TIMED_OUT` error reads "You are timed out until …" and an
+ * `UPSTREAM_UNAVAILABLE` one names no server id, wherever they surface.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);
   if (until) return timedOutMessage(until);
+  if (graphqlErrorCode(err) === UPSTREAM_UNAVAILABLE) return UPSTREAM_UNAVAILABLE_MESSAGE;
   const message = firstGraphQLError(err)?.message;
   if (typeof message === "string" && message.trim()) return message;
   if (err instanceof Error && err.message) return err.message;

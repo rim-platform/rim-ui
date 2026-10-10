@@ -447,6 +447,7 @@ export type Conversation = {
    * the workspace default.
    */
   notificationLevel?: Maybe<NotificationLevel>;
+  /** The conversation this one succeeds, on the host that held it; null for any other. */
   predecessor?: Maybe<ConversationPredecessor>;
   serverId: Scalars['ID']['output'];
   /**
@@ -502,6 +503,7 @@ export type ConversationPage = {
   prev?: Maybe<InboxCursorOutput>;
 };
 
+/** The conversation a successor replaces, on the host that held it. */
 export type ConversationPredecessor = {
   conversationId: Scalars['ID']['output'];
   hostServerId: Scalars['String']['output'];
@@ -546,7 +548,12 @@ export type CreateConversationInput = {
   memberIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** For DM conversations. */
   otherUserId?: InputMaybe<Scalars['ID']['input']>;
+  /** The conversation this one succeeds, when its home is gone. */
   predecessor?: InputMaybe<PredecessorInput>;
+  /**
+   * People from other servers, in the direct space only. With no `otherUserId` or
+   * `memberIds` and one remote member, the conversation is a DM with them.
+   */
   remoteMembers?: InputMaybe<Array<RemoteMemberInput>>;
   serverId: Scalars['ID']['input'];
   title?: InputMaybe<Scalars['String']['input']>;
@@ -743,12 +750,15 @@ export enum DigestFrequency {
   OFF = 'OFF'
 }
 
+/** A conversation started by someone outside the caller's contacts. */
 export type DmRequest = {
+  /** The sender's profile card as the host sent it. */
   card: SignedStatement;
   conversationId: Scalars['ID']['output'];
   createdAt: Scalars['DateTime']['output'];
   expiresAt: Scalars['DateTime']['output'];
   fromPrincipalId: Scalars['String']['output'];
+  /** Up to three items of the conversation, held while the request is pending. */
   heldItems: Array<RelayItem>;
   hostServerId: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -1629,9 +1639,11 @@ export type MlsWelcome = {
 };
 
 export type Mutation = {
+  /** Release the request's held items, let later ones flow, and add the sender as a contact. */
   acceptDmRequest: DmRequest;
   /** Acknowledge Welcomes of the session's device; answers how many were acknowledged now. */
   ackMlsWelcomes: Scalars['Int']['output'];
+  /** Move the session device's cursor up to `upTo`. */
   ackRelayItems: Scalars['Boolean']['output'];
   /**
    * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
@@ -1639,6 +1651,7 @@ export type Mutation = {
    * Cancels the incident's active escalation run, if any.
    */
   acknowledgeIncident: IncidentGql;
+  /** Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each). */
   addContact: Contact;
   /** Add (invite) workspace members to a channel or group the caller belongs to. */
   addConversationMembers: Conversation;
@@ -1654,6 +1667,7 @@ export type Mutation = {
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
   banMember: ServerBan;
+  /** Ignore a principal's pending requests and refuse its invites and key package claims. */
   blockPrincipal: Scalars['Boolean']['output'];
   /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
@@ -1725,6 +1739,7 @@ export type Mutation = {
   forwardMessage: Message;
   generatePostmortem: IncidentGql;
   heartbeat: Scalars['Boolean']['output'];
+  /** Delete the request's held items and drop later items of the conversation. */
   ignoreDmRequest: DmRequest;
   incrementWorkspaceState: WorkspaceStateEntryGql;
   /** Join a public, unarchived channel. Idempotent. */
@@ -1739,6 +1754,7 @@ export type Mutation = {
   kickMember: Scalars['Boolean']['output'];
   /** Leave a channel or group (not a DM). */
   leaveConversation: Scalars['Boolean']['output'];
+  /** Delete the caller's queue, requests, contacts and blocks on this relay. */
   leaveRelay: Scalars['Boolean']['output'];
   login: LoginPayload;
   /**
@@ -1773,6 +1789,7 @@ export type Mutation = {
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
   replyToMessage: Message;
+  /** Report a DM request as abuse; a pending one is ignored too. */
   reportDmRequest: Scalars['Boolean']['output'];
   /**
    * Report an encrypted message by revealing its content and franking key; the server checks
@@ -2931,6 +2948,7 @@ export enum PluginSourceKind {
   GIT = 'GIT'
 }
 
+/** The conversation a successor replaces. */
 export type PredecessorInput = {
   conversationId: Scalars['ID']['input'];
   hostServerId: Scalars['String']['input'];
@@ -2989,6 +3007,7 @@ export type Query = {
    */
   commandDiscover: Array<Command>;
   commands: Array<Command>;
+  /** The caller's contacts, oldest first. */
   contacts: Array<Contact>;
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
@@ -3003,6 +3022,7 @@ export type Query = {
    * needed: the link id is the capability.
    */
   deviceLinkAnswer?: Maybe<SealedMessage>;
+  /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
   /** List a server's escalation policies. Any workspace member may read. */
   escalationPolicies: Array<EscalationPolicyGql>;
@@ -3100,8 +3120,8 @@ export type Query = {
    */
   previewInviteToken: InviteTokenPreviewGql;
   /**
-   * The certified devices of principals who share a workspace with the caller; an empty
-   * list for any other principal. At most 100 ids.
+   * The certified devices of principals who share a workspace with the caller (the direct
+   * space included); an empty list for any other principal. At most 100 ids.
    */
   principalDevices: Array<PrincipalDevices>;
   /**
@@ -3111,9 +3131,19 @@ export type Query = {
    * No authentication required — this is public configuration metadata.
    */
   registrationMode: RegistrationModeGql;
+  /** This server's id, roles and direct space. Readable without a session. */
   relayInfo: RelayInfo;
+  /**
+   * The session device's queued host events above `after` (its cursor when omitted).
+   * `limit` is 1 to 500, 200 by default.
+   */
   relayItems: RelayItemPage;
+  /**
+   * A principal's identity: a local one directly, else fetched from `relayUrl` (pinning it)
+   * and cached for 24 hours.
+   */
   remoteIdentity: RemoteIdentity;
+  /** Pin the server at `origin` through this relay and return its discovery document. */
   remoteServer: RemoteServer;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
@@ -3144,6 +3174,10 @@ export type Query = {
    * individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
    */
   serverOnCall: Array<OnCallNowGql>;
+  /**
+   * The current `seq` of each named event stream of a space hosted here that the caller can
+   * see; streams the caller cannot see are left out.
+   */
   streamHeads: Array<StreamHead>;
   thread: Thread;
   threadByRootMessage?: Maybe<Thread>;
@@ -3601,12 +3635,17 @@ export enum RegistrationModeGql {
   OPEN = 'OPEN'
 }
 
+/** This server as its users' relay. */
 export type RelayInfo = {
+  /** The space holding the DMs and groups this relay's users start with anyone. */
   directSpaceId: Scalars['ID']['output'];
+  /** `host`, `relay` or both. */
   roles: Array<Scalars['String']['output']>;
+  /** This server's id (`rims1_…`). */
   serverId: Scalars['String']['output'];
 };
 
+/** A host event queued for the caller, signed by its host. */
 export type RelayItem = {
   envelope: SignedStatement;
   hostServerId: Scalars['String']['output'];
@@ -3619,27 +3658,38 @@ export type RelayItemPage = {
   items: Array<RelayItem>;
 };
 
+/**
+ * A principal's identity as their relay serves it. The app verifies the log against the
+ * principal id, each certificate against the log and the card against the head.
+ */
 export type RemoteIdentity = {
   card?: Maybe<SignedStatement>;
   devices: Array<RemotePrincipalDevice>;
   keyLog: Array<SignedStatement>;
   principalId: Scalars['String']['output'];
+  /** Server id of the relay that served it. */
   servedBy: Scalars['String']['output'];
 };
 
+/** Someone from another server to start a conversation with. */
 export type RemoteMemberInput = {
   principalId: Scalars['String']['input'];
+  /** Their relays, tried in order to fetch their identity. */
   relayUrls: Array<Scalars['String']['input']>;
 };
 
+/** A device of a principal from another server. */
 export type RemotePrincipalDevice = {
   certificate: SignedStatement;
   deviceId: Scalars['ID']['output'];
+  /** Whether the device uploaded key packages recently enough to be added to groups. */
   mlsActive: Scalars['Boolean']['output'];
   revocation?: Maybe<SignedStatement>;
 };
 
+/** Another server, pinned through this relay. */
 export type RemoteServer = {
+  /** The discovery document as JSON text, for the app to verify and pin. */
   discovery: Scalars['String']['output'];
   origin: Scalars['String']['output'];
   serverId: Scalars['String']['output'];
@@ -3962,7 +4012,6 @@ export type SignupWithKeyInput = {
   keyLog: Array<SignedStatementInput>;
   /** A `login` statement signed by that device over a fresh `keyLoginChallenge`. */
   proof: SignedStatementInput;
-  proofOfWork?: InputMaybe<Scalars['String']['input']>;
   username: Scalars['String']['input'];
   workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
 };
@@ -3998,6 +4047,7 @@ export type StartedDeviceLink = {
   linkId: Scalars['String']['output'];
 };
 
+/** The current `seq` of a host event stream, as a decimal string. */
 export type StreamHead = {
   seq: Scalars['String']['output'];
   stream: Scalars['String']['output'];
@@ -4016,6 +4066,12 @@ export type SubmitMlsCommitInput = {
 };
 
 export type Subscription = {
+  /**
+   * Host events queued for the session's device on this relay, above `after` (the device's
+   * cursor when omitted), then live ones, as JSON strings:
+   * `{"type":"RelayItem","id","hostServerId","workspaceId","envelope"}`, and the
+   * `DmRequestReceived` and `QueueOverflow` notices.
+   */
   relayStream: Scalars['String']['output'];
   /**
    * Subscribe to all real-time events for a workspace.
