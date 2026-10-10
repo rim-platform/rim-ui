@@ -946,7 +946,7 @@ type InboxCursorOutput {
 Read-only preview of a registration token.
 
 Does NOT consume the token. Workspace-invite previews carry server and
-inviter info; instance/bootstrap previews are minimal (§4.7).
+inviter info; instance-invite previews are minimal.
 """
 type InviteTokenPreviewGql {
 	tokenType: InviteTokenTypeGql!
@@ -963,19 +963,9 @@ type InviteTokenPreviewGql {
 """
 GraphQL enum for the type of an invite token, used by `InviteTokenPreview`.
 
-`BOOTSTRAP` and `INSTANCE` both trigger the "create your RIM account" form
-copy on the frontend, but they are distinct so the frontend knows which input
-field to populate on `signupWithInvite`:
-- `BOOTSTRAP` → use `bootstrapToken`
-- `INSTANCE`  → use `instanceInviteToken`
-
 Mirrors [`rim_services::auth::dto::InviteTokenType`].
 """
 enum InviteTokenTypeGql {
-	"""
-	Bootstrap token: routes to `bootstrapToken` input on `signupWithInvite`.
-	"""
-	BOOTSTRAP
 	"""
 	Instance invite: routes to `instanceInviteToken` input on `signupWithInvite`.
 	"""
@@ -1473,8 +1463,8 @@ type Mutation {
 	"""
 	Unified signup mutation for all token-based and open-mode registration paths.
 	
-	In invite-only mode, exactly one of `bootstrapToken`, `instanceInviteToken`,
-	or `workspaceInviteToken` must be supplied.
+	In invite-only mode, exactly one of `instanceInviteToken` or `workspaceInviteToken`
+	must be supplied.
 	In open mode, all token fields must be absent.
 	
 	On success, sets session and CSRF cookies via `AuthIntent`.
@@ -2296,7 +2286,7 @@ Variants appear in the SDL as `INVITE_ONLY`, `OPEN` and `POW`.
 """
 enum RegistrationModeGql {
 	"""
-	Default: signup requires a valid token (bootstrap, instance, or workspace invite).
+	Default: signup requires a valid token (instance or workspace invite).
 	"""
 	INVITE_ONLY
 	"""
@@ -2785,7 +2775,6 @@ input SignupWithInviteInput {
 	"""
 	displayName: String
 	password: String!
-	bootstrapToken: String
 	instanceInviteToken: String
 	workspaceInviteToken: String
 }
@@ -2794,7 +2783,7 @@ input SignupWithInviteInput {
 Payload returned from `signupWithInvite`.
 
 `server_id` is `Some` only when a `workspaceInviteToken` was used;
-bootstrap and instance-invite paths land in "no workspaces yet" state.
+the instance-invite and open paths land in "no workspaces yet" state.
 """
 type SignupWithInvitePayloadGql {
 	userId: ID!
@@ -2825,7 +2814,6 @@ input SignupWithKeyInput {
 	A `login` statement signed by that device over a fresh `keyLoginChallenge`.
 	"""
 	proof: SignedStatementInput!
-	bootstrapToken: String
 	instanceInviteToken: String
 	workspaceInviteToken: String
 	"""

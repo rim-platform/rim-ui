@@ -685,7 +685,6 @@ describe("signupWithKey on a relay in pow registration mode", () => {
   it.each([
     ["an instance invite", { instanceInviteToken: "inst-tok" }],
     ["a workspace invite", { workspaceInviteToken: "ws-tok" }],
-    ["a bootstrap token", { bootstrapToken: "boot-tok" }],
   ])("skips the proof with %s", async (_case, token) => {
     backend(server(), {
       key_identity_sign_signup: statements,

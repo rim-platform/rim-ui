@@ -106,8 +106,6 @@ function inviteTokenTypeToJoinFormVariant(tokenType: InviteTokenType): InviteTok
       return InviteTokenType.WORKSPACE;
     case InviteTokenType.INSTANCE:
       return InviteTokenType.INSTANCE;
-    case InviteTokenType.BOOTSTRAP:
-      return InviteTokenType.BOOTSTRAP;
     default: {
       const _exhaustive: never = tokenType;
       throw new Error(`Unhandled InviteTokenType: ${String(_exhaustive)}`);

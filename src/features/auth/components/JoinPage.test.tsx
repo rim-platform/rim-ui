@@ -157,7 +157,7 @@ describe("JoinPage", () => {
     renderAtPath("/join/ws-token-abc");
     expect(screen.getByText(/Acme Corp/)).toBeInTheDocument();
     expect(screen.getByText("Create account")).toBeInTheDocument();
-    // Negation: workspace variant must NOT show the generic instance/bootstrap heading
+    // Negation: workspace variant must NOT show the generic instance heading
     expect(screen.queryByText("Create your RIM account")).not.toBeInTheDocument();
   });
 
@@ -293,7 +293,6 @@ describe("JoinPage", () => {
     );
 
     const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
-    expect(Object.prototype.hasOwnProperty.call(input, "bootstrapToken")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
   });
 
@@ -348,73 +347,48 @@ describe("JoinPage", () => {
     expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
   });
 
-  it("bootstrap token happy path: shows 'Create your RIM account' copy", () => {
+  it("email-bound instance invite: shows the server's refusal of another address", async () => {
+    const refusal = "this invite admits only the email address it was issued for";
     mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
       isPending: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
     });
-
-    renderAtPath("/join/bootstrap-tok-abc");
-
-    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
-    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
-  });
-
-  it("bootstrap token: signup mutation called with bootstrapToken, not instanceInviteToken", async () => {
-    mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
-      isPending: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
+    // A graphql-request ClientError: its own message embeds the whole response.
+    const err = Object.assign(new Error(`${refusal}: {"response":{"errors":[]}}`), {
+      response: { errors: [{ message: refusal, extensions: { code: "VALIDATION" } }] },
     });
-
     mockSignupMutate.mockImplementation(
-      (
-        _input: unknown,
-        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: null } }) => void },
-      ) => {
-        opts.onSuccess({ signupWithInvite: { userId: "u-bootstrap", serverId: null } });
-      },
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => opts.onError(err),
     );
 
     const user = userEvent.setup();
-    renderAtPath("/join/bootstrap-tok-abc");
+    renderAtPath("/join/operator-tok-abc");
 
     await user.type(screen.getByPlaceholderText("yourname"), "newadmin");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "admin@example.com");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "other@example.com");
     await user.type(screen.getByPlaceholderText("password"), "password123");
     await user.click(screen.getByText("Create account"));
 
-    expect(mockSignupMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: "newadmin",
-        email: "admin@example.com",
-        bootstrapToken: "bootstrap-tok-abc",
-      }),
-      expect.any(Object),
-    );
-
-    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
-    expect(Object.prototype.hasOwnProperty.call(input, "instanceInviteToken")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+    expect(mockSetSession).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("already authenticated with bootstrap token: renders instance-token error copy", () => {
+  it("already authenticated with instance token: renders instance-token error copy", () => {
     mockSession = { userId: "existing-user" };
 
     mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
       isPending: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
     });
 
-    renderAtPath("/join/bootstrap-tok-abc");
+    renderAtPath("/join/inst-tok-abc");
 
     expect(
       screen.getByText("You already have a RIM account; instance invites are only for new users."),
@@ -461,19 +435,19 @@ describe("JoinPage — create account with a key (desktop)", () => {
     expect(mockSignupMutate).not.toHaveBeenCalled();
   });
 
-  it("bootstrap token: signs up with bootstrapToken and lands with no workspace", async () => {
+  it("instance token: signs up with instanceInviteToken and lands with no workspace", async () => {
     mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "BOOTSTRAP", expiresAt: null, workspace: null },
+      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
       isPending: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
     });
     const user = userEvent.setup();
-    renderAtPath("/join/boot-token-abc");
+    renderAtPath("/join/inst-token-abc");
 
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
-      bootstrapToken: "boot-token-abc",
+      instanceInviteToken: "inst-token-abc",
     });
     await user.click(screen.getByRole("button", { name: /finish key signup/i }));
 

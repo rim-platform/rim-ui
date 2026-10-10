@@ -7,7 +7,6 @@
  *     workspace name in the header) and wires the join button to the
  *     mutation + navigation.
  *   - `INSTANCE` arm: renders the existing-user error copy.
- *   - `BOOTSTRAP` arm: renders the same error copy as INSTANCE.
  *
  * The mocking style mirrors `JoinPage.test.tsx` — `vi.mock` for the
  * `useJoinServerByInviteMutation` hook, `useWorkspaceStore`, and
@@ -160,21 +159,6 @@ describe("JoinAuthenticated", () => {
     it("renders the existing-user error copy and no join button", () => {
       renderInRouter(
         <JoinAuthenticated token="inst-token-abc" tokenType={InviteTokenType.INSTANCE} />,
-      );
-
-      expect(
-        screen.getByText(
-          "You already have a RIM account; instance invites are only for new users.",
-        ),
-      ).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Join workspace" })).not.toBeInTheDocument();
-    });
-  });
-
-  describe("BOOTSTRAP token", () => {
-    it("renders the same existing-user error copy as INSTANCE and no join button", () => {
-      renderInRouter(
-        <JoinAuthenticated token="bootstrap-tok-abc" tokenType={InviteTokenType.BOOTSTRAP} />,
       );
 
       expect(

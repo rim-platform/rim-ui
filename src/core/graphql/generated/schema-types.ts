@@ -861,7 +861,7 @@ export type InboxCursorOutput = {
  * Read-only preview of a registration token.
  *
  * Does NOT consume the token. Workspace-invite previews carry server and
- * inviter info; instance/bootstrap previews are minimal (§4.7).
+ * inviter info; instance-invite previews are minimal.
  */
 export type InviteTokenPreviewGql = {
   /** `None` for workspace invites that were issued without an expiry. */
@@ -874,17 +874,9 @@ export type InviteTokenPreviewGql = {
 /**
  * GraphQL enum for the type of an invite token, used by `InviteTokenPreview`.
  *
- * `BOOTSTRAP` and `INSTANCE` both trigger the "create your RIM account" form
- * copy on the frontend, but they are distinct so the frontend knows which input
- * field to populate on `signupWithInvite`:
- * - `BOOTSTRAP` → use `bootstrapToken`
- * - `INSTANCE`  → use `instanceInviteToken`
- *
  * Mirrors [`rim_services::auth::dto::InviteTokenType`].
  */
 export enum InviteTokenTypeGql {
-  /** Bootstrap token: routes to `bootstrapToken` input on `signupWithInvite`. */
-  BOOTSTRAP = 'BOOTSTRAP',
   /** Instance invite: routes to `instanceInviteToken` input on `signupWithInvite`. */
   INSTANCE = 'INSTANCE',
   /** Workspace invite: join-a-workspace flow. */
@@ -1492,8 +1484,8 @@ export type Mutation = {
   /**
    * Unified signup mutation for all token-based and open-mode registration paths.
    *
-   * In invite-only mode, exactly one of `bootstrapToken`, `instanceInviteToken`,
-   * or `workspaceInviteToken` must be supplied.
+   * In invite-only mode, exactly one of `instanceInviteToken` or `workspaceInviteToken`
+   * must be supplied.
    * In open mode, all token fields must be absent.
    *
    * On success, sets session and CSRF cookies via `AuthIntent`.
@@ -2855,7 +2847,7 @@ export type ReactionGroup = {
  * Variants appear in the SDL as `INVITE_ONLY`, `OPEN` and `POW`.
  */
 export enum RegistrationModeGql {
-  /** Default: signup requires a valid token (bootstrap, instance, or workspace invite). */
+  /** Default: signup requires a valid token (instance or workspace invite). */
   INVITE_ONLY = 'INVITE_ONLY',
   /** `RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited. */
   OPEN = 'OPEN',
@@ -3231,7 +3223,6 @@ export type SignedStatementInput = {
  * `displayName` is optional; falls back to `username` server-side if absent or blank.
  */
 export type SignupWithInviteInput = {
-  bootstrapToken?: InputMaybe<Scalars['String']['input']>;
   /**
    * Optional display name (1–80 chars when present). Falls back to `username`
    * when absent or blank after trim.
@@ -3252,7 +3243,7 @@ export type SignupWithInviteInput = {
  * Payload returned from `signupWithInvite`.
  *
  * `server_id` is `Some` only when a `workspaceInviteToken` was used;
- * bootstrap and instance-invite paths land in "no workspaces yet" state.
+ * the instance-invite and open paths land in "no workspaces yet" state.
  */
 export type SignupWithInvitePayloadGql = {
   serverId?: Maybe<Scalars['ID']['output']>;
@@ -3265,7 +3256,6 @@ export type SignupWithInvitePayloadGql = {
  * invite-only mode, none in open mode. In pow mode it takes one token or `proofOfWork`.
  */
 export type SignupWithKeyInput = {
-  bootstrapToken?: InputMaybe<Scalars['String']['input']>;
   /** Certificate of the device signing up; the new session belongs to it. */
   device: SignedStatementInput;
   /**

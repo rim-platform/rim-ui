@@ -55,10 +55,10 @@ export const CONFLICT = "CONFLICT";
 /** The input was refused; the error's message says why. */
 export const VALIDATION = "VALIDATION";
 
-/** An invite or bootstrap token that is unknown, used up or revoked. */
+/** An invite token that is unknown, used up or revoked. */
 export const INVALID_TOKEN = "INVALID_TOKEN";
 
-/** An invite or bootstrap token past its expiry. */
+/** An invite token past its expiry. */
 export const EXPIRED_TOKEN = "EXPIRED_TOKEN";
 
 /** Another server the request needed could not be reached; extension `hostServerId`. */

@@ -11,4 +11,4 @@ Sealed, historical design records. ADR-style.
 
 ## Index
 
-- `registration-redesign-frontend-2026-04-28.md` — Frontend implementation of the multi-tenant registration redesign (JoinPage / JoinForm flows, BOOTSTRAP/INSTANCE/WORKSPACE token-type routing, useServerConfig wrapping).
+- `registration-redesign-frontend-2026-04-28.md` — Frontend implementation of the multi-tenant registration redesign (JoinPage / JoinForm flows, BOOTSTRAP/INSTANCE/WORKSPACE token-type routing, useServerConfig wrapping). Its `BOOTSTRAP` token type no longer exists: the server folded bootstrap tokens into instance invites, so an operator's link (`rim_server invite create [--email …]`) previews as `INSTANCE` and signs up through `instanceInviteToken`. An invite bound to an email address admits only a password signup with that address.

@@ -295,6 +295,11 @@ describe("KeySignupForm", () => {
       /username must be 3 to 32 characters/,
     ],
     [
+      "an email-bound invite refusing a key-only signup, in the server's words",
+      serverError("VALIDATION", "this invite admits only the email address it was issued for"),
+      /this invite admits only the email address it was issued for/,
+    ],
+    [
       "a rate limit, with the wait",
       serverError("RATE_LIMITED", "rate limit exceeded", { retryAfterSeconds: 300 }),
       /too many sign-ups.*try again in 5 minutes/i,
