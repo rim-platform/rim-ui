@@ -12,12 +12,6 @@ input AddWorkspacePluginInput {
 	publisherKeyLog: [SignedStatementInput!]
 }
 
-input AdvanceIncidentPhaseInput {
-	incidentId: ID!
-	nextPhase: IncidentPhaseNameGql!
-	note: String
-}
-
 type Attachment {
 	id: ID!
 	status: AttachmentStatusEnum!
@@ -207,12 +201,6 @@ type Command {
 	the UX confirm-modal placement.
 	"""
 	sensitivity: CommandSensitivity!
-	"""
-	The optional workspace module this command belongs to (Track 0.4), or null when the
-	command is always available. The server already omits commands whose feature is off
-	from `commands`; this lets clients group or explain gated commands.
-	"""
-	feature: WorkspaceFeature
 }
 
 """
@@ -617,22 +605,6 @@ input CreateCustomEmojiInput {
 	imageBase64: String!
 }
 
-input CreateIngestTokenInput {
-	serverId: ID!
-	conversationId: ID!
-	label: String!
-	severityDefault: IncidentSeverityGql
-}
-
-"""
-Result of `createIngestToken` — `raw_token` is surfaced exactly once and is never
-retrievable again (mirrors invite-token creation).
-"""
-type CreateIngestTokenResultGql {
-	token: IngestTokenGql!
-	rawToken: String!
-}
-
 """
 Input for `createInstanceInvite`.
 
@@ -905,94 +877,6 @@ input EnrollIdentityKeyInput {
 	proof: SignedStatementInput!
 }
 
-"""
-`MENTION_IN_CHANNEL`/`EMAIL` — `PUSH` is reserved for a future track and intentionally has no
-GraphQL representation yet (mirrors `rim_core::escalation::model::EscalationAction`, which has
-no `Push` variant either — see that enum's doc comment).
-"""
-enum EscalationActionKindGql {
-	MENTION_IN_CHANNEL
-	EMAIL
-}
-
-type EscalationPolicyGql {
-	id: ID!
-	serverId: ID!
-	name: String!
-	createdBy: ID!
-	createdAt: DateTime!
-	updatedAt: DateTime!
-	"""
-	Ordered by `position`.
-	"""
-	steps: [EscalationStepGql!]!
-}
-
-enum EscalationRunStatusGql {
-	ACTIVE
-	CANCELLED
-	COMPLETED
-}
-
-type EscalationStepGql {
-	id: ID!
-	policyId: ID!
-	"""
-	0-based order within the policy.
-	"""
-	position: Int!
-	delaySeconds: Int!
-	targetKind: EscalationTargetKindGql!
-	"""
-	Present only when `targetKind` is `USER`.
-	"""
-	targetUserId: ID
-	"""
-	Present only when `targetKind` is `ON_CALL`.
-	"""
-	targetScheduleId: ID
-	actions: [EscalationActionKindGql!]!
-}
-
-"""
-A step input for `createEscalationPolicy`/`updateEscalationPolicy` — no `id`/`policyId`
-(assigned by the repository) since the full step list is replaced atomically (§3).
-"""
-input EscalationStepInputGql {
-	delaySeconds: Int!
-	target: EscalationTargetInputGql!
-	"""
-	At least one action is required — enforced at the service boundary.
-	"""
-	actions: [EscalationActionKindGql!]!
-}
-
-"""
-An `EscalationTarget`, flattened for GraphQL: `kind` selects which of `userId`/`scheduleId`
-is populated (GraphQL has no native tagged-union input type) — same flattened-union pattern
-as [`RotationKindInputGql`], including strict rejection of a field that belongs to the
-*other* kind.
-"""
-input EscalationTargetInputGql {
-	kind: EscalationTargetKindGql!
-	"""
-	Required for `USER`; must not be set for `ON_CALL`.
-	"""
-	userId: ID
-	"""
-	Required for `ON_CALL`; must not be set for `USER`.
-	"""
-	scheduleId: ID
-}
-
-"""
-Discriminator for [`EscalationStepGql::target_kind`] / [`EscalationTargetInputGql::kind`].
-"""
-enum EscalationTargetKindGql {
-	USER
-	ON_CALL
-}
-
 input ExecuteCommandInput {
 	commandId: String!
 	args: JSON
@@ -1049,11 +933,6 @@ input ExecuteMacroInput {
 	`PALETTE`.
 	"""
 	initiator: CommandInitiator
-}
-
-type FeatureUsage {
-	featureId: String!
-	firstUsedAt: DateTime!
 }
 
 type FilterConditionGql {
@@ -1129,145 +1008,11 @@ type InboxCursorOutput {
 	conversationId: ID!
 }
 
-"""
-Read projection of the DB `escalation_run` row for a live incident (§10 FLAG C) — backs
-`Incident.escalationRun`. See `IncidentGql`'s `escalation_run` resolver for the
-nullability rationale.
-"""
-type IncidentEscalationRunGql {
-	currentStepIndex: Int!
-	nextFireAt: DateTime
-	status: EscalationRunStatusGql!
-}
-
-type IncidentGql {
-	id: ID!
-	serverId: ID!
-	conversationId: ID!
-	startedBy: ID!
-	status: IncidentStatusGql!
-	severity: IncidentSeverityGql
-	title: String!
-	originalTopic: String
-	startedAt: DateTime!
-	mitigatedAt: DateTime
-	resolvedAt: DateTime
-	postmortemDraft: String
-	createdAt: DateTime!
-	updatedAt: DateTime!
-	"""
-	The escalation policy armed at declare time, if any (§3/§10). `None` if the incident was
-	declared without an escalation chain.
-	"""
-	escalationPolicyId: ID
-	"""
-	Set by `acknowledgeIncident` (§4). `None` until acked.
-	"""
-	acknowledgedAt: DateTime
-	"""
-	Bare id companion to `acknowledgedByUser` below — kept alongside it (rather than only
-	exposing the nested object) so a client that only needs the id avoids a DataLoader round
-	trip (§10).
-	"""
-	acknowledgedBy: ID
-	"""
-	Nested `User` for `acknowledgedBy`, resolved via the shared `User` DataLoader (the
-	`message.author` pattern) rather than requiring a second round-trip. `None` if the
-	incident hasn't been acknowledged.
-	"""
-	acknowledgedByUser: User
-	"""
-	The incident's active escalation run, if any (§10 FLAG C) — lets a client loading
-	mid-incident, or reconnecting, render a live "escalating to L2 in 4:32" countdown (the
-	`EscalationStepFired` event alone can't give `nextFireAt` to a fresh client). `None` if no
-	policy is attached, or the run has already completed/been cancelled — only the currently
-	`Active` run is meaningful to show. Pure read projection of the DB `escalation_run` row;
-	adds no persistence.
-	"""
-	escalationRun: IncidentEscalationRunGql
-}
-
-input IncidentListCursorInput {
-	createdAt: DateTime!
-	incidentId: ID!
-}
-
-type IncidentListCursorOutput {
-	createdAt: DateTime!
-	incidentId: ID!
-}
-
-type IncidentMessageTagGql {
-	messageId: ID!
-	incidentId: ID!
-	phase: IncidentPhaseNameGql!
-	tagType: MessageTagTypeGql
-}
-
-type IncidentPage {
-	items: [IncidentGql!]!
-	next: IncidentListCursorOutput
-	prev: IncidentListCursorOutput
-	pageInfo: PageInfo!
-}
-
-type IncidentPhaseGql {
-	id: ID!
-	incidentId: ID!
-	phase: IncidentPhaseNameGql!
-	startedAt: DateTime!
-	endedAt: DateTime
-	note: String
-}
-
-enum IncidentPhaseNameGql {
-	DETECTION
-	TRIAGE
-	MITIGATION
-	RESOLUTION
-	POSTMORTEM
-}
-
-enum IncidentSeverityGql {
-	SEV_1
-	SEV_2
-	SEV_3
-	SEV_4
-}
-
-enum IncidentStatusGql {
-	ACTIVE
-	MITIGATED
-	RESOLVED
-}
-
-type IncidentTimelineGql {
-	incident: IncidentGql!
-	phases: [IncidentPhaseGql!]!
-	taggedMessages: [IncidentMessageTagGql!]!
-}
-
 input IncrementWorkspaceStateInput {
 	serverId: ID!
 	key: String!
 	scope: WorkspaceStateScopeGql!
 	delta: Int!
-}
-
-"""
-GraphQL projection of an alert-ingest token (Track B2). Never exposes `token_hash` — the raw
-token is only ever returned once, at creation, via [`CreateIngestTokenResultGql::raw_token`].
-"""
-type IngestTokenGql {
-	id: ID!
-	serverId: ID!
-	conversationId: ID!
-	createdBy: ID!
-	label: String!
-	severityDefault: IncidentSeverityGql
-	createdAt: DateTime!
-	revokedAt: DateTime
-	lastUsedAt: DateTime
 }
 
 """
@@ -1735,13 +1480,6 @@ enum MessageReportStatus {
 	DISMISSED
 }
 
-enum MessageTagTypeGql {
-	DECISION
-	ACTION_ITEM
-	ROOT_CAUSE
-	TIMELINE_EVENT
-}
-
 type MlsCommit {
 	id: ID!
 	incarnation: Int!
@@ -1935,61 +1673,9 @@ type Mutation {
 	updateMacro(input: UpdateMacroInput!): MacroDef!
 	deleteMacro(macroId: ID!): Boolean!
 	executeMacro(input: ExecuteMacroInput!): CommandResult!
-	recordFeatureUsage(featureId: String!): SkillProfileGql!
-	overrideSkillTier(tier: SkillTier!): SkillProfileGql!
 	createChannelLens(input: CreateChannelLensInput!): ChannelLens!
 	updateChannelLens(input: UpdateChannelLensInput!): ChannelLens!
 	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
-	startIncident(input: StartIncidentInput!): IncidentGql!
-	updateIncidentStatus(input: UpdateIncidentStatusInput!): IncidentGql!
-	advanceIncidentPhase(input: AdvanceIncidentPhaseInput!): IncidentPhaseGql!
-	tagIncidentMessage(input: TagIncidentMessageInput!): IncidentMessageTagGql!
-	generatePostmortem(incidentId: ID!): IncidentGql!
-	resolveIncident(incidentId: ID!): IncidentGql!
-	"""
-	Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
-	responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
-	Cancels the incident's active escalation run, if any.
-	"""
-	acknowledgeIncident(incidentId: ID!): IncidentGql!
-	"""
-	Create an escalation policy. Owner+Moderator (server-scoped — per-channel moderator
-	roles don't apply). Every step target is validated to belong to this server (C1 security
-	review): a `User` target must be a current member, an `OnCall` target's schedule must
-	belong to this server.
-	"""
-	createEscalationPolicy(serverId: ID!, name: String!, steps: [EscalationStepInputGql!]!): EscalationPolicyGql!
-	"""
-	Update an escalation policy's `name` and/or full step list. `steps: Some(_)` replaces
-	every step atomically; `None` leaves the existing steps untouched. Owner+Moderator
-	(resolved via the policy's own server); same per-target server constraint as create.
-	"""
-	updateEscalationPolicy(policyId: ID!, name: String, steps: [EscalationStepInputGql!]): EscalationPolicyGql!
-	"""
-	Delete an escalation policy. Owner+Moderator (resolved via the policy's own server).
-	"""
-	deleteEscalationPolicy(policyId: ID!): Boolean!
-	"""
-	Set a conversation's default escalation policy — the policy `ingestAlert`-declared
-	incidents always use (there's no human to pick an override for an alert-declared
-	incident), and `startIncident`'s fallback when no per-call override is given.
-	Owner+Moderator.
-	"""
-	setChannelEscalationPolicy(serverId: ID!, conversationId: ID!, policyId: ID!): Boolean!
-	"""
-	Mint a new alert-ingest token for a channel. Owner-only. The raw token is returned
-	exactly once, in `rawToken` — it is never retrievable again after this call.
-	"""
-	createIngestToken(input: CreateIngestTokenInput!): CreateIngestTokenResultGql!
-	"""
-	Revoke an ingest token. Owner-only, permanent (no un-revoke).
-	"""
-	revokeIngestToken(tokenId: ID!): Boolean!
-	"""
-	Turn an optional workspace module on or off. Owner-only. No data is deleted when a
-	feature is turned off; turning it back on restores everything. Audited.
-	"""
-	setWorkspaceFeature(serverId: ID!, feature: WorkspaceFeature!, enabled: Boolean!): WorkspaceFeatureState!
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
 	incrementWorkspaceState(input: IncrementWorkspaceStateInput!): WorkspaceStateEntryGql!
@@ -2024,45 +1710,6 @@ type Mutation {
 	```
 	"""
 	updateMyProfile(input: UpdateMyProfileInput!): User!
-	"""
-	Create an on-call schedule. Owner-only.
-	"""
-	createOnCallSchedule(serverId: ID!, name: String!, timezone: String!): OnCallScheduleGql!
-	"""
-	Update an on-call schedule's `name`/`timezone`. Owner-only.
-	"""
-	updateOnCallSchedule(scheduleId: ID!, name: String, timezone: String): OnCallScheduleGql!
-	"""
-	Delete an on-call schedule (cascades to its rotation layers/participants/overrides).
-	Owner-only.
-	"""
-	deleteOnCallSchedule(scheduleId: ID!): Boolean!
-	"""
-	Add a rotation layer to a schedule. Owner-only.
-	"""
-	addRotationLayer(scheduleId: ID!, name: String!, priority: Int!, kind: RotationKindInputGql!, anchorAt: DateTime!): RotationLayerGql!
-	"""
-	Update a rotation layer's `name`/`priority`/`kind`/`anchorAt`. Owner-only (resolved via
-	the layer's owning schedule).
-	"""
-	updateRotationLayer(layerId: ID!, name: String, priority: Int, kind: RotationKindInputGql, anchorAt: DateTime): RotationLayerGql!
-	"""
-	Remove a rotation layer (cascades to its participants). Owner-only.
-	"""
-	removeRotationLayer(layerId: ID!): Boolean!
-	"""
-	Replace a rotation layer's full ordered participant list. `userIds[0]` becomes the first
-	shift. Owner-only.
-	"""
-	setRotationParticipants(layerId: ID!, userIds: [ID!]!): RotationLayerGql!
-	"""
-	Create a one-off on-call override for a schedule. Owner-only.
-	"""
-	createOnCallOverride(scheduleId: ID!, userId: ID!, startAt: DateTime!, endAt: DateTime!): OnCallOverrideGql!
-	"""
-	Delete an on-call override. Owner-only (resolved via the override's owning schedule).
-	"""
-	deleteOnCallOverride(overrideId: ID!): Boolean!
 	"""
 	Change a member's role. Owner: any role but `OWNER`, never their own. Moderator:
 	`MEMBER` <-> `GUEST` only. Audited (`admin.set_member_role`).
@@ -2396,58 +2043,6 @@ type NotificationSettings {
 	digest: DigestFrequency!
 }
 
-"""
-Answer to "who is on call now" (`whoIsOnCall`/`serverOnCall` queries). `currentUser`/`nextUser`
-are resolved via the shared `User` DataLoader (the `message.author` pattern) rather than
-exposed as bare ids.
-"""
-type OnCallNowGql {
-	scheduleId: ID!
-	shiftEndsAt: DateTime
-	currentUser: User
-	nextUser: User
-}
-
-type OnCallOverrideGql {
-	id: ID!
-	scheduleId: ID!
-	userId: ID!
-	startAt: DateTime!
-	endAt: DateTime!
-	createdBy: ID!
-}
-
-type OnCallScheduleGql {
-	id: ID!
-	serverId: ID!
-	name: String!
-	timezone: String!
-	createdBy: ID!
-	createdAt: DateTime!
-	updatedAt: DateTime!
-	"""
-	This schedule's existing rotation layers, each with its participants attached, ordered
-	`priority DESC, created_at ASC` (§10) — lets the frontend editor load and edit existing
-	rotations rather than only being able to create new ones. Any server member may read.
-	"""
-	rotationLayers: [RotationLayerGql!]!
-}
-
-"""
-One contiguous block of on-call coverage (`onCallShifts` query). `user` is resolved via the
-shared `User` DataLoader, not exposed as a bare id.
-"""
-type OnCallShiftGql {
-	startAt: DateTime!
-	endAt: DateTime!
-	"""
-	`true` if this block came from a one-off `OnCallOverride` rather than the base rotation
-	layer (§10 FLAG B) — lets the frontend render override segments distinctly.
-	"""
-	isOverride: Boolean!
-	user: User
-}
-
 input OutOfBandProofInput {
 	requestId: String!
 }
@@ -2693,21 +2288,8 @@ type Query {
 	myMacros(serverId: ID!): [MacroDef!]!
 	macroByName(serverId: ID!, name: String!): MacroDef
 	serverMacros(serverId: ID!): [MacroDef!]!
-	mySkillProfile: SkillProfileGql!
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
 	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
-	activeIncident(serverId: ID!, conversationId: ID!): IncidentGql
-	incidentTimeline(incidentId: ID!): IncidentTimelineGql!
-	listIncidents(serverId: ID!, statusFilter: [IncidentStatusGql!], severityFilter: [IncidentSeverityGql!], dir: PageDir!, cursor: IncidentListCursorInput, limit: Int! = 20): IncidentPage!
-	"""
-	List every alert-ingest token for a server (including revoked). Owner-only.
-	"""
-	ingestTokens(serverId: ID!): [IngestTokenGql!]!
-	"""
-	Per-workspace optional modules and whether each is on (Track 0.4). Any member; one
-	entry per known feature, defaults filled in.
-	"""
-	workspaceFeatures(serverId: ID!): [WorkspaceFeatureState!]!
 	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
 	workspaceStateList(serverId: ID!, prefix: String!, scope: WorkspaceStateScopeGql!, limit: Int): [WorkspaceStateEntryGql!]!
 	pipeline(pipelineId: ID!): PipelineGql!
@@ -2740,29 +2322,6 @@ type Query {
 	See spec §4.7.
 	"""
 	previewInviteToken(token: String!): InviteTokenPreviewGql!
-	"""
-	List a server's on-call schedules. Any workspace member may read.
-	"""
-	onCallSchedules(serverId: ID!): [OnCallScheduleGql!]!
-	"""
-	Resolve who is on call for a schedule right now (or at `at`, if provided). Any workspace
-	member may read.
-	"""
-	whoIsOnCall(scheduleId: ID!, at: DateTime): OnCallNowGql!
-	"""
-	Batch [`who_is_on_call`] across every on-call schedule on a server — avoids an N+1 of
-	individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
-	"""
-	serverOnCall(serverId: ID!): [OnCallNowGql!]!
-	"""
-	Resolve on-call coverage for a schedule over `[from, to)`. Rejects spans over 90 days. Any
-	workspace member may read.
-	"""
-	onCallShifts(scheduleId: ID!, from: DateTime!, to: DateTime!): [OnCallShiftGql!]!
-	"""
-	List a server's escalation policies. Any workspace member may read.
-	"""
-	escalationPolicies(serverId: ID!): [EscalationPolicyGql!]!
 	"""
 	Active bans of the workspace, newest first. Owner/Moderator only.
 	"""
@@ -3120,63 +2679,6 @@ input RotateIdentityKeyInput {
 }
 
 """
-Discriminator for [`RotationLayerGql::kind`] / [`RotationKindInputGql::kind`]. See
-`docs/oncall.md` for the timezone/DST semantics of each variant.
-"""
-enum RotationKindGql {
-	DAILY
-	WEEKLY
-	CUSTOM
-}
-
-"""
-A `RotationKind`, flattened for GraphQL: `kind` selects which of the other fields are
-populated (GraphQL has no native tagged-union input type). `handoffTime` is `"HH:MM:SS"`
-24-hour wall-clock local time.
-"""
-input RotationKindInputGql {
-	kind: RotationKindGql!
-	"""
-	Required for `DAILY`/`WEEKLY`; ignored otherwise.
-	"""
-	handoffTime: String
-	"""
-	`0` (Monday) .. `6` (Sunday). Required for `WEEKLY`; ignored otherwise.
-	"""
-	handoffWeekday: Int
-	"""
-	Required for `CUSTOM` (must be `> 0`); ignored otherwise.
-	"""
-	intervalSeconds: Int
-}
-
-type RotationLayerGql {
-	id: ID!
-	scheduleId: ID!
-	name: String!
-	priority: Int!
-	kind: RotationKindGql!
-	"""
-	`"HH:MM:SS"`, present only when `kind` is `DAILY`/`WEEKLY`.
-	"""
-	handoffTime: String
-	"""
-	`0` (Monday) .. `6` (Sunday), present only when `kind` is `WEEKLY`.
-	"""
-	handoffWeekday: Int
-	"""
-	Present only when `kind` is `CUSTOM`.
-	"""
-	intervalSeconds: Int
-	anchorAt: DateTime!
-	createdAt: DateTime!
-	"""
-	Ordered by shift position.
-	"""
-	participants: [ID!]!
-}
-
-"""
 A sealed message exactly as it was sent.
 """
 type SealedMessage {
@@ -3288,12 +2790,6 @@ type Server {
 	there is no "not a member" variant to represent here.
 	"""
 	viewerRole: ServerMemberRoleGql!
-	"""
-	Per-workspace optional modules and whether each is on (Track 0.4). One entry per known
-	feature, defaults filled in. Resolved with one service call per server, like
-	`viewerRole`; `myServers` lists few servers per user, so no DataLoader.
-	"""
-	features: [WorkspaceFeatureState!]!
 }
 
 """
@@ -3459,31 +2955,6 @@ input SignupWithKeyInput {
 	proofOfWork: String
 }
 
-type SkillProfileGql {
-	userId: ID!
-	featuresUsed: [FeatureUsage!]!
-	skillTier: SkillTier!
-}
-
-enum SkillTier {
-	BEGINNER
-	INTERMEDIATE
-	ADVANCED
-}
-
-input StartIncidentInput {
-	serverId: ID!
-	conversationId: ID!
-	title: String!
-	severity: IncidentSeverityGql
-	"""
-	Overrides the conversation's default escalation policy (`setChannelEscalationPolicy`) for
-	just this incident (§3/§10). `None` falls back to that default (or no escalation chain at
-	all if none is set).
-	"""
-	escalationPolicyId: ID
-}
-
 type StartedDeviceLink {
 	"""
 	16 bytes, unpadded base64url. The server keeps only its hash, so it is shown once.
@@ -3530,12 +3001,6 @@ type Subscription {
 	the hosts of the user's workspaces see them online.
 	"""
 	relayStream(after: ID): String!
-}
-
-input TagIncidentMessageInput {
-	incidentId: ID!
-	messageId: ID!
-	tagType: MessageTagTypeGql
 }
 
 type Thread {
@@ -3615,11 +3080,6 @@ input UpdateConversationTopicInput {
 	serverId: ID!
 	conversationId: ID!
 	topic: String
-}
-
-input UpdateIncidentStatusInput {
-	incidentId: ID!
-	status: IncidentStatusGql!
 }
 
 input UpdateKeybindInput {
@@ -3733,24 +3193,6 @@ type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
-}
-
-"""
-An optional workspace module (Track 0.4). `INCIDENTS` covers incidents, on-call schedules,
-escalation policies and alert ingestion together.
-"""
-enum WorkspaceFeature {
-	INCIDENTS
-}
-
-"""
-Whether one optional module is on for one workspace. `updatedAt` is null when the value is
-the feature's default (never explicitly set for this workspace).
-"""
-type WorkspaceFeatureState {
-	feature: WorkspaceFeature!
-	enabled: Boolean!
-	updatedAt: DateTime
 }
 
 """
