@@ -47,7 +47,7 @@ Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vit
 
 **API layer:** GraphQL via `graphql-request` with HTTP/2 parallel queries (no batching). Shared fragments in `src/graphql/fragments/`. Backend uses nested resolvers + DataLoader — frontend requests `msg.author { ... }` directly, no manual joining.
 
-**Feature-driven layout in `src/features/`:** Each feature (auth, conversations, messages, threads, agent, commands, notifications, presence, plugins, incidents, oncall) follows `api/` → hooks, `components/` → React, `state/` → Zustand stores.
+**Feature-driven layout in `src/features/`:** Each feature (auth, conversations, messages, threads, agent, commands, notifications, presence, plugins, lenses, pipelines) follows `api/` → hooks, `components/` → React, `state/` → Zustand stores.
 
 **Shell (`src/shell/`):** AppShell is the main layout — workspace rail, side rail, tool panel, main surface, optional docked thread pane.
 
@@ -81,7 +81,7 @@ Product contracts, messaging semantics, command/keybind/plugin models, and capab
 
 **NEVER hand-write GraphQL enum values, input types, or schema types.** Use the generated
 types from `src/core/graphql/generated/schema-types.ts` instead. Hand-written types cause
-silent bugs when enum casing or field names differ from the backend (e.g., `SEV2` vs `SEV_2`).
+silent bugs when enum casing or field names differ from the backend (e.g., `HASLINKS` vs `HAS_LINKS`).
 
 ### Workflow
 
@@ -95,16 +95,16 @@ silent bugs when enum casing or field names differ from the backend (e.g., `SEV2
    ```
 3. Import generated types in your code:
    ```typescript
-   import { IncidentSeverityGql, FilterField, SkillTier } from "../../../core/graphql/generated/schema-types";
+   import { CommandSensitivity, FilterField } from "../../../core/graphql/generated/schema-types";
    ```
 
 ### Rules
 
 - **Enums**: ALWAYS import from `schema-types.ts`. Backend uses SCREAMING_SNAKE convention
-  (e.g., `SEV_1`, `ACTION_ITEM`, `HAS_LINKS`). Never guess the casing.
-- **Input types**: Generated as `CreateChannelLensInput`, `StartIncidentInput`, etc.
+  (e.g., `HAS_LINKS`, `DESKTOP_LOCAL`, `MESSAGE_LIST`). Never guess the casing.
+- **Input types**: Generated as `CreateChannelLensInput`, `ExecuteCommandInput`, etc.
   Use them for mutation variable typing.
-- **Object types**: Generated as `IncidentGql`, `ChannelLens`, `SkillProfileGql`, etc.
+- **Object types**: Generated as `ChannelLens`, `Command`, etc.
   Use for query result typing.
 - **GraphQL queries/mutations**: Still written as `gql` tagged templates in `api/*.ts` files.
   Only the TypeScript types are generated, not the queries themselves.
