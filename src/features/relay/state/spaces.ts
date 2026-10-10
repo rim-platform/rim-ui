@@ -67,3 +67,21 @@ export function remoteHosts(): string[] {
     (host) => !forked.includes(host),
   );
 }
+
+/** Remember a workspace's name, as its host answered it. */
+export async function setSpaceName(spaceId: string, name: string): Promise<void> {
+  const state = useRelayStore.getState();
+  const known = state.spaces[spaceId];
+  if (!known || known.name === name) return;
+  const space = { ...known, name };
+  state.addSpace(space);
+  await putRecord("spaces", space);
+}
+
+/** The workspaces this account uses on other servers. */
+export function remoteWorkspaces(): { workspaceId: string; host: string }[] {
+  const { spaces, forked } = useRelayStore.getState();
+  return Object.values(spaces)
+    .filter((s) => s.kind === "workspace" && !forked.includes(s.hostServerId))
+    .map((s) => ({ workspaceId: s.spaceId, host: s.hostServerId }));
+}

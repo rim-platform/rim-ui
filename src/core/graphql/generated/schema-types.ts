@@ -1796,7 +1796,10 @@ export type Mutation = {
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
   recordFeatureUsage: SkillProfileGql;
-  /** A login challenge from the host, for joining one of its workspaces. */
+  /**
+   * A login challenge from the host, for joining one of its workspaces, and the workspace
+   * `inviteToken` names.
+   */
   remoteJoinChallenge: RemoteJoinChallenge;
   removeContact: Scalars['Boolean']['output'];
   /**
@@ -2382,6 +2385,7 @@ export type MutationRecordFeatureUsageArgs = {
 export type MutationRemoteJoinChallengeArgs = {
   hostOrigin: Scalars['String']['input'];
   hostServerId: Scalars['String']['input'];
+  inviteToken?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -3728,6 +3732,8 @@ export type RemoteJoinChallenge = {
   challengeId: Scalars['ID']['output'];
   expiresAt: Scalars['DateTime']['output'];
   nonce: Scalars['String']['output'];
+  /** The workspace the invite token names, read without using the token up; null without one. */
+  workspaceId?: Maybe<Scalars['ID']['output']>;
 };
 
 export type RemoteJoinResult = {

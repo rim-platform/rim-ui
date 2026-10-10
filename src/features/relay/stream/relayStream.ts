@@ -8,6 +8,10 @@
  * it), and the stream fits the event. Events are then ordered per stream (`StreamSequencer`);
  * a gap held too long is reconciled through host-signed answers, and only when that fails does
  * the space show "Messages may be missing". Items are acknowledged once applied or dropped.
+ *
+ * While the app is connected to a host directly, that host's items are held unapplied and
+ * unacknowledged; switching back takes the host's stream heads as the baseline and runs them
+ * again, so whatever the direct connection already applied is dropped by `(host, stream, seq)`.
  */
 
 import { logger } from "../../../core/logger";
@@ -43,6 +47,8 @@ export interface RelayStreamDeps {
   onReconciled(spaceId: string): void;
   onDmRequest(): void;
   onForked(host: string): void;
+  /** A host acknowledged a device revocation; the notice as the relay sent it. */
+  onRevocationAcked?(notice: Record<string, unknown>): void;
   now(): number;
 }
 
@@ -84,6 +90,10 @@ export class RelayStreamProcessor {
   private acked: string | null = null;
   private queue: Promise<void> = Promise.resolve();
   private readonly reconciling = new Set<string>();
+  /** Hosts the app is connected to directly: their items wait. */
+  private readonly holding = new Set<string>();
+  /** Items of those hosts, held until the app switches back. */
+  private readonly deferred: RelayItemView[] = [];
 
   constructor(deps: RelayStreamDeps) {
     this.deps = deps;
@@ -96,6 +106,24 @@ export class RelayStreamProcessor {
       .catch((err: unknown) => {
         logger.warn("[RIM:relay] a relay message failed:", err);
       });
+    return this.queue;
+  }
+
+  /**
+   * Run items read from the queue outside the stream (`relayItems`), skipping those this run
+   * already received or acknowledged.
+   */
+  catchUpItems(items: RelayItemView[]): Promise<void> {
+    for (const item of items) {
+      this.queue = this.queue
+        .then(async () => {
+          if (this.received.includes(item.id)) return;
+          if (this.acked && compareIds(item.id, this.acked) <= 0) return;
+          await this.handleItem(item);
+          await this.flushAck();
+        })
+        .catch((err: unknown) => logger.warn("[RIM:relay] a relay item failed:", err));
+    }
     return this.queue;
   }
 
@@ -125,7 +153,7 @@ export class RelayStreamProcessor {
       const streams = [...this.sequencers.keys()]
         .filter((key) => key.startsWith(`${host}|${spaceId}|`))
         .map((key) => key.split("|")[2]);
-      await this.reconcile(host, spaceId, streams.length > 0 ? streams : ["w"]);
+      await this.reconcile(host, spaceId, streams.length > 0 ? streams : this.spaceStreams());
     });
     return this.queue;
   }
@@ -146,6 +174,9 @@ export class RelayStreamProcessor {
         return;
       case "QueueOverflow":
         return this.handleOverflow(parsed);
+      case "RevocationAcked":
+        this.deps.onRevocationAcked?.(parsed);
+        return;
       default:
         return;
     }
@@ -166,8 +197,13 @@ export class RelayStreamProcessor {
       const streams = [...this.sequencers.keys()]
         .filter((key) => key.startsWith(`${host}|${spaceId}|`))
         .map((key) => key.split("|")[2]);
-      await this.reconcile(host, spaceId, streams.length > 0 ? streams : ["w"]);
+      await this.reconcile(host, spaceId, streams.length > 0 ? streams : this.spaceStreams());
     }
+  }
+
+  /** The streams every space has for this person: space-wide events and their own. */
+  private spaceStreams(): string[] {
+    return ["w", `u:${this.deps.principalId}`];
   }
 
   /** Read, check and order one item; `null` when it is dropped. */
@@ -227,6 +263,14 @@ export class RelayStreamProcessor {
 
   private async handleItem(item: RelayItemView): Promise<void> {
     this.received.push(item.id);
+    if (this.holding.has(item.hostServerId)) {
+      this.deferred.push(item);
+      return;
+    }
+    return this.processItem(item);
+  }
+
+  private async processItem(item: RelayItemView): Promise<void> {
     const event = await this.verifiedEvent(item);
     if (!event) {
       this.finish([item.id]);
@@ -295,6 +339,76 @@ export class RelayStreamProcessor {
     await this.deps
       .ack(through)
       .catch((err: unknown) => logger.warn("[RIM:relay] acknowledging relay items failed:", err));
+  }
+
+  /**
+   * Take the host's `heads` of a space's streams as their baseline: anything at or below a
+   * head is a duplicate from then on. Streams already past a head keep their place.
+   */
+  baseline(host: string, spaceId: string, heads: Map<string, number>): Promise<void> {
+    this.queue = this.queue.then(() => this.applyHeads(host, spaceId, heads));
+    return this.queue;
+  }
+
+  private async applyHeads(host: string, spaceId: string, heads: Map<string, number>) {
+    for (const [stream, head] of heads) {
+      const key = streamKey(host, spaceId, stream);
+      const sequencer = await this.sequencer(key);
+      const outcome = sequencer.reconciled(head);
+      this.applyAll(outcome.apply);
+      this.finish(outcome.dropped.flatMap((a) => (a.itemId ? [a.itemId] : [])));
+      await this.persist(key, sequencer);
+    }
+  }
+
+  /** The streams of `host` this processor has seen or holds items for, by space. */
+  streamsOf(host: string): Map<string, string[]> {
+    const bySpace = new Map<string, Set<string>>();
+    const add = (spaceId: string, stream: string) => {
+      const set = bySpace.get(spaceId) ?? new Set<string>();
+      set.add(stream);
+      bySpace.set(spaceId, set);
+    };
+    for (const key of this.sequencers.keys()) {
+      const [keyHost, spaceId, stream] = key.split("|");
+      if (keyHost === host) add(spaceId, stream);
+    }
+    for (const item of this.deferred) {
+      if (item.hostServerId !== host) continue;
+      try {
+        const stream = (JSON.parse(item.envelope.payload) as { stream?: unknown }).stream;
+        if (typeof stream === "string" && stream !== "e") add(item.workspaceId, stream);
+      } catch {
+        // An unreadable item is dropped when it runs again.
+      }
+    }
+    return new Map([...bySpace].map(([space, streams]) => [space, [...streams]]));
+  }
+
+  /** Hold `host`'s items from every message handled after this one: the app went direct. */
+  holdHost(host: string): void {
+    this.holding.add(host);
+  }
+
+  /**
+   * The app left its direct connection to `host`: take the host's heads (by space) as the
+   * baseline, then run the items held meanwhile, oldest first. Messages handled before this
+   * call are still held; later ones run normally.
+   */
+  resumeHost(host: string, heads: Map<string, Map<string, number>>): Promise<void> {
+    this.queue = this.queue.then(async () => {
+      this.holding.delete(host);
+      for (const [spaceId, spaceHeads] of heads) await this.applyHeads(host, spaceId, spaceHeads);
+      const held = this.deferred.filter((item) => item.hostServerId === host);
+      this.deferred.splice(
+        0,
+        this.deferred.length,
+        ...this.deferred.filter((item) => item.hostServerId !== host),
+      );
+      for (const item of held) await this.processItem(item);
+      await this.flushAck();
+    });
+    return this.queue;
   }
 
   /** The last item acknowledged in this run. */

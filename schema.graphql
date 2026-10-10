@@ -2253,9 +2253,10 @@ type Mutation {
 	"""
 	leaveRelay: Boolean!
 	"""
-	A login challenge from the host, for joining one of its workspaces.
+	A login challenge from the host, for joining one of its workspaces, and the workspace
+	`inviteToken` names.
 	"""
-	remoteJoinChallenge(hostServerId: String!, hostOrigin: String!): RemoteJoinChallenge!
+	remoteJoinChallenge(hostServerId: String!, hostOrigin: String!, inviteToken: String): RemoteJoinChallenge!
 	"""
 	Join a workspace on another host; the relay presents the delegation and subscribes.
 	"""
@@ -2939,6 +2940,10 @@ type RemoteJoinChallenge {
 	challengeId: ID!
 	nonce: String!
 	expiresAt: DateTime!
+	"""
+	The workspace the invite token names, read without using the token up; null without one.
+	"""
+	workspaceId: ID
 }
 
 type RemoteJoinResult {

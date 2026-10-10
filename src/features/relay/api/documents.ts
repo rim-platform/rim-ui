@@ -1,7 +1,9 @@
 /**
  * Every GraphQL document of the relay: what this server is, servers and people on other
- * relays, contacts, the DM request inbox, the relay queue and its subscription, and the stream
- * heads a host answers through the forward path.
+ * relays, contacts, the DM request inbox, the relay queue and its subscription, the stream
+ * heads a host answers through the forward path, joining workspaces on other hosts and the
+ * delegations that keep them flowing, a device revocation's fan-out, and the calls the app
+ * makes directly on a host or a new relay.
  */
 
 import { gql } from "graphql-request";
@@ -187,5 +189,145 @@ export const LEAVE_RELAY_MUTATION = gql`
 export const RELAY_STREAM_SUBSCRIPTION = `
   subscription RelayStream($after: ID) {
     relayStream(after: $after)
+  }
+`;
+
+export const REMOTE_SUBSCRIPTIONS_QUERY = gql`
+  query RemoteSubscriptions {
+    remoteSubscriptions {
+      hostServerId
+      workspaceId
+      status
+      expiresAt
+    }
+  }
+`;
+
+export const DEVICE_REVOCATION_STATUS_QUERY = gql`
+  query DeviceRevocationStatus($deviceId: ID!) {
+    deviceRevocationStatus(deviceId: $deviceId) {
+      hostServerId
+      status
+      ack { ${STATEMENT} }
+      attempts
+    }
+  }
+`;
+
+export const REMOTE_JOIN_CHALLENGE_MUTATION = gql`
+  mutation RemoteJoinChallenge($hostServerId: String!, $hostOrigin: String!, $inviteToken: String) {
+    remoteJoinChallenge(
+      hostServerId: $hostServerId
+      hostOrigin: $hostOrigin
+      inviteToken: $inviteToken
+    ) {
+      challengeId
+      nonce
+      expiresAt
+      workspaceId
+    }
+  }
+`;
+
+export const JOIN_REMOTE_WORKSPACE_MUTATION = gql`
+  mutation JoinRemoteWorkspace($input: JoinRemoteWorkspaceInput!) {
+    joinRemoteWorkspace(input: $input) {
+      hostServerId
+      workspaceId
+      userId
+      role
+    }
+  }
+`;
+
+export const RENEW_DELEGATIONS_MUTATION = gql`
+  mutation RenewDelegations($delegations: [SignedStatementInput!]!) {
+    renewDelegations(delegations: $delegations) {
+      hostServerId
+      workspaceId
+      status
+      expiresAt
+    }
+  }
+`;
+
+/** Sent to a host directly: no session, no CSRF header. */
+export const APPLY_REMOTE_REVOCATION_MUTATION = gql`
+  mutation ApplyRemoteRevocation($revocation: SignedStatementInput!) {
+    applyRemoteRevocation(revocation: $revocation) {
+      ${STATEMENT}
+    }
+  }
+`;
+
+/** A workspace's name, asked of its host through the forward path. */
+export const REMOTE_WORKSPACE_QUERY = gql`
+  query RemoteWorkspace($serverId: ID!) {
+    server(serverId: $serverId) {
+      id
+      name
+    }
+  }
+`;
+
+/** Sent to a server directly, to sign in there with this device's key. */
+export const KEY_LOGIN_CHALLENGE_MUTATION = gql`
+  mutation KeyLoginChallenge {
+    keyLoginChallenge {
+      challengeId
+      nonce
+    }
+  }
+`;
+
+/** Sent to a server directly, with a proof whose audience is that server's id. */
+export const LOGIN_WITH_KEY_MUTATION = gql`
+  mutation LoginWithKey($proof: SignedStatementInput!) {
+    loginWithKey(proof: $proof) {
+      userId
+    }
+  }
+`;
+
+/** Sent to a new relay directly, to open an account there with this identity. */
+export const SIGNUP_WITH_KEY_MUTATION = gql`
+  mutation SignupWithKey($input: SignupWithKeyInput!) {
+    signupWithKey(input: $input) {
+      userId
+    }
+  }
+`;
+
+/** Sent to a new relay directly, to publish this person's card there. */
+export const PUBLISH_PROFILE_CARD_MUTATION = gql`
+  mutation PublishProfileCard($card: SignedStatementInput!) {
+    publishProfileCard(card: $card) {
+      version
+    }
+  }
+`;
+
+/** A host's events on its own WebSocket, for a direct connection. */
+export const WORKSPACE_EVENTS_SUBSCRIPTION = `
+  subscription WorkspaceEvents($workspaceId: ID!) {
+    workspaceEvents(workspaceId: $workspaceId)
+  }
+`;
+
+/** A page of a direct space's conversations, newest activity first. */
+export const DIRECT_SPACE_CONVERSATIONS_QUERY = gql`
+  query DirectSpaceConversations($serverId: ID!, $cursor: InboxCursorInput) {
+    inboxConversations(serverId: $serverId, dir: BEFORE, cursor: $cursor, limit: 100) {
+      items {
+        id
+      }
+      next {
+        lastActivityAt
+        conversationId
+      }
+      pageInfo {
+        hasNext
+      }
+    }
   }
 `;
