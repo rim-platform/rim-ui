@@ -60,6 +60,12 @@ export function graphqlErrorExtension(err: unknown, key: string): unknown {
 /** The request carried no valid session (an absent, expired or revoked cookie). */
 export const UNAUTHENTICATED = "UNAUTHENTICATED";
 
+/** The thing the request names does not exist, such as an unknown invite. */
+export const NOT_FOUND = "NOT_FOUND";
+
+/** The caller may not do this; the error's message says why. */
+export const FORBIDDEN = "FORBIDDEN";
+
 /** The write clashes with existing data, such as a username already taken. */
 export const CONFLICT = "CONFLICT";
 

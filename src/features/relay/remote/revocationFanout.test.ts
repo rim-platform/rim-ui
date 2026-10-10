@@ -7,6 +7,7 @@ import {
   accessUntil,
   DIRECT_AFTER_MS,
   directDue,
+  directProblem,
   readFanout,
   sendDirectly,
   unconfirmedText,
@@ -104,6 +105,43 @@ describe("a revocation's fan-out", () => {
       deps,
     );
     expect(result.state).toBe("failed");
+  });
+
+  it("says when a host that limits direct removals takes them again", async () => {
+    const limited = {
+      response: {
+        errors: [
+          {
+            message: "rate limit exceeded",
+            extensions: { code: "RATE_LIMITED", retryAfterSeconds: 610 },
+          },
+        ],
+      },
+    };
+    const [result] = await sendDirectly(
+      revocation,
+      [{ host: HOST, state: "waiting", via: null, appliedAt: null, problem: null }],
+      async () => {
+        throw limited;
+      },
+      deps,
+    );
+    expect(result.state).toBe("failed");
+    expect(result.problem).toBe(
+      "it refused more removals from this address for now; it accepts them again in 11 min",
+    );
+    expect(
+      directProblem({
+        response: {
+          errors: [
+            {
+              message: "server rims1_h is unavailable",
+              extensions: { code: "UPSTREAM_UNAVAILABLE" },
+            },
+          ],
+        },
+      }),
+    ).toBe("Another server this needs could not be reached. Try again later.");
   });
 
   it("names how long the device keeps access: the delegation's end, a day at most", () => {

@@ -8,6 +8,12 @@
  * access there: until its delegation runs out, 24 hours after the revocation at most.
  */
 
+import {
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  RATE_LIMITED,
+  retryAfterSeconds,
+} from "../../../core/graphql/errors";
 import { RevocationFanoutStatus } from "../../../core/graphql/generated/schema-types";
 import type { Statement } from "../../key-identity/browser/statements";
 import type { RevocationFanoutView } from "../api/relayApi";
@@ -101,6 +107,16 @@ export function directDue(startedAt: number, now: number): boolean {
   return now - startedAt >= DIRECT_AFTER_MS;
 }
 
+/** Why sending the revocation to a host directly failed, in words. */
+export function directProblem(err: unknown): string {
+  if (graphqlErrorCode(err) === RATE_LIMITED) {
+    const seconds = retryAfterSeconds(err);
+    const wait = seconds === undefined ? "later" : `in ${Math.max(1, Math.ceil(seconds / 60))} min`;
+    return `it refused more removals from this address for now; it accepts them again ${wait}`;
+  }
+  return graphqlErrorMessage(err, String(err));
+}
+
 /**
  * Send the revocation directly to every host not confirmed yet and check each answer.
  * `apply` sends it to one host and returns its acknowledgement.
@@ -143,7 +159,7 @@ export async function sendDirectly(
         state: "failed",
         via: null,
         appliedAt: null,
-        problem: err instanceof Error ? err.message : String(err),
+        problem: directProblem(err),
       });
     }
   }

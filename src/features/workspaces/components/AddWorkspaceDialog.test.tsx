@@ -62,6 +62,29 @@ describe("AddWorkspaceDialog", () => {
     expect(await screen.findByText(/names a key the server no longer uses/)).toBeInTheDocument();
   });
 
+  it.each([
+    ["NOT_FOUND", "not found", "Invalid invite code."],
+    ["FORBIDDEN", "the invite has expired", "This invite is expired or revoked."],
+    [
+      "UPSTREAM_UNAVAILABLE",
+      "server rims1_h is unavailable",
+      "Another server this needs could not be reached. Try again later.",
+    ],
+  ])("reads a remote join's %s error", async (code, message, shown) => {
+    const user = userEvent.setup();
+    remote.joinWithInvite.mockRejectedValue(
+      Object.assign(new Error(`${message}: {"response":{}}`), {
+        response: { errors: [{ message, extensions: { code } }] },
+      }),
+    );
+    renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.click(screen.getByRole("textbox"));
+    await user.paste(LINK);
+    await user.click(screen.getByRole("button", { name: "Join" }));
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+  });
+
   it("keeps plain invite codes on this server", async () => {
     const user = userEvent.setup();
     renderDialog();
