@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import type {
+  ConfirmationChallenge,
   MacroStep as MacroStepGql,
   MacroDef,
   MacroStepInput,
@@ -13,6 +14,16 @@ import type {
 } from "../../../core/graphql/generated/schema-types";
 
 export type { CreateMacroInput, UpdateMacroInput, ExecuteMacroInput, MacroStepInput };
+
+/** Variables of `executeMacro`; a dangerous macro is confirmed with `confirmation`. */
+export type ExecuteMacroVariables = Omit<ExecuteMacroInput, "confirmedDangerous">;
+
+/** Result of `executeMacro`; `confirmationRequired` is set when the status is `CONFIRMATION_REQUIRED`. */
+export interface ExecuteMacroResult {
+  status: string;
+  message: string;
+  confirmationRequired?: ConfirmationChallenge | null;
+}
 
 /** Output-side macro step with a non-nullable args convenience alias. */
 export type MacroStep = MacroStepGql;
@@ -73,6 +84,11 @@ export const ExecuteMacroDocument = gql`
     executeMacro(input: $input) {
       status
       message
+      confirmationRequired {
+        token
+        argsHash
+        expiresAt
+      }
     }
   }
 `;
@@ -123,11 +139,8 @@ export function useDeleteMacroMutation() {
 
 export function useExecuteMacroMutation() {
   return useMutation({
-    mutationFn: (input: ExecuteMacroInput) =>
-      graphqlClient.request<{ executeMacro: { status: string; message: string } }>(
-        ExecuteMacroDocument,
-        { input },
-      ),
+    mutationFn: (input: ExecuteMacroVariables) =>
+      graphqlClient.request<{ executeMacro: ExecuteMacroResult }>(ExecuteMacroDocument, { input }),
   });
 }
 

@@ -48,7 +48,6 @@ export function useDeleteMessage(
             conversationId,
             selectedMessageId: messageId,
           },
-          confirmedDangerous: true,
         });
         if (res.executeCommand.status === "ERROR") {
           throw new Error(res.executeCommand.message || "Failed to delete message");

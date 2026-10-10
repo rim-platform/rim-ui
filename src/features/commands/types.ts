@@ -75,7 +75,6 @@ export interface ExecuteCommandInput {
   commandId: string;
   args?: Record<string, unknown>;
   commandContext?: CommandContextInput;
-  confirmedDangerous?: boolean;
   isPipe?: boolean;
 }
 

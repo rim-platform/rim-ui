@@ -21,6 +21,8 @@ import {
   useExecuteMacroMutation,
 } from "../api/useMacros";
 import type { Macro, MacroStep } from "../api/useMacros";
+import type { ConfirmationChallenge } from "../../../core/graphql/generated/schema-types";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import { cn } from "../../../shared/ui/cn";
@@ -241,6 +243,12 @@ function MacroEditor({
   );
 }
 
+/** A macro run the server holds until the user confirms, with the challenge it issued. */
+interface PendingMacroConfirmation {
+  macro: Macro;
+  challenge: ConfirmationChallenge;
+}
+
 interface PendingAiMacro {
   name: string;
   description: string;
@@ -259,7 +267,7 @@ export function MacroSettings() {
   const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
-  const [dangerousConfirm, setDangerousConfirm] = useState<Macro | null>(null);
+  const [dangerousConfirm, setDangerousConfirm] = useState<PendingMacroConfirmation | null>(null);
 
   const handleAiStepsGenerated = useCallback((macro: GeneratedMacro) => {
     setPendingAiMacro({
@@ -283,47 +291,38 @@ export function MacroSettings() {
     [deleteMacro],
   );
 
-  const handleExecute = useCallback(
-    async (macroId: string, confirmedDangerous: boolean) => {
-      setExecutingId(macroId);
+  /**
+   * Runs a macro. The server answers a dangerous one with `CONFIRMATION_REQUIRED` and a
+   * challenge; the confirmation dialog then shows, and confirming runs it again with the
+   * challenge as proof.
+   */
+  const handleRunMacro = useCallback(
+    async (macro: Macro, proof?: ConfirmationChallenge) => {
+      setExecutingId(macro.id);
       setDangerousConfirm(null);
       try {
         const result = await executeMacro.mutateAsync({
-          macroId,
+          macroId: macro.id,
           commandContext: { workspaceId: workspaceId ?? undefined },
-          confirmedDangerous: confirmedDangerous || undefined,
+          ...(proof && {
+            confirmation: { inBandToken: { token: proof.token, argsHash: proof.argsHash } },
+          }),
         });
-        if (result.executeMacro.status === "SUCCESS") {
-          toast.success(result.executeMacro.message || "Macro executed successfully");
+        const { status, message, confirmationRequired } = result.executeMacro;
+        if (status === "SUCCESS") {
+          toast.success(message || "Macro executed successfully");
+        } else if (status === "CONFIRMATION_REQUIRED" && confirmationRequired) {
+          setDangerousConfirm({ macro, challenge: confirmationRequired });
         } else {
-          toast.error(result.executeMacro.message || "Macro execution failed");
+          toast.error(message || "Macro execution failed");
         }
-      } catch {
-        toast.error("Failed to execute macro");
+      } catch (err) {
+        toast.error(graphqlErrorMessage(err, "Failed to execute macro"));
       } finally {
         setExecutingId(null);
       }
     },
     [executeMacro, workspaceId],
-  );
-
-  /** Check if a macro contains dangerous commands and prompt confirmation if so. */
-  const handleRunMacro = useCallback(
-    (macro: Macro) => {
-      if (!commands) {
-        // Commands not loaded yet — run without check
-        void handleExecute(macro.id, false);
-        return;
-      }
-      const dangerousIds = new Set(commands.filter((c) => c.dangerous).map((c) => c.id));
-      const hasDangerous = macro.steps.some((s) => dangerousIds.has(s.commandId));
-      if (hasDangerous) {
-        setDangerousConfirm(macro);
-      } else {
-        void handleExecute(macro.id, false);
-      }
-    },
-    [commands, handleExecute],
   );
 
   if (editing !== null) {
@@ -404,7 +403,7 @@ export function MacroSettings() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => handleRunMacro(macro)}
+                  onClick={() => void handleRunMacro(macro)}
                   disabled={executingId === macro.id}
                   title="Run macro"
                   className={cn(
@@ -469,14 +468,14 @@ export function MacroSettings() {
                 Macro contains dangerous commands
               </p>
               <p className="mt-1 text-xs text-rim-text-muted">
-                &ldquo;{dangerousConfirm.name}&rdquo; includes commands marked as dangerous. These
-                may delete data or make irreversible changes. Are you sure you want to run it?
+                &ldquo;{dangerousConfirm.macro.name}&rdquo; includes commands marked as dangerous.
+                These may delete data or make irreversible changes. Are you sure you want to run it?
               </p>
               {commands && (
                 <div className="mt-2 space-y-1">
                   {[
                     ...new Set(
-                      dangerousConfirm.steps
+                      dangerousConfirm.macro.steps
                         .filter((s) => commands.some((c) => c.id === s.commandId && c.dangerous))
                         .map((s) => s.commandId),
                     ),
@@ -493,7 +492,9 @@ export function MacroSettings() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => void handleExecute(dangerousConfirm.id, true)}
+              onClick={() =>
+                void handleRunMacro(dangerousConfirm.macro, dangerousConfirm.challenge)
+              }
               className="rounded-lg bg-rim-danger/20 px-3 py-1.5 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/30"
             >
               Run anyway

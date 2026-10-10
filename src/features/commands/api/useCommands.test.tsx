@@ -69,3 +69,30 @@ describe("useExecuteCommandMutation — TIMED_OUT (Track 1.2)", () => {
     expect(useTimeoutStore.getState().byWorkspace).toEqual({});
   });
 });
+
+describe("useExecuteCommandMutation variables", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockResolvedValue({
+      executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+    });
+  });
+
+  it("sends no confirmedDangerous, even when a caller passes one", async () => {
+    const { result } = renderHook(() => useExecuteCommandMutation(), { wrapper });
+    const input = {
+      commandId: "chat.delete_message",
+      commandContext: { workspaceId: "ws-1", selectedMessageId: "msg-1" },
+      confirmedDangerous: true,
+    } as Parameters<typeof result.current.mutateAsync>[0];
+
+    await act(async () => {
+      await result.current.mutateAsync(input);
+    });
+
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    const variables = requestMock.mock.calls[0][1] as { input: Record<string, unknown> };
+    expect(variables.input).not.toHaveProperty("confirmedDangerous");
+    expect(variables.input.commandId).toBe("chat.delete_message");
+  });
+});
