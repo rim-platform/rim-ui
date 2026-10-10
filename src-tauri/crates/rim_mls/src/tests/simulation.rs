@@ -809,8 +809,10 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
     clients[0].create(&mut server, 1).unwrap();
     sync_all(&mut clients, &mut server, &directory);
 
-    // A key package whose lifetime ends one second from now. The server never hands out one
-    // this close to expiry; a committer that got it anyway adds it.
+    // A key package that expires at least three seconds from now: long enough for the committer
+    // to add it while it is valid. The server never hands out one this close to expiry; a
+    // committer that got it anyway adds it.
+    let expires = now() + 4;
     let newcomer = Client::new(1, 2);
     let mut packages = crate::provider::with_crypto!(&newcomer.dev.mls.backend, |crypto| {
         crate::device::generate_key_packages(
@@ -819,7 +821,7 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
             1,
             false,
             now(),
-            (now() - 60, now() + 1),
+            (now() - 60, expires),
         )
     })
     .unwrap();
@@ -844,7 +846,7 @@ fn a_commit_adding_a_key_package_that_expired_meanwhile_cannot_be_processed() {
         .mls
         .commit_accepted(&clients[0].dev.store, group)
         .unwrap();
-    super::support::wait(std::time::Duration::from_millis(2100));
+    super::support::wait_until(expires);
 
     // A device that processes the Commit later refuses it (OpenMLS checks an added key
     // package's lifetime when it processes the Commit) and needs a re-add.
