@@ -144,7 +144,7 @@ const ADVANCE_INCIDENT_PHASE = gql`
   mutation AdvanceIncidentPhase($input: AdvanceIncidentPhaseInput!) {
     advanceIncidentPhase(input: $input) {
       id
-      status
+      phase
     }
   }
 `;
