@@ -1279,7 +1279,10 @@ once in `CreateInstanceInvitePayload.inviteToken`.
 """
 type InstanceInviteGql {
 	id: ID!
-	createdByUserId: ID!
+	"""
+	The user who issued it; null for an invite the operator issued from the command line.
+	"""
+	createdByUserId: ID
 	expiresAt: DateTime!
 	maxUses: Int!
 	useCount: Int!
@@ -2003,6 +2006,8 @@ type Mutation {
 	# Errors
 	
 	- `UNAUTHENTICATED` — no session.
+	- `FORBIDDEN` — `displayName` from a member whose relay is another server; their
+	display name comes from their profile card.
 	- `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
 	`bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
 	- `NOT_FOUND` — caller's user row missing (should not happen in practice).
@@ -2869,6 +2874,10 @@ type Query {
 	Where the revocation of one of the caller's devices stands at each host holding them.
 	"""
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
+	"""
+	The server's release version and API version. Readable without a session.
+	"""
+	serverInfo: ServerInfo!
 }
 
 type ReactionGroup {
@@ -3304,6 +3313,20 @@ type ServerBan {
 	The banned user (null if the account no longer exists).
 	"""
 	user: User
+}
+
+"""
+The running server build and the API version it speaks.
+"""
+type ServerInfo {
+	"""
+	The server's release version, e.g. `0.1.0`.
+	"""
+	version: String!
+	"""
+	The major version of this GraphQL API.
+	"""
+	apiVersion: Int!
 }
 
 type ServerMember {

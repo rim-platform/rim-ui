@@ -100,6 +100,10 @@ vi.mock("../../updater/components/AboutUpdates", () => ({
   AboutVersion: () => <p>Version 9.9.9</p>,
   AboutUpdates: () => <div data-testid="about-updates">Updates</div>,
 }));
+vi.mock("../../updater/components/AboutServer", () => ({
+  AboutServerVersion: () => <p>Server 8.8.8</p>,
+  AboutServerApiBanner: () => <p role="status">Newer server API</p>,
+}));
 
 vi.mock("../../integrations/components/IngestTokenSettings", () => ({
   IngestTokenSettings: () => <div data-testid="ingest-token-settings">Integrations</div>,
@@ -202,6 +206,8 @@ describe("SettingsPage", () => {
     // About panel renders an "About RIM" heading plus product blurb.
     expect(screen.getByRole("heading", { name: "About RIM" })).toBeInTheDocument();
     expect(screen.getByText("Version 9.9.9")).toBeInTheDocument();
+    expect(screen.getByText("Server 8.8.8")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Newer server API");
     expect(screen.getByTestId("about-updates")).toBeInTheDocument();
     expect(screen.getByText("A programmable communication workspace.")).toBeInTheDocument();
   });

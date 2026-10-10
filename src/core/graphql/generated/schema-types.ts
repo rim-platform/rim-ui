@@ -1172,7 +1172,8 @@ export type IngestTokenGql = {
  */
 export type InstanceInviteGql = {
   createdAt: Scalars['DateTime']['output'];
-  createdByUserId: Scalars['ID']['output'];
+  /** The user who issued it; null for an invite the operator issued from the command line. */
+  createdByUserId?: Maybe<Scalars['ID']['output']>;
   expiresAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
   maxUses: Scalars['Int']['output'];
@@ -1979,6 +1980,8 @@ export type Mutation = {
    * # Errors
    *
    * - `UNAUTHENTICATED` — no session.
+   * - `FORBIDDEN` — `displayName` from a member whose relay is another server; their
+   * display name comes from their profile card.
    * - `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
    * `bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
    * - `NOT_FOUND` — caller's user row missing (should not happen in practice).
@@ -3230,6 +3233,8 @@ export type Query = {
   server: Server;
   /** Active bans of the workspace, newest first. Owner/Moderator only. */
   serverBans: Array<ServerBan>;
+  /** The server's release version and API version. Readable without a session. */
+  serverInfo: ServerInfo;
   serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
   /**
@@ -4026,6 +4031,14 @@ export type ServerBan = {
   /** The banned user (null if the account no longer exists). */
   user?: Maybe<User>;
   userId: Scalars['ID']['output'];
+};
+
+/** The running server build and the API version it speaks. */
+export type ServerInfo = {
+  /** The major version of this GraphQL API. */
+  apiVersion: Scalars['Int']['output'];
+  /** The server's release version, e.g. `0.1.0`. */
+  version: Scalars['String']['output'];
 };
 
 export type ServerMember = {
