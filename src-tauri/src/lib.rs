@@ -8,6 +8,7 @@ mod offline_session;
 mod plugin_host;
 mod relay;
 mod secret_store;
+mod updater;
 
 use std::sync::Arc;
 
@@ -15,7 +16,15 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut context = tauri::generate_context!();
+    let updater_config = updater::UpdaterConfig::bundled();
+    let builder = updater::register(
+        tauri::Builder::default(),
+        &mut context,
+        updater_config.as_ref(),
+    );
+    builder
+        .manage(updater::UpdaterStatus::of(updater_config.as_ref()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         // Native dialogs — used Rust-side only (the history archive folder picker).
@@ -261,8 +270,9 @@ pub fn run() {
             key_identity::commands::key_identity_link_offer,
             key_identity::commands::key_identity_link_open_answer,
             key_identity::commands::key_identity_link_accept,
+            updater::updater_status,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             // `run` ends the process without running destructors, so plugin
