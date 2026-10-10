@@ -3,6 +3,7 @@ import { Pin } from "lucide-react";
 
 import { usePinnedMessages } from "../api/usePinnedMessages";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettingsStore";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { formatTime } from "../../../shared/utils/formatTime";
@@ -24,6 +25,7 @@ export function PinnedMessagesPanel({
     isError,
   } = usePinnedMessages(workspaceId, conversationId);
   const memberLookup = useMemberLookup(workspaceId);
+  const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
   const memberDisplayMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const [userId, info] of memberLookup.map) {
@@ -94,6 +96,7 @@ export function PinnedMessagesPanel({
                   content={msg.text ?? ""}
                   className="mt-1 text-sm text-rim-text prose-rim"
                   memberMap={memberDisplayMap}
+                  showInlineMedia={showInlineMedia}
                 />
               </div>
             ))}

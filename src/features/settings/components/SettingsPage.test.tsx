@@ -203,6 +203,14 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("notification-settings")).toBeInTheDocument();
   });
 
+  it("Messages tab shows the inline media switch", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(screen.getByText("Messages"));
+    expect(screen.getByRole("switch", { name: "Show inline media" })).toBeInTheDocument();
+  });
+
   it("Macros tab renders", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);

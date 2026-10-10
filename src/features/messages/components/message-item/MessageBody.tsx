@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { MarkdownRenderer } from "../../../../shared/ui/MarkdownRenderer";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
+import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { MessageEditForm } from "./MessageEditForm";
 import type { MemberResolver } from "./types";
 
@@ -47,6 +48,7 @@ export const MessageText = memo(function MessageText({
   memberDisplayMap,
   resolveMember,
 }: MessageTextProps) {
+  const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
   const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
   const mentionTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -110,6 +112,7 @@ export const MessageText = memo(function MessageText({
           onMentionClick={handleMentionClick}
           onMentionHover={handleMentionHover}
           onMentionLeave={scheduleMentionClose}
+          showInlineMedia={showInlineMedia}
         />
       ) : !hasAttachments ? (
         <EmptyTag className={styles.empty}>[empty message]</EmptyTag>
