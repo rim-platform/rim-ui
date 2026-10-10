@@ -448,9 +448,7 @@ const sentSignups = new Map<string, KeySignupFields>();
 const proofs = new Map<string, { boundTo: string; nonce: string }>();
 
 function hasToken(fields: KeySignupFields): boolean {
-  return Boolean(
-    fields.bootstrapToken || fields.instanceInviteToken || fields.workspaceInviteToken,
-  );
+  return Boolean(fields.instanceInviteToken || fields.workspaceInviteToken);
 }
 
 /** Whether the server refused a signup over its proof-of-work, or for want of one. */

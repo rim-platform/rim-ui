@@ -32,11 +32,8 @@ import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { checkDisplayName } from "../displayName";
 import { JoinField } from "./JoinField";
 
-/** The token fields of `signupWithKey`: one for an invite or bootstrap link, none in open mode. */
-export type KeySignupTokens = Pick<
-  KeySignupFields,
-  "bootstrapToken" | "instanceInviteToken" | "workspaceInviteToken"
->;
+/** The token fields of `signupWithKey`: one for an invite link, none in open mode. */
+export type KeySignupTokens = Pick<KeySignupFields, "instanceInviteToken" | "workspaceInviteToken">;
 
 interface KeySignupFormProps {
   tokens: KeySignupTokens;

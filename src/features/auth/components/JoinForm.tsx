@@ -1,10 +1,9 @@
 /**
  * `JoinForm` — registration form used on `/join/:token` and `/join` (open mode).
  *
- * Handles four token-type variants via the `variant` prop:
+ * Handles three token-type variants via the `variant` prop:
  * - `"WORKSPACE"`: header shows workspace name, copy says "Create your account."
  * - `"INSTANCE"`: header says "Create your RIM account." No workspace name. Routes via `instanceInviteToken`.
- * - `"BOOTSTRAP"`: same UI as INSTANCE ("Create your RIM account"). Routes via `bootstrapToken`.
  * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
  *
  * On the desktop the page also offers "Create account with a key" (`KeySignupForm`): an
@@ -35,6 +34,7 @@
 
 import { useState } from "react";
 
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
 import { checkDisplayName } from "../displayName";
@@ -56,7 +56,6 @@ interface JoinFormProps {
    * Which registration path this form represents.
    * - `WORKSPACE` — workspace invite token, shows workspace name.
    * - `INSTANCE` — instance invite token; routes via `instanceInviteToken`.
-   * - `BOOTSTRAP` — bootstrap token; same UI as INSTANCE but routes via `bootstrapToken`.
    * - `OPEN` — no token; open registration.
    */
   variant: JoinFormVariant;
@@ -81,28 +80,20 @@ interface JoinFormProps {
  * in OPEN mode.
  *   - `WORKSPACE` → `workspaceInviteToken`
  *   - `INSTANCE`  → `instanceInviteToken`
- *   - `BOOTSTRAP` → `bootstrapToken`
  */
 function tokenFields(variant: JoinFormVariant, token: string | null): KeySignupTokens {
   if (!token) return {};
   if (variant === InviteTokenType.WORKSPACE) return { workspaceInviteToken: token };
   if (variant === InviteTokenType.INSTANCE) return { instanceInviteToken: token };
-  if (variant === InviteTokenType.BOOTSTRAP) return { bootstrapToken: token };
   return {};
 }
 
-/**
- * Returns the header copy for the given variant.
- *
- * BOOTSTRAP and INSTANCE share the same copy ("Create your RIM account") —
- * the distinction is only at the mutation-input level (`bootstrapToken` vs
- * `instanceInviteToken`).
- */
+/** Returns the header copy for the given variant. */
 function headerCopy(variant: JoinFormVariant, workspaceName?: string): string {
   if (variant === InviteTokenType.WORKSPACE && workspaceName) {
     return `You're joining ${workspaceName}`;
   }
-  // BOOTSTRAP, INSTANCE, and OPEN all show the same default copy.
+  // INSTANCE and OPEN show the same default copy.
   return "Create your RIM account";
 }
 
@@ -228,7 +219,7 @@ export function JoinForm({
         if (mapped?.field === "email") {
           setEmailError(mapped.message);
         } else {
-          setFormError(err instanceof Error ? err.message : "Registration failed. Try again.");
+          setFormError(graphqlErrorMessage(err, "Registration failed. Try again."));
         }
       },
     });
@@ -300,8 +291,7 @@ export function JoinForm({
               />
               {(formError || signup.error) && !emailError && (
                 <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                  {formError ??
-                    (signup.error instanceof Error ? signup.error.message : "Registration failed.")}
+                  {formError ?? graphqlErrorMessage(signup.error, "Registration failed.")}
                 </p>
               )}
               <button

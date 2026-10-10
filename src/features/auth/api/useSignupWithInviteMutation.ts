@@ -3,8 +3,8 @@
  * open-mode registration paths.
  *
  * Wraps the `signupWithInvite(input: SignupWithInviteInput!)` GraphQL mutation.
- * In invite-only mode exactly one of `bootstrapToken`, `instanceInviteToken`,
- * or `workspaceInviteToken` must be supplied. In open mode all token fields
+ * In invite-only mode exactly one of `instanceInviteToken` or
+ * `workspaceInviteToken` must be supplied. In open mode all token fields
  * must be absent.
  *
  * The backend sets session and CSRF cookies on success, matching the behavior
@@ -19,10 +19,10 @@
  *   server-side when absent.
  * - `password` — required.
  * - `workspaceInviteToken` — from `/join/:token` URLs for workspace invites.
- * - `instanceInviteToken` — from `/join/:token` URLs for instance invites.
- * - `bootstrapToken` — from `/join/:token` URLs for bootstrap tokens (first-user
- *   provisioning). Distinct from `instanceInviteToken`; use `bootstrapToken` when
- *   the preview returns `tokenType === BOOTSTRAP`.
+ * - `instanceInviteToken` — from `/join/:token` URLs for instance invites,
+ *   including the operator's links. An invite bound to an email address admits
+ *   only this signup with that address; the server refuses others with a
+ *   `VALIDATION` error.
  *
  * @returns TanStack Query mutation result. On success, `data.signupWithInvite`
  *   contains `{ userId, serverId? }`. `serverId` is present only for workspace

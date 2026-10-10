@@ -1,5 +1,5 @@
 /**
- * Tests for `JoinForm` — amendment 2026-04-28b field additions + BOOTSTRAP variant.
+ * Tests for `JoinForm` — amendment 2026-04-28b field additions + token routing.
  *
  * Covers the four new assertions from spec §13b:
  * (a) Malformed email rejected client-side, inline error before submit.
@@ -7,9 +7,10 @@
  * (c) displayName trimming — leading/trailing whitespace stripped before send.
  * (d) displayName empty after trim → omitted from request payload entirely.
  *
- * Also covers the BOOTSTRAP token variant (added 2026-04-28c):
- * (e) BOOTSTRAP variant routes via `bootstrapToken`, NOT `instanceInviteToken`.
- * (f) INSTANCE variant still routes via `instanceInviteToken` (regression guard).
+ * Also covers the INSTANCE token variant:
+ * (e) shows "Create your RIM account" header copy.
+ * (f) routes via `instanceInviteToken`.
+ * (g) shows the server's refusal when an email-bound invite turns the address away.
  *
  * And the desktop's "Create account with a key", which hands the page's token to
  * `KeySignupForm` (tested on its own).
@@ -66,19 +67,6 @@ function renderInstanceJoinForm(onSuccess = vi.fn()) {
   return render(
     <MemoryRouter>
       <JoinForm variant={InviteTokenType.INSTANCE} token="instance-tok-123" onSuccess={onSuccess} />
-    </MemoryRouter>,
-  );
-}
-
-/** Renders `JoinForm` with a BOOTSTRAP token variant. */
-function renderBootstrapJoinForm(onSuccess = vi.fn()) {
-  return render(
-    <MemoryRouter>
-      <JoinForm
-        variant={InviteTokenType.BOOTSTRAP}
-        token="bootstrap-tok-456"
-        onSuccess={onSuccess}
-      />
     </MemoryRouter>,
   );
 }
@@ -251,9 +239,9 @@ describe("JoinForm — amendment 2026-04-28b", () => {
   });
 });
 
-// ── BOOTSTRAP / INSTANCE token routing ───────────────────────────────────────
+// ── INSTANCE token routing ───────────────────────────────────────────────────
 
-describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
+describe("JoinForm — INSTANCE token routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -269,37 +257,12 @@ describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
     await user.click(screen.getByText("Create account"));
   }
 
-  it("(e) BOOTSTRAP variant routes via bootstrapToken, not instanceInviteToken", async () => {
-    mockSignupMutate.mockImplementation(
-      (
-        input: unknown,
-        opts: {
-          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string | null } }) => void;
-        },
-      ) => {
-        opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: null } });
-      },
-    );
-
-    const user = userEvent.setup();
-    renderBootstrapJoinForm();
-    await fillAndSubmit(user);
-
-    expect(mockSignupMutate).toHaveBeenCalledOnce();
-
-    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
-    // Must use bootstrapToken, NOT instanceInviteToken.
-    expect(input).toHaveProperty("bootstrapToken", "bootstrap-tok-456");
-    expect(Object.prototype.hasOwnProperty.call(input, "instanceInviteToken")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
-  });
-
-  it("(e) BOOTSTRAP variant shows 'Create your RIM account' header copy (same as INSTANCE)", () => {
-    renderBootstrapJoinForm();
+  it("(e) INSTANCE variant shows 'Create your RIM account' header copy", () => {
+    renderInstanceJoinForm();
     expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
   });
 
-  it("(f) INSTANCE variant routes via instanceInviteToken, not bootstrapToken", async () => {
+  it("(f) INSTANCE variant routes via instanceInviteToken", async () => {
     mockSignupMutate.mockImplementation(
       (
         input: unknown,
@@ -318,10 +281,26 @@ describe("JoinForm — BOOTSTRAP and INSTANCE token routing", () => {
     expect(mockSignupMutate).toHaveBeenCalledOnce();
 
     const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
-    // Must use instanceInviteToken, NOT bootstrapToken.
     expect(input).toHaveProperty("instanceInviteToken", "instance-tok-123");
-    expect(Object.prototype.hasOwnProperty.call(input, "bootstrapToken")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
+  });
+
+  it("(g) shows the server's message when an email-bound invite refuses the address", async () => {
+    const refusal = "this invite admits only the email address it was issued for";
+    // A graphql-request ClientError: its own message embeds the whole response.
+    const err = Object.assign(new Error(`${refusal}: {"response":{"errors":[]}}`), {
+      response: { errors: [{ message: refusal, extensions: { code: "VALIDATION" } }] },
+    });
+    mockSignupMutate.mockImplementation(
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => opts.onError(err),
+    );
+
+    const user = userEvent.setup();
+    renderInstanceJoinForm();
+    await fillAndSubmit(user);
+
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+    expect(screen.queryByText(/"response"/)).toBeNull();
   });
 });
 
@@ -491,7 +470,6 @@ describe("JoinForm — create account with a key", () => {
   it.each([
     [InviteTokenType.WORKSPACE, "ws-tok", { workspaceInviteToken: "ws-tok" }],
     [InviteTokenType.INSTANCE, "inst-tok", { instanceInviteToken: "inst-tok" }],
-    [InviteTokenType.BOOTSTRAP, "boot-tok", { bootstrapToken: "boot-tok" }],
     ["OPEN" as const, null, {}],
   ])("%s: hands the page's token to the key form", (variant, token, expected) => {
     renderVariant(variant, token);

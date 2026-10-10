@@ -1,10 +1,9 @@
 /**
  * `LoginForm` — the username + password form used on the `/login` route.
  *
- * Extracted from the old `AuthGate.tsx` `LoginForm` sub-component. No tab
- * parent; no Bootstrap form sibling. The component is "controlled" in the
- * sense that it owns its own field state and calls its mutation internally —
- * the parent (`LoginPage`) provides an `onSuccess` callback.
+ * The component is "controlled" in the sense that it owns its own field
+ * state and calls its mutation internally — the parent (`LoginPage`) provides
+ * an `onSuccess` callback.
  *
  * Props:
  * - `onSuccess(userId)` — called after the login mutation resolves. The

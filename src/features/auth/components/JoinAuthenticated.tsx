@@ -10,8 +10,6 @@
  * - `INSTANCE` token: renders an error message explaining that instance
  *   invites are only for new users. An authenticated user does not need a
  *   second account.
- * - `BOOTSTRAP` token: same error message as INSTANCE — bootstrap tokens are
- *   for first-time account creation and cannot be used by an existing session.
  *
  * Props:
  * - `token` — raw invite token from the URL param.
@@ -38,19 +36,17 @@ interface JoinAuthenticatedProps {
  * Branch rendered when an already-authenticated user visits `/join/:token`.
  *
  * Workspace tokens: shows a confirmation button to accept the invite.
- * Instance and bootstrap tokens: shows an error — existing users cannot use
- * these token types since they are only for new account creation.
+ * Instance tokens: shows an error — existing users cannot use them since they
+ * are only for new account creation.
  *
  * The per-token-type rendering is implemented as an exhaustive `switch` over
  * `tokenType` with a `never`-typed default arm. This mirrors the
  * `inviteTokenTypeToJoinFormVariant` helper in `JoinPage.tsx`: if a new
  * `InviteTokenType` enum member is added server-side and pulled through
  * codegen, this component will fail to type-check until the new case is
- * mapped explicitly. The previous `if (INSTANCE || BOOTSTRAP)` shape would
- * have silently routed any new variant into the workspace auto-join arm —
- * a runtime hazard we are deliberately closing here. The default arm uses a
- * `never`-typed binding so the failure is observable at compile time, not
- * via a thrown error in production.
+ * mapped explicitly, rather than any new variant falling into the workspace
+ * auto-join arm. The default arm uses a `never`-typed binding so the failure
+ * is observable at compile time, not via a thrown error in production.
  */
 export function JoinAuthenticated({ token, tokenType, workspaceName }: JoinAuthenticatedProps) {
   const navigate = useNavigate();
@@ -68,7 +64,6 @@ export function JoinAuthenticated({ token, tokenType, workspaceName }: JoinAuthe
 
   switch (tokenType) {
     case InviteTokenType.INSTANCE:
-    case InviteTokenType.BOOTSTRAP:
       return (
         <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
           <div className="w-full max-w-lg text-center space-y-2">
