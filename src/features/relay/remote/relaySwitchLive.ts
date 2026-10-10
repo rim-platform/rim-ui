@@ -10,8 +10,6 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { getApiOrigin, getGraphqlEndpoint, setRelayEndpoint } from "../../../core/graphql/config";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
-import { queryClient } from "../../../core/query/queryClient";
-import { queryKeys } from "../../../core/query/keys";
 import { keyBackend } from "../../key-identity/api/keyBackend";
 import {
   fetchMyKeyIdentity,
@@ -31,7 +29,8 @@ import {
   SIGNUP_WITH_KEY_MUTATION,
 } from "../api/documents";
 import { fetchConversationPredecessor, fetchRelayItems } from "../api/relayApi";
-import { continueConversation } from "../conversations/successor";
+import { relayUrlsFor } from "../contacts/knownRelays";
+import { startDirectConversation } from "../conversations/startDirect";
 import { relayCrypto } from "../crypto/relayCrypto";
 import { keyHash } from "../crypto/serverStatements";
 import { directRequest } from "../direct/directGraphql";
@@ -319,16 +318,24 @@ export function onNewRelay(state: SwitchState): boolean {
 export async function finishOnNewRelay(principalId: string): Promise<void> {
   const state = await loadSwitch(principalId);
   if (!state || state.step < 6 || !onNewRelay(state)) return;
-  const left = [];
+  const left: SwitchState["successors"] = [];
   for (const todo of state.successors) {
     try {
-      const head = await fetchConversationPredecessor(todo.spaceId, todo.conversationId);
-      queryClient.setQueryData(queryKeys.conversation(todo.spaceId, todo.conversationId), head);
-      await queryClient.fetchQuery({
-        queryKey: queryKeys.serverMembers(todo.spaceId),
-        queryFn: () => fetchServerMembers(todo.spaceId),
-      });
-      await continueConversation(todo.spaceId, todo.conversationId);
+      const old = await fetchConversationPredecessor(todo.spaceId, todo.conversationId);
+      const ids = new Set(old.memberIds);
+      const members = (await fetchServerMembers(todo.spaceId))
+        .filter((m) => ids.has(m.userId) && m.principalId && m.principalId !== principalId)
+        .map((m) => ({
+          principalId: m.principalId!,
+          relayUrls: relayUrlsFor(m.principalId!),
+          name: m.displayName || m.username,
+        }));
+      if (members.length > 0) {
+        await startDirectConversation(members, {
+          hostServerId: state.oldServerId,
+          conversationId: todo.conversationId,
+        });
+      }
     } catch (err) {
       logger.warn("[RIM:relay] continuing a conversation on the new relay failed:", err);
       left.push(todo);
