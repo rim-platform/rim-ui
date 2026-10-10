@@ -5,6 +5,9 @@ import { getApiOrigin } from "../../../../core/graphql/config";
 import { toast } from "../../../../shared/toast/useToastStore";
 import { cn } from "../../../../shared/ui/cn";
 import { useDeleteAttachmentMutation } from "../../api/useAttachments";
+import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
+import { InlineMedia } from "./InlineMedia";
+import { mediaKindOf } from "./mediaKind";
 import type { MessageAttachment } from "../../../../core/types/messages";
 
 const UPLOAD_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -20,6 +23,7 @@ export const MessageAttachments = memo(function MessageAttachments({
 }) {
   const baseUrl = getApiOrigin();
   const deleteAttachment = useDeleteAttachmentMutation();
+  const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
 
   // Track when we first observed each attachment as uploading for client-side timeout
   const uploadTimestamps = useRef<Map<string, number>>(new Map());
@@ -99,49 +103,12 @@ export const MessageAttachments = memo(function MessageAttachments({
         const isFailed = att.status === "FAILED" || timedOutIds.has(att.id);
         const canDownload = att.status === "READY";
         const downloadUrl = `${baseUrl}/api/attachments/${att.id}/download`;
-        const isImage = att.contentType.startsWith("image/");
+        const mediaKind = showInlineMedia ? mediaKindOf(att.contentType) : null;
 
-        if (isImage) {
+        if (mediaKind && canDownload) {
           return (
-            <div key={att.id} className="relative inline-block">
-              <a
-                href={canDownload ? downloadUrl : undefined}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(!canDownload && "pointer-events-none")}
-              >
-                <img
-                  src={canDownload ? downloadUrl : undefined}
-                  alt={att.filename}
-                  className={cn(
-                    "max-h-64 max-w-md rounded-lg object-contain",
-                    (isUploading || isFailed) && "opacity-60",
-                  )}
-                />
-              </a>
-              {isUploading && (
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-rim-text-faint">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Uploading...</span>
-                </div>
-              )}
-              {isFailed && (
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-rim-danger">
-                  <AlertCircle className="h-3 w-3" />
-                  <span>Upload failed</span>
-                  {serverId && (
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(att.id)}
-                      className="ml-1 rounded p-0.5 text-rim-danger transition hover:bg-rim-danger/10"
-                      title="Remove attachment"
-                      aria-label="Remove failed attachment"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              )}
+            <div key={att.id} className="w-fit max-w-full">
+              <InlineMedia kind={mediaKind} src={downloadUrl} filename={att.filename} />
             </div>
           );
         }

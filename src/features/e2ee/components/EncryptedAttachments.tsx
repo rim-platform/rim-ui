@@ -1,17 +1,21 @@
 import { memo, useEffect, useState } from "react";
-import { Download, FileIcon, Loader2 } from "lucide-react";
+import { Download, FileIcon, Film, Image as ImageIcon, Loader2 } from "lucide-react";
 
 import type { MessageAttachment } from "../../../core/types/messages";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { encryptedStoreAccount } from "../../messages/api/messageCache";
+import { InlineMedia } from "../../messages/components/message-item/InlineMedia";
+import { mediaKindOf } from "../../messages/components/message-item/mediaKind";
+import type { MediaKind } from "../../messages/components/message-item/mediaKind";
+import { useMessageDisplaySettingsStore } from "../../messages/state/useMessageDisplaySettingsStore";
 import { fetchMessageAttachments } from "../api/e2eeApi";
 import { decryptAttachment } from "../api/e2eeCommands";
 import { downloadBlob } from "../runtime/send";
 
-/** Images up to this size are downloaded and shown without asking (there are no thumbnails). */
-const AUTO_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Images and videos up to this size are decrypted and shown without asking (no thumbnails). */
+const AUTO_MEDIA_BYTES = 5 * 1024 * 1024;
 
 interface EncryptedAttachmentsProps {
   messageId: string;
@@ -52,16 +56,24 @@ async function openAttachment(
   return URL.createObjectURL(new Blob([plain as BlobPart], { type: attachment.contentType }));
 }
 
-function EncryptedImage({
+/**
+ * An encrypted image or video: decrypted into an object URL, shown like any other inline
+ * media and revoked on unmount. Files above the automatic size wait for a click.
+ */
+function EncryptedMedia({
   props,
   attachment,
+  kind,
 }: {
   props: EncryptedAttachmentsProps;
   attachment: MessageAttachment;
+  kind: MediaKind;
 }) {
+  const [requested, setRequested] = useState(attachment.sizeBytes <= AUTO_MEDIA_BYTES);
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (!requested) return;
     let revoked = false;
     let created: string | null = null;
     openAttachment(props, attachment)
@@ -71,7 +83,7 @@ function EncryptedImage({
         else setUrl(u);
       })
       .catch((err: unknown) => {
-        logger.warn("[RIM:e2ee] an image could not be opened:", err);
+        logger.warn("[RIM:e2ee] an attachment could not be opened:", err);
         if (!revoked) setFailed(true);
       });
     return () => {
@@ -80,20 +92,35 @@ function EncryptedImage({
     };
     // The attachment is identified by its hash; the props object changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attachment.blobSha256, attachment.id]);
+  }, [requested, attachment.blobSha256, attachment.id]);
   if (url) {
     return (
-      <img
-        src={url}
-        alt={attachment.filename}
-        className="max-h-80 max-w-sm rounded-lg border border-rim-line object-contain"
-      />
+      <div className="w-fit max-w-full">
+        <InlineMedia kind={kind} src={url} filename={attachment.filename} />
+      </div>
+    );
+  }
+  if (!requested) {
+    return (
+      <button
+        type="button"
+        onClick={() => setRequested(true)}
+        className="flex w-fit items-center gap-2 rounded-lg border border-rim-line bg-rim-panel-soft px-3 py-2 text-xs text-rim-text hover:border-rim-accent/40"
+      >
+        {kind === "video" ? (
+          <Film className="h-4 w-4 text-rim-text-muted" aria-hidden />
+        ) : (
+          <ImageIcon className="h-4 w-4 text-rim-text-muted" aria-hidden />
+        )}
+        <span className="max-w-60 truncate">{`Show ${attachment.filename}`}</span>
+        <span className="text-rim-text-faint">{Math.ceil(attachment.sizeBytes / 1024)} KB</span>
+      </button>
     );
   }
   return (
     <span className="flex items-center gap-2 text-xs text-rim-text-muted">
       {failed ? null : <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
-      {attachment.filename}
+      {failed ? `${attachment.filename} could not be opened` : attachment.filename}
     </span>
   );
 }
@@ -103,6 +130,7 @@ export const EncryptedAttachments = memo(function EncryptedAttachments(
   props: EncryptedAttachmentsProps,
 ) {
   const [busy, setBusy] = useState<string | null>(null);
+  const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
 
   async function save(attachment: MessageAttachment) {
     setBusy(attachment.blobSha256 ?? attachment.id);
@@ -126,11 +154,9 @@ export const EncryptedAttachments = memo(function EncryptedAttachments(
     <div className={cn("flex flex-col gap-2", props.hasText ? "mt-2" : "mt-0.5")}>
       {props.attachments.map((attachment) => {
         const key = attachment.blobSha256 ?? attachment.id;
-        if (
-          attachment.contentType.startsWith("image/") &&
-          attachment.sizeBytes <= AUTO_IMAGE_BYTES
-        ) {
-          return <EncryptedImage key={key} props={props} attachment={attachment} />;
+        const kind = showInlineMedia ? mediaKindOf(attachment.contentType) : null;
+        if (kind) {
+          return <EncryptedMedia key={key} props={props} attachment={attachment} kind={kind} />;
         }
         return (
           <button
