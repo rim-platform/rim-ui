@@ -22,6 +22,7 @@ npm run build:wasm           # Rebuild the web app's MLS module (docs/e2ee-web.m
 #   src/features/e2ee/wasm/source.json hashes the crate sources and wasmArtifact.test.ts fails
 #   until the module is rebuilt and committed, so such a change also needs the web gates (npm test).
 npm run test:wasm            # rim_mls and its wasm facade in headless Chromium (needs chromedriver)
+npm run skew:check -- <ref>  # Operations a server built from <ref> would refuse (docs/version-skew.md)
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
 

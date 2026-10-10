@@ -26,6 +26,8 @@ export type RuntimeCapabilities = {
    * the browser holds a device key for the account and the MLS module has loaded.
    */
   encryptedConversations: boolean;
+  /** Checking for, downloading and installing new versions of the app. Desktop only. */
+  updater: boolean;
 };
 
 /**
@@ -73,6 +75,7 @@ export function getRuntimeCapabilities(
       deviceKeys: true,
       identityKeys: true,
       encryptedConversations: true,
+      updater: true,
     };
   }
 
@@ -87,6 +90,7 @@ export function getRuntimeCapabilities(
       deviceKeys: deviceKeyStore === "browser",
       identityKeys: false,
       encryptedConversations: deviceKeyStore === "browser" && webEncryptionReady,
+      updater: false,
     };
   }
 
@@ -100,5 +104,6 @@ export function getRuntimeCapabilities(
     deviceKeys: false,
     identityKeys: false,
     encryptedConversations: false,
+    updater: false,
   };
 }
