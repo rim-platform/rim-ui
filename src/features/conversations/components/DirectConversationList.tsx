@@ -55,6 +55,9 @@ export function DirectConversationList() {
           e.preventDefault();
           const by = e.key === "ArrowDown" ? 1 : -1;
           setFocusedIndex((i) => Math.min(Math.max(i + by, 0), items.length - 1));
+        } else if ((e.key === "Home" || e.key === "End") && items.length > 0) {
+          e.preventDefault();
+          setFocusedIndex(e.key === "Home" ? 0 : items.length - 1);
         } else if (e.key === "Enter" && items[focusedIndex]) {
           e.preventDefault();
           open(items[focusedIndex].id);

@@ -21,6 +21,8 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useDisclosureStore, SkillTier } from "../../disclosure/state/useDisclosureStore";
 import { IncidentsHub } from "./IncidentsHub";
+import userEvent from "@testing-library/user-event";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("IncidentsHub", () => {
   beforeEach(() => {
@@ -81,5 +83,20 @@ describe("IncidentsHub", () => {
     render(<IncidentsHub />);
     fireEvent.click(screen.getByRole("button", { name: "Close incidents" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+  });
+
+  it("reaches its tabs and close button by keyboard and switches tabs with Enter", async () => {
+    const user = userEvent.setup();
+    render(<IncidentsHub />);
+    const onCall = screen.getByRole("button", { name: "On-call" });
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("button", { name: "Active / History" }),
+      onCall,
+      screen.getByRole("button", { name: "Escalation" }),
+      screen.getByRole("button", { name: "Close incidents" }),
+    ]);
+    onCall.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByTestId("oncall-subtab")).toBeInTheDocument();
   });
 });

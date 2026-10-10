@@ -7,6 +7,10 @@ type CommandState = {
   closeCommandPalette: () => void;
   toggleCommandPalette: () => void;
   setSearchQuery: (query: string) => void;
+  /** Whether the keyboard shortcuts panel is open. */
+  isShortcutsPanelOpen: boolean;
+  setShortcutsPanelOpen: (open: boolean) => void;
+  toggleShortcutsPanel: () => void;
 };
 
 export const useCommandStore = create<CommandState>((set) => ({
@@ -20,4 +24,8 @@ export const useCommandStore = create<CommandState>((set) => ({
       searchQuery: state.isCommandPaletteOpen ? "" : state.searchQuery,
     })),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  isShortcutsPanelOpen: false,
+  setShortcutsPanelOpen: (open) => set({ isShortcutsPanelOpen: open }),
+  toggleShortcutsPanel: () =>
+    set((state) => ({ isShortcutsPanelOpen: !state.isShortcutsPanelOpen })),
 }));

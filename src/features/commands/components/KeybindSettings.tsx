@@ -28,17 +28,11 @@ import {
 } from "../state/useDeviceKeybindStore";
 import { useIsCommandAvailable } from "../../workspaces/hooks/useFeatureEnabled";
 import { cn } from "../../../shared/ui/cn";
+import { Dialog } from "../../../shared/ui/Dialog";
+import { KEYBIND_CONTEXTS as CONTEXTS } from "../profiles/keybindProfile";
+import { parseKeystroke } from "../runtime/keybindEngine";
+import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
-
-const CONTEXTS: KeybindContext[] = [
-  "GLOBAL",
-  "COMPOSER",
-  "MESSAGE_LIST",
-  "THREAD_VIEW",
-  "CONVERSATION_VIEW",
-  "PANEL",
-  "COMMAND_PALETTE",
-];
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
 
@@ -141,18 +135,22 @@ export function KeybindSettings() {
     () => commands?.filter((cmd) => cmd.keybindCapable) ?? [],
     [commands],
   );
-  const pluginKeybindable = useMemo(
-    () => pluginCommands.filter((cmd) => cmd.keybindCapable),
-    [pluginCommands],
-  );
+  // Commands bound on this device: this app's own commands and the plugins' commands.
+  const deviceKeybindable = useMemo(() => {
+    const serverIds = new Set(builtInKeybindable.map((cmd) => cmd.id));
+    return [
+      ...LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id)),
+      ...pluginCommands.filter((cmd) => cmd.keybindCapable),
+    ];
+  }, [builtInKeybindable, pluginCommands]);
   const keybindableCommands = useMemo(
-    () => [...builtInKeybindable, ...pluginKeybindable],
-    [builtInKeybindable, pluginKeybindable],
+    () => [...builtInKeybindable, ...deviceKeybindable],
+    [builtInKeybindable, deviceKeybindable],
   );
 
   // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, string>(Object.entries(BUILT_IN_COMMAND_TITLES));
     if (commands) {
       for (const cmd of commands) {
         map.set(cmd.id, cmd.title);
@@ -265,17 +263,11 @@ export function KeybindSettings() {
   }
 
   function handleKeystrokeCapture(event: React.KeyboardEvent) {
+    // Tab still moves on, so the form stays usable without a mouse.
+    if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey) return;
     event.preventDefault();
-    const parts: string[] = [];
-    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
-    if (event.shiftKey) parts.push("Shift");
-    if (event.altKey) parts.push("Alt");
-    let key = event.key;
-    if (["Control", "Meta", "Shift", "Alt"].includes(key)) return;
-    if (key === " ") key = "Space";
-    if (key.length === 1) key = key.toUpperCase();
-    parts.push(key);
-    setNewKeystroke(parts.join("+"));
+    const keystroke = parseKeystroke(event);
+    if (keystroke) setNewKeystroke(keystroke);
   }
 
   function handleInlineKeystrokeCapture(kb: ResolvedKeybind, event: React.KeyboardEvent) {
@@ -287,17 +279,8 @@ export function KeybindSettings() {
       return;
     }
 
-    if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
-
-    const parts: string[] = [];
-    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
-    if (event.shiftKey) parts.push("Shift");
-    if (event.altKey) parts.push("Alt");
-    let key = event.key;
-    if (key === " ") key = "Space";
-    if (key.length === 1) key = key.toUpperCase();
-    parts.push(key);
-    const keystroke = parts.join("+");
+    const keystroke = parseKeystroke(event);
+    if (!keystroke) return;
 
     setCapturingKeybindId(null);
     if (isDeviceKeybind(kb.id)) {
@@ -385,6 +368,7 @@ export function KeybindSettings() {
               onKeyDown={handleKeystrokeCapture}
               onChange={() => {}}
               placeholder="Press a key combination..."
+              aria-label="Keystroke"
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
               readOnly
             />
@@ -392,6 +376,7 @@ export function KeybindSettings() {
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Command</label>
             <select
+              aria-label="Command"
               value={newCommandId}
               onChange={(e) => setNewCommandId(e.target.value)}
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
@@ -407,6 +392,7 @@ export function KeybindSettings() {
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Context</label>
             <select
+              aria-label="Context"
               value={newContext}
               onChange={(e) => setNewContext(e.target.value as KeybindContext)}
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
@@ -507,13 +493,14 @@ export function KeybindSettings() {
                             Command
                           </label>
                           <select
+                            aria-label="Command"
                             value={editCommandId}
                             onChange={(e) => setEditCommandId(e.target.value)}
                             className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
                           >
                             <option value="">Select command...</option>
-                            {/* A device keybind stays a plugin command; a server one a built-in. */}
-                            {(isDeviceKeybind(kb.id) ? pluginKeybindable : builtInKeybindable).map(
+                            {/* A device keybind stays a device command; a server one a built-in. */}
+                            {(isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable).map(
                               (cmd) => (
                                 <option key={cmd.id} value={cmd.id}>
                                   {cmd.title}
@@ -527,6 +514,7 @@ export function KeybindSettings() {
                             Context
                           </label>
                           <select
+                            aria-label="Context"
                             value={editContext}
                             onChange={(e) => setEditContext(e.target.value as KeybindContext)}
                             className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
@@ -697,31 +685,29 @@ export function KeybindSettings() {
         </div>
       )}
       {/* Delete confirmation dialog */}
-      {pendingDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setPendingDeleteId(null)} />
-          <div className="relative rounded-xl border border-rim-line bg-rim-panel p-5 shadow-2xl max-w-sm w-full mx-4">
-            <h3 className="text-sm font-medium text-rim-text mb-2">Delete keybind?</h3>
-            <p className="text-xs text-rim-text-muted mb-4">
-              This keybind will be removed. You can always create a new one later.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setPendingDeleteId(null)}
-                className="rounded-md px-3 py-1.5 text-xs text-rim-text-muted hover:text-rim-text transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="rounded-md bg-rim-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger/90 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+      <Dialog
+        open={pendingDeleteId !== null}
+        onClose={() => setPendingDeleteId(null)}
+        title="Delete keybind?"
+      >
+        <p className="text-xs text-rim-text-muted mb-4">
+          This keybind will be removed. You can always create a new one later.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={() => setPendingDeleteId(null)}
+            className="rounded-md px-3 py-1.5 text-xs text-rim-text-muted hover:text-rim-text transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={confirmDelete}
+            className="rounded-md bg-rim-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger/90 transition-colors"
+          >
+            Delete
+          </button>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

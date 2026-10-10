@@ -9,6 +9,8 @@ import { surfaceToContext } from "../../features/commands/runtime/keybindEngine"
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { OnCallIndicator } from "../../features/oncall/components/OnCallIndicator";
 import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
+import { useKeybindProfileStore } from "../../features/commands/state/useKeybindProfileStore";
+import { useVimStore } from "../../features/commands/state/useVimStore";
 
 /** Map internal keybind context strings to user-friendly labels. */
 function humanizeContext(ctx: string | null): string | null {
@@ -65,6 +67,9 @@ export function StatusBar() {
   const focusedSurface = useShellStore((s) => s.focusedSurface);
   const navigationMode = useShellStore((s) => s.navigationMode);
   const displayDensity = useShellStore((s) => s.displayDensity);
+  const vimMode = useKeybindProfileStore((s) => s.profile.vimMode);
+  const vim = useVimStore((s) => s.mode);
+  const vimPending = useVimStore((s) => s.pending);
 
   const activePresetId = useLayoutPresetStore((s) => s.activePresetId);
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
@@ -109,7 +114,23 @@ export function StatusBar() {
             </span>
           )}
         </DisclosureGate>
-        {mainSurface.kind === "conversation" &&
+        {vimMode && (
+          <span
+            role="status"
+            aria-label={`Vim ${vim} mode`}
+            className={cn(
+              "rounded px-1.5 py-px font-medium",
+              vim === "normal"
+                ? "bg-rim-accent/20 text-rim-accent"
+                : "bg-rim-panel-soft text-rim-text-muted",
+            )}
+          >
+            {vim === "normal" ? "NORMAL" : "INSERT"}
+            {vimPending && <span className="ml-1 font-mono">{vimPending}</span>}
+          </span>
+        )}
+        {!vimMode &&
+          mainSurface.kind === "conversation" &&
           (navigationMode ? (
             <span className="rounded bg-rim-accent/20 px-1.5 py-px font-medium text-rim-accent">
               NAVIGATE

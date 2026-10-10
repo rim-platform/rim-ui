@@ -48,6 +48,7 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
 vi.mock("./KeySignupForm");
 
 import { OpenJoinPage } from "./OpenJoinPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("OpenJoinPage", () => {
   beforeEach(() => {
@@ -144,5 +145,25 @@ describe("OpenJoinPage", () => {
     });
     renderPage();
     expect(screen.queryByRole("button", { name: /create account with a key/i })).toBeNull();
+  });
+
+  it("reaches its primary actions by keyboard", async () => {
+    const user = userEvent.setup();
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "OPEN" },
+      isPending: false,
+    });
+    renderPage();
+    const username = screen.getByPlaceholderText("yourname");
+    const email = screen.getByPlaceholderText("you@example.com");
+    const password = screen.getByPlaceholderText("password");
+    await expectReachableByKeyboard(user, [username, email, password]);
+    username.focus();
+    await user.keyboard("alice");
+    email.focus();
+    await user.keyboard("alice@example.com");
+    password.focus();
+    await user.keyboard("password123");
+    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Create account" })]);
   });
 });

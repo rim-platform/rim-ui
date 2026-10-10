@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../test/utils";
+import { expectReachableByKeyboard } from "../../test/keyboard";
 import { queryKeys } from "../../core/query/keys";
 import {
   IncidentPhaseNameGql,
@@ -130,6 +132,18 @@ describe("ConversationHeader — incidents module gate", () => {
       expect(qc.getQueryData(queryKeys.workspaceFeatures("srv-1"))).toBeDefined(),
     );
     expect(screen.queryByTestId("incident-banner")).not.toBeInTheDocument();
+  });
+
+  it("reaches the conversation actions by keyboard", async () => {
+    serve({ incidentsEnabled: true, incident: null });
+    const user = userEvent.setup();
+    renderHeader();
+    const startIncident = await screen.findByRole("button", { name: "Start incident" });
+    await expectReachableByKeyboard(user, [
+      startIncident,
+      screen.getByRole("button", { name: "Invite member" }),
+      screen.getByRole("button", { name: /^Search in/ }),
+    ]);
   });
 
   it("renders the banner for an open incident when the feature is on", async () => {

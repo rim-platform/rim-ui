@@ -128,12 +128,13 @@ export function MessageTimeline() {
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
-  const { handlers, editError, contextMenu, closeContextMenu } = useTimelineHandlers({
-    items,
-    workspaceId,
-    conversationId,
-    currentUserId,
-  });
+  const { handlers, editError, contextMenu, closeContextMenu, openActionsFor } =
+    useTimelineHandlers({
+      items,
+      workspaceId,
+      conversationId,
+      currentUserId,
+    });
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
@@ -156,6 +157,7 @@ export function MessageTimeline() {
       openThread,
       onDeleteMessage: handleDeleteMessage,
       onForwardMessage: setForwardMessage,
+      onOpenActions: openActionsFor,
       firstNewIndex,
       scrollToIndex,
     });

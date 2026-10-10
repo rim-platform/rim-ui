@@ -33,6 +33,9 @@ import {
 import { getCachedFeatureEnabled } from "../../workspaces/api/useWorkspaceFeatures";
 import { FEATURE_OFF_MESSAGE, featureForCommandId } from "../../workspaces/featureCatalog";
 import { gql } from "graphql-request";
+import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
+import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
+import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 
 interface ConversationItem {
   id: string;
@@ -256,6 +259,34 @@ const localHandlers: Record<
     // Find the first unread channel after the current position
     const after = unread.find((id) => allIds.indexOf(id) > currentIdx);
     useShellStore.getState().setSelectedConversationId(after ?? unread[0]);
+  },
+  "workspace.previous_unread_channel": () => {
+    const unread = getCachedUnreadConversationIds();
+    if (unread.length === 0) return;
+    const current = useShellStore.getState().selectedConversationId;
+    const allIds = getCachedConversationIds();
+    const currentIdx = current ? allIds.indexOf(current) : allIds.length;
+    // The last unread conversation before the current position, wrapping to the last one.
+    const before = [...unread].reverse().find((id) => allIds.indexOf(id) < currentIdx);
+    useShellStore.getState().setSelectedConversationId(before ?? unread[unread.length - 1]);
+  },
+  "workspace.navigate_panel_left": () => {
+    navigatePanel("left");
+  },
+  "workspace.navigate_panel_right": () => {
+    navigatePanel("right");
+  },
+  "workspace.cycle_layout_preset": () => {
+    useLayoutPresetStore.getState().cyclePresets();
+  },
+  "workspace.show_shortcuts": () => {
+    useCommandStore.getState().toggleShortcutsPanel();
+  },
+  "workspace.toggle_vim_mode": () => {
+    const profile = useKeybindProfileStore.getState();
+    const on = !profile.profile.vimMode;
+    profile.setVimMode(on);
+    toast.info(on ? "Vim mode on" : "Vim mode off", { duration: 1500 });
   },
   "workspace.open_agent": () => {
     useAgentStore.getState().open();

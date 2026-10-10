@@ -16,6 +16,9 @@ vi.mock("../../features/workspaces/hooks/useFeatureEnabled", () => ({
 import { useServerOnCall } from "../../features/oncall/api/useServerOnCall";
 import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 import { StatusBar } from "./StatusBar";
+import { act } from "@testing-library/react";
+import { useKeybindProfileStore } from "../../features/commands/state/useKeybindProfileStore";
+import { useVimStore } from "../../features/commands/state/useVimStore";
 
 describe("StatusBar", () => {
   beforeEach(() => {
@@ -81,5 +84,25 @@ describe("StatusBar", () => {
     } as ReturnType<typeof useServerOnCall>);
     renderWithProviders(<StatusBar />);
     expect(screen.queryByText(/On-call:/)).not.toBeInTheDocument();
+  });
+
+  it("shows the Vim mode and a half-typed command only while Vim mode is on", () => {
+    vi.mocked(useServerOnCall).mockReturnValue({ data: [] } as ReturnType<typeof useServerOnCall>);
+    useVimStore.setState({ mode: "normal", pending: "" });
+    renderWithProviders(<StatusBar />);
+    expect(screen.getByText("COMPOSE")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: /Vim/ })).not.toBeInTheDocument();
+
+    act(() => useKeybindProfileStore.getState().setVimMode(true));
+    try {
+      expect(screen.getByRole("status", { name: "Vim normal mode" })).toHaveTextContent("NORMAL");
+      expect(screen.queryByText("COMPOSE")).not.toBeInTheDocument();
+      act(() => useVimStore.setState({ mode: "normal", pending: "3g" }));
+      expect(screen.getByRole("status", { name: "Vim normal mode" })).toHaveTextContent("NORMAL3g");
+      act(() => useVimStore.setState({ mode: "insert", pending: "" }));
+      expect(screen.getByRole("status", { name: "Vim insert mode" })).toHaveTextContent("INSERT");
+    } finally {
+      act(() => useKeybindProfileStore.getState().setVimMode(false));
+    }
   });
 });

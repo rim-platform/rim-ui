@@ -22,6 +22,7 @@ import { useUnreadStore } from "../../features/conversations/state/useUnreadStor
 import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { cn } from "../../shared/ui/cn";
+import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
@@ -75,6 +76,7 @@ export function SideRail() {
       data-panel="sideRail"
       tabIndex={-1}
       onFocus={() => useShellStore.getState().setFocusedSurface("sideRail")}
+      onKeyDown={handleVerticalStripKeys}
       className="flex w-14 shrink-0 flex-col items-center border-r border-rim-line bg-rim-panel py-4 outline-none"
     >
       <nav className="flex flex-1 flex-col items-center gap-1">

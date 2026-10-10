@@ -67,6 +67,7 @@ vi.mock("../../key-identity/components/LinkThisDevice", () => ({
 }));
 
 import { LoginPage } from "./LoginPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -174,5 +175,26 @@ describe("LoginPage", () => {
   it("renders the Forgot password? link", () => {
     renderPage();
     expect(screen.getByText("Forgot password?")).toBeInTheDocument();
+  });
+
+  it("reaches its primary actions by keyboard and signs in with Enter", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const username = screen.getByPlaceholderText("owner");
+    const password = screen.getByPlaceholderText("password");
+    await expectReachableByKeyboard(user, [
+      username,
+      password,
+      screen.getByRole("link", { name: "Forgot password?" }),
+    ]);
+
+    username.focus();
+    await user.keyboard("alice");
+    password.focus();
+    await user.keyboard("secret");
+    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Log in" })]);
+    password.focus();
+    await user.keyboard("{Enter}");
+    expect(mockLoginMutate).toHaveBeenCalled();
   });
 });

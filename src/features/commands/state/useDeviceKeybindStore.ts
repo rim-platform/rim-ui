@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { isLocalCommand } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 /**
  * Keybinds kept on this device rather than on the server: those that run a
- * plugin's command. Plugins are installed per device and the server knows none
- * of their commands, so it refuses to store a binding to one.
+ * plugin's command or one of this app's own commands. Plugins are installed per
+ * device and the server knows neither kind, so it refuses to store a binding to one.
  */
 export const DEVICE_KEYBIND_PREFIX = "device:";
 
@@ -14,9 +15,9 @@ export function isDeviceKeybind(keybindId: string): boolean {
   return keybindId.startsWith(DEVICE_KEYBIND_PREFIX);
 }
 
-/** Whether a binding to `commandId` belongs on this device (a plugin command). */
+/** Whether a binding to `commandId` belongs on this device (a plugin or app command). */
 export function bindsOnDevice(commandId: string): boolean {
-  return commandId.startsWith("plugin.");
+  return commandId.startsWith("plugin.") || isLocalCommand(commandId);
 }
 
 export interface NewDeviceKeybind {

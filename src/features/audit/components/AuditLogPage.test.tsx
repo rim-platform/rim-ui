@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
 
@@ -141,6 +143,25 @@ describe("AuditLogPage", () => {
     await waitFor(() => {
       expect(screen.getByText("No entries match this filter.")).toBeInTheDocument();
     });
+  });
+
+  it("reaches its close buttons and filters by keyboard and filters with Enter", async () => {
+    requestMock.mockResolvedValue(makePage([]));
+    const user = userEvent.setup();
+    renderWithProviders(<AuditLogPage />);
+    await waitFor(() => expect(screen.getByText("No audit log entries yet.")).toBeInTheDocument());
+
+    const write = screen.getByRole("button", { name: "Write", pressed: false });
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("button", { name: "Back to conversation" }),
+      screen.getByRole("button", { name: "Close audit log" }),
+      write,
+    ]);
+    write.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.getByText("No entries match this filter.")).toBeInTheDocument(),
+    );
   });
 
   it("renders error state with retry button", async () => {

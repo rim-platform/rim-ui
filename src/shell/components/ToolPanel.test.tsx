@@ -48,6 +48,8 @@ import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceS
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { ToolPanel } from "./ToolPanel";
+import userEvent from "@testing-library/user-event";
+import { expectReachableByKeyboard } from "../../test/keyboard";
 
 describe("ToolPanel", () => {
   beforeEach(() => {
@@ -140,5 +142,18 @@ describe("ToolPanel", () => {
     expect(screen.queryByRole("button", { name: "Workspace members" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("member-directory")).not.toBeInTheDocument();
     expect(screen.getByTestId("conversation-list")).toBeInTheDocument();
+  });
+
+  it("reaches the panel's actions by keyboard and opens a new message with Enter", async () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox" });
+    const user = userEvent.setup();
+    render(<ToolPanel />);
+    const members = screen.getByRole("button", { name: "Workspace members" });
+    const newMessage = screen.getByRole("button", { name: "New message" });
+    await expectReachableByKeyboard(user, [members, newMessage]);
+    newMessage.focus();
+    await user.keyboard("{Enter}");
+    expect(useShellStore.getState().showNewMessagePicker).toBe(true);
   });
 });

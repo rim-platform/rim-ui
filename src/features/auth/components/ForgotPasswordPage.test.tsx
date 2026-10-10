@@ -22,6 +22,7 @@ vi.mock("../../../core/graphql/config", () => ({
 }));
 
 import { ForgotPasswordPage } from "./ForgotPasswordPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("ForgotPasswordPage", () => {
   beforeEach(() => {
@@ -97,5 +98,23 @@ describe("ForgotPasswordPage", () => {
     renderPage();
     const links = screen.getAllByText("Back to login");
     expect(links.length).toBeGreaterThan(0);
+  });
+
+  it("reaches its primary actions by keyboard and submits with Enter", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const username = screen.getByPlaceholderText("your username");
+    await expectReachableByKeyboard(user, [
+      username,
+      screen.getByRole("link", { name: "Back to login" }),
+    ]);
+    username.focus();
+    await user.keyboard("alice");
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("button", { name: "Request password reset" }),
+    ]);
+    username.focus();
+    await user.keyboard("{Enter}");
+    expect(mockMutate).toHaveBeenCalled();
   });
 });

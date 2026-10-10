@@ -75,6 +75,7 @@ import { KeybindProvider } from "./KeybindProvider";
 import { dispatchCommand } from "./commandDispatcher";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { toast } from "../../../shared/toast";
+import { useShellStore } from "../../../shell/state/useShellStore";
 
 const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
 
@@ -130,5 +131,96 @@ describe("KeybindProvider with a plugin command bound on this device", () => {
     );
     pressCtrlAltP();
     expect(dispatchCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe("KeybindProvider with the default profile", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useDeviceKeybindStore.setState({ keybinds: [] });
+    vi.mocked(dispatchCommand).mockResolvedValue(null);
+  });
+
+  function renderWith(children: React.ReactNode) {
+    return render(<KeybindProvider>{children}</KeybindProvider>);
+  }
+
+  function press(target: EventTarget, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function dispatched(): string[] {
+    return vi.mocked(dispatchCommand).mock.calls.map(([command]) => command.id);
+  }
+
+  it("opens the shortcuts panel on ? and Ctrl+/ outside a text field", () => {
+    renderWith(<button>x</button>);
+    press(document.body, "?", { shiftKey: true });
+    press(document.body, "/", { ctrlKey: true });
+    expect(dispatched()).toEqual(["workspace.show_shortcuts", "workspace.show_shortcuts"]);
+  });
+
+  it("lets a text field keep the characters typed into it, ? included", () => {
+    const { getByRole } = renderWith(<textarea aria-label="composer" />);
+    const field = getByRole("textbox");
+    field.focus();
+    const event = press(field, "?", { shiftKey: true });
+    expect(event.defaultPrevented).toBe(false);
+    expect(dispatchCommand).not.toHaveBeenCalled();
+  });
+
+  it("leaves word jumps and redo to a text field", () => {
+    const { getByRole } = renderWith(<input aria-label="field" />);
+    const field = getByRole("textbox");
+    field.focus();
+    expect(press(field, "ArrowLeft", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(press(field, "z", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(false);
+    expect(dispatchCommand).not.toHaveBeenCalled();
+  });
+
+  it("still runs a modifier shortcut from inside a text field", () => {
+    const { getByRole } = renderWith(<input aria-label="field" />);
+    const field = getByRole("textbox");
+    field.focus();
+    expect(press(field, "k", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(dispatched()).toEqual(["workspace.open_command_palette"]);
+  });
+
+  it("runs the pane commands on Ctrl+arrows outside a text field", () => {
+    renderWith(<div />);
+    press(document.body, "ArrowLeft", { ctrlKey: true });
+    press(document.body, "ArrowRight", { ctrlKey: true });
+    expect(dispatched()).toEqual([
+      "workspace.navigate_panel_left",
+      "workspace.navigate_panel_right",
+    ]);
+  });
+
+  it("matches a two-modifier default however the modifiers were written", () => {
+    renderWith(<div />);
+    press(document.body, "ArrowDown", { altKey: true, shiftKey: true });
+    expect(dispatched()).toEqual(["workspace.next_unread_channel"]);
+  });
+
+  it("leaves Escape to an open dialog instead of closing the surface behind it", () => {
+    const shell = useShellStore.getState() as unknown as { mainSurface: { kind: string } };
+    shell.mainSurface = { kind: "settings" };
+    try {
+      const { rerender } = renderWith(<div role="dialog" aria-label="Delete keybind?" />);
+      press(document.body, "Escape");
+      expect(dispatchCommand).not.toHaveBeenCalled();
+
+      rerender(
+        <KeybindProvider>
+          <div />
+        </KeybindProvider>,
+      );
+      press(document.body, "Escape");
+      expect(dispatched()).toEqual(["workspace.close_panel"]);
+    } finally {
+      shell.mainSurface = { kind: "conversation" };
+    }
   });
 });

@@ -28,6 +28,7 @@ vi.mock("../api/useCreateServer", () => ({
 }));
 
 import { EmptyWorkspaceState } from "./EmptyWorkspaceState";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("EmptyWorkspaceState", () => {
   beforeEach(() => {
@@ -57,6 +58,16 @@ describe("EmptyWorkspaceState", () => {
 
     await user.click(screen.getByText("+ Create workspace"));
 
+    expect(screen.getByTestId("create-workspace-dialog")).toBeInTheDocument();
+  });
+
+  it("reaches the create button by keyboard and opens the dialog with Enter", async () => {
+    const user = userEvent.setup();
+    renderComponent();
+    const create = screen.getByRole("button", { name: "+ Create workspace" });
+    await expectReachableByKeyboard(user, [create]);
+    create.focus();
+    await user.keyboard("{Enter}");
     expect(screen.getByTestId("create-workspace-dialog")).toBeInTheDocument();
   });
 

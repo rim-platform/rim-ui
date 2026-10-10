@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
   ConversationTypeEnum,
   ServerMemberRoleGql,
@@ -88,6 +90,59 @@ describe("ConversationList — channels sidebar", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
+  });
+
+  it("reaches every conversation and the channel actions with Tab", async () => {
+    serve();
+    const user = userEvent.setup();
+    renderList();
+    await screen.findByText("general");
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("listbox"),
+      screen.getByRole("button", { name: "Browse channels" }),
+      screen.getByRole("button", { name: "New channel" }),
+      screen.getByText("general").closest("button")!,
+      screen.getByText("secret").closest("button")!,
+      screen.getByRole("button", { name: /archived \(1\)/i }),
+    ]);
+  });
+
+  it("presses the focused button on Enter instead of opening the highlighted row", async () => {
+    serve();
+    const user = userEvent.setup();
+    renderList();
+    await screen.findByText("general");
+    screen.getByRole("button", { name: "Browse channels" }).focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
+    expect(useShellStore.getState().selectedConversationId).toBe("c-general");
+  });
+
+  it("opens the conversation a Tab landed on with Enter", async () => {
+    serve();
+    const user = userEvent.setup();
+    renderList();
+    (await screen.findByText("secret")).closest("button")!.focus();
+    await user.keyboard("{Enter}");
+    expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
+  });
+
+  it("jumps to the last and first conversation with End and Home", async () => {
+    serve();
+    const user = userEvent.setup();
+    renderList();
+    // Channels and the inbox load separately; wait for both before jumping to the end.
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
+    // An earlier test's conversation switch blurs focus on a later frame; let it pass.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    screen.getByRole("listbox").focus();
+    await user.keyboard("{End}{Enter}");
+    expect(useShellStore.getState().selectedConversationId).toBe("c-dm");
+    // Opening a conversation moves focus on the next frame; let it happen first.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    screen.getByRole("listbox").focus();
+    await user.keyboard("{Home}{Enter}");
+    expect(useShellStore.getState().selectedConversationId).toBe("c-general");
   });
 
   it("asks for joined channels including archived ones", async () => {

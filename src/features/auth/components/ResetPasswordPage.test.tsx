@@ -22,6 +22,7 @@ vi.mock("../../../core/graphql/config", () => ({
 }));
 
 import { ResetPasswordPage } from "./ResetPasswordPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("ResetPasswordPage", () => {
   beforeEach(() => {
@@ -123,5 +124,18 @@ describe("ResetPasswordPage", () => {
     await user.click(screen.getByText("Reset password"));
 
     expect(screen.getByText(/Password has been reset successfully/)).toBeInTheDocument();
+  });
+
+  it("reaches its primary actions by keyboard", async () => {
+    const user = userEvent.setup();
+    renderWithToken("abc123");
+    const fresh = screen.getByPlaceholderText("new password");
+    const confirm = screen.getByPlaceholderText("confirm password");
+    await expectReachableByKeyboard(user, [fresh, confirm]);
+    fresh.focus();
+    await user.keyboard("correct horse");
+    confirm.focus();
+    await user.keyboard("correct horse");
+    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Reset password" })]);
   });
 });
