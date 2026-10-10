@@ -11,8 +11,6 @@ import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMes
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
-import { useIncidentStore } from "../../incidents/state/useIncidentStore";
-import { TagMessageMenu } from "../../incidents/components/TagMessageMenu";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { ReportMessageDialog } from "./ReportMessageDialog";
@@ -57,8 +55,6 @@ export function MessageContextMenu({
   const [pendingReport, setPendingReport] = useState(false);
   const [pendingModeratorDelete, setPendingModeratorDelete] = useState(false);
   const canModerate = useCanModerate(workspaceId);
-  const [tagMenuPos, setTagMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const activeIncident = useIncidentStore((s) => s.activeIncident);
 
   const handleDelete = useCallback(async () => {
     setPendingDelete(false);
@@ -148,17 +144,6 @@ export function MessageContextMenu({
       },
     });
 
-    // Incident tagging
-    if (activeIncident) {
-      result.push({
-        id: "tag-for-incident",
-        label: "Tag for Incident",
-        onSelect: () => {
-          setTagMenuPos({ x: x + 180, y });
-        },
-      });
-    }
-
     // Plugin context menu actions
     for (const cmd of pluginContextMenuCommands) {
       result.push({
@@ -187,10 +172,7 @@ export function MessageContextMenu({
     unpinMessage,
     workspaceId,
     conversationId,
-    activeIncident,
     canModerate,
-    x,
-    y,
   ]);
 
   return (
@@ -226,16 +208,6 @@ export function MessageContextMenu({
           }}
           onClose={() => {
             setPendingModeratorDelete(false);
-            onClose();
-          }}
-        />
-      )}
-      {tagMenuPos && (
-        <TagMessageMenu
-          messageId={messageId}
-          position={tagMenuPos}
-          onClose={() => {
-            setTagMenuPos(null);
             onClose();
           }}
         />

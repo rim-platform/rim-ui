@@ -30,7 +30,7 @@ describe("matchingKeyword", () => {
     expect(matchingKeyword("The Deploy failed", ["deploy"])).toBe("deploy");
     expect(matchingKeyword("redeployed", ["deploy"])).toBeNull();
     expect(matchingKeyword(`ping <@rimp1_deploy>`, ["deploy"])).toBeNull();
-    expect(matchingKeyword("incident: db-01 down", ["db-01"])).toBe("db-01");
+    expect(matchingKeyword("outage: db-01 down", ["db-01"])).toBe("db-01");
     expect(matchingKeyword("anything", [])).toBeNull();
   });
 });

@@ -1,5 +1,4 @@
 import type {
-  IncidentTagInfo,
   MessageAuthorView,
   MessageItemMessage,
   MessageItemProps,
@@ -92,8 +91,7 @@ function sameView(a: MessageViewModel, b: MessageViewModel): boolean {
     a.displayDensity === b.displayDensity &&
     sameAuthor(a.author, b.author) &&
     sameReplyQuote(a.replyTo, b.replyTo) &&
-    sameMessage(a.message, b.message) &&
-    sameList<IncidentTagInfo>(a.incidentTags, b.incidentTags, (x, y) => x.tagType === y.tagType)
+    sameMessage(a.message, b.message)
   );
 }
 

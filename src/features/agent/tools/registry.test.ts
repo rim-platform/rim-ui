@@ -66,11 +66,11 @@ describe("agent tool registry", () => {
   it("registers tool with description option and getTool returns it (C2 §4)", () => {
     registerTool(testDefinition, testHandler, {
       description:
-        "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+        "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
     });
     const tool = getTool("test_tool");
     expect(tool!.description).toBe(
-      "Acknowledge an incident. This cancels the escalation chain and stops paging on-call for this incident.",
+      "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",
     );
   });
 

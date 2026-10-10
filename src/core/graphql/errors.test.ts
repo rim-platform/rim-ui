@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  FEATURE_DISABLED,
-  FeatureDisabledError,
+  FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
   RATE_LIMITED,
@@ -15,12 +14,12 @@ import {
   UPSTREAM_UNAVAILABLE_MESSAGE,
 } from "./errors";
 
-const featureDisabled = Object.assign(new Error('Feature disabled: {"response":{}}'), {
+const forbidden = Object.assign(new Error('Forbidden: {"response":{}}'), {
   response: {
     errors: [
       {
-        message: "The incidents feature is disabled for this workspace",
-        extensions: { code: "FEATURE_DISABLED", feature: "incidents" },
+        message: "Only moderators can archive channels",
+        extensions: { code: "FORBIDDEN" },
       },
     ],
   },
@@ -28,11 +27,7 @@ const featureDisabled = Object.assign(new Error('Feature disabled: {"response":{
 
 describe("graphqlErrorCode", () => {
   it("reads extensions.code off the first GraphQL error", () => {
-    expect(graphqlErrorCode(featureDisabled)).toBe(FEATURE_DISABLED);
-  });
-
-  it("reports FEATURE_DISABLED for the client-side FeatureDisabledError", () => {
-    expect(graphqlErrorCode(new FeatureDisabledError("off"))).toBe(FEATURE_DISABLED);
+    expect(graphqlErrorCode(forbidden)).toBe(FORBIDDEN);
   });
 
   it("is undefined for plain errors and non-objects", () => {
@@ -45,9 +40,7 @@ describe("graphqlErrorCode", () => {
 
 describe("graphqlErrorMessage", () => {
   it("prefers the server's message over the serialized ClientError message", () => {
-    expect(graphqlErrorMessage(featureDisabled, "fallback")).toBe(
-      "The incidents feature is disabled for this workspace",
-    );
+    expect(graphqlErrorMessage(forbidden, "fallback")).toBe("Only moderators can archive channels");
   });
 
   it("falls back to Error.message, then to the fallback", () => {

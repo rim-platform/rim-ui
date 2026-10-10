@@ -223,14 +223,14 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("shows the server's message for a FEATURE_DISABLED rejection, not the raw response dump", async () => {
+  it("shows the server's message for a FORBIDDEN rejection, not the raw response dump", async () => {
     // Shape of graphql-request's ClientError: the message embeds the serialized response.
-    const clientError = Object.assign(new Error('Feature disabled: {"response":{...}}'), {
+    const clientError = Object.assign(new Error('Forbidden: {"response":{...}}'), {
       response: {
         errors: [
           {
-            message: "The incidents feature is disabled for this workspace",
-            extensions: { code: "FEATURE_DISABLED", feature: "incidents" },
+            message: "Only moderators can run this command",
+            extensions: { code: "FORBIDDEN" },
           },
         ],
       },
@@ -244,7 +244,7 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     });
 
     expect(toast.error).toHaveBeenCalledWith(
-      "Run Test Command: The incidents feature is disabled for this workspace",
+      "Run Test Command: Only moderators can run this command",
     );
   });
 

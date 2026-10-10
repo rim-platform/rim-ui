@@ -257,7 +257,7 @@ export function CommandPalette() {
           toast.success(`${command.title}${payloadPreview}`);
         }
       } catch (err) {
-        // Show the server's own message (e.g. FEATURE_DISABLED, FORBIDDEN, RATE_LIMITED)
+        // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)
         // rather than graphql-request's serialized response dump.
         toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
       }

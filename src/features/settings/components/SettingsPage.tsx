@@ -13,9 +13,7 @@ import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
-import { useCanModerate, useIsOwner } from "../../workspaces/api/useMyServerRole";
-import { useFeatureEnabled } from "../../workspaces/hooks/useFeatureEnabled";
-import { WorkspaceFeature } from "../../../core/graphql/generated/schema-types";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
 import { AboutServerApiBanner, AboutServerVersion } from "../../updater/components/AboutServer";
 
@@ -43,11 +41,6 @@ const WorkspaceStateSettings = lazy(() =>
     default: m.WorkspaceStateSettings,
   })),
 );
-const WorkspaceFeatureSettings = lazy(() =>
-  import("./WorkspaceFeatureSettings").then((m) => ({
-    default: m.WorkspaceFeatureSettings,
-  })),
-);
 const ModerationSettings = lazy(() =>
   import("./ModerationSettings").then((m) => ({
     default: m.ModerationSettings,
@@ -73,11 +66,6 @@ const ContactsSettings = lazy(() =>
     default: m.ContactsSettings,
   })),
 );
-const IngestTokenSettings = lazy(() =>
-  import("../../integrations/components/IngestTokenSettings").then((m) => ({
-    default: m.IngestTokenSettings,
-  })),
-);
 
 function SettingsLoadingSpinner() {
   return (
@@ -88,8 +76,6 @@ function SettingsLoadingSpinner() {
 }
 
 function AboutRim() {
-  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
-
   return (
     <div className="space-y-6">
       <div>
@@ -162,12 +148,6 @@ function AboutRim() {
             <span className="h-1 w-1 rounded-full bg-rim-accent" />
             AI agent with tool-calling and multi-provider support
           </li>
-          {incidentsEnabled && (
-            <li className="flex items-center gap-2">
-              <span className="h-1 w-1 rounded-full bg-rim-accent" />
-              Incident management with timeline and postmortem
-            </li>
-          )}
           <li className="flex items-center gap-2">
             <span className="h-1 w-1 rounded-full bg-rim-accent" />
             Channel lenses &mdash; filtered message views
@@ -198,7 +178,6 @@ type SettingsTab =
   | "notifications"
   | "history"
   | "workspace"
-  | "integrations"
   | "security"
   | "contacts"
   | "account"
@@ -220,7 +199,6 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "notifications", label: "Notifications" },
   { key: "history", label: "History" },
   { key: "workspace", label: "Workspace" },
-  { key: "integrations", label: "Integrations" },
   { key: "security", label: "Security" },
   { key: "contacts", label: "Contacts" },
   { key: "account", label: "Account" },
@@ -245,18 +223,11 @@ export function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(mainSurface));
 
-  // Workspace holds the Owner-only feature flags (Track 0.4) and the Owner/Moderator
-  // Moderation section (Track 1.2); Integrations holds only the alert-ingest tokens, which
-  // belong to the optional incidents module. Both stay hidden until the role / flag is known.
+  // Workspace holds the Owner/Moderator settings and stays hidden until the role is known.
   // A requested tab that is hidden falls back to Profile without forgetting the request, so a
-  // deep link lands once the role / flag loads.
-  const isOwner = useIsOwner(workspaceId ?? undefined);
+  // deep link lands once the role loads.
   const canModerate = useCanModerate(workspaceId ?? undefined);
-  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
-  const visibleTabs = tabs.filter(
-    (tab) =>
-      (tab.key !== "workspace" || canModerate) && (tab.key !== "integrations" || incidentsEnabled),
-  );
+  const visibleTabs = tabs.filter((tab) => tab.key !== "workspace" || canModerate);
   const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
     ? activeTab
     : "profile";
@@ -326,12 +297,10 @@ export function SettingsPage() {
             {shownTab === "history" && <HistoryArchiveSettings />}
             {shownTab === "workspace" && (
               <div className="space-y-10">
-                {isOwner && <WorkspaceFeatureSettings serverId={workspaceId} />}
                 <ModerationSettings serverId={workspaceId} />
                 <WorkspacePluginSettings serverId={workspaceId} />
               </div>
             )}
-            {shownTab === "integrations" && <IngestTokenSettings serverId={workspaceId} />}
             {shownTab === "security" && <KeyIdentitySettings />}
             {shownTab === "contacts" && <ContactsSettings />}
             {shownTab === "account" && (

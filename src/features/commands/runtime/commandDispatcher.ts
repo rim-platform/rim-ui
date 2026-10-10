@@ -14,25 +14,11 @@ import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost"
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
-import { useIncidentStore } from "../../incidents/state/useIncidentStore";
-import { useOnCallStore } from "../../oncall/state/useOnCallStore";
 import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
-import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
-import { canModerate } from "../../workspaces/role";
-import {
-  FEATURE_DISABLED,
-  FeatureDisabledError,
-  graphqlErrorCode,
-  graphqlErrorMessage,
-  TIMED_OUT,
-} from "../../../core/graphql/errors";
-import { getCachedFeatureEnabled } from "../../workspaces/api/useWorkspaceFeatures";
-import { FEATURE_OFF_MESSAGE, featureForCommandId } from "../../workspaces/featureCatalog";
-import { gql } from "graphql-request";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
@@ -83,108 +69,10 @@ type ExecuteBackendCommand = (input: {
   isPipe?: boolean;
 }) => Promise<{ executeCommand: CommandResult }>;
 
-/**
- * Toast text for a failed incident/on-call call: the server's own message when the
- * workspace feature is off (`FEATURE_DISABLED`), otherwise the handler's generic fallback.
- */
-function commandFailureMessage(err: unknown, fallback: string): string {
-  const code = graphqlErrorCode(err);
-  return code === FEATURE_DISABLED || code === TIMED_OUT
-    ? graphqlErrorMessage(err, fallback)
-    : fallback;
-}
-
-/**
- * Refuse a command up front when the active workspace's cached flags say its feature is off
- * (Track 0.4). Covers the desktop-local `incident.*` / `oncall.*` handlers, which never reach
- * the server's own `FEATURE_DISABLED` gate, and keybinds that fire before the (already
- * server-filtered) command list loads. When the flags are not cached yet the command goes
- * ahead and the server decides.
- */
-function assertFeatureEnabled(command: CommandDefinition): void {
-  const feature = command.feature ?? featureForCommandId(command.id);
-  if (!feature) return;
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
-  if (workspaceId && getCachedFeatureEnabled(workspaceId, feature) === false) {
-    throw new FeatureDisabledError(FEATURE_OFF_MESSAGE[feature]);
-  }
-}
-
-const RESOLVE_INCIDENT_GQL = gql`
-  mutation ResolveIncident($incidentId: ID!) {
-    resolveIncident(incidentId: $incidentId) {
-      id
-      status
-      resolvedAt
-    }
-  }
-`;
-
-function resolveIncidentFromCommand(
-  incidentId: string,
-  workspaceId: string,
-  conversationId: string,
-) {
-  graphqlClient
-    .request(RESOLVE_INCIDENT_GQL, { incidentId })
-    .then(() => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
-      });
-      toast.success("Incident resolved");
-    })
-    .catch((err: unknown) => {
-      toast.error(commandFailureMessage(err, "Failed to resolve incident"));
-    });
-}
-
-/**
- * Ack via the primary unified-dispatch path (Track C1c): `incident.ack` is
- * `Mutating`/`dangerous:false`, and `requires_confirmation_for_initiator` only fires for the
- * `Restricted` tier, the `dangerous` flag, or agentic+>=Mutating dispatch — every C1 human ack
- * surface (palette/keybind/context-menu/banner button/paged-toast) is non-agentic, so this is
- * single-action with no confirmation prompt. There is deliberately no direct-mutation
- * fallback — this keeps ack consistent with the other three C1 builtins and pre-fits C2.
- */
-function ackIncidentFromCommand(
-  incidentId: string,
-  workspaceId: string,
-  conversationId: string,
-  executeBackend: ExecuteBackendCommand,
-) {
-  executeBackend({ commandId: "incident.ack", args: { incidentId } })
-    .then((res) => {
-      if (res.executeCommand.status === "ERROR") {
-        toast.error(res.executeCommand.message || "Failed to acknowledge incident");
-        return;
-      }
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, conversationId),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incidentId) });
-      toast.success("Incident acknowledged");
-    })
-    .catch((err: unknown) => {
-      toast.error(commandFailureMessage(err, "Failed to acknowledge incident"));
-    });
-}
-
-/** Reads the viewer's cached server role (no extra round-trip) to gate `oncall.take_shift`. */
-function canManageOnCall(workspaceId: string): boolean {
-  const server = queryClient.getQueryData<{ viewerRole: ServerMemberRoleGql }>(
-    queryKeys.server(workspaceId),
-  );
-  return canModerate(server?.viewerRole);
-}
-
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
 // every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
-// args, and the handler supplies FE-computed args — see `incident.start`/`incident.resolve`
-// above and the four Track C1 builtins below for the pattern.
-const localHandlers: Record<
-  string,
-  (args: Record<string, unknown> | undefined, executeBackend: ExecuteBackendCommand) => void
-> = {
+// args, and the handler supplies any args it needs itself.
+const localHandlers: Record<string, (args: Record<string, unknown> | undefined) => void> = {
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
@@ -359,88 +247,6 @@ const localHandlers: Record<
     const store = useLensStore.getState();
     store.setLensPickerOpen(!store.lensPickerOpen);
   },
-  "incident.start": () => {
-    useIncidentStore.getState().setShowStartDialog(true);
-  },
-  "incident.advance_phase": () => {
-    // Handled via the banner UI — this is a fallback entry point
-    const incident = useIncidentStore.getState().activeIncident;
-    if (!incident) {
-      toast.error("No active incident");
-    }
-    // The banner dropdown handles the actual phase advance
-  },
-  "incident.resolve": () => {
-    const incident = useIncidentStore.getState().activeIncident;
-    if (!incident) {
-      toast.error("No active incident");
-      return;
-    }
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
-    const conversationId = useShellStore.getState().selectedConversationId;
-    if (!workspaceId || !conversationId) return;
-    resolveIncidentFromCommand(incident.id, workspaceId, conversationId);
-  },
-  "incident.generate_postmortem": () => {
-    const incident = useIncidentStore.getState().activeIncident;
-    if (!incident) {
-      toast.error("No active incident");
-      return;
-    }
-    useIncidentStore.getState().setShowPostmortem(true);
-  },
-  // ── Track C1 builtins (oncall.who / oncall.take_shift / incident.ack / incident.escalate)
-  "incident.ack": (_args, executeBackend) => {
-    const incident = useIncidentStore.getState().activeIncident;
-    if (!incident) {
-      toast.error("No active incident");
-      return;
-    }
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
-    const conversationId = useShellStore.getState().selectedConversationId;
-    if (!workspaceId || !conversationId) return;
-    ackIncidentFromCommand(incident.id, workspaceId, conversationId, executeBackend);
-  },
-  "incident.escalate": (_args, executeBackend) => {
-    const incident = useIncidentStore.getState().activeIncident;
-    if (!incident) {
-      toast.error("No active incident");
-      return;
-    }
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
-    const conversationId = useShellStore.getState().selectedConversationId;
-    if (!workspaceId || !conversationId) return;
-    executeBackend({ commandId: "incident.escalate", args: { incidentId: incident.id } })
-      .then((res) => {
-        if (res.executeCommand.status === "ERROR") {
-          toast.error(res.executeCommand.message || "Failed to escalate incident");
-          return;
-        }
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.activeIncident(workspaceId, conversationId),
-        });
-        queryClient.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incident.id) });
-        toast.success("Incident escalated");
-      })
-      .catch((err: unknown) =>
-        toast.error(commandFailureMessage(err, "Failed to escalate incident")),
-      );
-  },
-  "oncall.who": () => {
-    useShellStore.getState().setMainSurface({ kind: "incidents", tab: "oncall" });
-  },
-  "oncall.take_shift": () => {
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
-    if (!workspaceId) return;
-    if (!canManageOnCall(workspaceId)) {
-      toast.error("Managing on-call requires Moderator");
-      return;
-    }
-    // The backend command stays a general primitive requiring explicit args — correct for
-    // macro/pipeline/agent use. The interactive FE supplies them via this modal on confirm
-    // (createOnCallOverride), not by re-dispatching this command with args.
-    useOnCallStore.getState().openOverrideModal();
-  },
   "workspace.toggle_zen_mode": () => {
     const shell = useShellStore.getState();
     shell.toggleZenMode();
@@ -460,9 +266,6 @@ const localHandlers: Record<
   },
 };
 
-const noBackend: ExecuteBackendCommand = () =>
-  Promise.reject(new Error("desktop-local commands do not reach the backend"));
-
 /**
  * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent (Track 4.1). The
  * server refuses to execute desktop-local commands, so agent tool calls for them land here
@@ -473,7 +276,7 @@ const noBackend: ExecuteBackendCommand = () =>
 export function runDesktopLocalCommand(commandId: string, args?: Record<string, unknown>): boolean {
   const handler = localHandlers[commandId];
   if (!handler) return false;
-  handler(args, noBackend);
+  handler(args);
   return true;
 }
 
@@ -489,16 +292,12 @@ export async function dispatchCommand(
     callerPluginId?: string;
   },
 ): Promise<CommandResult | null> {
-  // Feature-gated commands (Track 0.4) are refused before any handler runs. Throws
-  // `FeatureDisabledError`, which callers surface like the server's `FEATURE_DISABLED`.
-  assertFeatureEnabled(command);
-
   // Local handlers always take precedence — even if the backend marks a
   // command as "Backend", the frontend may have a local handler that opens
   // a dialog or performs a client-side action instead.
   const localHandler = localHandlers[command.id];
   if (localHandler) {
-    localHandler(context?.args, executeBackend);
+    localHandler(context?.args);
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 

@@ -32,12 +32,6 @@ export type AddWorkspacePluginInput = {
   status: WorkspacePluginStatus;
 };
 
-export type AdvanceIncidentPhaseInput = {
-  incidentId: Scalars['ID']['input'];
-  nextPhase: IncidentPhaseNameGql;
-  note?: InputMaybe<Scalars['String']['input']>;
-};
-
 export type Attachment = {
   /** Unpadded base64url SHA-256 of an encrypted conversation's blob. */
   blobSha256?: Maybe<Scalars['String']['output']>;
@@ -193,12 +187,6 @@ export type Command = {
   dangerous: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
   executionTarget: CommandExecutionTarget;
-  /**
-   * The optional workspace module this command belongs to (Track 0.4), or null when the
-   * command is always available. The server already omits commands whose feature is off
-   * from `commands`; this lets clients group or explain gated commands.
-   */
-  feature?: Maybe<WorkspaceFeature>;
   id: Scalars['String']['output'];
   /**
    * Example phrases a user might speak/type to invoke this command.
@@ -565,22 +553,6 @@ export type CreateCustomEmojiInput = {
   serverId: Scalars['ID']['input'];
 };
 
-export type CreateIngestTokenInput = {
-  conversationId: Scalars['ID']['input'];
-  label: Scalars['String']['input'];
-  serverId: Scalars['ID']['input'];
-  severityDefault?: InputMaybe<IncidentSeverityGql>;
-};
-
-/**
- * Result of `createIngestToken` — `raw_token` is surfaced exactly once and is never
- * retrievable again (mirrors invite-token creation).
- */
-export type CreateIngestTokenResultGql = {
-  rawToken: Scalars['String']['output'];
-  token: IngestTokenGql;
-};
-
 /**
  * Input for `createInstanceInvite`.
  *
@@ -816,78 +788,6 @@ export type EnrollIdentityKeyInput = {
   proof: SignedStatementInput;
 };
 
-/**
- * `MENTION_IN_CHANNEL`/`EMAIL` — `PUSH` is reserved for a future track and intentionally has no
- * GraphQL representation yet (mirrors `rim_core::escalation::model::EscalationAction`, which has
- * no `Push` variant either — see that enum's doc comment).
- */
-export enum EscalationActionKindGql {
-  EMAIL = 'EMAIL',
-  MENTION_IN_CHANNEL = 'MENTION_IN_CHANNEL'
-}
-
-export type EscalationPolicyGql = {
-  createdAt: Scalars['DateTime']['output'];
-  createdBy: Scalars['ID']['output'];
-  id: Scalars['ID']['output'];
-  name: Scalars['String']['output'];
-  serverId: Scalars['ID']['output'];
-  /** Ordered by `position`. */
-  steps: Array<EscalationStepGql>;
-  updatedAt: Scalars['DateTime']['output'];
-};
-
-export enum EscalationRunStatusGql {
-  ACTIVE = 'ACTIVE',
-  CANCELLED = 'CANCELLED',
-  COMPLETED = 'COMPLETED'
-}
-
-export type EscalationStepGql = {
-  actions: Array<EscalationActionKindGql>;
-  delaySeconds: Scalars['Int']['output'];
-  id: Scalars['ID']['output'];
-  policyId: Scalars['ID']['output'];
-  /** 0-based order within the policy. */
-  position: Scalars['Int']['output'];
-  targetKind: EscalationTargetKindGql;
-  /** Present only when `targetKind` is `ON_CALL`. */
-  targetScheduleId?: Maybe<Scalars['ID']['output']>;
-  /** Present only when `targetKind` is `USER`. */
-  targetUserId?: Maybe<Scalars['ID']['output']>;
-};
-
-/**
- * A step input for `createEscalationPolicy`/`updateEscalationPolicy` — no `id`/`policyId`
- * (assigned by the repository) since the full step list is replaced atomically (§3).
- */
-export type EscalationStepInputGql = {
-  /** At least one action is required — enforced at the service boundary. */
-  actions: Array<EscalationActionKindGql>;
-  delaySeconds: Scalars['Int']['input'];
-  target: EscalationTargetInputGql;
-};
-
-/**
- * An `EscalationTarget`, flattened for GraphQL: `kind` selects which of `userId`/`scheduleId`
- * is populated (GraphQL has no native tagged-union input type) — same flattened-union pattern
- * as [`RotationKindInputGql`], including strict rejection of a field that belongs to the
- * *other* kind.
- */
-export type EscalationTargetInputGql = {
-  kind: EscalationTargetKindGql;
-  /** Required for `ON_CALL`; must not be set for `USER`. */
-  scheduleId?: InputMaybe<Scalars['ID']['input']>;
-  /** Required for `USER`; must not be set for `ON_CALL`. */
-  userId?: InputMaybe<Scalars['ID']['input']>;
-};
-
-/** Discriminator for [`EscalationStepGql::target_kind`] / [`EscalationTargetInputGql::kind`]. */
-export enum EscalationTargetKindGql {
-  ON_CALL = 'ON_CALL',
-  USER = 'USER'
-}
-
 export type ExecuteCommandInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   commandContext?: InputMaybe<CommandContextInput>;
@@ -944,11 +844,6 @@ export type ExecuteMacroInput = {
    */
   initiator?: InputMaybe<CommandInitiator>;
   macroId: Scalars['ID']['input'];
-};
-
-export type FeatureUsage = {
-  featureId: Scalars['String']['output'];
-  firstUsedAt: Scalars['DateTime']['output'];
 };
 
 export type FilterConditionGql = {
@@ -1024,143 +919,11 @@ export type InboxCursorOutput = {
   lastActivityAt: Scalars['DateTime']['output'];
 };
 
-/**
- * Read projection of the DB `escalation_run` row for a live incident (§10 FLAG C) — backs
- * `Incident.escalationRun`. See `IncidentGql`'s `escalation_run` resolver for the
- * nullability rationale.
- */
-export type IncidentEscalationRunGql = {
-  currentStepIndex: Scalars['Int']['output'];
-  nextFireAt?: Maybe<Scalars['DateTime']['output']>;
-  status: EscalationRunStatusGql;
-};
-
-export type IncidentGql = {
-  /** Set by `acknowledgeIncident` (§4). `None` until acked. */
-  acknowledgedAt?: Maybe<Scalars['DateTime']['output']>;
-  /**
-   * Bare id companion to `acknowledgedByUser` below — kept alongside it (rather than only
-   * exposing the nested object) so a client that only needs the id avoids a DataLoader round
-   * trip (§10).
-   */
-  acknowledgedBy?: Maybe<Scalars['ID']['output']>;
-  /**
-   * Nested `User` for `acknowledgedBy`, resolved via the shared `User` DataLoader (the
-   * `message.author` pattern) rather than requiring a second round-trip. `None` if the
-   * incident hasn't been acknowledged.
-   */
-  acknowledgedByUser?: Maybe<User>;
-  conversationId: Scalars['ID']['output'];
-  createdAt: Scalars['DateTime']['output'];
-  /**
-   * The escalation policy armed at declare time, if any (§3/§10). `None` if the incident was
-   * declared without an escalation chain.
-   */
-  escalationPolicyId?: Maybe<Scalars['ID']['output']>;
-  /**
-   * The incident's active escalation run, if any (§10 FLAG C) — lets a client loading
-   * mid-incident, or reconnecting, render a live "escalating to L2 in 4:32" countdown (the
-   * `EscalationStepFired` event alone can't give `nextFireAt` to a fresh client). `None` if no
-   * policy is attached, or the run has already completed/been cancelled — only the currently
-   * `Active` run is meaningful to show. Pure read projection of the DB `escalation_run` row;
-   * adds no persistence.
-   */
-  escalationRun?: Maybe<IncidentEscalationRunGql>;
-  id: Scalars['ID']['output'];
-  mitigatedAt?: Maybe<Scalars['DateTime']['output']>;
-  originalTopic?: Maybe<Scalars['String']['output']>;
-  postmortemDraft?: Maybe<Scalars['String']['output']>;
-  resolvedAt?: Maybe<Scalars['DateTime']['output']>;
-  serverId: Scalars['ID']['output'];
-  severity?: Maybe<IncidentSeverityGql>;
-  startedAt: Scalars['DateTime']['output'];
-  startedBy: Scalars['ID']['output'];
-  status: IncidentStatusGql;
-  title: Scalars['String']['output'];
-  updatedAt: Scalars['DateTime']['output'];
-};
-
-export type IncidentListCursorInput = {
-  createdAt: Scalars['DateTime']['input'];
-  incidentId: Scalars['ID']['input'];
-};
-
-export type IncidentListCursorOutput = {
-  createdAt: Scalars['DateTime']['output'];
-  incidentId: Scalars['ID']['output'];
-};
-
-export type IncidentMessageTagGql = {
-  incidentId: Scalars['ID']['output'];
-  messageId: Scalars['ID']['output'];
-  phase: IncidentPhaseNameGql;
-  tagType?: Maybe<MessageTagTypeGql>;
-};
-
-export type IncidentPage = {
-  items: Array<IncidentGql>;
-  next?: Maybe<IncidentListCursorOutput>;
-  pageInfo: PageInfo;
-  prev?: Maybe<IncidentListCursorOutput>;
-};
-
-export type IncidentPhaseGql = {
-  endedAt?: Maybe<Scalars['DateTime']['output']>;
-  id: Scalars['ID']['output'];
-  incidentId: Scalars['ID']['output'];
-  note?: Maybe<Scalars['String']['output']>;
-  phase: IncidentPhaseNameGql;
-  startedAt: Scalars['DateTime']['output'];
-};
-
-export enum IncidentPhaseNameGql {
-  DETECTION = 'DETECTION',
-  MITIGATION = 'MITIGATION',
-  POSTMORTEM = 'POSTMORTEM',
-  RESOLUTION = 'RESOLUTION',
-  TRIAGE = 'TRIAGE'
-}
-
-export enum IncidentSeverityGql {
-  SEV_1 = 'SEV_1',
-  SEV_2 = 'SEV_2',
-  SEV_3 = 'SEV_3',
-  SEV_4 = 'SEV_4'
-}
-
-export enum IncidentStatusGql {
-  ACTIVE = 'ACTIVE',
-  MITIGATED = 'MITIGATED',
-  RESOLVED = 'RESOLVED'
-}
-
-export type IncidentTimelineGql = {
-  incident: IncidentGql;
-  phases: Array<IncidentPhaseGql>;
-  taggedMessages: Array<IncidentMessageTagGql>;
-};
-
 export type IncrementWorkspaceStateInput = {
   delta: Scalars['Int']['input'];
   key: Scalars['String']['input'];
   scope: WorkspaceStateScopeGql;
   serverId: Scalars['ID']['input'];
-};
-
-/**
- * GraphQL projection of an alert-ingest token (Track B2). Never exposes `token_hash` — the raw
- * token is only ever returned once, at creation, via [`CreateIngestTokenResultGql::raw_token`].
- */
-export type IngestTokenGql = {
-  conversationId: Scalars['ID']['output'];
-  createdAt: Scalars['DateTime']['output'];
-  createdBy: Scalars['ID']['output'];
-  id: Scalars['ID']['output'];
-  label: Scalars['String']['output'];
-  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
-  revokedAt?: Maybe<Scalars['DateTime']['output']>;
-  serverId: Scalars['ID']['output'];
-  severityDefault?: Maybe<IncidentSeverityGql>;
 };
 
 /**
@@ -1561,13 +1324,6 @@ export enum MessageReportStatus {
   RESOLVED = 'RESOLVED'
 }
 
-export enum MessageTagTypeGql {
-  ACTION_ITEM = 'ACTION_ITEM',
-  DECISION = 'DECISION',
-  ROOT_CAUSE = 'ROOT_CAUSE',
-  TIMELINE_EVENT = 'TIMELINE_EVENT'
-}
-
 export type MlsCommit = {
   createdAt: Scalars['DateTime']['output'];
   /** The epoch the Commit was created in; the group moved to the next. */
@@ -1659,23 +1415,14 @@ export type Mutation = {
   ackMlsWelcomes: Scalars['Int']['output'];
   /** Move the session device's cursor up to `upTo`. */
   ackRelayItems: Scalars['Boolean']['output'];
-  /**
-   * Acknowledge an incident (§4). Any server member may ack, not owner-gated — whoever
-   * responds picked it up. Idempotent: acking an already-acked incident returns it unchanged.
-   * Cancels the incident's active escalation run, if any.
-   */
-  acknowledgeIncident: IncidentGql;
   /** Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each). */
   addContact: Contact;
   /** Add (invite) workspace members to a channel or group the caller belongs to. */
   addConversationMembers: Conversation;
   /** Add a device certified by the current identity key. */
   addDeviceKey: DeviceKey;
-  /** Add a rotation layer to a schedule. Owner-only. */
-  addRotationLayer: RotationLayerGql;
   /** Add the statement's plugin to the workspace's registry. Owner or Moderator. */
   addWorkspacePlugin: WorkspacePlugin;
-  advanceIncidentPhase: IncidentPhaseGql;
   /**
    * Apply a device revocation on this host directly, as an app does when a host did not
    * acknowledge it through the relay. Needs no session: it acts only on the revocation's
@@ -1702,18 +1449,6 @@ export type Mutation = {
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
   /**
-   * Create an escalation policy. Owner+Moderator (server-scoped — per-channel moderator
-   * roles don't apply). Every step target is validated to belong to this server (C1 security
-   * review): a `User` target must be a current member, an `OnCall` target's schedule must
-   * belong to this server.
-   */
-  createEscalationPolicy: EscalationPolicyGql;
-  /**
-   * Mint a new alert-ingest token for a channel. Owner-only. The raw token is returned
-   * exactly once, in `rawToken` — it is never retrievable again after this call.
-   */
-  createIngestToken: CreateIngestTokenResultGql;
-  /**
    * Create a new instance invite (admin-only gate: must own at least one workspace).
    *
    * Returns the raw invite token exactly once in the payload. Store it; it cannot
@@ -1723,28 +1458,15 @@ export type Mutation = {
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
-  /** Create a one-off on-call override for a schedule. Owner-only. */
-  createOnCallOverride: OnCallOverrideGql;
-  /** Create an on-call schedule. Owner-only. */
-  createOnCallSchedule: OnCallScheduleGql;
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
   deleteAttachment: Scalars['Boolean']['output'];
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
-  /** Delete an escalation policy. Owner+Moderator (resolved via the policy's own server). */
-  deleteEscalationPolicy: Scalars['Boolean']['output'];
   deleteKeybind: Scalars['Boolean']['output'];
   deleteMacro: Scalars['Boolean']['output'];
   deleteMessage: Scalars['Boolean']['output'];
-  /** Delete an on-call override. Owner-only (resolved via the override's owning schedule). */
-  deleteOnCallOverride: Scalars['Boolean']['output'];
-  /**
-   * Delete an on-call schedule (cascades to its rotation layers/participants/overrides).
-   * Owner-only.
-   */
-  deleteOnCallSchedule: Scalars['Boolean']['output'];
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
@@ -1757,7 +1479,6 @@ export type Mutation = {
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
   forwardMessage: Message;
-  generatePostmortem: IncidentGql;
   heartbeat: Scalars['Boolean']['output'];
   /** Delete the request's held items and drop later items of the conversation. */
   ignoreDmRequest: DmRequest;
@@ -1801,11 +1522,9 @@ export type Mutation = {
    */
   markNotificationsRead: Scalars['Int']['output'];
   muteConversation: Scalars['Boolean']['output'];
-  overrideSkillTier: SkillProfileGql;
   pinMessage: Scalars['Boolean']['output'];
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
-  recordFeatureUsage: SkillProfileGql;
   /**
    * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
    * join, with the workspace `inviteToken` names (the invite is not used).
@@ -1817,8 +1536,6 @@ export type Mutation = {
    * themselves.
    */
   removeConversationMember: Scalars['Boolean']['output'];
-  /** Remove a rotation layer (cascades to its participants). Owner-only. */
-  removeRotationLayer: Scalars['Boolean']['output'];
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
   /**
@@ -1843,7 +1560,6 @@ export type Mutation = {
   requestMlsReadd: Scalars['Boolean']['output'];
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
-  resolveIncident: IncidentGql;
   /**
    * Close an open report as resolved or dismissed (Owner/Moderator). Audited
    * (`admin.resolve_report`).
@@ -1851,8 +1567,6 @@ export type Mutation = {
   resolveReport: MessageReport;
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
-  /** Revoke an ingest token. Owner-only, permanent (no un-revoke). */
-  revokeIngestToken: Scalars['Boolean']['output'];
   /**
    * Revoke an existing instance invite (admin-only gate: must own at least one workspace).
    *
@@ -1878,13 +1592,6 @@ export type Mutation = {
    */
   sendEncryptedMessage: Message;
   sendMessage: Message;
-  /**
-   * Set a conversation's default escalation policy — the policy `ingestAlert`-declared
-   * incidents always use (there's no human to pick an override for an alert-declared
-   * incident), and `startIncident`'s fallback when no per-call override is given.
-   * Owner+Moderator.
-   */
-  setChannelEscalationPolicy: Scalars['Boolean']['output'];
   /** Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only. */
   setConversationArchived: Conversation;
   /**
@@ -1903,20 +1610,10 @@ export type Mutation = {
    */
   setMemberRole: ServerMember;
   /**
-   * Replace a rotation layer's full ordered participant list. `userIds[0]` becomes the first
-   * shift. Owner-only.
-   */
-  setRotationParticipants: RotationLayerGql;
-  /**
    * Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
    * Audited (`chat.set_slow_mode`).
    */
   setSlowMode: Conversation;
-  /**
-   * Turn an optional workspace module on or off. Owner-only. No data is deleted when a
-   * feature is turned off; turning it back on restores everything. Audited.
-   */
-  setWorkspaceFeature: WorkspaceFeatureState;
   setWorkspaceState: WorkspaceStateEntryGql;
   /**
    * Unified signup mutation for all token-based and open-mode registration paths.
@@ -1940,14 +1637,12 @@ export type Mutation = {
    * live link. The link lives 10 minutes.
    */
   startDeviceLink: StartedDeviceLink;
-  startIncident: IncidentGql;
   startTyping: Scalars['Boolean']['output'];
   /**
    * A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
    * `STALE_EPOCH` names the current incarnation and epoch when another Commit came first.
    */
   submitMlsCommit: MlsCommit;
-  tagIncidentMessage: IncidentMessageTagGql;
   /**
    * Time a member out until `until` (at most 30 days ahead): they keep reading but every
    * write fails with `TIMED_OUT`. Same targeting rules as `kickMember`. Audited.
@@ -1962,13 +1657,6 @@ export type Mutation = {
   unpinMessage: Scalars['Boolean']['output'];
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
-  /**
-   * Update an escalation policy's `name` and/or full step list. `steps: Some(_)` replaces
-   * every step atomically; `None` leaves the existing steps untouched. Owner+Moderator
-   * (resolved via the policy's own server); same per-target server constraint as create.
-   */
-  updateEscalationPolicy: EscalationPolicyGql;
-  updateIncidentStatus: IncidentGql;
   updateKeybind: Keybind;
   updateMacro: MacroDef;
   /**
@@ -2003,14 +1691,7 @@ export type Mutation = {
    * daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
    */
   updateNotificationSettings: NotificationSettings;
-  /** Update an on-call schedule's `name`/`timezone`. Owner-only. */
-  updateOnCallSchedule: OnCallScheduleGql;
   updatePipeline: PipelineGql;
-  /**
-   * Update a rotation layer's `name`/`priority`/`kind`/`anchorAt`. Owner-only (resolved via
-   * the layer's owning schedule).
-   */
-  updateRotationLayer: RotationLayerGql;
   updateUserCommand: Command;
   /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
   updateWorkspacePlugin: WorkspacePlugin;
@@ -2037,11 +1718,6 @@ export type MutationAckRelayItemsArgs = {
 };
 
 
-export type MutationAcknowledgeIncidentArgs = {
-  incidentId: Scalars['ID']['input'];
-};
-
-
 export type MutationAddContactArgs = {
   principalId: Scalars['String']['input'];
   relayUrls: Array<Scalars['String']['input']>;
@@ -2060,22 +1736,8 @@ export type MutationAddDeviceKeyArgs = {
 };
 
 
-export type MutationAddRotationLayerArgs = {
-  anchorAt: Scalars['DateTime']['input'];
-  kind: RotationKindInputGql;
-  name: Scalars['String']['input'];
-  priority: Scalars['Int']['input'];
-  scheduleId: Scalars['ID']['input'];
-};
-
-
 export type MutationAddWorkspacePluginArgs = {
   input: AddWorkspacePluginInput;
-};
-
-
-export type MutationAdvanceIncidentPhaseArgs = {
-  input: AdvanceIncidentPhaseInput;
 };
 
 
@@ -2138,18 +1800,6 @@ export type MutationCreateCustomEmojiArgs = {
 };
 
 
-export type MutationCreateEscalationPolicyArgs = {
-  name: Scalars['String']['input'];
-  serverId: Scalars['ID']['input'];
-  steps: Array<EscalationStepInputGql>;
-};
-
-
-export type MutationCreateIngestTokenArgs = {
-  input: CreateIngestTokenInput;
-};
-
-
 export type MutationCreateInstanceInviteArgs = {
   input: CreateInstanceInviteInput;
 };
@@ -2167,21 +1817,6 @@ export type MutationCreateKeybindArgs = {
 
 export type MutationCreateMacroArgs = {
   input: CreateMacroInput;
-};
-
-
-export type MutationCreateOnCallOverrideArgs = {
-  endAt: Scalars['DateTime']['input'];
-  scheduleId: Scalars['ID']['input'];
-  startAt: Scalars['DateTime']['input'];
-  userId: Scalars['ID']['input'];
-};
-
-
-export type MutationCreateOnCallScheduleArgs = {
-  name: Scalars['String']['input'];
-  serverId: Scalars['ID']['input'];
-  timezone: Scalars['String']['input'];
 };
 
 
@@ -2216,11 +1851,6 @@ export type MutationDeleteCustomEmojiArgs = {
 };
 
 
-export type MutationDeleteEscalationPolicyArgs = {
-  policyId: Scalars['ID']['input'];
-};
-
-
 export type MutationDeleteKeybindArgs = {
   input: DeleteKeybindInput;
 };
@@ -2233,16 +1863,6 @@ export type MutationDeleteMacroArgs = {
 
 export type MutationDeleteMessageArgs = {
   input: DeleteMessageInput;
-};
-
-
-export type MutationDeleteOnCallOverrideArgs = {
-  overrideId: Scalars['ID']['input'];
-};
-
-
-export type MutationDeleteOnCallScheduleArgs = {
-  scheduleId: Scalars['ID']['input'];
 };
 
 
@@ -2293,11 +1913,6 @@ export type MutationFinalizeAttachmentArgs = {
 
 export type MutationForwardMessageArgs = {
   input: ForwardMessageInput;
-};
-
-
-export type MutationGeneratePostmortemArgs = {
-  incidentId: Scalars['ID']['input'];
 };
 
 
@@ -2377,11 +1992,6 @@ export type MutationMuteConversationArgs = {
 };
 
 
-export type MutationOverrideSkillTierArgs = {
-  tier: SkillTier;
-};
-
-
 export type MutationPinMessageArgs = {
   input: PinMessageInput;
 };
@@ -2389,11 +1999,6 @@ export type MutationPinMessageArgs = {
 
 export type MutationPublishProfileCardArgs = {
   card: SignedStatementInput;
-};
-
-
-export type MutationRecordFeatureUsageArgs = {
-  featureId: Scalars['String']['input'];
 };
 
 
@@ -2413,11 +2018,6 @@ export type MutationRemoveConversationMemberArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
-};
-
-
-export type MutationRemoveRotationLayerArgs = {
-  layerId: Scalars['ID']['input'];
 };
 
 
@@ -2472,11 +2072,6 @@ export type MutationResetPasswordArgs = {
 };
 
 
-export type MutationResolveIncidentArgs = {
-  incidentId: Scalars['ID']['input'];
-};
-
-
 export type MutationResolveReportArgs = {
   outcome: ReportOutcome;
   reportId: Scalars['ID']['input'];
@@ -2486,11 +2081,6 @@ export type MutationResolveReportArgs = {
 
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
-};
-
-
-export type MutationRevokeIngestTokenArgs = {
-  tokenId: Scalars['ID']['input'];
 };
 
 
@@ -2531,13 +2121,6 @@ export type MutationSendMessageArgs = {
 };
 
 
-export type MutationSetChannelEscalationPolicyArgs = {
-  conversationId: Scalars['ID']['input'];
-  policyId: Scalars['ID']['input'];
-  serverId: Scalars['ID']['input'];
-};
-
-
 export type MutationSetConversationArchivedArgs = {
   archived: Scalars['Boolean']['input'];
   conversationId: Scalars['ID']['input'];
@@ -2566,22 +2149,9 @@ export type MutationSetMemberRoleArgs = {
 };
 
 
-export type MutationSetRotationParticipantsArgs = {
-  layerId: Scalars['ID']['input'];
-  userIds: Array<Scalars['ID']['input']>;
-};
-
-
 export type MutationSetSlowModeArgs = {
   conversationId: Scalars['ID']['input'];
   seconds: Scalars['Int']['input'];
-  serverId: Scalars['ID']['input'];
-};
-
-
-export type MutationSetWorkspaceFeatureArgs = {
-  enabled: Scalars['Boolean']['input'];
-  feature: WorkspaceFeature;
   serverId: Scalars['ID']['input'];
 };
 
@@ -2601,11 +2171,6 @@ export type MutationSignupWithKeyArgs = {
 };
 
 
-export type MutationStartIncidentArgs = {
-  input: StartIncidentInput;
-};
-
-
 export type MutationStartTypingArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -2614,11 +2179,6 @@ export type MutationStartTypingArgs = {
 
 export type MutationSubmitMlsCommitArgs = {
   input: SubmitMlsCommitInput;
-};
-
-
-export type MutationTagIncidentMessageArgs = {
-  input: TagIncidentMessageInput;
 };
 
 
@@ -2672,18 +2232,6 @@ export type MutationUpdateConversationTopicArgs = {
 };
 
 
-export type MutationUpdateEscalationPolicyArgs = {
-  name?: InputMaybe<Scalars['String']['input']>;
-  policyId: Scalars['ID']['input'];
-  steps?: InputMaybe<Array<EscalationStepInputGql>>;
-};
-
-
-export type MutationUpdateIncidentStatusArgs = {
-  input: UpdateIncidentStatusInput;
-};
-
-
 export type MutationUpdateKeybindArgs = {
   input: UpdateKeybindInput;
 };
@@ -2705,24 +2253,8 @@ export type MutationUpdateNotificationSettingsArgs = {
 };
 
 
-export type MutationUpdateOnCallScheduleArgs = {
-  name?: InputMaybe<Scalars['String']['input']>;
-  scheduleId: Scalars['ID']['input'];
-  timezone?: InputMaybe<Scalars['String']['input']>;
-};
-
-
 export type MutationUpdatePipelineArgs = {
   input: UpdatePipelineInput;
-};
-
-
-export type MutationUpdateRotationLayerArgs = {
-  anchorAt?: InputMaybe<Scalars['DateTime']['input']>;
-  kind?: InputMaybe<RotationKindInputGql>;
-  layerId: Scalars['ID']['input'];
-  name?: InputMaybe<Scalars['String']['input']>;
-  priority?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -2825,58 +2357,6 @@ export type NotificationSettings = {
   /** Lower-cased; a whole-word, case-insensitive hit notifies (level `MENTIONS` or `ALL`). */
   keywords: Array<Scalars['String']['output']>;
   serverId: Scalars['ID']['output'];
-};
-
-/**
- * Answer to "who is on call now" (`whoIsOnCall`/`serverOnCall` queries). `currentUser`/`nextUser`
- * are resolved via the shared `User` DataLoader (the `message.author` pattern) rather than
- * exposed as bare ids.
- */
-export type OnCallNowGql = {
-  currentUser?: Maybe<User>;
-  nextUser?: Maybe<User>;
-  scheduleId: Scalars['ID']['output'];
-  shiftEndsAt?: Maybe<Scalars['DateTime']['output']>;
-};
-
-export type OnCallOverrideGql = {
-  createdBy: Scalars['ID']['output'];
-  endAt: Scalars['DateTime']['output'];
-  id: Scalars['ID']['output'];
-  scheduleId: Scalars['ID']['output'];
-  startAt: Scalars['DateTime']['output'];
-  userId: Scalars['ID']['output'];
-};
-
-export type OnCallScheduleGql = {
-  createdAt: Scalars['DateTime']['output'];
-  createdBy: Scalars['ID']['output'];
-  id: Scalars['ID']['output'];
-  name: Scalars['String']['output'];
-  /**
-   * This schedule's existing rotation layers, each with its participants attached, ordered
-   * `priority DESC, created_at ASC` (§10) — lets the frontend editor load and edit existing
-   * rotations rather than only being able to create new ones. Any server member may read.
-   */
-  rotationLayers: Array<RotationLayerGql>;
-  serverId: Scalars['ID']['output'];
-  timezone: Scalars['String']['output'];
-  updatedAt: Scalars['DateTime']['output'];
-};
-
-/**
- * One contiguous block of on-call coverage (`onCallShifts` query). `user` is resolved via the
- * shared `User` DataLoader, not exposed as a bare id.
- */
-export type OnCallShiftGql = {
-  endAt: Scalars['DateTime']['output'];
-  /**
-   * `true` if this block came from a one-off `OnCallOverride` rather than the base rotation
-   * layer (§10 FLAG B) — lets the frontend render override segments distinctly.
-   */
-  isOverride: Scalars['Boolean']['output'];
-  startAt: Scalars['DateTime']['output'];
-  user?: Maybe<User>;
 };
 
 export type OutOfBandProofInput = {
@@ -3048,7 +2528,6 @@ export type ProfileCard = {
 };
 
 export type Query = {
-  activeIncident?: Maybe<IncidentGql>;
   applyChannelLens: Array<Message>;
   attachment: Attachment;
   capabilities: Array<Capability>;
@@ -3088,12 +2567,7 @@ export type Query = {
   deviceRevocationStatus: Array<RevocationFanout>;
   /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
-  /** List a server's escalation policies. Any workspace member may read. */
-  escalationPolicies: Array<EscalationPolicyGql>;
   inboxConversations: ConversationPage;
-  incidentTimeline: IncidentTimelineGql;
-  /** List every alert-ingest token for a server (including revoked). Owner-only. */
-  ingestTokens: Array<IngestTokenGql>;
   /**
    * The public key log of a principal enrolled on this server, oldest first; empty when none
    * is. No session needed: a person who lost every device reads the head here to sign a
@@ -3104,7 +2578,6 @@ export type Query = {
   keybinds: Array<Keybind>;
   /** Query the command audit log. Requires `audit.read` capability. */
   listAuditLog: AuditLogPage;
-  listIncidents: IncidentPage;
   /**
    * List all active (non-revoked) instance invites.
    *
@@ -3160,16 +2633,8 @@ export type Query = {
    */
   myNotifications: NotificationPage;
   myServers: Array<Server>;
-  mySkillProfile: SkillProfileGql;
   /** Unread notifications of the viewer in the workspace (the bell badge). */
   myUnreadNotificationCount: Scalars['Int']['output'];
-  /** List a server's on-call schedules. Any workspace member may read. */
-  onCallSchedules: Array<OnCallScheduleGql>;
-  /**
-   * Resolve on-call coverage for a schedule over `[from, to)`. Rejects spans over 90 days. Any
-   * workspace member may read.
-   */
-  onCallShifts: Array<OnCallShiftGql>;
   pinnedMessages: Array<Message>;
   pipeline: PipelineGql;
   pipelines: Array<PipelineGql>;
@@ -3238,11 +2703,6 @@ export type Query = {
   serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
   /**
-   * Batch [`who_is_on_call`] across every on-call schedule on a server — avoids an N+1 of
-   * individual `whoIsOnCall` calls for a status-bar-style UI. Any workspace member may read.
-   */
-  serverOnCall: Array<OnCallNowGql>;
-  /**
    * The current `seq` of each named event stream of a space hosted here that the caller can
    * see; streams the caller cannot see are left out.
    */
@@ -3252,27 +2712,11 @@ export type Query = {
   threadMessages: MessagePage;
   threads: ThreadPage;
   unreadCounts: Array<UnreadCount>;
-  /**
-   * Resolve who is on call for a schedule right now (or at `at`, if provided). Any workspace
-   * member may read.
-   */
-  whoIsOnCall: OnCallNowGql;
-  /**
-   * Per-workspace optional modules and whether each is on (Track 0.4). Any member; one
-   * entry per known feature, defaults filled in.
-   */
-  workspaceFeatures: Array<WorkspaceFeatureState>;
   /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
   workspacePlugins: Array<WorkspacePlugin>;
   workspacePresence: Array<UserPresenceGql>;
   workspaceState?: Maybe<WorkspaceStateEntryGql>;
   workspaceStateList: Array<WorkspaceStateEntryGql>;
-};
-
-
-export type QueryActiveIncidentArgs = {
-  conversationId: Scalars['ID']['input'];
-  serverId: Scalars['ID']['input'];
 };
 
 
@@ -3354,25 +2798,10 @@ export type QueryDmRequestsArgs = {
 };
 
 
-export type QueryEscalationPoliciesArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
 export type QueryInboxConversationsArgs = {
   cursor?: InputMaybe<InboxCursorInput>;
   dir: PageDir;
   limit: Scalars['Int']['input'];
-  serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryIncidentTimelineArgs = {
-  incidentId: Scalars['ID']['input'];
-};
-
-
-export type QueryIngestTokensArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3398,16 +2827,6 @@ export type QueryKeybindsArgs = {
 export type QueryListAuditLogArgs = {
   filter?: InputMaybe<AuditLogFilterInput>;
   pagination?: InputMaybe<AuditLogPaginationInput>;
-};
-
-
-export type QueryListIncidentsArgs = {
-  cursor?: InputMaybe<IncidentListCursorInput>;
-  dir: PageDir;
-  limit?: Scalars['Int']['input'];
-  serverId: Scalars['ID']['input'];
-  severityFilter?: InputMaybe<Array<IncidentSeverityGql>>;
-  statusFilter?: InputMaybe<Array<IncidentStatusGql>>;
 };
 
 
@@ -3510,18 +2929,6 @@ export type QueryMyUnreadNotificationCountArgs = {
 };
 
 
-export type QueryOnCallSchedulesArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryOnCallShiftsArgs = {
-  from: Scalars['DateTime']['input'];
-  scheduleId: Scalars['ID']['input'];
-  to: Scalars['DateTime']['input'];
-};
-
-
 export type QueryPinnedMessagesArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -3603,11 +3010,6 @@ export type QueryServerMembersArgs = {
 };
 
 
-export type QueryServerOnCallArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
 export type QueryStreamHeadsArgs = {
   serverId: Scalars['ID']['input'];
   streams: Array<Scalars['String']['input']>;
@@ -3650,17 +3052,6 @@ export type QueryThreadsArgs = {
 
 export type QueryUnreadCountsArgs = {
   workspaceId: Scalars['ID']['input'];
-};
-
-
-export type QueryWhoIsOnCallArgs = {
-  at?: InputMaybe<Scalars['DateTime']['input']>;
-  scheduleId: Scalars['ID']['input'];
-};
-
-
-export type QueryWorkspaceFeaturesArgs = {
-  serverId: Scalars['ID']['input'];
 };
 
 
@@ -3867,49 +3258,6 @@ export type RotateIdentityKeyInput = {
   entry: SignedStatementInput;
 };
 
-/**
- * Discriminator for [`RotationLayerGql::kind`] / [`RotationKindInputGql::kind`]. See
- * `docs/oncall.md` for the timezone/DST semantics of each variant.
- */
-export enum RotationKindGql {
-  CUSTOM = 'CUSTOM',
-  DAILY = 'DAILY',
-  WEEKLY = 'WEEKLY'
-}
-
-/**
- * A `RotationKind`, flattened for GraphQL: `kind` selects which of the other fields are
- * populated (GraphQL has no native tagged-union input type). `handoffTime` is `"HH:MM:SS"`
- * 24-hour wall-clock local time.
- */
-export type RotationKindInputGql = {
-  /** Required for `DAILY`/`WEEKLY`; ignored otherwise. */
-  handoffTime?: InputMaybe<Scalars['String']['input']>;
-  /** `0` (Monday) .. `6` (Sunday). Required for `WEEKLY`; ignored otherwise. */
-  handoffWeekday?: InputMaybe<Scalars['Int']['input']>;
-  /** Required for `CUSTOM` (must be `> 0`); ignored otherwise. */
-  intervalSeconds?: InputMaybe<Scalars['Int']['input']>;
-  kind: RotationKindGql;
-};
-
-export type RotationLayerGql = {
-  anchorAt: Scalars['DateTime']['output'];
-  createdAt: Scalars['DateTime']['output'];
-  /** `"HH:MM:SS"`, present only when `kind` is `DAILY`/`WEEKLY`. */
-  handoffTime?: Maybe<Scalars['String']['output']>;
-  /** `0` (Monday) .. `6` (Sunday), present only when `kind` is `WEEKLY`. */
-  handoffWeekday?: Maybe<Scalars['Int']['output']>;
-  id: Scalars['ID']['output'];
-  /** Present only when `kind` is `CUSTOM`. */
-  intervalSeconds?: Maybe<Scalars['Int']['output']>;
-  kind: RotationKindGql;
-  name: Scalars['String']['output'];
-  /** Ordered by shift position. */
-  participants: Array<Scalars['ID']['output']>;
-  priority: Scalars['Int']['output'];
-  scheduleId: Scalars['ID']['output'];
-};
-
 /** A sealed message exactly as it was sent. */
 export type SealedMessage = {
   ciphertext: Scalars['String']['output'];
@@ -4001,12 +3349,6 @@ export type SendMessageInput = {
 };
 
 export type Server = {
-  /**
-   * Per-workspace optional modules and whether each is on (Track 0.4). One entry per known
-   * feature, defaults filled in. Resolved with one service call per server, like
-   * `viewerRole`; `myServers` lists few servers per user, so no DataLoader.
-   */
-  features: Array<WorkspaceFeatureState>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   /**
@@ -4159,31 +3501,6 @@ export type SignupWithKeyInput = {
   workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
 };
 
-export type SkillProfileGql = {
-  featuresUsed: Array<FeatureUsage>;
-  skillTier: SkillTier;
-  userId: Scalars['ID']['output'];
-};
-
-export enum SkillTier {
-  ADVANCED = 'ADVANCED',
-  BEGINNER = 'BEGINNER',
-  INTERMEDIATE = 'INTERMEDIATE'
-}
-
-export type StartIncidentInput = {
-  conversationId: Scalars['ID']['input'];
-  /**
-   * Overrides the conversation's default escalation policy (`setChannelEscalationPolicy`) for
-   * just this incident (§3/§10). `None` falls back to that default (or no escalation chain at
-   * all if none is set).
-   */
-  escalationPolicyId?: InputMaybe<Scalars['ID']['input']>;
-  serverId: Scalars['ID']['input'];
-  severity?: InputMaybe<IncidentSeverityGql>;
-  title: Scalars['String']['input'];
-};
-
 export type StartedDeviceLink = {
   expiresAt: Scalars['DateTime']['output'];
   /** 16 bytes, unpadded base64url. The server keeps only its hash, so it is shown once. */
@@ -4232,12 +3549,6 @@ export type SubscriptionRelayStreamArgs = {
 
 export type SubscriptionWorkspaceEventsArgs = {
   workspaceId: Scalars['ID']['input'];
-};
-
-export type TagIncidentMessageInput = {
-  incidentId: Scalars['ID']['input'];
-  messageId: Scalars['ID']['input'];
-  tagType?: InputMaybe<MessageTagTypeGql>;
 };
 
 export type Thread = {
@@ -4317,11 +3628,6 @@ export type UpdateConversationTopicInput = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
   topic?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type UpdateIncidentStatusInput = {
-  incidentId: Scalars['ID']['input'];
-  status: IncidentStatusGql;
 };
 
 export type UpdateKeybindInput = {
@@ -4427,24 +3733,6 @@ export type UserPresenceGql = {
   lastSeenAt: Scalars['DateTime']['output'];
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
-};
-
-/**
- * An optional workspace module (Track 0.4). `INCIDENTS` covers incidents, on-call schedules,
- * escalation policies and alert ingestion together.
- */
-export enum WorkspaceFeature {
-  INCIDENTS = 'INCIDENTS'
-}
-
-/**
- * Whether one optional module is on for one workspace. `updatedAt` is null when the value is
- * the feature's default (never explicitly set for this workspace).
- */
-export type WorkspaceFeatureState = {
-  enabled: Scalars['Boolean']['output'];
-  feature: WorkspaceFeature;
-  updatedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 /**

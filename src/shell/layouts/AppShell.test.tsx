@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
-import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 
 // ── Side-effect / data hooks used directly by AppShell / WorkspaceShell ──
@@ -64,14 +63,6 @@ vi.mock("../hooks/useZenModeTransition", () => ({
 }));
 vi.mock("../hooks/useAutoFocusComposer", () => ({ useAutoFocusComposer: () => {} }));
 vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {} }));
-// Workspace feature flags (Track 0.4) — mutable so tests can turn the incidents module off.
-let incidentsStatus: "loading" | "enabled" | "disabled" = "enabled";
-vi.mock("../../features/workspaces/hooks/useFeatureEnabled", () => ({
-  useFeatureStatus: () => incidentsStatus,
-}));
-vi.mock("../../features/incidents/components/IncidentsHub", () => ({
-  IncidentsHub: () => <div data-testid="incidents-hub" />,
-}));
 
 // ── Heavy/unrelated child components — trivial stubs ──
 vi.mock("../../features/workspaces/components/WorkspaceSelector", () => ({
@@ -114,41 +105,18 @@ vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
-vi.mock("../../features/oncall/components/OverrideModal", () => ({
-  OverrideModal: () => null,
-}));
-vi.mock("../../features/incidents/components/StartIncidentDialog", () => ({
-  StartIncidentDialog: () => null,
-}));
-vi.mock("../../features/incidents/components/IncidentHistoryPage", () => ({
-  IncidentHistoryPage: () => null,
-}));
 vi.mock("../../features/audit/components/AuditLogPage", () => ({ AuditLogPage: () => null }));
 vi.mock("../components/StatusBar", () => ({ StatusBar: () => null }));
 vi.mock("../navigation/FocusPulse", () => ({ FocusPulse: () => null }));
 
-// ── The three panels under test — throw on demand via a shared flag,
+// ── The panel under test — throws on demand via a shared flag,
 //    mirroring the Bomb pattern in SurfaceErrorBoundary.test.tsx ──
 let pinnedShouldThrow = false;
-let timelineShouldThrow = false;
-let postmortemShouldThrow = false;
 
 vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
   PinnedMessagesPanel: () => {
     if (pinnedShouldThrow) throw new Error("pinned boom");
     return <div data-testid="pinned-panel">pinned ok</div>;
-  },
-}));
-vi.mock("../../features/incidents/components/IncidentTimeline", () => ({
-  IncidentTimelinePanel: () => {
-    if (timelineShouldThrow) throw new Error("timeline boom");
-    return <div data-testid="timeline-panel">timeline ok</div>;
-  },
-}));
-vi.mock("../../features/incidents/components/PostmortemPreview", () => ({
-  PostmortemPreview: () => {
-    if (postmortemShouldThrow) throw new Error("postmortem boom");
-    return <div data-testid="postmortem-panel">postmortem ok</div>;
   },
 }));
 
@@ -171,9 +139,6 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     // React logs the caught error to console.error; expected noise here.
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     pinnedShouldThrow = false;
-    timelineShouldThrow = false;
-    postmortemShouldThrow = false;
-    incidentsStatus = "enabled";
 
     useAuthStore.setState({ session: { userId: "u1" } });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
@@ -182,7 +147,6 @@ describe("AppShell — conversation side-panel error boundaries", () => {
       selectedConversationId: "conv-1",
       pinnedPanelOpen: true,
     });
-    useIncidentStore.setState({ showTimeline: true, showPostmortem: true });
   });
 
   afterEach(() => {
@@ -190,19 +154,11 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     useAuthStore.setState({ session: null });
     useWorkspaceStore.setState({ workspaceId: null });
     useShellStore.getState().reset();
-    useIncidentStore.setState({
-      activeIncident: null,
-      showStartDialog: false,
-      showTimeline: false,
-      showPostmortem: false,
-    });
   });
 
-  it("renders all three panels normally when nothing throws", () => {
+  it("renders the panel normally when nothing throws", () => {
     renderShell();
     expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("postmortem-panel")).toBeInTheDocument();
   });
 
   it("wraps PinnedMessagesPanel: a crash shows the in-pane fallback and the rest of the shell stays mounted", () => {
@@ -210,87 +166,7 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     renderShell();
 
     expect(screen.getByText("Pinned messages failed to load")).toBeInTheDocument();
-    // The rest of the shell — including sibling panels — stays mounted.
+    // The rest of the shell stays mounted.
     expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("postmortem-panel")).toBeInTheDocument();
-  });
-
-  it("wraps IncidentTimelinePanel: a crash shows the in-pane fallback and the rest of the shell stays mounted", () => {
-    timelineShouldThrow = true;
-    renderShell();
-
-    expect(screen.getByText("Incident timeline failed to load")).toBeInTheDocument();
-    expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
-    expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("postmortem-panel")).toBeInTheDocument();
-  });
-
-  it("wraps PostmortemPreview: a crash shows the in-pane fallback and the rest of the shell stays mounted", () => {
-    postmortemShouldThrow = true;
-    renderShell();
-
-    expect(screen.getByText("Postmortem failed to load")).toBeInTheDocument();
-    expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
-    expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
-  });
-});
-
-describe("AppShell — incidents module gate (Track 0.4)", () => {
-  beforeEach(() => {
-    incidentsStatus = "enabled";
-    useAuthStore.setState({ session: { userId: "u1" } });
-    useWorkspaceStore.setState({ workspaceId: "ws-1" });
-    useShellStore.setState({
-      mainSurface: { kind: "conversation" },
-      selectedConversationId: "conv-1",
-      pinnedPanelOpen: false,
-    });
-    useIncidentStore.setState({ showTimeline: true, showPostmortem: true });
-  });
-
-  afterEach(() => {
-    useAuthStore.setState({ session: null });
-    useWorkspaceStore.setState({ workspaceId: null });
-    useShellStore.getState().reset();
-    useIncidentStore.setState({
-      activeIncident: null,
-      showStartDialog: false,
-      showTimeline: false,
-      showPostmortem: false,
-    });
-  });
-
-  it("mounts no incident panels and clears incident state when the feature is off", () => {
-    incidentsStatus = "disabled";
-    renderShell();
-    expect(screen.queryByTestId("timeline-panel")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("postmortem-panel")).not.toBeInTheDocument();
-    expect(useIncidentStore.getState().showTimeline).toBe(false);
-    expect(useIncidentStore.getState().showPostmortem).toBe(false);
-  });
-
-  it("mounts no incident panels while the flag is still loading", () => {
-    incidentsStatus = "loading";
-    renderShell();
-    expect(screen.queryByTestId("timeline-panel")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("postmortem-panel")).not.toBeInTheDocument();
-  });
-
-  it("shows a notice instead of the Incidents hub when the feature is off", () => {
-    incidentsStatus = "disabled";
-    useShellStore.setState({ mainSurface: { kind: "incidents" } });
-    renderShell();
-    expect(screen.queryByTestId("incidents-hub")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Incidents and on-call are turned off for this workspace."),
-    ).toBeInTheDocument();
-  });
-
-  it("renders the Incidents hub when the feature is on", () => {
-    useShellStore.setState({ mainSurface: { kind: "incidents" } });
-    renderShell();
-    expect(screen.getByTestId("incidents-hub")).toBeInTheDocument();
   });
 });

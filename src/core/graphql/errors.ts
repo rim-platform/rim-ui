@@ -9,9 +9,6 @@
 
 import { formatTime } from "../../shared/utils/formatTime";
 
-/** GraphQL extension code for a command or call that belongs to a workspace feature that is off. */
-export const FEATURE_DISABLED = "FEATURE_DISABLED";
-
 /** A write by a member who is timed out in the workspace; extension `until` (RFC 3339). */
 export const TIMED_OUT = "TIMED_OUT";
 
@@ -31,23 +28,8 @@ function firstGraphQLError(err: unknown): GraphQLErrorLike | undefined {
   return typeof first === "object" && first !== null ? (first as GraphQLErrorLike) : undefined;
 }
 
-/**
- * Raised on the client before a request is sent, when the local cache already knows the
- * command's workspace feature is off. Carries the same code as the server's error so callers
- * handle both the same way.
- */
-export class FeatureDisabledError extends Error {
-  readonly code = FEATURE_DISABLED;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "FeatureDisabledError";
-  }
-}
-
 /** The backend error code (`extensions.code`) of a failed request, if any. */
 export function graphqlErrorCode(err: unknown): string | undefined {
-  if (err instanceof FeatureDisabledError) return err.code;
   const code = firstGraphQLError(err)?.extensions?.code;
   return typeof code === "string" ? code : undefined;
 }

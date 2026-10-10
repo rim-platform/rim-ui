@@ -3,12 +3,7 @@ import { useConnectionStore } from "../../features/system/state/useConnectionSto
 import { useShellStore } from "../state/useShellStore";
 import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
-import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
-import { SkillTier, WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
-import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
-import { OnCallIndicator } from "../../features/oncall/components/OnCallIndicator";
-import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 import { useKeybindProfileStore } from "../../features/commands/state/useKeybindProfileStore";
 import { useVimStore } from "../../features/commands/state/useVimStore";
 
@@ -73,8 +68,6 @@ export function StatusBar() {
 
   const activePresetId = useLayoutPresetStore((s) => s.activePresetId);
   const customPresets = useLayoutPresetStore((s) => s.customPresets);
-  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const rawContext = surfaceToContext(focusedSurface);
   const contextLabel = humanizeContext(rawContext);
@@ -99,21 +92,18 @@ export function StatusBar() {
       {/* Center spacer */}
       <div className="flex-1" />
 
-      {/* Right: density + mode + keybind context + layout preset + on-call */}
+      {/* Right: density + layout preset + mode + keybind context */}
       <div className="flex items-center gap-2">
-        {incidentsEnabled && <OnCallIndicator serverId={workspaceId} />}
         {displayDensity !== "comfortable" && (
           <span className="rounded bg-rim-panel-soft px-1.5 py-px text-rim-text-faint">
             {displayDensity === "compact" ? "Compact" : "Ultra Compact"}
           </span>
         )}
-        <DisclosureGate minTier={SkillTier.INTERMEDIATE}>
-          {activePresetName && (
-            <span className="rounded bg-rim-warm/20 px-1.5 py-px font-medium text-rim-warm">
-              {activePresetName}
-            </span>
-          )}
-        </DisclosureGate>
+        {activePresetName && (
+          <span className="rounded bg-rim-warm/20 px-1.5 py-px font-medium text-rim-warm">
+            {activePresetName}
+          </span>
+        )}
         {vimMode && (
           <span
             role="status"

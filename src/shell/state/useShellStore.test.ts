@@ -46,9 +46,9 @@ describe("useShellStore", () => {
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "plugin", pluginId: "p1" });
   });
 
-  it("sets main surface to incidents", () => {
-    useShellStore.getState().setMainSurface({ kind: "incidents" });
-    expect(useShellStore.getState().mainSurface).toEqual({ kind: "incidents" });
+  it("sets main surface to the audit log", () => {
+    useShellStore.getState().setMainSurface({ kind: "audit-log" });
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
   });
 
   it("selects a conversation and resets thread/editing state", () => {

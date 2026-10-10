@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Hash, Pin, Search, UserPlus, AlertTriangle } from "lucide-react";
+import { Hash, Pin, Search, UserPlus } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
@@ -20,17 +20,8 @@ import {
   usePresenceStore,
   type PresenceStatus,
 } from "../../features/presence/state/usePresenceStore";
-import {
-  ConversationTypeEnum,
-  IncidentSeverityGql,
-  IncidentPhaseNameGql,
-  WorkspaceFeature,
-} from "../../core/graphql/generated/schema-types";
+import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
-import { IncidentBanner } from "../../features/incidents/components/IncidentBanner";
-import { useIncidentStore } from "../../features/incidents/state/useIncidentStore";
-import { useActiveIncident } from "../../features/incidents/api/useIncident";
-import { useFeatureEnabled } from "../../features/workspaces/hooks/useFeatureEnabled";
 import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 
 export function ConversationHeader() {
@@ -71,49 +62,6 @@ export function ConversationHeader() {
   // Guests cannot invite (Track 1.2); the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
 
-  // Incident mode — only when the workspace has the incidents module on (Track 0.4). The
-  // query is skipped when off, and any cached incident is ignored so turning the feature off
-  // mid-session clears the banner immediately.
-  const incidentsEnabled = useFeatureEnabled(WorkspaceFeature.INCIDENTS);
-  const { data: fetchedActiveIncident } = useActiveIncident(workspaceId, conversationId, {
-    enabled: incidentsEnabled,
-  });
-  const activeIncidentData = incidentsEnabled ? fetchedActiveIncident : undefined;
-  const setActiveIncident = useIncidentStore((s) => s.setActiveIncident);
-  const activeIncident = useIncidentStore((s) => s.activeIncident);
-  const setShowStartDialog = useIncidentStore((s) => s.setShowStartDialog);
-
-  useEffect(() => {
-    if (activeIncidentData) {
-      setActiveIncident({
-        id: activeIncidentData.id,
-        title: activeIncidentData.title,
-        status: activeIncidentData.status,
-        severity: activeIncidentData.severity ?? IncidentSeverityGql.SEV_4,
-        currentPhase: IncidentPhaseNameGql.DETECTION,
-        startedAt: activeIncidentData.startedAt,
-        acknowledgedAt: activeIncidentData.acknowledgedAt ?? null,
-        acknowledgedByUser: activeIncidentData.acknowledgedByUser
-          ? {
-              id: activeIncidentData.acknowledgedByUser.id,
-              username: activeIncidentData.acknowledgedByUser.username,
-              displayName: activeIncidentData.acknowledgedByUser.displayName ?? null,
-              avatarUrl: activeIncidentData.acknowledgedByUser.avatarUrl ?? null,
-            }
-          : null,
-        escalationRun: activeIncidentData.escalationRun
-          ? {
-              currentStepIndex: activeIncidentData.escalationRun.currentStepIndex,
-              nextFireAt: activeIncidentData.escalationRun.nextFireAt ?? null,
-              status: activeIncidentData.escalationRun.status,
-            }
-          : null,
-      });
-    } else {
-      setActiveIncident(null);
-    }
-  }, [activeIncidentData, setActiveIncident]);
-
   const topic = conversation?.topic ?? null;
   const [isEditingTopic, setIsEditingTopic] = useState(false);
   const [topicDraft, setTopicDraft] = useState("");
@@ -148,110 +96,89 @@ export function ConversationHeader() {
   );
 
   return (
-    <div>
-      <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          {dmOtherUserId ? (
-            <Avatar
-              url={dmAvatarUrl}
-              name={displayTitle ?? "?"}
-              userId={dmOtherUserId}
-              size="sm"
-              presenceStatus={presenceStatus ?? null}
-            />
-          ) : conversation ? (
-            <ChannelIcon conversation={conversation} className="h-5 w-5 text-rim-text-muted" />
-          ) : (
-            <Hash className="h-5 w-5 text-rim-text-muted" />
-          )}
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-rim-text">
-                {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
-              </h2>
-              {isChannel && conversation && (
-                <button
-                  type="button"
-                  onClick={toggleMembers}
-                  aria-label={`${conversation.memberCount} members`}
-                  className="text-xs text-rim-text-faint transition hover:text-rim-text"
-                >
-                  {conversation.memberCount} {conversation.memberCount === 1 ? "member" : "members"}
-                </button>
-              )}
-              {conversation?.isArchived && (
-                <span className="rounded border border-rim-line px-1 text-[10px] uppercase tracking-wider text-rim-text-faint">
-                  Archived
-                </span>
-              )}
-            </div>
-            {isChannel &&
-              (isEditingTopic ? (
-                <input
-                  ref={topicInputRef}
-                  type="text"
-                  value={topicDraft}
-                  onChange={(e) => setTopicDraft(e.target.value)}
-                  onKeyDown={handleTopicKeyDown}
-                  onBlur={() => setIsEditingTopic(false)}
-                  placeholder="Set a topic..."
-                  className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleTopicClick}
-                  className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
-                >
-                  {topic || "Set a topic..."}
-                </button>
-              ))}
-            {!isChannel && (
-              <p className="text-xs text-rim-text-faint">
-                {workspace?.name ?? ""}
-                {conversation && ` \u00b7 ${conversation.memberCount} members`}
-              </p>
-            )}
-          </div>
-        </div>
-        {conversationId && (
-          <div className="flex items-center gap-1">
-            {incidentsEnabled && !activeIncident && (
-              <HoverTooltip
-                content={
-                  <span className="text-xs text-rim-text whitespace-nowrap">Start incident</span>
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowStartDialog(true)}
-                  aria-label="Start incident"
-                  className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-                >
-                  <AlertTriangle className="h-4 w-4" />
-                </button>
-              </HoverTooltip>
-            )}
-            {!isGuest && <InviteButton onClick={() => setInviteOpen(true)} />}
-            {isChannel && workspaceId && (
-              <LensPicker serverId={workspaceId} conversationId={conversationId} />
-            )}
-            {isChannel && <PinnedMessagesButton />}
-            <ChannelSearchButton
-              conversationId={conversationId}
-              displayTitle={displayTitle}
-              openSearch={openSearch}
-            />
-            {conversation && workspaceId && (
-              <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
-            )}
-          </div>
+    <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        {dmOtherUserId ? (
+          <Avatar
+            url={dmAvatarUrl}
+            name={displayTitle ?? "?"}
+            userId={dmOtherUserId}
+            size="sm"
+            presenceStatus={presenceStatus ?? null}
+          />
+        ) : conversation ? (
+          <ChannelIcon conversation={conversation} className="h-5 w-5 text-rim-text-muted" />
+        ) : (
+          <Hash className="h-5 w-5 text-rim-text-muted" />
         )}
-        <InviteDialog open={inviteOpen && !isGuest} onClose={() => setInviteOpen(false)} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-rim-text">
+              {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
+            </h2>
+            {isChannel && conversation && (
+              <button
+                type="button"
+                onClick={toggleMembers}
+                aria-label={`${conversation.memberCount} members`}
+                className="text-xs text-rim-text-faint transition hover:text-rim-text"
+              >
+                {conversation.memberCount} {conversation.memberCount === 1 ? "member" : "members"}
+              </button>
+            )}
+            {conversation?.isArchived && (
+              <span className="rounded border border-rim-line px-1 text-[10px] uppercase tracking-wider text-rim-text-faint">
+                Archived
+              </span>
+            )}
+          </div>
+          {isChannel &&
+            (isEditingTopic ? (
+              <input
+                ref={topicInputRef}
+                type="text"
+                value={topicDraft}
+                onChange={(e) => setTopicDraft(e.target.value)}
+                onKeyDown={handleTopicKeyDown}
+                onBlur={() => setIsEditingTopic(false)}
+                placeholder="Set a topic..."
+                className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handleTopicClick}
+                className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
+              >
+                {topic || "Set a topic..."}
+              </button>
+            ))}
+          {!isChannel && (
+            <p className="text-xs text-rim-text-faint">
+              {workspace?.name ?? ""}
+              {conversation && ` \u00b7 ${conversation.memberCount} members`}
+            </p>
+          )}
+        </div>
       </div>
-      {incidentsEnabled && activeIncident && workspaceId && conversationId && (
-        <IncidentBanner serverId={workspaceId} conversationId={conversationId} />
+      {conversationId && (
+        <div className="flex items-center gap-1">
+          {!isGuest && <InviteButton onClick={() => setInviteOpen(true)} />}
+          {isChannel && workspaceId && (
+            <LensPicker serverId={workspaceId} conversationId={conversationId} />
+          )}
+          {isChannel && <PinnedMessagesButton />}
+          <ChannelSearchButton
+            conversationId={conversationId}
+            displayTitle={displayTitle}
+            openSearch={openSearch}
+          />
+          {conversation && workspaceId && (
+            <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
+          )}
+        </div>
       )}
+      <InviteDialog open={inviteOpen && !isGuest} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }

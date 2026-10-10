@@ -18,9 +18,8 @@ is the backstop: it should only ever fire for errors outside any surface (routin
 providers, or a bug in the shell chrome itself).
 
 **`SurfaceErrorBoundary`** wraps an individual pane inside `WorkspaceShell` —
-Conversation, Thread, Tool panel, Settings, Incidents, Audit log, and the three
-conversation side-panels (Pinned messages, Incident timeline, Postmortem). A crash in
-one pane shows a contained, in-pane fallback (surface name, error message,
+Conversation, Thread, Tool panel, Settings, Audit log, and the Pinned messages
+side-panel. A crash in one pane shows a contained, in-pane fallback (surface name, error message,
 Retry/Report buttons) while the rest of the shell — including the WebSocket
 subscription and `KeybindProvider`, which live above these boundaries in
 `WorkspaceShell` — stays mounted and functional. This is the default choice for any
@@ -57,35 +56,23 @@ Rule of thumb: pass the id(s) that identify what the surface is currently showin
 - Conversation pane → `[selectedConversationId]`
 - Thread pane → `[selectedRootMessageId]`
 - Tool panel → `[selectedConversationId]` (its content follows the active conversation)
-- Settings / Incidents / Audit log → `[]` (nothing to scope to; these are single-instance
-  pages, so only Retry recovers them)
-- Conversation side-panels (Pinned messages, Incident timeline, Postmortem) →
-  `[selectedConversationId]` — they only render while a conversation is selected, and
-  their content is scoped to that conversation.
+- Settings / Audit log → `[]` (nothing to scope to; these are single-instance pages, so
+  only Retry recovers them)
+- Conversation side-panels (Pinned messages) → `[selectedConversationId]` — they only
+  render while a conversation is selected, and their content is scoped to that
+  conversation.
 
 ## Current wiring
 
-`WorkspaceShell` (`src/shell/layouts/AppShell.tsx`) wraps nine surfaces — the
+`WorkspaceShell` (`src/shell/layouts/AppShell.tsx`) wraps six surfaces — the
 conversation surface's list is complete:
 
 - Tool panel — `resetKeys={[selectedConversationId]}`
 - Conversation (`ConversationHeader` + `MessageTimeline`) — `resetKeys={[selectedConversationId]}`
 - Thread (`ThreadPanel`) — `resetKeys={[selectedRootMessageId]}`
 - Pinned messages (`PinnedMessagesPanel`) — `resetKeys={[selectedConversationId]}`
-- Incident timeline (`IncidentTimelinePanel`) — `resetKeys={[selectedConversationId]}`
-- Postmortem (`PostmortemPreview`) — `resetKeys={[selectedConversationId]}`
 - Settings (`SettingsPage`) — `resetKeys={[]}`
-- Incidents (`IncidentsHub`) — `resetKeys={[]}`
 - Audit log (`AuditLogPage`) — `resetKeys={[]}`
-
-`IncidentsHub` (Track C1) additionally wraps each of its three sub-tabs in its own
-`SurfaceErrorBoundary`, finer-grained than the outer Incidents boundary above — a
-crash in the On-call or Escalation editor doesn't take the whole hub (or the History
-tab) down with it:
-
-- History (`IncidentHistoryPage`, `embedded`) — `resetKeys={[activeTab]}`
-- On-call (`OnCallSubTab`) — `resetKeys={[activeTab]}`
-- Escalation (`EscalationSubTab`) — `resetKeys={[activeTab]}`
 
 ## Adding a new surface
 

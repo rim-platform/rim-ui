@@ -26,7 +26,7 @@ interface SurfaceErrorBoundaryState {
 
 /**
  * Contained, per-pane error boundary for RIM's shell surfaces (Conversation,
- * Thread, Tool panel, Settings, Incidents, Audit log, …).
+ * Thread, Tool panel, Settings, Audit log, …).
  *
  * Unlike the full-screen {@link https://react.dev/reference/react/Component AppErrorBoundary},
  * this renders a compact in-pane fallback so a crash in one surface doesn't

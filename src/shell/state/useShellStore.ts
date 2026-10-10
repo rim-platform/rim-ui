@@ -15,12 +15,6 @@ export type MainSurface =
   | { kind: "settings"; tab?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
-  /**
-   * Opens the Incidents hub. Pass an optional `tab` to land on a specific sub-tab (e.g.
-   * `"oncall"` — used by the `oncall.who` command and the status-bar `OnCallIndicator`).
-   * Falls back to `"history"` when absent. Same trick as the `settings` surface's `tab`.
-   */
-  | { kind: "incidents"; tab?: "history" | "oncall" | "escalation" }
   | { kind: "audit-log" };
 
 export type ActivePluginPanel = {

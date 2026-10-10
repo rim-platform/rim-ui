@@ -6,10 +6,10 @@
  * item acknowledged, and keeps the delegations of workspaces elsewhere fresh.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
-import { applyWorkspaceEvent, type AckMutate } from "../../../core/events/useWorkspaceEvents";
+import { applyWorkspaceEvent } from "../../../core/events/useWorkspaceEvents";
 import type { WorkspaceEvent } from "../../../core/events/types";
 import { setSpaceRouter } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
@@ -18,7 +18,6 @@ import { logger } from "../../../core/logger";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { keyBackend } from "../../key-identity/api/keyBackend";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
@@ -85,21 +84,16 @@ async function refetchSpace(qc: QueryClient, spaceId: string, conversationIds: s
   requestCacheSync(spaceId, conversationIds.length > 0 ? conversationIds : undefined);
 }
 
-function applyRelayEvent(
-  qc: QueryClient,
-  ack: AckMutate,
-  event: WorkspaceEvent,
-  spaceId: string,
-): void {
+function applyRelayEvent(qc: QueryClient, event: WorkspaceEvent, spaceId: string): void {
   if (event.type === "DmInvite") {
     rememberRelays(event.from_principal_id, cardRelays(event.from_card));
     void qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
     return;
   }
-  applyWorkspaceEvent(event, qc, spaceId, ack);
+  applyWorkspaceEvent(event, qc, spaceId);
 }
 
-async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Promise<() => void> {
+async function start(userId: string, qc: QueryClient): Promise<() => void> {
   const info = await fetchRelayInfo();
   const me = await fetchRelayMe();
   if (me.id !== userId || !me.principalId) {
@@ -147,7 +141,7 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
     },
     streamHeads: fetchStreamHeads,
     refetchSpace: (spaceId, conversations) => refetchSpace(qc, spaceId, conversations),
-    apply: (event, spaceId) => applyRelayEvent(qc, ack(), event, spaceId),
+    apply: (event, spaceId) => applyRelayEvent(qc, event, spaceId),
     ack: async (upTo) => {
       await ackRelayItems(upTo);
       await putRecord<CursorRecord>("meta", { account: key, name: CURSOR, after: upTo });
@@ -201,7 +195,7 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
   // Back after the socket was down: delegations may have lapsed meanwhile.
   const offReconnect = onWsConnected(renewInBackground);
   const stopDirect = await startDirect(account, key, (event, spaceId) =>
-    applyRelayEvent(qc, ack(), event, spaceId),
+    applyRelayEvent(qc, event, spaceId),
   );
 
   return () => {
@@ -218,12 +212,6 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
 export function useRelayRuntime() {
   const userId = useAuthStore((s) => s.session?.userId);
   const qc = useQueryClient();
-  const execute = useExecuteCommandMutation();
-  const ackRef = useRef(execute.mutate);
-  useEffect(() => {
-    ackRef.current = execute.mutate;
-  });
-
   useEffect(() => {
     if (!userId) return;
     let stop: (() => void) | null = null;
@@ -231,7 +219,7 @@ export function useRelayRuntime() {
     const boot = () => {
       stop?.();
       stop = null;
-      start(userId, qc, () => ackRef.current)
+      start(userId, qc)
         .then((stopper) => {
           if (cancelled) stopper();
           else stop = stopper;

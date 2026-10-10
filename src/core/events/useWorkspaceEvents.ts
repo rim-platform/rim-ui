@@ -3,12 +3,11 @@ import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { logger } from "../logger";
 import { toast } from "../../shared/toast";
-import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS, VOLATILE_GLOBAL_KEY_ROOTS } from "../query/keys";
+import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { WorkspaceEvent, MessageEventData } from "./types";
 import type { MessageItem, MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
-import { useExecuteCommandMutation } from "../../features/commands/api/useCommands";
 import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
 import { hostOf } from "../../features/relay/state/useRelayStore";
@@ -48,8 +47,8 @@ const WORKSPACE_EVENTS_QUERY = `
  * disconnect are currently lost (there's no resume-since-cursor yet), so on
  * reconnect we must assume anything workspace-scoped that flows through
  * `workspaceEvents` may be stale. We invalidate only the active workspace's
- * volatile server-state keys (`VOLATILE_WORKSPACE_KEY_ROOTS` /
- * `VOLATILE_GLOBAL_KEY_ROOTS` in `core/query/keys.ts`) rather than the whole
+ * volatile server-state keys (`VOLATILE_WORKSPACE_KEY_ROOTS` in
+ * `core/query/keys.ts`) rather than the whole
  * cache, and skip the very first connect (initial page load already fetches
  * everything fresh). Track B will add a resume-since-cursor to the
  * subscription so reconnects can replay only what was actually missed,
@@ -61,14 +60,6 @@ export function useWorkspaceEvents(workspaceId: string | null) {
   const workspaceIdRef = useRef(workspaceId);
   workspaceIdRef.current = workspaceId;
   const hasConnectedRef = useRef(false);
-
-  // Ack from the paged-toast inline action dispatches through the same `incident.ack`
-  // command as the banner button and keybind (see IncidentBanner.tsx / commandDispatcher.ts).
-  // Kept in a ref (same pattern as `workspaceIdRef`) so the subscription effect below
-  // doesn't need to resubscribe every time the mutation object's identity changes.
-  const executeCommandMutation = useExecuteCommandMutation();
-  const executeCommandRef = useRef(executeCommandMutation);
-  executeCommandRef.current = executeCommandMutation;
 
   // Invalidate the active workspace's volatile queries on WebSocket reconnect
   // to catch up on missed events (see file-header comment for the strategy).
@@ -83,9 +74,6 @@ export function useWorkspaceEvents(workspaceId: string | null) {
       logger.debug("[RIM:WS] Reconnected — invalidating active-workspace volatile keys");
       for (const root of VOLATILE_WORKSPACE_KEY_ROOTS) {
         qc.invalidateQueries({ queryKey: [root, wsId] });
-      }
-      for (const root of VOLATILE_GLOBAL_KEY_ROOTS) {
-        qc.invalidateQueries({ queryKey: [root] });
       }
       toast.success("Reconnected", {
         id: "ws-reconnect",
@@ -115,7 +103,7 @@ export function useWorkspaceEvents(workspaceId: string | null) {
 
           try {
             const event: WorkspaceEvent = JSON.parse(result.data.workspaceEvents);
-            applyWorkspaceEvent(event, qc, workspaceId, executeCommandRef.current.mutate);
+            applyWorkspaceEvent(event, qc, workspaceId);
           } catch (err) {
             logger.warn("[RIM:WS] Failed to parse event:", err);
           }
@@ -162,8 +150,6 @@ function eventMessageToCache(msg: MessageEventData): MessageItem {
   };
 }
 
-export type AckMutate = ReturnType<typeof useExecuteCommandMutation>["mutate"];
-
 /**
  * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
  * this server hosts, or a verified host event from the relay for a space elsewhere.
@@ -172,7 +158,6 @@ export function applyWorkspaceEvent(
   event: WorkspaceEvent,
   qc: ReturnType<typeof useQueryClient>,
   workspaceId: string,
-  ackIncident: AckMutate,
 ) {
   // Real-time message events carry no change-feed version; for the local message cache they
   // are only a signal to ask the feed for that conversation (no-op outside the desktop app).
@@ -556,93 +541,6 @@ export function applyWorkspaceEvent(
         pipelineName: event.pipeline_name,
         reason: event.reason,
       });
-      break;
-    }
-
-    // Incident UI (IncidentTimelinePanel, IncidentHistoryPage, the active-incident
-    // banner) is TanStack-Query-driven, so scoped cache invalidation is sufficient —
-    // no new event-bus channel needed. Pipelines already react to incident events
-    // server-side (track-b2-alerts.md §8), so the frontend does not re-trigger
-    // anything here.
-    case "IncidentDeclared": {
-      qc.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, event.conversation_id),
-      });
-      // Broad prefix — listIncidents keys status/severity filters after serverId.
-      qc.invalidateQueries({ queryKey: ["listIncidents", workspaceId] });
-      qc.invalidateQueries({
-        queryKey: queryKeys.incidentTimeline(event.incident_id),
-      });
-      toast.info(`Incident declared: ${event.title}`, {
-        description: event.severity ? `Severity: ${event.severity}` : undefined,
-      });
-      break;
-    }
-
-    case "IncidentUpdated": {
-      qc.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, event.conversation_id),
-      });
-      qc.invalidateQueries({ queryKey: ["listIncidents", workspaceId] });
-      qc.invalidateQueries({
-        queryKey: queryKeys.incidentTimeline(event.incident_id),
-      });
-      // No toast here (unlike IncidentDeclared) — repeated alert firings on the
-      // same incident would otherwise spam the user; cache invalidation alone
-      // keeps the query-driven incident panels current.
-      break;
-    }
-
-    case "EscalationStepFired": {
-      qc.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, event.conversation_id),
-      });
-      qc.invalidateQueries({ queryKey: ["listIncidents", workspaceId] });
-      qc.invalidateQueries({ queryKey: queryKeys.incidentTimeline(event.incident_id) });
-
-      const me = qc.getQueryData<{ id: string }>(queryKeys.me);
-      if (me && event.target_user_ids.includes(me.id)) {
-        const incidentId = event.incident_id;
-        toast.warning("You're being paged for an incident", {
-          id: `paged-${incidentId}`,
-          persistent: true,
-          description: "An escalation step just fired — ack to stop further escalation.",
-          action: {
-            label: "Ack",
-            onClick: () => {
-              // Dispatches the SAME `incident.ack` command as the banner button and
-              // keybind — see IncidentBanner.tsx / commandDispatcher.ts.
-              ackIncident(
-                { commandId: "incident.ack", args: { incidentId } },
-                {
-                  onSuccess: (res) => {
-                    if (res.executeCommand.status === "ERROR") {
-                      toast.error(res.executeCommand.message || "Failed to acknowledge incident");
-                      return;
-                    }
-                    qc.invalidateQueries({
-                      queryKey: queryKeys.activeIncident(workspaceId, event.conversation_id),
-                    });
-                    qc.invalidateQueries({ queryKey: queryKeys.incidentTimeline(incidentId) });
-                    toast.dismiss(`paged-${incidentId}`);
-                  },
-                  onError: () => toast.error("Failed to acknowledge incident"),
-                },
-              );
-            },
-          },
-        });
-      }
-      break;
-    }
-
-    case "IncidentAcknowledged": {
-      qc.invalidateQueries({
-        queryKey: queryKeys.activeIncident(workspaceId, event.conversation_id),
-      });
-      qc.invalidateQueries({ queryKey: ["listIncidents", workspaceId] });
-      qc.invalidateQueries({ queryKey: queryKeys.incidentTimeline(event.incident_id) });
-      toast.dismiss(`paged-${event.incident_id}`);
       break;
     }
   }

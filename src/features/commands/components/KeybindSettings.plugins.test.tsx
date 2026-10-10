@@ -24,9 +24,6 @@ vi.mock("../api/useKeybindSettings", () => ({
   useUpdateKeybindMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteKeybindMutation: () => ({ mutate: vi.fn() }),
 }));
-vi.mock("../../workspaces/hooks/useFeatureEnabled", () => ({
-  useIsCommandAvailable: () => () => true,
-}));
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ workspaceId: "ws-1" }),

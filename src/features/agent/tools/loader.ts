@@ -25,7 +25,6 @@ import { ConfirmationRequiredError } from "../runtime/confirmationGate";
 import { getCurrentCommandContext } from "./commandContext";
 import { registerGetCurrentContextTool } from "./getCurrentContext";
 import { buildAiToolFromCommand, buildAiToolRegistrationOptions } from "./generator";
-import { invalidateAfterCommand } from "./postExecution";
 import { registerTool, getAllTools, getTool, unregisterTool } from "./registry";
 import type { AiToolHandler, RegisteredTool } from "./types";
 
@@ -56,9 +55,8 @@ const EXECUTE_COMMAND_MUTATION = gql`
   }
 `;
 
-// Sent with the active workspace as context (Track 0.4): the server drops commands whose
-// workspace feature is off and hides feature-gated commands entirely when no workspace is
-// given, so the AI surface is per workspace just like the palette.
+// Sent with the active workspace as context, so the AI surface is per workspace just like
+// the palette.
 const AI_COMMANDS_QUERY = gql`
   query AgentListAiCommands($commandContext: CommandContextInput) {
     commands(surface: AI, commandContext: $commandContext) {
@@ -179,12 +177,6 @@ function interpretResult(
   result: CommandResult,
 ): string {
   if (result.status === CommandResultStatus.SUCCESS) {
-    // Agent tool calls bypass commandDispatcher entirely, so this is the
-    // only choke point for cache invalidation on this path (covers both the
-    // one-shot call and the post-confirmation-proof re-call, since
-    // executeCommandWithProof flows through here too). Scoped to the two C2
-    // incident commands only — see postExecution.ts doc comment.
-    invalidateAfterCommand(commandId, args);
     return payloadToString(result.payload);
   }
   if (result.status === CommandResultStatus.CONFIRMATION_REQUIRED) {
