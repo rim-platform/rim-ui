@@ -3,8 +3,7 @@ import { useConnectionStore } from "../../features/system/state/useConnectionSto
 import { useShellStore } from "../state/useShellStore";
 import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
-import { DisclosureGate } from "../../features/disclosure/components/DisclosureGate";
-import { SkillTier, WorkspaceFeature } from "../../core/graphql/generated/schema-types";
+import { WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 import { surfaceToContext } from "../../features/commands/runtime/keybindEngine";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { OnCallIndicator } from "../../features/oncall/components/OnCallIndicator";
@@ -107,13 +106,11 @@ export function StatusBar() {
             {displayDensity === "compact" ? "Compact" : "Ultra Compact"}
           </span>
         )}
-        <DisclosureGate minTier={SkillTier.INTERMEDIATE}>
-          {activePresetName && (
-            <span className="rounded bg-rim-warm/20 px-1.5 py-px font-medium text-rim-warm">
-              {activePresetName}
-            </span>
-          )}
-        </DisclosureGate>
+        {activePresetName && (
+          <span className="rounded bg-rim-warm/20 px-1.5 py-px font-medium text-rim-warm">
+            {activePresetName}
+          </span>
+        )}
         {vimMode && (
           <span
             role="status"
