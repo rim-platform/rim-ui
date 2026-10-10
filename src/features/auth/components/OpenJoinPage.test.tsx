@@ -112,7 +112,6 @@ describe("OpenJoinPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
     await user.click(screen.getByRole("button", { name: /finish key signup/i }));
 

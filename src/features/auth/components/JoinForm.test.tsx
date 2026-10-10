@@ -479,11 +479,13 @@ describe("JoinForm — create account with a key", () => {
     expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
   });
 
-  it("is offered next to the password form, which stays the default", () => {
+  it("is the default on the desktop, with the password form behind the toggle", () => {
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
-    expect(screen.getByRole("button", { name: /create account with a key/i })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
-    expect(screen.queryByTestId("key-signup")).toBeNull();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /create account with a password/i }),
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -491,11 +493,8 @@ describe("JoinForm — create account with a key", () => {
     [InviteTokenType.INSTANCE, "inst-tok", { instanceInviteToken: "inst-tok" }],
     [InviteTokenType.BOOTSTRAP, "boot-tok", { bootstrapToken: "boot-tok" }],
     ["OPEN" as const, null, {}],
-  ])("%s: hands the page's token to the key form", async (variant, token, expected) => {
-    const user = userEvent.setup();
+  ])("%s: hands the page's token to the key form", (variant, token, expected) => {
     renderVariant(variant, token);
-
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
 
     expect(screen.queryByPlaceholderText("password")).toBeNull();
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual(expected);
@@ -506,7 +505,6 @@ describe("JoinForm — create account with a key", () => {
     const onSuccess = vi.fn();
     renderVariant(InviteTokenType.WORKSPACE, "ws-tok", onSuccess);
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     await user.click(screen.getByRole("button", { name: /finish key signup/i }));
 
     expect(onSuccess).toHaveBeenCalledWith("user-key", "server-key");
@@ -517,7 +515,6 @@ describe("JoinForm — create account with a key", () => {
     const user = userEvent.setup();
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     await user.click(screen.getByRole("button", { name: /start key signup/i }));
 
     expect(screen.getByRole("button", { name: /create account with a password/i })).toBeDisabled();
@@ -535,14 +532,18 @@ describe("JoinForm — create account with a key", () => {
     expect(screen.queryByRole("button", { name: /create account with a password/i })).toBeNull();
   });
 
-  it("goes back to the password form", async () => {
+  it("switches to the password form and back", async () => {
     const user = userEvent.setup();
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     await user.click(screen.getByRole("button", { name: /create account with a password/i }));
 
     expect(screen.queryByTestId("key-signup")).toBeNull();
     expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
+
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
   });
 });
