@@ -1,7 +1,7 @@
 /**
  * The relay as the UI sees it: whether this server runs as a relay (`relayInfo`), the account
  * that uses it, the spaces this account uses on other servers, servers whose identity forked,
- * and spaces whose events may be missing.
+ * spaces whose events may be missing, and why a host refused a space's last renewal.
  */
 
 import { create } from "zustand";
@@ -25,6 +25,13 @@ export interface RelayAccount {
   deviceId: string | null;
 }
 
+/** One answer of `renewDelegations`. */
+export interface RenewalAnswer {
+  workspaceId: string;
+  status: string;
+  reason?: string | null;
+}
+
 /** A space whose events may be missing after reconciling failed. */
 export interface MissingNotice {
   spaceId: string;
@@ -42,12 +49,15 @@ interface RelayState {
   missing: Record<string, MissingNotice>;
   /** Where each pinned server was fetched from, by server id. */
   origins: Record<string, string>;
+  /** Why the host refused each space's last renewal, by space id; absent once one succeeds. */
+  refusals: Record<string, string | null>;
   setStarted: (info: RelayInfo, account: RelayAccount, spaces: SpaceRecord[]) => void;
   addSpace: (space: SpaceRecord) => void;
   markForked: (serverId: string) => void;
   setMissing: (notice: MissingNotice) => void;
   clearMissing: (spaceId: string) => void;
   setOrigin: (serverId: string, origin: string) => void;
+  noteRenewals: (answers: RenewalAnswer[]) => void;
   reset: () => void;
 }
 
@@ -58,6 +68,7 @@ export const useRelayStore = create<RelayState>((set) => ({
   forked: [],
   missing: {},
   origins: {},
+  refusals: {},
   setStarted: (info, account, spaces) =>
     set({ info, account, spaces: Object.fromEntries(spaces.map((s) => [s.spaceId, s])) }),
   addSpace: (space) => set((s) => ({ spaces: { ...s.spaces, [space.spaceId]: space } })),
@@ -78,7 +89,25 @@ export const useRelayStore = create<RelayState>((set) => ({
     set((s) =>
       s.origins[serverId] === origin ? s : { origins: { ...s.origins, [serverId]: origin } },
     ),
-  reset: () => set({ info: null, account: null, spaces: {}, forked: [], missing: {}, origins: {} }),
+  noteRenewals: (answers) =>
+    set((s) => {
+      const refusals = { ...s.refusals };
+      for (const answer of answers) {
+        if (answer.status === "active") delete refusals[answer.workspaceId];
+        else refusals[answer.workspaceId] = answer.reason ?? null;
+      }
+      return { refusals };
+    }),
+  reset: () =>
+    set({
+      info: null,
+      account: null,
+      spaces: {},
+      forked: [],
+      missing: {},
+      origins: {},
+      refusals: {},
+    }),
 }));
 
 /** Whether `spaceId` is a direct space: this relay's or one on another relay. */

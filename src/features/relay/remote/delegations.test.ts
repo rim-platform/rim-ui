@@ -5,6 +5,7 @@ import {
   DELEGATION_MS,
   delegationFields,
   needsRenewal,
+  refusalText,
   RENEW_BATCH,
   RENEW_BEFORE_MS,
   renewDue,
@@ -109,7 +110,13 @@ describe("renewing delegations", () => {
     const records = new Map<string, DelegationRecord>();
     const { d } = deps(records, {
       renew: vi.fn(async () => [
-        { hostServerId: "rims1_host", workspaceId: "w", status: "refused", expiresAt: null },
+        {
+          hostServerId: "rims1_host",
+          workspaceId: "w",
+          status: "refused",
+          expiresAt: null,
+          reason: "not_member",
+        },
       ]),
     });
     await renewDue([{ workspaceId: "w", host: "rims1_host" }], d);
@@ -128,5 +135,18 @@ describe("renewing delegations", () => {
     expect(d.renew).not.toHaveBeenCalled();
     await renewDue(spaces, d, true);
     expect(vi.mocked(d.renew).mock.calls.map((c) => c[0].length)).toEqual([RENEW_BATCH, 3]);
+  });
+});
+
+describe("refusalText", () => {
+  it("names a host's reason in words, and an unknown one as it is", () => {
+    expect(refusalText("not_member")).toBe(
+      "The last renewal was refused: this account is no longer a member there.",
+    );
+    expect(refusalText("upstream_unavailable")).toBe(
+      "The last renewal was refused: the server could not be reached; it is tried again later.",
+    );
+    expect(refusalText("peer_forked")).toBe("The last renewal was refused: peer_forked.");
+    expect(refusalText(null)).toBe("The last renewal was refused: no reason given.");
   });
 });

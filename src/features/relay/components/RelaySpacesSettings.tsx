@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { Button } from "../../../shared/ui/Button";
 import { fetchRemoteSubscriptions } from "../api/relayApi";
+import { refusalText } from "../remote/delegations";
 import { delegationRecords, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { useRelayStore } from "../state/useRelayStore";
 
@@ -14,13 +15,14 @@ function when(value: string | number | null | undefined): string {
 /**
  * Settings > Security > "Spaces through this relay": the workspaces on other servers this
  * relay carries for the person, the host's status for each, when this device's delegation for
- * it runs out, and a way to renew them now.
+ * it runs out, why the host refused its last renewal, and a way to renew them now.
  */
 export function RelaySpacesSettings() {
   const qc = useQueryClient();
   const relayOn = useRelayStore((s) => s.account !== null);
   const spaces = useRelayStore((s) => s.spaces);
   const origins = useRelayStore((s) => s.origins);
+  const refusals = useRelayStore((s) => s.refusals);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const subscriptions = useQuery({
@@ -82,6 +84,11 @@ export function RelaySpacesSettings() {
                   {when(row.expiresAt)} · this device&apos;s delegation until{" "}
                   {when(mine?.expiresAt)}
                 </p>
+                {row.workspaceId in refusals && (
+                  <p className="text-xs text-rim-warm">
+                    {refusalText(refusals[row.workspaceId] ?? null)}
+                  </p>
+                )}
               </li>
             );
           })}

@@ -47,6 +47,29 @@ export function needsRenewal(record: DelegationRecord | null, relay: string, now
   return !record || record.relay !== relay || record.expiresAt - now < RENEW_BEFORE_MS;
 }
 
+/** Why a host refused a delegation, by the reason its answer names. */
+const REFUSALS: Record<string, string> = {
+  not_member: "this account is no longer a member there",
+  banned: "this account is banned there",
+  expired: "the delegation had expired",
+  revoked_device: "this device was removed from the account",
+  unknown_device: "the server does not know this device",
+  relay_key: "the server no longer accepts this relay's key",
+  wrong_relay: "the delegation names another relay",
+  wrong_host: "the delegation names another server",
+  bad_signature: "the delegation's signature did not verify",
+  invalid_delegation: "the delegation could not be read",
+  limited: "too many delegations at once; it is tried again later",
+  rate_limited: "too many requests; it is tried again later",
+  upstream_unavailable: "the server could not be reached; it is tried again later",
+};
+
+/** The sentence saying why the last renewal for a workspace was refused. */
+export function refusalText(reason: string | null): string {
+  const why = reason ? (REFUSALS[reason] ?? reason) : "no reason given";
+  return `The last renewal was refused: ${why}.`;
+}
+
 /** A workspace elsewhere that this account uses. */
 export interface RemoteWorkspace {
   workspaceId: string;
@@ -108,7 +131,7 @@ export async function renewDue(
       const answer = answers[at];
       if (answer && answer.status !== "active") {
         logger.warn(
-          `[RIM:relay] ${entry.space.host} refused the delegation for ${entry.space.workspaceId}: ${answer.status}`,
+          `[RIM:relay] ${entry.space.host} refused the delegation for ${entry.space.workspaceId}: ${answer.reason ?? answer.status}`,
         );
         continue;
       }
