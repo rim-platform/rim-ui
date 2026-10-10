@@ -1,0 +1,74 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import vectors from "../../../../protocol/relay-vectors.json";
+
+const remote = vi.hoisted(() => ({ joinWithInvite: vi.fn() }));
+vi.mock("../../relay/remote/remoteWorkspaces", () => remote);
+const local = vi.hoisted(() => ({ mutate: vi.fn() }));
+vi.mock("../api/useJoinServer", () => ({
+  useJoinServerMutation: () => ({ ...local, reset: vi.fn(), isPending: false, error: null }),
+}));
+
+import { useWorkspaceStore } from "../state/useWorkspaceStore";
+import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
+
+const LINK = `rim-invite:1:${vectors.host.serverId}:${vectors.host.keyHash}:rim_inv_x:https://host.example`;
+
+function renderDialog(onClose = vi.fn()) {
+  const qc = new QueryClient();
+  render(
+    <QueryClientProvider client={qc}>
+      <AddWorkspaceDialog onClose={onClose} />
+    </QueryClientProvider>,
+  );
+  return onClose;
+}
+
+beforeEach(() => vi.clearAllMocks());
+
+describe("AddWorkspaceDialog", () => {
+  it("joins a workspace on another server from a rim-invite link", async () => {
+    const user = userEvent.setup();
+    remote.joinWithInvite.mockResolvedValue({
+      hostServerId: vectors.host.serverId,
+      workspaceId: "ws-remote",
+      role: "member",
+    });
+    const onClose = renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.click(screen.getByRole("textbox"));
+    await user.paste(LINK);
+    expect(screen.getByText(/This workspace is on another server/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Join" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(remote.joinWithInvite.mock.calls[0][0]).toBe(LINK);
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-remote");
+    expect(local.mutate).not.toHaveBeenCalled();
+  });
+
+  it("shows why a remote join failed", async () => {
+    const user = userEvent.setup();
+    remote.joinWithInvite.mockRejectedValue(
+      new Error("This invite names a key the server no longer uses."),
+    );
+    renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.click(screen.getByRole("textbox"));
+    await user.paste(LINK);
+    await user.click(screen.getByRole("button", { name: "Join" }));
+    expect(await screen.findByText(/names a key the server no longer uses/)).toBeInTheDocument();
+  });
+
+  it("keeps plain invite codes on this server", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.type(screen.getByRole("textbox"), "rim_inv_local");
+    await user.click(screen.getByRole("button", { name: "Join" }));
+    expect(local.mutate).toHaveBeenCalledWith("rim_inv_local", expect.anything());
+    expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+});

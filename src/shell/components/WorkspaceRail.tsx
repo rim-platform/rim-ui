@@ -15,6 +15,16 @@ export function WorkspaceRail() {
   const { data: servers } = useMyServers();
   const [showCreate, setShowCreate] = useState(false);
   const directSpaceId = useRelayStore((s) => s.info?.directSpaceId ?? null);
+  const remoteSpaces = useRelayStore((s) => s.spaces);
+  const origins = useRelayStore((s) => s.origins);
+  const forked = useRelayStore((s) => s.forked);
+  const elsewhere = Object.values(remoteSpaces)
+    .filter((space) => space.kind === "workspace" && !forked.includes(space.hostServerId))
+    .map((space) => ({
+      id: space.spaceId,
+      name: space.name ?? "Workspace",
+      where: origins[space.hostServerId] ?? space.hostServerId,
+    }));
   const inDirectSpace = useRelayStore(
     (s) =>
       Boolean(workspaceId) &&
@@ -46,13 +56,16 @@ export function WorkspaceRail() {
         </button>
       )}
 
-      {servers?.map((server) => {
+      {[
+        ...(servers ?? []).map((server) => ({ ...server, where: null as string | null })),
+        ...elsewhere,
+      ].map((server) => {
         const active = server.id === workspaceId;
         return (
           <button
             key={server.id}
             type="button"
-            title={server.name}
+            title={server.where ? `${server.name} (on ${server.where})` : server.name}
             onClick={() => setWorkspaceId(server.id)}
             onMouseEnter={() =>
               useHoverContextStore.getState().setTarget({
