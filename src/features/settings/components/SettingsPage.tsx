@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { UserCommandSettings } from "../../commands/components/UserCommandSettings";
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
+import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { ProfileSettings } from "./ProfileSettings";
@@ -187,6 +188,7 @@ type SettingsTab =
   | "emoji"
   | "state"
   | "agent"
+  | "messages"
   | "notifications"
   | "history"
   | "workspace"
@@ -207,6 +209,7 @@ const tabs: { key: SettingsTab; label: string }[] = [
   { key: "emoji", label: "Emoji" },
   { key: "state", label: "State" },
   { key: "agent", label: "AI Agent" },
+  { key: "messages", label: "Messages" },
   { key: "notifications", label: "Notifications" },
   { key: "history", label: "History" },
   { key: "workspace", label: "Workspace" },
@@ -310,6 +313,7 @@ export function SettingsPage() {
             {shownTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
             {shownTab === "state" && <WorkspaceStateSettings serverId={workspaceId ?? undefined} />}
             {shownTab === "agent" && <AgentSettingsPanel />}
+            {shownTab === "messages" && <MessageDisplaySettings />}
             {shownTab === "notifications" && <NotificationSettings />}
             {shownTab === "history" && <HistoryArchiveSettings />}
             {shownTab === "workspace" && (

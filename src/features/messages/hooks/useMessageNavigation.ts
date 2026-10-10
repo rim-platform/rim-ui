@@ -30,6 +30,13 @@ interface UseMessageNavigationOptions {
   scrollToIndex: (index: number) => void;
 }
 
+const ROW_CONTROL = "button, a[href], video, audio, [role='button']";
+
+/** True when `target` is an interactive element inside the list rather than the list itself. */
+function isRowControl(target: HTMLElement, list: EventTarget): boolean {
+  return target !== list && target.closest(ROW_CONTROL) !== null;
+}
+
 export function useMessageNavigation({
   items,
   conversationId,
@@ -110,6 +117,10 @@ export function useMessageNavigation({
       // Skip when a text input is focused (e.g. message edit textarea)
       const target = e.target as HTMLElement;
       if (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable) {
+        return;
+      }
+      // Enter and Space belong to a focused control inside a row (copy, embed, quote, mention).
+      if ((e.key === "Enter" || e.key === " ") && isRowControl(target, e.currentTarget)) {
         return;
       }
 

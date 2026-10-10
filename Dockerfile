@@ -67,7 +67,7 @@ server {
     # styles at build time; tightening to a nonce requires build-pipeline changes
     # beyond this scope (flagged per spec M2 review note). 'wasm-unsafe-eval' lets the
     # page compile the encrypted conversations' MLS module (WebAssembly), nothing else.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
 
     # Gzip compression
     gzip on;

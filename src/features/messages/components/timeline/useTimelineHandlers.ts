@@ -3,6 +3,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useEditMessageMutation } from "../../api/useEditMessage";
 import { useToggleReactionMutation } from "../../api/useToggleReaction";
 import { useShellStore } from "../../../../shell/state/useShellStore";
+import { toast } from "../../../../shared/toast";
 import type { MessageItemHandlers } from "../MessageItem";
 
 export interface TimelineContextMenu {
@@ -111,6 +112,16 @@ export function useTimelineHandlers({
     [],
   );
 
+  const handleJumpToMessage = useCallback((messageId: string) => {
+    if (itemsRef.current.some((m) => m.id === messageId)) {
+      useShellStore.getState().setHighlightedMessageId(messageId);
+    } else {
+      toast.info("The original message is not loaded", {
+        description: "Scroll up to load older messages.",
+      });
+    }
+  }, []);
+
   const handlers = useMemo<MessageItemHandlers>(
     () => ({
       onOpenThread: openThread,
@@ -119,6 +130,7 @@ export function useTimelineHandlers({
       onSaveEdit: handleSaveEdit,
       onCancelEdit: handleCancelEdit,
       onNavigateToForwardedSource: handleNavigateToForwardedSource,
+      onJumpToMessage: handleJumpToMessage,
     }),
     [
       openThread,
@@ -127,6 +139,7 @@ export function useTimelineHandlers({
       handleSaveEdit,
       handleCancelEdit,
       handleNavigateToForwardedSource,
+      handleJumpToMessage,
     ],
   );
 

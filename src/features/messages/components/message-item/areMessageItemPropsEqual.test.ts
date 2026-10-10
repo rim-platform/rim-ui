@@ -53,6 +53,21 @@ describe("areMessageItemPropsEqual", () => {
     expect(areMessageItemPropsEqual(makeProps(), next)).toBe(false);
   });
 
+  it("compares the reply quote by value", () => {
+    const quote = { messageId: "p-1", authorName: "Bob", excerpt: "hi" };
+    expect(
+      areMessageItemPropsEqual(makeProps({ replyTo: quote }), makeProps({ replyTo: { ...quote } })),
+    ).toBe(true);
+    expect(
+      areMessageItemPropsEqual(
+        makeProps({ replyTo: quote }),
+        makeProps({ replyTo: { ...quote, excerpt: "edited" } }),
+      ),
+    ).toBe(false);
+    expect(areMessageItemPropsEqual(makeProps({ replyTo: quote }), makeProps())).toBe(false);
+    expect(areMessageItemPropsEqual(makeProps({ replyTo: null }), makeProps())).toBe(true);
+  });
+
   it("detects a thread being started on the message", () => {
     const next = makeProps();
     next.view.message = { ...next.view.message, rootThreadId: "t-1" };

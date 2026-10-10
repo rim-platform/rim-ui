@@ -30,12 +30,23 @@ import { useTimelineHandlers } from "./timeline/useTimelineHandlers";
 import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
+import { replyQuoteFor } from "./message-item/replyQuote";
 import {
   NavigationHints,
   NewMessagesDivider,
   OlderMessagesLoader,
 } from "./timeline/TimelineChrome";
 import type { MessageMembers } from "./MessageItem";
+
+/** The name a row shows for a message's author. */
+function authorNameOf(msg: TimelineMessage, member: { displayName?: string | null }): string {
+  return (
+    member.displayName ||
+    msg.author?.displayName ||
+    msg.author?.username ||
+    msg.authorId.slice(0, 8)
+  );
+}
 
 export function MessageTimeline() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -82,6 +93,11 @@ export function MessageTimeline() {
   const items: TimelineMessage[] = timeline.items;
   const { isLensActive, activeLens } = timeline;
   const groups = useMemo(() => computeGroups(items), [items]);
+  const itemsById = useMemo(() => new Map(items.map((m) => [m.id, m])), [items]);
+  const mentionNameOf = useCallback(
+    (userId: string) => memberDisplayMap.get(userId),
+    [memberDisplayMap],
+  );
 
   const isAtBottomRef = useRef(true);
   const { firstNewIndex, dividerFading, onScrollPosition } = useNewMessagesDivider({
@@ -237,6 +253,15 @@ export function MessageTimeline() {
                 }
                 const member = memberLookup.resolve(msg.authorId);
                 const group = groups[row.index] ?? { isGrouped: false, isFirstInGroup: true };
+                const parent = msg.parentMessageId ? itemsById.get(msg.parentMessageId) : undefined;
+                const replyTo = msg.parentMessageId
+                  ? replyQuoteFor(
+                      msg.parentMessageId,
+                      parent,
+                      parent ? authorNameOf(parent, memberLookup.resolve(parent.authorId)) : null,
+                      mentionNameOf,
+                    )
+                  : null;
                 return (
                   <div
                     key={row.key}
@@ -249,12 +274,9 @@ export function MessageTimeline() {
                     <MessageItem
                       view={{
                         message: msg,
+                        replyTo,
                         author: {
-                          name:
-                            member.displayName ||
-                            msg.author?.displayName ||
-                            msg.author?.username ||
-                            msg.authorId.slice(0, 8),
+                          name: authorNameOf(msg, member),
                           avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
                           username: member.username ?? msg.author?.username,
                           statusText: member.statusText,

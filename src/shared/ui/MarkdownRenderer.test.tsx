@@ -1,7 +1,18 @@
 import "../../test/mocks/tauri";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+
+/** Replaces the clipboard (after userEvent installed its own) with a spy. */
+function stubClipboard() {
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+  });
+  return writeText;
+}
 
 describe("MarkdownRenderer", () => {
   it("renders basic markdown text", () => {
@@ -63,5 +74,67 @@ describe("MarkdownRenderer", () => {
       <MarkdownRenderer content="Hello :unknown: world" customEmojiMap={emojiMap} />,
     );
     expect(container.textContent).toContain(":unknown:");
+  });
+
+  it("highlights a fenced code block once the highlighter loads", async () => {
+    const { container } = render(<MarkdownRenderer content={"```ts\nconst x = 1;\n```"} />);
+    expect(container.querySelector("pre code")?.textContent).toBe("const x = 1;");
+    await waitFor(() => expect(container.querySelector("code.hljs .hljs-keyword")).not.toBeNull());
+    expect(container.querySelector("code")?.textContent).toBe("const x = 1;");
+  });
+
+  it("gives a code block a language label and a copy button", () => {
+    const { container } = render(<MarkdownRenderer content={"```rust\nfn main() {}\n```"} />);
+    expect(container.querySelector(".rim-code-language")?.textContent).toBe("rust");
+    expect(screen.getByRole("button", { name: "Copy rust code" })).toBeInTheDocument();
+  });
+
+  it("copies the code, not the header, when the copy button is clicked", async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(<MarkdownRenderer content={"```\nline one\nline two\n```"} />);
+    await user.click(screen.getByRole("button", { name: "Copy code" }));
+    expect(writeText).toHaveBeenCalledWith("line one\nline two");
+    expect(await screen.findByRole("button", { name: "Copied" })).toHaveTextContent("Copied");
+  });
+
+  it("copies with the keyboard", async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(<MarkdownRenderer content={"```sh\necho hi\n```"} />);
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Copy sh code" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(writeText).toHaveBeenCalledWith("echo hi");
+  });
+
+  it("does not add a copy button to inline code", () => {
+    render(<MarkdownRenderer content="`inline`" />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("renders blockquotes", () => {
+    const { container } = render(<MarkdownRenderer content="> a quote" />);
+    expect(container.querySelector("blockquote")?.textContent?.trim()).toBe("a quote");
+  });
+
+  it("renders Markdown images as links when inline media is off", () => {
+    const { container } = render(
+      <MarkdownRenderer content="![pic](https://example.com/p.png)" showInlineMedia={false} />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("link", { name: "pic" })).toHaveAttribute(
+      "href",
+      "https://example.com/p.png",
+    );
+  });
+
+  it("opens a link through the system opener", async () => {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    vi.mocked(openUrl).mockClear();
+    const user = userEvent.setup();
+    render(<MarkdownRenderer content="[safe](https://example.com)" />);
+    await user.click(screen.getByText("safe"));
+    await waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://example.com"));
   });
 });

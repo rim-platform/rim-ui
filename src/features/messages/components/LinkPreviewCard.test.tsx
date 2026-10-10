@@ -6,6 +6,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 import { LinkPreviewCard, type LinkPreview } from "./LinkPreviewCard";
+import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettingsStore";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 describe("LinkPreviewCard", () => {
   const fullPreview: LinkPreview = {
@@ -105,5 +107,48 @@ describe("LinkPreviewCard", () => {
     render(<LinkPreviewCard preview={fullPreview} />);
     const button = screen.getByRole("button");
     expect(button).toBeInTheDocument();
+  });
+
+  it("loads the preview image lazily without a referrer", () => {
+    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
+    const img = container.querySelector("img");
+    expect(img).toHaveAttribute("loading", "lazy");
+    expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
+  });
+
+  it("hides the preview image when inline media is off", () => {
+    useMessageDisplaySettingsStore.setState({ showInlineMedia: false });
+    try {
+      const { container } = render(<LinkPreviewCard preview={fullPreview} />);
+      expect(container.querySelector("img")).toBeNull();
+      expect(screen.getByText("Example Article")).toBeInTheDocument();
+    } finally {
+      useMessageDisplaySettingsStore.setState({ showInlineMedia: true });
+    }
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "data:image/png;base64,AAAA",
+    "/relative.png",
+  ])("never loads a preview image from %s", (imageUrl) => {
+    const { container } = render(<LinkPreviewCard preview={{ ...fullPreview, imageUrl }} />);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("hides an image that fails to load", () => {
+    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
+    fireEvent.error(container.querySelector("img") as HTMLImageElement);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("does not open a preview whose URL is not http(s)", () => {
+    vi.mocked(openUrl).mockClear();
+    render(<LinkPreviewCard preview={{ ...fullPreview, url: "javascript:alert(1)" }} />);
+    const card = screen.getByRole("button");
+    expect(card).toBeDisabled();
+    fireEvent.click(card);
+    expect(openUrl).not.toHaveBeenCalled();
   });
 });
