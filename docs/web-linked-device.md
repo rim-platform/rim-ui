@@ -37,6 +37,9 @@ side.
   `deviceKeyStore` (`checking`, `browser`, `unsupported`) and turns `capabilities.deviceKeys` on
   for the web when it is `browser`. `capabilities.identityKeys` (desktop only) gates enrollment,
   key-only signup, recovery and the old device's linking.
+- On a relay in `pow` registration mode the sign-in page and `/join` say to create an account in
+  the desktop app or with an invite: a signup without a token there needs a key, which the web
+  app cannot make (`relay-client.md`, "Signing up on a public relay").
 - Sign-in page: `DeviceKeySignIn` ("Sign in as … with this device", for each stored account) and
   `LinkThisDevice` ("Link this browser with its code"), both with the weaker-keys notice
   (`BrowserKeyNotice`). A browser without Ed25519 or IndexedDB gets a line saying why it cannot be
