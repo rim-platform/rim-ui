@@ -205,12 +205,11 @@ describe("dispatchCommand", () => {
       commandId: "backend.some_command",
       args: { foo: "bar" },
       commandContext: { workspaceId: "ws-1" },
-      confirmedDangerous: undefined,
     });
     expect(result?.status).toBe("SUCCESS");
   });
 
-  it("passes confirmedDangerous flag to backend", async () => {
+  it("keeps a local confirmation off the backend call", async () => {
     const command = makeCommand({
       id: "backend.dangerous_cmd",
       executionTarget: "BACKEND",
@@ -222,9 +221,8 @@ describe("dispatchCommand", () => {
 
     await dispatchCommand(command, mockExecuteBackend, { confirmedDangerous: true });
 
-    expect(mockExecuteBackend).toHaveBeenCalledWith(
-      expect.objectContaining({ confirmedDangerous: true }),
-    );
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
+    expect(mockExecuteBackend.mock.calls[0][0]).not.toHaveProperty("confirmedDangerous");
   });
 });
 

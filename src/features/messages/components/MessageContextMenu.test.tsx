@@ -151,7 +151,6 @@ describe("MessageContextMenu — report and moderator delete (Track 1.2)", () =>
               conversationId: "conv-1",
               selectedMessageId: "msg-1",
             },
-            confirmedDangerous: true,
             isPipe: undefined,
           },
         },

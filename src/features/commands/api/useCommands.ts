@@ -78,7 +78,6 @@ export function useExecuteCommandMutation() {
       commandId: string;
       args?: Record<string, unknown>;
       commandContext?: CommandContextInput;
-      confirmedDangerous?: boolean;
       isPipe?: boolean;
     }) =>
       graphqlClient.request<{ executeCommand: CommandResult }>(ExecuteCommandDocument, {
@@ -86,7 +85,6 @@ export function useExecuteCommandMutation() {
           commandId: input.commandId,
           args: input.args,
           commandContext: input.commandContext,
-          confirmedDangerous: input.confirmedDangerous,
           isPipe: input.isPipe,
         },
       }),

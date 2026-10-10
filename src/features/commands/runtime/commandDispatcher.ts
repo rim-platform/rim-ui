@@ -65,7 +65,6 @@ type ExecuteBackendCommand = (input: {
   commandId: string;
   args?: Record<string, unknown>;
   commandContext?: Record<string, unknown>;
-  confirmedDangerous?: boolean;
   isPipe?: boolean;
 }) => Promise<{ executeCommand: CommandResult }>;
 
@@ -286,6 +285,7 @@ export async function dispatchCommand(
   context?: {
     args?: Record<string, unknown>;
     commandContext?: Record<string, unknown>;
+    /** Lets the plugin host run a dangerous plugin command without asking the user again. */
     confirmedDangerous?: boolean;
     isPipe?: boolean;
     /** Set when a plugin panel asks to run a command; the host then refuses other plugins' commands. */
@@ -328,7 +328,6 @@ export async function dispatchCommand(
     commandId: command.id,
     args: context?.args,
     commandContext: context?.commandContext,
-    confirmedDangerous: context?.confirmedDangerous,
     isPipe: context?.isPipe,
   });
 
