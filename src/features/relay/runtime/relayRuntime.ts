@@ -25,13 +25,13 @@ import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from ".
 import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
 import { rememberRelays } from "../contacts/knownRelays";
+import { useContactStore } from "../contacts/useContactStore";
 import { activeDirect } from "../direct/directConnection";
 import { startDirect } from "../direct/directRuntime";
+import { acceptWorkspaceMembers } from "../inbox/autoAccept";
 import { refreshWorkspaceName, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { resetRelaySelf } from "../remote/relaySelf";
 import { finishOnNewRelay } from "../remote/relaySwitchLive";
-import { useContactStore } from "../contacts/useContactStore";
-import { acceptWorkspaceMembers } from "../inbox/autoAccept";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
 import { loadSpaces, registerSpace } from "../state/spaces";

@@ -4,9 +4,11 @@
 //!
 //! The webview checks everything a server signs; this module only carries bytes: the discovery
 //! document, GraphQL requests with the server's session cookie and CSRF header, and a
-//! WebSocket opened with that cookie.
+//! WebSocket opened with that cookie. A session may only point at `/api` and `/api/ws` of an
+//! origin whose discovery document was fetched here, so the webview cannot use it to reach
+//! anything but RIM servers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -71,10 +73,12 @@ struct Session {
     cookies: BTreeMap<String, String>,
 }
 
-/// Direct sessions by server id, and the open sockets.
+/// Direct sessions by server id, the origins whose discovery document was fetched, and the
+/// open sockets.
 #[derive(Default)]
 pub(crate) struct DirectState {
     sessions: Mutex<HashMap<String, Session>>,
+    discovered: Mutex<HashSet<String>>,
     sockets: Mutex<HashMap<u64, mpsc::UnboundedSender<Outgoing>>>,
     next_socket: AtomicU64,
 }
@@ -139,13 +143,33 @@ pub(crate) fn checked_origin(origin: &str) -> Result<String> {
     Ok(origin.trim_end_matches('/').to_string())
 }
 
-fn checked_url(url: &str, schemes: &[&str]) -> Result<String> {
-    let parsed =
-        reqwest::Url::parse(url).map_err(|_| DirectError::Invalid(format!("not a URL: {url}")))?;
-    if !schemes.contains(&parsed.scheme()) {
-        return Err(DirectError::Invalid(format!(
-            "not a server endpoint: {url}"
-        )));
+/// The origin of `url` as `checked_origin` spells it (`ws(s)` read as `http(s)`).
+fn http_origin(url: &reqwest::Url) -> Option<String> {
+    let scheme = match url.scheme() {
+        "http" | "ws" => "http",
+        "https" | "wss" => "https",
+        _ => return None,
+    };
+    let host = url.host_str()?;
+    Some(match url.port() {
+        Some(port) => format!("{scheme}://{host}:{port}"),
+        None => format!("{scheme}://{host}"),
+    })
+}
+
+/// An endpoint a session may use: `schemes`, the path `path`, at an origin in `allowed`.
+fn checked_endpoint(
+    url: &str,
+    schemes: &[&str],
+    path: &str,
+    allowed: &HashSet<String>,
+) -> Result<String> {
+    let invalid = || DirectError::Invalid(format!("not a server endpoint: {url}"));
+    let parsed = reqwest::Url::parse(url).map_err(|_| invalid())?;
+    let at_origin = http_origin(&parsed).is_some_and(|o| allowed.contains(&o));
+    let bare = parsed.query().is_none() && parsed.fragment().is_none();
+    if !schemes.contains(&parsed.scheme()) || parsed.path() != path || !bare || !at_origin {
+        return Err(invalid());
     }
     Ok(parsed.to_string())
 }
@@ -212,7 +236,10 @@ impl DirectState {
 
 /// Fetch a server's discovery document directly: 5 seconds, 64 KiB, no redirects.
 #[tauri::command]
-pub async fn relay_direct_discovery(origin: String) -> Result<String> {
+pub async fn relay_direct_discovery(
+    state: State<'_, DirectState>,
+    origin: String,
+) -> Result<String> {
     let origin = checked_origin(&origin)?;
     let response = discovery_client()
         .get(format!("{origin}{DISCOVERY_PATH}"))
@@ -226,8 +253,12 @@ pub async fn relay_direct_discovery(origin: String) -> Result<String> {
         )));
     }
     let bytes = read_capped(response, DISCOVERY_MAX_BYTES).await?;
-    String::from_utf8(bytes)
-        .map_err(|_| DirectError::Invalid("the discovery document is not text".into()))
+    let document = String::from_utf8(bytes)
+        .map_err(|_| DirectError::Invalid("the discovery document is not text".into()))?;
+    if let Ok(mut discovered) = state.discovered.lock() {
+        discovered.insert(origin);
+    }
+    Ok(document)
 }
 
 async fn read_capped(response: reqwest::Response, max: usize) -> Result<Vec<u8>> {
@@ -251,8 +282,16 @@ pub async fn relay_direct_open(
     graphql: String,
     websocket: String,
 ) -> Result<()> {
-    let graphql = checked_url(&graphql, &["http", "https"])?;
-    let websocket = checked_url(&websocket, &["ws", "wss"])?;
+    let (graphql, websocket) = {
+        let allowed = state
+            .discovered
+            .lock()
+            .map_err(|_| DirectError::Invalid("direct sessions are unavailable".into()))?;
+        (
+            checked_endpoint(&graphql, &["http", "https"], "/api", &allowed)?,
+            checked_endpoint(&websocket, &["ws", "wss"], "/api/ws", &allowed)?,
+        )
+    };
     let mut sessions = state
         .sessions
         .lock()
@@ -474,6 +513,21 @@ mod tests {
         ] {
             assert!(checked_origin(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn endpoints_must_be_the_api_of_a_discovered_origin() {
+        let allowed: HashSet<String> = ["https://host.example".to_string()].into();
+        let graphql = |url: &str| checked_endpoint(url, &["http", "https"], "/api", &allowed);
+        let socket = |url: &str| checked_endpoint(url, &["ws", "wss"], "/api/ws", &allowed);
+        assert!(graphql("https://host.example/api").is_ok());
+        assert!(socket("wss://host.example/api/ws").is_ok());
+        assert!(graphql("https://other.example/api").is_err());
+        assert!(graphql("https://host.example/admin").is_err());
+        assert!(graphql("https://host.example:444/api").is_err());
+        assert!(graphql("https://host.example/api?x=1").is_err());
+        assert!(socket("ws://host.example/api/ws").is_err());
+        assert!(graphql("wss://host.example/api").is_err());
     }
 
     #[test]

@@ -346,7 +346,9 @@ export class RelayStreamProcessor {
    * head is a duplicate from then on. Streams already past a head keep their place.
    */
   baseline(host: string, spaceId: string, heads: Map<string, number>): Promise<void> {
-    this.queue = this.queue.then(() => this.applyHeads(host, spaceId, heads));
+    this.queue = this.queue
+      .then(() => this.applyHeads(host, spaceId, heads))
+      .catch((err: unknown) => logger.warn("[RIM:relay] taking stream heads failed:", err));
     return this.queue;
   }
 
@@ -385,7 +387,7 @@ export class RelayStreamProcessor {
     return new Map([...bySpace].map(([space, streams]) => [space, [...streams]]));
   }
 
-  /** Hold `host`'s items from every message handled after this one: the app went direct. */
+  /** Hold `host`'s relay items from now on: the app is connected to it directly. */
   holdHost(host: string): void {
     this.holding.add(host);
   }
@@ -396,18 +398,28 @@ export class RelayStreamProcessor {
    * call are still held; later ones run normally.
    */
   resumeHost(host: string, heads: Map<string, Map<string, number>>): Promise<void> {
-    this.queue = this.queue.then(async () => {
-      this.holding.delete(host);
-      for (const [spaceId, spaceHeads] of heads) await this.applyHeads(host, spaceId, spaceHeads);
-      const held = this.deferred.filter((item) => item.hostServerId === host);
-      this.deferred.splice(
-        0,
-        this.deferred.length,
-        ...this.deferred.filter((item) => item.hostServerId !== host),
-      );
-      for (const item of held) await this.processItem(item);
-      await this.flushAck();
-    });
+    this.queue = this.queue
+      .then(async () => {
+        this.holding.delete(host);
+        try {
+          for (const [spaceId, spaceHeads] of heads) {
+            await this.applyHeads(host, spaceId, spaceHeads);
+          }
+        } catch (err) {
+          // Without a baseline the held items still run; duplicates of streams with a stored
+          // position are dropped, and a gap is reconciled as usual.
+          logger.warn("[RIM:relay] taking a host's stream heads failed:", err);
+        }
+        const held = this.deferred.filter((item) => item.hostServerId === host);
+        this.deferred.splice(
+          0,
+          this.deferred.length,
+          ...this.deferred.filter((item) => item.hostServerId !== host),
+        );
+        for (const item of held) await this.processItem(item);
+        await this.flushAck();
+      })
+      .catch((err: unknown) => logger.warn("[RIM:relay] resuming a host failed:", err));
     return this.queue;
   }
 
