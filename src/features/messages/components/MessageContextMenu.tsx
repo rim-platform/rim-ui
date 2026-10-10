@@ -13,9 +13,6 @@ import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { ReportMessageDialog } from "./ReportMessageDialog";
 
-const MODERATOR_DELETE_DESCRIPTION =
-  "You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log.";
-
 interface MessageContextMenuProps {
   x: number;
   y: number;
@@ -63,7 +60,7 @@ export function MessageContextMenu({
 
   const handleModeratorDelete = useCallback(async () => {
     onClose();
-    const deleted = await deleteMessageFn(messageId, { description: MODERATOR_DELETE_DESCRIPTION });
+    const deleted = await deleteMessageFn(messageId, { asModerator: true });
     if (deleted) toast.success("Message deleted");
   }, [messageId, deleteMessageFn, onClose]);
 

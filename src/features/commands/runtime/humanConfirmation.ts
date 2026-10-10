@@ -40,8 +40,11 @@ export interface ConfirmationSubject {
   args?: Record<string, unknown>;
   /** A `RESTRICTED` command must have its verb typed before it can be confirmed. */
   sensitivity?: CommandSensitivity;
-  /** Word to type for a `RESTRICTED` command, instead of the one derived from `commandId`. */
-  verb?: string;
+  /**
+   * Word to type for a `RESTRICTED` command, instead of the one derived from `commandId`;
+   * `null` asks for no typed word.
+   */
+  verb?: string | null;
 }
 
 /**

@@ -221,7 +221,7 @@ describe("MessageContextMenu — report and delete", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("deletes the viewer's own message through the same confirmation dialog", async () => {
+  it("deletes the viewer's own message with a plain Confirm, no typed verb", async () => {
     serve(ServerMemberRoleGql.MEMBER, {
       "mutation ExecuteCommand": heldThen(() => ({
         executeCommand: { status: "SUCCESS", message: "message deleted", payload: null },
@@ -232,10 +232,19 @@ describe("MessageContextMenu — report and delete", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
     expect(within(dialog).queryByText(/as a moderator/)).not.toBeInTheDocument();
-    fireEvent.change(within(dialog).getByTestId("verb-input"), { target: { value: "delete" } });
-    fireEvent.click(within(dialog).getByTestId("confirm-button"));
+    expect(within(dialog).queryByTestId("verb-input")).not.toBeInTheDocument();
+    const confirm = within(dialog).getByTestId("confirm-button");
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
 
     await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(2));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[1]).toEqual({
+      input: {
+        commandId: "chat.delete_message",
+        commandContext: deleteContext,
+        confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
+      },
+    });
   });
 });
 

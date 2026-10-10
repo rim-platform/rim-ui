@@ -112,6 +112,7 @@ describe("useDeleteMessage", () => {
       commandId: "chat.delete_message",
       toolName: "Delete Message",
       sensitivity: CommandSensitivity.RESTRICTED,
+      verb: null,
       token: "tok-1",
     });
     expect(cachedMessage(qc)?.isDeleted).toBe(false);
@@ -131,6 +132,29 @@ describe("useDeleteMessage", () => {
     ]);
     expect(cachedMessage(qc)?.isDeleted).toBe(true);
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("asks a moderator to type the verb and names the moderator consequence", async () => {
+    serveDelete(
+      () => held,
+      () => done,
+    );
+    const qc = seededClient();
+    const result = renderDelete(qc);
+
+    let deleted: Promise<boolean> | undefined;
+    act(() => {
+      deleted = result.current("msg-1", { asModerator: true });
+    });
+
+    const request = await openedDialog();
+    expect(request.verb).toBeUndefined();
+    expect(request.sensitivity).toBe(CommandSensitivity.RESTRICTED);
+    expect(request.description).toMatch(/as a moderator/);
+    act(() => useConfirmationModalStore.getState().approve());
+
+    await expect(deleted).resolves.toBe(true);
+    expect(cachedMessage(qc)?.isDeleted).toBe(true);
   });
 
   it("keeps the message and sends nothing more when the user cancels", async () => {

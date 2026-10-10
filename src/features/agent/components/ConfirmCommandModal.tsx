@@ -127,7 +127,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   // Tier-4 trigger per §4.8: RESTRICTED, OR same-turn-after-tool-result +
   // sensitivity ≥ MUTATING.
   const requireType =
-    visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING);
+    request.verb !== null &&
+    (visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING));
 
   const expectedVerb = useMemo(
     () => request.verb ?? deriveConfirmationVerb(request.commandId),

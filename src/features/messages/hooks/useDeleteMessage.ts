@@ -11,6 +11,9 @@ import type { MessagesPage } from "../api/useMessages";
 
 const DELETE_MESSAGE = "chat.delete_message";
 
+const MODERATOR_DELETE_DESCRIPTION =
+  "You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log.";
+
 export function useDeleteMessage(
   workspaceId: string | null | undefined,
   conversationId: string | null | undefined,
@@ -19,13 +22,14 @@ export function useDeleteMessage(
   const qc = useQueryClient();
 
   /**
-   * Deletes a message (the author's own, or anyone's for Owner/Moderator). The server holds
-   * the delete until the user confirms it in the confirmation dialog, whose consequence line
-   * is `description`. The message leaves the cache only once the server reports success.
-   * Resolves `true` when the message was deleted; failures are toasted.
+   * Deletes a message: the author's own, or with `asModerator` anyone's for Owner/Moderator.
+   * The server holds the delete until the user confirms it in the confirmation dialog; a
+   * moderator must also type the verb, the author need not. The message leaves the cache only
+   * once the server reports success. Resolves `true` when the message was deleted; failures
+   * are toasted.
    */
   const deleteMessage = useCallback(
-    async (messageId: string, options: { description?: string } = {}): Promise<boolean> => {
+    async (messageId: string, options: { asModerator?: boolean } = {}): Promise<boolean> => {
       if (!workspaceId || !conversationId) return false;
 
       const commandContext = { workspaceId, conversationId, selectedMessageId: messageId };
@@ -42,9 +46,12 @@ export function useDeleteMessage(
           {
             commandId: DELETE_MESSAGE,
             title: "Delete Message",
-            description: options.description ?? "Delete this message. This cannot be undone.",
-            // The server classes deleting a message as Restricted: the verb must be typed.
+            description: options.asModerator
+              ? MODERATOR_DELETE_DESCRIPTION
+              : "Delete this message. This cannot be undone.",
             sensitivity: CommandSensitivity.RESTRICTED,
+            // Deleting someone else's message needs the verb typed; one's own does not.
+            ...(options.asModerator ? {} : { verb: null }),
           },
         );
         if (outcome.kind === "cancelled" || outcome.kind === "stale") return false;

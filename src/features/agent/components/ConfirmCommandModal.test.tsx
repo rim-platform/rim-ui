@@ -597,6 +597,16 @@ describe("ConfirmCommandModal — a command the user ran", () => {
     await expect(decision).resolves.toEqual({ approved: true });
   });
 
+  it("asks for no verb for a Restricted command whose verb is null", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(userRequest({ verb: null }));
+    });
+    expect(screen.queryByTestId("verb-input")).not.toBeInTheDocument();
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("RESTRICTED");
+  });
+
   it("asks for no verb when the command's sensitivity is unknown", () => {
     render(<ConfirmCommandModal />);
     act(() => {
