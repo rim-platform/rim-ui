@@ -5,6 +5,7 @@ import { AppRouter } from "./router/AppRouter";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { persistSessionRecord } from "../features/offline/api/offlineSession";
 import { useUpdateSchedule } from "../features/updater/runtime/useUpdateSchedule";
+import { useServerApiNotice } from "../features/updater/runtime/useServerApiNotice";
 
 /**
  * Boot-time side-effects, rendered inside `AppProviders`.
@@ -12,10 +13,12 @@ import { useUpdateSchedule } from "../features/updater/runtime/useUpdateSchedule
  *   - Keeping the offline session record in step with sign-ins and sign-outs (desktop only;
  *     a no-op in the web app).
  *   - Checking for app updates at launch and daily (desktop builds with an update endpoint).
+ *   - Telling the user once per launch when the server speaks a newer API than this app.
  */
 function AppBoot() {
   useEffect(() => persistSessionRecord(), []);
   useUpdateSchedule();
+  useServerApiNotice();
 
   return null;
 }

@@ -96,6 +96,8 @@ export const queryKeys = {
   listAuditLog: (typedVerb?: string, after?: string) =>
     ["listAuditLog", typedVerb ?? null, after ?? null] as const,
   serverConfig: () => ["serverConfig"] as const,
+  // The server's release and API version; read once per session.
+  serverInfo: ["serverInfo"] as const,
   previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
   workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
   ingestTokens: (serverId?: string) => ["ingestTokens", serverId] as const,

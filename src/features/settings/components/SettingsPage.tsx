@@ -17,6 +17,7 @@ import { useCanModerate, useIsOwner } from "../../workspaces/api/useMyServerRole
 import { useFeatureEnabled } from "../../workspaces/hooks/useFeatureEnabled";
 import { WorkspaceFeature } from "../../../core/graphql/generated/schema-types";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
+import { AboutServerApiBanner, AboutServerVersion } from "../../updater/components/AboutServer";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -104,8 +105,11 @@ function AboutRim() {
           <div>
             <p className="text-sm font-semibold text-rim-text">RIM</p>
             <AboutVersion />
+            <AboutServerVersion />
           </div>
         </div>
+
+        <AboutServerApiBanner />
 
         <p className="text-sm text-rim-text-muted leading-relaxed">
           RIM is not another chat app. Chat is the communication layer &mdash; commands, keybinds,
