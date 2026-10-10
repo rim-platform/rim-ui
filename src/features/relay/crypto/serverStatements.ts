@@ -228,6 +228,15 @@ export async function namesCurrentKey(head: ServerHead, keyHashText: string): Pr
 
 // ─── Descriptor and discovery ───────────────────────────────────────────────
 
+/** How a server takes new accounts; `powBits` is the proof-of-work difficulty in `pow` mode. */
+export interface ServerRegistration {
+  mode: "invite" | "open" | "pow";
+  powBits: number | null;
+}
+
+/** Highest proof-of-work difficulty a descriptor may ask for. */
+const MAX_POW_BITS = 40;
+
 /** A verified server descriptor: where the server answers and what it runs. */
 export interface ServerDescriptor {
   serverId: string;
@@ -235,6 +244,7 @@ export interface ServerDescriptor {
   version: number;
   roles: ("host" | "relay")[];
   endpoints: { graphql: string; websocket: string; s2s: string | null };
+  registration: ServerRegistration;
 }
 
 const DESCRIPTOR_FIELDS = [
@@ -264,6 +274,21 @@ function readRoles(value: unknown): ("host" | "relay")[] | null {
   return value as ("host" | "relay")[];
 }
 
+/** A descriptor's `registration`: `powBits` is set exactly in `pow` mode, 1 to 40. */
+function readRegistration(value: unknown): ServerRegistration | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const fields = value as Fields;
+  const mode = text(fields, "mode");
+  if (unknownField(fields, ["mode", "powBits"]) || !("powBits" in fields)) return null;
+  if (mode === "pow") {
+    const bits = uint(fields, "powBits", MAX_POW_BITS);
+    return bits !== null && bits >= 1 ? { mode, powBits: bits } : null;
+  }
+  return (mode === "invite" || mode === "open") && fields.powBits === null
+    ? { mode, powBits: null }
+    : null;
+}
+
 /** Verify a descriptor signed by the head key of `head`. */
 export async function verifyDescriptor(
   head: ServerHead,
@@ -280,6 +305,7 @@ export async function verifyDescriptor(
   const graphql = endpoints ? text(endpoints, "graphql") : null;
   const websocket = endpoints ? text(endpoints, "websocket") : null;
   const s2s = endpoints?.s2s === null ? null : endpoints ? text(endpoints, "s2s") : null;
+  const registration = fields ? readRegistration(fields.registration) : null;
   if (
     !fields ||
     !endpoints ||
@@ -293,6 +319,7 @@ export async function verifyDescriptor(
     graphql === null ||
     websocket === null ||
     (s2s === null && endpoints.s2s !== null) ||
+    !registration ||
     timestamp(fields, "issuedAt") === null
   ) {
     throw refused("server descriptor", "malformed");
@@ -311,6 +338,7 @@ export async function verifyDescriptor(
     version,
     roles,
     endpoints: { graphql, websocket, s2s },
+    registration,
   };
 }
 
