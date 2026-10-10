@@ -15,9 +15,6 @@ import type {
 
 export type { CreateMacroInput, UpdateMacroInput, ExecuteMacroInput, MacroStepInput };
 
-/** Variables of `executeMacro`; a dangerous macro is confirmed with `confirmation`. */
-export type ExecuteMacroVariables = Omit<ExecuteMacroInput, "confirmedDangerous">;
-
 /** Result of `executeMacro`; `confirmationRequired` is set when the status is `CONFIRMATION_REQUIRED`. */
 export interface ExecuteMacroResult {
   status: string;

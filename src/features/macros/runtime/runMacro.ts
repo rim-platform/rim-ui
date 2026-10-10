@@ -9,7 +9,7 @@ import {
 import {
   ExecuteMacroDocument,
   type ExecuteMacroResult,
-  type ExecuteMacroVariables,
+  type ExecuteMacroInput,
   type Macro,
 } from "../api/useMacros";
 
@@ -27,7 +27,7 @@ export async function runMacro(
   try {
     const outcome = await runWithHumanConfirmation(
       async (confirmation) => {
-        const input: ExecuteMacroVariables = {
+        const input: ExecuteMacroInput = {
           macroId: macro.id,
           commandContext: { workspaceId },
           ...(confirmation && { confirmation }),
