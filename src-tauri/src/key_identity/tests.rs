@@ -203,6 +203,50 @@ fn a_confirmed_account_signs_login_proofs_for_the_endpoint() {
 }
 
 #[test]
+fn login_proofs_and_delegations_for_another_server_use_its_id() {
+    let state = self::state();
+    let (draft, statements) = enrolled(&state);
+    let host = "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw";
+    let device_key = payload_field(&statements.device, "deviceKey");
+    let device_key = device_key.as_str().unwrap();
+    let proof = state
+        .sign_login_for_server(host, &draft.principal_id, &challenge())
+        .unwrap();
+    assert!(verify(&proof, context::LOGIN, device_key, 2));
+    assert_eq!(payload_field(&proof, "audience"), host);
+    assert!(state
+        .sign_login_for_server("https://host.example", &draft.principal_id, &challenge())
+        .is_err());
+    assert!(state
+        .sign_login_for_server("rims1_short", &draft.principal_id, &challenge())
+        .is_err());
+
+    let delegation = state
+        .sign_delegation(
+            &draft.principal_id,
+            &statement::DelegationInput {
+                relay: "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c".into(),
+                relay_key_hash: "8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM".into(),
+                host: host.into(),
+                workspace_id: "0199d1a0-0000-7000-8000-000000000002".into(),
+                nonce: "cHFyc3R1dnd4eXp7fH1-fw".into(),
+                issued_at: "2026-10-09T00:00:00Z".into(),
+                expires_at: "2026-10-09T06:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    assert!(verify(&delegation, context::DELEGATION, device_key, 2));
+    assert_eq!(
+        payload_field(&delegation, "principalId"),
+        draft.principal_id.as_str()
+    );
+    assert_eq!(
+        payload_field(&delegation, "deviceId"),
+        payload_field(&statements.device, "deviceId")
+    );
+}
+
+#[test]
 fn a_rotation_is_pending_until_the_log_moves_past_it() {
     let state = self::state();
     let (draft, statements) = enrolled(&state);

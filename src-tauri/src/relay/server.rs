@@ -15,6 +15,7 @@ pub(crate) mod context {
     pub(crate) const DESCRIPTOR: &[u8] = b"rim.server-descriptor.v1\0";
     pub(crate) const HOST_RESPONSE: &[u8] = b"rim.host-response.v1\0";
     pub(crate) const HOST_EVENT: &[u8] = b"rim.host-event.v1\0";
+    pub(crate) const REVOCATION_ACK: &[u8] = b"rim.revocation-ack.v1\0";
 }
 
 const SERVER_DOMAIN: &[u8] = b"rim.server.v1\0";
@@ -447,10 +448,82 @@ pub(crate) fn verify_host_event(envelope: &Statement, host_key: &str) -> bool {
     verify(envelope, context::HOST_EVENT, host_key, VERSION)
 }
 
+// ─── Revocation acknowledgements ─────────────────────────────────────────────
+
+/// A host's `revocation-ack`: it applied a device revocation.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RevocationAck {
+    #[serde(skip_serializing)]
+    v: u8,
+    #[serde(rename = "type", skip_serializing)]
+    kind: String,
+    pub(crate) host: String,
+    pub(crate) key_seq: u32,
+    pub(crate) principal_id: String,
+    pub(crate) device_id: String,
+    pub(crate) revocation_sha256: String,
+    pub(crate) applied_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// What an acknowledgement must answer: the revocation this app sent, to that host.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AckExpectation {
+    pub(crate) host: String,
+    /// The `device-revoke` payload text that was sent.
+    pub(crate) revocation_payload: String,
+}
+
+/// Read a revocation acknowledgement before its key is chosen.
+pub(crate) fn read_revocation_ack(ack: &Statement) -> Result<RevocationAck> {
+    let malformed = || refused("revocation acknowledgement", "malformed");
+    bounded(ack, 16 * KIB, "revocation acknowledgement")?;
+    let entry: RevocationAck = serde_json::from_str(&ack.payload).map_err(|_| malformed())?;
+    if entry.v != VERSION || entry.kind != "revocation-ack" {
+        return Err(malformed());
+    }
+    Ok(entry)
+}
+
+/// Check an acknowledgement against the revocation it answers and the host key at its
+/// `keySeq`: the host, the principal and device the revocation names, its hash, the signature.
+pub(crate) fn verify_revocation_ack(
+    ack: &Statement,
+    host_key: &str,
+    expected: &AckExpectation,
+) -> Result<RevocationAck> {
+    let what = "revocation acknowledgement";
+    let entry = read_revocation_ack(ack)?;
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Revoked {
+        principal_id: String,
+        device_id: String,
+    }
+    let revoked: Revoked = serde_json::from_str(&expected.revocation_payload)
+        .map_err(|_| refused(what, "the revocation is malformed"))?;
+    if entry.host != expected.host {
+        return Err(refused(what, "from another host"));
+    }
+    if entry.principal_id != revoked.principal_id || entry.device_id != revoked.device_id {
+        return Err(refused(what, "names another device"));
+    }
+    if entry.revocation_sha256 != sha256_text(expected.revocation_payload.as_bytes()) {
+        return Err(refused(what, "answers another revocation"));
+    }
+    if !verify(ack, context::REVOCATION_ACK, host_key, VERSION) {
+        return Err(refused(what, "signature does not verify"));
+    }
+    Ok(entry)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::key_identity::statement::{device_request, DeviceRequestInput, SecretKey};
+    use crate::key_identity::statement::{
+        delegation, device_request, DelegationInput, DeviceRequestInput, SecretKey,
+    };
     use zeroize::Zeroizing;
 
     /// base64url(SHA-256(tagged key text)): how a delegation or an invite names a server key.
@@ -661,5 +734,138 @@ mod tests {
         let mut extra = envelope;
         extra.payload = extra.payload.replace("{\"v\":2,", "{\"v\":2,\"x\":1,");
         assert!(read_host_event(&extra).is_err());
+    }
+
+    fn delegation_input(value: &serde_json::Value) -> DelegationInput {
+        serde_json::from_value(value.clone()).expect("a delegation input")
+    }
+
+    fn device_key() -> SecretKey {
+        SecretKey::from_seed(Zeroizing::new([20u8; 32]))
+    }
+
+    #[test]
+    fn the_delegation_vector_signs_byte_for_byte() {
+        let v = vectors();
+        let signed = delegation(
+            &device_key(),
+            text(&v["device"]["principalId"]),
+            text(&v["device"]["deviceId"]),
+            &delegation_input(&v["delegation"]["input"]),
+        )
+        .unwrap();
+        assert_eq!(signed.payload, text(&v["delegation"]["payload"]));
+        assert_eq!(signed.signature, text(&v["delegation"]["signature"]));
+    }
+
+    #[test]
+    fn the_delegation_conformance_cases_sign_what_the_web_app_signs() {
+        let v = vectors();
+        let cases = v["delegationConformance"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let signed = delegation(
+                &device_key(),
+                text(&v["device"]["principalId"]),
+                text(&v["device"]["deviceId"]),
+                &delegation_input(&case["input"]),
+            )
+            .unwrap();
+            assert_eq!(signed.payload, text(&case["payload"]));
+            assert_eq!(signed.signature, text(&case["signature"]));
+        }
+    }
+
+    #[test]
+    fn a_delegation_a_host_would_refuse_is_not_signed() {
+        let v = vectors();
+        let input = delegation_input(&v["delegation"]["input"]);
+        let sign = |input: &DelegationInput| {
+            delegation(
+                &device_key(),
+                "rimp1_x",
+                "00000000-0000-0000-0000-000000000001",
+                input,
+            )
+        };
+        let longer = DelegationInput {
+            expires_at: "2026-10-10T00:00:01Z".into(),
+            ..input.clone()
+        };
+        assert!(sign(&longer).is_err());
+        let backwards = DelegationInput {
+            expires_at: input.issued_at.clone(),
+            ..input.clone()
+        };
+        assert!(sign(&backwards).is_err());
+        let short_nonce = DelegationInput {
+            nonce: "cHFyc3R1dnd4eXp7fH1-".into(),
+            ..input.clone()
+        };
+        assert!(sign(&short_nonce).is_err());
+        let fractional = DelegationInput {
+            issued_at: "2026-10-09T00:00:00.5Z".into(),
+            ..input.clone()
+        };
+        assert!(sign(&fractional).is_err());
+        let not_a_server = DelegationInput {
+            relay: "https://relay.example".into(),
+            ..input.clone()
+        };
+        assert!(sign(&not_a_server).is_err());
+        let bad_workspace = DelegationInput {
+            workspace_id: "workspace".into(),
+            ..input
+        };
+        assert!(sign(&bad_workspace).is_err());
+    }
+
+    #[test]
+    fn the_revocation_ack_vector_verifies_for_its_revocation_only() {
+        let v = vectors();
+        let ack = statement(&v["revocationAck"]);
+        let host_key = text(&v["host"]["serverKey"]);
+        let expected = AckExpectation {
+            host: text(&v["host"]["serverId"]).into(),
+            revocation_payload: text(&v["revocation"]["payload"]).into(),
+        };
+        assert_eq!(read_revocation_ack(&ack).unwrap().key_seq, 0);
+        let entry = verify_revocation_ack(&ack, host_key, &expected).unwrap();
+        assert_eq!(entry.device_id, text(&v["device"]["deviceId"]));
+        assert_eq!(
+            entry.revocation_sha256,
+            sha256_text(expected.revocation_payload.as_bytes())
+        );
+
+        let other_revocation = AckExpectation {
+            revocation_payload: expected
+                .revocation_payload
+                .replace("09T00:00:00Z", "09T00:00:01Z"),
+            ..expected.clone()
+        };
+        assert!(verify_revocation_ack(&ack, host_key, &other_revocation).is_err());
+        let other_host = AckExpectation {
+            host: text(&v["relay"]["serverId"]).into(),
+            ..expected.clone()
+        };
+        assert!(verify_revocation_ack(&ack, host_key, &other_host).is_err());
+        let relay_key = text(&v["relay"]["serverKey"]);
+        assert!(verify_revocation_ack(&ack, relay_key, &expected).is_err());
+        let mut extra = ack;
+        extra.payload = extra.payload.replace("{\"v\":2,", "{\"v\":2,\"x\":1,");
+        assert!(read_revocation_ack(&extra).is_err());
+    }
+
+    #[test]
+    fn the_revocation_vector_is_signed_by_the_device() {
+        let v = vectors();
+        let revocation = statement(&v["revocation"]);
+        let device = device_key().public_key();
+        assert!(verify(
+            &revocation,
+            crate::key_identity::statement::context::DEVICE_REVOKE,
+            &device,
+            VERSION
+        ));
     }
 }

@@ -29,6 +29,7 @@ pub(crate) mod context {
     pub(crate) const LOGIN: &[u8] = b"rim.login.v1\0";
     pub(crate) const PLUGIN_MANIFEST: &[u8] = b"rim.plugin-manifest.v1\0";
     pub(crate) const DEVICE_REQUEST: &[u8] = b"rim.device-request.v1\0";
+    pub(crate) const DELEGATION: &[u8] = b"rim.delegation.v1\0";
 }
 
 const PRINCIPAL_DOMAIN: &[u8] = b"rim.principal.v1\0";
@@ -558,6 +559,103 @@ pub(crate) fn device_request(
         issued_at: &input.issued_at,
     });
     Ok(device.sign(context::DEVICE_REQUEST, payload))
+}
+
+/// What a delegation says besides the device: relay `relay` may receive workspace
+/// `workspace_id`'s events from `host` and forward this device's requests there until
+/// `expires_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DelegationInput {
+    pub(crate) relay: String,
+    pub(crate) relay_key_hash: String,
+    pub(crate) host: String,
+    pub(crate) workspace_id: String,
+    pub(crate) nonce: String,
+    pub(crate) issued_at: String,
+    pub(crate) expires_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Delegation<'a> {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: &'a str,
+    principal_id: &'a str,
+    device_id: &'a str,
+    relay: &'a str,
+    relay_key_hash: &'a str,
+    host: &'a str,
+    workspace_id: &'a str,
+    scope: &'a str,
+    nonce: &'a str,
+    issued_at: &'a str,
+    expires_at: &'a str,
+}
+
+/// The longest a delegation may run, from `issuedAt` to `expiresAt`.
+pub(crate) const MAX_DELEGATION_SECONDS: i64 = 24 * 60 * 60;
+
+/// A whole-second UTC time as statements write it (`2026-10-09T00:00:00Z`).
+fn statement_time(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(text).ok()?;
+    let utc = parsed.with_timezone(&chrono::Utc);
+    (utc.to_rfc3339_opts(chrono::SecondsFormat::Secs, true) == text).then_some(utc)
+}
+
+fn uuid_text(text: &str) -> bool {
+    uuid::Uuid::parse_str(text).is_ok_and(|u| u.hyphenated().to_string() == text)
+}
+
+/// A delegation signed by the device key, for one workspace on one host through one relay, at
+/// most 24 hours. Refuses fields a host would refuse.
+pub(crate) fn delegation(
+    device: &SecretKey,
+    principal_id: &str,
+    device_id: &str,
+    input: &DelegationInput,
+) -> Result<Statement, KeyIdentityError> {
+    let refused = |why: &str| KeyIdentityError::Invalid(format!("delegation: {why}"));
+    if !input.relay.starts_with("rims1_") || !input.host.starts_with("rims1_") {
+        return Err(refused("relay and host must be server ids"));
+    }
+    if unb64(&input.relay_key_hash).map(|b| b.len()).ok() != Some(32) {
+        return Err(refused("the relay key hash is malformed"));
+    }
+    if !uuid_text(&input.workspace_id) {
+        return Err(refused("the workspace id is malformed"));
+    }
+    if unb64(&input.nonce).map(|b| b.len()).ok() != Some(16) {
+        return Err(refused("the nonce must be 16 bytes"));
+    }
+    let (Some(issued), Some(expires)) = (
+        statement_time(&input.issued_at),
+        statement_time(&input.expires_at),
+    ) else {
+        return Err(refused("times must be whole-second UTC"));
+    };
+    let lifetime = (expires - issued).num_seconds();
+    if lifetime <= 0 || lifetime > MAX_DELEGATION_SECONDS {
+        return Err(refused(
+            "a delegation runs for at most 24 hours after it is issued",
+        ));
+    }
+    let payload = json(&Delegation {
+        v: WRITE_VERSION,
+        kind: "delegation",
+        principal_id,
+        device_id,
+        relay: &input.relay,
+        relay_key_hash: &input.relay_key_hash,
+        host: &input.host,
+        workspace_id: &input.workspace_id,
+        scope: "workspace",
+        nonce: &input.nonce,
+        issued_at: &input.issued_at,
+        expires_at: &input.expires_at,
+    });
+    Ok(device.sign(context::DELEGATION, payload))
 }
 
 // ─── Replaying a key log ─────────────────────────────────────────────────────

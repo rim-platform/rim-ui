@@ -4,7 +4,10 @@
 use crate::key_identity::statement::{replay, verified_card, Statement, VerifiedCard};
 use crate::key_identity::KeyIdentityError;
 
-use super::server::{self, HostEvent, HostResponse, ResponseExpectation, VerifiedDiscovery};
+use super::server::{
+    self, AckExpectation, HostEvent, HostResponse, ResponseExpectation, RevocationAck,
+    VerifiedDiscovery,
+};
 
 /// Verify a discovery document fetched for `origin`.
 #[tauri::command]
@@ -76,4 +79,21 @@ pub async fn relay_verify_card(
         ));
     }
     verified_card(&card, &head)
+}
+
+/// The `keySeq` a revocation acknowledgement names, read before the key to check it with is
+/// chosen.
+#[tauri::command]
+pub async fn relay_revocation_ack_key_seq(ack: Statement) -> Result<u32, KeyIdentityError> {
+    Ok(server::read_revocation_ack(&ack)?.key_seq)
+}
+
+/// Check a host's revocation acknowledgement against the revocation sent, under `host_key`.
+#[tauri::command]
+pub async fn relay_verify_revocation_ack(
+    ack: Statement,
+    host_key: String,
+    expected: AckExpectation,
+) -> Result<RevocationAck, KeyIdentityError> {
+    server::verify_revocation_ack(&ack, &host_key, &expected)
 }

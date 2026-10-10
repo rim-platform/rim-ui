@@ -115,6 +115,7 @@ pub fn run() {
             app.manage(offline_session::init(vault.clone()));
             app.manage(key_identity::init(vault.clone()));
             app.manage(e2ee::attachment_state());
+            app.manage(relay::direct::DirectState::default());
             app.manage(vault);
             Ok(())
         })
@@ -222,12 +223,23 @@ pub fn run() {
             key_identity::commands::key_identity_settle,
             key_identity::commands::key_identity_sign_login,
             key_identity::commands::key_identity_sign_device_request,
+            key_identity::commands::key_identity_sign_delegation,
+            key_identity::commands::key_identity_sign_login_for_server,
             relay::commands::relay_verify_discovery,
             relay::commands::relay_replay_server_log,
             relay::commands::relay_host_response_key_seq,
             relay::commands::relay_verify_host_response,
             relay::commands::relay_read_host_event,
             relay::commands::relay_verify_card,
+            relay::commands::relay_revocation_ack_key_seq,
+            relay::commands::relay_verify_revocation_ack,
+            relay::direct::relay_direct_discovery,
+            relay::direct::relay_direct_open,
+            relay::direct::relay_direct_close,
+            relay::direct::relay_direct_graphql,
+            relay::direct::relay_direct_socket_open,
+            relay::direct::relay_direct_socket_send,
+            relay::direct::relay_direct_socket_close,
             key_identity::commands::key_identity_sync_log,
             key_identity::commands::key_identity_sign_revocation,
             key_identity::commands::key_identity_begin_rotation,

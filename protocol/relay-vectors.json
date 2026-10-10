@@ -1,5 +1,5 @@
 {
-  "description": "Known answers of the server, device-request, host-response and host-event statements: what the desktop (src-tauri/src/relay) and the web app (src/features/relay/crypto) must both reproduce byte for byte. Keys are SigningKey::from_bytes([seed; 32]). Never use these values for real keys.",
+  "description": "Known answers of the server, device-request, host-response, host-event, delegation and revocation acknowledgement statements: what the desktop (src-tauri/src/relay) and the web app (src/features/relay/crypto) must both reproduce byte for byte. Keys are SigningKey::from_bytes([seed; 32]). Never use these values for real keys.",
   "device": {
     "seed": 20,
     "principalId": "rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0",
@@ -106,6 +106,55 @@
       "bodySha256": "kiTZ8-pOSQbpTle1R3oUD57ZE_y2_AK5r7sRiH749m4",
       "payload": "{\"v\":2,\"type\":\"device-request\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"method\":\"POST\",\"path\":\"/api\",\"seq\":1,\"bodySha256\":\"kiTZ8-pOSQbpTle1R3oUD57ZE_y2_AK5r7sRiH749m4\",\"issuedAt\":\"2026-10-10T00:00:00Z\"}",
       "signature": "ed25519:NVi8j19NcNh80v2qZYODjr2mhqBEa9DD0bsViRkTjcID4VKxTzypb0X2rwEsRv4QIygxYMbzaOJlz-JREdXHBw"
+    }
+  ],
+  "delegation": {
+    "input": {
+      "relay": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "relayKeyHash": "8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM",
+      "host": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+      "workspaceId": "0199d1a0-0000-7000-8000-000000000002",
+      "nonce": "cHFyc3R1dnd4eXp7fH1-fw",
+      "issuedAt": "2026-10-09T00:00:00Z",
+      "expiresAt": "2026-10-10T00:00:00Z"
+    },
+    "payload": "{\"v\":2,\"type\":\"delegation\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"relay\":\"rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c\",\"relayKeyHash\":\"8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"workspaceId\":\"0199d1a0-0000-7000-8000-000000000002\",\"scope\":\"workspace\",\"nonce\":\"cHFyc3R1dnd4eXp7fH1-fw\",\"issuedAt\":\"2026-10-09T00:00:00Z\",\"expiresAt\":\"2026-10-10T00:00:00Z\"}",
+    "signature": "ed25519:aT8j0zeSdSqWySreIIeRokrjVoYuO-3z1k4IcsFN898M2x_in0B9UlaL5hCUAdw-gCisynSQi3b51QQiZdHlCQ"
+  },
+  "revocation": {
+    "payload": "{\"v\":2,\"type\":\"device-revoke\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"signer\":\"device\",\"issuedAt\":\"2026-10-09T00:00:00Z\"}",
+    "signature": "ed25519:kCcxKVwjdFvYSC3xx3yHWgO5gWwwq9wpC8bzQs1NPn9bKhAUJSBdLawiI1bWkNDDOdeW_x7AEm0fafPf38D3Bw"
+  },
+  "revocationAck": {
+    "payload": "{\"v\":2,\"type\":\"revocation-ack\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"keySeq\":0,\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"revocationSha256\":\"VYCvacXofNMIe3q3-owfpopw8oLdXAOc6KvNKsEtis4\",\"appliedAt\":\"2026-10-09T00:00:00Z\"}",
+    "signature": "ed25519:waKbDNMuQ460M8gX_H1NKzAMDXF3x4P8hbHoJFPr-pSduvfvQSbXvOcRmK5VcF5F9-sICQmF-pBnACBu9Z-mDg"
+  },
+  "delegationConformance": [
+    {
+      "input": {
+        "relay": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+        "relayKeyHash": "8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM",
+        "host": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+        "workspaceId": "0199d1a0-0000-7000-8000-00000000000a",
+        "nonce": "gIGCg4SFhoeIiYqLjI2Ojw",
+        "issuedAt": "2026-10-09T18:00:00Z",
+        "expiresAt": "2026-10-10T18:00:00Z"
+      },
+      "payload": "{\"v\":2,\"type\":\"delegation\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"relay\":\"rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c\",\"relayKeyHash\":\"8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"workspaceId\":\"0199d1a0-0000-7000-8000-00000000000a\",\"scope\":\"workspace\",\"nonce\":\"gIGCg4SFhoeIiYqLjI2Ojw\",\"issuedAt\":\"2026-10-09T18:00:00Z\",\"expiresAt\":\"2026-10-10T18:00:00Z\"}",
+      "signature": "ed25519:Fbf5u7kiFyVuzdce0i_9dDM2Q6-IbO-Z65ipibDwH8Lv4QUw8Yj7WZoEoNdf4ChJS7CN9X_YIA9EGSJzgz5TCg"
+    },
+    {
+      "input": {
+        "relay": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+        "relayKeyHash": "8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM",
+        "host": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+        "workspaceId": "0199d1a0-0000-7000-8000-00000000000b",
+        "nonce": "_____________________w",
+        "issuedAt": "2026-10-10T06:30:15Z",
+        "expiresAt": "2026-10-10T12:30:15Z"
+      },
+      "payload": "{\"v\":2,\"type\":\"delegation\",\"principalId\":\"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0\",\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"relay\":\"rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c\",\"relayKeyHash\":\"8UGftl4tBoxZjUo1UP_-zwUlobQJPwj5kZ0NC1oaAaM\",\"host\":\"rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw\",\"workspaceId\":\"0199d1a0-0000-7000-8000-00000000000b\",\"scope\":\"workspace\",\"nonce\":\"_____________________w\",\"issuedAt\":\"2026-10-10T06:30:15Z\",\"expiresAt\":\"2026-10-10T12:30:15Z\"}",
+      "signature": "ed25519:4Hd1ar91IQuuIChrJu3I05zJZNZHGZS01RAjBOElzgdaTZrvovjfUEw4Go8_zypJU_Xjg93Jpwgvuf6VHqX-BQ"
     }
   ]
 }
