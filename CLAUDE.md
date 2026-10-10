@@ -18,6 +18,9 @@ npm run dev                  # Vite dev server (port 1420)
 npm run build                # TypeScript check + Vite build (primary frontend validation)
 npm run codegen              # Generate GraphQL types from schema.graphql (see below)
 npm run build:wasm           # Rebuild the web app's MLS module (docs/e2ee-web.md); commit the result
+#   Required after ANY change under src-tauri/crates/rim_mls or rim_mls_wasm, test files included:
+#   src/features/e2ee/wasm/source.json hashes the crate sources and wasmArtifact.test.ts fails
+#   until the module is rebuilt and committed, so such a change also needs the web gates (npm test).
 npm run test:wasm            # rim_mls and its wasm facade in headless Chromium (needs chromedriver)
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
