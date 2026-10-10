@@ -94,12 +94,6 @@ enum AuditOutcomeGql {
 	MACRO_PARTIAL_FAILURE
 }
 
-type Capability {
-	id: String!
-	title: String!
-	description: String!
-}
-
 input ChannelCursorInput {
 	createdAt: DateTime!
 	conversationId: ID!
@@ -271,7 +265,7 @@ enforcement point. Adding a variant on the DTO without extending this
 enum + the match below is a compile error.
 
 Wire contract: SCREAMING_SNAKE variants (`PALETTE`, `AGENT`, `MACRO`,
-`KEYBIND`, `CONTEXT_MENU`, `PLUGIN`, `CLI`, `MCP`) — async-graphql's
+`KEYBIND`, `CONTEXT_MENU`, `PLUGIN`, `CLI`) — async-graphql's
 `Enum` derive handles the conversion. Auto-discovered by the schema
 because it's referenced from `ExecuteCommandInput.initiator` and
 `ExecuteMacroInput.initiator` — no explicit registration in `lib.rs`
@@ -308,10 +302,6 @@ enum CommandInitiator {
 	Out-of-process CLI client (rim-cli).
 	"""
 	CLI
-	"""
-	MCP (Model Context Protocol) server.
-	"""
-	MCP
 }
 
 type CommandResult {
@@ -400,17 +390,11 @@ type ConfirmationChallenge {
 }
 
 """
-GraphQL input for submitting a confirmation proof. Exactly one of
-`inBandToken` or `outOfBand` MUST be populated; submitting both or
-neither results in a `VALIDATION` error.
-
-`outOfBand` is a Phase-1 placeholder for MCP-style consent flows
-(M5 / Phase 6); the server currently rejects it with
-`CONFIRMATION_FAILED { code: UNSUPPORTED }`.
+GraphQL input for submitting a confirmation proof: the token and args
+hash of the challenge a previous call returned.
 """
 input ConfirmationProofInput {
-	inBandToken: InBandTokenInput
-	outOfBand: OutOfBandProofInput
+	inBandToken: InBandTokenInput!
 }
 
 type Contact {
@@ -605,35 +589,6 @@ input CreateCustomEmojiInput {
 	imageBase64: String!
 }
 
-"""
-Input for `createInstanceInvite`.
-
-Both fields are optional: `expires_at` defaults to `now() + 7 days`,
-`max_uses` defaults to 1.
-"""
-input CreateInstanceInviteInput {
-	expiresAt: DateTime
-	maxUses: Int
-	"""
-	Optional recipient to email the invite link to (Track B3). Validated server-side;
-	malformed addresses return a validation error.
-	"""
-	recipientEmail: String
-}
-
-"""
-Payload returned after successfully creating an instance invite.
-
-`invite_token` is the raw (unhashed) token — shown to the admin exactly once.
-"""
-type CreateInstanceInvitePayloadGql {
-	"""
-	The raw invite token. Shown to the admin once; never stored unhashed.
-	"""
-	inviteToken: String!
-	invite: InstanceInviteGql!
-}
-
 input CreateInviteInput {
 	serverId: ID!
 	expiresAt: DateTime
@@ -711,14 +666,6 @@ Implement the DateTime<Utc> scalar
 The input/output is a string in RFC3339 format.
 """
 scalar DateTime
-
-type DefaultKeybind {
-	source: KeybindSource!
-	keystroke: String!
-	commandId: String!
-	context: KeybindContext!
-	presetArgs: JSON
-}
 
 input DeleteAttachmentInput {
 	serverId: ID!
@@ -882,14 +829,6 @@ input ExecuteCommandInput {
 	args: JSON
 	commandContext: CommandContextInput
 	"""
-	**Deprecated** — use `confirmation` instead. Pre-Phase-1 callers
-	(the unmigrated frontend) set this to `true` after `window.confirm()`.
-	When `confirmation` is absent and this is `Some(true)`, the server
-	synthesizes a self-issued in-band proof so the H1 gate has a single
-	authoritative path. Removed in Phase 4 once the frontend modal lands.
-	"""
-	confirmedDangerous: Boolean
-	"""
 	Server-issued, server-verified confirmation proof. Required when
 	re-submitting after a previous `executeCommand` returned
 	`status: CONFIRMATION_REQUIRED`. Closes H1 (TOCTOU) by binding the
@@ -914,11 +853,6 @@ input ExecuteCommandInput {
 input ExecuteMacroInput {
 	macroId: ID!
 	commandContext: CommandContextInput
-	"""
-	**Deprecated** — see `ExecuteCommandInput.confirmed_dangerous`.
-	Removed in Phase 4.
-	"""
-	confirmedDangerous: Boolean
 	"""
 	Server-issued confirmation proof. Same shape and semantics as
 	`ExecuteCommandInput.confirmation`. Phase 1 note: macros are an
@@ -1006,47 +940,6 @@ input InboxCursorInput {
 type InboxCursorOutput {
 	lastActivityAt: DateTime!
 	conversationId: ID!
-}
-
-input IncrementWorkspaceStateInput {
-	serverId: ID!
-	key: String!
-	scope: WorkspaceStateScopeGql!
-	delta: Int!
-}
-
-"""
-Output type for an instance invite (admin view).
-
-Mirrors the `InstanceInvite` SDL type in spec §9.2.
-Note: the raw invite token is **not** exposed here — it is only emitted
-once in `CreateInstanceInvitePayload.inviteToken`.
-"""
-type InstanceInviteGql {
-	id: ID!
-	"""
-	The user who issued it; null for an invite the operator issued from the command line.
-	"""
-	createdByUserId: ID
-	expiresAt: DateTime!
-	maxUses: Int!
-	useCount: Int!
-	revokedAt: DateTime
-	createdAt: DateTime!
-}
-
-type Invite {
-	id: ID!
-	serverId: ID!
-	createdByUserId: ID!
-	expiresAt: DateTime
-	maxUses: Int!
-	useCount: Int!
-	revokedAt: DateTime
-	"""
-	Role granted on join: `MEMBER` or `GUEST` (Track 1.2).
-	"""
-	role: ServerMemberRoleGql!
 }
 
 """
@@ -1188,13 +1081,6 @@ enum KeybindContext {
 	CONVERSATION_VIEW
 	PANEL
 	COMMAND_PALETTE
-}
-
-type KeybindLayers {
-	defaultKeybind: DefaultKeybind
-	userKeybind: Keybind
-	workspaceKeybind: Keybind
-	resolvedPersistedKeybind: Keybind
 }
 
 enum KeybindScope {
@@ -1398,15 +1284,6 @@ type MessagePage {
 	pageInfo: PageInfo!
 }
 
-type MessageReference {
-	serverId: ID!
-	conversationId: ID!
-	messageId: ID!
-	threadId: ID
-	permalinkPath: String!
-	anchor: String!
-}
-
 """
 A member's report of a message. `messageText` and `messageAuthorId` are present only when
 the viewing moderator can read the conversation (`messageReadable`); otherwise only the ids
@@ -1593,7 +1470,6 @@ type Mutation {
 	logoutOtherSessions: Int!
 	createInvite(input: CreateInviteInput!): CreateInvitePayload!
 	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
-	revokeInvite(inviteId: ID!): Boolean!
 	"""
 	Unified signup mutation for all token-based and open-mode registration paths.
 	
@@ -1604,19 +1480,6 @@ type Mutation {
 	On success, sets session and CSRF cookies via `AuthIntent`.
 	"""
 	signupWithInvite(input: SignupWithInviteInput!): SignupWithInvitePayloadGql!
-	"""
-	Create a new instance invite (admin-only gate: must own at least one workspace).
-	
-	Returns the raw invite token exactly once in the payload. Store it; it cannot
-	be retrieved again.
-	"""
-	createInstanceInvite(input: CreateInstanceInviteInput!): CreateInstanceInvitePayloadGql!
-	"""
-	Revoke an existing instance invite (admin-only gate: must own at least one workspace).
-	
-	Returns `true` on success. Returns `NOT_FOUND` if the invite does not exist.
-	"""
-	revokeInstanceInvite(inviteId: ID!): Boolean!
 	sendMessage(input: SendMessageInput!): Message!
 	replyToMessage(input: ReplyToMessageInput!): Message!
 	createConversation(input: CreateConversationInput!): Conversation!
@@ -1667,7 +1530,7 @@ type Mutation {
 	unmuteConversation(input: UnmuteConversationInput!): Boolean!
 	"""
 	`FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
-	logged instead of sent, as before.
+	logged instead of sent.
 	"""
 	requestPasswordReset(username: String!): Boolean!
 	resetPassword(token: String!, newPassword: String!): Boolean!
@@ -1682,7 +1545,6 @@ type Mutation {
 	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
-	incrementWorkspaceState(input: IncrementWorkspaceStateInput!): WorkspaceStateEntryGql!
 	createPipeline(input: CreatePipelineInput!): PipelineGql!
 	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
 	deletePipeline(pipelineId: ID!): Boolean!
@@ -2047,10 +1909,6 @@ type NotificationSettings {
 	digest: DigestFrequency!
 }
 
-input OutOfBandProofInput {
-	requestId: String!
-}
-
 enum PageDir {
 	BEFORE
 	AFTER
@@ -2236,13 +2094,7 @@ type Query {
 	Returns `RATE_LIMITED` on overage.
 	"""
 	commandDiscover(intentPhrase: String, limit: Int, workspaceId: ID): [Command!]!
-	command(commandId: String!): Command
-	capabilities: [Capability!]!
-	keybinds(scope: KeybindScope!, workspaceId: ID): [Keybind!]!
-	defaultKeybinds: [DefaultKeybind!]!
 	resolvedKeybinds(workspaceId: ID): [Keybind!]!
-	resolveKeybind(keystroke: String!, context: KeybindContext!, workspaceId: ID): Keybind
-	keybindLayers(keystroke: String!, context: KeybindContext!, workspaceId: ID): KeybindLayers!
 	conversation(serverId: ID!, conversationId: ID!): Conversation!
 	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
 	channels(serverId: ID!, dir: PageDir!, cursor: ChannelCursorInput, limit: Int!, filter: ChannelListFilter): ChannelPage!
@@ -2265,7 +2117,6 @@ type Query {
 	"""
 	searchMessages(input: SearchMessagesInput!): SearchResultPage!
 	message(serverId: ID!, conversationId: ID!, messageId: ID!): Message!
-	messageReference(serverId: ID!, conversationId: ID!, messageId: ID!): MessageReference!
 	"""
 	The message change feed: for each conversation, the messages created, edited or deleted
 	after its cursor (timeline and thread replies alike), oldest change first. A client cache
@@ -2275,28 +2126,22 @@ type Query {
 	messageChanges(input: MessageChangesInput!): [ConversationMessageChanges!]!
 	thread(serverId: ID!, conversationId: ID!, threadId: ID!): Thread!
 	threadByRootMessage(serverId: ID!, conversationId: ID!, rootMessageId: ID!): Thread
-	threads(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: ThreadCursorInput, limit: Int!): ThreadPage!
 	threadMessages(serverId: ID!, conversationId: ID!, threadId: ID!, dir: PageDir!, cursor: MessageCursorInput, limit: Int!, includeDeleted: Boolean!): MessagePage!
-	attachment(serverId: ID!, attachmentId: ID!): Attachment!
 	me: User!
 	myServers: [Server!]!
 	server(serverId: ID!): Server!
 	unreadCounts(workspaceId: ID!): [UnreadCount!]!
 	serverMembers(serverId: ID!): [ServerMember!]!
-	myMentions(serverId: ID!, limit: Int! = 50): [Message!]!
 	pinnedMessages(serverId: ID!, conversationId: ID!): [Message!]!
 	workspacePresence(workspaceId: ID!): [UserPresenceGql!]!
-	myInvites(serverId: ID!): [Invite!]!
 	mutedConversations(serverId: ID!): [MutedConversation!]!
 	customEmojis(serverId: ID!): [CustomEmoji!]!
 	myMacros(serverId: ID!): [MacroDef!]!
 	macroByName(serverId: ID!, name: String!): MacroDef
-	serverMacros(serverId: ID!): [MacroDef!]!
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
 	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
 	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
 	workspaceStateList(serverId: ID!, prefix: String!, scope: WorkspaceStateScopeGql!, limit: Int): [WorkspaceStateEntryGql!]!
-	pipeline(pipelineId: ID!): PipelineGql!
 	pipelines(serverId: ID!, enabled: Boolean): [PipelineGql!]!
 	"""
 	Query the command audit log. Requires `audit.read` capability.
@@ -2309,13 +2154,6 @@ type Query {
 	No authentication required — this is public configuration metadata.
 	"""
 	registrationMode: RegistrationModeGql!
-	"""
-	List all active (non-revoked) instance invites.
-	
-	Admin-only: requires the caller to be `Owner` on at least one workspace.
-	Returns `FORBIDDEN` otherwise.
-	"""
-	listInstanceInvites: [InstanceInviteGql!]!
 	"""
 	Preview a registration token without consuming it.
 	
@@ -3055,23 +2893,6 @@ type Thread {
 	rootText: String
 	createdAt: DateTime!
 	lastMessageAt: DateTime!
-}
-
-input ThreadCursorInput {
-	lastMessageAt: DateTime!
-	threadId: ID!
-}
-
-type ThreadCursorOutput {
-	lastMessageAt: DateTime!
-	threadId: ID!
-}
-
-type ThreadPage {
-	items: [Thread!]!
-	next: ThreadCursorOutput
-	prev: ThreadCursorOutput
-	pageInfo: PageInfo!
 }
 
 input ToggleReactionInput {

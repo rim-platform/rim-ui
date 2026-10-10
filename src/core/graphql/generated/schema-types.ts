@@ -108,12 +108,6 @@ export enum AuditOutcomeGql {
   SUCCESS = 'SUCCESS'
 }
 
-export type Capability = {
-  description: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  title: Scalars['String']['output'];
-};
-
 export type ChannelCursorInput = {
   conversationId: Scalars['ID']['input'];
   createdAt: Scalars['DateTime']['input'];
@@ -281,7 +275,7 @@ export enum CommandExecutionTarget {
  * enum + the match below is a compile error.
  *
  * Wire contract: SCREAMING_SNAKE variants (`PALETTE`, `AGENT`, `MACRO`,
- * `KEYBIND`, `CONTEXT_MENU`, `PLUGIN`, `CLI`, `MCP`) — async-graphql's
+ * `KEYBIND`, `CONTEXT_MENU`, `PLUGIN`, `CLI`) — async-graphql's
  * `Enum` derive handles the conversion. Auto-discovered by the schema
  * because it's referenced from `ExecuteCommandInput.initiator` and
  * `ExecuteMacroInput.initiator` — no explicit registration in `lib.rs`
@@ -300,8 +294,6 @@ export enum CommandInitiator {
   KEYBIND = 'KEYBIND',
   /** Inside a macro / user command expansion. */
   MACRO = 'MACRO',
-  /** MCP (Model Context Protocol) server. */
-  MCP = 'MCP',
   /** User typed/clicked in the command palette. */
   PALETTE = 'PALETTE',
   /** Plugin's own runtime invoked the command. */
@@ -386,17 +378,11 @@ export type ConfirmationChallenge = {
 };
 
 /**
- * GraphQL input for submitting a confirmation proof. Exactly one of
- * `inBandToken` or `outOfBand` MUST be populated; submitting both or
- * neither results in a `VALIDATION` error.
- *
- * `outOfBand` is a Phase-1 placeholder for MCP-style consent flows
- * (M5 / Phase 6); the server currently rejects it with
- * `CONFIRMATION_FAILED { code: UNSUPPORTED }`.
+ * GraphQL input for submitting a confirmation proof: the token and args
+ * hash of the challenge a previous call returned.
  */
 export type ConfirmationProofInput = {
-  inBandToken?: InputMaybe<InBandTokenInput>;
-  outOfBand?: InputMaybe<OutOfBandProofInput>;
+  inBandToken: InBandTokenInput;
 };
 
 export type Contact = {
@@ -553,33 +539,6 @@ export type CreateCustomEmojiInput = {
   serverId: Scalars['ID']['input'];
 };
 
-/**
- * Input for `createInstanceInvite`.
- *
- * Both fields are optional: `expires_at` defaults to `now() + 7 days`,
- * `max_uses` defaults to 1.
- */
-export type CreateInstanceInviteInput = {
-  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
-  maxUses?: InputMaybe<Scalars['Int']['input']>;
-  /**
-   * Optional recipient to email the invite link to (Track B3). Validated server-side;
-   * malformed addresses return a validation error.
-   */
-  recipientEmail?: InputMaybe<Scalars['String']['input']>;
-};
-
-/**
- * Payload returned after successfully creating an instance invite.
- *
- * `invite_token` is the raw (unhashed) token — shown to the admin exactly once.
- */
-export type CreateInstanceInvitePayloadGql = {
-  invite: InstanceInviteGql;
-  /** The raw invite token. Shown to the admin once; never stored unhashed. */
-  inviteToken: Scalars['String']['output'];
-};
-
 export type CreateInviteInput = {
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   maxUses?: InputMaybe<Scalars['Int']['input']>;
@@ -649,14 +608,6 @@ export type CustomEmoji = {
   name: Scalars['String']['output'];
   serverId: Scalars['ID']['output'];
   uploadedBy: Scalars['ID']['output'];
-};
-
-export type DefaultKeybind = {
-  commandId: Scalars['String']['output'];
-  context: KeybindContext;
-  keystroke: Scalars['String']['output'];
-  presetArgs?: Maybe<Scalars['JSON']['output']>;
-  source: KeybindSource;
 };
 
 export type DeleteAttachmentInput = {
@@ -800,14 +751,6 @@ export type ExecuteCommandInput = {
    */
   confirmation?: InputMaybe<ConfirmationProofInput>;
   /**
-   * **Deprecated** — use `confirmation` instead. Pre-Phase-1 callers
-   * (the unmigrated frontend) set this to `true` after `window.confirm()`.
-   * When `confirmation` is absent and this is `Some(true)`, the server
-   * synthesizes a self-issued in-band proof so the H1 gate has a single
-   * authoritative path. Removed in Phase 4 once the frontend modal lands.
-   */
-  confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
-  /**
    * Who issued this command. Optional for back-compat — when omitted, the
    * backend defaults to `PALETTE` (the conservative human default). Phase
    * 4 frontend dispatcher will start sending the explicit value from every
@@ -832,11 +775,6 @@ export type ExecuteMacroInput = {
    * add per-step proofs once the modal can render a step list.
    */
   confirmation?: InputMaybe<ConfirmationProofInput>;
-  /**
-   * **Deprecated** — see `ExecuteCommandInput.confirmed_dangerous`.
-   * Removed in Phase 4.
-   */
-  confirmedDangerous?: InputMaybe<Scalars['Boolean']['input']>;
   /**
    * Who triggered this macro. Same back-compat semantics as
    * `ExecuteCommandInput.initiator`: optional, server-defaults to
@@ -917,43 +855,6 @@ export type InboxCursorInput = {
 export type InboxCursorOutput = {
   conversationId: Scalars['ID']['output'];
   lastActivityAt: Scalars['DateTime']['output'];
-};
-
-export type IncrementWorkspaceStateInput = {
-  delta: Scalars['Int']['input'];
-  key: Scalars['String']['input'];
-  scope: WorkspaceStateScopeGql;
-  serverId: Scalars['ID']['input'];
-};
-
-/**
- * Output type for an instance invite (admin view).
- *
- * Mirrors the `InstanceInvite` SDL type in spec §9.2.
- * Note: the raw invite token is **not** exposed here — it is only emitted
- * once in `CreateInstanceInvitePayload.inviteToken`.
- */
-export type InstanceInviteGql = {
-  createdAt: Scalars['DateTime']['output'];
-  /** The user who issued it; null for an invite the operator issued from the command line. */
-  createdByUserId?: Maybe<Scalars['ID']['output']>;
-  expiresAt: Scalars['DateTime']['output'];
-  id: Scalars['ID']['output'];
-  maxUses: Scalars['Int']['output'];
-  revokedAt?: Maybe<Scalars['DateTime']['output']>;
-  useCount: Scalars['Int']['output'];
-};
-
-export type Invite = {
-  createdByUserId: Scalars['ID']['output'];
-  expiresAt?: Maybe<Scalars['DateTime']['output']>;
-  id: Scalars['ID']['output'];
-  maxUses: Scalars['Int']['output'];
-  revokedAt?: Maybe<Scalars['DateTime']['output']>;
-  /** Role granted on join: `MEMBER` or `GUEST` (Track 1.2). */
-  role: ServerMemberRoleGql;
-  serverId: Scalars['ID']['output'];
-  useCount: Scalars['Int']['output'];
 };
 
 /**
@@ -1065,13 +966,6 @@ export enum KeybindContext {
   PANEL = 'PANEL',
   THREAD_VIEW = 'THREAD_VIEW'
 }
-
-export type KeybindLayers = {
-  defaultKeybind?: Maybe<DefaultKeybind>;
-  resolvedPersistedKeybind?: Maybe<Keybind>;
-  userKeybind?: Maybe<Keybind>;
-  workspaceKeybind?: Maybe<Keybind>;
-};
 
 export enum KeybindScope {
   USER = 'USER',
@@ -1248,15 +1142,6 @@ export type MessagePage = {
   next?: Maybe<MessageCursorOutput>;
   pageInfo: PageInfo;
   prev?: Maybe<MessageCursorOutput>;
-};
-
-export type MessageReference = {
-  anchor: Scalars['String']['output'];
-  conversationId: Scalars['ID']['output'];
-  messageId: Scalars['ID']['output'];
-  permalinkPath: Scalars['String']['output'];
-  serverId: Scalars['ID']['output'];
-  threadId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**
@@ -1448,13 +1333,6 @@ export type Mutation = {
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
-  /**
-   * Create a new instance invite (admin-only gate: must own at least one workspace).
-   *
-   * Returns the raw invite token exactly once in the payload. Store it; it cannot
-   * be retrieved again.
-   */
-  createInstanceInvite: CreateInstanceInvitePayloadGql;
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
@@ -1482,7 +1360,6 @@ export type Mutation = {
   heartbeat: Scalars['Boolean']['output'];
   /** Delete the request's held items and drop later items of the conversation. */
   ignoreDmRequest: DmRequest;
-  incrementWorkspaceState: WorkspaceStateEntryGql;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   /**
@@ -1560,7 +1437,7 @@ export type Mutation = {
   requestMlsReadd: Scalars['Boolean']['output'];
   /**
    * `FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
-   * logged instead of sent, as before.
+   * logged instead of sent.
    */
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
@@ -1571,13 +1448,6 @@ export type Mutation = {
   resolveReport: MessageReport;
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
-  /**
-   * Revoke an existing instance invite (admin-only gate: must own at least one workspace).
-   *
-   * Returns `true` on success. Returns `NOT_FOUND` if the invite does not exist.
-   */
-  revokeInstanceInvite: Scalars['Boolean']['output'];
-  revokeInvite: Scalars['Boolean']['output'];
   /**
    * Append a rotation to the key log. A rotation signed by the recovery key works without a
    * session, revokes every device and session, and enrolls the device given with it.
@@ -1804,11 +1674,6 @@ export type MutationCreateCustomEmojiArgs = {
 };
 
 
-export type MutationCreateInstanceInviteArgs = {
-  input: CreateInstanceInviteInput;
-};
-
-
 export type MutationCreateInviteArgs = {
   input: CreateInviteInput;
 };
@@ -1927,11 +1792,6 @@ export type MutationHeartbeatArgs = {
 
 export type MutationIgnoreDmRequestArgs = {
   id: Scalars['ID']['input'];
-};
-
-
-export type MutationIncrementWorkspaceStateArgs = {
-  input: IncrementWorkspaceStateInput;
 };
 
 
@@ -2085,16 +1945,6 @@ export type MutationResolveReportArgs = {
 
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
-};
-
-
-export type MutationRevokeInstanceInviteArgs = {
-  inviteId: Scalars['ID']['input'];
-};
-
-
-export type MutationRevokeInviteArgs = {
-  inviteId: Scalars['ID']['input'];
 };
 
 
@@ -2363,10 +2213,6 @@ export type NotificationSettings = {
   serverId: Scalars['ID']['output'];
 };
 
-export type OutOfBandProofInput = {
-  requestId: Scalars['String']['input'];
-};
-
 export enum PageDir {
   AFTER = 'AFTER',
   BEFORE = 'BEFORE'
@@ -2533,11 +2379,8 @@ export type ProfileCard = {
 
 export type Query = {
   applyChannelLens: Array<Message>;
-  attachment: Attachment;
-  capabilities: Array<Capability>;
   channelLenses: Array<ChannelLens>;
   channels: ChannelPage;
-  command?: Maybe<Command>;
   /**
    * P5-A7 — AI Agent command-discovery meta-tool (v2 §5 R1 #3, M6).
    *
@@ -2556,7 +2399,6 @@ export type Query = {
   contacts: Array<Contact>;
   conversation: Conversation;
   customEmojis: Array<CustomEmoji>;
-  defaultKeybinds: Array<DefaultKeybind>;
   /**
    * One of the signed-in account's device links: its state, expiry and, once the new device
    * sent it, the sealed offer.
@@ -2578,17 +2420,8 @@ export type Query = {
    * recovery rotation (`rotateIdentityKey`).
    */
   keyLog: Array<KeyLogEntry>;
-  keybindLayers: KeybindLayers;
-  keybinds: Array<Keybind>;
   /** Query the command audit log. Requires `audit.read` capability. */
   listAuditLog: AuditLogPage;
-  /**
-   * List all active (non-revoked) instance invites.
-   *
-   * Admin-only: requires the caller to be `Owner` on at least one workspace.
-   * Returns `FORBIDDEN` otherwise.
-   */
-  listInstanceInvites: Array<InstanceInviteGql>;
   macroByName?: Maybe<MacroDef>;
   me: User;
   message: Message;
@@ -2599,7 +2432,6 @@ export type Query = {
    * `docs/message-change-feed.md`.
    */
   messageChanges: Array<ConversationMessageChanges>;
-  messageReference: MessageReference;
   /**
    * One report of the workspace. Owner/Moderator only. For a verified report of an
    * encrypted message it includes `frankedContent`, and records that the moderator viewed
@@ -2619,11 +2451,9 @@ export type Query = {
    */
   mlsCommits: MlsCommitPage;
   mutedConversations: Array<MutedConversation>;
-  myInvites: Array<Invite>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
   myMacros: Array<MacroDef>;
-  myMentions: Array<Message>;
   /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
   /** The session device's unacknowledged Welcomes, oldest first. */
@@ -2640,7 +2470,6 @@ export type Query = {
   /** Unread notifications of the viewer in the workspace (the bell badge). */
   myUnreadNotificationCount: Scalars['Int']['output'];
   pinnedMessages: Array<Message>;
-  pipeline: PipelineGql;
   pipelines: Array<PipelineGql>;
   /**
    * Preview a registration token without consuming it.
@@ -2680,7 +2509,6 @@ export type Query = {
   remoteServer: RemoteServer;
   /** The caller's subscriptions to workspaces on other hosts. */
   remoteSubscriptions: Array<RemoteSubscription>;
-  resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
   /**
    * Full-text search over messages. Supports the `from:`/`in:`/`has:`/`before:`/`after:`
@@ -2704,7 +2532,6 @@ export type Query = {
   serverBans: Array<ServerBan>;
   /** The server's release version, API version and features. Readable without a session. */
   serverInfo: ServerInfo;
-  serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
   /**
    * The current `seq` of each named event stream of a space hosted here that the caller can
@@ -2714,7 +2541,6 @@ export type Query = {
   thread: Thread;
   threadByRootMessage?: Maybe<Thread>;
   threadMessages: MessagePage;
-  threads: ThreadPage;
   unreadCounts: Array<UnreadCount>;
   /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
   workspacePlugins: Array<WorkspacePlugin>;
@@ -2732,12 +2558,6 @@ export type QueryApplyChannelLensArgs = {
 };
 
 
-export type QueryAttachmentArgs = {
-  attachmentId: Scalars['ID']['input'];
-  serverId: Scalars['ID']['input'];
-};
-
-
 export type QueryChannelLensesArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -2750,11 +2570,6 @@ export type QueryChannelsArgs = {
   filter?: InputMaybe<ChannelListFilter>;
   limit: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryCommandArgs = {
-  commandId: Scalars['String']['input'];
 };
 
 
@@ -2815,19 +2630,6 @@ export type QueryKeyLogArgs = {
 };
 
 
-export type QueryKeybindLayersArgs = {
-  context: KeybindContext;
-  keystroke: Scalars['String']['input'];
-  workspaceId?: InputMaybe<Scalars['ID']['input']>;
-};
-
-
-export type QueryKeybindsArgs = {
-  scope: KeybindScope;
-  workspaceId?: InputMaybe<Scalars['ID']['input']>;
-};
-
-
 export type QueryListAuditLogArgs = {
   filter?: InputMaybe<AuditLogFilterInput>;
   pagination?: InputMaybe<AuditLogPaginationInput>;
@@ -2849,13 +2651,6 @@ export type QueryMessageArgs = {
 
 export type QueryMessageChangesArgs = {
   input: MessageChangesInput;
-};
-
-
-export type QueryMessageReferenceArgs = {
-  conversationId: Scalars['ID']['input'];
-  messageId: Scalars['ID']['input'];
-  serverId: Scalars['ID']['input'];
 };
 
 
@@ -2898,18 +2693,7 @@ export type QueryMutedConversationsArgs = {
 };
 
 
-export type QueryMyInvitesArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
 export type QueryMyMacrosArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryMyMentionsArgs = {
-  limit?: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
 };
 
@@ -2936,11 +2720,6 @@ export type QueryMyUnreadNotificationCountArgs = {
 export type QueryPinnedMessagesArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryPipelineArgs = {
-  pipelineId: Scalars['ID']['input'];
 };
 
 
@@ -2977,13 +2756,6 @@ export type QueryRemoteServerArgs = {
 };
 
 
-export type QueryResolveKeybindArgs = {
-  context: KeybindContext;
-  keystroke: Scalars['String']['input'];
-  workspaceId?: InputMaybe<Scalars['ID']['input']>;
-};
-
-
 export type QueryResolvedKeybindsArgs = {
   workspaceId?: InputMaybe<Scalars['ID']['input']>;
 };
@@ -3000,11 +2772,6 @@ export type QueryServerArgs = {
 
 
 export type QueryServerBansArgs = {
-  serverId: Scalars['ID']['input'];
-};
-
-
-export type QueryServerMacrosArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3042,15 +2809,6 @@ export type QueryThreadMessagesArgs = {
   limit: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
   threadId: Scalars['ID']['input'];
-};
-
-
-export type QueryThreadsArgs = {
-  conversationId: Scalars['ID']['input'];
-  cursor?: InputMaybe<ThreadCursorInput>;
-  dir: PageDir;
-  limit: Scalars['Int']['input'];
-  serverId: Scalars['ID']['input'];
 };
 
 
@@ -3589,23 +3347,6 @@ export type Thread = {
   rootMessageId?: Maybe<Scalars['ID']['output']>;
   rootText?: Maybe<Scalars['String']['output']>;
   serverId: Scalars['ID']['output'];
-};
-
-export type ThreadCursorInput = {
-  lastMessageAt: Scalars['DateTime']['input'];
-  threadId: Scalars['ID']['input'];
-};
-
-export type ThreadCursorOutput = {
-  lastMessageAt: Scalars['DateTime']['output'];
-  threadId: Scalars['ID']['output'];
-};
-
-export type ThreadPage = {
-  items: Array<Thread>;
-  next?: Maybe<ThreadCursorOutput>;
-  pageInfo: PageInfo;
-  prev?: Maybe<ThreadCursorOutput>;
 };
 
 export type ToggleReactionInput = {
