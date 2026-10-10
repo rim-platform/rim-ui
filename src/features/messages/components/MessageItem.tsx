@@ -14,6 +14,7 @@ import { DeletedMessageText, MessageContent, MessageText } from "./message-item/
 import { MessageEditForm } from "./message-item/MessageEditForm";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
 import { MessageReactions } from "./message-item/MessageReactions";
+import { ReplyQuote } from "./message-item/ReplyQuote";
 import type { MessageTextVariant } from "./message-item/MessageBody";
 import type { MessageItemProps } from "./message-item/types";
 
@@ -41,6 +42,7 @@ export const MessageItem = memo(function MessageItem({
   const {
     message,
     author,
+    replyTo,
     incidentTags,
     isSelected,
     isHighlighted,
@@ -111,6 +113,9 @@ export const MessageItem = memo(function MessageItem({
     </>
   );
 
+  const replyQuote =
+    replyTo && !isDeleted ? <ReplyQuote quote={replyTo} onJump={handlers.onJumpToMessage} /> : null;
+
   const threadButton =
     !isDeleted && !message.threadId && !message.rootThreadId ? (
       <MessageThreadButton messageId={messageId} onOpenThread={onOpenThread} />
@@ -159,6 +164,7 @@ export const MessageItem = memo(function MessageItem({
           </div>
         ) : (
           <div className="min-w-0 flex-1">
+            {replyQuote}
             <MessageText {...textProps("inline")} />
             {extras}
           </div>
@@ -202,6 +208,7 @@ export const MessageItem = memo(function MessageItem({
                 {formatShortTime(message.sentAt)}
               </span>
               <div className="min-w-0 flex-1">
+                {replyQuote}
                 <MessageContent {...contentProps} {...textProps("compact")} />
               </div>
             </div>
@@ -210,6 +217,7 @@ export const MessageItem = memo(function MessageItem({
               <span className="absolute -left-12 top-0.5 text-xs text-rim-text-faint opacity-0 transition-opacity group-hover:opacity-100">
                 {formatShortTime(message.sentAt)}
               </span>
+              {replyQuote}
               <MessageContent {...contentProps} {...textProps("grouped")} />
             </div>
           )
@@ -231,6 +239,7 @@ export const MessageItem = memo(function MessageItem({
               onOpenThread={onOpenThread}
               onNavigateToForwardedSource={handlers.onNavigateToForwardedSource}
             />
+            {replyQuote}
             <MessageContent {...contentProps} {...textProps("full")} />
           </>
         )}

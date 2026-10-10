@@ -38,6 +38,8 @@ export interface MessageItemMessage {
   isDeleted?: boolean;
   forwardedFromMessageId?: string | null;
   forwardedFrom?: ForwardedFromInfo | null;
+  /** The message this one replies to. */
+  parentMessageId?: string | null;
   attachments?: MessageAttachment[];
   reactions?: Reaction[];
   linkPreviews?: LinkPreview[];
@@ -77,10 +79,21 @@ export interface MessageAuthorView {
   isCurrentUser: boolean;
 }
 
+/** The compact quote of the message a reply answers. */
+export interface ReplyQuoteView {
+  messageId: string;
+  /** Null when the parent is not loaded. */
+  authorName: string | null;
+  /** The parent's first line as plain text, or a note when there is no text to show. */
+  excerpt: string;
+}
+
 /** Everything a row needs to render, as plain data. */
 export interface MessageViewModel {
   message: MessageItemMessage;
   author: MessageAuthorView;
+  /** Set when the message replies to another one. */
+  replyTo?: ReplyQuoteView | null;
   incidentTags?: IncidentTagInfo[];
   isSelected?: boolean;
   /** Briefly flashed after a search/permalink jump. */
@@ -105,6 +118,8 @@ export interface MessageItemHandlers {
   onSaveEdit?: (messageId: string, newText: string) => void;
   onCancelEdit?: () => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;
+  /** Scrolls to and flashes a message of the same conversation (a reply's parent). */
+  onJumpToMessage?: (messageId: string) => void;
 }
 
 /** Member directory used for mention rendering and reaction tooltips. Stable per member list. */

@@ -5,6 +5,7 @@ import type {
   MessageItemProps,
   MessageViewModel,
   Reaction,
+  ReplyQuoteView,
 } from "./types";
 
 export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean {
@@ -58,6 +59,7 @@ function sameMessage(a: MessageItemMessage, b: MessageItemMessage): boolean {
     a.isDeleted === b.isDeleted &&
     a.forwardedFromMessageId === b.forwardedFromMessageId &&
     a.forwardedFrom?.id === b.forwardedFrom?.id &&
+    a.parentMessageId === b.parentMessageId &&
     a.e2ee?.status === b.e2ee?.status &&
     a.e2ee?.rev === b.e2ee?.rev &&
     Boolean(a.encryption) === Boolean(b.encryption) &&
@@ -66,6 +68,15 @@ function sameMessage(a: MessageItemMessage, b: MessageItemMessage): boolean {
     sameList(a.attachments, b.attachments, (x, y) => x.id === y.id && x.status === y.status) &&
     sameList(a.linkPreviews, b.linkPreviews, (x, y) => x.id === y.id)
   );
+}
+
+function sameReplyQuote(
+  a: ReplyQuoteView | null | undefined,
+  b: ReplyQuoteView | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a && !b;
+  return a.messageId === b.messageId && a.authorName === b.authorName && a.excerpt === b.excerpt;
 }
 
 function sameView(a: MessageViewModel, b: MessageViewModel): boolean {
@@ -80,6 +91,7 @@ function sameView(a: MessageViewModel, b: MessageViewModel): boolean {
     a.isFirstInGroup === b.isFirstInGroup &&
     a.displayDensity === b.displayDensity &&
     sameAuthor(a.author, b.author) &&
+    sameReplyQuote(a.replyTo, b.replyTo) &&
     sameMessage(a.message, b.message) &&
     sameList<IncidentTagInfo>(a.incidentTags, b.incidentTags, (x, y) => x.tagType === y.tagType)
   );
