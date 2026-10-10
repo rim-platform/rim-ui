@@ -7,10 +7,14 @@ import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
-import { toastPluginCommandResult } from "../../plugins/runtime/pluginCommandInfo";
+import {
+  isCancelledResult,
+  toastPluginCommandResult,
+} from "../../plugins/runtime/pluginCommandInfo";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { dispatchCommand } from "../runtime/commandDispatcher";
+import { commandResultOf, dispatchCommand } from "../runtime/commandDispatcher";
+import { runWithHumanConfirmation, strictestSensitivity } from "../runtime/humanConfirmation";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
 import { LOCAL_COMMANDS } from "../runtime/localCommands";
 import { cn } from "../../../shared/ui/cn";
@@ -179,14 +183,31 @@ export function CommandPalette() {
         persistent: true,
       });
       try {
-        const res = await executeCommandMutation.mutateAsync({
-          commandId: pipeExpression,
-          commandContext: { workspaceId: workspaceId ?? undefined },
-          isPipe: true,
-        });
-        const result = res.executeCommand;
+        const outcome = await runWithHumanConfirmation(
+          async (confirmation) => {
+            const res = await executeCommandMutation.mutateAsync({
+              commandId: pipeExpression,
+              commandContext: { workspaceId: workspaceId ?? undefined },
+              isPipe: true,
+              confirmation,
+            });
+            return res.executeCommand;
+          },
+          {
+            commandId: pipeExpression,
+            title: "Run pipe",
+            args: { pipe: pipeExpression },
+            ...strictestSensitivity(
+              allSegments.map((segment) => segment.trim().split(/\s+/)[0] ?? ""),
+              commands,
+            ),
+          },
+        );
+        const result = commandResultOf(outcome);
         toast.dismiss(toastId);
-        if (result.pipelineStages && result.pipelineStages.length > 0) {
+        if (isCancelledResult(result)) {
+          closeCommandPalette();
+        } else if (result.pipelineStages && result.pipelineStages.length > 0) {
           setPipelineResult(result);
           if (result.status === "ERROR") {
             const failedStage = result.pipelineStages.find((s) => s.status === "ERROR");
@@ -212,7 +233,7 @@ export function CommandPalette() {
         setPipeExecuting(false);
       }
     },
-    [closeCommandPalette, executeCommandMutation, workspaceId],
+    [closeCommandPalette, executeCommandMutation, workspaceId, commands],
   );
 
   const executeSelected = useCallback(
@@ -247,6 +268,8 @@ export function CommandPalette() {
         if (command.sourceKind === "PLUGIN") {
           // A plugin answers in words (its payload is for scripts and the agent).
           toastPluginCommandResult(command.title, result);
+        } else if (isCancelledResult(result)) {
+          // The user declined the confirmation, or was told it expired.
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {

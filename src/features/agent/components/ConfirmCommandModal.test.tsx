@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
@@ -549,5 +549,116 @@ describe("ConfirmCommandModal — accessibility", () => {
     });
     const redactedCell = screen.getByLabelText("redacted");
     expect(redactedCell).toHaveTextContent("[REDACTED]");
+  });
+});
+
+describe("ConfirmCommandModal — a command the user ran", () => {
+  function userRequest(overrides: Partial<ConfirmationRequest> = {}): ConfirmationRequest {
+    return makeRequest({
+      initiator: "user",
+      commandId: "admin.purge_channel",
+      toolName: "Purge Channel",
+      args: { channel: "general" },
+      sensitivity: CommandSensitivity.RESTRICTED,
+      nlDescription: undefined,
+      description: "Delete every message in the channel.",
+      ...overrides,
+    });
+  }
+
+  it("titles the dialog with the command's title and shows no agent chip", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(userRequest());
+    });
+    const dialog = screen.getByRole("dialog", { name: "Confirm: Purge Channel" });
+    expect(dialog).toHaveTextContent("Delete every message in the channel.");
+    expect(dialog).toHaveTextContent("Initiated by you.");
+    expect(dialog).not.toHaveTextContent("Agent wants to:");
+    expect(screen.queryByTestId("initiator-chip")).not.toBeInTheDocument();
+    expect(screen.getByTestId("args-block")).toHaveTextContent("general");
+  });
+
+  it("asks for the typed verb of a Restricted command, honouring a verb override", async () => {
+    const user = userEvent.setup();
+    render(<ConfirmCommandModal />);
+    let decision: Promise<{ approved: boolean }> | undefined;
+    act(() => {
+      decision = useConfirmationModalStore.getState().open(userRequest({ verb: "wipe" }));
+    });
+    const confirm = screen.getByTestId("confirm-button");
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByTestId("verb-input"), "purge");
+    expect(confirm).toBeDisabled();
+    await user.clear(screen.getByTestId("verb-input"));
+    await user.type(screen.getByTestId("verb-input"), "wipe");
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+    await expect(decision).resolves.toEqual({ approved: true });
+  });
+
+  it("asks for no verb for a Restricted command whose verb is null", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(userRequest({ verb: null }));
+    });
+    expect(screen.queryByTestId("verb-input")).not.toBeInTheDocument();
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("RESTRICTED");
+  });
+
+  it("asks for no verb when the command's sensitivity is unknown", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(userRequest({ sensitivity: undefined }));
+    });
+    expect(screen.queryByTestId("verb-input")).not.toBeInTheDocument();
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("MUTATING");
+  });
+
+  it("cancels on Escape and returns focus to where it was", async () => {
+    render(
+      <>
+        <button type="button">Origin</button>
+        <ConfirmCommandModal />
+      </>,
+    );
+    const origin = screen.getByRole("button", { name: "Origin" });
+    origin.focus();
+    let decision: Promise<{ approved: boolean }> | undefined;
+    act(() => {
+      decision = useConfirmationModalStore.getState().open(userRequest());
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await expect(decision).resolves.toEqual({ approved: false });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(origin).toHaveFocus();
+  });
+
+  it("keeps Tab inside the dialog and confirms with Ctrl+Enter", async () => {
+    const user = userEvent.setup();
+    render(<ConfirmCommandModal />);
+    let decision: Promise<{ approved: boolean }> | undefined;
+    act(() => {
+      decision = useConfirmationModalStore
+        .getState()
+        .open(userRequest({ sensitivity: CommandSensitivity.MUTATING }));
+    });
+    const close = screen.getByRole("button", { name: "Close" });
+    const confirm = screen.getByTestId("confirm-button");
+
+    // Focus starts on Close, the safe choice, and wraps at both ends.
+    await waitFor(() => expect(close).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await expect(decision).resolves.toEqual({ approved: true });
   });
 });

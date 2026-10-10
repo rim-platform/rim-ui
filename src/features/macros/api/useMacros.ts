@@ -134,13 +134,6 @@ export function useDeleteMacroMutation() {
   });
 }
 
-export function useExecuteMacroMutation() {
-  return useMutation({
-    mutationFn: (input: ExecuteMacroInput) =>
-      graphqlClient.request<{ executeMacro: ExecuteMacroResult }>(ExecuteMacroDocument, { input }),
-  });
-}
-
 /**
  * Resolve a macro name to its definition (including the ID).
  * Returns null if the macro does not exist.

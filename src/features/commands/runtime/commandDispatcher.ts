@@ -22,6 +22,11 @@ import { reloadCommands } from "../api/useCommands";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import {
+  runWithHumanConfirmation,
+  type ConfirmationProof,
+  type HumanConfirmationOutcome,
+} from "./humanConfirmation";
 
 interface ConversationItem {
   id: string;
@@ -66,6 +71,7 @@ type ExecuteBackendCommand = (input: {
   args?: Record<string, unknown>;
   commandContext?: Record<string, unknown>;
   isPipe?: boolean;
+  confirmation?: ConfirmationProof;
 }) => Promise<{ executeCommand: CommandResult }>;
 
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
@@ -323,15 +329,48 @@ export async function dispatchCommand(
     };
   }
 
-  // Backend command
-  const result = await executeBackend({
-    commandId: command.id,
-    args: context?.args,
-    commandContext: context?.commandContext,
-    isPipe: context?.isPipe,
-  });
+  // Backend command: a dangerous one is held until the user confirms it in the dialog.
+  const outcome = await runWithHumanConfirmation(
+    async (confirmation) => {
+      const result = await executeBackend({
+        commandId: command.id,
+        args: context?.args,
+        commandContext: context?.commandContext,
+        isPipe: context?.isPipe,
+        ...(confirmation && { confirmation }),
+      });
+      return result.executeCommand;
+    },
+    {
+      commandId: command.id,
+      title: command.title || command.id,
+      description: command.description || undefined,
+      args: context?.args,
+      sensitivity: command.sensitivity,
+    },
+  );
+  return commandResultOf(outcome);
+}
 
-  return result.executeCommand;
+/**
+ * The `CommandResult` a confirmed run ends in. A cancelled or expired confirmation is an
+ * `ERROR` with the cancelled payload, so callers show nothing more.
+ */
+export function commandResultOf(outcome: HumanConfirmationOutcome<CommandResult>): CommandResult {
+  switch (outcome.kind) {
+    case "completed":
+      return outcome.result;
+    case "cancelled":
+    case "stale":
+      return {
+        status: "ERROR",
+        message: "Cancelled",
+        payload: CANCELLED_PAYLOAD,
+        followUpCommands: [],
+      };
+    case "unconfirmed":
+      return { status: "ERROR", message: outcome.message, payload: null, followUpCommands: [] };
+  }
 }
 
 /**

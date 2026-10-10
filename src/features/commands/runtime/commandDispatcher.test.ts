@@ -137,6 +137,9 @@ import type { CommandDefinition } from "../types";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
+import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 
 function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -223,6 +226,154 @@ describe("dispatchCommand", () => {
 
     expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
     expect(mockExecuteBackend.mock.calls[0][0]).not.toHaveProperty("confirmedDangerous");
+  });
+});
+
+describe("backend commands the server holds for confirmation", () => {
+  const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
+  const held = {
+    executeCommand: {
+      status: "CONFIRMATION_REQUIRED",
+      message: "confirmation required for dangerous command",
+      payload: null,
+      followUpCommands: [],
+      confirmationRequired: challenge,
+    },
+  };
+  const proof = { inBandToken: { token: "tok-1", argsHash: "hash-1" } };
+  const command = makeCommand({
+    id: "admin.purge_channel",
+    title: "Purge Channel",
+    description: "Delete every message in the channel.",
+    executionTarget: "BACKEND",
+    dangerous: true,
+    sensitivity: CommandSensitivity.RESTRICTED,
+  });
+  const mockExecuteBackend = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecuteBackend.mockReset();
+    useConfirmationModalStore.getState().reset();
+  });
+
+  async function openedDialog() {
+    await vi.waitFor(() => expect(useConfirmationModalStore.getState().request).not.toBeNull());
+    return useConfirmationModalStore.getState().request!;
+  }
+
+  it("opens the dialog and re-sends the same command with the challenge on confirm", async () => {
+    mockExecuteBackend.mockResolvedValueOnce(held).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "Purged", payload: null, followUpCommands: [] },
+    });
+
+    const pending = dispatchCommand(command, mockExecuteBackend, {
+      args: { channel: "general" },
+      commandContext: { workspaceId: "ws-1" },
+    });
+    const request = await openedDialog();
+    expect(request).toMatchObject({
+      initiator: "user",
+      commandId: "admin.purge_channel",
+      toolName: "Purge Channel",
+      description: "Delete every message in the channel.",
+      args: { channel: "general" },
+      sensitivity: CommandSensitivity.RESTRICTED,
+      token: "tok-1",
+    });
+    useConfirmationModalStore.getState().approve();
+
+    const result = await pending;
+    expect(result?.status).toBe("SUCCESS");
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(2);
+    expect(mockExecuteBackend.mock.calls[1][0]).toEqual({
+      commandId: "admin.purge_channel",
+      args: { channel: "general" },
+      commandContext: { workspaceId: "ws-1" },
+      confirmation: proof,
+    });
+    expect(mockExecuteBackend.mock.calls[0][0]).not.toHaveProperty("confirmation");
+  });
+
+  it("returns a cancelled result and sends nothing more when the user cancels", async () => {
+    mockExecuteBackend.mockResolvedValueOnce(held);
+
+    const pending = dispatchCommand(command, mockExecuteBackend);
+    await openedDialog();
+    useConfirmationModalStore.getState().reject();
+
+    const result = await pending;
+    expect(result?.status).toBe("ERROR");
+    expect(isCancelledResult(result)).toBe(true);
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("tells the user a stale confirmation expired and lets them run it again", async () => {
+    mockExecuteBackend
+      .mockResolvedValueOnce(held)
+      .mockRejectedValueOnce(
+        graphqlError("CONFIRMATION_STALE", "confirmation expired or was already used"),
+      );
+
+    const pending = dispatchCommand(command, mockExecuteBackend);
+    await openedDialog();
+    useConfirmationModalStore.getState().approve();
+
+    const result = await pending;
+    expect(isCancelledResult(result)).toBe(true);
+    expect(toastErrorMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+
+    // Running it again starts a fresh challenge.
+    mockExecuteBackend.mockResolvedValueOnce(held).mockResolvedValueOnce({
+      executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+    });
+    const again = dispatchCommand(command, mockExecuteBackend);
+    await openedDialog();
+    useConfirmationModalStore.getState().approve();
+    expect((await again)?.status).toBe("SUCCESS");
+  });
+
+  it("says the confirmation expired when the dialog timed out", async () => {
+    mockExecuteBackend.mockResolvedValueOnce({
+      executeCommand: {
+        ...held.executeCommand,
+        confirmationRequired: { ...challenge, expiresAt: "2000-01-01T00:00:00Z" },
+      },
+    });
+
+    const pending = dispatchCommand(command, mockExecuteBackend);
+    await openedDialog();
+    useConfirmationModalStore.getState().reject();
+
+    expect(isCancelledResult(await pending)).toBe(true);
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+  });
+
+  it("never reports success for a held command that carries no challenge", async () => {
+    mockExecuteBackend.mockResolvedValueOnce({
+      executeCommand: { ...held.executeCommand, confirmationRequired: null },
+    });
+
+    const result = await dispatchCommand(command, mockExecuteBackend);
+
+    expect(result).toMatchObject({
+      status: "ERROR",
+      message: "confirmation required for dangerous command",
+    });
+    expect(useConfirmationModalStore.getState().request).toBeNull();
+  });
+
+  it("never reports success when the server holds the confirmed re-send again", async () => {
+    mockExecuteBackend.mockResolvedValueOnce(held).mockResolvedValueOnce(held);
+
+    const pending = dispatchCommand(command, mockExecuteBackend);
+    await openedDialog();
+    useConfirmationModalStore.getState().approve();
+
+    expect((await pending)?.status).toBe("ERROR");
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(2);
   });
 });
 

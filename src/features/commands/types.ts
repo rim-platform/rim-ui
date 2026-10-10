@@ -1,3 +1,8 @@
+import type {
+  CommandSensitivity,
+  ConfirmationChallenge,
+} from "../../core/graphql/generated/schema-types";
+
 // These types mirror the backend GraphQL schema for commands and keybinds.
 // When codegen runs, the generated SDK will provide the canonical types.
 // These local types allow development without a running backend.
@@ -21,7 +26,7 @@ export type KeybindScope = "USER" | "WORKSPACE";
 
 export type KeybindSource = "DEFAULT" | "USER" | "WORKSPACE";
 
-export type CommandResultStatus = "SUCCESS" | "ERROR";
+export type CommandResultStatus = "SUCCESS" | "ERROR" | "CONFIRMATION_REQUIRED";
 
 export interface CommandDefinition {
   id: string;
@@ -36,6 +41,8 @@ export interface CommandDefinition {
   visibleInContextMenus: boolean;
   keybindCapable: boolean;
   dangerous: boolean;
+  /** Server classification; a `RESTRICTED` command needs its verb typed to confirm. */
+  sensitivity?: CommandSensitivity;
 }
 
 export interface ResolvedKeybind {
@@ -69,6 +76,8 @@ export interface CommandResult {
   payload: unknown;
   followUpCommands: string[];
   pipelineStages?: PipeStageResult[] | null;
+  /** The server's challenge when `status` is `CONFIRMATION_REQUIRED`. */
+  confirmationRequired?: ConfirmationChallenge | null;
 }
 
 export interface ExecuteCommandInput {

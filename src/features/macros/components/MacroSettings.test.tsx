@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -21,6 +21,9 @@ vi.mock("./AiMacroBuilder", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
+import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { MacroSettings } from "./MacroSettings";
 
 const macro = {
@@ -43,6 +46,7 @@ const deleteCommand = {
   visibleInContextMenus: true,
   keybindCapable: true,
   dangerous: true,
+  sensitivity: CommandSensitivity.RESTRICTED,
   feature: null,
 };
 
@@ -60,6 +64,7 @@ function renderSettings() {
   render(
     <QueryClientProvider client={createTestQueryClient()}>
       <MacroSettings />
+      <ConfirmCommandModal />
     </QueryClientProvider>,
   );
 }
@@ -74,6 +79,7 @@ describe("MacroSettings running a macro", () => {
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useConfirmationModalStore.getState().reset();
   });
 
   it("runs a macro the server does not hold, without confirmedDangerous", async () => {
@@ -82,7 +88,7 @@ describe("MacroSettings running a macro", () => {
 
     await clickRun();
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Done"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Macro "Cleanup" executed'));
     expect(callsTo(requestMock, "mutation ExecuteMacro")).toEqual([
       { input: { macroId: "macro-1", commandContext: { workspaceId: "ws-1" } } },
     ]);
@@ -105,14 +111,18 @@ describe("MacroSettings running a macro", () => {
     renderSettings();
 
     await clickRun();
-    expect(await screen.findByText("Macro contains dangerous commands")).toBeInTheDocument();
-    expect(screen.getByText("chat.delete_message")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: 'Confirm: Run macro "Cleanup"' });
+    expect(within(dialog).getByText("chat.delete_message")).toBeInTheDocument();
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Run anyway" }));
+    // A Restricted step needs its verb typed before the run can be confirmed.
+    const confirm = within(dialog).getByTestId("confirm-button");
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByTestId("verb-input"), { target: { value: "delete" } });
+    fireEvent.click(confirm);
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Done"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Macro "Cleanup" executed'));
     const sent = callsTo(requestMock, "mutation ExecuteMacro");
     expect(sent).toEqual([
       { input: { macroId: "macro-1", commandContext: { workspaceId: "ws-1" } } },
@@ -127,7 +137,7 @@ describe("MacroSettings running a macro", () => {
     for (const variables of sent) {
       expect(variables.input).not.toHaveProperty("confirmedDangerous");
     }
-    expect(screen.queryByText("Macro contains dangerous commands")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("sends nothing more when the user cancels the confirmation", async () => {
@@ -141,10 +151,13 @@ describe("MacroSettings running a macro", () => {
     renderSettings();
 
     await clickRun();
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog", { name: 'Confirm: Run macro "Cleanup"' });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByText("Macro contains dangerous commands")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(callsTo(requestMock, "mutation ExecuteMacro")).toHaveLength(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("shows the server's message when the challenge is missing", async () => {
@@ -155,7 +168,7 @@ describe("MacroSettings running a macro", () => {
 
     await clickRun();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("needs a proof"));
-    expect(screen.queryByText("Macro contains dangerous commands")).not.toBeInTheDocument();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Macro failed: needs a proof"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -17,6 +17,7 @@
  *  - error result (status: "ERROR")            → toast.error with title + message
  *  - thrown exception                          → toast.error with title + error message
  *  - null result from dispatchCommand          → toast.error with fallback message
+ *  - cancelled confirmation (CANCELLED_PAYLOAD)  → no toast
  *  - palette closes immediately (synchronous), toast fires after (regression guard)
  */
 
@@ -46,6 +47,7 @@ import { useCallback } from "react";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { CANCELLED_PAYLOAD, isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import type { CommandDefinition, CommandResult } from "../types";
 
 // ─── Minimal hook that mirrors executeSelected's dispatch+toast logic ─────────
@@ -71,7 +73,9 @@ function useExecuteSelected(
             workspaceId: workspaceId ?? undefined,
           },
         });
-        if (result === null || result.status === "ERROR") {
+        if (isCancelledResult(result)) {
+          // The user declined the confirmation, or was told it expired.
+        } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
           const payloadPreview =
@@ -246,6 +250,21 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     expect(toast.error).toHaveBeenCalledWith(
       "Run Test Command: Only moderators can run this command",
     );
+  });
+
+  it("shows no toast when the user cancelled the confirmation", async () => {
+    vi.mocked(dispatchCommand).mockResolvedValue(
+      makeResult({ status: "ERROR", message: "Cancelled", payload: CANCELLED_PAYLOAD }),
+    );
+
+    const { executeSelected } = setup();
+
+    await act(async () => {
+      await executeSelected(makeCommand());
+    });
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("calls toast.error with a fallback message when dispatchCommand returns null", async () => {

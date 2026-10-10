@@ -40,6 +40,7 @@ vi.mock("../../../shared/toast", () => ({
 import { graphqlClient } from "../../../core/graphql/client";
 import { fetchMacroByName } from "../../macros/api/useMacros";
 import { toast } from "../../../shared/toast";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { getSlashCommandSuggestions, isSlashCommand, SLASH_COMMANDS } from "./slashCommands";
 
 const mockGraphqlRequest = vi.mocked(graphqlClient.request);
@@ -216,6 +217,71 @@ describe("slashCommands (extra coverage)", () => {
 
       await vi.waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith("Macro failed: Step 2 failed");
+      });
+    });
+
+    describe("a macro the server holds for confirmation", () => {
+      const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
+      const held = {
+        executeMacro: {
+          status: "CONFIRMATION_REQUIRED",
+          message: "macro requires confirmation due to sensitivity tier",
+          confirmationRequired: challenge,
+        },
+      };
+
+      beforeEach(() => {
+        useConfirmationModalStore.getState().reset();
+        mockFetchMacroByName.mockResolvedValueOnce({
+          id: "macro-9",
+          name: "purge",
+          description: "",
+          steps: [{ commandId: "chat.delete_message", args: null }],
+        });
+      });
+
+      async function openedDialog() {
+        await vi.waitFor(() => expect(useConfirmationModalStore.getState().request).not.toBeNull());
+        return useConfirmationModalStore.getState().request!;
+      }
+
+      it("asks for confirmation and re-sends with the challenge as proof", async () => {
+        mockGraphqlRequest
+          .mockResolvedValueOnce(held)
+          .mockResolvedValueOnce({ executeMacro: { status: "SUCCESS", message: "Done" } });
+
+        macroHandler("purge");
+
+        const request = await openedDialog();
+        expect(request).toMatchObject({ initiator: "user", toolName: 'Run macro "purge"' });
+        expect(mockToast.success).not.toHaveBeenCalled();
+        useConfirmationModalStore.getState().approve();
+
+        await vi.waitFor(() =>
+          expect(mockToast.success).toHaveBeenCalledWith('Macro "purge" executed'),
+        );
+        expect(mockGraphqlRequest).toHaveBeenLastCalledWith(expect.anything(), {
+          input: {
+            macroId: "macro-9",
+            commandContext: { workspaceId: "ws-1" },
+            confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
+          },
+        });
+      });
+
+      it("runs nothing and shows no toast when the user cancels", async () => {
+        mockGraphqlRequest.mockResolvedValueOnce(held);
+
+        macroHandler("purge");
+
+        await openedDialog();
+        useConfirmationModalStore.getState().reject();
+
+        await vi.waitFor(() => expect(useConfirmationModalStore.getState().request).toBeNull());
+        await Promise.resolve();
+        expect(mockGraphqlRequest).toHaveBeenCalledTimes(1);
+        expect(mockToast.success).not.toHaveBeenCalled();
+        expect(mockToast.error).not.toHaveBeenCalled();
       });
     });
   });

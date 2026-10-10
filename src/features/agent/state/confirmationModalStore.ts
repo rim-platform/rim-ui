@@ -26,6 +26,13 @@ export interface ConfirmationRequest {
    * does not yet emit this; defaults to undefined (banner hidden).
    */
   sameTurnAfterToolResult?: boolean;
+  /** Who started the command: the AI agent (the default) or the user. */
+  initiator?: "agent" | "user";
+  /**
+   * Word to type for a `RESTRICTED` command, instead of the one derived from `commandId`;
+   * `null` asks for no typed word.
+   */
+  verb?: string | null;
 }
 
 export interface ConfirmationDecision {
