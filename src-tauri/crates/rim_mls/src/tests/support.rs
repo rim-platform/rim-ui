@@ -29,14 +29,12 @@ pub(crate) fn now() -> u64 {
     chrono::Utc::now().timestamp() as u64
 }
 
-/// Let `duration` pass. A browser cannot block a thread, so the wasm build waits on the clock.
-pub(crate) fn wait(duration: std::time::Duration) {
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::sleep(duration);
-    #[cfg(target_arch = "wasm32")]
-    {
-        let until = chrono::Utc::now() + duration;
-        while chrono::Utc::now() < until {}
+/// Wait until the wall clock reaches `unix_secs`, the clock OpenMLS checks lifetimes against.
+/// A browser cannot block a thread, so the wasm build spins.
+pub(crate) fn wait_until(unix_secs: u64) {
+    while now() < unix_secs {
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }
 
