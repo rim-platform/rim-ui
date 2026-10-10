@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
+
+import { expectReachableByKeyboard } from "../../test/keyboard";
 
 // Mock the hooks that WorkspaceRail uses
 vi.mock("../../features/workspaces/state/useWorkspaceStore", () => ({
@@ -45,5 +48,23 @@ describe("WorkspaceRail", () => {
   it("renders add workspace button", () => {
     renderWithQuery(<WorkspaceRail />);
     expect(screen.getByTitle("Add workspace")).toBeInTheDocument();
+  });
+
+  it("reaches every workspace and the add button by keyboard, and moves with the arrows", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const alpha = screen.getByRole("button", { name: "Alpha" });
+    const beta = screen.getByRole("button", { name: "Beta" });
+    const add = screen.getByRole("button", { name: "Add workspace" });
+    await expectReachableByKeyboard(user, [alpha, beta, add]);
+    expect(alpha).toHaveAttribute("aria-pressed", "true");
+
+    alpha.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(beta).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(add).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(beta).toHaveFocus();
   });
 });

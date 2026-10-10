@@ -3,6 +3,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
+import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
 
 interface MessageNavItem {
   id: string;
@@ -21,6 +22,8 @@ interface UseMessageNavigationOptions {
   openThread: (messageId: string) => void;
   onDeleteMessage: (msg: { id: string }) => void | Promise<void>;
   onForwardMessage: (msg: { id: string; text: string }) => void;
+  /** Open the actions menu of a message, as a right click on it does. */
+  onOpenActions?: (messageId: string) => void;
   /** Index of the first new message after the watermark, or -1 if no divider. */
   firstNewIndex?: number;
   /**
@@ -47,6 +50,7 @@ export function useMessageNavigation({
   openThread,
   onDeleteMessage,
   onForwardMessage,
+  onOpenActions,
   firstNewIndex = -1,
   scrollToIndex,
 }: UseMessageNavigationOptions) {
@@ -126,11 +130,13 @@ export function useMessageNavigation({
 
       const navMode = useShellStore.getState().navigationMode;
 
-      // Escape always works: exit navigation mode and return to composer
+      // Escape always works: exit navigation mode and return to composer. With the Vim layer
+      // on, the list is normal mode already, so Escape only drops the selection.
       if (e.key === "Escape") {
         e.preventDefault();
         setSelectedMessageId(null);
         setDeleteConfirmMessageId(null);
+        if (vimModeEnabled()) return;
         useShellStore.getState().setNavigationMode(false);
         document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
         return;
@@ -157,6 +163,14 @@ export function useMessageNavigation({
         return;
       }
 
+      // Home and End: first and last message
+      if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        setDeleteConfirmMessageId(null);
+        selectIndex(e.key === "Home" ? 0 : items.length - 1);
+        return;
+      }
+
       // Navigation: j/k and ArrowDown/ArrowUp
       if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
@@ -176,6 +190,15 @@ export function useMessageNavigation({
       const msg = items[selectedMessageIndex];
       if (!msg) return;
       const isOwnMessage = msg.author?.id === currentUserId;
+
+      // The context-menu key or Shift+F10: the message's actions menu, as a right click opens.
+      if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+        if (onOpenActions) {
+          e.preventDefault();
+          onOpenActions(msg.id);
+        }
+        return;
+      }
 
       // If in delete-confirm mode, any key other than d cancels
       if (deleteConfirmMessageId) {
@@ -269,6 +292,7 @@ export function useMessageNavigation({
       openThread,
       onDeleteMessage,
       onForwardMessage,
+      onOpenActions,
       workspaceId,
       conversationId,
       firstNewIndex,

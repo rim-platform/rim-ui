@@ -6,6 +6,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import { useKeybindProfileStore } from "../../commands/state/useKeybindProfileStore";
 import type { MessageItem as MessageItemData, MessagesPage } from "../../../core/types/messages";
 
 // --- Controlled data sources ---------------------------------------------
@@ -68,6 +69,11 @@ vi.mock("../../conversations/api/useMarkAsRead", () => ({
 }));
 
 vi.mock("./Composer", () => ({ Composer: () => null }));
+vi.mock("./MessageContextMenu", () => ({
+  MessageContextMenu: ({ messageId }: { messageId: string }) => (
+    <div role="menu" aria-label={`Actions for ${messageId}`} />
+  ),
+}));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));
 
 // --- Render-counting MessageItem spy --------------------------------------
@@ -608,5 +614,50 @@ describe("MessageTimeline virtualization", () => {
     // Far outside the window, but still mounted so an unsaved draft survives.
     expect(screen.getByText("message 59").getAttribute("data-editing")).toBe("true");
     expect(screen.queryByText("message 40")).not.toBeInTheDocument();
+  });
+});
+
+describe("MessageTimeline keyboard", () => {
+  it("jumps to the first and last message with Home and End", () => {
+    setMessages([0, 1, 2, 3, 4].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    act(() => useShellStore.setState({ navigationMode: true }));
+
+    fireEvent.keyDown(list, { key: "Home" });
+    expect(screen.getByText("message 0").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(list, { key: "End" });
+    expect(screen.getByText("message 4").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("opens the selected message's actions with the context-menu key or Shift+F10", () => {
+    setMessages([0, 1, 2].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    act(() => useShellStore.setState({ navigationMode: true }));
+
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+    expect(screen.getByRole("menu", { name: "Actions for m-002" })).toBeInTheDocument();
+
+    fireEvent.keyDown(list, { key: "k" });
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(screen.getByRole("menu", { name: "Actions for m-001" })).toBeInTheDocument();
+  });
+
+  it("keeps Escape in the list in Vim mode: it drops the selection, not the mode", () => {
+    useKeybindProfileStore.getState().setVimMode(true);
+    try {
+      setMessages([0, 1].map((i) => makeMessage(i)));
+      render(<MessageTimeline />);
+      const list = screen.getByRole("listbox", { name: "Messages" });
+      act(() => useShellStore.setState({ navigationMode: true }));
+      expect(screen.getByText("message 1").getAttribute("aria-selected")).toBe("true");
+
+      fireEvent.keyDown(list, { key: "Escape" });
+      expect(screen.getByText("message 1").getAttribute("aria-selected")).toBe("false");
+      expect(useShellStore.getState().navigationMode).toBe(true);
+    } finally {
+      useKeybindProfileStore.getState().setVimMode(false);
+    }
   });
 });

@@ -438,6 +438,7 @@ function ThreadComposer({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder="Reply in thread..."
+        aria-label="Reply in thread"
         className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
         style={{ height: "auto" }}
       />

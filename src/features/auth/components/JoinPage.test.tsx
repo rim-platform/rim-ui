@@ -90,6 +90,7 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
 vi.mock("./KeySignupForm");
 
 import { JoinPage } from "./JoinPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("JoinPage — no-referrer meta tag (L3)", () => {
   beforeEach(() => {
@@ -158,6 +159,22 @@ describe("JoinPage", () => {
     expect(screen.getByText("Create account")).toBeInTheDocument();
     // Negation: workspace variant must NOT show the generic instance/bootstrap heading
     expect(screen.queryByText("Create your RIM account")).not.toBeInTheDocument();
+  });
+
+  it("reaches its primary actions by keyboard", async () => {
+    const user = userEvent.setup();
+    renderAtPath("/join/ws-token-abc");
+    const username = screen.getByPlaceholderText("yourname");
+    const email = screen.getByPlaceholderText("you@example.com");
+    const password = screen.getByPlaceholderText("password");
+    await expectReachableByKeyboard(user, [username, email, password]);
+    username.focus();
+    await user.keyboard("alice");
+    email.focus();
+    await user.keyboard("alice@example.com");
+    password.focus();
+    await user.keyboard("password123");
+    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Create account" })]);
   });
 
   it("workspace token: signup mutation called with workspaceInviteToken on submit", async () => {

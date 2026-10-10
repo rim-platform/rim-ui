@@ -6,6 +6,7 @@ import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { cn } from "../../shared/ui/cn";
+import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
 
@@ -36,6 +37,7 @@ export function WorkspaceRail() {
       data-panel="workspaceRail"
       tabIndex={-1}
       onFocus={() => useShellStore.getState().setFocusedSurface("workspaceRail")}
+      onKeyDown={handleVerticalStripKeys}
       className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2 outline-none"
     >
       {directSpaceId && (
@@ -66,6 +68,8 @@ export function WorkspaceRail() {
             key={server.id}
             type="button"
             title={server.where ? `${server.name} (on ${server.where})` : server.name}
+            aria-label={server.where ? `${server.name} (on ${server.where})` : server.name}
+            aria-pressed={active}
             onClick={() => setWorkspaceId(server.id)}
             onMouseEnter={() =>
               useHoverContextStore.getState().setTarget({
@@ -91,6 +95,7 @@ export function WorkspaceRail() {
         <button
           type="button"
           title="Add workspace"
+          aria-label="Add workspace"
           onClick={() => setShowCreate(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl text-rim-text-muted transition hover:bg-white/10 hover:text-rim-text"
         >

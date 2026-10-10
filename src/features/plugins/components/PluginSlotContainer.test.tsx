@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -88,5 +91,16 @@ describe("PluginSlotContainer", () => {
     const iframe = container.querySelector("iframe");
     expect(iframe).toBeInTheDocument();
     expect(iframe?.getAttribute("src")).toContain("test-plugin");
+  });
+
+  it("reaches the close button by keyboard and closes with Enter", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={onClose} />);
+    const close = screen.getByRole("button", { name: "Close plugin panel" });
+    await expectReachableByKeyboard(user, [close]);
+    close.focus();
+    await user.keyboard("{Enter}");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

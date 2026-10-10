@@ -46,10 +46,17 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
     adjustPosition();
   }, [adjustPosition]);
 
-  // Auto-focus first item
+  // Auto-focus first item; on close, focus goes back where it was unless something else took it.
   useEffect(() => {
+    const previous = document.activeElement;
+    const menu = menuRef.current;
     setFocusedIndex(0);
-    menuRef.current?.focus();
+    menu?.focus();
+    return () => {
+      const active = document.activeElement;
+      const focusLost = !active || active === document.body || Boolean(menu?.contains(active));
+      if (focusLost && previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, []);
 
   // Close on click outside

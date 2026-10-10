@@ -18,6 +18,8 @@ export interface TimelineContextMenu {
 
 interface TimelineHandlerItem {
   id: string;
+  text?: string | null;
+  isDeleted?: boolean | null;
   isPinned?: boolean;
   threadId?: string | null;
   rootThreadId?: string | null;
@@ -57,12 +59,12 @@ export function useTimelineHandlers({
     itemsRef.current = items;
   }, [items]);
 
-  const handleContextMenu = useCallback(
-    (event: React.MouseEvent, messageId: string, messageText: string) => {
+  const openMenuAt = useCallback(
+    (x: number, y: number, messageId: string, messageText: string) => {
       const msg = itemsRef.current.find((m) => m.id === messageId);
       setContextMenu({
-        x: event.clientX,
-        y: event.clientY,
+        x,
+        y,
         messageId,
         messageText,
         isOwnMessage: msg?.author?.id === currentUserId,
@@ -71,6 +73,27 @@ export function useTimelineHandlers({
       });
     },
     [currentUserId],
+  );
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, messageId: string, messageText: string) => {
+      openMenuAt(event.clientX, event.clientY, messageId, messageText);
+    },
+    [openMenuAt],
+  );
+
+  /** Open a message's actions menu from the keyboard, under the message's row. */
+  const openActionsFor = useCallback(
+    (messageId: string) => {
+      const msg = itemsRef.current.find((m) => m.id === messageId);
+      if (!msg || msg.isDeleted) return;
+      const row = Array.from(document.querySelectorAll("[data-message-id]")).find(
+        (element) => element.getAttribute("data-message-id") === messageId,
+      );
+      const rect = row?.getBoundingClientRect();
+      openMenuAt(rect ? rect.left + 16 : 16, rect ? rect.bottom : 16, messageId, msg.text ?? "");
+    },
+    [openMenuAt],
   );
 
   const handleSaveEdit = useCallback(
@@ -145,5 +168,11 @@ export function useTimelineHandlers({
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
-  return { handlers, editError: editMessage.isError, contextMenu, closeContextMenu };
+  return {
+    handlers,
+    editError: editMessage.isError,
+    contextMenu,
+    closeContextMenu,
+    openActionsFor,
+  };
 }

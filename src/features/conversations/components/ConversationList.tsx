@@ -165,7 +165,17 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
           setFocusedIndex((i) => Math.max(i - 1, 0));
         }
       }
-    } else if (e.key === "Enter" && focusedIndex >= 0) {
+    } else if ((e.key === "Home" || e.key === "End") && allItems.length > 0) {
+      e.preventDefault();
+      setIsKeyboardNavigating(true);
+      setFocusedIndex(e.key === "Home" ? 0 : allItems.length - 1);
+    } else if (
+      e.key === "Enter" &&
+      focusedIndex >= 0 &&
+      // Enter on a button inside the list (a conversation reached with Tab, "New channel")
+      // presses that button; it opens the highlighted row only after arrow keys moved it.
+      (isKeyboardNavigating || e.target === e.currentTarget)
+    ) {
       e.preventDefault();
       const id = allItems[focusedIndex].id;
       setIsKeyboardNavigating(false);
