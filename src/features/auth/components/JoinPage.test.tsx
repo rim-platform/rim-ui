@@ -431,7 +431,6 @@ describe("JoinPage — create account with a key (desktop)", () => {
     const user = userEvent.setup();
     renderAtPath("/join/ws-token-abc");
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
       workspaceInviteToken: "ws-token-abc",
     });
@@ -456,7 +455,6 @@ describe("JoinPage — create account with a key (desktop)", () => {
     const user = userEvent.setup();
     renderAtPath("/join/boot-token-abc");
 
-    await user.click(screen.getByRole("button", { name: /create account with a key/i }));
     expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
       bootstrapToken: "boot-token-abc",
     });

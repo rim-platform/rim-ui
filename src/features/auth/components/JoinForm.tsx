@@ -136,7 +136,11 @@ export function JoinForm({
   onSuccess,
 }: JoinFormProps) {
   const { capabilities } = useRuntime();
-  const [chosen, setMethod] = useState<"password" | "key">("password");
+  // Where this device can keep a key, the key signup comes first; the password form is the
+  // fallback behind the toggle.
+  const [chosen, setMethod] = useState<"password" | "key">(() =>
+    capabilities.identityKeys ? "key" : "password",
+  );
   const method = keyOnly ? "key" : chosen;
   // A key signup in progress keeps its form mounted until it settles.
   const [keySignupBusy, setKeySignupBusy] = useState(false);
