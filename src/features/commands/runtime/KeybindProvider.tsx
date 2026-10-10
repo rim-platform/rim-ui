@@ -9,213 +9,49 @@ import {
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { useResolvedKeybinds } from "../api/useKeybinds";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
 import { dispatchCommand } from "./commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
-import { useDeviceKeybindStore, withDeviceKeybinds } from "../state/useDeviceKeybindStore";
 import {
   findPluginCommand,
   toastPluginCommandResult,
 } from "../../plugins/runtime/pluginCommandInfo";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
-import type { ResolvedKeybind, CommandDefinition } from "../types";
+import { isTextEntry } from "../../../shared/ui/focusNavigation";
+import { useEffectiveKeybinds } from "./effectiveKeybinds";
+import { LOCAL_COMMANDS } from "./localCommands";
+import { installVimLayer } from "./vimLayer";
+import type { CommandDefinition } from "../types";
 
 interface KeybindProviderProps {
   children: ReactNode;
 }
 
 /**
- * Hardcoded keybinds that always work, even without a backend connection.
- * These match the backend's default keybinds but are available offline.
+ * Text-editing chords that keep their editing meaning inside a text field, even when a global
+ * keybind uses them: word jumps, word deletes, select all, clipboard, undo and redo.
  */
-const FALLBACK_KEYBINDS: ResolvedKeybind[] = [
-  {
-    id: "__fallback_palette",
-    keystroke: "Ctrl+K",
-    commandId: "workspace.open_command_palette",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_settings",
-    keystroke: "Ctrl+Alt+S",
-    commandId: "workspace.open_settings",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_search",
-    keystroke: "Ctrl+F",
-    commandId: "workspace.search_in_channel",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_search_workspace",
-    keystroke: "Ctrl+Shift+F",
-    commandId: "workspace.open_search",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_marketplace",
-    keystroke: "Ctrl+Shift+X",
-    commandId: "workspace.open_marketplace",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_agent",
-    keystroke: "Ctrl+Shift+A",
-    commandId: "workspace.open_agent",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_create_channel",
-    keystroke: "Ctrl+Shift+C",
-    commandId: "chat.create_channel",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_create_group",
-    keystroke: "Ctrl+Shift+G",
-    commandId: "chat.create_group",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_mark_all_read",
-    keystroke: "Ctrl+Shift+M",
-    commandId: "chat.mark_all_as_read",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_cycle_density",
-    keystroke: "Ctrl+D",
-    commandId: "workspace.cycle_display_density",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_navigate_channel",
-    keystroke: "Ctrl+Shift+K",
-    commandId: "workspace.navigate_to_channel",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_prev_channel",
-    keystroke: "Alt+ArrowUp",
-    commandId: "workspace.previous_channel",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_next_channel",
-    keystroke: "Alt+ArrowDown",
-    commandId: "workspace.next_channel",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_zen_mode",
-    keystroke: "Ctrl+Shift+Z",
-    commandId: "workspace.toggle_zen_mode",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_cycle_layout",
-    keystroke: "Ctrl+L",
-    commandId: "workspace.cycle_layout_preset",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_panel_left",
-    keystroke: "Ctrl+ArrowLeft",
-    commandId: "workspace.navigate_panel_left",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-  {
-    id: "__fallback_panel_right",
-    keystroke: "Ctrl+ArrowRight",
-    commandId: "workspace.navigate_panel_right",
-    context: "GLOBAL",
-    source: "DEFAULT",
-    scope: "USER",
-    isEnabled: true,
-    presetArgs: null,
-  },
-];
+const TEXT_EDITING_KEYSTROKES = new Set([
+  "Ctrl+ArrowLeft",
+  "Ctrl+ArrowRight",
+  "Ctrl+Shift+ArrowLeft",
+  "Ctrl+Shift+ArrowRight",
+  "Ctrl+Backspace",
+  "Ctrl+Delete",
+  "Ctrl+A",
+  "Ctrl+C",
+  "Ctrl+V",
+  "Ctrl+X",
+  "Ctrl+Z",
+  "Ctrl+Shift+Z",
+  "Ctrl+Y",
+]);
 
-/**
- * Merge backend keybinds with fallbacks. Fallback keybinds are included
- * unless the backend already provides a binding for the same commandId.
- * This ensures local-only commands (search overlay, marketplace, etc.)
- * always have their keybinds available.
- */
-function mergeWithFallbacks(backendKeybinds: ResolvedKeybind[] | undefined): ResolvedKeybind[] {
-  if (!backendKeybinds || backendKeybinds.length === 0) return FALLBACK_KEYBINDS;
-
-  const backendCommandIds = new Set(backendKeybinds.map((kb) => kb.commandId));
-  const missingFallbacks = FALLBACK_KEYBINDS.filter((fb) => !backendCommandIds.has(fb.commandId));
-  return [...backendKeybinds, ...missingFallbacks];
+/** Whether a dialog or menu of the host is open; Escape then belongs to it. */
+function hostOverlayOpen(): boolean {
+  return document.querySelector('[role="dialog"], [aria-modal="true"], [role="menu"]') !== null;
 }
 
 export function KeybindProvider({ children }: KeybindProviderProps) {
@@ -223,8 +59,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
-  const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
-  const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
+  const resolvedKeybinds = useEffectiveKeybinds();
   const { data: commands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);
@@ -232,27 +67,28 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
   const handleKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   handleKeyDownRef.current = (event: KeyboardEvent) => {
-    const target = event.target as HTMLElement;
-    const isTextInput =
-      target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    const isTextInput = isTextEntry(event.target as Element);
 
     const keystroke = parseKeystroke(event);
     if (!keystroke) return;
 
     const context = surfaceToContext(focusedSurface);
 
-    // Merge backend keybinds with fallbacks — fallbacks fill in any
-    // commands the backend doesn't know about (e.g. local-only search).
-    // Plugin keybinds live on this device and come first.
-    const resolvedKeybinds = withDeviceKeybinds(deviceKeybinds, mergeWithFallbacks(keybinds));
-
-    // Try context-specific match first, then global
-    let match = matchKeybind(keystroke, context, resolvedKeybinds);
-    if (!match && isTextInput) {
-      // In text inputs, only match Global keybinds with Ctrl/Cmd or Alt modifier
-      if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
-      match = matchKeybind(keystroke, "GLOBAL", resolvedKeybinds);
-    }
+    // In a text field, a key that types a character and the text-editing chords stay with the
+    // field: only a binding made for that very context can take one. Other keys match the
+    // context's bindings and the global ones.
+    const typesCharacter =
+      event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+    const keepInField = isTextInput && (typesCharacter || TEXT_EDITING_KEYSTROKES.has(keystroke));
+    const match = keepInField
+      ? context === "GLOBAL"
+        ? null
+        : matchKeybind(
+            keystroke,
+            context,
+            resolvedKeybinds.filter((kb) => kb.context === context),
+          )
+      : matchKeybind(keystroke, context, resolvedKeybinds);
 
     if (!match) return;
 
@@ -265,7 +101,8 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         useAgentStore.getState().isOpen ||
         shell.showNewChannelDialog ||
         shell.showNewMessagePicker ||
-        shell.showInviteDialog;
+        shell.showInviteDialog ||
+        hostOverlayOpen();
       if (overlayOpen) {
         return;
       }
@@ -294,20 +131,21 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       match.commandId.startsWith("admin.");
     const isPluginCommand = match.commandId.startsWith("plugin.");
     const pluginCommand = isPluginCommand ? findPluginCommand(match.commandId) : null;
-    const command: CommandDefinition = commands?.find((cmd) => cmd.id === match!.commandId) ?? {
-      id: match.commandId,
-      title: pluginCommand?.title ?? match.commandId,
-      description: "",
-      category: "",
-      sourceKind: isPluginCommand ? "PLUGIN" : "BUILT_IN",
-      executionTarget: isLocalPrefix || isPluginCommand ? "DESKTOP_LOCAL" : "BACKEND",
-      requiredContext: [],
-      requiredCapabilities: [],
-      visibleInPalette: false,
-      visibleInContextMenus: false,
-      keybindCapable: true,
-      dangerous: pluginCommand?.dangerous ?? false,
-    };
+    const command: CommandDefinition = commands?.find((cmd) => cmd.id === match.commandId) ??
+      LOCAL_COMMANDS.find((cmd) => cmd.id === match.commandId) ?? {
+        id: match.commandId,
+        title: pluginCommand?.title ?? match.commandId,
+        description: "",
+        category: "",
+        sourceKind: isPluginCommand ? "PLUGIN" : "BUILT_IN",
+        executionTarget: isLocalPrefix || isPluginCommand ? "DESKTOP_LOCAL" : "BACKEND",
+        requiredContext: [],
+        requiredCapabilities: [],
+        visibleInPalette: false,
+        visibleInContextMenus: false,
+        keybindCapable: true,
+        dangerous: pluginCommand?.dangerous ?? false,
+      };
 
     dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
       args: match.presetArgs as Record<string, unknown> | undefined,
@@ -328,9 +166,15 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
           toast.error(graphqlErrorMessage(err, "This command is turned off for this workspace."));
           return;
         }
-        logger.warn(`[RIM:Keybind] ${match!.commandId} failed`, err);
+        logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
       });
   };
+
+  // The Vim layer listens first, so a key it takes never reaches the keybinds.
+  useEffect(() => {
+    if (!capabilities.deviceLocalKeybinds) return;
+    return installVimLayer();
+  }, [capabilities.deviceLocalKeybinds]);
 
   useEffect(() => {
     if (!capabilities.deviceLocalKeybinds) return;

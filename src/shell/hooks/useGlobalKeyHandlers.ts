@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import { useShellStore } from "../state/useShellStore";
 import { toast } from "../../shared/toast";
+import { vimModeEnabled } from "../../features/commands/state/useKeybindProfileStore";
 
 /**
  * Global keyboard handlers:
  * 1. ESC exits zen mode when active.
- * 2. Printable characters auto-focus the composer.
+ * 2. Printable characters auto-focus the composer, unless the Vim layer is on: there, keys
+ *    outside a text field are normal-mode commands and `i` enters insert mode.
  */
 export function useGlobalKeyHandlers() {
   // ESC exits zen mode when active.
@@ -30,6 +32,7 @@ export function useGlobalKeyHandlers() {
 
       // Skip if in navigation mode — let message list handle single keys
       if (useShellStore.getState().navigationMode) return;
+      if (vimModeEnabled()) return;
       // Skip non-printable keys
       if (e.key.length !== 1) return;
       // Skip if already focused on an input/textarea/contenteditable

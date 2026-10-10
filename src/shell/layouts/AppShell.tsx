@@ -8,6 +8,7 @@ import { WorkspaceSelector } from "../../features/workspaces/components/Workspac
 import { MessageTimeline } from "../../features/messages/components/MessageTimeline";
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
 import { CommandPalette, KeybindProvider } from "../../features/commands";
+import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
 import { QuickAccessAssigner } from "../../features/commands/components/QuickAccessAssigner";
 import { SearchOverlay } from "../../features/messages/components/SearchOverlay";
 import { ToastContainer } from "../../shared/toast";
@@ -62,11 +63,20 @@ import { WorkspaceFeature } from "../../core/graphql/generated/schema-types";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
-import { useSpatialNavigation } from "../navigation/useSpatialNavigation";
 import { cn } from "../../shared/ui/cn";
 import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
 import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
+
+/**
+ * Marks a main surface other than the conversation as the grid's main panel, so pane
+ * navigation and the Vim layer can move focus into it.
+ */
+const MAIN_PANEL_PROPS = {
+  "data-panel": "mainSurface",
+  tabIndex: -1,
+  onFocus: () => useShellStore.getState().setFocusedSurface("mainSurface"),
+} as const;
 
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
@@ -146,7 +156,6 @@ function WorkspaceShell() {
   usePresenceEventHandler();
   useTypingEventHandler();
   useNotificationEventHandler(workspaceId);
-  useSpatialNavigation();
 
   const { capabilities } = useRuntime();
   const mainSurface = useShellStore((s) => s.mainSurface);
@@ -277,7 +286,7 @@ function WorkspaceShell() {
 
               {/* Plugin main_area slot — replaces main content */}
               {mainAreaPlugin ? (
-                <main className="flex min-w-0 flex-1 flex-col">
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
                   <PluginSlotContainer
                     plugin={mainAreaPlugin.plugin}
                     panel={mainAreaPlugin.panel}
@@ -381,7 +390,7 @@ function WorkspaceShell() {
           )}
 
           {mainSurface.kind === "settings" && (
-            <main className="flex min-w-0 flex-1 flex-col">
+            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
               <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
                 <SettingsPage />
               </SurfaceErrorBoundary>
@@ -389,7 +398,7 @@ function WorkspaceShell() {
           )}
 
           {mainSurface.kind === "incidents" && (
-            <main className="flex min-w-0 flex-1 flex-col">
+            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
               {incidentsEnabled && (
                 <SurfaceErrorBoundary surface="Incidents" resetKeys={[]}>
                   <IncidentsHub />
@@ -406,7 +415,7 @@ function WorkspaceShell() {
           )}
 
           {mainSurface.kind === "audit-log" && (
-            <main className="flex min-w-0 flex-1 flex-col">
+            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
               <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
                 <AuditLogPage />
               </SurfaceErrorBoundary>
@@ -422,7 +431,7 @@ function WorkspaceShell() {
               const mainPanel = mainPlugin?.panels?.[0];
               if (mainPlugin && mainPanel) {
                 return (
-                  <main className="flex min-w-0 flex-1 flex-col">
+                  <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
                     <PluginSlotContainer
                       plugin={mainPlugin}
                       panel={mainPanel}
@@ -434,7 +443,10 @@ function WorkspaceShell() {
                 );
               }
               return (
-                <main className="flex min-w-0 flex-1 flex-col items-center justify-center">
+                <main
+                  {...MAIN_PANEL_PROPS}
+                  className="flex min-w-0 flex-1 flex-col items-center justify-center outline-none"
+                >
                   <p className="text-sm text-rim-text-muted">
                     Plugin {mainSurface.pluginId} is not enabled or has no panels.
                   </p>
@@ -443,12 +455,16 @@ function WorkspaceShell() {
             })()}
 
           {mainSurface.kind === "marketplace" && (
-            <main className="flex min-w-0 flex-1 flex-col items-center justify-center">
+            <main
+              {...MAIN_PANEL_PROPS}
+              className="flex min-w-0 flex-1 flex-col items-center justify-center outline-none"
+            >
               <p className="text-sm text-rim-text-muted">Marketplace coming soon!</p>
             </main>
           )}
 
           <CommandPalette />
+          <ShortcutsPanel />
           <SearchOverlay />
           <AgentOverlay />
           <ConfirmCommandModal />

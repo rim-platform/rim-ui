@@ -1,14 +1,12 @@
-import { useEffect } from "react";
-
 import { useShellStore } from "../state/useShellStore";
 import { getVisiblePanels, getAdjacentPanel } from "./panelGrid";
 import type { PanelId, Direction } from "./panelGrid";
 
 /**
- * Map focusedSurface strings to panel IDs.
- * The shell uses various surface names; we map them to our panel grid.
+ * The panel of the grid a focused surface belongs to, or `null` for a surface outside it.
+ * The shell names surfaces in several ways; this maps them onto the panel grid.
  */
-function surfaceToPanelId(surface: string | null): PanelId | null {
+export function panelIdForSurface(surface: string | null): PanelId | null {
   switch (surface) {
     case "workspaceRail":
       return "workspaceRail";
@@ -29,10 +27,14 @@ function surfaceToPanelId(surface: string | null): PanelId | null {
   }
 }
 
+/**
+ * Move focus to the visible panel left or right of the focused one. The panel keybind
+ * commands and the Vim layer's `h` and `l` run this.
+ */
 export function navigatePanel(direction: Direction): void {
   const shell = useShellStore.getState();
   const visiblePanels = getVisiblePanels(shell);
-  const currentPanel = surfaceToPanelId(shell.focusedSurface);
+  const currentPanel = panelIdForSurface(shell.focusedSurface);
 
   const target = getAdjacentPanel(currentPanel ?? "mainSurface", direction, visiblePanels);
 
@@ -45,34 +47,4 @@ export function navigatePanel(direction: Direction): void {
     const el = document.querySelector<HTMLElement>(`[data-panel="${target}"]`);
     el?.focus();
   });
-}
-
-/**
- * Hook that enables Ctrl+ArrowLeft/Right spatial navigation between panels.
- * Should be mounted once in WorkspaceShell.
- */
-export function useSpatialNavigation(): void {
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Only respond to Ctrl+Arrow keys
-      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-
-      // Don't interfere with text inputs
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
-        return;
-      }
-
-      // Ctrl+Arrow navigates panels — this is orthogonal to j/k message
-      // navigation, so it should work regardless of navigation mode.
-
-      const direction: Direction = e.key === "ArrowLeft" ? "left" : "right";
-      navigatePanel(direction);
-    }
-
-    // Use capture phase so we can intercept before other handlers
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
 }

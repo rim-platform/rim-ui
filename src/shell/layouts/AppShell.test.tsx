@@ -59,7 +59,6 @@ vi.mock("../../features/messages/state/useTypingEventHandler", () => ({
 vi.mock("../../features/notifications/runtime/useNotificationEventHandler", () => ({
   useNotificationEventHandler: () => {},
 }));
-vi.mock("../navigation/useSpatialNavigation", () => ({ useSpatialNavigation: () => {} }));
 vi.mock("../hooks/useZenModeTransition", () => ({
   useZenModeTransition: () => ({ zenContentHidden: false, handleZenTransitionEnd: () => {} }),
 }));

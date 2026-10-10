@@ -4,15 +4,15 @@ import { useFuzzySearchList, Highlight } from "@nozbe/microfuzz/react";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCommandStore } from "../state/useCommandStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
-import { useResolvedKeybinds } from "../api/useKeybinds";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
 import { toastPluginCommandResult } from "../../plugins/runtime/pluginCommandInfo";
-import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { dispatchCommand } from "../runtime/commandDispatcher";
+import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
+import { LOCAL_COMMANDS } from "../runtime/localCommands";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
@@ -43,8 +43,7 @@ export function CommandPalette() {
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
   const registryItems = useRegistryPaletteItems();
-  const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
-  const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
+  const keybinds = useEffectiveKeybinds();
   const executeCommandMutation = useExecuteCommandMutation();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -60,7 +59,14 @@ export function CommandPalette() {
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
     const base = commands?.filter((cmd) => cmd.visibleInPalette) ?? [];
-    return [...base, ...pluginCommands.filter((cmd) => cmd.visibleInPalette), ...registryItems];
+    const serverIds = new Set(base.map((cmd) => cmd.id));
+    const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));
+    return [
+      ...base,
+      ...local,
+      ...pluginCommands.filter((cmd) => cmd.visibleInPalette),
+      ...registryItems,
+    ];
   }, [commands, pluginCommands, registryItems]);
 
   const getCommandText = useCallback(
@@ -108,13 +114,13 @@ export function CommandPalette() {
   // Build keybind lookup
   const keybindMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const kb of [...deviceKeybinds, ...(keybinds ?? [])]) {
+    for (const kb of keybinds) {
       if (kb.isEnabled && !map.has(kb.commandId)) {
         map.set(kb.commandId, kb.keystroke);
       }
     }
     return map;
-  }, [keybinds, deviceKeybinds]);
+  }, [keybinds]);
 
   // Reset selection when query changes
   useEffect(() => {
