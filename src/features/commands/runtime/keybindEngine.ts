@@ -1,29 +1,61 @@
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
+const MODIFIER_KEYS = ["Control", "Meta", "Shift", "Alt"];
+
+/**
+ * Whether Shift is part of typing `key` itself: a single character that is not a letter, such
+ * as `?` or `:`, already says which shifted key was pressed, and keyboard layouts disagree on
+ * whether Shift is needed for it.
+ */
+function shiftIsImplied(key: string): boolean {
+  return key.length === 1 && key.toLowerCase() === key.toUpperCase() && key !== " ";
+}
+
 /**
  * Convert a KeyboardEvent into a normalized keystroke string.
- * Format: "Ctrl+Shift+Alt+Key" (modifiers always in this order)
+ * Format: "Ctrl+Shift+Alt+Key" (modifiers always in this order). Shift is left out for a
+ * character that already implies it, so `?` is "?" on every layout.
  */
-export function parseKeystroke(event: KeyboardEvent): string {
-  const parts: string[] = [];
+export function parseKeystroke(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">,
+): string {
+  let key = event.key;
+  if (!key || MODIFIER_KEYS.includes(key)) return "";
 
+  const parts: string[] = [];
   if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
-  if (event.shiftKey) parts.push("Shift");
+  if (event.shiftKey && !shiftIsImplied(key)) parts.push("Shift");
   if (event.altKey) parts.push("Alt");
 
-  // Normalize the key
-  let key = event.key;
-
-  // Skip if key is just a modifier
-  if (["Control", "Meta", "Shift", "Alt"].includes(key)) return "";
-
-  // Normalize common keys
   if (key === " ") key = "Space";
   if (key.length === 1) key = key.toUpperCase();
 
   parts.push(key);
-
   return parts.join("+");
+}
+
+const MODIFIER_ORDER = ["Ctrl", "Shift", "Alt"];
+
+/**
+ * A stored keystroke in the form `parseKeystroke` produces: modifiers in Ctrl, Shift, Alt
+ * order, Meta as Ctrl, and no Shift before a character that implies it. So "Shift+?" matches
+ * "?" and "Alt+Shift+ArrowDown" matches the key as pressed.
+ */
+export function normalizeKeystroke(keystroke: string): string {
+  const cut = keystroke.endsWith("++") ? keystroke.length - 1 : keystroke.lastIndexOf("+") + 1;
+  const key = keystroke.slice(cut);
+  if (!key) return keystroke;
+  const modifiers = new Set(
+    keystroke
+      .slice(0, cut)
+      .split("+")
+      .filter((part) => part !== "")
+      .map((part) => (part === "Meta" ? "Ctrl" : part)),
+  );
+  if (shiftIsImplied(key)) modifiers.delete("Shift");
+  const known = MODIFIER_ORDER.filter((modifier) => modifiers.has(modifier));
+  const other = [...modifiers].filter((modifier) => !MODIFIER_ORDER.includes(modifier));
+  return [...known, ...other, key].join("+");
 }
 
 /**
@@ -41,7 +73,7 @@ export function matchKeybind(
     keybinds.find(
       (kb) =>
         kb.isEnabled &&
-        kb.keystroke === keystroke &&
+        normalizeKeystroke(kb.keystroke) === keystroke &&
         (kb.context === context || kb.context === "GLOBAL"),
     ) ?? null
   );

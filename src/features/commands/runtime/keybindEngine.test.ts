@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
+import {
+  parseKeystroke,
+  matchKeybind,
+  normalizeKeystroke,
+  surfaceToContext,
+} from "./keybindEngine";
 import type { ResolvedKeybind } from "../types";
 
 describe("parseKeystroke", () => {
@@ -43,6 +48,73 @@ describe("parseKeystroke", () => {
   it("handles Meta key as Ctrl", () => {
     const event = new KeyboardEvent("keydown", { key: "c", metaKey: true });
     expect(parseKeystroke(event)).toBe("Ctrl+C");
+  });
+});
+
+describe("parseKeystroke and characters that imply Shift", () => {
+  it("leaves Shift out for a character that needs it on the keyboard", () => {
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: "?", shiftKey: true }))).toBe("?");
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: ":", shiftKey: true }))).toBe(":");
+    expect(
+      parseKeystroke(new KeyboardEvent("keydown", { key: "?", shiftKey: true, ctrlKey: true })),
+    ).toBe("Ctrl+?");
+  });
+
+  it("keeps Shift for letters, named keys and Space", () => {
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: "G", shiftKey: true }))).toBe(
+      "Shift+G",
+    );
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true }))).toBe(
+      "Shift+ArrowDown",
+    );
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: " ", shiftKey: true }))).toBe(
+      "Shift+Space",
+    );
+  });
+
+  it("parses Ctrl+/", () => {
+    expect(parseKeystroke(new KeyboardEvent("keydown", { key: "/", ctrlKey: true }))).toBe(
+      "Ctrl+/",
+    );
+  });
+});
+
+describe("normalizeKeystroke", () => {
+  it("drops Shift before a character that implies it", () => {
+    expect(normalizeKeystroke("Shift+?")).toBe("?");
+    expect(normalizeKeystroke("Ctrl+Shift+?")).toBe("Ctrl+?");
+    expect(normalizeKeystroke("Shift++")).toBe("+");
+  });
+
+  it("puts modifiers in the order a pressed key has them", () => {
+    expect(normalizeKeystroke("Alt+Shift+ArrowDown")).toBe("Shift+Alt+ArrowDown");
+    expect(normalizeKeystroke("Shift+Meta+K")).toBe("Ctrl+Shift+K");
+    const pressed = parseKeystroke(
+      new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, shiftKey: true }),
+    );
+    expect(pressed).toBe(normalizeKeystroke("Alt+Shift+ArrowDown"));
+  });
+
+  it("leaves other keystrokes alone", () => {
+    expect(normalizeKeystroke("Ctrl+Shift+K")).toBe("Ctrl+Shift+K");
+    expect(normalizeKeystroke("Escape")).toBe("Escape");
+    expect(normalizeKeystroke("+")).toBe("+");
+    expect(normalizeKeystroke("Ctrl++")).toBe("Ctrl++");
+  });
+
+  it("lets a stored Shift+? binding match the key as pressed", () => {
+    const stored: ResolvedKeybind = {
+      id: "kb",
+      keystroke: "Shift+?",
+      commandId: "workspace.show_shortcuts",
+      context: "GLOBAL",
+      source: "USER",
+      scope: "USER",
+      isEnabled: true,
+      presetArgs: null,
+    };
+    const pressed = parseKeystroke(new KeyboardEvent("keydown", { key: "?", shiftKey: true }));
+    expect(matchKeybind(pressed, "GLOBAL", [stored])?.commandId).toBe("workspace.show_shortcuts");
   });
 });
 
