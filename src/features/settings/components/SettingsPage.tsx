@@ -15,6 +15,7 @@ import { cn } from "../../../shared/ui/cn";
 import { useCanModerate, useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { useFeatureEnabled } from "../../workspaces/hooks/useFeatureEnabled";
 import { WorkspaceFeature } from "../../../core/graphql/generated/schema-types";
+import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -101,7 +102,7 @@ function AboutRim() {
           </div>
           <div>
             <p className="text-sm font-semibold text-rim-text">RIM</p>
-            <p className="text-xs text-rim-text-faint">Version 0.1.0</p>
+            <AboutVersion />
           </div>
         </div>
 
@@ -130,6 +131,8 @@ function AboutRim() {
           </div>
         </div>
       </div>
+
+      <AboutUpdates />
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-3">
         <p className="text-sm font-medium text-rim-text">Core Capabilities</p>

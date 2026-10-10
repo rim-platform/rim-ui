@@ -92,6 +92,11 @@ vi.mock("./ModerationSettings", () => ({
   ModerationSettings: () => <div data-testid="moderation-settings">Moderation</div>,
 }));
 
+vi.mock("../../updater/components/AboutUpdates", () => ({
+  AboutVersion: () => <p>Version 9.9.9</p>,
+  AboutUpdates: () => <div data-testid="about-updates">Updates</div>,
+}));
+
 vi.mock("../../integrations/components/IngestTokenSettings", () => ({
   IngestTokenSettings: () => <div data-testid="ingest-token-settings">Integrations</div>,
 }));
@@ -175,6 +180,8 @@ describe("SettingsPage", () => {
     await user.click(screen.getByText("About"));
     // About panel renders an "About RIM" heading plus product blurb.
     expect(screen.getByRole("heading", { name: "About RIM" })).toBeInTheDocument();
+    expect(screen.getByText("Version 9.9.9")).toBeInTheDocument();
+    expect(screen.getByTestId("about-updates")).toBeInTheDocument();
     expect(screen.getByText("A programmable communication workspace.")).toBeInTheDocument();
   });
 
