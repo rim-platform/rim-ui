@@ -206,7 +206,7 @@ export async function fetchConversationPredecessor(
 /** A subscription of this relay to a workspace elsewhere, for this person. */
 export type RemoteSubscriptionView = Pick<
   RemoteSubscription,
-  "hostServerId" | "workspaceId" | "status" | "expiresAt"
+  "hostServerId" | "workspaceId" | "status" | "expiresAt" | "reason"
 >;
 
 /** How a device revocation reached one host. */

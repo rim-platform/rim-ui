@@ -98,6 +98,7 @@ export async function renewWorkspaceDelegations(force = false): Promise<RenewOut
     },
     force,
   );
+  useRelayStore.getState().noteRenewals(outcome.renewed);
   for (const workspaceId of outcome.lapsed) await catchUp(workspaceId);
   if (outcome.renewed.length > 0) {
     void queryClient.invalidateQueries({ queryKey: ["remoteSubscriptions"] });

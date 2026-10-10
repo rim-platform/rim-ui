@@ -1226,14 +1226,16 @@ export enum InviteTokenTypeGql {
   WORKSPACE = 'WORKSPACE'
 }
 
-/** Join a workspace hosted on another server through this relay. */
+/** Join a workspace on another host through this relay. */
 export type JoinRemoteWorkspaceInput = {
+  /** A delegation of the signing device for this relay, the host and the workspace. */
   delegation: SignedStatementInput;
+  /** The host's origin, from the invite link. */
   hostOrigin: Scalars['String']['input'];
   hostServerId: Scalars['String']['input'];
-  /** Null for a current member of the workspace. */
+  /** The invite token; null for a current member. */
   inviteToken?: InputMaybe<Scalars['String']['input']>;
-  /** A `login` statement over the host's challenge, with the host's server id as audience. */
+  /** A `login` statement over a `remoteJoinChallenge`, naming the host's server id. */
   proof: SignedStatementInput;
 };
 
@@ -1674,8 +1676,9 @@ export type Mutation = {
   addWorkspacePlugin: WorkspacePlugin;
   advanceIncidentPhase: IncidentPhaseGql;
   /**
-   * Apply a device revocation on this host, without a session; answers the host's signed
-   * `revocation-ack`.
+   * Apply a device revocation on this host directly, as an app does when a host did not
+   * acknowledge it through the relay. Needs no session: it acts only on the revocation's
+   * signature, and attempts are limited per IP. Returns the host's signed acknowledgement.
    */
   applyRemoteRevocation: SignedStatement;
   /**
@@ -1760,7 +1763,10 @@ export type Mutation = {
   incrementWorkspaceState: WorkspaceStateEntryGql;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
-  /** Join a workspace on another host; the relay presents the delegation and subscribes. */
+  /**
+   * Join a workspace on another host: the relay presents the caller's identity, proof and
+   * delegation, and records the subscription.
+   */
   joinRemoteWorkspace: RemoteJoinResult;
   joinServerByInvite: JoinServerByInvitePayload;
   /** Start a key login: a single-use challenge for a device to sign. No session needed. */
@@ -1772,7 +1778,10 @@ export type Mutation = {
   kickMember: Scalars['Boolean']['output'];
   /** Leave a channel or group (not a DM). */
   leaveConversation: Scalars['Boolean']['output'];
-  /** Delete the caller's queue, requests, contacts and blocks on this relay. */
+  /**
+   * Cancel the caller's subscriptions at every host, then delete their queue, requests,
+   * contacts and blocks on this relay.
+   */
   leaveRelay: Scalars['Boolean']['output'];
   login: LoginPayload;
   /**
@@ -1797,8 +1806,8 @@ export type Mutation = {
   publishProfileCard: ProfileCard;
   recordFeatureUsage: SkillProfileGql;
   /**
-   * A login challenge from the host, for joining one of its workspaces, and the workspace
-   * `inviteToken` names.
+   * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
+   * join, with the workspace `inviteToken` names (the invite is not used).
    */
   remoteJoinChallenge: RemoteJoinChallenge;
   removeContact: Scalars['Boolean']['output'];
@@ -1811,7 +1820,10 @@ export type Mutation = {
   removeRotationLayer: Scalars['Boolean']['output'];
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
-  /** Present fresh delegations to their hosts (at most 64). */
+  /**
+   * Present fresh delegations of the caller's devices to their hosts; one entry per
+   * delegation, in order.
+   */
   renewDelegations: Array<RemoteSubscription>;
   replyToMessage: Message;
   /** Report a DM request as abuse; a pending one is ignored too. */
@@ -3069,7 +3081,7 @@ export type Query = {
    * needed: the link id is the capability.
    */
   deviceLinkAnswer?: Maybe<SealedMessage>;
-  /** How the revocation of one of the caller's devices reached each host holding the caller. */
+  /** Where the revocation of one of the caller's devices stands at each host holding them. */
   deviceRevocationStatus: Array<RevocationFanout>;
   /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
@@ -3194,7 +3206,7 @@ export type Query = {
   remoteIdentity: RemoteIdentity;
   /** Pin the server at `origin` through this relay and return its discovery document. */
   remoteServer: RemoteServer;
-  /** The caller's subscriptions to workspaces on other hosts through this relay. */
+  /** The caller's subscriptions to workspaces on other hosts. */
   remoteSubscriptions: Array<RemoteSubscription>;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
@@ -3727,22 +3739,29 @@ export type RemoteIdentity = {
   servedBy: Scalars['String']['output'];
 };
 
-/** Someone from another server to start a conversation with. */
+/**
+ * A login challenge from a host, fetched through the relay, for a device to sign with the
+ * host's server id as `audience`.
+ */
 export type RemoteJoinChallenge = {
   challengeId: Scalars['ID']['output'];
   expiresAt: Scalars['DateTime']['output'];
   nonce: Scalars['String']['output'];
-  /** The workspace the invite token names, read without using the token up; null without one. */
+  /** The workspace the invite names, for the delegation; null without an invite. */
   workspaceId?: Maybe<Scalars['ID']['output']>;
 };
 
+/** A workspace joined on another host. */
 export type RemoteJoinResult = {
   hostServerId: Scalars['String']['output'];
+  /** `owner`, `moderator`, `member` or `guest`. */
   role: Scalars['String']['output'];
+  /** The member's user id at the host. */
   userId: Scalars['ID']['output'];
   workspaceId: Scalars['ID']['output'];
 };
 
+/** Someone from another server to start a conversation with. */
 export type RemoteMemberInput = {
   principalId: Scalars['String']['input'];
   /** Their relays, tried in order to fetch their identity. */
@@ -3766,11 +3785,14 @@ export type RemoteServer = {
   serverId: Scalars['String']['output'];
 };
 
-/** This relay's subscription to a workspace on another host, for the caller. */
+/** The relay's subscription to a workspace on another host, or a delegation the host refused. */
 export type RemoteSubscription = {
+  /** When the host stops honouring the delegation that keeps it active. */
   expiresAt?: Maybe<Scalars['DateTime']['output']>;
   hostServerId: Scalars['String']['output'];
-  /** `active`, or another word saying why not (`refused`, `expired`). */
+  /** Why a delegation was refused (`not_member`, `expired`, `relay_key`, …). */
+  reason?: Maybe<Scalars['String']['output']>;
+  /** `active`, `lapsed` or `ended`; `refused` for a delegation the host did not accept. */
   status: Scalars['String']['output'];
   workspaceId: Scalars['ID']['output'];
 };
@@ -3812,15 +3834,16 @@ export type RequestMlsReaddInput = {
   serverId: Scalars['ID']['input'];
 };
 
-/** How a device revocation reached one host. */
+/** A device revocation at one host. */
 export type RevocationFanout = {
-  /** The host's signed `revocation-ack`, once it answered. */
+  /** The host's signed `revocation-ack`, checked against its key. */
   ack?: Maybe<SignedStatement>;
   attempts: Scalars['Int']['output'];
   hostServerId: Scalars['String']['output'];
   status: RevocationFanoutStatus;
 };
 
+/** Where a revocation's delivery to one host stands. */
 export enum RevocationFanoutStatus {
   ACKED = 'ACKED',
   GAVE_UP = 'GAVE_UP',
@@ -4165,7 +4188,8 @@ export type Subscription = {
    * Host events queued for the session's device on this relay, above `after` (the device's
    * cursor when omitted), then live ones, as JSON strings:
    * `{"type":"RelayItem","id","hostServerId","workspaceId","envelope"}`, and the
-   * `DmRequestReceived` and `QueueOverflow` notices.
+   * `DmRequestReceived`, `QueueOverflow` and `RevocationAcked` notices. While one is open
+   * the hosts of the user's workspaces see them online.
    */
   relayStream: Scalars['String']['output'];
   /**

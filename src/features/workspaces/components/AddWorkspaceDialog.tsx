@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, Building2, Link } from "lucide-react";
 
+import {
+  FORBIDDEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  NOT_FOUND,
+} from "../../../core/graphql/errors";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { useCreateServerMutation } from "../api/useCreateServer";
@@ -74,15 +80,13 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
   }
 
   function formatError(error: unknown): string {
-    if (error instanceof Error) {
-      const msg = error.message;
-      if (msg.includes("already a member")) return "You are already a member of this workspace.";
-      if (msg.includes("PermissionDenied") || msg.includes("permission"))
-        return "This invite is expired or revoked.";
-      if (msg.includes("not found") || msg.includes("NotFound")) return "Invalid invite code.";
-      return msg;
-    }
-    return "Something went wrong.";
+    const code = graphqlErrorCode(error);
+    const msg = graphqlErrorMessage(error, "Something went wrong.");
+    if (msg.includes("already a member")) return "You are already a member of this workspace.";
+    if (code === NOT_FOUND) return "Invalid invite code.";
+    if (code === FORBIDDEN && (msg === "permission denied" || msg.includes("invite")))
+      return "This invite is expired or revoked.";
+    return msg;
   }
 
   return (

@@ -199,6 +199,7 @@ export const REMOTE_SUBSCRIPTIONS_QUERY = gql`
       workspaceId
       status
       expiresAt
+      reason
     }
   }
 `;
@@ -247,6 +248,7 @@ export const RENEW_DELEGATIONS_MUTATION = gql`
       workspaceId
       status
       expiresAt
+      reason
     }
   }
 `;
