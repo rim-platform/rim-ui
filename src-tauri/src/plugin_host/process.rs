@@ -188,6 +188,14 @@ pub fn force_kill(pid: u32) {
     }
 }
 
+/// Checked-in plugin scripts for tests that spawn processes.
+///
+/// A script written at test time can be busy for exec while another test thread forks.
+#[cfg(test)]
+pub(crate) fn test_plugins_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plugin_host/test_plugins")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,23 +203,14 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
-    fn create_test_script(dir: &Path, name: &str, content: &str) {
-        let path = dir.join(name);
-        std::fs::write(&path, content).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
     #[tokio::test]
     async fn spawn_and_shutdown() {
-        let tmp = TempDir::new().unwrap();
-        create_test_script(
-            tmp.path(),
-            "plugin.sh",
-            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
-        );
-
-        let (mut proc, _pipes) =
-            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+        let (mut proc, _pipes) = PluginProcess::spawn(
+            "dev.example.test",
+            &test_plugins_dir(),
+            "exits_on_sigterm.sh",
+        )
+        .unwrap();
         assert!(proc.try_wait().unwrap().is_none()); // still running
 
         proc.shutdown().await.unwrap();
@@ -222,16 +221,9 @@ mod tests {
 
     #[tokio::test]
     async fn plugin_that_exits_on_stdin_eof_is_not_signalled() {
-        let tmp = TempDir::new().unwrap();
-        // Exits with 3 on EOF; SIGTERM would end it with a signal instead.
-        create_test_script(
-            tmp.path(),
-            "plugin.sh",
-            "#!/bin/sh\ncat >/dev/null\nexit 3\n",
-        );
-
         let (mut proc, pipes) =
-            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+            PluginProcess::spawn("dev.example.test", &test_plugins_dir(), "exits_3_on_eof.sh")
+                .unwrap();
         drop(pipes); // the host closes stdin
         proc.shutdown().await.unwrap();
         let status = proc.try_wait().unwrap().expect("process exited");
@@ -240,14 +232,12 @@ mod tests {
 
     #[tokio::test]
     async fn force_kill_ends_a_process_that_ignores_sigterm() {
-        let tmp = TempDir::new().unwrap();
-        create_test_script(
-            tmp.path(),
-            "plugin.sh",
-            "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 1; done\n",
-        );
-        let (mut proc, _pipes) =
-            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+        let (mut proc, _pipes) = PluginProcess::spawn(
+            "dev.example.test",
+            &test_plugins_dir(),
+            "ignores_sigterm.sh",
+        )
+        .unwrap();
         force_kill(proc.pid().unwrap());
         let status = timeout(Duration::from_secs(5), proc.child.wait())
             .await

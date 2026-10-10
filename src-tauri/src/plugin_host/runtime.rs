@@ -500,10 +500,10 @@ mod tests {
     use super::*;
     use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
     use crate::plugin_host::panel_relay::PanelRelay;
+    use crate::plugin_host::process::test_plugins_dir;
     use crate::plugin_host::state::{state_file_path, PluginStateStore};
     use crate::plugin_host::PluginHostState;
     use std::collections::HashMap;
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
     fn test_manifest(plugin_id: &str, entrypoint: &str) -> PluginManifest {
@@ -551,26 +551,13 @@ mod tests {
         }
     }
 
-    fn write_script(dir: &std::path::Path, name: &str, content: &str) {
-        let path = dir.join(name);
-        std::fs::write(&path, content).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
     #[tokio::test]
     async fn start_plugin_registers_shutdown_tx() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        // A long-running plugin script that speaks a stub broker protocol
-        write_script(
-            &plugin_dir,
-            "main.sh",
-            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
-        );
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_on_sigterm.sh");
 
         start_plugin("dev.example.test", &manifest, &state).unwrap();
 
@@ -584,16 +571,10 @@ mod tests {
     #[tokio::test]
     async fn start_plugin_idempotent_returns_error_on_double_call() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        write_script(
-            &plugin_dir,
-            "main.sh",
-            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
-        );
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_on_sigterm.sh");
 
         start_plugin("dev.example.test", &manifest, &state).unwrap();
         let err = start_plugin("dev.example.test", &manifest, &state).unwrap_err();
@@ -606,16 +587,10 @@ mod tests {
     #[tokio::test]
     async fn stop_plugin_removes_shutdown_tx() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        write_script(
-            &plugin_dir,
-            "main.sh",
-            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
-        );
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_on_sigterm.sh");
 
         start_plugin("dev.example.test", &manifest, &state).unwrap();
         stop_plugin("dev.example.test", &state).await.unwrap();
@@ -634,15 +609,9 @@ mod tests {
         use crate::plugin_host::state::PluginStatus;
 
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        write_script(
-            &plugin_dir,
-            "main.sh",
-            "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n",
-        );
+        let plugin_dir = test_plugins_dir();
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let mut manifest = test_manifest("dev.example.test", "main.sh");
+        let mut manifest = test_manifest("dev.example.test", "exits_on_sigterm.sh");
         manifest.capabilities = vec!["ui.panel".into()];
         {
             let mut store = state.store.lock().unwrap();
@@ -731,14 +700,20 @@ mod tests {
         );
     }
 
-    async fn wait_for_client(state: &PluginHostState, plugin_id: &str) -> bool {
-        for _ in 0..250 {
-            if state.clients.lock().unwrap().contains_key(plugin_id) {
-                return true;
+    /// Poll `done` until it holds, giving up after a deadline generous enough for a loaded machine.
+    async fn wait_until(mut done: impl FnMut() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !done() {
+            if Instant::now() >= deadline {
+                return false;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        false
+        true
+    }
+
+    async fn wait_for_client(state: &PluginHostState, plugin_id: &str) -> bool {
+        wait_until(|| state.clients.lock().unwrap().contains_key(plugin_id)).await
     }
 
     #[tokio::test]
@@ -793,13 +768,11 @@ mod tests {
     #[tokio::test]
     async fn stop_all_stops_running_plugins_for_app_exit() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
         // Exits once its stdin closes, as a v1 plugin must.
-        write_script(&plugin_dir, "main.sh", "#!/bin/sh\ncat >/dev/null\n");
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_on_eof.sh");
         start_plugin("dev.example.test", &manifest, &state).unwrap();
         assert!(state.pids.lock().unwrap().contains_key("dev.example.test"));
 
@@ -835,27 +808,32 @@ mod tests {
     #[test]
     fn start_plugin_works_outside_a_tokio_runtime() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        write_script(&plugin_dir, "main.sh", "#!/bin/sh\nexit 0\n");
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_at_once.sh");
         start_plugin("dev.example.test", &manifest, &state).unwrap();
     }
 
     #[tokio::test]
     async fn plugin_without_handshake_never_accepts_commands() {
         let tmp = TempDir::new().unwrap();
-        let plugin_dir = tmp.path().join("dev.example.test");
-        std::fs::create_dir_all(&plugin_dir).unwrap();
-        write_script(&plugin_dir, "main.sh", "#!/bin/sh\nexit 0\n");
+        let plugin_dir = test_plugins_dir();
 
         let state = make_state(&tmp, "dev.example.test", &plugin_dir);
-        let manifest = test_manifest("dev.example.test", "main.sh");
+        let manifest = test_manifest("dev.example.test", "exits_at_once.sh");
         start_plugin("dev.example.test", &manifest, &state).unwrap();
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // The broker task deregisters the plugin once its process is gone.
+        assert!(
+            wait_until(|| !state
+                .shutdown_txs
+                .lock()
+                .unwrap()
+                .contains_key("dev.example.test"))
+            .await,
+            "the broker task must finish once the plugin exits"
+        );
         assert!(!state
             .clients
             .lock()
