@@ -14,6 +14,10 @@ interface MentionEntry {
 
 const MENTION_TOKEN_RE = /<@([a-zA-Z0-9_-]+)>/g;
 
+/** Classes of a rendered mention span. */
+export const MENTION_CLASS =
+  "mention text-rim-accent font-medium cursor-pointer rounded px-0.5 -mx-0.5 bg-rim-accent/10 hover:bg-rim-accent/20 transition-colors";
+
 export function preprocessMentions(
   text: string,
   memberMap: Map<string, string>, // userId → displayName
@@ -37,7 +41,7 @@ export function postprocessMentions(html: string, mentions: MentionEntry[]): str
   for (let i = 0; i < mentions.length; i++) {
     const placeholder = `%%MENTION_${i}%%`;
     const mention = mentions[i];
-    const span = `<span class="mention text-rim-accent font-medium cursor-pointer rounded px-0.5 -mx-0.5 bg-rim-accent/10 hover:bg-rim-accent/20 transition-colors" data-user-id="${mention.userId}" tabindex="0" role="button">@${escapeHtml(mention.displayName)}</span>`;
+    const span = `<span class="${MENTION_CLASS}" data-user-id="${mention.userId}" tabindex="0" role="button">@${escapeHtml(mention.displayName)}</span>`;
     result = result.replace(placeholder, span);
   }
   return result;
