@@ -110,6 +110,8 @@ pub(crate) struct LocalAccount {
 pub(crate) struct EnrollmentDraft {
     pub(crate) draft_id: String,
     pub(crate) principal_id: String,
+    /// The payload of the key log's inception, which a signup's proof-of-work is bound to.
+    pub(crate) inception_payload: String,
     /// The whole kit text, to copy.
     pub(crate) recovery_kit: Zeroizing<String>,
     /// The kit's 12 words in order, to show as a numbered grid.
@@ -389,6 +391,7 @@ impl KeyIdentityState {
         drop(recovery_entropy);
 
         let draft_id = uuid::Uuid::new_v4().to_string();
+        let inception_payload = inception.payload.clone();
         self.drafts
             .lock()
             .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
@@ -408,6 +411,7 @@ impl KeyIdentityState {
         Ok(EnrollmentDraft {
             draft_id,
             principal_id,
+            inception_payload,
             recovery_kit,
             recovery_phrase,
         })

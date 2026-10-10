@@ -116,6 +116,7 @@ pub fn run() {
             app.manage(key_identity::init(vault.clone()));
             app.manage(e2ee::attachment_state());
             app.manage(relay::direct::DirectState::default());
+            app.manage(relay::pow::PowState::default());
             app.manage(vault);
             Ok(())
         })
@@ -240,6 +241,8 @@ pub fn run() {
             relay::direct::relay_direct_socket_open,
             relay::direct::relay_direct_socket_send,
             relay::direct::relay_direct_socket_close,
+            relay::pow::relay_solve_pow,
+            relay::pow::relay_cancel_pow,
             key_identity::commands::key_identity_sync_log,
             key_identity::commands::key_identity_sign_revocation,
             key_identity::commands::key_identity_begin_rotation,
