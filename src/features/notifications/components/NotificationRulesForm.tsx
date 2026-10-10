@@ -6,6 +6,8 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { DigestFrequency, NotificationLevel } from "../../../core/graphql/generated/schema-types";
 import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import {
   useUpdateNotificationSettings,
   type NotificationSettingsData,
@@ -87,6 +89,8 @@ export function NotificationRulesForm({ serverId, settings }: NotificationRulesF
   const [keywordError, setKeywordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const update = useUpdateNotificationSettings();
+  // Without email on the server no digest is sent; the stored choice is kept as it is.
+  const email = useServerFeature("email");
 
   const dirty = !sameDraft(draft, baseline) || keywordDraft.trim() !== "";
 
@@ -254,26 +258,33 @@ export function NotificationRulesForm({ serverId, settings }: NotificationRulesF
         )}
       </div>
 
-      <label className="flex items-center justify-between gap-4">
-        <span>
+      {!email.enabled ? (
+        <div className="space-y-1.5">
           <span className="block text-sm font-medium text-rim-text">Email digest</span>
-          <span className="mt-0.5 block text-xs text-rim-text-muted">
-            Unread notifications by email while you are away.
+          <FeatureOffNotice feature="email" view={email} />
+        </div>
+      ) : (
+        <label className="flex items-center justify-between gap-4">
+          <span>
+            <span className="block text-sm font-medium text-rim-text">Email digest</span>
+            <span className="mt-0.5 block text-xs text-rim-text-muted">
+              Unread notifications by email while you are away.
+            </span>
           </span>
-        </span>
-        <select
-          aria-label="Email digest"
-          value={draft.digest}
-          onChange={(e) => patch({ digest: e.target.value as DigestFrequency })}
-          className="rounded-md border border-rim-line bg-rim-void px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent/40"
-        >
-          {DIGEST_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          <select
+            aria-label="Email digest"
+            value={draft.digest}
+            onChange={(e) => patch({ digest: e.target.value as DigestFrequency })}
+            className="rounded-md border border-rim-line bg-rim-void px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent/40"
+          >
+            {DIGEST_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {formError && (
         <p

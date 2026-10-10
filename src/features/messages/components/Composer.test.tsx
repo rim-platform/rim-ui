@@ -3,7 +3,11 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
-import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  ServerFeatureState,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
+import { serverInfoQueryClient, type FakeFeatures } from "../../../test/serverInfo";
 import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast/useToastStore";
@@ -362,5 +366,81 @@ describe("Composer — offline", () => {
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
     expect(textbox).toHaveValue("written offline");
+  });
+});
+
+describe("Composer — attachments switch", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  function renderWith(features: FakeFeatures = {}) {
+    render(
+      <QueryClientProvider client={serverInfoQueryClient(features)}>
+        <Composer workspaceId="ws-1" conversationId="conv-1" />
+      </QueryClientProvider>,
+    );
+  }
+
+  function dropFile(name: string) {
+    const form = screen.getByRole("textbox").closest("form")!;
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["x"], name)] } });
+  }
+
+  it("offers the attach button and takes a drop while the server runs attachments", async () => {
+    serve(makeConversation());
+    renderWith();
+    await screen.findByRole("textbox");
+    expect(screen.getByRole("button", { name: "Attach file" })).toBeInTheDocument();
+
+    dropFile("notes.txt");
+    expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+  });
+
+  it("offers no attach button and takes no drop while attachments are switched off", async () => {
+    serve(makeConversation());
+    renderWith({ attachments: ServerFeatureState.DISABLED });
+    await screen.findByRole("textbox");
+    expect(screen.queryByRole("button", { name: "Attach file" })).not.toBeInTheDocument();
+
+    dropFile("notes.txt");
+    expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  it("says attachments are switched off when the server refuses the upload", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "m-1" } }),
+      "mutation CreateAttachment": () => {
+        throw Object.assign(new Error("serialized"), {
+          response: {
+            errors: [
+              {
+                message: "the attachments feature is not available on this server",
+                extensions: { code: "FEATURE_DISABLED", feature: "attachments" },
+              },
+            ],
+          },
+        });
+      },
+    });
+    renderWith();
+    const textbox = await screen.findByRole("textbox");
+    dropFile("notes.txt");
+    await screen.findByText("notes.txt");
+    fireEvent.change(textbox, { target: { value: "see attached" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Attachments are switched off on this server", {
+        id: "feature-disabled-attachments",
+      }),
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 });

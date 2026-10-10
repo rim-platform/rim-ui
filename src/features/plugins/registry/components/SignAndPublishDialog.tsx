@@ -6,7 +6,9 @@ import {
   WorkspacePluginStatus,
   type SignedStatementInput,
 } from "../../../../core/graphql/generated/schema-types";
+import { graphqlErrorMessage } from "../../../../core/graphql/errors";
 import { queryKeys } from "../../../../core/query/keys";
+import { reportFeatureDisabled } from "../../../../core/query/queryClient";
 import { toast } from "../../../../shared/toast";
 import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
@@ -17,6 +19,7 @@ import { useCurrentUser } from "../../../workspaces/api/useCurrentUser";
 import { useCanModerate } from "../../../workspaces/api/useMyServerRole";
 import { useWorkspace } from "../../../workspaces/api/useWorkspace";
 import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
+import { useServerFeature } from "../../../updater/hooks/useServerFeature";
 import type { PluginInfo } from "../../types";
 import { useWorkspacePlugins } from "../api";
 import { messageOf } from "../installer";
@@ -80,7 +83,9 @@ function SourceSummary({ source }: { source: SigningSource }) {
 export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPublishDialogProps) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const canPublish = useCanModerate(workspaceId ?? undefined);
+  // Publishing needs the workspace registry on the server; a signature file does not.
+  const registryOn = useServerFeature("workspace_plugins").enabled;
+  const canPublish = useCanModerate(workspaceId ?? undefined) && registryOn;
   const { data: workspace } = useWorkspace(workspaceId ?? undefined);
   const { data: entries } = useWorkspacePlugins(workspaceId, canPublish);
   const { data: me } = useCurrentUser();
@@ -162,7 +167,8 @@ export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPubli
       toast.success(`Published ${source.displayName} ${source.version} to ${workspace?.name}`);
       onClose();
     } catch (err) {
-      setError(messageOf(err));
+      reportFeatureDisabled(err, qc);
+      setError(graphqlErrorMessage(err, messageOf(err)));
     } finally {
       setBusy(false);
     }

@@ -13,6 +13,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { registerProvider } from "../providers/registry";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { Dialog } from "../../../shared/ui/Dialog";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import type { ServerFeatureView } from "../../updater/hooks/useServerFeature";
+import { AI_COMMANDS_OFF_MESSAGE } from "../aiCommandsOff";
 
 // Register tools once per workspace (dual-mode: hardcoded builtins + backend AI surface,
 // backend-wins). The backend AI surface is per workspace (Track 0.4: feature-gated commands
@@ -99,10 +104,12 @@ export function AgentOverlay() {
   const [inputValue, setInputValue] = useState("");
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
+  const aiCommands = useServerFeature("ai_commands");
+  const agentOn = aiCommands.enabled;
 
   // Focus input on open + check disclaimer
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && agentOn) {
       ensureToolsRegistered();
 
       if (!disclaimerChecked) {
@@ -114,7 +121,7 @@ export function AgentOverlay() {
 
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [isOpen, disclaimerChecked]);
+  }, [isOpen, disclaimerChecked, agentOn]);
 
   // Global Escape handler
   useEffect(() => {
@@ -239,6 +246,8 @@ export function AgentOverlay() {
   }, [startNewConversation]);
 
   if (!isOpen) return null;
+
+  if (!agentOn) return <AgentOff view={aiCommands} onClose={close} />;
 
   if (showDisclaimer) {
     return (
@@ -401,6 +410,15 @@ export function AgentOverlay() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The agent's place while the server has the AI command surface switched off. */
+function AgentOff({ view, onClose }: { view: ServerFeatureView; onClose: () => void }) {
+  return (
+    <Dialog open onClose={onClose} title="RIM Agent">
+      <FeatureOffNotice feature="ai_commands" view={view} message={AI_COMMANDS_OFF_MESSAGE} />
+    </Dialog>
   );
 }
 

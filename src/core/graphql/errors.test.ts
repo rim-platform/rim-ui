@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 
+import { FeatureDisabledError } from "../serverFeatures";
 import {
+  disabledFeatureOf,
   FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
@@ -99,5 +101,35 @@ describe("Track 1.2 error extensions", () => {
   it("words a TIMED_OUT failure as the timed-out message everywhere", () => {
     expect(graphqlErrorMessage(timedOut, "fallback")).toBe(timedOutMessage(until));
     expect(timedOutMessage(until)).toMatch(/^You are timed out until /);
+  });
+});
+
+describe("disabledFeatureOf", () => {
+  const featureDisabled = Object.assign(new Error("serialized"), {
+    response: {
+      errors: [
+        {
+          message: "the custom_emoji feature is not available on this server",
+          extensions: { code: "FEATURE_DISABLED", feature: "custom_emoji" },
+        },
+      ],
+    },
+  });
+
+  it("reads the feature of a FEATURE_DISABLED GraphQL error and of a REST refusal", () => {
+    expect(disabledFeatureOf(featureDisabled)).toBe("custom_emoji");
+    expect(disabledFeatureOf(new FeatureDisabledError("attachments"))).toBe("attachments");
+  });
+
+  it("is undefined for other errors", () => {
+    expect(disabledFeatureOf(forbidden)).toBeUndefined();
+    expect(disabledFeatureOf(new Error("boom"))).toBeUndefined();
+    expect(disabledFeatureOf(undefined)).toBeUndefined();
+  });
+
+  it("gives graphqlErrorMessage the switched-off wording", () => {
+    expect(graphqlErrorMessage(featureDisabled, "fallback")).toBe(
+      "Custom emoji is switched off on this server",
+    );
   });
 });

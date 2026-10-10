@@ -23,19 +23,38 @@ vi.mock("../../../core/graphql/config", () => ({
 
 import { ForgotPasswordPage } from "./ForgotPasswordPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
+import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 describe("ForgotPasswordPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  function renderPage() {
+  function renderPage(features: FakeFeatures = {}) {
     return render(
       <MemoryRouter>
         <ForgotPasswordPage />
       </MemoryRouter>,
+      { wrapper: withServerInfo(features) },
     );
   }
+
+  it("says email is not set up, with the reason, instead of the form", () => {
+    renderPage({
+      email: { state: ServerFeatureState.UNAVAILABLE, reason: "SMTP is not configured" },
+    });
+    expect(screen.getByText("Email is not set up on this server.")).toBeInTheDocument();
+    expect(screen.getByText("SMTP is not configured")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("your username")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to login" })).toBeInTheDocument();
+  });
+
+  it("says email is switched off instead of the form when the operator disabled it", () => {
+    renderPage({ email: ServerFeatureState.DISABLED });
+    expect(screen.getByText("Email is switched off on this server.")).toBeInTheDocument();
+    expect(screen.queryByText("Request password reset")).not.toBeInTheDocument();
+  });
 
   it("renders the page with form", () => {
     renderPage();

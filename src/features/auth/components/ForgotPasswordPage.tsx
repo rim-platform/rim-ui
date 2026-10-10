@@ -5,11 +5,14 @@ import { useRequestPasswordResetMutation } from "../api/usePasswordResetMutation
 import { cn } from "../../../shared/ui/cn";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { useHealthCheck } from "../../system/api/useHealthCheck";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
 export function ForgotPasswordPage() {
   const [username, setUsername] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const requestReset = useRequestPasswordResetMutation();
+  const email = useServerFeature("email");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +36,20 @@ export function ForgotPasswordPage() {
         <HealthIndicator />
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          {submitted ? (
+          {!email.enabled ? (
+            <div className="space-y-4">
+              <FeatureOffNotice feature="email" view={email} />
+              <p className="text-sm text-rim-text-muted">
+                Ask an administrator of this server to reset your password.
+              </p>
+              <Link
+                to="/"
+                className="block text-center text-sm text-rim-text-muted transition hover:text-rim-text"
+              >
+                Back to login
+              </Link>
+            </div>
+          ) : submitted ? (
             <div className="space-y-4">
               <p className="text-sm text-rim-text-muted">
                 If the account exists, a reset link has been sent. Check with your administrator for

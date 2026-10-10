@@ -8,6 +8,7 @@
  */
 
 import { formatTime } from "../../shared/utils/formatTime";
+import { FeatureDisabledError, featureOffMessage } from "../serverFeatures";
 
 /** A write by a member who is timed out in the workspace; extension `until` (RFC 3339). */
 export const TIMED_OUT = "TIMED_OUT";
@@ -63,6 +64,20 @@ export const EXPIRED_TOKEN = "EXPIRED_TOKEN";
 /** Another server the request needed could not be reached; extension `hostServerId`. */
 export const UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE";
 
+/** A feature the server does not run; extension `feature` names it. */
+export const FEATURE_DISABLED = "FEATURE_DISABLED";
+
+/**
+ * The feature a failed request was refused for: a `FEATURE_DISABLED` GraphQL error's `feature`
+ * extension, or a `FeatureDisabledError` from a REST route. `undefined` for anything else.
+ */
+export function disabledFeatureOf(err: unknown): string | undefined {
+  if (err instanceof FeatureDisabledError) return err.feature;
+  if (graphqlErrorCode(err) !== FEATURE_DISABLED) return undefined;
+  const feature = graphqlErrorExtension(err, "feature");
+  return typeof feature === "string" && feature ? feature : undefined;
+}
+
 /** The wording for an `UPSTREAM_UNAVAILABLE` failure. */
 export const UPSTREAM_UNAVAILABLE_MESSAGE =
   "Another server this needs could not be reached. Try again later.";
@@ -100,12 +115,15 @@ export function timedOutMessage(until: string): string {
 
 /**
  * The server's human-readable message for a failed request, else `err.message`, else
- * `fallback`. A `TIMED_OUT` error reads "You are timed out until …" and an
- * `UPSTREAM_UNAVAILABLE` one names no server id, wherever they surface.
+ * `fallback`. A `TIMED_OUT` error reads "You are timed out until …", a `FEATURE_DISABLED` one
+ * "<Feature> is switched off on this server", and an `UPSTREAM_UNAVAILABLE` one names no
+ * server id, wherever they surface.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);
   if (until) return timedOutMessage(until);
+  const feature = disabledFeatureOf(err);
+  if (feature) return featureOffMessage(feature);
   if (graphqlErrorCode(err) === UPSTREAM_UNAVAILABLE) return UPSTREAM_UNAVAILABLE_MESSAGE;
   const message = firstGraphQLError(err)?.message;
   if (typeof message === "string" && message.trim()) return message;

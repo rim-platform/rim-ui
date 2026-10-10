@@ -15,6 +15,9 @@ import { Button } from "../../../shared/ui/Button";
 import { toast } from "../../../shared/toast/useToastStore";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAgentStore } from "../state/useAgentStore";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { AI_COMMANDS_OFF_MESSAGE } from "../aiCommandsOff";
 import type { AiModelDef } from "../providers/types";
 import { getProvider } from "../providers/registry";
 import { createAnthropicProvider } from "../providers/anthropic";
@@ -215,6 +218,7 @@ export function AgentSettingsPanel() {
   const { capabilities } = useRuntime();
   const settings = useAgentStore((s) => s.settings);
   const updateSettings = useAgentStore((s) => s.updateSettings);
+  const aiCommands = useServerFeature("ai_commands");
 
   const [keyInput, setKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -342,6 +346,14 @@ export function AgentSettingsPanel() {
           leave your device.
         </p>
       </div>
+
+      {!aiCommands.enabled && (
+        <FeatureOffNotice
+          feature="ai_commands"
+          view={aiCommands}
+          message={AI_COMMANDS_OFF_MESSAGE}
+        />
+      )}
 
       {/* Data-leakage warning — must be first thing after the heading */}
       <div className="rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">

@@ -8,6 +8,8 @@ import { queryKeys } from "../../../../core/query/keys";
 import { toast } from "../../../../shared/toast";
 import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
+import { FeatureOffNotice } from "../../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../../updater/hooks/useServerFeature";
 import { useCanModerate } from "../../../workspaces/api/useMyServerRole";
 import { removeWorkspacePlugin, updateWorkspacePlugin, type RegistryEntry } from "../api";
 import { useRegistryItems } from "../hooks";
@@ -23,6 +25,7 @@ import { TrustBadge } from "./TrustBadge";
 export function WorkspacePluginSettings({ serverId }: { serverId: string | null }) {
   const qc = useQueryClient();
   const canManage = useCanModerate(serverId ?? undefined);
+  const registry = useServerFeature("workspace_plugins");
   const { items, members, workspaceName } = useRegistryItems(serverId);
   const entries = items.map((i) => i.check.entry);
   const [adding, setAdding] = useState<{ replacing?: RegistryEntry } | null>(null);
@@ -30,6 +33,14 @@ export function WorkspacePluginSettings({ serverId }: { serverId: string | null 
   const [busy, setBusy] = useState<string | null>(null);
 
   if (!serverId || !canManage) return null;
+  if (!registry.enabled) {
+    return (
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold text-rim-text">Plugins</h2>
+        <FeatureOffNotice feature="workspace_plugins" view={registry} />
+      </section>
+    );
+  }
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.workspacePlugins(serverId) });
 
   async function setStatus(entry: RegistryEntry, status: WorkspacePluginStatus) {

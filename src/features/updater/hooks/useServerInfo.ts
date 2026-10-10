@@ -10,7 +10,7 @@ export const NEWER_SERVER_API_MESSAGE =
 
 /** What the client knows about the server it talks to. */
 export interface ServerInfoView {
-  /** The server's versions; `undefined` while loading or when it could not be read. */
+  /** The server's versions and features; `undefined` while loading or when it could not be read. */
   info: ServerInfo | undefined;
   /** The query failed: the server is down, or too old to answer it. */
   unreachable: boolean;
@@ -18,7 +18,10 @@ export interface ServerInfoView {
   newerApi: boolean;
 }
 
-/** The connected server's versions, read once per session; a failure only sets `unreachable`. */
+/**
+ * The connected server's versions and features, read once per session (and again after a call
+ * is refused for a disabled feature); a failure only sets `unreachable`.
+ */
 export function useServerInfo(): ServerInfoView {
   const query = useQuery({
     queryKey: queryKeys.serverInfo,

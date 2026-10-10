@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
 import { useInstalledPlugins } from "../api/usePluginList";
 import { useWorkspacePlugins } from "./api";
@@ -21,10 +22,15 @@ export function usePluginPlatform() {
   };
 }
 
-/** Every entry of a workspace's registry, verified on this device (steps 1 to 4). */
+/**
+ * Every entry of a workspace's registry, verified on this device (steps 1 to 4). Nothing loads
+ * while the server has workspace plugins switched off, so nothing is offered and nothing reads
+ * as removed.
+ */
 export function useRegistryChecks(serverId: string | null | undefined) {
   const { enabled } = usePluginPlatform();
-  const entries = useWorkspacePlugins(serverId, enabled);
+  const registryOn = useServerFeature("workspace_plugins").enabled;
+  const entries = useWorkspacePlugins(serverId, enabled && registryOn);
   const versions = entries.data?.map((e) => `${e.id}:${e.updatedAt}`) ?? [];
   const checks = useQuery({
     queryKey: queryKeys.workspacePluginChecks(serverId, versions),

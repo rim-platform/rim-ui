@@ -7,6 +7,8 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
 type InviteRole = ServerMemberRoleGql.MEMBER | ServerMemberRoleGql.GUEST;
 
@@ -60,10 +62,11 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [role, setRole] = useState<InviteRole>(ServerMemberRoleGql.MEMBER);
+  const email = useServerFeature("email");
 
   function handleGenerate() {
     if (!workspaceId) return;
-    const trimmed = recipientEmail.trim();
+    const trimmed = email.enabled ? recipientEmail.trim() : "";
     if (trimmed && !EMAIL_REGEX.test(trimmed)) {
       setEmailError("Enter a valid email address.");
       return;
@@ -143,33 +146,37 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
                 ))}
               </div>
             </div>
-            <div>
-              <label
-                htmlFor="invite-recipient-email"
-                className="mb-1 block text-xs font-medium text-rim-text"
-              >
-                Email invite (optional)
-              </label>
-              <input
-                id="invite-recipient-email"
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => {
-                  setRecipientEmail(e.target.value);
-                  setEmailError(null);
-                }}
-                placeholder="teammate@example.com"
-                className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent"
-              />
-              {emailError ? (
-                <p className="mt-1 text-xs text-rim-danger">{emailError}</p>
-              ) : (
-                <p className="mt-1 text-xs text-rim-text-muted">
-                  If provided, we'll email the invite link. You can still copy the link below either
-                  way.
-                </p>
-              )}
-            </div>
+            {email.enabled ? (
+              <div>
+                <label
+                  htmlFor="invite-recipient-email"
+                  className="mb-1 block text-xs font-medium text-rim-text"
+                >
+                  Email invite (optional)
+                </label>
+                <input
+                  id="invite-recipient-email"
+                  type="email"
+                  value={recipientEmail}
+                  onChange={(e) => {
+                    setRecipientEmail(e.target.value);
+                    setEmailError(null);
+                  }}
+                  placeholder="teammate@example.com"
+                  className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent"
+                />
+                {emailError ? (
+                  <p className="mt-1 text-xs text-rim-danger">{emailError}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-rim-text-muted">
+                    If provided, we'll email the invite link. You can still copy the link below
+                    either way.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <FeatureOffNotice feature="email" view={email} />
+            )}
             {showGenericError && (
               <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
                 {createInvite.error instanceof Error

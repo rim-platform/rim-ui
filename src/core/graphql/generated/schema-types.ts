@@ -1558,6 +1558,10 @@ export type Mutation = {
   reportMessage: MessageReport;
   /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
+  /**
+   * `FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
+   * logged instead of sent, as before.
+   */
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   /**
@@ -2698,7 +2702,7 @@ export type Query = {
   server: Server;
   /** Active bans of the workspace, newest first. Owner/Moderator only. */
   serverBans: Array<ServerBan>;
-  /** The server's release version and API version. Readable without a session. */
+  /** The server's release version, API version and features. Readable without a session. */
   serverInfo: ServerInfo;
   serverMacros: Array<MacroDef>;
   serverMembers: Array<ServerMember>;
@@ -3375,10 +3379,35 @@ export type ServerBan = {
   userId: Scalars['ID']['output'];
 };
 
-/** The running server build and the API version it speaks. */
+/** One optional feature and whether it works here. */
+export type ServerFeatureInfo = {
+  /**
+   * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
+   * `email`, `custom_emoji`, `workspace_plugins` or `ai_commands`. A client ignores a name
+   * it does not know.
+   */
+  key: Scalars['String']['output'];
+  /** Why an unavailable feature is unavailable; null otherwise. */
+  reason?: Maybe<Scalars['String']['output']>;
+  state: ServerFeatureState;
+};
+
+/** Whether an optional feature works on this instance. */
+export enum ServerFeatureState {
+  /** The operator switched it off. */
+  DISABLED = 'DISABLED',
+  /** The feature works. */
+  ENABLED = 'ENABLED',
+  /** The configuration lacks something the feature needs; `reason` says what. */
+  UNAVAILABLE = 'UNAVAILABLE'
+}
+
+/** The running server build, the API version it speaks and the optional features it runs. */
 export type ServerInfo = {
   /** The major version of this GraphQL API. */
   apiVersion: Scalars['Int']['output'];
+  /** Every optional feature with its state on this instance. */
+  features: Array<ServerFeatureInfo>;
   /** The server's release version, e.g. `0.1.0`. */
   version: Scalars['String']['output'];
 };

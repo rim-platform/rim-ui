@@ -10,6 +10,12 @@ vi.mock("../api/useInviteMutations", () => ({
 
 import { useCreateInviteMutation } from "../api/useInviteMutations";
 import { InviteDialog } from "./InviteDialog";
+import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
+
+function renderDialog(features: FakeFeatures = {}) {
+  return render(<InviteDialog open onClose={() => {}} />, { wrapper: withServerInfo(features) });
+}
 
 function mockCreateInvite({
   mutate = vi.fn(),
@@ -41,12 +47,27 @@ describe("InviteDialog", () => {
     useToastStore.setState({ toasts: [] });
   });
 
+  it("says email is not set up, with the reason, in place of the email field", () => {
+    const mutate = vi.fn();
+    mockCreateInvite({ mutate });
+    renderDialog({
+      email: { state: ServerFeatureState.UNAVAILABLE, reason: "SMTP is not configured" },
+    });
+
+    expect(screen.queryByLabelText(/email invite/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Email is not set up on this server.")).toBeInTheDocument();
+    expect(screen.getByText("SMTP is not configured")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+    expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
+  });
+
   it("empty email: generates a link-only invite (no recipientEmail in the call)", () => {
     const mutate = vi.fn((_input, options) => {
       options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
     });
     mockCreateInvite({ mutate });
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
 
@@ -59,7 +80,7 @@ describe("InviteDialog", () => {
       options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
     });
     mockCreateInvite({ mutate });
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     fireEvent.change(screen.getByLabelText(/email invite/i), {
       target: { value: "teammate@example.com" },
@@ -76,7 +97,7 @@ describe("InviteDialog", () => {
   it("defaults to Member and can mint a Guest invite", () => {
     const mutate = vi.fn();
     mockCreateInvite({ mutate });
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     expect(screen.getByRole("radio", { name: /member/i })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("radio", { name: /guest/i }));
@@ -89,7 +110,7 @@ describe("InviteDialog", () => {
   it("invalid email: shows an inline error and does not call the mutation", () => {
     const mutate = vi.fn();
     mockCreateInvite({ mutate });
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     fireEvent.change(screen.getByLabelText(/email invite/i), {
       target: { value: "not-an-email" },
@@ -102,7 +123,7 @@ describe("InviteDialog", () => {
 
   it("clears the inline email error once the field is edited again", () => {
     mockCreateInvite();
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     const input = screen.getByLabelText(/email invite/i);
     fireEvent.change(input, { target: { value: "not-an-email" } });
@@ -120,7 +141,7 @@ describe("InviteDialog", () => {
       });
     });
     mockCreateInvite({ mutate });
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     fireEvent.change(screen.getByLabelText(/email invite/i), {
       target: { value: "teammate@example.com" },
@@ -136,7 +157,7 @@ describe("InviteDialog", () => {
     });
     mockCreateInvite({ mutate });
     stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
-    render(<InviteDialog open onClose={() => {}} />);
+    renderDialog();
 
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
 

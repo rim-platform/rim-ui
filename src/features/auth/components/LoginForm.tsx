@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useLoginMutation } from "../api/useAuthMutations";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
 interface LoginFormProps {
   /** Called with the authenticated user's ID on successful login. */
@@ -57,7 +58,8 @@ function MutationError({ error }: { error: unknown }) {
 }
 
 /**
- * Renders the username/password form and the "Forgot password?" link.
+ * Renders the username/password form and the "Forgot password?" link, which is left out while
+ * the server sends no email.
  *
  * Does not handle navigation — calls `props.onSuccess` and lets the parent
  * decide the post-login destination. The return target is router state only
@@ -68,6 +70,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const login = useLoginMutation();
+  const email = useServerFeature("email");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,12 +102,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       >
         {login.isPending ? "Signing in..." : "Log in"}
       </button>
-      <Link
-        to="/forgot-password"
-        className="block text-center text-sm text-rim-text-muted transition hover:text-rim-text"
-      >
-        Forgot password?
-      </Link>
+      {email.enabled && (
+        <Link
+          to="/forgot-password"
+          className="block text-center text-sm text-rim-text-muted transition hover:text-rim-text"
+        >
+          Forgot password?
+        </Link>
+      )}
     </form>
   );
 }

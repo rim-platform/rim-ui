@@ -2,6 +2,7 @@
 // The fragment pins the bytes: the link installs only a bundle with that hash.
 
 import { getApiOrigin } from "../../../core/graphql/config";
+import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 import { MAX_BUNDLE_BYTES, sha256Hex } from "./bundle";
 
 /** A link the host refuses, with the reason. */
@@ -47,7 +48,8 @@ export function serverBundleUrl(serverId: string, sha256: string): string {
 /**
  * Fetch a bundle without caches, following redirects, and stop reading past
  * 8 MiB. The bytes must hash to `sha256`. Credentials go only to the RIM
- * server's own copy, which needs the session; any other host gets none.
+ * server's own copy, which needs the session; any other host gets none. The server's own copy
+ * is refused with a `FeatureDisabledError` while workspace plugins are switched off.
  */
 export async function fetchBundle(
   url: string,
@@ -68,7 +70,10 @@ export async function fetchBundle(
       "The bundle could not be fetched. Its server must allow it with Access-Control-Allow-Origin: *.",
     );
   }
-  if (!response.ok) throw new BundleLinkError(`The bundle's server answered ${response.status}.`);
+  if (!response.ok) {
+    const disabled = credentials === "include" ? await featureDisabledFromResponse(response) : null;
+    throw disabled ?? new BundleLinkError(`The bundle's server answered ${response.status}.`);
+  }
   const bytes = await readCapped(response);
   if ((await sha256Hex(bytes)) !== sha256) {
     throw new BundleLinkError("The bundle does not match the SHA-256 in the link.");

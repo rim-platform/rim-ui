@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
 export interface CustomEmoji {
   id: string;
@@ -24,17 +25,19 @@ const CUSTOM_EMOJIS_QUERY = `
   }
 `;
 
+/** The workspace's custom emoji; none, and no request, while the server has them switched off. */
 export function useCustomEmojis(serverId: string | null): {
   emojis: CustomEmoji[];
   isLoading: boolean;
 } {
+  const customEmoji = useServerFeature("custom_emoji").enabled;
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.customEmojis(serverId ?? undefined),
     queryFn: () =>
       graphqlClient.request<{ customEmojis: CustomEmoji[] }>(CUSTOM_EMOJIS_QUERY, { serverId }),
-    enabled: !!serverId,
+    enabled: !!serverId && customEmoji,
   });
-  return { emojis: data?.customEmojis ?? [], isLoading };
+  return { emojis: customEmoji ? (data?.customEmojis ?? []) : [], isLoading };
 }
 
 /** Build a name → imageUrl lookup map from custom emoji list */

@@ -18,7 +18,11 @@ describe("useServerInfo", () => {
     const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
 
     await waitFor(() => expect(result.current.info).toBeDefined());
-    expect(result.current.info).toEqual({ version: "0.3.0", apiVersion: CLIENT_API_VERSION });
+    expect(result.current.info).toEqual({
+      version: "0.3.0",
+      apiVersion: CLIENT_API_VERSION,
+      features: [],
+    });
     expect(result.current.unreachable).toBe(false);
     expect(result.current.newerApi).toBe(false);
   });
@@ -47,6 +51,41 @@ describe("useServerInfo", () => {
     const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
 
     await waitFor(() => expect(result.current.unreachable).toBe(true));
+  });
+
+  it("reads the server's features", async () => {
+    const features = [
+      { key: "attachments", state: "DISABLED", reason: null },
+      { key: "email", state: "UNAVAILABLE", reason: "SMTP is not configured" },
+    ];
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: { version: "0.4.0", apiVersion: CLIENT_API_VERSION, features },
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info?.features).toEqual(features);
+  });
+
+  it("reads a server older than features as listing none", async () => {
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        if (body.operationName === "ServerInfo") {
+          return HttpResponse.json({
+            errors: [{ message: 'Unknown field "features" on type "ServerInfo"' }],
+          });
+        }
+        return HttpResponse.json({ data: { serverInfo: { version: "0.3.0", apiVersion: 1 } } });
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info).toEqual({ version: "0.3.0", apiVersion: 1, features: [] });
+    expect(result.current.unreachable).toBe(false);
   });
 
   it("flags a server that speaks a newer API", async () => {
