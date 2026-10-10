@@ -8,6 +8,10 @@ use tokio::time::{timeout, Duration};
 const EXIT_GRACE: Duration = Duration::from_secs(1);
 /// How long a plugin has to exit after SIGTERM before it is killed.
 const TERM_GRACE: Duration = Duration::from_secs(2);
+/// How many times a spawn is retried while the entrypoint is busy.
+const BUSY_RETRIES: u32 = 8;
+/// Delay before the first busy retry; it doubles with each one.
+const BUSY_BACKOFF: Duration = Duration::from_millis(5);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
@@ -45,13 +49,14 @@ impl PluginProcess {
             ));
         }
 
-        let mut child = Command::new(&entrypoint_path)
+        let mut command = Command::new(&entrypoint_path);
+        command
             .current_dir(plugin_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .kill_on_drop(true)
-            .spawn()?;
+            .kill_on_drop(true);
+        let mut child = spawn_while_busy(&mut command)?;
 
         let stdin = child.stdin.take().ok_or(ProcessError::NoStdin)?;
         let stdout = child.stdout.take().ok_or(ProcessError::NoStdout)?;
@@ -147,6 +152,25 @@ impl PluginProcess {
     }
 }
 
+/// Spawn `command`, retrying with backoff while its executable is busy.
+///
+/// An entrypoint this process just wrote, as a bundle install does right before a restart,
+/// stays open for writing in any child another thread forked meanwhile, until that child
+/// execs. Executing the file in that window fails with ETXTBSY.
+fn spawn_while_busy(command: &mut Command) -> std::io::Result<Child> {
+    let mut delay = BUSY_BACKOFF;
+    for _ in 0..BUSY_RETRIES {
+        match command.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(delay);
+                delay *= 2;
+            }
+            result => return result,
+        }
+    }
+    command.spawn()
+}
+
 /// Kill a process by pid, for app exit, where no destructor runs.
 pub fn force_kill(pid: u32) {
     #[cfg(unix)]
@@ -167,6 +191,7 @@ pub fn force_kill(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
@@ -229,6 +254,28 @@ mod tests {
             .expect("killed process is reaped")
             .unwrap();
         assert!(!status.success());
+    }
+
+    #[tokio::test]
+    async fn spawn_waits_out_an_entrypoint_still_open_for_writing() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("plugin.sh");
+        let mut writer = std::fs::File::create(&path).unwrap();
+        writer.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let closer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            drop(writer);
+        });
+
+        let (mut proc, _pipes) =
+            PluginProcess::spawn("dev.example.test", tmp.path(), "plugin.sh").unwrap();
+        closer.join().unwrap();
+        let status = timeout(Duration::from_secs(5), proc.child.wait())
+            .await
+            .expect("plugin exits")
+            .unwrap();
+        assert_eq!(status.code(), Some(0));
     }
 
     #[tokio::test]
