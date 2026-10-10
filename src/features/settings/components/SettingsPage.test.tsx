@@ -16,6 +16,10 @@ vi.mock("./AccountSettings", () => ({
   ),
 }));
 
+vi.mock("../../commands/components/KeyboardSettings", () => ({
+  KeyboardSettings: () => <div data-testid="keyboard-settings">Keyboard Panel</div>,
+}));
+
 vi.mock("../../commands/components/KeybindSettings", () => ({
   KeybindSettings: () => <div data-testid="keybind-settings">Keybinds Panel</div>,
 }));
@@ -102,6 +106,7 @@ vi.mock("../../integrations/components/IngestTokenSettings", () => ({
 }));
 
 import { SettingsPage } from "./SettingsPage";
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 describe("SettingsPage", () => {
   beforeEach(() => {
@@ -125,6 +130,22 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("AI Keys")).not.toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("About")).toBeInTheDocument();
+  });
+
+  it("reaches every tab and the close button by keyboard and opens Keyboard with Enter", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    const keyboard = screen.getByRole("button", { name: "Keyboard" });
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("button", { name: "Close settings" }),
+      ...["Profile", "Keybinds", "Commands", "Plugins", "Account", "About"].map((name) =>
+        screen.getByRole("button", { name }),
+      ),
+      keyboard,
+    ]);
+    keyboard.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByTestId("keyboard-settings")).toBeInTheDocument();
   });
 
   it("shows Profile tab content by default", () => {

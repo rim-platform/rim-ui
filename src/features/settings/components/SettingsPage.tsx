@@ -4,6 +4,7 @@ import { X, Loader2 } from "lucide-react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
+import { KeyboardSettings } from "../../commands/components/KeyboardSettings";
 import { UserCommandSettings } from "../../commands/components/UserCommandSettings";
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
 import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
@@ -180,6 +181,7 @@ function AboutRim() {
 type SettingsTab =
   | "profile"
   | "keybinds"
+  | "keyboard"
   | "commands"
   | "macros"
   | "pipelines"
@@ -201,6 +203,7 @@ type SettingsTab =
 const tabs: { key: SettingsTab; label: string }[] = [
   { key: "profile", label: "Profile" },
   { key: "keybinds", label: "Keybinds" },
+  { key: "keyboard", label: "Keyboard" },
   { key: "commands", label: "Commands" },
   { key: "macros", label: "Macros" },
   { key: "pipelines", label: "Pipelines" },
@@ -305,6 +308,7 @@ export function SettingsPage() {
           <Suspense fallback={<SettingsLoadingSpinner />}>
             {shownTab === "profile" && <ProfileSettings />}
             {shownTab === "keybinds" && <KeybindSettings />}
+            {shownTab === "keyboard" && <KeyboardSettings />}
             {shownTab === "commands" && <UserCommandSettings />}
             {shownTab === "macros" && <MacroSettings />}
             {shownTab === "pipelines" && <PipelineSettings />}
