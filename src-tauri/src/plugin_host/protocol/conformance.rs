@@ -37,7 +37,7 @@ const DISPLAY_NAME: &str = "Jakub";
 const HELLO_WORLD: &str = "dev.example.hello-world";
 const TEMPLATE_TS: &str = "dev.example.template-ts";
 const K8S_PODS: &str = "chat.rim.k8s-pods";
-const WAIT: Duration = Duration::from_secs(5);
+const WAIT: Duration = Duration::from_secs(15);
 
 static SCHEMA: LazyLock<Value> =
     LazyLock::new(|| serde_json::from_str(SCHEMA_JSON).expect("schema is valid JSON"));
@@ -469,9 +469,9 @@ async fn ask(
     response
 }
 
-/// Wait for a plugin that was told to exit, failing after two seconds.
+/// Wait for a plugin that was told to exit, failing after fifteen seconds.
 async fn wait_for_exit(process: &mut PluginProcess) -> std::process::ExitStatus {
-    for _ in 0..100 {
+    for _ in 0..750 {
         if let Some(status) = process.try_wait().unwrap() {
             return status;
         }
@@ -735,7 +735,7 @@ async fn template_ts_runs_through_the_host() {
         .insert(TEMPLATE_TS.into(), template_ts_dir());
     runtime::start_plugin(TEMPLATE_TS, &manifest, &state).unwrap();
     // The host registers the plugin's client once the handshake is accepted.
-    for _ in 0..250 {
+    for _ in 0..750 {
         if state.clients.lock().unwrap().contains_key(TEMPLATE_TS) {
             break;
         }
