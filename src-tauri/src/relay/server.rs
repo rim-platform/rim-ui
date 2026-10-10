@@ -214,10 +214,38 @@ struct DescriptorEntry {
     mls_cipher_suites: serde_json::Value,
     #[allow(dead_code)]
     limits: serde_json::Value,
-    #[allow(dead_code)]
-    registration: serde_json::Value,
+    registration: Registration,
     #[allow(dead_code)]
     issued_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// How a server takes new accounts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum RegistrationMode {
+    Invite,
+    Open,
+    Pow,
+}
+
+/// A descriptor's `registration`: the mode, and the proof-of-work difficulty in `pow` mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Registration {
+    pub(crate) mode: RegistrationMode,
+    pub(crate) pow_bits: Option<u32>,
+}
+
+impl Registration {
+    /// `powBits` is set exactly in `pow` mode, and then within what a client can compute.
+    fn valid(&self) -> bool {
+        match self.mode {
+            RegistrationMode::Pow => self
+                .pow_bits
+                .is_some_and(|bits| (1..=super::pow::MAX_POW_BITS).contains(&bits)),
+            RegistrationMode::Invite | RegistrationMode::Open => self.pow_bits.is_none(),
+        }
+    }
 }
 
 /// A verified server descriptor.
@@ -229,6 +257,7 @@ pub(crate) struct ServerDescriptor {
     pub(crate) version: u32,
     pub(crate) roles: Vec<String>,
     pub(crate) endpoints: Endpoints,
+    pub(crate) registration: Registration,
 }
 
 fn roles_in_order(roles: &[String]) -> bool {
@@ -258,6 +287,7 @@ pub(crate) fn verify_descriptor(
         || entry.kind != "server-descriptor"
         || !(1..=i32::MAX as u32).contains(&entry.version)
         || !roles_in_order(&entry.roles)
+        || !entry.registration.valid()
     {
         return Err(refused("server descriptor", "malformed"));
     }
@@ -276,6 +306,7 @@ pub(crate) fn verify_descriptor(
         version: entry.version,
         roles: entry.roles,
         endpoints: entry.endpoints,
+        registration: entry.registration,
     })
 }
 
@@ -590,6 +621,43 @@ mod tests {
         let mut extra = statement(&v["host"]["inception"]);
         extra.payload = extra.payload.replace("{\"v\":2,", "{\"v\":2,\"x\":1,");
         assert!(replay_server_log(&[extra]).is_err());
+    }
+
+    #[test]
+    fn a_descriptor_names_its_registration_mode_and_proof_of_work_difficulty() {
+        let v = vectors();
+        let host = replay_server_log(&[statement(&v["host"]["inception"])]).unwrap();
+        let invite = verify_descriptor(&host, &statement(&v["host"]["descriptor"])).unwrap();
+        assert_eq!(
+            invite.registration,
+            Registration {
+                mode: RegistrationMode::Invite,
+                pow_bits: None
+            }
+        );
+        let pow_vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../../../protocol/pow-vectors.json")).unwrap();
+        let relay = replay_server_log(&[statement(&v["relay"]["inception"])]).unwrap();
+        let descriptor = statement(&pow_vectors["powDescriptor"]);
+        let pow = verify_descriptor(&relay, &descriptor).unwrap();
+        assert_eq!(
+            pow.registration,
+            Registration {
+                mode: RegistrationMode::Pow,
+                pow_bits: Some(16)
+            }
+        );
+        for (from, to) in [
+            (r#""powBits":16"#, r#""powBits":null"#),
+            (r#""powBits":16"#, r#""powBits":41"#),
+            (r#""mode":"pow""#, r#""mode":"open""#),
+            (r#""mode":"pow""#, r#""mode":"puzzle""#),
+        ] {
+            let mut changed = descriptor.clone();
+            changed.payload = changed.payload.replace(from, to);
+            let refused = verify_descriptor(&relay, &changed).unwrap_err();
+            assert!(refused.to_string().contains("malformed"), "{to}: {refused}");
+        }
     }
 
     #[test]

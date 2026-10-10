@@ -8,7 +8,8 @@
  * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
  *
  * On the desktop the page also offers "Create account with a key" (`KeySignupForm`): an
- * account with no password and no email, signed in by a key kept on this computer.
+ * account with no password and no email, signed in by a key kept on this computer. With
+ * `keyOnly` (a relay in pow mode, no token) it offers only that.
  *
  * **Fields:**
  * - `username` — required, unique handle.
@@ -65,6 +66,8 @@ interface JoinFormProps {
   workspaceName?: string;
   /** The invite's workspace, from its preview, when `variant === "WORKSPACE"`. */
   workspaceId?: string;
+  /** Offer only the key signup: the server takes no password signup without a token. */
+  keyOnly?: boolean;
   /**
    * Called on successful signup.
    * @param userId - The new user's ID.
@@ -124,9 +127,17 @@ function mapSignupError(err: unknown): { field: "email" | "general"; message: st
 /**
  * Signup form for all registration paths (invite token + open registration).
  */
-export function JoinForm({ variant, token, workspaceName, workspaceId, onSuccess }: JoinFormProps) {
+export function JoinForm({
+  variant,
+  token,
+  workspaceName,
+  workspaceId,
+  keyOnly = false,
+  onSuccess,
+}: JoinFormProps) {
   const { capabilities } = useRuntime();
-  const [method, setMethod] = useState<"password" | "key">("password");
+  const [chosen, setMethod] = useState<"password" | "key">("password");
+  const method = keyOnly ? "key" : chosen;
   // A key signup in progress keeps its form mounted until it settles.
   const [keySignupBusy, setKeySignupBusy] = useState(false);
   const [username, setUsername] = useState("");
@@ -300,7 +311,7 @@ export function JoinForm({ variant, token, workspaceName, workspaceId, onSuccess
           )}
         </div>
 
-        {capabilities.identityKeys && (
+        {capabilities.identityKeys && !keyOnly && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />

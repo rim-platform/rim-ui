@@ -29,9 +29,11 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/features/relay/remote/` | Workspaces on other servers: invite links, joining, delegations and their renewal, the relay's own key, a revocation's fan-out, switching relays |
 | `src/features/relay/direct/` | Talking to a server directly: the transport (`directTransport.ts`), GraphQL over it, the socket shim for `graphql-ws`, the direct connection and its runtime, one-off calls |
 | `src-tauri/src/relay/direct.rs` | The desktop's direct sessions: discovery fetches, GraphQL with each server's own cookie jar, WebSockets with that cookie |
+| `src/features/relay/pow/`, `src-tauri/src/relay/pow.rs` | The signup proof-of-work: reading a relay's registration mode, the search in a web worker and on the desktop's cores |
 | `src/core/graphql/client.ts` | `setSpaceRouter`: the GraphQL client's `fetch` sends a request about a space elsewhere to its host |
 | `src/core/graphql/config.ts` | `setRelayEndpoint`: the relay the desktop moved to after a switch |
 | `protocol/relay-vectors.json` | Known answers both platforms reproduce, including the delegation and the revocation acknowledgement and their conformance cases |
+| `protocol/pow-vectors.json` | Proof-of-work known answers both platforms find, and a relay descriptor in `pow` mode |
 
 ## Server pins
 
@@ -258,7 +260,8 @@ account to another relay in six steps, saved after each (`remote/relaySwitch.ts`
 
 1. Pin the new relay from its discovery document, open a direct session and sign in there with
    this device's key, or, the first time, `signupWithKey` with the account's key log, this
-   device's certificate and a proof for the new relay's server id.
+   device's certificate and a proof for the new relay's server id (and a proof-of-work when the
+   new relay is in `pow` registration mode, below).
 2. Publish a card listing both relays, the new one first, on both.
 3. Sign a delegation for the new relay for every workspace this account uses, those the old
    relay hosts included, and present them with `renewDelegations` there.
@@ -275,6 +278,44 @@ nothing is applied twice and nothing is lost. The noted conversations get succes
 relay's direct space, with the old relay's direct space bound as a space elsewhere. A step that
 fails shows why and stays where it stopped; "Continue" picks it up, also after a restart, signing
 in to the new relay again first.
+
+## Signing up on a public relay
+
+A public relay runs in `pow` registration mode: `registrationMode` answers `POW`, and its
+descriptor says `registration: { mode: "pow", powBits }`. It takes a key-only signup with an
+invite token, as any server does, or without one when `signupWithKey` carries `proofOfWork`: an
+8-byte nonce, unpadded base64url, such that
+
+```
+SHA-256("rim.pow.v1\0" || relay server id || "\0" || inception payload || nonce)
+```
+
+starts with `powBits` zero bits (rim-server `docs/specs/server-to-server-v1.md`, "Public relay").
+The work is bound to that relay and to the new account's inception, so it cannot be reused for
+another account or another relay.
+
+- **Where the person signs up.** In `pow` mode the login page links to `/join` in the desktop app,
+  and that page offers only "Create account with a key" (a password signup takes a token there).
+  The web app cannot sign up with a key: it says to use the desktop app or an invite. An invite
+  link's page is unchanged, and its token skips the proof.
+- **When.** `signupWithKey` (`key-identity/api/keyIdentity.ts`) reads this server's discovery
+  document first (fetched directly and verified, `pow/proofOfWork.ts` `readRegistration`), and in
+  `pow` mode searches over the draft's inception payload (the draft carries it, the same bytes the
+  signed key log starts with) before it asks for the login challenge, which expires in two
+  minutes. A document that cannot be read means no proof; the server then says what it wants.
+  The nonce is kept per draft, so a retry after another refusal sends it again; a refusal of the
+  proof itself (`VALIDATION` or `FORBIDDEN` naming it) drops it and the next try searches again.
+  A relay switch to a relay in `pow` mode does the same with the account's inception.
+- **The search.** Both platforms find the smallest counter that meets the difficulty, as an 8-byte
+  big-endian nonce, so they send the same nonce; `protocol/pow-vectors.json` holds known answers
+  both reproduce (the server's own vector among them). The desktop runs it on every core
+  (`relay_solve_pow`, cancelled with `relay_cancel_pow`); the web app in a dedicated worker
+  (`pow/pow.worker.ts`) with a SHA-256 that hashes everything before the nonce once, terminated to
+  cancel. 24 bits is about 16.8 million hashes on average: well under a second in a release build
+  of the desktop app, a few seconds in a browser on a fast machine.
+- **On screen.** The signup form shows "Proving this is a real device…" with the time so far and
+  a Cancel button; past ten seconds it says how much work the relay asks for and how long that
+  takes. A refused proof shows the server's words with "Try again".
 
 ## What needs two servers
 

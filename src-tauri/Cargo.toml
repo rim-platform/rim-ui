@@ -86,3 +86,8 @@ inherits = "release"
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+# The signup proof-of-work (src/relay/pow.rs) hashes millions of times: optimized even in
+# development builds, so a signup there takes seconds, not minutes.
+[profile.dev.package.sha2]
+opt-level = 3

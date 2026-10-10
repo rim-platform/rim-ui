@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientError } from "graphql-request";
 
+import { PowCancelled } from "../../relay/pow/proofOfWork";
+
 const requestMock = vi.fn();
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -26,6 +28,7 @@ import {
   forgetKeysTheServerNeverSaw,
   KeyChallengeFailed,
   profileCardIsStale,
+  proofOfWorkRefused,
   profileCardRelays,
   reconcileDeviceKeys,
   recoverAccount,
@@ -308,6 +311,7 @@ describe("signupWithKey", () => {
     draft = {
       draftId: `draft-${n}`,
       principalId: PRINCIPAL,
+      inceptionPayload: "{}",
       recoveryKit: "kit",
       recoveryPhrase: [],
     };
@@ -586,6 +590,188 @@ const LOCAL_UNCONFIRMED = {
   hasIdentityKey: true,
   confirmed: false,
 };
+
+describe("signupWithKey on a relay in pow registration mode", () => {
+  let n = 0;
+  let draft: EnrollmentDraft;
+  beforeEach(() => {
+    n += 1;
+    draft = {
+      draftId: `pow-draft-${n}`,
+      principalId: PRINCIPAL,
+      inceptionPayload: '{"v":2,"type":"inception","seq":0}',
+      recoveryKit: "kit",
+      recoveryPhrase: [],
+    };
+  });
+  const statements = { keyLog: [STATEMENT], device: STATEMENT, proof: STATEMENT };
+  const created = { signupWithKey: { userId: "user-1", serverId: null } };
+  const identity = {
+    myKeyIdentity: {
+      principalId: PRINCIPAL,
+      keySeq: 0,
+      keyLog: [{ seq: 0, statement: STATEMENT }],
+      devices: [],
+      profileCard: null,
+    },
+  };
+  const NONCE = "AAAAAAAAkaM";
+
+  /** This server's verified discovery document, as the Tauri side answers it. */
+  function discovery(registration: { mode: string; powBits: number | null }) {
+    return {
+      log: [],
+      head: { serverId: "rims1_relay" },
+      descriptor: { serverId: "rims1_relay", registration },
+    };
+  }
+
+  const server = (signup: unknown = created) => ({
+    KeyLoginChallenge: CHALLENGE,
+    SignupWithKey: signup,
+    KeyLog: { keyLog: [] },
+    MyKeyIdentity: identity,
+    PublishProfileCard: { publishProfileCard: { version: 1 } },
+  });
+
+  function sentInput(call = 0): Record<string, unknown> | undefined {
+    const signups = requestMock.mock.calls.filter((c) => operation(c) === "SignupWithKey");
+    return (signups[call]?.[1] as { input: Record<string, unknown> } | undefined)?.input;
+  }
+
+  it("finds the proof over the draft's inception before the challenge, and sends it", async () => {
+    backend(server(), {
+      relay_direct_discovery: "document",
+      relay_verify_discovery: discovery({ mode: "pow", powBits: 20 }),
+      relay_solve_pow: NONCE,
+      key_identity_sign_signup: statements,
+      key_identity_sign_profile_card: STATEMENT,
+    });
+    const onProofOfWork = vi.fn();
+
+    await expect(signupWithKey(draft, { username: "ada" }, { onProofOfWork })).resolves.toEqual({
+      userId: "user-1",
+      serverId: null,
+    });
+
+    expect(onProofOfWork).toHaveBeenCalledWith(20);
+    expect(invokeMock).toHaveBeenCalledWith("relay_direct_discovery", {
+      origin: "http://localhost:8080",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("relay_verify_discovery", {
+      document: "document",
+      origin: "http://localhost:8080",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("relay_solve_pow", {
+      jobId: expect.any(String),
+      serverId: "rims1_relay",
+      inceptionPayload: draft.inceptionPayload,
+      bits: 20,
+    });
+    expect(commands().slice(0, 4)).toEqual([
+      "relay_direct_discovery",
+      "relay_verify_discovery",
+      "relay_solve_pow",
+      "key_identity_sign_signup",
+    ]);
+    // The proof is found before the challenge is asked for, so it cannot expire meanwhile.
+    expect(requestMock.mock.calls.map(operation)[0]).toBe("KeyLoginChallenge");
+    expect(invokeMock.mock.invocationCallOrder[2]).toBeLessThan(
+      requestMock.mock.invocationCallOrder[0],
+    );
+    expect(sentInput()).toMatchObject({ username: "ada", proofOfWork: NONCE });
+  });
+
+  it.each([
+    ["an instance invite", { instanceInviteToken: "inst-tok" }],
+    ["a workspace invite", { workspaceInviteToken: "ws-tok" }],
+    ["a bootstrap token", { bootstrapToken: "boot-tok" }],
+  ])("skips the proof with %s", async (_case, token) => {
+    backend(server(), {
+      key_identity_sign_signup: statements,
+      key_identity_sign_profile_card: STATEMENT,
+    });
+    await signupWithKey(draft, { username: "ada", ...token });
+    expect(commands().filter((c) => c.startsWith("relay_"))).toEqual([]);
+    expect(sentInput()).toEqual(expect.objectContaining(token));
+    expect(sentInput()).not.toHaveProperty("proofOfWork");
+  });
+
+  it.each([
+    ["in open mode", { relay_verify_discovery: discovery({ mode: "open", powBits: null }) }],
+    [
+      "when the discovery document cannot be read",
+      { relay_verify_discovery: new Error("server discovery: malformed") },
+    ],
+  ])("sends no proof %s", async (_case, answers) => {
+    backend(server(), {
+      relay_direct_discovery: "document",
+      ...answers,
+      key_identity_sign_signup: statements,
+      key_identity_sign_profile_card: STATEMENT,
+    });
+    await signupWithKey(draft, { username: "ada" });
+    expect(commands()).not.toContain("relay_solve_pow");
+    expect(sentInput()).not.toHaveProperty("proofOfWork");
+  });
+
+  it("reuses the nonce on a retry, and searches again after the server refused it", async () => {
+    let solved = 0;
+    const tauri = {
+      relay_direct_discovery: "document",
+      relay_verify_discovery: discovery({ mode: "pow", powBits: 20 }),
+      relay_solve_pow: () => `nonce-${++solved}`,
+      key_identity_sign_signup: statements,
+      key_identity_sign_profile_card: STATEMENT,
+    };
+    backend(server(serverError("CONFLICT")), tauri);
+    await expect(signupWithKey(draft, { username: "ada" })).rejects.toBeInstanceOf(ClientError);
+    expect(sentInput(0)).toMatchObject({ proofOfWork: "nonce-1" });
+
+    const refused = serverError("VALIDATION");
+    refused.response.errors![0].message =
+      "proofOfWork does not have the required leading zero bits";
+    backend(server(refused), tauri);
+    await expect(signupWithKey(draft, { username: "ada2" })).rejects.toBeInstanceOf(ClientError);
+    expect(sentInput(1)).toMatchObject({ proofOfWork: "nonce-1" });
+    expect(solved).toBe(1);
+
+    backend(server(), tauri);
+    await signupWithKey(draft, { username: "ada2" });
+    expect(sentInput(2)).toMatchObject({ proofOfWork: "nonce-2" });
+    expect(solved).toBe(2);
+  });
+
+  it("stops when the search is cancelled, before anything is signed or sent", async () => {
+    backend(server(), {
+      relay_direct_discovery: "document",
+      relay_verify_discovery: discovery({ mode: "pow", powBits: 20 }),
+      relay_solve_pow: null,
+    });
+    const stop = new AbortController();
+    const signup = signupWithKey(draft, { username: "ada" }, { signal: stop.signal });
+    stop.abort();
+    await expect(signup).rejects.toBeInstanceOf(PowCancelled);
+    expect(commands()).not.toContain("key_identity_sign_signup");
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("tells a refusal over the proof-of-work from other refusals", () => {
+    const refusal = (code: string, message: string) => {
+      const err = serverError(code);
+      err.response.errors![0].message = message;
+      return err;
+    };
+    expect(
+      proofOfWorkRefused(refusal("VALIDATION", "a registration token or proofOfWork is required")),
+    ).toBe(true);
+    expect(proofOfWorkRefused(refusal("FORBIDDEN", "proof-of-work refused"))).toBe(true);
+    expect(proofOfWorkRefused(refusal("VALIDATION", "username must be 3 to 32 characters"))).toBe(
+      false,
+    );
+    expect(proofOfWorkRefused(refusal("CONFLICT", "proofOfWork"))).toBe(false);
+  });
+});
 
 describe("forgetKeysTheServerNeverSaw", () => {
   it("removes unconfirmed keys whose principal the server has no log for", async () => {

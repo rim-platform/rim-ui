@@ -21,12 +21,14 @@ import {
   defaultDeviceName,
   discardKeySignup,
   KeyChallengeFailed,
+  proofOfWorkRefused,
   signupWithKey,
   type EnrollmentDraft,
   type KeySignupFields,
   type KeySignupResult,
 } from "../../key-identity/api/keyIdentity";
 import { SaveRecoveryKit } from "../../key-identity/components/SaveRecoveryKit";
+import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { checkDisplayName } from "../displayName";
 import { JoinField } from "./JoinField";
 
@@ -45,14 +47,34 @@ interface KeySignupFormProps {
   onBusyChange?: (busy: boolean) => void;
 }
 
-type SignupError = { field: "username" | "general"; message: string };
+/** `retry` offers to try again: a refused proof-of-work is searched for again. */
+type SignupError = { field: "username" | "general"; message: string; retry?: boolean };
 
 function general(message: string): SignupError {
   return { field: "general", message };
 }
 
+/** After this long the proof-of-work note says how long it can take. */
+const SLOW_PROOF_SECONDS = 10;
+
+/** About how many hashes a proof-of-work of `bits` bits takes, in words. */
+function triesInWords(bits: number): string {
+  const tries = 2 ** bits;
+  if (tries >= 1e9) return `${(tries / 1e9).toFixed(1)} billion`;
+  if (tries >= 1e6) return `${(tries / 1e6).toFixed(1)} million`;
+  if (tries >= 1e3) return `${Math.round(tries / 1e3)} thousand`;
+  return String(tries);
+}
+
 /** What a failed key signup tells the person, and the field it belongs to. */
 function signupError(err: unknown): SignupError {
+  if (proofOfWorkRefused(err)) {
+    return {
+      field: "general",
+      message: graphqlErrorMessage(err, "The server did not accept the proof-of-work."),
+      retry: true,
+    };
+  }
   if (err instanceof KeyChallengeFailed) {
     return graphqlErrorCode(err.reason) === RATE_LIMITED
       ? general("Too many attempts from this network. Wait a minute and try again.")
@@ -90,11 +112,48 @@ function signupError(err: unknown): SignupError {
   }
 }
 
+/** The proof-of-work under way: its difficulty and when it started. */
+interface Proving {
+  bits: number;
+  startedAt: number;
+}
+
+/** "Proving this is a real device…" with the time it has taken, and a way to stop it. */
+function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - proving.startedAt) / 1000));
+  return (
+    <div
+      role="status"
+      className="space-y-2 rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text-muted"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span>Proving this is a real device… {seconds} s</span>
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      {seconds >= SLOW_PROOF_SECONDS && (
+        <p className="text-xs text-rim-text-faint">
+          This relay asks every new account for about {triesInWords(proving.bits)} hashes, to keep
+          out automated sign-ups. That takes seconds in the desktop app and can take tens of seconds
+          in a browser.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * Creates an account from a key kept on this computer, with no password and no email: the
  * person picks a username, saves the recovery kit of the new keys, and the account is created
- * with them. After a refusal they can try again with the same keys, so the saved kit stays
- * valid, or discard the keys. Desktop only.
+ * with them. On a relay that asks for a proof-of-work instead of an invite, this device finds
+ * it first, which the person can cancel. After a refusal they can try again with the same keys,
+ * so the saved kit stays valid, or discard the keys. Desktop only.
  */
 export function KeySignupForm({
   tokens,
@@ -112,8 +171,12 @@ export function KeySignupForm({
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [proving, setProving] = useState<Proving | null>(null);
   // The draft to give up on if the page closes before the account is created.
   const pending = useRef<EnrollmentDraft | null>(null);
+  // Stops the proof-of-work under way.
+  const stopProof = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +185,7 @@ export function KeySignupForm({
     });
     return () => {
       cancelled = true;
+      stopProof.current?.abort();
       if (pending.current) void abandonKeySignup(pending.current).catch(() => undefined);
     };
   }, []);
@@ -155,25 +219,41 @@ export function KeySignupForm({
 
   async function createAccount(current: EnrollmentDraft) {
     const trimmedDisplayName = displayName.trim();
+    const stop = new AbortController();
+    stopProof.current = stop;
     try {
       finish(
-        await signupWithKey(current, {
-          username: username.trim(),
-          ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
-          ...tokens,
-        }),
+        await signupWithKey(
+          current,
+          {
+            username: username.trim(),
+            ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
+            ...tokens,
+          },
+          {
+            onProofOfWork: (bits) => setProving({ bits, startedAt: Date.now() }),
+            signal: stop.signal,
+          },
+        ),
       );
     } catch (err) {
+      // Cancelled by the person: nothing to tell them, and Create account starts again.
+      if (err instanceof PowCancelled) return;
       // The draft stays: trying again uses the same keys, so the saved kit stays valid.
       const mapped = signupError(err);
       if (mapped.field === "username") setUsernameError(mapped.message);
       else setFormError(mapped.message);
+      setCanRetry(mapped.retry === true);
+    } finally {
+      stopProof.current = null;
+      setProving(null);
     }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
+    setCanRetry(false);
     const nameError = checkDisplayName(displayName);
     if (nameError) {
       setDisplayNameError(nameError);
@@ -254,13 +334,21 @@ export function KeySignupForm({
         />
       )}
       {draft && <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />}
+      {proving && (
+        <ProofOfWorkStatus proving={proving} onCancel={() => stopProof.current?.abort()} />
+      )}
       {formError && (
-        <p
+        <div
           role="alert"
-          className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          className="flex items-center justify-between gap-3 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
         >
-          {formError}
-        </p>
+          <span>{formError}</span>
+          {canRetry && draft && (
+            <Button type="submit" variant="secondary" size="sm" disabled={busy || !canSubmit}>
+              Try again
+            </Button>
+          )}
+        </div>
       )}
       {draft ? (
         <div className="flex gap-2">

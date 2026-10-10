@@ -628,6 +628,8 @@ fn a_signup_stores_the_keys_before_the_account_exists_and_settles_with_its_user_
 
     let head = replay(&statements.key_log).unwrap();
     assert_eq!(head.principal_id, draft.principal_id);
+    // The proof-of-work computed from the draft is over the inception the signup sends.
+    assert_eq!(statements.key_log[0].payload, draft.inception_payload);
     assert!(verify(
         &statements.device,
         context::DEVICE,

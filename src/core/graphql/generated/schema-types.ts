@@ -3694,13 +3694,19 @@ export type ReactionGroup = {
  * GraphQL enum for the deployment-wide registration mode.
  *
  * Mirrors [`rim_services::auth::dto::RegistrationMode`].
- * Variants appear in the SDL as `INVITE_ONLY` and `OPEN`.
+ * Variants appear in the SDL as `INVITE_ONLY`, `OPEN` and `POW`.
  */
 export enum RegistrationModeGql {
   /** Default: signup requires a valid token (bootstrap, instance, or workspace invite). */
   INVITE_ONLY = 'INVITE_ONLY',
   /** `RIM_OPEN_REGISTRATION=true`: signup accepts no token; rate-limited. */
-  OPEN = 'OPEN'
+  OPEN = 'OPEN',
+  /**
+   * `RIM_REGISTRATION_POW_BITS`: `signupWithKey` takes a token or a proof-of-work whose
+   * difficulty the discovery document's `registration.powBits` gives; a password signup
+   * takes a token.
+   */
+  POW = 'POW'
 }
 
 /** This server as its users' relay. */
@@ -4114,7 +4120,7 @@ export type SignupWithInvitePayloadGql = {
 /**
  * Input for `signupWithKey`: an account created from a key identity alone, with no password
  * and no email. The tokens follow the same rules as `signupWithInvite`: exactly one in
- * invite-only mode, none in open mode.
+ * invite-only mode, none in open mode. In pow mode it takes one token or `proofOfWork`.
  */
 export type SignupWithKeyInput = {
   bootstrapToken?: InputMaybe<Scalars['String']['input']>;
@@ -4130,6 +4136,12 @@ export type SignupWithKeyInput = {
   keyLog: Array<SignedStatementInput>;
   /** A `login` statement signed by that device over a fresh `keyLoginChallenge`. */
   proof: SignedStatementInput;
+  /**
+   * In pow registration mode: an 8-byte nonce, unpadded base64url, such that
+   * `SHA-256("rim.pow.v1\0" || server id || "\0" || inception payload || nonce)` starts with
+   * the descriptor's `powBits` zero bits.
+   */
+  proofOfWork?: InputMaybe<Scalars['String']['input']>;
   username: Scalars['String']['input'];
   workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
 };

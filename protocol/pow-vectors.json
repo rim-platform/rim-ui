@@ -1,0 +1,90 @@
+{
+  "description": "Known answers of the signup proof-of-work: the smallest counter, as an 8-byte big-endian nonce, whose SHA-256(\"rim.pow.v1\\0\" || server id || \"\\0\" || inception payload || nonce) starts with `bits` zero bits. The desktop (src-tauri/src/relay/pow.rs) and the web app (src/features/relay/pow) must both find these. `powDescriptor` is the relay of relay-vectors.json in pow registration mode, signed by its key (seed 30).",
+  "cases": [
+    {
+      "description": "A.8: the relay of relay-vectors.json, key-identity appendix B's inception",
+      "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "inceptionPayload": "{\"v\":2,\"type\":\"inception\",\"seq\":0,\"identityKey\":\"ed25519:iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"recoveryKey\":\"ed25519:1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "bits": 16,
+      "counter": 37283,
+      "nonce": "AAAAAAAAkaM",
+      "hash": "00002f63d137749fda27201ccf9d282a4ed846287d49c55fea89a47617e78ed6"
+    },
+    {
+      "description": "No work asked: counter 0",
+      "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "inceptionPayload": "{\"v\":2,\"type\":\"inception\",\"seq\":0,\"identityKey\":\"ed25519:iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"recoveryKey\":\"ed25519:1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "bits": 0,
+      "counter": 0,
+      "nonce": "AAAAAAAAAAA",
+      "hash": "9de2b6642db90bd7e5ac2fcc80649fd72ec5b880170b5b5a2ab4f53763de019d"
+    },
+    {
+      "description": "Another server, the same inception",
+      "serverId": "rims1_OFPDNXTV1splCcKcgz1vWYj6Mg-lbUollHQwXTkYEBw",
+      "inceptionPayload": "{\"v\":2,\"type\":\"inception\",\"seq\":0,\"identityKey\":\"ed25519:iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"recoveryKey\":\"ed25519:1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "bits": 12,
+      "counter": 8152,
+      "nonce": "AAAAAAAAH9g",
+      "hash": "000a391c6094c98d97d52146ae974f2fa8725f27e5bcebdd46a6efc84479aa33"
+    },
+    {
+      "description": "An empty payload",
+      "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "inceptionPayload": "",
+      "bits": 8,
+      "counter": 54,
+      "nonce": "AAAAAAAAADY",
+      "hash": "002c14f311b30825f1c0e299de2d429d794144c2c25d55dc4f0d5682bc6673e3"
+    },
+    {
+      "description": "The nonce ends exactly at a block edge",
+      "serverId": "s",
+      "inceptionPayload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "bits": 10,
+      "counter": 465,
+      "nonce": "AAAAAAAAAdE",
+      "hash": "00219fd212a08c5b94b3575d9f63ef6de01e2a1d0b028fefa9e7096bcb73ee79"
+    },
+    {
+      "description": "The padding spills into a second block",
+      "serverId": "s",
+      "inceptionPayload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "bits": 10,
+      "counter": 2657,
+      "nonce": "AAAAAAAACmE",
+      "hash": "003759daceb87f8508681bc3ac01744707081ab2732264113b7b54b158c910f2"
+    },
+    {
+      "description": "The prefix fills whole blocks",
+      "serverId": "s",
+      "inceptionPayload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "bits": 10,
+      "counter": 255,
+      "nonce": "AAAAAAAAAP8",
+      "hash": "003d4f3982a6a50a0f5e1e04d46c4947db362ca04c896357be1e07a10c32b378"
+    },
+    {
+      "description": "Multi-byte UTF-8 in the payload",
+      "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "inceptionPayload": "{\"name\":\"Žluťoučký kůň 🐎\"}",
+      "bits": 14,
+      "counter": 13362,
+      "nonce": "AAAAAAAANDI",
+      "hash": "0003085cc78f1999a598dd3935bbff40e0b7d59c144fa2566cf1ab0dfc1fa7f6"
+    },
+    {
+      "description": "Twenty bits",
+      "serverId": "rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c",
+      "inceptionPayload": "{\"v\":2,\"type\":\"inception\",\"seq\":0,\"identityKey\":\"ed25519:iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"recoveryKey\":\"ed25519:1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg\",\"createdAt\":\"2026-10-09T00:00:00Z\"}",
+      "bits": 20,
+      "counter": 1352838,
+      "nonce": "AAAAAAAUpIY",
+      "hash": "000008f83114b3da261d231ee80f250041fb7355f3575661f4213dccef3c6d6a"
+    }
+  ],
+  "powDescriptor": {
+    "payload": "{\"v\":2,\"type\":\"server-descriptor\",\"serverId\":\"rims1_T5LLFxkrobgyvlf3WVxuvLlfqYSZAssRFgmvCfI2R-c\",\"keySeq\":0,\"version\":1,\"roles\":[\"relay\"],\"endpoints\":{\"graphql\":\"https://relay.example/api\",\"websocket\":\"wss://relay.example/api/ws\",\"s2s\":\"https://relay.example/s2s/v1\"},\"s2sVersions\":[1],\"mlsCipherSuites\":[79],\"limits\":{\"maxBodyBytes\":8388608,\"clockSkewSeconds\":300,\"maxDeliverItems\":256},\"registration\":{\"mode\":\"pow\",\"powBits\":16},\"issuedAt\":\"2026-10-10T00:00:00Z\"}",
+    "signature": "ed25519:7XyXg3-PyhIV_4eDovaXNuDb39oqRQNfYQr5jRz0GjZlkDljHcOJkwadQG0DFQrOSCouiKRzt7cUcOemIFUiCw"
+  }
+}

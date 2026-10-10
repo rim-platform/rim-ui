@@ -523,6 +523,18 @@ describe("JoinForm — create account with a key", () => {
     expect(screen.getByRole("button", { name: /create account with a password/i })).toBeDisabled();
   });
 
+  it("offers only the key, with no token, on a relay that takes key signups with a proof-of-work", () => {
+    render(
+      <MemoryRouter>
+        <JoinForm variant="OPEN" token={null} keyOnly onSuccess={vi.fn()} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(screen.queryByRole("button", { name: /create account with a password/i })).toBeNull();
+  });
+
   it("goes back to the password form", async () => {
     const user = userEvent.setup();
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");

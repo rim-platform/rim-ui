@@ -14,7 +14,12 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getApiOrigin, getGraphqlEndpoint } from "../../../core/graphql/config";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import {
+  FORBIDDEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  VALIDATION,
+} from "../../../core/graphql/errors";
 import type {
   DeviceKey,
   EnrollIdentityKeyInput,
@@ -28,6 +33,11 @@ import type {
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { MAX_CARD_RELAYS } from "../../relay/contacts/contactLink";
+import {
+  readRegistration,
+  solveProofOfWork,
+  type RelayRegistration,
+} from "../../relay/pow/proofOfWork";
 import { keyBackend, keyCommand, type LocalKeyAccount } from "./keyBackend";
 
 export { keyCommand, type LocalKeyAccount } from "./keyBackend";
@@ -38,6 +48,8 @@ export { keyCommand, type LocalKeyAccount } from "./keyBackend";
 export interface EnrollmentDraft {
   draftId: string;
   principalId: string;
+  /** The payload of the key log's inception, which a signup's proof-of-work is bound to. */
+  inceptionPayload: string;
   /** The whole kit text (`RIM recovery kit (v2)` …), to copy. */
   recoveryKit: string;
   /** The kit's 12 recovery phrase words in order, to show as a numbered grid. */
@@ -397,7 +409,18 @@ export async function completeEnrollment(
 // ─── Key-only signup ────────────────────────────────────────────────────────
 
 /** What the join page fills in for `signupWithKey`: the name and the page's token, if any. */
-export type KeySignupFields = Omit<SignupWithKeyInput, "keyLog" | "device" | "proof">;
+export type KeySignupFields = Omit<
+  SignupWithKeyInput,
+  "keyLog" | "device" | "proof" | "proofOfWork"
+>;
+
+/** How a signup reports and stops the proof-of-work a relay in `pow` mode asks for. */
+export interface KeySignupOptions {
+  /** Told when a proof-of-work of `bits` bits starts; it ends when the signup settles. */
+  onProofOfWork?: (bits: number) => void;
+  /** Aborting stops the proof-of-work: the signup then fails with `PowCancelled`. */
+  signal?: AbortSignal;
+}
 
 /** The new account; `serverId` is set when a workspace invite also joined its workspace. */
 export type KeySignupResult = Pick<SignupWithInvitePayloadGql, "userId"> & {
@@ -420,6 +443,59 @@ let signupsInFlight = 0;
 
 /** What each draft was last sent with, by draft id, to store its keys again under. */
 const sentSignups = new Map<string, KeySignupFields>();
+
+/** Each draft's proof-of-work, by draft id, for the relay and difficulty it was found for. */
+const proofs = new Map<string, { boundTo: string; nonce: string }>();
+
+function hasToken(fields: KeySignupFields): boolean {
+  return Boolean(
+    fields.bootstrapToken || fields.instanceInviteToken || fields.workspaceInviteToken,
+  );
+}
+
+/** Whether the server refused a signup over its proof-of-work, or for want of one. */
+export function proofOfWorkRefused(err: unknown): boolean {
+  const code = graphqlErrorCode(err);
+  return (
+    (code === VALIDATION || code === FORBIDDEN) &&
+    /proof-?of-?work/i.test(graphqlErrorMessage(err, ""))
+  );
+}
+
+/**
+ * The proof-of-work this server asks of a signup with no token, over the draft's inception:
+ * `undefined` when its verified discovery document names another registration mode, or cannot
+ * be read (the server then says what it wants). A retry with the same draft reuses the nonce.
+ */
+async function proofOfWorkFor(
+  draft: EnrollmentDraft,
+  fields: KeySignupFields,
+  options: KeySignupOptions,
+): Promise<string | undefined> {
+  if (hasToken(fields)) return undefined;
+  let registration: RelayRegistration;
+  try {
+    registration = await readRegistration(getApiOrigin());
+  } catch (err) {
+    logger.warn("[RIM:keys] reading this server's registration mode failed:", err);
+    return undefined;
+  }
+  if (registration.mode !== "pow" || registration.powBits === null) return undefined;
+  const boundTo = `${registration.serverId}|${registration.powBits}`;
+  const known = proofs.get(draft.draftId);
+  if (known?.boundTo === boundTo) return known.nonce;
+  options.onProofOfWork?.(registration.powBits);
+  const nonce = await solveProofOfWork(
+    {
+      serverId: registration.serverId,
+      inceptionPayload: draft.inceptionPayload,
+      bits: registration.powBits,
+    },
+    options.signal,
+  );
+  proofs.set(draft.draftId, { boundTo, nonce });
+  return nonce;
+}
 
 /**
  * Whether an account on this server holds `principalId`, read from its public key log:
@@ -478,12 +554,17 @@ async function finishTakenSignup(draft: EnrollmentDraft): Promise<KeySignupResul
  * go and the draft stays, so a retry uses the same keys and the saved recovery kit; if an
  * earlier attempt whose answer was lost created it, this device signs in with its key; with no
  * answer either way the keys stay for a later sign-in. The server sets the session cookie.
+ *
+ * Without a token, on a relay in `pow` registration mode, the proof-of-work is found first,
+ * before the challenge is fetched, so the challenge does not expire while it runs.
  */
 export async function signupWithKey(
   draft: EnrollmentDraft,
   fields: KeySignupFields,
+  options: KeySignupOptions = {},
 ): Promise<KeySignupResult> {
   const sent: KeySignupFields = { ...fields, username: fields.username.trim() };
+  const proofOfWork = await proofOfWorkFor(draft, sent, options);
   let challengeId: string;
   let nonce: string;
   try {
@@ -498,7 +579,7 @@ export async function signupWithKey(
     challenge: { challengeId, nonce },
   });
   sentSignups.set(draft.draftId, sent);
-  const input: SignupWithKeyInput = { ...sent, ...statements };
+  const input: SignupWithKeyInput = { ...sent, ...statements, ...(proofOfWork && { proofOfWork }) };
   let result: KeySignupResult;
   signupsInFlight += 1;
   try {
@@ -508,6 +589,8 @@ export async function signupWithKey(
     );
     result = { userId: res.signupWithKey.userId, serverId: res.signupWithKey.serverId ?? null };
   } catch (err) {
+    // A refused nonce is searched for again, against the relay's discovery document as it is.
+    if (proofOfWorkRefused(err)) proofs.delete(draft.draftId);
     const taken = await principalTaken(draft.principalId);
     if (taken === false) {
       await keyCommand<null>("key_identity_remove_draft_keys", { draftId: draft.draftId }).catch(
@@ -520,6 +603,7 @@ export async function signupWithKey(
     signupsInFlight -= 1;
   }
   sentSignups.delete(draft.draftId);
+  proofs.delete(draft.draftId);
   // Best-effort from here: the account exists and the session is set. A later sign-in links
   // the keys.
   try {
@@ -540,6 +624,7 @@ async function discardUnlessTaken(draft: EnrollmentDraft): Promise<boolean | nul
   const taken = await principalTaken(draft.principalId);
   if (taken === false) {
     sentSignups.delete(draft.draftId);
+    proofs.delete(draft.draftId);
     await keyCommand<null>("key_identity_discard_enrollment", { draftId: draft.draftId });
   }
   return taken;

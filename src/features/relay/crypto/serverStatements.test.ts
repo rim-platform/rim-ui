@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import powVectors from "../../../../protocol/pow-vectors.json";
 import vectors from "../../../../protocol/relay-vectors.json";
 import { keyFromSeed } from "../../../test/ed25519";
 import { b64, utf8 } from "../../key-identity/browser/bytes";
@@ -71,6 +72,37 @@ describe("server key log", () => {
     const descriptor = await verifyDescriptor(head, host.descriptor);
     expect(descriptor.roles).toEqual(["host", "relay"]);
     expect(descriptor.endpoints.s2s).toBe("https://host.example/s2s/v1");
+  });
+
+  it("reads the registration mode and the proof-of-work difficulty", async () => {
+    const hostHead = await replayServerLog([host.inception]);
+    expect((await verifyDescriptor(hostHead, host.descriptor)).registration).toEqual({
+      mode: "invite",
+      powBits: null,
+    });
+    const relayHead = await replayServerLog([vectors.relay.inception]);
+    const pow = powVectors.powDescriptor;
+    expect((await verifyDescriptor(relayHead, pow)).registration).toEqual({
+      mode: "pow",
+      powBits: 16,
+    });
+    const relayKey = await keyFromSeed(vectors.relay.seed);
+    for (const [from, to] of [
+      ['"powBits":16', '"powBits":null'],
+      ['"powBits":16', '"powBits":0'],
+      ['"powBits":16', '"powBits":41'],
+      ['"mode":"pow"', '"mode":"open"'],
+      ['"mode":"pow"', '"mode":"puzzle"'],
+      ['"powBits":16', '"powBits":16,"x":1'],
+      [',"powBits":16', ""],
+    ]) {
+      const changed = await sign(
+        relayKey.privateKey,
+        RELAY_CONTEXT.descriptor,
+        pow.payload.replace(from, to),
+      );
+      await expect(verifyDescriptor(relayHead, changed), to).rejects.toThrow(/malformed/);
+    }
   });
 
   it("refuses a tampered entry, an unknown field and a version 1 entry", async () => {

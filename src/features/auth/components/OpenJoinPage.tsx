@@ -1,10 +1,11 @@
 /**
  * `OpenJoinPage` — the `/join` (no token) route component.
  *
- * Only functional when the server reports `registrationMode === "OPEN"`.
- * In all other cases (including while loading, which defaults to
- * `INVITE_ONLY` for safety), renders a 404-like message and schedules a
- * redirect to `/login` after 3 seconds.
+ * Functional when the server reports `registrationMode === "OPEN"`, or `"POW"` in the desktop
+ * app: a relay in pow mode takes a key-only signup with a proof-of-work instead of a token, so
+ * the form offers only the key. In all other cases (including while loading, which defaults to
+ * `INVITE_ONLY` for safety), renders a 404-like message and schedules a redirect to `/login`
+ * after 3 seconds.
  *
  * When open registration is available, renders `JoinForm` with the `"OPEN"`
  * variant. Signup submits without any token field; the backend rate-limits
@@ -17,6 +18,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAuthStore } from "../state/useAuthStore";
 import { useServerConfig } from "../api/useServerConfig";
 import { RegistrationMode } from "../types";
@@ -34,19 +36,23 @@ export function OpenJoinPage() {
   const { data: serverConfig, isPending } = useServerConfig();
   const setSession = useAuthStore((s) => s.setSession);
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  const { capabilities } = useRuntime();
 
-  const isOpen = serverConfig?.registrationMode === RegistrationMode.OPEN;
+  const isPow = serverConfig?.registrationMode === RegistrationMode.POW;
+  const canSignUp =
+    serverConfig?.registrationMode === RegistrationMode.OPEN ||
+    (isPow && capabilities.identityKeys);
 
   // Redirect to /login when invite-only (or still loading — safe default).
   useEffect(() => {
-    if (isPending || isOpen) return;
+    if (isPending || canSignUp) return;
 
     const timer = setTimeout(() => {
       navigate("/login", { replace: true });
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [isPending, isOpen, navigate]);
+  }, [isPending, canSignUp, navigate]);
 
   if (isPending) {
     return (
@@ -56,12 +62,14 @@ export function OpenJoinPage() {
     );
   }
 
-  if (!isOpen) {
+  if (!canSignUp) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
         <div className="w-full max-w-sm text-center space-y-2">
           <p className="text-sm text-rim-text-muted">
-            Registration is invite-only on this RIM instance.
+            {isPow
+              ? "Signing up here takes the RIM desktop app, or an invite."
+              : "Registration is invite-only on this RIM instance."}
           </p>
           <p className="text-xs text-rim-text-faint">Redirecting to login...</p>
         </div>
@@ -77,5 +85,5 @@ export function OpenJoinPage() {
     navigate("/");
   }
 
-  return <JoinForm variant="OPEN" token={null} onSuccess={handleSuccess} />;
+  return <JoinForm variant="OPEN" token={null} keyOnly={isPow} onSuccess={handleSuccess} />;
 }

@@ -32,7 +32,7 @@ import { fetchConversationPredecessor, fetchRelayItems } from "../api/relayApi";
 import { relayUrlsFor } from "../contacts/knownRelays";
 import { startDirectConversation } from "../conversations/startDirect";
 import { relayCrypto } from "../crypto/relayCrypto";
-import { keyHash } from "../crypto/serverStatements";
+import { keyHash, type ServerRegistration } from "../crypto/serverStatements";
 import { directRequest } from "../direct/directGraphql";
 import { directTransport } from "../direct/directTransport";
 import {
@@ -43,6 +43,7 @@ import {
   type RelayStore,
   type SpaceRecord,
 } from "../state/relayDb";
+import { solveProofOfWork } from "../pow/proofOfWork";
 import { pinDiscovery } from "../state/serverPins";
 import { accountKey, remoteWorkspaces } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
@@ -115,10 +116,13 @@ async function carryOver(from: string, to: string): Promise<void> {
   }
 }
 
-function liveDeps(displayName: string): SwitchDeps {
+/** What a switch needs, wired to this app; exported for its tests. */
+export function liveDeps(displayName: string): SwitchDeps {
   const account = signedInAccount();
   const crypto = relayCrypto();
   const transport = directTransport();
+  // How each relay checked in this run takes new accounts, from its verified descriptor.
+  const registrations = new Map<string, ServerRegistration>();
 
   async function challenge(serverId: string): Promise<Statement> {
     const answer = await directRequest<{
@@ -137,6 +141,7 @@ function liveDeps(displayName: string): SwitchDeps {
       const document = await transport.discovery(origin);
       const verified = await crypto.verifyDiscovery(document, origin);
       const pin = await pinDiscovery(document, origin, verified.head.serverId);
+      registrations.set(pin.serverId, verified.descriptor.registration);
       return {
         serverId: pin.serverId,
         keyHash: await keyHash(pin.keys[pin.keys.length - 1]),
@@ -161,6 +166,17 @@ function liveDeps(displayName: string): SwitchDeps {
       const identity = await fetchMyKeyIdentity();
       const device = identity.devices.find((d) => d.deviceId === account.deviceId);
       if (!device) throw new Error("This device's certificate is not on your account.");
+      const keyLog = keyLogStatements(identity);
+      // A relay in pow mode takes the signup with a proof-of-work over the log's inception.
+      const registration = registrations.get(serverId);
+      const proofOfWork =
+        registration?.mode === "pow" && registration.powBits !== null && keyLog[0]
+          ? await solveProofOfWork({
+              serverId,
+              inceptionPayload: keyLog[0].payload,
+              bits: registration.powBits,
+            })
+          : undefined;
       const created = await directRequest<{ signupWithKey: { userId: string } }>(
         serverId,
         SIGNUP_WITH_KEY_MUTATION,
@@ -168,9 +184,10 @@ function liveDeps(displayName: string): SwitchDeps {
           input: {
             username,
             displayName,
-            keyLog: keyLogStatements(identity),
+            keyLog,
             device: device.certificate,
             proof: await challenge(serverId),
+            ...(proofOfWork && { proofOfWork }),
           },
         },
       );
