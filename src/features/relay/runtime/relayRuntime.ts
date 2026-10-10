@@ -1,8 +1,9 @@
 /**
  * The relay for the signed-in account: started once `relayInfo` answers (a server without it
  * runs as before, with the relay off). It learns the account's principal and this device's key,
- * loads the spaces it uses on other servers, routes their requests through the relay, and reads
- * `relayStream` on the existing WebSocket from the last item acknowledged.
+ * loads the spaces it uses on other servers, routes their requests through the relay (or a
+ * direct connection to their host), reads `relayStream` on the existing WebSocket from the last
+ * item acknowledged, and keeps the delegations of workspaces elsewhere fresh.
  */
 
 import { useEffect, useRef } from "react";
@@ -25,16 +26,24 @@ import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
 import { rememberRelays } from "../contacts/knownRelays";
 import { useContactStore } from "../contacts/useContactStore";
+import { activeDirect } from "../direct/directConnection";
+import { startDirect } from "../direct/directRuntime";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
+import { refreshWorkspaceName, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
+import { resetRelaySelf } from "../remote/relaySelf";
+import { finishOnNewRelay } from "../remote/relaySwitchLive";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
 import { loadSpaces, registerSpace } from "../state/spaces";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
+import { activeProcessor, setActiveProcessor } from "../stream/activeProcessor";
 import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
 import { loadRelayHealth } from "../transport/relayHealth";
 import { sendGraphql } from "../transport/remoteFetch";
 
 const HELD_CHECK_MS = 5_000;
+/** How often the delegations of workspaces elsewhere are checked for renewal. */
+const RENEW_CHECK_MS = 10 * 60 * 1000;
 const CURSOR = "relayCursor";
 
 interface StreamRecord {
@@ -51,11 +60,15 @@ interface CursorRecord {
   after: string;
 }
 
-let processor: RelayStreamProcessor | null = null;
-
 /** The running stream processor, for the request inbox and the "messages missing" retry. */
 export function relayProcessor(): RelayStreamProcessor | null {
-  return processor;
+  return activeProcessor();
+}
+
+function renewInBackground(): void {
+  void renewWorkspaceDelegations().catch((err: unknown) =>
+    logger.warn("[RIM:relay] renewing delegations failed:", err),
+  );
 }
 
 function streamRecordKey(account: string, key: string): IDBValidKey {
@@ -112,7 +125,10 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
     .getState()
     .load()
     .catch(() => undefined);
-  setSpaceRouter({ hostOf, send: sendGraphql });
+  setSpaceRouter({
+    hostOf,
+    send: (host, body) => activeDirect()?.send(host, body) ?? sendGraphql(host, body),
+  });
 
   const active = new RelayStreamProcessor({
     crypto: relayCrypto(),
@@ -153,9 +169,12 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
         .catch((err: unknown) => logger.warn("[RIM:relay] checking a request failed:", err));
     },
     onForked: (host) => useRelayStore.getState().markForked(host),
+    onRevocationAcked: () => {
+      void qc.invalidateQueries({ queryKey: ["deviceRevocationStatus"] });
+    },
     now: () => Date.now(),
   });
-  processor = active;
+  setActiveProcessor(active);
 
   const cursor = await getRecord<CursorRecord>("meta", [key, CURSOR]).catch(() => null);
   const unsubscribe = wsClient.subscribe<{ relayStream: string }>(
@@ -171,10 +190,27 @@ async function start(userId: string, qc: QueryClient, ack: () => AckMutate): Pro
   const timer = setInterval(() => void active.checkHeld(), HELD_CHECK_MS);
   void acceptWorkspaceMembers().catch(() => undefined);
 
+  for (const space of spaces) {
+    if (space.kind === "workspace" && !space.name) void refreshWorkspaceName(space.spaceId);
+  }
+  renewInBackground();
+  void finishOnNewRelay(me.principalId).catch((err: unknown) =>
+    logger.warn("[RIM:relay] finishing a relay switch failed:", err),
+  );
+  const renewTimer = setInterval(renewInBackground, RENEW_CHECK_MS);
+  // Back after the socket was down: delegations may have lapsed meanwhile.
+  const offReconnect = onWsConnected(renewInBackground);
+  const stopDirect = await startDirect(account, key, (event, spaceId) =>
+    applyRelayEvent(qc, ack(), event, spaceId),
+  );
+
   return () => {
     unsubscribe();
     clearInterval(timer);
-    if (processor === active) processor = null;
+    clearInterval(renewTimer);
+    offReconnect();
+    stopDirect();
+    if (activeProcessor() === active) setActiveProcessor(null);
   };
 }
 
@@ -216,6 +252,7 @@ export function useRelayRuntime() {
       setSpaceRouter(null);
       useRelayStore.getState().reset();
       resetPinCache();
+      resetRelaySelf();
     };
   }, [userId, qc]);
 }

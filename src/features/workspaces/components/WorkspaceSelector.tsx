@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useMyServers } from "../api/useMyServers";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { EmptyWorkspaceState } from "./EmptyWorkspaceState";
@@ -8,12 +9,16 @@ export function WorkspaceSelector() {
   const { data: servers, isPending, isError } = useMyServers();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  // A workspace on another server, for an account with none here.
+  const elsewhere = useRelayStore(
+    (s) => Object.values(s.spaces).find((space) => space.kind === "workspace")?.spaceId ?? null,
+  );
 
   useEffect(() => {
-    if (servers && servers.length >= 1 && !workspaceId) {
-      setWorkspaceId(servers[0].id);
-    }
-  }, [servers, workspaceId, setWorkspaceId]);
+    if (workspaceId) return;
+    if (servers && servers.length >= 1) setWorkspaceId(servers[0].id);
+    else if (servers && elsewhere) setWorkspaceId(elsewhere);
+  }, [servers, elsewhere, workspaceId, setWorkspaceId]);
 
   if (isPending) {
     return (

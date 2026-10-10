@@ -28,12 +28,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 dirs = "6"
-tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt", "macros"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt", "macros", "net"] }
 log = "0.4"
 libc = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
+# Direct connections to another server (src/relay/direct.rs): a WebSocket carrying that
+# server's session cookie, which the webview's own socket cannot.
+tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

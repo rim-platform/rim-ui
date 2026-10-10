@@ -7,21 +7,27 @@ import { sign, type Statement } from "../../key-identity/browser/statements";
 import {
   comparePin,
   deviceRequestHeaders,
+  delegationPayload,
   deviceRequestPayload,
   issuedAtNow,
   keyHash,
   namesCurrentKey,
   readHostEvent,
   readHostResponse,
+  readRevocationAck,
   RELAY_CONTEXT,
   replayServerLog,
   serverId,
   sha256Text,
+  signDelegation,
   signDeviceRequest,
+  statementTime,
   verifyDescriptor,
   verifyDiscovery,
   verifyHostEventSignature,
   verifyHostResponse,
+  verifyRevocationAck,
+  type DelegationInput,
   type DeviceRequestInput,
 } from "./serverStatements";
 
@@ -231,5 +237,86 @@ describe("host events", () => {
       event: { type: "TypingStarted" },
     });
     expect(readHostEvent({ payload, signature: "" }).seq).toBeNull();
+  });
+});
+
+describe("delegations", () => {
+  const owner = { principalId: vectors.device.principalId, deviceId: vectors.device.deviceId };
+  const input: DelegationInput = { ...owner, ...vectors.delegation.input };
+
+  it("signs the delegation vector byte for byte", async () => {
+    expect(delegationPayload(input)).toBe(vectors.delegation.payload);
+    const device = await keyFromSeed(vectors.device.seed);
+    expect(await signDelegation(device.privateKey, input)).toEqual({
+      payload: vectors.delegation.payload,
+      signature: vectors.delegation.signature,
+    });
+  });
+
+  it("signs the conformance cases the desktop signs, byte for byte", async () => {
+    const device = await keyFromSeed(vectors.device.seed);
+    expect(vectors.delegationConformance.length).toBeGreaterThan(0);
+    for (const conformance of vectors.delegationConformance) {
+      const signed = await signDelegation(device.privateKey, { ...owner, ...conformance.input });
+      expect(signed).toEqual({ payload: conformance.payload, signature: conformance.signature });
+    }
+  });
+
+  it("refuses what a host would refuse", () => {
+    const refusals: Partial<DelegationInput>[] = [
+      { expiresAt: "2026-10-10T00:00:01Z" },
+      { expiresAt: input.issuedAt },
+      { nonce: "cHFyc3R1dnd4eXp7fH1-" },
+      { issuedAt: "2026-10-09T00:00:00.500Z" },
+      { relay: "https://relay.example" },
+      { workspaceId: "workspace" },
+      { relayKeyHash: "short" },
+    ];
+    for (const change of refusals) {
+      expect(() => delegationPayload({ ...input, ...change })).toThrow(/delegation/);
+    }
+  });
+
+  it("reads statement times in whole UTC seconds only", () => {
+    expect(statementTime("2026-10-09T00:00:00Z")).toBe(Date.UTC(2026, 9, 9));
+    expect(statementTime("2026-10-09T00:00:00+00:00")).toBeNull();
+    expect(statementTime("2026-02-30T00:00:00Z")).toBeNull();
+  });
+});
+
+describe("revocation acknowledgements", () => {
+  const ack = vectors.revocationAck;
+  const expected = { host: host.serverId, revocationPayload: vectors.revocation.payload };
+
+  it("verifies the acknowledgement vector for its revocation", async () => {
+    expect(readRevocationAck(ack).keySeq).toBe(0);
+    const entry = await verifyRevocationAck(ack, host.serverKey, expected);
+    expect(entry.deviceId).toBe(vectors.device.deviceId);
+    expect(entry.revocationSha256).toBe(await sha256Text(utf8(vectors.revocation.payload)));
+  });
+
+  it("refuses another revocation, host, key or field", async () => {
+    await expect(
+      verifyRevocationAck(ack, host.serverKey, {
+        ...expected,
+        revocationPayload: expected.revocationPayload.replace("00:00Z", "00:01Z"),
+      }),
+    ).rejects.toThrow(/another revocation/);
+    await expect(
+      verifyRevocationAck(ack, host.serverKey, { ...expected, host: vectors.relay.serverId }),
+    ).rejects.toThrow(/another host/);
+    await expect(verifyRevocationAck(ack, vectors.relay.serverKey, expected)).rejects.toThrow(
+      /signature/,
+    );
+    expect(() =>
+      readRevocationAck({ ...ack, payload: ack.payload.replace('{"v":2,', '{"v":2,"x":1,') }),
+    ).toThrow(/malformed/);
+  });
+
+  it("checks the revocation vector under the device key", async () => {
+    const device = await keyFromSeed(vectors.device.seed);
+    expect(
+      await sign(device.privateKey, utf8("rim.device-revoke.v1\0"), vectors.revocation.payload),
+    ).toEqual(vectors.revocation);
   });
 });

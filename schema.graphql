@@ -1350,6 +1350,23 @@ A scalar that can represent any JSON value.
 """
 scalar JSON
 
+"""
+Join a workspace hosted on another server through this relay.
+"""
+input JoinRemoteWorkspaceInput {
+	hostServerId: String!
+	hostOrigin: String!
+	"""
+	Null for a current member of the workspace.
+	"""
+	inviteToken: String
+	"""
+	A `login` statement over the host's challenge, with the host's server id as audience.
+	"""
+	proof: SignedStatementInput!
+	delegation: SignedStatementInput!
+}
+
 input JoinServerByInviteInput {
 	inviteToken: String!
 }
@@ -2235,6 +2252,24 @@ type Mutation {
 	Delete the caller's queue, requests, contacts and blocks on this relay.
 	"""
 	leaveRelay: Boolean!
+	"""
+	A login challenge from the host, for joining one of its workspaces, and the workspace
+	`inviteToken` names.
+	"""
+	remoteJoinChallenge(hostServerId: String!, hostOrigin: String!, inviteToken: String): RemoteJoinChallenge!
+	"""
+	Join a workspace on another host; the relay presents the delegation and subscribes.
+	"""
+	joinRemoteWorkspace(input: JoinRemoteWorkspaceInput!): RemoteJoinResult!
+	"""
+	Present fresh delegations to their hosts (at most 64).
+	"""
+	renewDelegations(delegations: [SignedStatementInput!]!): [RemoteSubscription!]!
+	"""
+	Apply a device revocation on this host, without a session; answers the host's signed
+	`revocation-ack`.
+	"""
+	applyRemoteRevocation(revocation: SignedStatementInput!): SignedStatement!
 }
 
 input MuteConversationInput {
@@ -2816,6 +2851,14 @@ type Query {
 	see; streams the caller cannot see are left out.
 	"""
 	streamHeads(serverId: ID!, streams: [String!]!): [StreamHead!]!
+	"""
+	The caller's subscriptions to workspaces on other hosts through this relay.
+	"""
+	remoteSubscriptions: [RemoteSubscription!]!
+	"""
+	How the revocation of one of the caller's devices reached each host holding the caller.
+	"""
+	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 }
 
 type ReactionGroup {
@@ -2893,6 +2936,23 @@ type RemoteIdentity {
 """
 Someone from another server to start a conversation with.
 """
+type RemoteJoinChallenge {
+	challengeId: ID!
+	nonce: String!
+	expiresAt: DateTime!
+	"""
+	The workspace the invite token names, read without using the token up; null without one.
+	"""
+	workspaceId: ID
+}
+
+type RemoteJoinResult {
+	hostServerId: String!
+	workspaceId: ID!
+	userId: ID!
+	role: String!
+}
+
 input RemoteMemberInput {
 	principalId: String!
 	"""
@@ -2924,6 +2984,38 @@ type RemoteServer {
 	The discovery document as JSON text, for the app to verify and pin.
 	"""
 	discovery: String!
+}
+
+"""
+This relay's subscription to a workspace on another host, for the caller.
+"""
+type RemoteSubscription {
+	hostServerId: String!
+	workspaceId: ID!
+	"""
+	`active`, or another word saying why not (`refused`, `expired`).
+	"""
+	status: String!
+	expiresAt: DateTime
+}
+
+"""
+How a device revocation reached one host.
+"""
+type RevocationFanout {
+	hostServerId: String!
+	status: RevocationFanoutStatus!
+	"""
+	The host's signed `revocation-ack`, once it answered.
+	"""
+	ack: SignedStatement
+	attempts: Int!
+}
+
+enum RevocationFanoutStatus {
+	PENDING
+	ACKED
+	GAVE_UP
 }
 
 input ReplyToMessageInput {

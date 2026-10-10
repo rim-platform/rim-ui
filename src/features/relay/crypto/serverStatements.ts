@@ -1,8 +1,8 @@
 /**
  * Statements between this app, its relay and the hosts of spaces elsewhere, in the browser: a
  * server's key log and signed descriptor, the device-request statement this device signs for a
- * request to a space hosted elsewhere, and the host-response and host-event statements a host
- * signs. All are statement version 2 only, read with the same strictness as the key log of a
+ * request to a space hosted elsewhere and the delegation it signs for its relay, and the
+ * host-response, host-event and revocation-acknowledgement statements a host signs. All are statement version 2 only, read with the same strictness as the key log of a
  * person (`statements.ts`): unknown fields are refused and keys name their algorithm.
  */
 
@@ -28,6 +28,8 @@ export const RELAY_CONTEXT = {
   deviceRequest: utf8("rim.device-request.v1\0"),
   hostResponse: utf8("rim.host-response.v1\0"),
   hostEvent: utf8("rim.host-event.v1\0"),
+  delegation: utf8("rim.delegation.v1\0"),
+  revocationAck: utf8("rim.revocation-ack.v1\0"),
 } as const;
 
 const SERVER_DOMAIN = utf8("rim.server.v1\0");
@@ -555,4 +557,156 @@ export function readHostEvent(envelope: Statement): HostEvent {
 /** Whether `envelope` is signed by the host key `hostKey`. */
 export function verifyHostEventSignature(envelope: Statement, hostKey: string): Promise<boolean> {
   return verify(envelope, RELAY_CONTEXT.hostEvent, hostKey, VERSION);
+}
+
+// ─── Delegations ────────────────────────────────────────────────────────────
+
+/** The longest a delegation may run, from `issuedAt` to `expiresAt`. */
+export const MAX_DELEGATION_MS = 24 * 60 * 60 * 1000;
+
+/** What a delegation says, in its field order. */
+export interface DelegationInput {
+  principalId: string;
+  deviceId: string;
+  relay: string;
+  relayKeyHash: string;
+  host: string;
+  workspaceId: string;
+  nonce: string;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** A whole-second UTC time as statements write it, in ms; `null` for anything else. */
+export function statementTime(text: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(text)) return null;
+  const ms = Date.parse(text);
+  return Number.isNaN(ms) || issuedAtNow(ms) !== text ? null : ms;
+}
+
+/** The exact payload text of a delegation; refuses what a host would refuse. */
+export function delegationPayload(input: DelegationInput): string {
+  if (!input.relay.startsWith("rims1_") || !input.host.startsWith("rims1_")) {
+    throw refused("delegation", "relay and host must be server ids");
+  }
+  if (unb64(input.relayKeyHash)?.length !== 32) {
+    throw refused("delegation", "the relay key hash is malformed");
+  }
+  if (!UUID.test(input.workspaceId)) throw refused("delegation", "the workspace id is malformed");
+  if (unb64(input.nonce)?.length !== 16) throw refused("delegation", "the nonce must be 16 bytes");
+  const issued = statementTime(input.issuedAt);
+  const expires = statementTime(input.expiresAt);
+  if (issued === null || expires === null) {
+    throw refused("delegation", "times must be whole-second UTC");
+  }
+  if (expires <= issued || expires - issued > MAX_DELEGATION_MS) {
+    throw refused("delegation", "a delegation runs for at most 24 hours after it is issued");
+  }
+  return JSON.stringify({
+    v: VERSION,
+    type: "delegation",
+    principalId: input.principalId,
+    deviceId: input.deviceId,
+    relay: input.relay,
+    relayKeyHash: input.relayKeyHash,
+    host: input.host,
+    workspaceId: input.workspaceId,
+    scope: "workspace",
+    nonce: input.nonce,
+    issuedAt: input.issuedAt,
+    expiresAt: input.expiresAt,
+  });
+}
+
+/** A delegation signed by a WebCrypto device key. */
+export function signDelegation(deviceKey: CryptoKey, input: DelegationInput): Promise<Statement> {
+  return sign(deviceKey, RELAY_CONTEXT.delegation, delegationPayload(input));
+}
+
+// ─── Revocation acknowledgements ────────────────────────────────────────────
+
+const ACK_FIELDS = [
+  "v",
+  "type",
+  "host",
+  "keySeq",
+  "principalId",
+  "deviceId",
+  "revocationSha256",
+  "appliedAt",
+];
+
+/** A host's `revocation-ack`: it applied a device revocation. */
+export interface RevocationAck {
+  host: string;
+  keySeq: number;
+  principalId: string;
+  deviceId: string;
+  revocationSha256: string;
+  appliedAt: string;
+}
+
+/** Read a revocation acknowledgement before its key is chosen. */
+export function readRevocationAck(ack: Statement): RevocationAck {
+  bounded(ack, 16 * KIB, "revocation acknowledgement");
+  const fields = parseObject(ack.payload);
+  const host = fields ? text(fields, "host") : null;
+  const keySeq = fields ? uint(fields, "keySeq", MAX_U32) : null;
+  const principal = fields ? text(fields, "principalId") : null;
+  const deviceId = fields ? text(fields, "deviceId") : null;
+  const revocationSha256 = fields ? text(fields, "revocationSha256") : null;
+  const appliedAt = fields ? timestamp(fields, "appliedAt") : null;
+  if (
+    !fields ||
+    unknownField(fields, ACK_FIELDS) ||
+    uint(fields, "v", 0xff) !== VERSION ||
+    text(fields, "type") !== "revocation-ack" ||
+    host === null ||
+    keySeq === null ||
+    principal === null ||
+    deviceId === null ||
+    revocationSha256 === null ||
+    appliedAt === null
+  ) {
+    throw refused("revocation acknowledgement", "malformed");
+  }
+  return { host, keySeq, principalId: principal, deviceId, revocationSha256, appliedAt };
+}
+
+/** What an acknowledgement must answer: the revocation sent, to that host. */
+export interface AckExpectation {
+  host: string;
+  /** The `device-revoke` payload text that was sent. */
+  revocationPayload: string;
+}
+
+/**
+ * Check an acknowledgement against the revocation it answers and the host key at its
+ * `keySeq`: the host, the principal and device, the revocation's hash, the signature.
+ */
+export async function verifyRevocationAck(
+  ack: Statement,
+  hostKey: string,
+  expected: AckExpectation,
+): Promise<RevocationAck> {
+  const what = "revocation acknowledgement";
+  const entry = readRevocationAck(ack);
+  const revoked = parseObject(expected.revocationPayload);
+  if (!revoked) throw refused(what, "the revocation is malformed");
+  if (entry.host !== expected.host) throw refused(what, "from another host");
+  if (
+    entry.principalId !== text(revoked, "principalId") ||
+    entry.deviceId !== text(revoked, "deviceId")
+  ) {
+    throw refused(what, "names another device");
+  }
+  if (entry.revocationSha256 !== (await sha256Text(utf8(expected.revocationPayload)))) {
+    throw refused(what, "answers another revocation");
+  }
+  if (!(await verify(ack, RELAY_CONTEXT.revocationAck, hostKey, VERSION))) {
+    throw refused(what, "signature does not verify");
+  }
+  return entry;
 }

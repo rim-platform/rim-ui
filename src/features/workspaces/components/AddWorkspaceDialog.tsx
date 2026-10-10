@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, Building2, Link } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
@@ -6,6 +7,8 @@ import { Button } from "../../../shared/ui/Button";
 import { useCreateServerMutation } from "../api/useCreateServer";
 import { useJoinServerMutation } from "../api/useJoinServer";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
+import { isInviteLink } from "../../relay/remote/inviteLink";
+import { joinWithInvite } from "../../relay/remote/remoteWorkspaces";
 
 type Step = "choose" | "create" | "join";
 
@@ -23,6 +26,9 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
 
   const create = useCreateServerMutation();
   const join = useJoinServerMutation();
+  const joinRemote = useMutation({ mutationFn: joinWithInvite });
+  const remote = isInviteLink(inviteCode);
+  const joining = remote ? joinRemote : join;
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +49,15 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     if (!inviteCode.trim()) return;
 
+    if (remote) {
+      joinRemote.mutate(inviteCode, {
+        onSuccess: (joined) => {
+          setWorkspaceId(joined.workspaceId);
+          onClose();
+        },
+      });
+      return;
+    }
     join.mutate(inviteCode.trim(), {
       onSuccess: (data) => {
         setWorkspaceId(data.joinServerByInvite.serverId);
@@ -55,6 +70,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
     setStep("choose");
     create.reset();
     join.reset();
+    joinRemote.reset();
   }
 
   function formatError(error: unknown): string {
@@ -160,15 +176,21 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
               type="text"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.currentTarget.value)}
-              placeholder="rim_inv_..."
+              placeholder="rim_inv_... or rim-invite:1:..."
               autoFocus
               className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
             />
           </label>
+          {remote && (
+            <p className="text-xs text-rim-text-muted">
+              This workspace is on another server. RIM checks that server&apos;s identity against
+              the invite, and your messages there go through this server.
+            </p>
+          )}
 
-          {join.error && (
+          {joining.error && (
             <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-              {formatError(join.error)}
+              {formatError(joining.error)}
             </p>
           )}
 
@@ -176,10 +198,10 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
             type="submit"
             variant="primary"
             disabled={!inviteCode.trim()}
-            isLoading={join.isPending}
+            isLoading={joining.isPending}
             className="w-full"
           >
-            {join.isPending ? "Joining..." : "Join"}
+            {joining.isPending ? "Joining..." : "Join"}
           </Button>
         </form>
       )}

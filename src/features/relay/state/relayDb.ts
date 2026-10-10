@@ -9,15 +9,18 @@
  * - `streams`: per account, host, space and stream, the last event `seq` applied.
  * - `aliases`: per account, the name the person gave a contact.
  * - `meta`: per account, small values such as the last relay item applied.
+ * - `delegations`: per account and workspace elsewhere, the delegation this device signed for
+ *   the relay, and when it expires.
  */
 
 import type { Statement } from "../../key-identity/browser/statements";
 import type { ServerRotationSigner } from "../crypto/serverStatements";
 
 const DB_NAME = "rim-relay";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-export type RelayStore = "servers" | "spaces" | "requestSeq" | "streams" | "aliases" | "meta";
+export type RelayStore =
+  "servers" | "spaces" | "requestSeq" | "streams" | "aliases" | "meta" | "delegations";
 
 const KEY_PATHS: Record<RelayStore, string | string[]> = {
   servers: "serverId",
@@ -26,6 +29,7 @@ const KEY_PATHS: Record<RelayStore, string | string[]> = {
   streams: ["account", "host", "workspaceId", "stream"],
   aliases: ["account", "principalId"],
   meta: ["account", "name"],
+  delegations: ["account", "workspaceId"],
 };
 
 /** A server pinned on first use. */
@@ -41,6 +45,8 @@ export interface ServerPin {
   /** Until when the key before the head still verifies, after a server rotation seen here. */
   previousKeyUntil: number | null;
   descriptorVersion: number;
+  /** Where the server answers its own clients, from its verified descriptor. */
+  endpoints?: { graphql: string; websocket: string };
   status: "active" | "forked";
   pinnedAt: number;
   fetchedAt: number;
@@ -52,6 +58,19 @@ export interface SpaceRecord {
   spaceId: string;
   hostServerId: string;
   kind: "direct" | "workspace";
+  /** A workspace's name, as its host last answered. */
+  name?: string;
+}
+
+/** The delegation this device signed for its relay, for one workspace elsewhere. */
+export interface DelegationRecord {
+  account: string;
+  workspaceId: string;
+  host: string;
+  relay: string;
+  issuedAt: number;
+  expiresAt: number;
+  statement: Statement;
 }
 
 let opened: { factory: IDBFactory; db: Promise<IDBDatabase> } | null = null;

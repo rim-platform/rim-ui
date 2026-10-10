@@ -8,8 +8,14 @@ import { graphqlClient } from "../../../core/graphql/client";
 import type {
   Contact,
   DmRequestStatus,
+  JoinRemoteWorkspaceInput,
   RelayItemPage,
+  RemoteJoinChallenge,
+  RemoteJoinResult,
+  RemoteSubscription,
+  RevocationFanoutStatus,
   SignedStatement,
+  SignedStatementInput,
 } from "../../../core/graphql/generated/schema-types";
 import type { RelayInfo } from "../state/useRelayStore";
 import {
@@ -19,14 +25,20 @@ import {
   BLOCK_PRINCIPAL_MUTATION,
   CONTACTS_QUERY,
   CONVERSATION_PREDECESSOR_QUERY,
+  DEVICE_REVOCATION_STATUS_QUERY,
   DM_REQUESTS_QUERY,
   IGNORE_DM_REQUEST_MUTATION,
+  JOIN_REMOTE_WORKSPACE_MUTATION,
   RELAY_INFO_QUERY,
   RELAY_ITEMS_QUERY,
   RELAY_ME_QUERY,
   REMOTE_IDENTITY_QUERY,
+  REMOTE_JOIN_CHALLENGE_MUTATION,
   REMOTE_SERVER_QUERY,
+  REMOTE_SUBSCRIPTIONS_QUERY,
+  REMOTE_WORKSPACE_QUERY,
   REMOVE_CONTACT_MUTATION,
+  RENEW_DELEGATIONS_MUTATION,
   REPORT_DM_REQUEST_MUTATION,
   STREAM_HEADS_QUERY,
   UNBLOCK_PRINCIPAL_MUTATION,
@@ -189,4 +201,80 @@ export async function fetchConversationPredecessor(
     { serverId, conversationId },
   );
   return res.conversation;
+}
+
+/** A subscription of this relay to a workspace elsewhere, for this person. */
+export type RemoteSubscriptionView = Pick<
+  RemoteSubscription,
+  "hostServerId" | "workspaceId" | "status" | "expiresAt"
+>;
+
+/** How a device revocation reached one host. */
+export interface RevocationFanoutView {
+  hostServerId: string;
+  status: RevocationFanoutStatus;
+  ack: StatementOnly | null;
+  attempts: number;
+}
+
+export async function fetchRemoteSubscriptions(): Promise<RemoteSubscriptionView[]> {
+  const res = await graphqlClient.request<{ remoteSubscriptions: RemoteSubscriptionView[] }>(
+    REMOTE_SUBSCRIPTIONS_QUERY,
+  );
+  return res.remoteSubscriptions;
+}
+
+export async function fetchDeviceRevocationStatus(
+  deviceId: string,
+): Promise<RevocationFanoutView[]> {
+  const res = await graphqlClient.request<{ deviceRevocationStatus: RevocationFanoutView[] }>(
+    DEVICE_REVOCATION_STATUS_QUERY,
+    { deviceId },
+  );
+  return res.deviceRevocationStatus;
+}
+
+/**
+ * A login challenge of `hostServerId`, fetched by the relay, for joining one of its spaces,
+ * and the workspace `inviteToken` names there.
+ */
+export async function remoteJoinChallenge(
+  hostServerId: string,
+  hostOrigin: string,
+  inviteToken: string | null,
+): Promise<Pick<RemoteJoinChallenge, "challengeId" | "nonce" | "expiresAt" | "workspaceId">> {
+  const res = await graphqlClient.request<{ remoteJoinChallenge: RemoteJoinChallenge }>(
+    REMOTE_JOIN_CHALLENGE_MUTATION,
+    { hostServerId, hostOrigin, inviteToken },
+  );
+  return res.remoteJoinChallenge;
+}
+
+export async function joinRemoteWorkspace(
+  input: JoinRemoteWorkspaceInput,
+): Promise<RemoteJoinResult> {
+  const res = await graphqlClient.request<{ joinRemoteWorkspace: RemoteJoinResult }>(
+    JOIN_REMOTE_WORKSPACE_MUTATION,
+    { input },
+  );
+  return res.joinRemoteWorkspace;
+}
+
+export async function renewDelegations(
+  delegations: SignedStatementInput[],
+): Promise<RemoteSubscriptionView[]> {
+  const res = await graphqlClient.request<{ renewDelegations: RemoteSubscriptionView[] }>(
+    RENEW_DELEGATIONS_MUTATION,
+    { delegations },
+  );
+  return res.renewDelegations;
+}
+
+/** A workspace's name, from its host through the forward path. */
+export async function fetchRemoteWorkspaceName(serverId: string): Promise<string> {
+  const res = await graphqlClient.request<{ server: { id: string; name: string } }>(
+    REMOTE_WORKSPACE_QUERY,
+    { serverId },
+  );
+  return res.server.name;
 }

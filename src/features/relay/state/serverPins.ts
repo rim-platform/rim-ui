@@ -64,10 +64,17 @@ function fork(pin: ServerPin): never {
 /** A new pin, or what `head` makes of the existing one. Pure, for tests. */
 export function nextPin(
   existing: ServerPin | null,
-  fetched: { origin: string; log: ServerPin["log"]; head: ServerHead; descriptorVersion: number },
+  fetched: {
+    origin: string;
+    log: ServerPin["log"];
+    head: ServerHead;
+    descriptorVersion: number;
+    endpoints?: ServerPin["endpoints"];
+  },
   now: number,
 ): ServerPin {
   const { head } = fetched;
+  const endpoints = fetched.endpoints ?? existing?.endpoints;
   const fresh = (previousKeyUntil: number | null): ServerPin => ({
     serverId: head.serverId,
     origin: fetched.origin,
@@ -77,6 +84,7 @@ export function nextPin(
     signers: head.signers,
     previousKeyUntil,
     descriptorVersion: fetched.descriptorVersion,
+    ...(endpoints ? { endpoints } : {}),
     status: "active",
     pinnedAt: existing?.pinnedAt ?? now,
     fetchedAt: now,
@@ -84,12 +92,15 @@ export function nextPin(
   if (!existing) return fresh(null);
   if (existing.status === "forked") return existing;
   switch (comparePin(existing.hashes, head)) {
-    case "equal":
+    case "equal": {
+      const newer = fetched.descriptorVersion > existing.descriptorVersion;
       return {
         ...existing,
         descriptorVersion: Math.max(existing.descriptorVersion, fetched.descriptorVersion),
+        ...(newer || !existing.endpoints ? (endpoints ? { endpoints } : {}) : {}),
         fetchedAt: now,
       };
+    }
     case "extends":
       return fresh(head.signers[head.seq] === "server" ? now + GRACE_MS : null);
     case "prefix":
@@ -113,11 +124,22 @@ export async function pinServer(origin: string, expectedServerId?: string): Prom
   }
   lastFetch.set(origin, now);
   const remote = await fetchRemoteServer(origin);
-  const verified = await relayCrypto().verifyDiscovery(remote.discovery, origin);
-  if (verified.head.serverId !== remote.serverId) {
-    throw new Error("the relay named another server than the one it fetched");
-  }
-  if (expectedServerId && verified.head.serverId !== expectedServerId) {
+  return pinDiscovery(remote.discovery, origin, expectedServerId ?? remote.serverId, now);
+}
+
+/**
+ * Verify a discovery document fetched for `origin` (through the relay or directly) and pin
+ * the server, or check it against its pin. A server with another id than `expectedServerId`
+ * is refused; a log that does not extend the pin throws `ServerForkedError`.
+ */
+export async function pinDiscovery(
+  document: string,
+  origin: string,
+  expectedServerId: string,
+  now: number = Date.now(),
+): Promise<ServerPin> {
+  const verified = await relayCrypto().verifyDiscovery(document, origin);
+  if (verified.head.serverId !== expectedServerId) {
     throw new Error(`${origin} is another server than the one expected`);
   }
   const existing = await loadPin(verified.head.serverId);
@@ -128,6 +150,10 @@ export async function pinServer(origin: string, expectedServerId?: string): Prom
       log: verified.log,
       head: verified.head,
       descriptorVersion: verified.descriptor.version,
+      endpoints: {
+        graphql: verified.descriptor.endpoints.graphql,
+        websocket: verified.descriptor.endpoints.websocket,
+      },
     },
     now,
   );
@@ -182,6 +208,11 @@ export async function hostKeyAt(serverId: string, keySeq: number): Promise<strin
   const key = keyAt(pin, keySeq, Date.now());
   if (!key) throw new Error(`signed by a key of ${serverId} this app does not accept`);
   return key;
+}
+
+/** The pin of `serverId`, if this app has one. */
+export function storedPin(serverId: string): Promise<ServerPin | null> {
+  return loadPin(serverId);
 }
 
 /** Whether this app stopped using `serverId` because its identity forked. */

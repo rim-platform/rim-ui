@@ -10,7 +10,7 @@ use super::device_link::{
     Sealed, SentOffer,
 };
 use super::plugin_manifest::{self, KeyHistory, PluginManifestInput, VerifiedPluginManifest};
-use super::statement::{DeviceRequestInput, Statement};
+use super::statement::{DelegationInput, DeviceRequestInput, Statement};
 use super::{
     CardContent, Challenge, EnrollmentDraft, EnrollmentStatements, KeyIdentityError,
     KeyIdentityState, LocalAccount, LogStatus, RecoveryStatements, ServerAccount,
@@ -155,6 +155,33 @@ pub async fn key_identity_sign_device_request(
 ) -> Result<Statement, KeyIdentityError> {
     blocking(&state, move |s| {
         s.sign_device_request(&principal_id, &request)
+    })
+    .await
+}
+
+/// Sign a login proof over `challenge` with this device's key, for the server `server_id`.
+#[tauri::command]
+pub async fn key_identity_sign_login_for_server(
+    state: State<'_, KeyIdentityState>,
+    server_id: String,
+    principal_id: String,
+    challenge: Challenge,
+) -> Result<Statement, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.sign_login_for_server(&server_id, &principal_id, &challenge)
+    })
+    .await
+}
+
+/// Sign a delegation for a workspace on another host with this device's key.
+#[tauri::command]
+pub async fn key_identity_sign_delegation(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+    delegation: DelegationInput,
+) -> Result<Statement, KeyIdentityError> {
+    blocking(&state, move |s| {
+        s.sign_delegation(&principal_id, &delegation)
     })
     .await
 }

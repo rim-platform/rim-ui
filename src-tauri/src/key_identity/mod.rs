@@ -191,6 +191,12 @@ pub(crate) fn audience(endpoint: &str) -> Result<String> {
     Ok(authority.to_ascii_lowercase())
 }
 
+/// A server id as issued: `rims1_` and 32 bytes of unpadded base64url.
+pub(crate) fn valid_server_id(text: &str) -> bool {
+    text.strip_prefix("rims1_")
+        .is_some_and(|rest| statement::unb64(rest).is_ok_and(|b| b.len() == 32))
+}
+
 /// A device name as certificates allow it: trimmed, 1 to 64 characters, no control characters.
 fn device_name(name: &str) -> Result<String> {
     let name: String = name
@@ -700,6 +706,54 @@ impl KeyIdentityState {
             &record.device_id,
             request,
         )
+    }
+
+    /// Sign a delegation for `principal_id` with this device's key: a relay may carry one
+    /// workspace's traffic between this device and its host until the delegation expires.
+    pub(crate) fn sign_delegation(
+        &self,
+        principal_id: &str,
+        input: &statement::DelegationInput,
+    ) -> Result<Statement> {
+        let record = {
+            let _guard = self.guard()?;
+            self.record(principal_id)?
+        };
+        statement::delegation(
+            &key(&record.device_seed)?,
+            principal_id,
+            &record.device_id,
+            input,
+        )
+    }
+
+    /// Sign a login proof over `challenge` whose audience is the server id `server_id`: good
+    /// only at that server, whoever carries it there.
+    pub(crate) fn sign_login_for_server(
+        &self,
+        server_id: &str,
+        principal_id: &str,
+        challenge: &Challenge,
+    ) -> Result<Statement> {
+        if !valid_server_id(server_id) {
+            return Err(KeyIdentityError::Invalid(format!(
+                "not a server id: {server_id}"
+            )));
+        }
+        let record = {
+            let _guard = self.guard()?;
+            self.record(principal_id)?
+        };
+        Ok(statement::login(
+            &key(&record.device_seed)?,
+            &statement::LoginInput {
+                challenge_id: &challenge.challenge_id,
+                nonce: &challenge.nonce,
+                audience: server_id,
+                principal_id,
+                device_id: &record.device_id,
+            },
+        ))
     }
 
     /// This device's id and device key (tagged text) for `principal_id`.

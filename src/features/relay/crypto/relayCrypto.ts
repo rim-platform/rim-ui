@@ -10,13 +10,21 @@ import { keyCommand } from "../../key-identity/api/keyBackend";
 import { record } from "../../key-identity/browser/keyStore";
 import {
   replay,
+  signLogin,
   StatementError,
   verifiedCard,
   type Statement,
 } from "../../key-identity/browser/statements";
+import type { KeyChallenge } from "../../key-identity/api/keyBackend";
 import {
   readHostEvent as readInBrowser,
   readHostResponse,
+  readRevocationAck,
+  signDelegation as signDelegationInBrowser,
+  verifyRevocationAck as verifyAckInBrowser,
+  type AckExpectation,
+  type DelegationInput,
+  type RevocationAck,
   replayServerLog as replayInBrowser,
   sha256Text,
   signDeviceRequest as signInBrowser,
@@ -54,6 +62,9 @@ export interface CardView {
 /** The fields of a device request that the caller chooses; the key holder adds the device. */
 export type DeviceRequestFields = Omit<DeviceRequestInput, "principalId" | "deviceId">;
 
+/** The fields of a delegation that the caller chooses; the key holder adds the device. */
+export type DelegationFields = Omit<DelegationInput, "principalId" | "deviceId">;
+
 export interface RelayCrypto {
   verifyDiscovery(document: string, origin: string): Promise<DiscoveryResult>;
   replayServerLog(log: Statement[]): Promise<ServerHead>;
@@ -74,6 +85,26 @@ export interface RelayCrypto {
   ): Promise<Statement>;
   /** Verify a person's key log against their id and their card against its head. */
   verifyCard(principalId: string, keyLog: Statement[], card: Statement): Promise<CardView>;
+  /** A delegation signed by this device's key for the account on `endpoint`. */
+  signDelegation(
+    endpoint: string,
+    principalId: string,
+    fields: DelegationFields,
+  ): Promise<Statement>;
+  /** A login proof over `challenge` whose audience is the server id `serverId`. */
+  signLoginForServer(
+    endpoint: string,
+    serverId: string,
+    principalId: string,
+    challenge: KeyChallenge,
+  ): Promise<Statement>;
+  /** The `keySeq` a revocation acknowledgement names, before its key is chosen. */
+  revocationAckKeySeq(ack: Statement): Promise<number>;
+  verifyRevocationAck(
+    ack: Statement,
+    hostKey: string,
+    expected: AckExpectation,
+  ): Promise<RevocationAck>;
 }
 
 /** The desktop: the `relay_*` and `key_identity_sign_device_request` commands. */
@@ -107,6 +138,17 @@ export const tauriRelayCrypto: RelayCrypto = {
     keyCommand<Statement>("key_identity_sign_device_request", { principalId, request: fields }),
   verifyCard: (principalId, keyLog, card) =>
     keyCommand<CardView>("relay_verify_card", { principalId, keyLog, card }),
+  signDelegation: (_endpoint, principalId, delegation) =>
+    keyCommand<Statement>("key_identity_sign_delegation", { principalId, delegation }),
+  signLoginForServer: (_endpoint, serverId, principalId, challenge) =>
+    keyCommand<Statement>("key_identity_sign_login_for_server", {
+      serverId,
+      principalId,
+      challenge,
+    }),
+  revocationAckKeySeq: (ack) => keyCommand<number>("relay_revocation_ack_key_seq", { ack }),
+  verifyRevocationAck: (ack, hostKey, expected) =>
+    keyCommand<RevocationAck>("relay_verify_revocation_ack", { ack, hostKey, expected }),
 };
 
 /** The web app: WebCrypto, and the device key this browser holds for the account. */
@@ -136,6 +178,29 @@ export const browserRelayCrypto: RelayCrypto = {
     const { version, displayName, relays } = await verifiedCard(card, head);
     return { version, displayName, relays };
   },
+  async signDelegation(endpoint, principalId, fields) {
+    const found = await record(endpoint, principalId);
+    if (!found) throw new Error("this browser has no keys for that account");
+    return signDelegationInBrowser(found.deviceKey, {
+      ...fields,
+      principalId,
+      deviceId: found.deviceId,
+    });
+  },
+  async signLoginForServer(endpoint, serverId, principalId, challenge) {
+    if (!/^rims1_[A-Za-z0-9_-]{43}$/.test(serverId)) throw new Error("not a server id");
+    const found = await record(endpoint, principalId);
+    if (!found) throw new Error("this browser has no keys for that account");
+    return signLogin(found.deviceKey, {
+      challengeId: challenge.challengeId,
+      nonce: challenge.nonce,
+      audience: serverId,
+      principalId,
+      deviceId: found.deviceId,
+    });
+  },
+  revocationAckKeySeq: async (ack) => readRevocationAck(ack).keySeq,
+  verifyRevocationAck: verifyAckInBrowser,
 };
 
 /** The backend of this platform. */

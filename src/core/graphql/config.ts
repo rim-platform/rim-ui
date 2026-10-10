@@ -1,8 +1,39 @@
 const DEFAULT_GRAPHQL_ENDPOINT = "http://localhost:8080/api";
 
-/** The GraphQL HTTP endpoint (env override or the localhost default). */
+/** Where the desktop app keeps the relay it moved to; not a secret. */
+const RELAY_ENDPOINT_KEY = "rim.relayEndpoint";
+
+function isDesktop(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** The relay the desktop app moved to, if it switched relays. */
+function movedEndpoint(): string | null {
+  if (!isDesktop()) return null;
+  try {
+    return window.localStorage.getItem(RELAY_ENDPOINT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Point the desktop app at another relay's GraphQL endpoint from its next start (`null`
+ * goes back to the configured one). The web app is served by its relay and never moves.
+ */
+export function setRelayEndpoint(endpoint: string | null): void {
+  if (!isDesktop()) return;
+  try {
+    if (endpoint) window.localStorage.setItem(RELAY_ENDPOINT_KEY, endpoint);
+    else window.localStorage.removeItem(RELAY_ENDPOINT_KEY);
+  } catch {
+    // Without storage the app stays on its configured relay.
+  }
+}
+
+/** The GraphQL HTTP endpoint: the relay the desktop moved to, else env or the localhost default. */
 export function getGraphqlEndpoint(): string {
-  return import.meta.env.VITE_GRAPHQL_ENDPOINT || DEFAULT_GRAPHQL_ENDPOINT;
+  return movedEndpoint() ?? (import.meta.env.VITE_GRAPHQL_ENDPOINT || DEFAULT_GRAPHQL_ENDPOINT);
 }
 
 /**

@@ -23,16 +23,18 @@ interface MyServersResponse {
   myServers: Server[];
 }
 
+/** The workspaces this account is a member of on this server. */
+export async function fetchMyServers(): Promise<Server[]> {
+  const res = await graphqlClient.request<MyServersResponse>(MY_SERVERS_QUERY);
+  return res.myServers;
+}
+
 export function useMyServers() {
   return useQuery({
     queryKey: queryKeys.myServers(),
     staleTime: 60_000,
     // Runs offline too: the desktop app answers from its saved copy (offlineSnapshot.ts).
     networkMode: "offlineFirst",
-    queryFn: () =>
-      withOfflineSnapshot("servers", null, async () => {
-        const res = await graphqlClient.request<MyServersResponse>(MY_SERVERS_QUERY);
-        return res.myServers;
-      }),
+    queryFn: () => withOfflineSnapshot("servers", null, fetchMyServers),
   });
 }

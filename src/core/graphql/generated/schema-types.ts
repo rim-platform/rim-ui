@@ -1226,6 +1226,17 @@ export enum InviteTokenTypeGql {
   WORKSPACE = 'WORKSPACE'
 }
 
+/** Join a workspace hosted on another server through this relay. */
+export type JoinRemoteWorkspaceInput = {
+  delegation: SignedStatementInput;
+  hostOrigin: Scalars['String']['input'];
+  hostServerId: Scalars['String']['input'];
+  /** Null for a current member of the workspace. */
+  inviteToken?: InputMaybe<Scalars['String']['input']>;
+  /** A `login` statement over the host's challenge, with the host's server id as audience. */
+  proof: SignedStatementInput;
+};
+
 export type JoinServerByInviteInput = {
   inviteToken: Scalars['String']['input'];
 };
@@ -1663,6 +1674,11 @@ export type Mutation = {
   addWorkspacePlugin: WorkspacePlugin;
   advanceIncidentPhase: IncidentPhaseGql;
   /**
+   * Apply a device revocation on this host, without a session; answers the host's signed
+   * `revocation-ack`.
+   */
+  applyRemoteRevocation: SignedStatement;
+  /**
    * Remove a member and block them from re-joining until `expiresAt` (or until unbanned
    * when omitted). Same targeting rules as `kickMember`. Audited.
    */
@@ -1744,6 +1760,8 @@ export type Mutation = {
   incrementWorkspaceState: WorkspaceStateEntryGql;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
+  /** Join a workspace on another host; the relay presents the delegation and subscribes. */
+  joinRemoteWorkspace: RemoteJoinResult;
   joinServerByInvite: JoinServerByInvitePayload;
   /** Start a key login: a single-use challenge for a device to sign. No session needed. */
   keyLoginChallenge: KeyLoginChallenge;
@@ -1778,6 +1796,11 @@ export type Mutation = {
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
   recordFeatureUsage: SkillProfileGql;
+  /**
+   * A login challenge from the host, for joining one of its workspaces, and the workspace
+   * `inviteToken` names.
+   */
+  remoteJoinChallenge: RemoteJoinChallenge;
   removeContact: Scalars['Boolean']['output'];
   /**
    * Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
@@ -1788,6 +1811,8 @@ export type Mutation = {
   removeRotationLayer: Scalars['Boolean']['output'];
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
+  /** Present fresh delegations to their hosts (at most 64). */
+  renewDelegations: Array<RemoteSubscription>;
   replyToMessage: Message;
   /** Report a DM request as abuse; a pending one is ignored too. */
   reportDmRequest: Scalars['Boolean']['output'];
@@ -2039,6 +2064,11 @@ export type MutationAdvanceIncidentPhaseArgs = {
 };
 
 
+export type MutationApplyRemoteRevocationArgs = {
+  revocation: SignedStatementInput;
+};
+
+
 export type MutationBanMemberArgs = {
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   reason?: InputMaybe<Scalars['String']['input']>;
@@ -2277,6 +2307,11 @@ export type MutationJoinChannelArgs = {
 };
 
 
+export type MutationJoinRemoteWorkspaceArgs = {
+  input: JoinRemoteWorkspaceInput;
+};
+
+
 export type MutationJoinServerByInviteArgs = {
   input: JoinServerByInviteInput;
 };
@@ -2347,6 +2382,13 @@ export type MutationRecordFeatureUsageArgs = {
 };
 
 
+export type MutationRemoteJoinChallengeArgs = {
+  hostOrigin: Scalars['String']['input'];
+  hostServerId: Scalars['String']['input'];
+  inviteToken?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type MutationRemoveContactArgs = {
   principalId: Scalars['String']['input'];
 };
@@ -2367,6 +2409,11 @@ export type MutationRemoveRotationLayerArgs = {
 export type MutationRemoveWorkspacePluginArgs = {
   pluginId: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationRenewDelegationsArgs = {
+  delegations: Array<SignedStatementInput>;
 };
 
 
@@ -3022,6 +3069,8 @@ export type Query = {
    * needed: the link id is the capability.
    */
   deviceLinkAnswer?: Maybe<SealedMessage>;
+  /** How the revocation of one of the caller's devices reached each host holding the caller. */
+  deviceRevocationStatus: Array<RevocationFanout>;
   /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
   /** List a server's escalation policies. Any workspace member may read. */
@@ -3145,6 +3194,8 @@ export type Query = {
   remoteIdentity: RemoteIdentity;
   /** Pin the server at `origin` through this relay and return its discovery document. */
   remoteServer: RemoteServer;
+  /** The caller's subscriptions to workspaces on other hosts through this relay. */
+  remoteSubscriptions: Array<RemoteSubscription>;
   resolveKeybind?: Maybe<Keybind>;
   resolvedKeybinds: Array<Keybind>;
   /**
@@ -3273,6 +3324,11 @@ export type QueryDeviceLinkArgs = {
 
 export type QueryDeviceLinkAnswerArgs = {
   linkId: Scalars['String']['input'];
+};
+
+
+export type QueryDeviceRevocationStatusArgs = {
+  deviceId: Scalars['ID']['input'];
 };
 
 
@@ -3672,6 +3728,21 @@ export type RemoteIdentity = {
 };
 
 /** Someone from another server to start a conversation with. */
+export type RemoteJoinChallenge = {
+  challengeId: Scalars['ID']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  nonce: Scalars['String']['output'];
+  /** The workspace the invite token names, read without using the token up; null without one. */
+  workspaceId?: Maybe<Scalars['ID']['output']>;
+};
+
+export type RemoteJoinResult = {
+  hostServerId: Scalars['String']['output'];
+  role: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+  workspaceId: Scalars['ID']['output'];
+};
+
 export type RemoteMemberInput = {
   principalId: Scalars['String']['input'];
   /** Their relays, tried in order to fetch their identity. */
@@ -3693,6 +3764,15 @@ export type RemoteServer = {
   discovery: Scalars['String']['output'];
   origin: Scalars['String']['output'];
   serverId: Scalars['String']['output'];
+};
+
+/** This relay's subscription to a workspace on another host, for the caller. */
+export type RemoteSubscription = {
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  hostServerId: Scalars['String']['output'];
+  /** `active`, or another word saying why not (`refused`, `expired`). */
+  status: Scalars['String']['output'];
+  workspaceId: Scalars['ID']['output'];
 };
 
 export type ReplyToMessageInput = {
@@ -3731,6 +3811,21 @@ export type RequestMlsReaddInput = {
   request: SignedStatementInput;
   serverId: Scalars['ID']['input'];
 };
+
+/** How a device revocation reached one host. */
+export type RevocationFanout = {
+  /** The host's signed `revocation-ack`, once it answered. */
+  ack?: Maybe<SignedStatement>;
+  attempts: Scalars['Int']['output'];
+  hostServerId: Scalars['String']['output'];
+  status: RevocationFanoutStatus;
+};
+
+export enum RevocationFanoutStatus {
+  ACKED = 'ACKED',
+  GAVE_UP = 'GAVE_UP',
+  PENDING = 'PENDING'
+}
 
 export type RotateIdentityKeyInput = {
   /** Device certificate under the new identity key. Required for a recovery rotation. */

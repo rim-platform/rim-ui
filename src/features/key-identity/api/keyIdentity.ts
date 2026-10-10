@@ -595,13 +595,18 @@ export async function syncKeyLog(identity: MyKeyIdentity): Promise<LogStatus | n
   });
 }
 
-export async function revokeDevice(identity: MyKeyIdentity, deviceId: string): Promise<void> {
+/** Revoke a device; returns the signed revocation, which other servers are sent too. */
+export async function revokeDevice(
+  identity: MyKeyIdentity,
+  deviceId: string,
+): Promise<SignedStatementInput> {
   const revocation = await keyCommand<SignedStatementInput>("key_identity_sign_revocation", {
     principalId: identity.principalId,
     keyLog: logStatements(identity.keyLog),
     deviceId,
   });
   await graphqlClient.request(REVOKE_MUTATION, { revocation });
+  return revocation;
 }
 
 /** Replace the identity key. The recovery key and every device stay. */
@@ -672,16 +677,13 @@ export function profileCardIsStale(identity: MyKeyIdentity, displayName: string)
   );
 }
 
-/**
- * Sign and publish a new profile card: display name, relays (`relays`, or the card's current
- * ones with this server among them), the active devices.
- */
-export async function publishProfileCard(
+/** Sign a new profile card (version + 1) listing `relays`, without publishing it. */
+export function signProfileCard(
   identity: MyKeyIdentity,
   displayName: string,
-  relays: string[] = profileCardRelays(identity),
-): Promise<void> {
-  const card = await keyCommand<SignedStatementInput>("key_identity_sign_profile_card", {
+  relays: string[],
+): Promise<SignedStatementInput> {
+  return keyCommand<SignedStatementInput>("key_identity_sign_profile_card", {
     principalId: identity.principalId,
     keyLog: logStatements(identity.keyLog),
     card: {
@@ -694,7 +696,24 @@ export async function publishProfileCard(
         .map((d) => statementInput(d.certificate)),
     },
   });
+}
+
+/**
+ * Sign and publish a new profile card: display name, relays (`relays`, or the card's current
+ * ones with this server among them), the active devices.
+ */
+export async function publishProfileCard(
+  identity: MyKeyIdentity,
+  displayName: string,
+  relays: string[] = profileCardRelays(identity),
+): Promise<void> {
+  const card = await signProfileCard(identity, displayName, relays);
   await graphqlClient.request(PUBLISH_CARD_MUTATION, { card });
+}
+
+/** The key log as statements, inception first, for signing elsewhere. */
+export function keyLogStatements(identity: MyKeyIdentity): SignedStatementInput[] {
+  return logStatements(identity.keyLog);
 }
 
 // ─── Recovery ───────────────────────────────────────────────────────────────

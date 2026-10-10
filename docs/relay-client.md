@@ -1,7 +1,7 @@
-# DMs across relays: the client
+# Relays: the client
 
 The app talks only to its own server, its **relay**. A DM or group homed on another relay (its
-creator's), and later a workspace hosted elsewhere, is reached through the relay: requests are
+creator's), and a workspace hosted elsewhere, is reached through the relay: requests are
 signed by this device and forwarded unchanged, answers and pushed events are signed by the host
 and checked here against the host's key, pinned on first use. The contract is rim-server
 `docs/specs/server-to-server-v1.md`; this document says how the desktop and the web app
@@ -26,8 +26,12 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/features/relay/inbox/autoAccept.ts`, `components/DmRequestInbox.tsx` | Message requests |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
 | `src/features/relay/runtime/relayRuntime.ts` | Start-up and wiring (`useRelayRuntime`, mounted in `AppShell`) |
+| `src/features/relay/remote/` | Workspaces on other servers: invite links, joining, delegations and their renewal, the relay's own key, a revocation's fan-out, switching relays |
+| `src/features/relay/direct/` | Talking to a server directly: the transport (`directTransport.ts`), GraphQL over it, the socket shim for `graphql-ws`, the direct connection and its runtime, one-off calls |
+| `src-tauri/src/relay/direct.rs` | The desktop's direct sessions: discovery fetches, GraphQL with each server's own cookie jar, WebSockets with that cookie |
 | `src/core/graphql/client.ts` | `setSpaceRouter`: the GraphQL client's `fetch` sends a request about a space elsewhere to its host |
-| `protocol/relay-vectors.json` | Known answers both platforms reproduce |
+| `src/core/graphql/config.ts` | `setRelayEndpoint`: the relay the desktop moved to after a switch |
+| `protocol/relay-vectors.json` | Known answers both platforms reproduce, including the delegation and the revocation acknowledgement and their conformance cases |
 
 ## Server pins
 
@@ -88,13 +92,14 @@ acknowledged. For each `RelayItem` the app:
    baseline. After 30 seconds or 256 held events the app reconciles: `streamHeads` through the
    host, a refetch of the space's lists and change feed (all host-signed answers), `last` moved
    to the head and what is held above it applied. If that fails the app shows "Messages may be
-   missing from <space>" with a retry and "Connect directly", disabled until the direct
-   connection lands;
+   missing from <space>" with a retry and "Connect directly" (see "Direct connection");
 5. applies it through the same handler as `workspaceEvents` (`applyWorkspaceEvent`);
 6. acknowledges (`ackRelayItems`) every item up to the first still held, and stores that cursor.
 
-`DmRequestReceived` refreshes the request inbox; `QueueOverflow` reconciles the spaces it names.
-`workspaceEvents` is not opened for a space elsewhere.
+`DmRequestReceived` refreshes the request inbox; `QueueOverflow` reconciles the spaces it names;
+`RevocationAcked` refreshes the revocation fan-out (the app reads its acknowledgements from
+`deviceRevocationStatus`, whatever the notice carries). `workspaceEvents` is not opened for a
+space elsewhere.
 
 ## Profile card and contacts
 
@@ -147,6 +152,130 @@ Accept, Ignore, Block (which also leaves the conversation through its home) and 
 relay. A request from someone who is a member of a workspace this person is in (by the member
 lists the workspaces' hosts answer) is accepted without asking.
 
+## Workspaces on other servers
+
+An invite to a workspace elsewhere is a link:
+`rim-invite:1:<host server id>:<host key hash>:<invite token>:<host origin>`. It is read like a
+device-link code (ASCII whitespace removed, at most 400 characters, scheme case ignored, split at
+the first four `:` after the scheme, so the origin keeps its colons). The join dialog takes it
+where it takes an invite code; plain codes still join workspaces on this server.
+
+Joining (`remote/joinRemote.ts`):
+
+1. `remoteServer(origin)` pins the host through the relay; the log must hash to the invite's
+   server id, and the key hash must name a key of the log followed only by `signer: server`
+   rotations. Anything else is refused before the host is asked anything.
+2. `remoteJoinChallenge(hostServerId, hostOrigin, inviteToken)` gets the host's login challenge
+   and the workspace the token names.
+3. The device signs a `login` statement whose `audience` is the host's server id
+   (`key_identity_sign_login_for_server`, or the browser's device key) and a delegation for the
+   relay (below).
+4. `joinRemoteWorkspace` joins. The space is bound to the host, the delegation kept, and the
+   host's `streamHeads` of `w` and `u:<principal id>` (asked through the forward path) become
+   the baseline of its events; without them the first event seen is the baseline.
+
+The workspace then shows in the rail after this server's own, under the name its host answers,
+and everything it shows is loaded through the forward path. A person with no workspace here
+opens their first one elsewhere.
+
+## Delegations
+
+A delegation lets the relay carry one workspace's traffic between this device and the
+workspace's host until it expires:
+
+```json
+{"v":2,"type":"delegation","principalId":"rimp1_…","deviceId":"<uuid>","relay":"rims1_…","relayKeyHash":"…",
+ "host":"rims1_…","workspaceId":"<uuid>","scope":"workspace","nonce":"<16 bytes>","issuedAt":"…","expiresAt":"…"}
+```
+
+It is signed by the device key over `rim.delegation.v1\0 || payload`, runs exactly 24 hours from
+a whole second, and names the relay by its server id and the hash of its current key, which the
+app reads from the relay's own discovery document (fetched directly and pinned like any server,
+`remote/relaySelf.ts`). Both platforms refuse fields a host would refuse (another scope, a nonce
+that is not 16 bytes, more than 24 hours, times that are not whole-second UTC).
+
+While the app runs it checks every 10 minutes, at start and whenever its WebSocket comes back:
+a workspace whose delegation (kept in IndexedDB `delegations`) has under 6 hours left, names
+another relay or is missing gets a new one, sent with `renewDelegations` (64 per call). A
+delegation the host refused is not kept. One that had already expired means every device was
+away long enough for the subscription to lapse: the space catches up through its change feed,
+its lists and its stream heads. Settings > Security > "Spaces through this relay" lists
+`remoteSubscriptions` with their status, the subscription's expiry and this device's delegation's,
+and renews them all on request.
+
+## Revocation
+
+Removing a device in Settings > Security keeps the signed revocation and follows it to every
+host holding the account (IndexedDB `meta`, so a restart does not lose it):
+
+- `deviceRevocationStatus(deviceId)` every 5 seconds, and at once on `RevocationAcked`. Each
+  host's acknowledgement is checked against the host's pinned key at its `keySeq`: it must name
+  the host, the principal and device of the revocation, and the SHA-256 of the revocation's
+  payload. An acknowledgement that does not verify counts as none.
+- Two minutes in, the app sends the revocation itself to every host without a verified
+  acknowledgement: it fetches the host's discovery document directly, checks it against the pin
+  and calls `applyRemoteRevocation` on the host's own `/api` (no session, no CSRF header), then
+  checks that acknowledgement the same way.
+- A host still without one is named: "<host> has not confirmed; the device keeps access to
+  <workspace> until <time>", where the time is the subscription's expiry and never more than 24
+  hours after the revocation, since every delegation the removed device signed runs out by then.
+
+## Direct connection
+
+The desktop app talks to a host itself when the relay fails it (`direct/directConnection.ts`):
+
+- **When.** Every 15 seconds the app looks at each host it uses: forwarded requests failing for
+  60 seconds (network errors, 5xx, answers that do not verify), the relay's WebSocket down for 60
+  seconds, or "Messages may be missing" still shown after reconciling. The first time for a host
+  it asks: "Connect directly to <host>? It will see your IP address", and remembers the answer
+  (IndexedDB `meta`, per account). "Connect directly" on the notice asks again.
+- **How.** It fetches the host's discovery document directly, checks it against the pin (a fork
+  stops it), opens a session on the Tauri side at the host's own endpoints, and signs in with
+  `keyLoginChallenge` and `loginWithKey`, the proof's `audience` the host's server id. GraphQL for
+  the host's spaces goes there instead of `/api/remote/…`, and `workspaceEvents` for each of its
+  spaces runs over a `graphql-ws` client whose socket the Tauri side opens with the host's
+  session cookie (`direct/directSocket.ts`). A banner says "Connected directly to <host>".
+  Meanwhile the relay stream holds that host's items, unapplied and unacknowledged.
+- **Back.** Every 60 seconds the app probes `relayInfo`. After two successes in a row it renews
+  the delegations through the relay, asks the host directly for the stream heads of every stream
+  it knows there, takes them as the baseline, runs the held relay items (those at or below a
+  head are dropped, so nothing applied directly is applied again), and closes the session and
+  its sockets.
+
+The Tauri side (`src-tauri/src/relay/direct.rs`) keeps one cookie jar per server, adds the
+`X-CSRF-Token` header from that server's `rim_csrf` cookie, and lets a session point only at
+`/api` and `/api/ws` of an origin whose discovery document it fetched. The webview never sees
+those cookies, and its own session stays with its relay.
+
+The web app cannot hold a session with another origin, so it fetches discovery documents and
+sends `applyRemoteRevocation` with plain `fetch` and nothing else; its "Connect directly" button
+is disabled with the reason beside it.
+
+## Switching relays
+
+Settings > Security > "Switch relays" (desktop: it signs cards with the identity key) moves the
+account to another relay in six steps, saved after each (`remote/relaySwitch.ts`):
+
+1. Pin the new relay from its discovery document, open a direct session and sign in there with
+   this device's key, or, the first time, `signupWithKey` with the account's key log, this
+   device's certificate and a proof for the new relay's server id.
+2. Publish a card listing both relays, the new one first, on both.
+3. Sign a delegation for the new relay for every workspace this account uses, those the old
+   relay hosts included, and present them with `renewDelegations` there.
+4. Drain the old relay's queue through `relayItems` into the stream processor; from step 3 on
+   every host delivers to both relays.
+5. If the old relay is going away, note the conversations in its direct space.
+6. Publish a card with the new relay only, call `leaveRelay` on the old one, copy this device's
+   records (spaces, stream positions, contact names) to the new account, link the device key to
+   the account there, and point the app at the new relay (`setRelayEndpoint`).
+
+The app then restarts on the new relay; its first key sign-in there uses the linked key. The
+carried stream positions make the new relay's copies of events already read duplicates, so
+nothing is applied twice and nothing is lost. The noted conversations get successors in the new
+relay's direct space, with the old relay's direct space bound as a space elsewhere. A step that
+fails shows why and stays where it stopped; "Continue" picks it up, also after a restart, signing
+in to the new relay again first.
+
 ## What needs two servers
 
 The vector, statement and flow tests run against mocks. These need two rim-servers with S5-2
@@ -155,3 +284,17 @@ edits and read state; a group with members on both; the request inbox (accept, i
 read first, auto-accept); a gap and its reconciliation (stop the home's outbox briefly); a host
 key rotation and a forged fork; the successor after the home is stopped for 7 days (or with the
 clock moved).
+
+With S5-4 on both servers (one the relay, one the host of a workspace):
+
+- joining from a `rim-invite:` link, channel traffic both ways, and the space loading through
+  the forward path; an invite whose key hash the host no longer uses;
+- delegation renewal (move the clock past 18 hours) and a lapse (keep every device away 24
+  hours), then the catch-up;
+- revoking a device with the host reachable (acknowledged through the relay), and with the
+  relay's fan-out blocked (sent directly at two minutes), and with the host down (named with the
+  expiry);
+- the direct connection: stop the relay for a minute, accept the notice, read and send in the
+  workspace, start the relay again and check nothing shows twice;
+- a relay switch between two relays with a workspace on a third server, sending messages
+  throughout, then restarting on the new relay.

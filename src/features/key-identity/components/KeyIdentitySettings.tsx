@@ -8,6 +8,11 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
+import { RevocationFanoutPanel } from "../../relay/components/RevocationFanoutPanel";
+import { followRevocation } from "../../relay/remote/useRevocationStore";
+import { RelaySpacesSettings } from "../../relay/components/RelaySpacesSettings";
+import { RelaySwitchPanel } from "../../relay/components/RelaySwitchPanel";
+import { useRelaySwitchStore } from "../../relay/remote/relaySwitchLive";
 import {
   abandonEnrollment,
   beginEnrollment,
@@ -277,8 +282,10 @@ function KeyIdentityOverview({
   const [cardError, setCardError] = useState<string | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
 
-  // Keep the profile card in step with the name, the devices and the identity key.
-  const cardStale = holdsIdentityKey && profileCardIsStale(identity, me.displayName);
+  // Keep the profile card in step with the name, the devices and the identity key; a relay
+  // switch publishes its own cards.
+  const switching = useRelaySwitchStore((s) => s.running || (s.state?.step ?? 0) >= 5);
+  const cardStale = holdsIdentityKey && !switching && profileCardIsStale(identity, me.displayName);
   const cardAttempt = useRef<string | null>(null);
   useEffect(() => {
     if (!cardStale) return;
@@ -386,10 +393,10 @@ function KeyIdentityOverview({
                 size="sm"
                 isLoading={busy}
                 onClick={() =>
-                  void run(
-                    () => revokeDevice(identity, confirm.deviceId),
-                    "Could not remove the device.",
-                  )
+                  void run(async () => {
+                    const revocation = await revokeDevice(identity, confirm.deviceId);
+                    await followRevocation(confirm.deviceId, revocation).catch(() => undefined);
+                  }, "Could not remove the device.")
                 }
               >
                 Remove device
@@ -400,7 +407,12 @@ function KeyIdentityOverview({
             </div>
           </div>
         )}
+        <RevocationFanoutPanel />
       </section>
+
+      <RelaySpacesSettings />
+
+      {holdsIdentityKey && <RelaySwitchPanel identity={identity} displayName={me.displayName} />}
 
       {holdsIdentityKey && <LinkDevicePanel identity={identity} displayName={me.displayName} />}
 
