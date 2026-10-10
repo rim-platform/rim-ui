@@ -27,7 +27,30 @@ vi.mock("../../plugins/api/usePluginCommands", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
+import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { MessageContextMenu } from "./MessageContextMenu";
+
+const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
+const deleteContext = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
+
+/** `ExecuteCommand` answers: held for confirmation first, then `then` for the confirmed re-send. */
+function heldThen(then: () => unknown) {
+  let calls = 0;
+  return () => {
+    calls += 1;
+    if (calls > 1) return then();
+    return {
+      executeCommand: {
+        status: "CONFIRMATION_REQUIRED",
+        message: "confirmation required for dangerous command",
+        payload: null,
+        followUpCommands: [],
+        confirmationRequired: challenge,
+      },
+    };
+  };
+}
 
 function serve(role: ServerMemberRoleGql, extra: Record<string, () => unknown> = {}) {
   routeRequests(requestMock, {
@@ -58,6 +81,7 @@ async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean, mess
         message={message}
         onClose={onClose}
       />
+      <ConfirmCommandModal />
     </QueryClientProvider>,
   );
   await waitFor(() =>
@@ -72,11 +96,12 @@ function labels(): string[] {
   return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
 }
 
-describe("MessageContextMenu — report and moderator delete (Track 1.2)", () => {
+describe("MessageContextMenu — report and delete", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
+    useConfirmationModalStore.getState().reset();
   });
 
   it("offers Report but no Delete on someone else's message to a member", async () => {
@@ -130,37 +155,60 @@ describe("MessageContextMenu — report and moderator delete (Track 1.2)", () =>
     expect(await screen.findByRole("alert")).toHaveTextContent("you already reported this message");
   });
 
-  it("lets a moderator delete someone else's message after a dangerous-action confirm", async () => {
-    serve(ServerMemberRoleGql.MODERATOR);
+  it("lets a moderator delete someone else's message once the confirmation dialog is confirmed", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, {
+      "mutation ExecuteCommand": heldThen(() => ({
+        executeCommand: { status: "SUCCESS", message: "message deleted", payload: null },
+      })),
+    });
     const { onClose } = await renderMenu(ServerMemberRoleGql.MODERATOR, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Delete this message?" });
-    expect(within(dialog).getByText("DANGEROUS")).toBeInTheDocument();
-    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
+    expect(within(dialog).getByText(/as a moderator/)).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("initiator-chip")).not.toBeInTheDocument();
+    const confirm = within(dialog).getByTestId("confirm-button");
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByTestId("verb-input"), { target: { value: "delete" } });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
 
-    await waitFor(() =>
-      expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([
-        {
-          input: {
-            commandId: "chat.delete_message",
-            args: undefined,
-            commandContext: {
-              workspaceId: "ws-1",
-              conversationId: "conv-1",
-              selectedMessageId: "msg-1",
-            },
-            isPipe: undefined,
-          },
-        },
-      ]),
-    );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Message deleted"));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([
+      { input: { commandId: "chat.delete_message", commandContext: deleteContext } },
+      {
+        input: {
+          commandId: "chat.delete_message",
+          commandContext: deleteContext,
+          confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
+        },
+      },
+    ]);
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("keeps the confirm open with the server's message when a moderator delete fails", async () => {
+  it("sends nothing more when the moderator cancels the confirmation", async () => {
+    serve(ServerMemberRoleGql.OWNER, {
+      "mutation ExecuteCommand": heldThen(() => {
+        throw new Error("the re-send must not happen");
+      }),
+    });
+    await renderMenu(ServerMemberRoleGql.OWNER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(useConfirmationModalStore.getState().request).toBeNull());
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm: Delete Message" }),
+    ).not.toBeInTheDocument();
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("toasts the server's message when a moderator delete fails", async () => {
     serve(ServerMemberRoleGql.OWNER, {
       "mutation ExecuteCommand": () => {
         throw graphqlError("NOT_FOUND", "not found");
@@ -168,9 +216,26 @@ describe("MessageContextMenu — report and moderator delete (Track 1.2)", () =>
     });
     await renderMenu(ServerMemberRoleGql.OWNER, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not found");
-    expect(toast.error).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not found"));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("deletes the viewer's own message through the same confirmation dialog", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ExecuteCommand": heldThen(() => ({
+        executeCommand: { status: "SUCCESS", message: "message deleted", payload: null },
+      })),
+    });
+    await renderMenu(ServerMemberRoleGql.MEMBER, true);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
+    expect(within(dialog).queryByText(/as a moderator/)).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByTestId("verb-input"), { target: { value: "delete" } });
+    fireEvent.click(within(dialog).getByTestId("confirm-button"));
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(2));
   });
 });
 

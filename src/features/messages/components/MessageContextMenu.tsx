@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
 import type { MessageItem } from "../../../core/types/messages";
-import { Dialog } from "../../../shared/ui/Dialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { toast } from "../../../shared/toast";
@@ -12,8 +11,10 @@ import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
-import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { ReportMessageDialog } from "./ReportMessageDialog";
+
+const MODERATOR_DELETE_DESCRIPTION =
+  "You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log.";
 
 interface MessageContextMenuProps {
   x: number;
@@ -50,16 +51,20 @@ export function MessageContextMenu({
   const pinMessage = usePinMessageMutation();
   const unpinMessage = useUnpinMessageMutation();
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
-  const [pendingDelete, setPendingDelete] = useState(false);
-  // Track 1.2: anyone can report someone else's message; Owner/Moderator can delete it.
+  // Anyone can report someone else's message; Owner/Moderator can delete it.
   const [pendingReport, setPendingReport] = useState(false);
-  const [pendingModeratorDelete, setPendingModeratorDelete] = useState(false);
   const canModerate = useCanModerate(workspaceId);
 
-  const handleDelete = useCallback(async () => {
-    setPendingDelete(false);
+  // The confirmation dialog for the delete comes from the server's challenge.
+  const handleDelete = useCallback(() => {
     onClose();
-    await deleteMessageFn(messageId);
+    void deleteMessageFn(messageId);
+  }, [messageId, deleteMessageFn, onClose]);
+
+  const handleModeratorDelete = useCallback(async () => {
+    onClose();
+    const deleted = await deleteMessageFn(messageId, { description: MODERATOR_DELETE_DESCRIPTION });
+    if (deleted) toast.success("Message deleted");
   }, [messageId, deleteMessageFn, onClose]);
 
   const items: DropdownMenuItem[] = useMemo(() => {
@@ -109,7 +114,7 @@ export function MessageContextMenu({
         id: "delete-message",
         label: "Delete Message",
         danger: true,
-        onSelect: () => setPendingDelete(true),
+        onSelect: handleDelete,
       });
     }
 
@@ -126,7 +131,7 @@ export function MessageContextMenu({
         id: "moderator-delete-message",
         label: "Delete Message",
         danger: true,
-        onSelect: () => setPendingModeratorDelete(true),
+        onSelect: () => void handleModeratorDelete(),
       });
     }
 
@@ -173,13 +178,13 @@ export function MessageContextMenu({
     workspaceId,
     conversationId,
     canModerate,
+    handleDelete,
+    handleModeratorDelete,
   ]);
 
   return (
     <>
-      {!pendingDelete && !pendingReport && !pendingModeratorDelete && (
-        <DropdownMenu items={items} position={{ x, y }} onClose={onClose} />
-      )}
+      {!pendingReport && <DropdownMenu items={items} position={{ x, y }} onClose={onClose} />}
       {pendingReport && (
         <ReportMessageDialog
           workspaceId={workspaceId}
@@ -192,57 +197,6 @@ export function MessageContextMenu({
           }}
         />
       )}
-      {pendingModeratorDelete && (
-        <ModerationDialog
-          title="Delete this message?"
-          description="You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log."
-          tone="danger"
-          chips={["DANGEROUS", "MODERATOR"]}
-          confirmLabel="Delete"
-          errorFallback="Failed to delete message"
-          onConfirm={() => deleteMessageFn(messageId, { throwOnError: true })}
-          onDone={() => {
-            setPendingModeratorDelete(false);
-            toast.success("Message deleted");
-            onClose();
-          }}
-          onClose={() => {
-            setPendingModeratorDelete(false);
-            onClose();
-          }}
-        />
-      )}
-      <Dialog
-        open={pendingDelete}
-        onClose={() => {
-          setPendingDelete(false);
-          onClose();
-        }}
-        title="Delete Message"
-      >
-        <p className="text-sm text-rim-text-muted">
-          Are you sure you want to delete this message? This cannot be undone.
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded px-3 py-1.5 text-sm text-rim-text-muted transition hover:text-rim-text"
-            onClick={() => {
-              setPendingDelete(false);
-              onClose();
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="rounded bg-rim-danger px-3 py-1.5 text-sm text-rim-text transition hover:bg-rim-danger"
-            onClick={handleDelete}
-          >
-            Delete
-          </button>
-        </div>
-      </Dialog>
     </>
   );
 }

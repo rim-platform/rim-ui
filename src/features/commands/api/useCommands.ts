@@ -12,6 +12,7 @@ import type {
   CommandDefinition,
   CommandResult,
 } from "../types";
+import type { ConfirmationProof } from "../runtime/humanConfirmation";
 
 const CommandsDocument = gql`
   query Commands($surface: CommandSurface, $commandContext: CommandContextInput) {
@@ -28,6 +29,7 @@ const CommandsDocument = gql`
       visibleInContextMenus
       keybindCapable
       dangerous
+      sensitivity
     }
   }
 `;
@@ -45,6 +47,11 @@ const ExecuteCommandDocument = gql`
         status
         message
         payload
+      }
+      confirmationRequired {
+        token
+        argsHash
+        expiresAt
       }
     }
   }
@@ -79,6 +86,7 @@ export function useExecuteCommandMutation() {
       args?: Record<string, unknown>;
       commandContext?: CommandContextInput;
       isPipe?: boolean;
+      confirmation?: ConfirmationProof;
     }) =>
       graphqlClient.request<{ executeCommand: CommandResult }>(ExecuteCommandDocument, {
         input: {
@@ -86,6 +94,7 @@ export function useExecuteCommandMutation() {
           args: input.args,
           commandContext: input.commandContext,
           isPipe: input.isPipe,
+          ...(input.confirmation && { confirmation: input.confirmation }),
         },
       }),
     // A `TIMED_OUT` answer (Mutating commands while timed out, Track 1.2) switches the

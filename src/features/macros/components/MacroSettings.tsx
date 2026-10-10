@@ -9,7 +9,6 @@ import {
   X,
   Wand2,
   Loader2,
-  AlertTriangle,
 } from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -18,17 +17,15 @@ import {
   useCreateMacroMutation,
   useUpdateMacroMutation,
   useDeleteMacroMutation,
-  useExecuteMacroMutation,
 } from "../api/useMacros";
 import type { Macro, MacroStep } from "../api/useMacros";
-import type { ConfirmationChallenge } from "../../../core/graphql/generated/schema-types";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast";
 import { AiMacroBuilder } from "./AiMacroBuilder";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
+import { runMacro } from "../runtime/runMacro";
 
 const MAX_STEPS = 20;
 
@@ -243,12 +240,6 @@ function MacroEditor({
   );
 }
 
-/** A macro run the server holds until the user confirms, with the challenge it issued. */
-interface PendingMacroConfirmation {
-  macro: Macro;
-  challenge: ConfirmationChallenge;
-}
-
 interface PendingAiMacro {
   name: string;
   description: string;
@@ -260,14 +251,12 @@ export function MacroSettings() {
   const { data: macros, isLoading } = useMyMacros(workspaceId ?? undefined);
   const { data: commands } = useCommands("PALETTE");
   const deleteMacro = useDeleteMacroMutation();
-  const executeMacro = useExecuteMacroMutation();
 
   const [editing, setEditing] = useState<Macro | "new" | null>(null);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
-  const [dangerousConfirm, setDangerousConfirm] = useState<PendingMacroConfirmation | null>(null);
 
   const handleAiStepsGenerated = useCallback((macro: GeneratedMacro) => {
     setPendingAiMacro({
@@ -291,38 +280,18 @@ export function MacroSettings() {
     [deleteMacro],
   );
 
-  /**
-   * Runs a macro. The server answers a dangerous one with `CONFIRMATION_REQUIRED` and a
-   * challenge; the confirmation dialog then shows, and confirming runs it again with the
-   * challenge as proof.
-   */
+  /** Runs a macro; one with a dangerous step asks for confirmation first. */
   const handleRunMacro = useCallback(
-    async (macro: Macro, proof?: ConfirmationChallenge) => {
+    async (macro: Macro) => {
+      if (!workspaceId) return;
       setExecutingId(macro.id);
-      setDangerousConfirm(null);
       try {
-        const result = await executeMacro.mutateAsync({
-          macroId: macro.id,
-          commandContext: { workspaceId: workspaceId ?? undefined },
-          ...(proof && {
-            confirmation: { inBandToken: { token: proof.token, argsHash: proof.argsHash } },
-          }),
-        });
-        const { status, message, confirmationRequired } = result.executeMacro;
-        if (status === "SUCCESS") {
-          toast.success(message || "Macro executed successfully");
-        } else if (status === "CONFIRMATION_REQUIRED" && confirmationRequired) {
-          setDangerousConfirm({ macro, challenge: confirmationRequired });
-        } else {
-          toast.error(message || "Macro execution failed");
-        }
-      } catch (err) {
-        toast.error(graphqlErrorMessage(err, "Failed to execute macro"));
+        await runMacro(macro, workspaceId, commands);
       } finally {
         setExecutingId(null);
       }
     },
-    [executeMacro, workspaceId],
+    [commands, workspaceId],
   );
 
   if (editing !== null) {
@@ -455,58 +424,6 @@ export function MacroSettings() {
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Dangerous command confirmation dialog */}
-      {dangerousConfirm && (
-        <div className="mt-4 rounded-lg border border-rim-danger/30 bg-rim-danger/5 p-4 space-y-3">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-danger" />
-            <div>
-              <p className="text-sm font-medium text-rim-danger">
-                Macro contains dangerous commands
-              </p>
-              <p className="mt-1 text-xs text-rim-text-muted">
-                &ldquo;{dangerousConfirm.macro.name}&rdquo; includes commands marked as dangerous.
-                These may delete data or make irreversible changes. Are you sure you want to run it?
-              </p>
-              {commands && (
-                <div className="mt-2 space-y-1">
-                  {[
-                    ...new Set(
-                      dangerousConfirm.macro.steps
-                        .filter((s) => commands.some((c) => c.id === s.commandId && c.dangerous))
-                        .map((s) => s.commandId),
-                    ),
-                  ].map((cmdId) => (
-                    <div key={cmdId} className="flex items-center gap-1.5 text-xs">
-                      <span className="h-1 w-1 rounded-full bg-rim-danger" />
-                      <span className="font-mono text-rim-text-faint">{cmdId}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                void handleRunMacro(dangerousConfirm.macro, dangerousConfirm.challenge)
-              }
-              className="rounded-lg bg-rim-danger/20 px-3 py-1.5 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/30"
-            >
-              Run anyway
-            </button>
-            <button
-              type="button"
-              onClick={() => setDangerousConfirm(null)}
-              className="rounded-lg border border-rim-line px-3 py-1.5 text-xs text-rim-text-muted transition hover:bg-rim-void/50"
-            >
-              Cancel
-            </button>
-          </div>
         </div>
       )}
     </div>

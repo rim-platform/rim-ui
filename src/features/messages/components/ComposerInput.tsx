@@ -15,6 +15,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { CommandDefinition } from "../../commands/types";
@@ -279,7 +280,7 @@ export function ComposerInput({
             (input) => executeMutationRef.current.mutateAsync(input),
             { commandContext: workspaceId ? { workspaceId } : undefined },
           );
-          if (result && result.status === "ERROR") {
+          if (result && result.status === "ERROR" && !isCancelledResult(result)) {
             toast.error(result.message || "Command failed");
           }
         } catch (err: unknown) {

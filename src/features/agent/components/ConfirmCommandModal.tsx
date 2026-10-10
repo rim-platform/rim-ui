@@ -22,6 +22,7 @@ const FOCUSABLE_SELECTOR =
 
 const ARG_DISPLAY_LIMIT = 10;
 const ARG_VALUE_TRUNCATE_AT = 200;
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 interface SeverityVisuals {
   borderAccent: string;
@@ -101,6 +102,10 @@ interface ContainerProps {
   onReject: () => void;
 }
 
+/**
+ * Confirmation dialog for a command the server holds with `CONFIRMATION_REQUIRED`, whether
+ * the AI agent or the user started it. A `RESTRICTED` command needs its verb typed first.
+ */
 export function ConfirmCommandModal() {
   const request = useConfirmationModalStore((s) => s.request);
   const approve = useConfirmationModalStore((s) => s.approve);
@@ -113,17 +118,20 @@ export function ConfirmCommandModal() {
 function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerProps) {
   const currentConversationId = useShellStore((s) => s.selectedConversationId);
 
-  const visuals = useMemo(() => severityVisuals(request.sensitivity), [request.sensitivity]);
+  const byUser = request.initiator === "user";
+  // The server holds a user's command only when it is dangerous or stricter, so an unknown
+  // sensitivity is shown as MUTATING.
+  const sensitivity = request.sensitivity ?? (byUser ? CommandSensitivity.MUTATING : undefined);
+  const visuals = useMemo(() => severityVisuals(sensitivity), [sensitivity]);
   const sameTurn = !!request.sameTurnAfterToolResult;
   // Tier-4 trigger per §4.8: RESTRICTED, OR same-turn-after-tool-result +
   // sensitivity ≥ MUTATING.
   const requireType =
-    visuals.requireTypeToConfirm ||
-    (sameTurn && request.sensitivity === CommandSensitivity.MUTATING);
+    visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING);
 
   const expectedVerb = useMemo(
-    () => deriveConfirmationVerb(request.commandId),
-    [request.commandId],
+    () => request.verb ?? deriveConfirmationVerb(request.commandId),
+    [request.verb, request.commandId],
   );
 
   const crossChannel = useMemo(
@@ -184,6 +192,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
       onReject();
       return;
     }
+    // A delay past the timer's 32-bit limit would fire at once.
+    if (ms > MAX_TIMER_DELAY_MS) return;
     const t = setTimeout(() => onReject(), ms);
     return () => clearTimeout(t);
   }, [request.expiresAt, onReject]);
@@ -229,7 +239,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
     }
   }
 
-  const sensitivityLabel = severityWireLabel(request.sensitivity);
+  const sensitivityLabel = severityWireLabel(sensitivity);
   const titleId = `confirm-cmd-title-${request.token}`;
   const descId = `confirm-cmd-desc-${request.token}`;
 
@@ -286,7 +296,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
             {/* Title + subtitle */}
             <div>
               <h2 id={titleId} className="text-xl font-medium text-rim-text">
-                {titlePrefix(request)} <span className="text-rim-accent">{request.toolName}</span>
+                {byUser ? "Confirm:" : "Agent wants to:"}{" "}
+                <span className="text-rim-accent">{request.toolName}</span>
               </h2>
               {/* `description` is the human-facing consequence line, written
                   for humans and not clamp-prone the way `nlDescription` (model-facing, tuned for
@@ -301,7 +312,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
 
             {/* Hidden SR description, read in order per §6.2 */}
             <span id={descId} className="sr-only">
-              {visuals.srLabel}. Initiated by AI agent.
+              {visuals.srLabel}. {byUser ? "Initiated by you." : "Initiated by AI agent."}
               {crossChannel
                 ? ` Destination differs from active conversation; will post in conversation ${crossChannel.targetId.slice(0, 8)}.`
                 : ""}
@@ -323,15 +334,17 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               >
                 {sensitivityLabel}
               </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                  "bg-rim-accent-strong/30 text-rim-accent-strong",
-                )}
-                data-testid="initiator-chip"
-              >
-                <Bot className="h-3 w-3" /> AGENT
-              </span>
+              {!byUser && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                    "bg-rim-accent-strong/30 text-rim-accent-strong",
+                  )}
+                  data-testid="initiator-chip"
+                >
+                  <Bot className="h-3 w-3" /> AGENT
+                </span>
+              )}
             </div>
 
             {/* Cross-channel warning chip (§4.5).
@@ -463,14 +476,6 @@ function RimSystemBadge() {
       RIM
     </span>
   );
-}
-
-function titlePrefix(request: ConfirmationRequest): string {
-  // Phase 4 only ever opens this modal from the AGENT initiator (the gate
-  // is wired into the agent runtime). Keep the prefix table for when
-  // human-initiated dispatchers route through here too (Phase 5+).
-  void request;
-  return "Agent wants to:";
 }
 
 function ArgsBlock({ args }: { args: Record<string, unknown> }) {

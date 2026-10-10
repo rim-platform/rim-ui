@@ -22,7 +22,7 @@ export function findPluginCommand(qualifiedId: string): FoundPluginCommand | nul
   return null;
 }
 
-/** Payload of the result a plugin command returns when the user declined to confirm it. */
+/** Payload of a command result when the user declined to confirm the command. */
 export const CANCELLED_PAYLOAD = Object.freeze({ cancelled: true });
 
 /** True for the result of a dangerous command the user chose not to run. */

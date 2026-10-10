@@ -1,7 +1,11 @@
 import { useAgentStore } from "../../agent/state/useAgentStore";
-import { graphqlClient } from "../../../core/graphql/client";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { fetchMacroByName, ExecuteMacroDocument } from "../../macros/api/useMacros";
+import type { CommandDefinition } from "../../commands/types";
+import { fetchMacroByName, type Macro } from "../../macros/api/useMacros";
+import { runMacro } from "../../macros/runtime/runMacro";
 import { toast } from "../../../shared/toast";
 
 export interface SlashCommand {
@@ -35,31 +39,21 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       }
 
       void (async () => {
+        let macro: Macro | null;
         try {
-          const macro = await fetchMacroByName(workspaceId, macroName);
-          if (!macro) {
-            toast.error(`Macro not found: "${macroName}"`);
-            return;
-          }
-
-          const result = await graphqlClient.request<{
-            executeMacro: { status: string; message: string };
-          }>(ExecuteMacroDocument, {
-            input: {
-              macroId: macro.id,
-              commandContext: { workspaceId },
-            },
-          });
-
-          if (result.executeMacro.status === "ERROR") {
-            toast.error(`Macro failed: ${result.executeMacro.message}`);
-          } else {
-            toast.success(`Macro "${macroName}" executed`);
-          }
+          macro = await fetchMacroByName(workspaceId, macroName);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : "Unknown error";
-          toast.error(`Failed to execute macro: ${message}`);
+          toast.error(`Failed to execute macro: ${graphqlErrorMessage(err, "unknown error")}`);
+          return;
         }
+        if (!macro) {
+          toast.error(`Macro not found: "${macroName}"`);
+          return;
+        }
+        const commands = queryClient.getQueryData<CommandDefinition[]>(
+          queryKeys.commands("PALETTE", workspaceId),
+        );
+        await runMacro(macro, workspaceId, commands);
       })();
     },
   },
