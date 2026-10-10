@@ -20,7 +20,8 @@
     "format:check": "prettier --check .",
     "sdk:generate": "node sdk/plugin-sdk/scripts/generate-protocol.ts",
     "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods && tsc -p plugins/github-prs",
-    "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs"
+    "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
+    "skew:check": "node scripts/skew-check.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
