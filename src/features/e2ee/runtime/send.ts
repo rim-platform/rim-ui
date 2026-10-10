@@ -11,9 +11,10 @@
 import { getApiOrigin } from "../../../core/graphql/config";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
+import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 import type { MessageAuthor, MessageItem } from "../../../core/types/messages";
 import { hostOf } from "../../relay/state/useRelayStore";
-import { remoteFetch } from "../../relay/transport/remoteFetch";
+import { asResponse, remoteFetch } from "../../relay/transport/remoteFetch";
 import {
   createAttachment,
   finalizeAttachment,
@@ -190,11 +191,18 @@ export async function downloadBlob(workspaceId: string, attachmentId: string): P
   const host = hostOf(workspaceId);
   if (host) {
     const res = await remoteFetch(host, path, { method: "GET" });
-    if (res.status < 200 || res.status >= 300) throw new Error(`Download failed: ${res.status}`);
+    if (res.status < 200 || res.status >= 300) {
+      throw (
+        (await featureDisabledFromResponse(asResponse(res))) ??
+        new Error(`Download failed: ${res.status}`)
+      );
+    }
     return res.body;
   }
   const res = await fetch(`${getApiOrigin()}${path}`, { credentials: "include" });
-  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  if (!res.ok) {
+    throw (await featureDisabledFromResponse(res)) ?? new Error(`Download failed: ${res.status}`);
+  }
   return new Uint8Array(await res.arrayBuffer());
 }
 

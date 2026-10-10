@@ -49,8 +49,18 @@ export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
 
   add: (toast) => {
-    const id = toast.id ?? `toast-${++nextId}`;
-    const existing = get().toasts.find((t) => t.id === id);
+    // A toast without an id that repeats a showing one (same variant, title and description)
+    // refreshes that one instead of stacking a copy.
+    const existing = toast.id
+      ? get().toasts.find((t) => t.id === toast.id)
+      : get().toasts.find(
+          (t) =>
+            !t.dismissing &&
+            t.variant === toast.variant &&
+            t.title === toast.title &&
+            t.description === toast.description,
+        );
+    const id = existing?.id ?? toast.id ?? `toast-${++nextId}`;
 
     if (existing) {
       // Deduplicate: update existing toast

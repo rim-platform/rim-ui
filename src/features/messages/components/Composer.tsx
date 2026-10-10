@@ -35,6 +35,8 @@ import { useMyTimeout } from "../../workspaces/hooks/useMyTimeout";
 import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import { useSlowModeStore } from "../state/useSlowModeStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { reportFeatureDisabled } from "../../../core/query/queryClient";
 import { ComposerInput } from "./ComposerInput";
 import { OfflineComposerNotice, SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
@@ -116,6 +118,8 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
   const isModerator = useCanModerate(workspaceId);
   const slowModeSeconds = conversation?.slowModeSeconds ?? 0;
   const slowModeBlockedUntil = useSlowModeStore((s) => s.blockedUntil[conversationId]);
+  // Without attachments on the server, the composer offers no attach button and takes no drop.
+  const attachments = useServerFeature("attachments").enabled;
 
   // Load draft on mount and when conversationId changes
   useEffect(() => {
@@ -154,6 +158,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
    * timeouts give the text back, since the message never left.
    */
   function handleSendError(err: unknown, fallback: string, unsentText?: string) {
+    if (reportFeatureDisabled(err, qc)) return;
     const code = graphqlErrorCode(err);
     const waitSeconds = retryAfterSeconds(err);
     if (waitSeconds !== undefined) {
@@ -398,6 +403,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
   }, []);
 
   function handleDragOver(e: React.DragEvent) {
+    if (!attachments) return;
     e.preventDefault();
     setIsDragOver(true);
   }
@@ -410,6 +416,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragOver(false);
+    if (!attachments) return;
     if (e.dataTransfer.files.length > 0) {
       addFiles(e.dataTransfer.files);
     }
@@ -438,16 +445,18 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
       />
       <FilePreviewBar pendingFiles={pendingFiles} onRemove={removeFile} />
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          if (e.target.files) addFiles(e.target.files);
-          e.target.value = "";
-        }}
-      />
+      {attachments && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      )}
 
       <fieldset
         disabled={Boolean(timedOutUntil) || sendBlocked}
@@ -466,7 +475,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
           textareaRef={textareaRef}
           mentionMapRef={mentionMapRef}
           serverMembers={serverMembers}
-          onFilePickerOpen={() => fileInputRef.current?.click()}
+          onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
         />
       </fieldset>
     </form>

@@ -1665,6 +1665,10 @@ type Mutation {
 	heartbeat(input: HeartbeatInput!): Boolean!
 	muteConversation(input: MuteConversationInput!): Boolean!
 	unmuteConversation(input: UnmuteConversationInput!): Boolean!
+	"""
+	`FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
+	logged instead of sent, as before.
+	"""
 	requestPasswordReset(username: String!): Boolean!
 	resetPassword(token: String!, newPassword: String!): Boolean!
 	createCustomEmoji(input: CreateCustomEmojiInput!): CustomEmoji!
@@ -2434,7 +2438,7 @@ type Query {
 	"""
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
-	The server's release version and API version. Readable without a session.
+	The server's release version, API version and features. Readable without a session.
 	"""
 	serverInfo: ServerInfo!
 }
@@ -2812,7 +2816,42 @@ type ServerBan {
 }
 
 """
-The running server build and the API version it speaks.
+One optional feature and whether it works here.
+"""
+type ServerFeatureInfo {
+	"""
+	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
+	`email`, `custom_emoji`, `workspace_plugins` or `ai_commands`. A client ignores a name
+	it does not know.
+	"""
+	key: String!
+	state: ServerFeatureState!
+	"""
+	Why an unavailable feature is unavailable; null otherwise.
+	"""
+	reason: String
+}
+
+"""
+Whether an optional feature works on this instance.
+"""
+enum ServerFeatureState {
+	"""
+	The feature works.
+	"""
+	ENABLED
+	"""
+	The operator switched it off.
+	"""
+	DISABLED
+	"""
+	The configuration lacks something the feature needs; `reason` says what.
+	"""
+	UNAVAILABLE
+}
+
+"""
+The running server build, the API version it speaks and the optional features it runs.
 """
 type ServerInfo {
 	"""
@@ -2823,6 +2862,10 @@ type ServerInfo {
 	The major version of this GraphQL API.
 	"""
 	apiVersion: Int!
+	"""
+	Every optional feature with its state on this instance.
+	"""
+	features: [ServerFeatureInfo!]!
 }
 
 type ServerMember {

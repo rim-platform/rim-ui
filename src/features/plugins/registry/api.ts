@@ -13,6 +13,7 @@ import type {
   WorkspacePlugin,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 import { BUNDLE_MEDIA_TYPE } from "../web/bundle";
 
 /** One registry entry as this client selects it. */
@@ -101,7 +102,10 @@ export interface UploadedBundle {
 const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
-/** Upload a bundle to the workspace's server, with the session and the CSRF header. */
+/**
+ * Upload a bundle to the workspace's server, with the session and the CSRF header. A server
+ * with workspace plugins switched off refuses it with a `FeatureDisabledError`.
+ */
 export async function uploadPluginBundle(
   serverId: string,
   bytes: Uint8Array,
@@ -120,6 +124,8 @@ export async function uploadPluginBundle(
     },
   );
   if (!response.ok) {
+    const disabled = await featureDisabledFromResponse(response);
+    if (disabled) throw disabled;
     let reason = `${response.status}`;
     try {
       const body = (await response.json()) as { error?: unknown };

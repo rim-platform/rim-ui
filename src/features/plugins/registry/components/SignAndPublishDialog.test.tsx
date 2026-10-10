@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { WorkspacePluginStatus } from "../../../../core/graphql/generated/schema-types";
+import {
+  ServerFeatureState,
+  WorkspacePluginStatus,
+} from "../../../../core/graphql/generated/schema-types";
+import { serverInfoQueryClient, type FakeFeatures } from "../../../../test/serverInfo";
 import type { MyKeyIdentity } from "../../../key-identity/api/keyIdentity";
 import { encodeBase64, sha256Hex } from "../../web/bundle";
 import { readSignatureFile } from "../signatureFile";
@@ -68,8 +72,8 @@ function builtSource(): SigningSource {
   };
 }
 
-async function signIt() {
-  const qc = new QueryClient();
+async function signIt(features?: FakeFeatures) {
+  const qc = features ? serverInfoQueryClient(features) : new QueryClient();
   render(
     <QueryClientProvider client={qc}>
       <SignAndPublishDialog plugin={installedHello()} identity={identity} onClose={() => {}} />
@@ -148,5 +152,11 @@ describe("Sign and publish", () => {
     });
     expect(bundle).toBe(builtSource().bundle);
     expect(beside).toBeNull();
+  });
+
+  it("offers only the signature file while workspace plugins are switched off", async () => {
+    await signIt({ workspace_plugins: ServerFeatureState.DISABLED });
+    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export…" })).toBeInTheDocument();
   });
 });

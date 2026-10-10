@@ -61,7 +61,8 @@ interface ComposerInputProps {
         avatarUrl: string | null;
       }>
     | undefined;
-  onFilePickerOpen: () => void;
+  /** Opens the file picker; without it the composer shows no attach button. */
+  onFilePickerOpen?: () => void;
 }
 
 export function ComposerInput({
@@ -445,15 +446,17 @@ export function ComposerInput({
   return (
     <>
       <div className="flex items-end gap-2">
-        <button
-          type="button"
-          onClick={onFilePickerOpen}
-          className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
-          title="Attach file"
-          aria-label="Attach file"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
+        {onFilePickerOpen && (
+          <button
+            type="button"
+            onClick={onFilePickerOpen}
+            className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
+            title="Attach file"
+            aria-label="Attach file"
+          >
+            <Paperclip className="h-4 w-4" />
+          </button>
+        )}
         <textarea
           ref={textareaRef}
           data-composer-input

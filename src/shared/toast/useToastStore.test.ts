@@ -58,6 +58,21 @@ describe("useToastStore", () => {
     expect(toasts[0].title).toBe("Updated");
   });
 
+  it("refreshes a showing toast instead of stacking an identical one without an id", () => {
+    const first = useToastStore.getState().add({ id: "named", variant: "error", title: "Off" });
+    const second = useToastStore.getState().add({ variant: "error", title: "Off" });
+    expect(second).toBe(first);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+  });
+
+  it("stacks toasts that differ in variant, title or description", () => {
+    useToastStore.getState().add({ variant: "error", title: "Off" });
+    useToastStore.getState().add({ variant: "info", title: "Off" });
+    useToastStore.getState().add({ variant: "error", title: "Off", description: "why" });
+    useToastStore.getState().add({ variant: "error", title: "Other" });
+    expect(useToastStore.getState().toasts).toHaveLength(4);
+  });
+
   it("updates an existing toast", () => {
     const id = useToastStore.getState().add({ variant: "error", title: "Oops" });
     useToastStore.getState().update(id, { title: "Fixed" });

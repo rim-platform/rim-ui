@@ -15,7 +15,12 @@ import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
-import { AboutServerApiBanner, AboutServerVersion } from "../../updater/components/AboutServer";
+import {
+  AboutServerApiBanner,
+  AboutServerFeatures,
+  AboutServerVersion,
+} from "../../updater/components/AboutServer";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -94,6 +99,8 @@ function AboutRim() {
             <AboutServerVersion />
           </div>
         </div>
+
+        <AboutServerFeatures />
 
         <AboutServerApiBanner />
 
@@ -227,7 +234,11 @@ export function SettingsPage() {
   // A requested tab that is hidden falls back to Profile without forgetting the request, so a
   // deep link lands once the role loads.
   const canModerate = useCanModerate(workspaceId ?? undefined);
-  const visibleTabs = tabs.filter((tab) => tab.key !== "workspace" || canModerate);
+  // Emoji management needs custom emoji on the server.
+  const customEmoji = useServerFeature("custom_emoji").enabled;
+  const visibleTabs = tabs.filter(
+    (tab) => (tab.key !== "workspace" || canModerate) && (tab.key !== "emoji" || customEmoji),
+  );
   const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
     ? activeTab
     : "profile";

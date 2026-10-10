@@ -68,6 +68,8 @@ vi.mock("../../key-identity/components/LinkThisDevice", () => ({
 
 import { LoginPage } from "./LoginPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
+import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -80,11 +82,12 @@ describe("LoginPage", () => {
     });
   });
 
-  function renderPage() {
+  function renderPage(features: FakeFeatures = {}) {
     return render(
       <MemoryRouter initialEntries={["/login"]}>
         <LoginPage />
       </MemoryRouter>,
+      { wrapper: withServerInfo(features) },
     );
   }
 
@@ -175,6 +178,12 @@ describe("LoginPage", () => {
   it("renders the Forgot password? link", () => {
     renderPage();
     expect(screen.getByText("Forgot password?")).toBeInTheDocument();
+  });
+
+  it("leaves out the Forgot password? link while the server sends no email", () => {
+    renderPage({ email: { state: ServerFeatureState.UNAVAILABLE, reason: "no SMTP" } });
+    expect(screen.getByText("Log in")).toBeInTheDocument();
+    expect(screen.queryByText("Forgot password?")).not.toBeInTheDocument();
   });
 
   it("reaches its primary actions by keyboard and signs in with Enter", async () => {

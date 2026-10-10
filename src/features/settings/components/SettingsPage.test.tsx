@@ -94,10 +94,17 @@ vi.mock("../../updater/components/AboutUpdates", () => ({
 vi.mock("../../updater/components/AboutServer", () => ({
   AboutServerVersion: () => <p>Server 8.8.8</p>,
   AboutServerApiBanner: () => <p role="status">Newer server API</p>,
+  AboutServerFeatures: () => <ul aria-label="Server features" />,
 }));
 
 import { SettingsPage } from "./SettingsPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
+import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
+
+function renderSettings(features: FakeFeatures = {}) {
+  return render(<SettingsPage />, { wrapper: withServerInfo(features) });
+}
 
 describe("SettingsPage", () => {
   beforeEach(() => {
@@ -108,7 +115,7 @@ describe("SettingsPage", () => {
   });
 
   it("renders with header and tabs", () => {
-    render(<SettingsPage />);
+    renderSettings();
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Profile")).toBeInTheDocument();
     expect(screen.getByText("Keybinds")).toBeInTheDocument();
@@ -123,7 +130,7 @@ describe("SettingsPage", () => {
 
   it("reaches every tab and the close button by keyboard and opens Keyboard with Enter", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
     const keyboard = screen.getByRole("button", { name: "Keyboard" });
     await expectReachableByKeyboard(user, [
       screen.getByRole("button", { name: "Close settings" }),
@@ -138,13 +145,13 @@ describe("SettingsPage", () => {
   });
 
   it("shows Profile tab content by default", () => {
-    render(<SettingsPage />);
+    renderSettings();
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
   it("switches to Keybinds tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Keybinds"));
     expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
@@ -153,7 +160,7 @@ describe("SettingsPage", () => {
 
   it("switches to Commands tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Commands"));
     expect(screen.getByTestId("command-settings")).toBeInTheDocument();
@@ -161,7 +168,7 @@ describe("SettingsPage", () => {
 
   it("switches to Plugins tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Plugins"));
     expect(await screen.findByTestId("plugin-settings")).toBeInTheDocument();
@@ -169,7 +176,7 @@ describe("SettingsPage", () => {
 
   it("switches to AI Agent tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("AI Agent"));
     expect(await screen.findByTestId("agent-settings")).toBeInTheDocument();
@@ -177,7 +184,7 @@ describe("SettingsPage", () => {
 
   it("switches to Account tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Account"));
     expect(screen.getByTestId("account-settings")).toBeInTheDocument();
@@ -185,7 +192,7 @@ describe("SettingsPage", () => {
 
   it("switches to About tab and shows about panel", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("About"));
     // About panel renders an "About RIM" heading plus product blurb.
@@ -199,7 +206,7 @@ describe("SettingsPage", () => {
 
   it("close button navigates to conversation surface", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByLabelText("Close settings"));
     expect(mockSetMainSurface).toHaveBeenCalledWith({ kind: "conversation" });
@@ -207,7 +214,7 @@ describe("SettingsPage", () => {
 
   it("Account tab can navigate back to Profile", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Account"));
     await user.click(screen.getByText("Go to profile"));
@@ -216,7 +223,7 @@ describe("SettingsPage", () => {
 
   it("Notifications tab renders", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Notifications"));
     expect(screen.getByTestId("notification-settings")).toBeInTheDocument();
@@ -224,7 +231,7 @@ describe("SettingsPage", () => {
 
   it("Messages tab shows the inline media switch", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Messages"));
     expect(screen.getByRole("switch", { name: "Show inline media" })).toBeInTheDocument();
@@ -232,7 +239,7 @@ describe("SettingsPage", () => {
 
   it("Macros tab renders", async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderSettings();
 
     await user.click(screen.getByText("Macros"));
     expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
@@ -242,26 +249,26 @@ describe("SettingsPage", () => {
 
   it("opens on the Plugins tab when surface.tab is 'plugins'", async () => {
     mockShellState.mainSurface = { kind: "settings", tab: "plugins" };
-    render(<SettingsPage />);
+    renderSettings();
     expect(await screen.findByTestId("plugin-settings")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
   });
 
   it("falls back to Profile tab when surface has no tab hint", () => {
     mockShellState.mainSurface = { kind: "settings" };
-    render(<SettingsPage />);
+    renderSettings();
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
   it("falls back to Profile tab when surface.tab is an unknown value", () => {
     mockShellState.mainSurface = { kind: "settings", tab: "does-not-exist" };
-    render(<SettingsPage />);
+    renderSettings();
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
   it("opens on the Keybinds tab when surface.tab is 'keybinds'", () => {
     mockShellState.mainSurface = { kind: "settings", tab: "keybinds" };
-    render(<SettingsPage />);
+    renderSettings();
     expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
   });
@@ -269,7 +276,7 @@ describe("SettingsPage", () => {
   describe("Workspace tab", () => {
     it("is hidden for an ordinary member, even when deep-linked", () => {
       mockShellState.mainSurface = { kind: "settings", tab: "workspace" };
-      render(<SettingsPage />);
+      renderSettings();
       expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
       expect(screen.queryByTestId("moderation-settings")).not.toBeInTheDocument();
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
@@ -278,10 +285,31 @@ describe("SettingsPage", () => {
     it("is offered to a moderator with the moderation settings", async () => {
       mockGate.canModerate = true;
       const user = userEvent.setup();
-      render(<SettingsPage />);
+      renderSettings();
 
       await user.click(screen.getByRole("button", { name: "Workspace" }));
       expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+    });
+  });
+
+  it("lists the server's features in About", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.getByRole("list", { name: "Server features" })).toBeInTheDocument();
+  });
+
+  describe("Emoji tab", () => {
+    it("is offered while the server runs custom emoji", () => {
+      renderSettings();
+      expect(screen.getByRole("button", { name: "Emoji" })).toBeInTheDocument();
+    });
+
+    it("is hidden, even when deep-linked, while custom emoji is switched off", () => {
+      mockShellState.mainSurface = { kind: "settings", tab: "emoji" };
+      renderSettings({ custom_emoji: ServerFeatureState.DISABLED });
+      expect(screen.queryByRole("button", { name: "Emoji" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
   });
 });

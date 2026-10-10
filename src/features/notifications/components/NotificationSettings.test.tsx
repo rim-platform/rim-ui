@@ -3,7 +3,13 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
-import { DigestFrequency, NotificationLevel } from "../../../core/graphql/generated/schema-types";
+import {
+  DigestFrequency,
+  NotificationLevel,
+  ServerFeatureState,
+} from "../../../core/graphql/generated/schema-types";
+import { fakeServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   callsTo,
@@ -56,8 +62,13 @@ function serve(
   });
 }
 
-async function renderSettings() {
+async function renderSettings(features?: FakeFeatures) {
   const qc = createTestQueryClient();
+  if (features) {
+    // The test client drops unobserved data at once; the form mounts after its settings load.
+    qc.setQueryDefaults(queryKeys.serverInfo, { gcTime: Infinity });
+    qc.setQueryData(queryKeys.serverInfo, fakeServerInfo(features));
+  }
   render(
     <QueryClientProvider client={qc}>
       <NotificationSettings />
@@ -80,6 +91,17 @@ describe("NotificationSettings", () => {
 
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("says email is not set up in place of the digest choice while the server sends none", async () => {
+    serve();
+    await renderSettings({
+      email: { state: ServerFeatureState.UNAVAILABLE, reason: "SMTP is not configured" },
+    });
+
+    expect(screen.queryByLabelText("Email digest")).not.toBeInTheDocument();
+    expect(screen.getByText("Email is not set up on this server.")).toBeInTheDocument();
+    expect(screen.getByText("SMTP is not configured")).toBeInTheDocument();
   });
 
   it("saves the rules with the server's variables", async () => {

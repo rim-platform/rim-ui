@@ -100,13 +100,15 @@ vi.mock("../state/useAgentStore", () => {
 
 import { AgentSettingsPanel } from "./AgentSettingsPanel";
 import { toast } from "../../../shared/toast/useToastStore";
+import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
-function setup() {
-  return render(<AgentSettingsPanel />);
+function setup(features: FakeFeatures = {}) {
+  return render(<AgentSettingsPanel />, { wrapper: withServerInfo(features) });
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -136,6 +138,18 @@ describe("AgentSettingsPanel", () => {
     setup();
     expect(screen.getByRole("heading", { name: "AI Agent" })).toBeInTheDocument();
     expect(screen.getByText(/Keys are stored in your secret vault/)).toBeInTheDocument();
+  });
+
+  it("says the AI command surface is switched off while the server has it off", () => {
+    setup({ ai_commands: ServerFeatureState.DISABLED });
+    expect(
+      screen.getByText("The AI command surface is switched off on this server."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no switched-off notice while the server runs AI commands", () => {
+    setup();
+    expect(screen.queryByText(/AI command surface is switched off/)).not.toBeInTheDocument();
   });
 
   it("renders the data-leakage security banner", async () => {

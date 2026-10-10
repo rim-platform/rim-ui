@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 
 import { server } from "../../../test/mocks/server";
@@ -7,7 +7,9 @@ import { mockGraphQLQuery } from "../../../test/mocks/graphql";
 import { renderWithProviders } from "../../../test/utils";
 import { CLIENT_API_VERSION } from "../api/serverInfoApi";
 import { NEWER_SERVER_API_MESSAGE } from "../hooks/useServerInfo";
-import { AboutServerApiBanner, AboutServerVersion } from "./AboutServer";
+import { AboutServerApiBanner, AboutServerFeatures, AboutServerVersion } from "./AboutServer";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
+import { withServerInfo } from "../../../test/serverInfo";
 
 function serveInfo(version: string, apiVersion: number) {
   server.use(mockGraphQLQuery("ServerInfo", { serverInfo: { version, apiVersion } }));
@@ -59,5 +61,59 @@ describe("About server rows", () => {
 
     expect(await screen.findByText("Server 0.0.1")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+describe("AboutServerFeatures", () => {
+  it("lists every known feature with its state, and the reason of an unavailable one", () => {
+    render(<AboutServerFeatures />, {
+      wrapper: withServerInfo({
+        attachments: ServerFeatureState.DISABLED,
+        email: { state: ServerFeatureState.UNAVAILABLE, reason: "SMTP is not configured" },
+      }),
+    });
+
+    const list = screen.getByRole("list", { name: "Server features" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "AttachmentsSwitched off",
+      "Link previewsOn",
+      "EmailNot set upSMTP is not configured",
+      "Custom emojiOn",
+      "Workspace pluginsOn",
+      "AI commandsOn",
+    ]);
+  });
+
+  it("leaves out a feature this client does not know", async () => {
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: {
+          version: "0.5.0",
+          apiVersion: CLIENT_API_VERSION,
+          features: [
+            { key: "attachments", state: "ENABLED", reason: null },
+            { key: "teleport", state: "DISABLED", reason: null },
+          ],
+        },
+      }),
+    );
+    renderWithProviders(<AboutServerFeatures />);
+
+    const list = await screen.findByRole("list", { name: "Server features" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.queryByText("teleport")).not.toBeInTheDocument();
+  });
+
+  it("shows nothing for a server that lists no features", async () => {
+    serveInfo("0.3.0", CLIENT_API_VERSION);
+    renderWithProviders(
+      <>
+        <AboutServerVersion />
+        <AboutServerFeatures />
+      </>,
+    );
+    expect(await screen.findByText("Server 0.3.0")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Server features" })).not.toBeInTheDocument();
   });
 });
