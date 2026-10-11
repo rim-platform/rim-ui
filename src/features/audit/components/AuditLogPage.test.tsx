@@ -5,13 +5,24 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../../../test/utils";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
+import {
+  AuditOutcomeGql,
+  ServerMemberRoleGql,
+  TypedVerbGql,
+} from "../../../core/graphql/generated/schema-types";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
+// `listAuditLog` requests; the workspace query is answered by `serverMock`.
 const requestMock = vi.fn();
+const serverMock = vi.fn();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
-    request: (...args: unknown[]) => requestMock(...args),
+    request: (document: unknown, variables: unknown) =>
+      String(document).includes("listAuditLog")
+        ? requestMock(document, variables)
+        : serverMock(document, variables),
   },
 }));
 
@@ -45,6 +56,10 @@ function makeEntry(overrides: {
   };
 }
 
+function serverWithRole(viewerRole: ServerMemberRoleGql) {
+  return { server: { id: "ws-1", name: "Workspace", viewerRole } };
+}
+
 function makePage(
   items: ReturnType<typeof makeEntry>[],
   opts: { hasNextPage?: boolean; nextCursor?: string | null } = {},
@@ -66,7 +81,79 @@ function makePage(
 describe("AuditLogPage", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    serverMock.mockReset();
     useShellStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "user-1" } });
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it.each([ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR])(
+    "asks a %s for the whole workspace log",
+    async (role) => {
+      useWorkspaceStore.setState({ workspaceId: "ws-1" });
+      serverMock.mockResolvedValue(serverWithRole(role));
+      requestMock.mockResolvedValue(makePage([]));
+      renderWithProviders(<AuditLogPage />);
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(requestMock.mock.calls[0][1].filter).toEqual({ serverId: "ws-1" });
+      await waitFor(() =>
+        expect(screen.getByText("No audit log entries yet.")).toBeInTheDocument(),
+      );
+      expect(screen.queryByTestId("audit-scope-note")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([ServerMemberRoleGql.MEMBER, ServerMemberRoleGql.GUEST])(
+    "asks a %s for their own actions in the workspace and says so",
+    async (role) => {
+      useWorkspaceStore.setState({ workspaceId: "ws-1" });
+      serverMock.mockResolvedValue(serverWithRole(role));
+      requestMock.mockResolvedValue(makePage([]));
+      renderWithProviders(<AuditLogPage />);
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(requestMock.mock.calls[0][1].filter).toEqual({
+        serverId: "ws-1",
+        actorUserId: "user-1",
+      });
+      expect(await screen.findByTestId("audit-scope-note")).toHaveTextContent(
+        "Showing your own actions",
+      );
+    },
+  );
+
+  it("asks for the viewer's own actions when no workspace is selected", async () => {
+    requestMock.mockResolvedValue(makePage([]));
+    renderWithProviders(<AuditLogPage />);
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    expect(requestMock.mock.calls[0][1].filter).toEqual({ actorUserId: "user-1" });
+    expect(serverMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("audit-scope-note")).toHaveTextContent("Showing your own actions");
+  });
+
+  it("holds the request until the viewer's role is known", async () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    serverMock.mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(<AuditLogPage />);
+
+    await waitFor(() => expect(serverMock).toHaveBeenCalledTimes(1));
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Loading audit log")).toBeInTheDocument();
+  });
+
+  it("falls back to the viewer's own actions when the role cannot be read", async () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    serverMock.mockRejectedValue(new Error("network failure"));
+    requestMock.mockResolvedValue(makePage([]));
+    renderWithProviders(<AuditLogPage />);
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    expect(requestMock.mock.calls[0][1].filter).toEqual({
+      serverId: "ws-1",
+      actorUserId: "user-1",
+    });
   });
 
   it("renders skeleton rows while loading", () => {
@@ -178,15 +265,16 @@ describe("AuditLogPage", () => {
     renderWithProviders(<AuditLogPage />);
 
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
-    // Initial call: no filter
-    expect(requestMock.mock.calls[0][1]).toMatchObject({ filter: null });
+    // Initial call: the viewer's own actions, no verb
+    expect(requestMock.mock.calls[0][1].filter).toEqual({ actorUserId: "user-1" });
 
     // Click Write filter
     fireEvent.click(screen.getByRole("button", { name: "Write", pressed: false }));
 
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
-    expect(requestMock.mock.calls[1][1]).toMatchObject({
-      filter: { typedVerb: TypedVerbGql.WRITE },
+    expect(requestMock.mock.calls[1][1].filter).toEqual({
+      actorUserId: "user-1",
+      typedVerb: TypedVerbGql.WRITE,
     });
   });
 
@@ -198,13 +286,14 @@ describe("AuditLogPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete", pressed: false }));
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
-    expect(requestMock.mock.calls[1][1]).toMatchObject({
-      filter: { typedVerb: TypedVerbGql.DELETE },
+    expect(requestMock.mock.calls[1][1].filter).toEqual({
+      actorUserId: "user-1",
+      typedVerb: TypedVerbGql.DELETE,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Delete", pressed: true }));
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(3));
-    expect(requestMock.mock.calls[2][1]).toMatchObject({ filter: null });
+    expect(requestMock.mock.calls[2][1].filter).toEqual({ actorUserId: "user-1" });
   });
 
   it("clear filter button resets filter to null", async () => {
@@ -221,7 +310,7 @@ describe("AuditLogPage", () => {
     fireEvent.click(clearBtns[0]);
 
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(3));
-    expect(requestMock.mock.calls[2][1]).toMatchObject({ filter: null });
+    expect(requestMock.mock.calls[2][1].filter).toEqual({ actorUserId: "user-1" });
   });
 
   it("close button navigates back to conversation surface", async () => {

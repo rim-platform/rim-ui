@@ -6,7 +6,11 @@ import { formatTime } from "../../../shared/utils/formatTime";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
 import type { AuditLogEntry } from "../../../core/graphql/generated/schema-types";
-import { useListAuditLog } from "../api/useListAuditLog";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useWorkspace } from "../../workspaces/api/useWorkspace";
+import { canModerate } from "../../workspaces/role";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useListAuditLog, type AuditLogScope } from "../api/useListAuditLog";
 
 // ── Typed verb display config ──────────────────────────────────────────────
 
@@ -142,15 +146,49 @@ function AuditRow({ entry }: AuditRowProps) {
   );
 }
 
+// ── Scope ──────────────────────────────────────────────────────────────────
+
+interface AuditScope {
+  /** The rows to request; `null` until the viewer's role in the workspace is known. */
+  scope: AuditLogScope | null;
+  /** Whether the viewer sees only their own actions rather than the whole workspace log. */
+  ownOnly: boolean;
+}
+
+/**
+ * The rows the viewer may read: Owners and Moderators read the current workspace's whole log;
+ * everyone else, and anyone with no workspace selected, reads their own actions.
+ */
+function useAuditScope(): AuditScope {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const userId = useAuthStore((s) => s.session?.userId ?? null);
+  const workspace = useWorkspace(workspaceId ?? undefined);
+
+  if (workspaceId && workspace.isPending) return { scope: null, ownOnly: false };
+  if (workspaceId && canModerate(workspace.data?.viewerRole)) {
+    return { scope: { serverId: workspaceId, actorUserId: null }, ownOnly: false };
+  }
+  if (!userId) return { scope: null, ownOnly: true };
+  return { scope: { serverId: workspaceId, actorUserId: userId }, ownOnly: true };
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export function AuditLogPage() {
+  const { scope, ownOnly } = useAuditScope();
+  // A new scope starts over from the first page with no filter.
+  const scopeKey = `${scope?.serverId ?? ""}:${scope?.actorUserId ?? ""}`;
+  return <AuditLogView key={scopeKey} scope={scope} ownOnly={ownOnly} />;
+}
+
+function AuditLogView({ scope, ownOnly }: AuditScope) {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const [verbFilter, setVerbFilter] = useState<TypedVerbGql | null>(null);
   const [afterCursor, setAfterCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
 
   const query = useListAuditLog({
+    scope,
     typedVerbFilter: verbFilter,
     after: afterCursor,
   });
@@ -248,6 +286,11 @@ export function AuditLogPage() {
             </button>
           )}
         </div>
+        {ownOnly && (
+          <p className="text-xs text-rim-text-muted" data-testid="audit-scope-note">
+            Showing your own actions.
+          </p>
+        )}
       </div>
 
       {/* Table */}

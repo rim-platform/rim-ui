@@ -77,8 +77,14 @@ export const queryKeys = {
   workspaceStateList: (serverId?: string, scope?: string, prefix?: string) =>
     ["workspaceStateList", serverId, scope ?? "SERVER", prefix] as const,
   pipelines: (serverId?: string) => ["pipelines", serverId] as const,
-  listAuditLog: (typedVerb?: string, after?: string) =>
-    ["listAuditLog", typedVerb ?? null, after ?? null] as const,
+  listAuditLog: (serverId?: string, actorUserId?: string, typedVerb?: string, after?: string) =>
+    [
+      "listAuditLog",
+      serverId ?? null,
+      actorUserId ?? null,
+      typedVerb ?? null,
+      after ?? null,
+    ] as const,
   serverConfig: () => ["serverConfig"] as const,
   // The server's release and API version; read once per session.
   serverInfo: ["serverInfo"] as const,

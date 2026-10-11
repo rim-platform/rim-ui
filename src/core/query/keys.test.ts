@@ -14,6 +14,27 @@ describe("queryKeys", () => {
     expect(queryKeys.myServers()).toEqual(["myServers"]);
   });
 
+  it("listAuditLog keys the scope, the verb and the cursor", () => {
+    expect(queryKeys.listAuditLog("ws-1", "user-1", "WRITE", "cursor-1")).toEqual([
+      "listAuditLog",
+      "ws-1",
+      "user-1",
+      "WRITE",
+      "cursor-1",
+    ]);
+  });
+
+  it("listAuditLog keeps a missing scope part as null so scopes never collide", () => {
+    expect(queryKeys.listAuditLog("ws-1")).toEqual(["listAuditLog", "ws-1", null, null, null]);
+    expect(queryKeys.listAuditLog(undefined, "user-1")).toEqual([
+      "listAuditLog",
+      null,
+      "user-1",
+      null,
+      null,
+    ]);
+  });
+
   it("serverMembers includes serverId", () => {
     expect(queryKeys.serverMembers("srv-1")).toEqual(["serverMembers", "srv-1"]);
   });
