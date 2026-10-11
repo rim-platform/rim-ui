@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { useCreateServerMutation } from "../api/useCreateServer";
@@ -44,7 +45,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
 
         {create.error && (
           <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-            {create.error instanceof Error ? create.error.message : "Failed to create workspace"}
+            {graphqlErrorMessage(create.error, "Failed to create workspace")}
           </p>
         )}
 

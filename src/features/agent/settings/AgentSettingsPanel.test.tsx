@@ -99,6 +99,7 @@ vi.mock("../state/useAgentStore", () => {
 });
 
 import { AgentSettingsPanel } from "./AgentSettingsPanel";
+import { useLiveModelsStore } from "../state/useLiveModelsStore";
 import { toast } from "../../../shared/toast/useToastStore";
 import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
@@ -174,6 +175,7 @@ describe("AgentSettingsPanel", () => {
       systemPrompt: "",
     };
     agentStoreState.hasApiKey = false;
+    useLiveModelsStore.setState({ byProvider: {} });
     answerIpc({});
   });
 
@@ -542,6 +544,10 @@ describe("AgentSettingsPanel", () => {
       expect(ipcCalls("agent_list_models")).toEqual([
         ["agent_list_models", { provider: "anthropic" }],
       ]);
+      expect(useLiveModelsStore.getState().byProvider.anthropic?.map((m) => m.name)).toEqual([
+        "Claude Opus 5.5",
+        "Claude Sonnet 5.5",
+      ]);
     });
 
     it("a failed fetch keeps the fallback list and shows the error without a toast", async () => {
@@ -596,6 +602,7 @@ describe("AgentSettingsPanel", () => {
       await act(async () => anthropicList.resolve(ANTHROPIC_LIVE));
 
       expect(agentStoreState.settings).toMatchObject({ providerId: "openai", modelId: "gpt-5.4" });
+      expect(useLiveModelsStore.getState().byProvider).toEqual({});
     });
   });
 

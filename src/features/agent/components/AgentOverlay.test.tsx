@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { withServerInfo } from "../../../test/serverInfo";
 import { useAgentStore } from "../state/useAgentStore";
+import { useLiveModelsStore } from "../state/useLiveModelsStore";
 
 vi.mock("../tools/loader", () => ({ loadAgentTools: vi.fn(() => Promise.resolve()) }));
 
@@ -36,5 +37,36 @@ describe("AgentOverlay and the ai_commands switch", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(useAgentStore.getState().isOpen).toBe(false);
+  });
+});
+
+describe("AgentOverlay model label", () => {
+  const opus = {
+    id: "claude-opus-5-5",
+    name: "Claude Opus 5.5",
+    contextWindow: 1_000_000,
+    supportsTools: true,
+    supportsStreaming: true,
+  };
+
+  beforeEach(() => {
+    localStorage.setItem("agent-disclaimer-accepted", "true");
+    useAgentStore.setState({
+      isOpen: true,
+      settings: { providerId: "anthropic", modelId: "claude-opus-5-5", systemPrompt: "" },
+    });
+    useLiveModelsStore.setState({ byProvider: {} });
+  });
+
+  it("names the model by its display name from the live list", () => {
+    useLiveModelsStore.setState({ byProvider: { anthropic: [opus] } });
+    render(<AgentOverlay />, { wrapper: withServerInfo() });
+    expect(screen.getByText("anthropic / Claude Opus 5.5")).toBeInTheDocument();
+  });
+
+  it("names the model by its whole id when the live list lacks it", () => {
+    useLiveModelsStore.setState({ byProvider: { openai: [{ ...opus, id: "gpt-5.4" }] } });
+    render(<AgentOverlay />, { wrapper: withServerInfo() });
+    expect(screen.getByText("anthropic / claude-opus-5-5")).toBeInTheDocument();
   });
 });

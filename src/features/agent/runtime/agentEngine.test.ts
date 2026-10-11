@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import type {
   AiChatRequest,
+  AiMessage,
   AiProvider,
   AiProviderConfig,
   AiStreamChunk,
 } from "../providers/types";
 import { useAgentStore } from "../state/useAgentStore";
+import { useLiveModelsStore } from "../state/useLiveModelsStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { commandsToBackendTools } from "../tools/loader";
@@ -267,6 +269,7 @@ beforeEach(() => {
   useAgentStore.getState().reset();
   useShellStore.getState().reset();
   useWorkspaceStore.getState().clearWorkspaceId();
+  useLiveModelsStore.setState({ byProvider: {} });
 });
 
 afterEach(() => {
@@ -328,6 +331,55 @@ describe("runAgent — engine harness sanity", () => {
 
     expect(useAgentStore.getState().status).toBe("error");
     expect(chatCalls).toBe(1);
+  });
+});
+
+describe("runAgent — context window", () => {
+  /** An earlier turn of about 1 000 tokens: over 70% of a 1 000-token window, far under 100 000. */
+  const earlier: AiMessage[] = [
+    { role: "user", content: "x".repeat(4_000) },
+    { role: "assistant", content: "ok" },
+  ];
+
+  /** How many messages the provider receives for a prompt that follows `earlier`. */
+  async function sentMessageCount(): Promise<number> {
+    let sent = 0;
+    vi.mocked(getProvider).mockReturnValue(
+      makeScriptedProvider({
+        rounds: [[{ kind: "done", usage: { inputTokens: 0, outputTokens: 0 } }]],
+        onRequest: (req) => {
+          sent = req.messages.length;
+        },
+      }),
+    );
+    await runAgent({
+      prompt: "hi",
+      providerId: "test-provider",
+      modelId: "test-model",
+      existingMessages: earlier,
+    });
+    return sent;
+  }
+
+  it("trims the history to the live list's context window when it has the model", async () => {
+    useLiveModelsStore.setState({
+      byProvider: {
+        "test-provider": [
+          {
+            id: "test-model",
+            name: "Test Model",
+            contextWindow: 1_000,
+            supportsTools: true,
+            supportsStreaming: true,
+          },
+        ],
+      },
+    });
+    expect(await sentMessageCount()).toBe(2);
+  });
+
+  it("keeps the fallback table's context window when the live list lacks the model", async () => {
+    expect(await sentMessageCount()).toBe(3);
   });
 });
 

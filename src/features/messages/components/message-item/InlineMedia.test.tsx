@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders as render } from "../../../../test/utils";
@@ -75,7 +75,9 @@ describe("InlineMedia", () => {
     );
     await user.click(screen.getByRole("button", { name: "Open image x.png" }));
     onListKeyDown.mockClear();
-    await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog");
+    // The dialog moves focus inside on the next animation frame; until then keys go to the list.
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
     await user.keyboard("j");
     expect(onListKeyDown).not.toHaveBeenCalled();
   });
