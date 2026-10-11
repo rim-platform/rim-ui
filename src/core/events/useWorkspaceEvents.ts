@@ -4,11 +4,15 @@ import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { logger } from "../logger";
 import { toast } from "../../shared/toast";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
-import type { WorkspaceEvent, MessageEventData } from "./types";
-import type { MessageItem, MessagesPage } from "../types/messages";
+import type { WorkspaceEvent } from "./types";
+import type { MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
 import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
+import {
+  insertTimelineMessage,
+  messageFromEvent,
+} from "../../features/messages/api/timelineMessages";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
 import { hostOf } from "../../features/relay/state/useRelayStore";
 import {
@@ -126,30 +130,6 @@ export function useWorkspaceEvents(workspaceId: string | null) {
   }, [workspaceId, qc]);
 }
 
-function eventMessageToCache(msg: MessageEventData): MessageItem {
-  return {
-    id: msg.id,
-    serverId: msg.server_id,
-    conversationId: msg.conversation_id,
-    threadId: msg.thread_id ?? null,
-    rootThreadId: msg.root_thread_id ?? null,
-    authorId: msg.author_id,
-    author: null,
-    text: msg.text ?? "",
-    hasAttachments: msg.has_attachments ?? false,
-    parentMessageId: msg.parent_message_id ?? null,
-    isPinned: false,
-    mentionedUserIds: [],
-    forwardedFromMessageId: msg.forwarded_from_message_id ?? null,
-    forwardedFrom: null,
-    isDeleted: msg.is_deleted,
-    sentAt: msg.sent_at,
-    reactions: [],
-    attachments: [],
-    linkPreviews: [],
-  };
-}
-
 /**
  * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
  * this server hosts, or a verified host event from the relay for a space elsewhere.
@@ -196,46 +176,7 @@ export function applyWorkspaceEvent(
 
   switch (event.type) {
     case "NewMessage": {
-      const cacheMessage = eventMessageToCache(event.message);
-      cacheMessage.serverId = workspaceId;
-
-      if (event.message.thread_id) {
-        // Thread reply — invalidate thread messages and thread metadata
-        qc.invalidateQueries({
-          queryKey: queryKeys.threadMessages(
-            workspaceId,
-            event.conversation_id,
-            event.message.thread_id,
-          ),
-        });
-        // Invalidate threadByRoot so reply count / lastMessageAt updates
-        qc.invalidateQueries({
-          queryKey: ["threadByRoot", workspaceId, event.conversation_id],
-        });
-      } else {
-        // Main conversation message — update cache directly
-        qc.setQueryData<InfiniteData<MessagesPage>>(
-          queryKeys.messages(workspaceId, event.conversation_id),
-          (old) => {
-            if (!old) return old;
-            const firstPage = old.pages[0];
-            if (!firstPage) return old;
-
-            // Deduplicate — skip if message already exists
-            const exists = old.pages.some((p) => p.items.some((m) => m.id === cacheMessage.id));
-            if (exists) return old;
-
-            // Items are now oldest-first, so append new message at the end
-            return {
-              ...old,
-              pages: [
-                { ...firstPage, items: [...firstPage.items, cacheMessage] },
-                ...old.pages.slice(1),
-              ],
-            };
-          },
-        );
-      }
+      insertTimelineMessage(qc, workspaceId, messageFromEvent(event.message));
 
       // Unread tracking via event bus; the feature filters (own message, active conversation).
       // Desktop notifications are decided by the server and arrive as `NotificationDue`.
@@ -247,8 +188,7 @@ export function applyWorkspaceEvent(
     }
 
     case "MessageUpdated": {
-      const updated = eventMessageToCache(event.message);
-      updated.serverId = workspaceId;
+      const updated = messageFromEvent(event.message);
 
       if (event.message.thread_id) {
         // Thread message — invalidate thread queries
