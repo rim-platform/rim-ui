@@ -4,9 +4,14 @@ import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, X } from "lucide-r
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { FORBIDDEN, graphqlErrorCode } from "../../../core/graphql/errors";
 import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
 import type { AuditLogEntry } from "../../../core/graphql/generated/schema-types";
-import { useListAuditLog } from "../api/useListAuditLog";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useWorkspace } from "../../workspaces/api/useWorkspace";
+import { canModerate } from "../../workspaces/role";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useListAuditLog, type AuditLogScope } from "../api/useListAuditLog";
 
 // ── Typed verb display config ──────────────────────────────────────────────
 
@@ -142,18 +147,53 @@ function AuditRow({ entry }: AuditRowProps) {
   );
 }
 
+// ── Scope ──────────────────────────────────────────────────────────────────
+
+interface AuditScope {
+  /** The rows to request; `null` until the viewer's role in the workspace is known. */
+  scope: AuditLogScope | null;
+  /** Whether the viewer sees only their own actions rather than the whole workspace log. */
+  ownOnly: boolean;
+}
+
+/**
+ * The rows the viewer may read: Owners and Moderators read the current workspace's whole log;
+ * everyone else, and anyone with no workspace selected, reads their own actions.
+ */
+function useAuditScope(): AuditScope {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const userId = useAuthStore((s) => s.session?.userId ?? null);
+  const workspace = useWorkspace(workspaceId ?? undefined);
+
+  if (workspaceId && workspace.isPending) return { scope: null, ownOnly: false };
+  if (workspaceId && canModerate(workspace.data?.viewerRole)) {
+    return { scope: { serverId: workspaceId, actorUserId: null }, ownOnly: false };
+  }
+  if (!userId) return { scope: null, ownOnly: true };
+  return { scope: { serverId: workspaceId, actorUserId: userId }, ownOnly: true };
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export function AuditLogPage() {
+  const { scope, ownOnly } = useAuditScope();
+  // A new scope starts over from the first page with no filter.
+  const scopeKey = `${scope?.serverId ?? ""}:${scope?.actorUserId ?? ""}`;
+  return <AuditLogView key={scopeKey} scope={scope} ownOnly={ownOnly} />;
+}
+
+function AuditLogView({ scope, ownOnly }: AuditScope) {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const [verbFilter, setVerbFilter] = useState<TypedVerbGql | null>(null);
   const [afterCursor, setAfterCursor] = useState<string | null>(null);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
 
   const query = useListAuditLog({
+    scope,
     typedVerbFilter: verbFilter,
     after: afterCursor,
   });
+  const forbidden = query.isError && graphqlErrorCode(query.error) === FORBIDDEN;
 
   const handleSelectVerb = useCallback((value: TypedVerbGql) => {
     setVerbFilter((prev) => (prev === value ? null : value));
@@ -195,9 +235,10 @@ export function AuditLogPage() {
 
   const summary = useMemo(() => {
     if (query.isPending) return "Loading audit log...";
+    if (forbidden) return "Not permitted.";
     if (query.isError) return "Failed to load audit log.";
     return `${items.length} entr${items.length === 1 ? "y" : "ies"}`;
-  }, [query.isPending, query.isError, items.length]);
+  }, [query.isPending, query.isError, forbidden, items.length]);
 
   return (
     <div className="flex h-full flex-col" data-testid="audit-log-page">
@@ -248,6 +289,11 @@ export function AuditLogPage() {
             </button>
           )}
         </div>
+        {ownOnly && (
+          <p className="text-xs text-rim-text-muted" data-testid="audit-scope-note">
+            Showing your own actions.
+          </p>
+        )}
       </div>
 
       {/* Table */}
@@ -275,7 +321,17 @@ export function AuditLogPage() {
             </ul>
           )}
 
-          {query.isError && (
+          {forbidden && (
+            <div role="alert" className="flex flex-col items-center gap-2 py-12 text-center">
+              <p className="text-sm text-rim-danger">You are not allowed to read this audit log.</p>
+              <p className="text-xs text-rim-text-muted">
+                Workspace owners and moderators see the whole log. Everyone else sees their own
+                actions.
+              </p>
+            </div>
+          )}
+
+          {query.isError && !forbidden && (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <p className="text-sm text-rim-danger">Failed to load audit log.</p>
               <button

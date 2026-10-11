@@ -2357,7 +2357,11 @@ export type Query = {
    * recovery rotation (`rotateIdentityKey`).
    */
   keyLog: Array<KeyLogEntry>;
-  /** Query the command audit log. Requires `audit.read` capability. */
+  /**
+   * Query the command audit log. Owners and moderators of a workspace read its whole log by
+   * setting `filter.serverId`. Everyone reads their own rows by setting `filter.actorUserId`
+   * to themselves. A filter with neither is rejected.
+   */
   listAuditLog: AuditLogPage;
   macroByName?: Maybe<MacroDef>;
   me: User;

@@ -2078,7 +2078,9 @@ type Query {
 	workspaceStateList(serverId: ID!, prefix: String!, scope: WorkspaceStateScopeGql!, limit: Int): [WorkspaceStateEntryGql!]!
 	pipelines(serverId: ID!, enabled: Boolean): [PipelineGql!]!
 	"""
-	Query the command audit log. Requires `audit.read` capability.
+	Query the command audit log. Owners and moderators of a workspace read its whole log by
+	setting `filter.serverId`. Everyone reads their own rows by setting `filter.actorUserId`
+	to themselves. A filter with neither is rejected.
 	"""
 	listAuditLog(filter: AuditLogFilterInput, pagination: AuditLogPaginationInput): AuditLogPage!
 	"""
