@@ -990,6 +990,7 @@ export type Message = {
    * plaintext messages.
    */
   encryption?: Maybe<MessageEncryption>;
+  /** The forwarded message; null when the viewer cannot read its conversation or it is gone. */
   forwardedFrom?: Maybe<Message>;
   forwardedFromMessageId?: Maybe<Scalars['ID']['output']>;
   hasAttachments: Scalars['Boolean']['output'];
@@ -2444,7 +2445,10 @@ export type Query = {
    * No authentication required — this is public configuration metadata.
    */
   registrationMode: RegistrationModeGql;
-  /** This server's id, roles and direct space. Readable without a session. */
+  /**
+   * This server's id, roles and direct space. Readable without a session; a signed-in local
+   * user of a relay becomes a guest of the direct space, if not one yet.
+   */
   relayInfo: RelayInfo;
   /**
    * The session device's queued host events above `after` (its cursor when omitted).
@@ -3057,6 +3061,12 @@ export type Server = {
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   /**
+   * The account holding the owner role; null when there is none, as in the direct space or
+   * once the owner's account is deleted. Workspace metadata: every member sees it, guests
+   * included.
+   */
+  owner?: Maybe<User>;
+  /**
    * The requesting actor's effective role in this server. **Display/affordance signal
    * only — not an authorization boundary.** Every mutation independently re-checks the
    * role server-side (defense in depth); this field just lets the client avoid rendering
@@ -3446,17 +3456,22 @@ export type UserPresenceGql = {
 
 /**
  * Minimal workspace info included in a workspace-invite preview. The workspace name and the
- * inviter's display name are shown to anyone holding the invite link.
+ * inviter's and owner's display names are shown to anyone holding the invite link.
  */
 export type WorkspaceInvitePreviewGql = {
   invitedByDisplayName: Scalars['String']['output'];
+  /** The workspace owner's display name, else username; null when the workspace has no owner. */
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
   serverId: Scalars['ID']['output'];
   serverName: Scalars['String']['output'];
 };
 
 export type WorkspacePlugin = {
   approvedAt: Scalars['DateTime']['output'];
-  /** Who approved the entry last; null once that account is deleted. */
+  /**
+   * Who approved the entry last; null once that account is deleted, and for a guest who
+   * shares no conversation with them.
+   */
   approvedBy?: Maybe<User>;
   displayName: Scalars['String']['output'];
   id: Scalars['ID']['output'];

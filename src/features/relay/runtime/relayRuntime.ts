@@ -30,7 +30,7 @@ import { useContactStore } from "../contacts/useContactStore";
 import { activeDirect } from "../direct/directConnection";
 import { startDirect } from "../direct/directRuntime";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
-import { refreshWorkspaceName, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
+import { refreshWorkspaceDetails, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { resetRelaySelf } from "../remote/relaySelf";
 import { finishOnNewRelay } from "../remote/relaySwitchLive";
 import { getRecord, putRecord } from "../state/relayDb";
@@ -187,7 +187,9 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
   void acceptWorkspaceMembers().catch(() => undefined);
 
   for (const space of spaces) {
-    if (space.kind === "workspace" && !space.name) void refreshWorkspaceName(space.spaceId);
+    if (space.kind === "workspace" && (!space.name || space.ownerName === undefined)) {
+      void refreshWorkspaceDetails(space.spaceId);
+    }
   }
   renewInBackground();
   void finishOnNewRelay(me.principalId).catch((err: unknown) =>

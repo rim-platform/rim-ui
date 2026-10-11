@@ -51,6 +51,10 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
 }));
 
+vi.mock("../../workspaces/api/useMyServers", () => ({
+  useMyServers: () => ({ data: [] }),
+}));
+
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InviteTokenType } from "../types";
 

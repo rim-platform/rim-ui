@@ -152,6 +152,9 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
         token={token}
         tokenType={preview.tokenType}
         workspaceName={preview.workspace?.serverName}
+        workspaceId={preview.workspace?.serverId}
+        invitedBy={preview.workspace?.invitedByDisplayName}
+        ownerName={preview.workspace?.ownerDisplayName}
       />
     );
   }
@@ -162,6 +165,8 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
       token={token}
       workspaceName={preview.workspace?.serverName}
       workspaceId={preview.workspace?.serverId}
+      invitedBy={preview.workspace?.invitedByDisplayName}
+      ownerName={preview.workspace?.ownerDisplayName}
       onSuccess={onSignupSuccess}
     />
   );

@@ -68,12 +68,16 @@ export function remoteHosts(): string[] {
   );
 }
 
-/** Remember a workspace's name, as its host answered it. */
-export async function setSpaceName(spaceId: string, name: string): Promise<void> {
+/** Remember a workspace's name or owner, as its host answered them. */
+export async function setSpaceDetails(
+  spaceId: string,
+  details: Partial<Pick<SpaceRecord, "name" | "ownerName">>,
+): Promise<void> {
   const state = useRelayStore.getState();
   const known = state.spaces[spaceId];
-  if (!known || known.name === name) return;
-  const space = { ...known, name };
+  if (!known) return;
+  const space = { ...known, ...details };
+  if (space.name === known.name && space.ownerName === known.ownerName) return;
   state.addSpace(space);
   await putRecord("spaces", space);
 }

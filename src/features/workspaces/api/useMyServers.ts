@@ -10,13 +10,20 @@ const MY_SERVERS_QUERY = gql`
     myServers {
       id
       name
+      owner {
+        id
+        username
+        displayName
+      }
     }
   }
 `;
 
-interface Server {
+export interface Server {
   id: string;
   name: string;
+  /** Null for the direct space, and once the owner's account is deleted. */
+  owner: { id: string; username: string; displayName: string | null } | null;
 }
 
 interface MyServersResponse {

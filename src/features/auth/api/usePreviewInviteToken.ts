@@ -25,7 +25,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import type { InviteTokenPreview, InviteErrorCode } from "../types";
+import type { InviteTokenPreview, InviteErrorCode, WorkspaceInvitePreview } from "../types";
 
 const PREVIEW_INVITE_TOKEN_QUERY = gql`
   query PreviewInviteToken($token: String!) {
@@ -36,6 +36,7 @@ const PREVIEW_INVITE_TOKEN_QUERY = gql`
         serverId
         serverName
         invitedByDisplayName
+        ownerDisplayName
       }
     }
   }
@@ -45,11 +46,7 @@ interface PreviewInviteTokenResponse {
   previewInviteToken: {
     tokenType: string;
     expiresAt: string | null;
-    workspace: {
-      serverId: string;
-      serverName: string;
-      invitedByDisplayName: string;
-    } | null;
+    workspace: WorkspaceInvitePreview | null;
   };
 }
 

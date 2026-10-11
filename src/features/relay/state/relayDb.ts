@@ -60,6 +60,8 @@ export interface SpaceRecord {
   kind: "direct" | "workspace";
   /** A workspace's name, as its host last answered. */
   name?: string;
+  /** A workspace owner's name as shown, as its host last answered; null when it has none. */
+  ownerName?: string | null;
 }
 
 /** The delegation this device signed for its relay, for one workspace elsewhere. */

@@ -17,6 +17,7 @@ import type {
   SignedStatement,
   SignedStatementInput,
 } from "../../../core/graphql/generated/schema-types";
+import { ownerName } from "../../workspaces/workspaceLabel";
 import type { RelayInfo } from "../state/useRelayStore";
 import {
   ACCEPT_DM_REQUEST_MUTATION,
@@ -36,6 +37,7 @@ import {
   REMOTE_JOIN_CHALLENGE_MUTATION,
   REMOTE_SERVER_QUERY,
   REMOTE_SUBSCRIPTIONS_QUERY,
+  REMOTE_WORKSPACE_OWNER_QUERY,
   REMOTE_WORKSPACE_QUERY,
   REMOVE_CONTACT_MUTATION,
   RENEW_DELEGATIONS_MUTATION,
@@ -277,4 +279,12 @@ export async function fetchRemoteWorkspaceName(serverId: string): Promise<string
     { serverId },
   );
   return res.server.name;
+}
+
+/** A workspace owner's name as shown, from its host; null when it has none. */
+export async function fetchRemoteWorkspaceOwner(serverId: string): Promise<string | null> {
+  const res = await graphqlClient.request<{
+    server: { id: string; owner: { username: string; displayName: string | null } | null };
+  }>(REMOTE_WORKSPACE_OWNER_QUERY, { serverId });
+  return ownerName(res.server.owner);
 }
