@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, X } from "lucide-r
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { FORBIDDEN, graphqlErrorCode } from "../../../core/graphql/errors";
 import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
 import type { AuditLogEntry } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -192,6 +193,7 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
     typedVerbFilter: verbFilter,
     after: afterCursor,
   });
+  const forbidden = query.isError && graphqlErrorCode(query.error) === FORBIDDEN;
 
   const handleSelectVerb = useCallback((value: TypedVerbGql) => {
     setVerbFilter((prev) => (prev === value ? null : value));
@@ -233,9 +235,10 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
 
   const summary = useMemo(() => {
     if (query.isPending) return "Loading audit log...";
+    if (forbidden) return "Not permitted.";
     if (query.isError) return "Failed to load audit log.";
     return `${items.length} entr${items.length === 1 ? "y" : "ies"}`;
-  }, [query.isPending, query.isError, items.length]);
+  }, [query.isPending, query.isError, forbidden, items.length]);
 
   return (
     <div className="flex h-full flex-col" data-testid="audit-log-page">
@@ -318,7 +321,17 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
             </ul>
           )}
 
-          {query.isError && (
+          {forbidden && (
+            <div role="alert" className="flex flex-col items-center gap-2 py-12 text-center">
+              <p className="text-sm text-rim-danger">You are not allowed to read this audit log.</p>
+              <p className="text-xs text-rim-text-muted">
+                Workspace owners and moderators see the whole log. Everyone else sees their own
+                actions.
+              </p>
+            </div>
+          )}
+
+          {query.isError && !forbidden && (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <p className="text-sm text-rim-danger">Failed to load audit log.</p>
               <button

@@ -60,6 +60,14 @@ function serverWithRole(viewerRole: ServerMemberRoleGql) {
   return { server: { id: "ws-1", name: "Workspace", viewerRole } };
 }
 
+function forbiddenError() {
+  return {
+    response: {
+      errors: [{ message: "audit log filter too broad", extensions: { code: "FORBIDDEN" } }],
+    },
+  };
+}
+
 function makePage(
   items: ReturnType<typeof makeEntry>[],
   opts: { hasNextPage?: boolean; nextCursor?: string | null } = {},
@@ -154,6 +162,17 @@ describe("AuditLogPage", () => {
       serverId: "ws-1",
       actorUserId: "user-1",
     });
+  });
+
+  it("explains a FORBIDDEN answer instead of offering a retry", async () => {
+    requestMock.mockRejectedValue(forbiddenError());
+    renderWithProviders(<AuditLogPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You are not allowed to read this audit log.",
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No audit log entries yet.")).not.toBeInTheDocument();
   });
 
   it("renders skeleton rows while loading", () => {
