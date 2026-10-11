@@ -107,6 +107,15 @@ Google account settings, Security, Third-party apps with account access, when th
 An archive belongs to the OAuth client that wrote it: a build with a different Google client id
 sees a different `appDataFolder`, and a different Dropbox app a different `Apps/` folder.
 
+## History archive in S3-compatible storage
+
+Settings > History, "S3-compatible storage", keeps the archive in a bucket of Amazon S3,
+Cloudflare R2, Backblaze B2, MinIO, Garage or any other S3-compatible storage, under a prefix.
+It needs no build configuration and is always offered; the user types the endpoint, region,
+bucket, prefix and an access key. Give that key `s3:GetObject`, `s3:PutObject` and
+`s3:ListBucket` on the bucket or prefix (and `s3:DeleteObject` to let the setup check remove its
+probe), nothing more.
+
 ## History archive on your own server
 
 Settings > History, "Your own server", keeps the archive on a service the user runs: one URL

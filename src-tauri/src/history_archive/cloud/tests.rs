@@ -1,7 +1,7 @@
-//! The Google Drive, Dropbox and backup endpoint providers against the fake services in
-//! [`super::fake`]: sign-in and the endpoint check, upload, list, download, token refresh,
-//! rate limits, an interrupted backup, and a restore on a second device. The endpoint also
-//! runs against the reference service in Python.
+//! The Google Drive, Dropbox, S3 and backup endpoint providers against the fake services in
+//! [`super::fake`]: sign-in and the S3 and endpoint checks, upload, list, download, token
+//! refresh, rate limits, an interrupted backup, and a restore on a second device. The endpoint
+//! also runs against the reference service in Python.
 
 use std::sync::Arc;
 
@@ -13,25 +13,30 @@ use super::super::provider::ArchiveProvider;
 use super::super::tests::{message, Device, PASSPHRASE, TEST_COST};
 use super::super::{ArchiveError, ConnectTarget};
 use super::endpoint::{EndpointAuth, EndpointProblem};
-use super::fake::{approve, deny, FakeCloud, ENDPOINT_TOKEN};
+use super::fake::{approve, deny, FakeCloud, S3Conditional, ENDPOINT_TOKEN, S3_SECRET};
+use super::s3::S3Problem;
 use super::{CloudConnections, CloudKind};
 use crate::message_cache::tests::{account, MockFeed};
 
 const KINDS: [CloudKind; 2] = [CloudKind::GoogleDrive, CloudKind::Dropbox];
 
-/// Where an archive is kept in these tests: a cloud service signed in to, or the backup
-/// endpoint checked.
+/// Where an archive is kept in these tests: a cloud service signed in to, or an S3 bucket or
+/// the backup endpoint checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Backend {
     Cloud(CloudKind),
+    S3,
     Endpoint,
 }
 
-const BACKENDS: [Backend; 3] = [
+const BACKENDS: [Backend; 4] = [
     Backend::Cloud(CloudKind::GoogleDrive),
     Backend::Cloud(CloudKind::Dropbox),
+    Backend::S3,
     Backend::Endpoint,
 ];
+/// The fake S3's prefix, as the setup normalizes it.
+const S3_PREFIX: &str = "backups/ada/";
 const DEVICE: &str = "0f0e0d0c-aaaa-4bbb-8ccc-123456789abc";
 const LABEL: &str = "http://localhost:8080/api\nalice";
 
@@ -63,6 +68,21 @@ fn check_endpoint(
     (check.connection_id, provider)
 }
 
+/// Check the fake's S3 bucket and return the pending connection's provider.
+fn check_s3(
+    cloud: &FakeCloud,
+    connections: &CloudConnections,
+) -> (String, Box<dyn ArchiveProvider>) {
+    let check = connections
+        .check_s3(cloud.s3_setup(), |p| {
+            Ok(Archive::inspect(p)?.map(|m| m.version))
+        })
+        .unwrap();
+    assert_eq!(check.location, "rim/backups/ada on 127.0.0.1");
+    let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+    (check.connection_id, provider)
+}
+
 /// Set `backend` up on the fake and return the pending connection's provider.
 fn set_up(
     cloud: &FakeCloud,
@@ -71,11 +91,12 @@ fn set_up(
 ) -> (String, Box<dyn ArchiveProvider>) {
     match backend {
         Backend::Cloud(kind) => sign_in(connections, kind),
+        Backend::S3 => check_s3(cloud, connections),
         Backend::Endpoint => check_endpoint(cloud, connections),
     }
 }
 
-/// How many provider revokes `n` sign-outs make: Dropbox revokes; Google and the endpoint
+/// How many provider revokes `n` sign-outs make: Dropbox revokes; Google, S3 and the endpoint
 /// do not.
 fn expected_revokes(backend: Backend, n: usize) -> usize {
     match backend {
@@ -202,6 +223,7 @@ fn upload_list_download_and_overwrite() {
         assert!(provider.read("../escape").is_err());
         let place = match backend {
             Backend::Cloud(_) => "ada@example.com".to_string(),
+            Backend::S3 => "rim/backups/ada on 127.0.0.1".to_string(),
             Backend::Endpoint => format!("{}/ep/backup", cloud.url()),
         };
         assert!(provider.describe().contains(&place));
@@ -223,6 +245,11 @@ fn upload_list_download_and_overwrite() {
                 let paths: Vec<_> = state.dropbox.keys().cloned().collect();
                 assert_eq!(paths, files.map(|f| format!("/{f}")));
             }
+            Backend::S3 => {
+                // Objects under the prefix; the storage takes conditional writes, so the create
+                // left no claims, and the check deleted its probe.
+                assert_eq!(state.s3_keys(), files.map(|f| format!("{S3_PREFIX}{f}")));
+            }
             Backend::Endpoint => {
                 // The service honours If-None-Match, so the create left no claim files; the
                 // check left one probe.
@@ -236,10 +263,15 @@ fn upload_list_download_and_overwrite() {
 
 #[test]
 fn listings_follow_every_page() {
-    for kind in KINDS {
+    let paged = [
+        Backend::Cloud(CloudKind::GoogleDrive),
+        Backend::Cloud(CloudKind::Dropbox),
+        Backend::S3,
+    ];
+    for backend in paged {
         let cloud = FakeCloud::start();
         let (connections, _) = cloud.connections();
-        let (_, provider) = sign_in(&connections, kind);
+        let (_, provider) = set_up(&cloud, &connections, backend);
         for i in 0..7 {
             provider
                 .write(&format!("accounts/t/devices/d{i}/head.rimx"), b"h")
@@ -335,9 +367,20 @@ fn rate_limits_and_server_errors_are_retried_with_backoff() {
                 ("POST /upload/drive/v3/files", "GET /drive/v3/files")
             }
             Backend::Cloud(CloudKind::Dropbox) => ("files/upload", "files/download"),
+            Backend::S3 => ("PUT /s3/", "GET /s3/"),
             Backend::Endpoint => ("POST /ep/backup", "GET /ep/backup"),
         };
         let drive = backend == Backend::Cloud(CloudKind::GoogleDrive);
+        // S3 asks for a retry of a write that met another conditional write of its key.
+        if backend == Backend::S3 {
+            cloud.fault(
+                upload,
+                409,
+                None,
+                json!("<Error><Code>ConditionalRequestConflict</Code></Error>"),
+                1,
+            );
+        }
         cloud.fault(
             upload,
             429,
@@ -359,7 +402,11 @@ fn rate_limits_and_server_errors_are_retried_with_backoff() {
         provider
             .write("accounts/t/devices/d/head.rimx", b"h")
             .unwrap();
-        let retries = if drive { 3 } else { 2 };
+        let retries = if drive || backend == Backend::S3 {
+            3
+        } else {
+            2
+        };
         assert_eq!(cloud.state().count(upload) - before, retries + 1);
         assert_eq!(
             provider
@@ -430,6 +477,7 @@ fn an_interrupted_backup_resumes_from_the_head() {
         let head_write = match backend {
             Backend::Cloud(CloudKind::GoogleDrive) => "PATCH /upload/drive/v3/files",
             Backend::Cloud(CloudKind::Dropbox) => "head.rimx",
+            Backend::S3 => "head.rimx PUT",
             Backend::Endpoint => "head.rimx POST",
         };
         cloud.fault(head_write, 500, None, json!({}), 100);
@@ -490,6 +538,11 @@ fn connect_place(device: &Device, cloud: &FakeCloud, backend: Backend) -> (Strin
             assert_eq!(auth.has_archive, auth.version.is_some());
             (auth.connection_id, auth.version)
         }
+        Backend::S3 => {
+            let check = device.archive.s3_check(cloud.s3_setup()).unwrap();
+            assert_eq!(check.has_archive, check.version.is_some());
+            (check.connection_id, check.version)
+        }
         Backend::Endpoint => {
             let check = device
                 .archive
@@ -519,14 +572,15 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
         let (expected_kind, place) = match backend {
             Backend::Cloud(CloudKind::GoogleDrive) => ("googleDrive", "ada@example.com".into()),
             Backend::Cloud(CloudKind::Dropbox) => ("dropbox", "ada@example.com".into()),
+            Backend::S3 => ("s3", "rim/backups/ada on 127.0.0.1".into()),
             Backend::Endpoint => ("endpoint", format!("{}/ep/backup", cloud.url())),
         };
         assert_eq!(status.provider, Some(expected_kind));
         assert_eq!(status.folder, Some(place));
         assert!(status.unlocked);
 
-        // The refresh token or the endpoint's token is in the keyring, not in the settings
-        // file.
+        // The refresh token, the S3 secret or the endpoint's token is in the keyring, not in
+        // the settings file.
         assert_eq!(laptop_credentials.0.lock().unwrap().len(), 1);
         let settings_dir = laptop._data.path().join("history-archive");
         for entry in std::fs::read_dir(&settings_dir).unwrap() {
@@ -534,7 +588,8 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
             assert!(
                 !text.contains("refresh-0")
                     && !text.contains("access-")
-                    && !text.contains(ENDPOINT_TOKEN),
+                    && !text.contains(ENDPOINT_TOKEN)
+                    && !text.contains(S3_SECRET),
                 "{text}"
             );
         }
@@ -890,5 +945,97 @@ fn the_reference_service_holds_an_archive() {
             .flat_map(|s| s.events)
             .collect();
         assert_eq!(all, events("c1", 1, 5), "{auth:?}");
+    }
+}
+
+// ─── S3 ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn the_s3_check_names_the_problem() {
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    let code = |setup| {
+        connections
+            .check_s3(setup, |_| Ok(None))
+            .map(|check| check.connection_id)
+            .unwrap_err()
+            .code()
+    };
+    let setup = FakeCloud::s3_setup;
+
+    let mut wrong_secret = setup(&cloud);
+    wrong_secret.secret_access_key = Some(zeroize::Zeroizing::new("not-it".into()));
+    let mut wrong_key = setup(&cloud);
+    wrong_key.access_key_id = "AKIDOTHER".into();
+    let mut wrong_bucket = setup(&cloud);
+    wrong_bucket.bucket = "elsewhere".into();
+    let mut wrong_region = setup(&cloud);
+    wrong_region.region = "eu-central-1".into();
+    let mut not_s3 = setup(&cloud);
+    not_s3.endpoint = format!("{}/ep/wrong", cloud.url());
+    let mut insecure = setup(&cloud);
+    insecure.endpoint = "http://minio.example.invalid:9000".into();
+    let mut no_secret = setup(&cloud);
+    no_secret.secret_access_key = None;
+
+    for (setup, expected) in [
+        (wrong_secret, S3Problem::Credentials.code()),
+        (wrong_key, S3Problem::Credentials.code()),
+        (wrong_bucket, S3Problem::NoSuchBucket.code()),
+        (wrong_region, S3Problem::WrongRegion.code()),
+        (not_s3, S3Problem::NotS3.code()),
+        (insecure, EndpointProblem::Insecure.code()),
+        (no_secret, "INVALID_ARGS"),
+    ] {
+        let endpoint = setup.endpoint.clone();
+        assert_eq!(code(setup), expected, "{endpoint}");
+    }
+
+    let s3_error = |code: &str| json!(format!("<Error><Code>{code}</Code></Error>"));
+    cloud.fault("PUT /s3/", 403, None, s3_error("AccessDenied"), 1);
+    assert_eq!(code(setup(&cloud)), S3Problem::Forbidden.code());
+    cloud.fault("PUT /s3/", 403, None, s3_error("RequestTimeTooSkewed"), 1);
+    assert_eq!(code(setup(&cloud)), S3Problem::Clock.code());
+    cloud.fault("GET /s3/", 200, None, json!("other bytes"), 1);
+    assert_eq!(code(setup(&cloud)), S3Problem::Broken.code());
+    cloud.fault("list-type=2", 200, None, json!("<html></html>"), 1);
+    assert_eq!(code(setup(&cloud)), S3Problem::NotS3.code());
+
+    // The archive never deletes, so a key that may not delete still passes; its probe stays.
+    cloud.fault("DELETE /s3/", 403, None, s3_error("AccessDenied"), 1);
+    connections.check_s3(setup(&cloud), |_| Ok(None)).unwrap();
+}
+
+#[test]
+fn s3_without_conditional_writes_keeps_the_oldest_claim() {
+    for conditional in [S3Conditional::Ignore, S3Conditional::NotImplemented] {
+        let cloud = FakeCloud::start();
+        let (connections, _) = cloud.connections();
+        cloud.state().s3_conditional = conditional;
+        let check = connections
+            .check_s3(cloud.s3_setup(), |_| Ok(None))
+            .unwrap();
+        assert!(!check.conditional_writes, "{conditional:?}");
+        let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+
+        assert!(provider.create("rim-archive.json", b"mine").unwrap());
+        assert!(!provider.create("rim-archive.json", b"again").unwrap());
+        assert_eq!(provider.read("rim-archive.json").unwrap().unwrap(), b"mine");
+
+        // Another device's claim is a second older: this device copies that one and joins.
+        cloud.state().s3_race = Some("head.rimx".into());
+        assert!(!provider.create("devices/d1/head.rimx", b"mine").unwrap());
+        assert_eq!(
+            provider.read("devices/d1/head.rimx").unwrap().unwrap(),
+            b"the other device's"
+        );
+        let claims = cloud
+            .state()
+            .s3_keys()
+            .into_iter()
+            .filter(|k| k.ends_with(".claim"))
+            .count();
+        assert_eq!(claims, 3);
+        assert_eq!(provider.list_dirs("devices").unwrap(), vec!["d1"]);
     }
 }

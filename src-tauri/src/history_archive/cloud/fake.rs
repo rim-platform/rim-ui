@@ -1,9 +1,9 @@
 //! Test doubles for the cloud providers: an in-memory credential store, and a fake Google
-//! Drive, Dropbox, backup endpoint and OAuth token endpoint on a local HTTP server, holding
-//! files in memory. Only the API surface the providers use is implemented, with the behaviors
-//! they rely on (Drive's duplicate names and `appDataFolder`, Dropbox's upload modes and 409
-//! errors, the endpoint's `If-None-Match` and listing order, bearer tokens that expire, rate
-//! limits on demand).
+//! Drive, Dropbox, S3 bucket, backup endpoint and OAuth token endpoint on a local HTTP server,
+//! holding files in memory. Only the API surface the providers use is implemented, with the
+//! behaviors they rely on (Drive's duplicate names and `appDataFolder`, Dropbox's upload modes
+//! and 409 errors, S3's signatures, conditional writes and delimited listings, the endpoint's
+//! `If-None-Match` and listing order, bearer tokens that expire, rate limits on demand).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,8 @@ use zeroize::Zeroizing;
 use super::super::ArchiveError;
 use super::endpoint::{EndpointAuth, EndpointSetup};
 use super::http::RetryPolicy;
+use super::s3::S3Setup;
+use super::sigv4;
 use super::{CloudConnections, CloudSettings, CredentialStore};
 
 // ─── Credentials ────────────────────────────────────────────────────────────
@@ -249,6 +251,17 @@ pub(crate) struct CloudState {
     /// When a claim for this name is stored, another device's claim lands first.
     pub endpoint_race: Option<String>,
 
+    /// The S3 bucket's objects: bytes, and `LastModified` in seconds after the fake's epoch.
+    pub s3: BTreeMap<String, (Vec<u8>, i64)>,
+    pub s3_bucket: String,
+    pub s3_region: String,
+    pub s3_secret: String,
+    pub s3_conditional: S3Conditional,
+    /// `LastModified` of the objects stored from now on.
+    pub s3_clock: i64,
+    /// When a claim for this name is stored, another device's older claim lands first.
+    pub s3_race: Option<String>,
+
     pub faults: Vec<Fault>,
     /// The log line of every request.
     pub log: Vec<String>,
@@ -268,6 +281,10 @@ impl CloudState {
 
     pub(crate) fn count(&self, line: &str) -> usize {
         self.log.iter().filter(|l| l.contains(line)).count()
+    }
+
+    pub(crate) fn s3_keys(&self) -> Vec<String> {
+        self.s3.keys().cloned().collect()
     }
 
     /// The endpoint's paths, sorted, without the probes its checks left.
@@ -292,6 +309,21 @@ pub(crate) struct FakeCloud {
 pub(crate) const GOOD_CODE: &str = "good-code";
 /// The token the fake backup endpoint takes unless a test says otherwise.
 pub(crate) const ENDPOINT_TOKEN: &str = "endpoint-token";
+/// The fake S3's access key id and, unless a test says otherwise, its secret.
+pub(crate) const S3_ACCESS_KEY: &str = "AKIDFAKE";
+pub(crate) const S3_SECRET: &str = "s3-secret";
+
+/// How the fake S3 treats `If-None-Match: *`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum S3Conditional {
+    /// 412 when the key exists, as AWS, R2 and MinIO do.
+    #[default]
+    Honour,
+    /// Writes anyway.
+    Ignore,
+    /// 501, as storage without conditional writes may.
+    NotImplemented,
+}
 
 impl FakeCloud {
     pub(crate) fn start() -> Self {
@@ -301,6 +333,9 @@ impl FakeCloud {
             email: "ada@example.com".into(),
             page_size: 1000,
             endpoint_auth: Some(("Authorization".into(), format!("Bearer {ENDPOINT_TOKEN}"))),
+            s3_bucket: "rim".into(),
+            s3_region: "us-east-1".into(),
+            s3_secret: S3_SECRET.into(),
             ..CloudState::default()
         }));
         let handler_state = state.clone();
@@ -319,6 +354,21 @@ impl FakeCloud {
             url: format!("{}/ep", self.server.url),
             auth: EndpointAuth::Bearer,
             secret: Some(Zeroizing::new(ENDPOINT_TOKEN.into())),
+            allow_insecure: false,
+        }
+    }
+
+    /// What the user types to use the fake S3: its endpoint (path-style, as for any endpoint
+    /// not on amazonaws.com), region, bucket, a prefix, and the key.
+    pub(crate) fn s3_setup(&self) -> S3Setup {
+        S3Setup {
+            endpoint: format!("{}/s3", self.server.url),
+            region: "us-east-1".into(),
+            bucket: "rim".into(),
+            prefix: "backups/ada".into(),
+            access_key_id: S3_ACCESS_KEY.into(),
+            secret_access_key: Some(Zeroizing::new(S3_SECRET.into())),
+            addressing: None,
             allow_insecure: false,
         }
     }
@@ -410,12 +460,17 @@ fn unauthorized() -> Response {
     Response::json(401, json!({ "error": "invalid_token" }))
 }
 
-/// "METHOD /path" and then Dropbox's argument header, or the backup endpoint's query followed
-/// by the method again, so a fault can match one method on one file (`head.rimx POST`).
+/// "METHOD /path" and then Dropbox's argument header, or the backup endpoint's or S3's query
+/// followed by the method again, so a fault can match one method on one file
+/// (`head.rimx POST`).
 fn log_line(req: &Request) -> String {
-    let arg = if req.path.starts_with("/ep/") {
+    let arg = if req.path.starts_with("/ep/") || req.path.starts_with("/s3/") {
         let query: Vec<String> = req.query.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        format!("{} {}", query.join("&"), req.method)
+        if query.is_empty() {
+            req.method.clone()
+        } else {
+            format!("{} {}", query.join("&"), req.method)
+        }
     } else {
         req.header("Dropbox-API-Arg").unwrap_or("").to_string()
     };
@@ -452,6 +507,9 @@ fn handle(state: &mut CloudState, req: Request) -> Response {
     }
     if let Some(rest) = req.path.strip_prefix("/ep/") {
         return endpoint(state, &req, rest);
+    }
+    if let Some(rest) = req.path.strip_prefix("/s3/") {
+        return s3(state, &req, rest);
     }
     let bearer = format!("Bearer {}", state.access_token);
     if req.header("Authorization") != Some(bearer.as_str()) {
@@ -789,4 +847,204 @@ fn endpoint(state: &mut CloudState, req: &Request, rest: &str) -> Response {
         }
         _ => Response::empty(400),
     }
+}
+
+// ─── S3 ─────────────────────────────────────────────────────────────────────
+
+fn s3_xml(status: u16, body: String) -> Response {
+    Response {
+        status,
+        headers: vec![("Content-Type".into(), "application/xml".into())],
+        body: format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{body}").into_bytes(),
+    }
+}
+
+fn s3_error(status: u16, code: &str) -> Response {
+    s3_xml(
+        status,
+        format!("<Error><Code>{code}</Code><Message>{code}</Message></Error>"),
+    )
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&text[i + 1..i + 3], 16) {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap()
+}
+
+fn s3_time(seconds: i64) -> String {
+    chrono::DateTime::from_timestamp(1_760_000_000 + seconds, 0)
+        .unwrap()
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// The signature check of S3: the same Signature Version 4 over what arrived, with the
+/// fake's secret.
+fn s3_verify(state: &CloudState, req: &Request) -> Result<(), Response> {
+    let auth = req
+        .header("Authorization")
+        .ok_or_else(|| s3_error(403, "AccessDenied"))?;
+    let field = |name: &str| {
+        auth.split([' ', ','])
+            .find_map(|part| part.strip_prefix(&format!("{name}=")))
+            .unwrap_or("")
+            .to_string()
+    };
+    let credential = field("Credential");
+    let scope: Vec<&str> = credential.split('/').collect();
+    if scope.len() != 5 || scope[0] != S3_ACCESS_KEY {
+        return Err(s3_error(403, "InvalidAccessKeyId"));
+    }
+    if scope[2] != state.s3_region {
+        return Err(s3_error(400, "AuthorizationHeaderMalformed"));
+    }
+    let payload_hash = sigv4::payload_hash(&req.body);
+    if req.header("x-amz-content-sha256") != Some(payload_hash.as_str()) {
+        return Err(s3_error(400, "XAmzContentSHA256Mismatch"));
+    }
+    let time = chrono::NaiveDateTime::parse_from_str(
+        req.header("x-amz-date").unwrap_or(""),
+        sigv4::AMZ_DATE,
+    )
+    .map_err(|_| s3_error(403, "AccessDenied"))?
+    .and_utc();
+    let signed_headers = field("SignedHeaders");
+    let mut headers = Vec::new();
+    for name in signed_headers.split(';') {
+        let value = req
+            .header(name)
+            .ok_or_else(|| s3_error(403, "SignatureDoesNotMatch"))?;
+        headers.push((name, value));
+    }
+    let expected = sigv4::authorization(
+        &sigv4::Request {
+            method: &req.method,
+            path: &req.path,
+            query: &req.query,
+            headers: &headers,
+            payload_hash: &payload_hash,
+        },
+        &sigv4::Key {
+            access_key_id: S3_ACCESS_KEY,
+            secret: &state.s3_secret,
+            region: scope[2],
+            service: scope[3],
+        },
+        time,
+    );
+    if expected != auth {
+        return Err(s3_error(403, "SignatureDoesNotMatch"));
+    }
+    Ok(())
+}
+
+fn s3(state: &mut CloudState, req: &Request, rest: &str) -> Response {
+    if let Err(refused) = s3_verify(state, req) {
+        return refused;
+    }
+    let (bucket, key) = rest.split_once('/').unwrap_or((rest, ""));
+    if bucket != state.s3_bucket {
+        return s3_error(404, "NoSuchBucket");
+    }
+    let key = percent_decode(key);
+    match (req.method.as_str(), key.is_empty()) {
+        ("GET", true) if req.query("list-type") == Some("2") => s3_list(state, req),
+        ("GET", false) => match state.s3.get(&key) {
+            Some((bytes, _)) => Response::bytes(bytes.clone()),
+            None => s3_error(404, "NoSuchKey"),
+        },
+        ("PUT", false) => {
+            if req.header("If-None-Match") == Some("*") {
+                match state.s3_conditional {
+                    S3Conditional::NotImplemented => return s3_error(501, "NotImplemented"),
+                    S3Conditional::Honour if state.s3.contains_key(&key) => {
+                        return s3_error(412, "PreconditionFailed")
+                    }
+                    _ => {}
+                }
+            }
+            let (dir, name) = key.rsplit_once('/').unwrap_or(("", &key));
+            if let Some(race) = state.s3_race.clone() {
+                if super::claims::is_claim(name, &race) {
+                    state.s3_race = None;
+                    let other = format!("{dir}/.{race}.ffffffffffff.claim");
+                    let older = state.s3_clock - 1;
+                    state
+                        .s3
+                        .insert(other, (b"the other device's".to_vec(), older));
+                }
+            }
+            let now = state.s3_clock;
+            state.s3.insert(key, (req.body.clone(), now));
+            Response::empty(200)
+        }
+        ("DELETE", false) => {
+            state.s3.remove(&key);
+            Response::empty(204)
+        }
+        _ => s3_error(400, "InvalidRequest"),
+    }
+}
+
+/// `ListObjectsV2`: keys and common prefixes in key order, paged by `page_size`.
+fn s3_list(state: &CloudState, req: &Request) -> Response {
+    let prefix = req.query("prefix").unwrap_or("");
+    let delimited = req.query("delimiter") == Some("/");
+    let start: usize = req
+        .query("continuation-token")
+        .map_or(0, |t| t.parse().unwrap());
+    let mut items: Vec<(String, Option<i64>)> = Vec::new();
+    for (key, (_, modified)) in &state.s3 {
+        let Some(rest) = key.strip_prefix(prefix) else {
+            continue;
+        };
+        match rest.find('/') {
+            Some(slash) if delimited => {
+                let common = format!("{prefix}{}", &rest[..=slash]);
+                if !items.iter().any(|(k, _)| *k == common) {
+                    items.push((common, None));
+                }
+            }
+            _ => items.push((key.clone(), Some(*modified))),
+        }
+    }
+    let page: Vec<_> = items.iter().skip(start).take(state.page_size).collect();
+    let next = start + state.page_size;
+    let mut xml = format!(
+        "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>{}</Name><Prefix>{prefix}</Prefix><KeyCount>{}</KeyCount>",
+        state.s3_bucket,
+        page.len()
+    );
+    for (key, modified) in page {
+        match modified {
+            Some(modified) => xml.push_str(&format!(
+                "<Contents><Key>{key}</Key><LastModified>{}</LastModified><Size>0</Size></Contents>",
+                s3_time(*modified)
+            )),
+            None => xml.push_str(&format!(
+                "<CommonPrefixes><Prefix>{key}</Prefix></CommonPrefixes>"
+            )),
+        }
+    }
+    if next < items.len() {
+        xml.push_str(&format!(
+            "<IsTruncated>true</IsTruncated><NextContinuationToken>{next}</NextContinuationToken>"
+        ));
+    } else {
+        xml.push_str("<IsTruncated>false</IsTruncated>");
+    }
+    xml.push_str("</ListBucketResult>");
+    s3_xml(200, xml)
 }

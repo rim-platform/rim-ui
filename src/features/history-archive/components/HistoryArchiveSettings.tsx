@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, FolderOpen, Server } from "lucide-react";
+import { Cloud, Database, FolderOpen, Server } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
-import type { SafeInvokeError } from "../../../core/tauri/safeInvoke";
+import type { SafeInvokeError, SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   backUpIdentityKeyQuietly,
@@ -18,10 +18,12 @@ import {
   CLOUD_SERVICE_NAMES,
   ENDPOINT_NAME,
   MIN_PASSPHRASE_LENGTH,
+  S3_NAME,
   archiveLocation,
   authorizeCloud,
   cancelCloudSignIn,
   checkEndpoint,
+  checkS3,
   connectArchive,
   disconnectArchive,
   discardCloudSignIn,
@@ -37,12 +39,13 @@ import {
   type CloudKind,
   type ConnectTarget,
   type EndpointSetup,
+  type S3Setup,
 } from "../api/historyArchive";
 import { describeExport, describeRestore } from "./archiveReports";
 import { EndpointForm } from "./EndpointForm";
+import { S3Form } from "./S3Form";
 
-const inputClass =
-  "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
+import { archiveInputClass as inputClass } from "./formParts";
 
 function errorText(error: SafeInvokeError): string {
   if (error.kind === "backend_error") {
@@ -73,13 +76,27 @@ function errorText(error: SafeInvokeError): string {
         return "Something answered, but not as a backup endpoint: its listing is not JSON. Check the URL.";
       case ArchiveErrorCode.ENDPOINT_BROKEN:
         return `The backup endpoint does not keep files correctly: ${error.message}.`;
+      case ArchiveErrorCode.S3_CREDENTIALS:
+        return "The storage refused the access key or the secret. Check both, and that the key is active.";
+      case ArchiveErrorCode.S3_FORBIDDEN:
+        return "The access key is valid but may not use this bucket or prefix. It needs to read, write and list objects there.";
+      case ArchiveErrorCode.S3_NO_BUCKET:
+        return "There is no bucket of that name at this endpoint.";
+      case ArchiveErrorCode.S3_REGION:
+        return "The bucket is in another region. Check the region (Cloudflare R2 takes auto).";
+      case ArchiveErrorCode.S3_CLOCK:
+        return "This computer's clock is too far off for the storage. Set the correct time and try again.";
+      case ArchiveErrorCode.S3_NOT_S3:
+        return "Something answered, but not as S3 storage. Check the endpoint URL.";
+      case ArchiveErrorCode.S3_BROKEN:
+        return `The storage does not keep objects correctly: ${error.message}.`;
     }
   }
   return error.message;
 }
 
-/** A failed endpoint check: "cannot be reached" means the address, not a drive. */
-function endpointCheckErrorText(error: SafeInvokeError): string {
+/** A failed endpoint or bucket check: "cannot be reached" means the address, not a drive. */
+function checkErrorText(error: SafeInvokeError): string {
   if (error.kind === "backend_error" && error.code === ArchiveErrorCode.UNAVAILABLE) {
     return "Nothing answers at that address. Check the URL and that the service is running.";
   }
@@ -115,9 +132,9 @@ export function HistoryArchiveSettings() {
         <h2 className="text-base font-semibold text-rim-text">History</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
           Keep an encrypted copy of your message history in a folder you choose, in your own Google
-          Drive or Dropbox, or on a server of your own, and get it back on another device. A folder
-          that OneDrive or Syncthing keeps in sync carries it to your other computers too. RIM has
-          no copy of it.
+          Drive or Dropbox, in an S3 bucket, or on a server of your own, and get it back on another
+          device. A folder that OneDrive or Syncthing keeps in sync carries it to your other
+          computers too. RIM has no copy of it.
         </p>
       </div>
 
@@ -169,8 +186,8 @@ function useAfterRestore() {
 }
 
 /**
- * Where the archive being set up is: a folder, a cloud account just signed in to, or a backup
- * endpoint just checked.
+ * Where the archive being set up is: a folder, a cloud account just signed in to, or an S3
+ * bucket or a backup endpoint just checked.
  */
 type Place =
   | { kind: "localFolder"; path: string; hasArchive: boolean }
@@ -181,6 +198,7 @@ type Place =
       account: string;
       hasArchive: boolean;
     }
+  | { kind: "s3"; connectionId: string; location: string; hasArchive: boolean }
   | { kind: "endpoint"; connectionId: string; url: string; hasArchive: boolean };
 
 function placeTarget(place: Place): ConnectTarget {
@@ -195,6 +213,8 @@ function placeLabel(place: Place): string {
       return place.path;
     case "cloud":
       return `${CLOUD_SERVICE_NAMES[place.service]} (${place.account})`;
+    case "s3":
+      return `${S3_NAME} (${place.location})`;
     case "endpoint":
       return `${ENDPOINT_NAME} (${place.url})`;
   }
@@ -203,6 +223,7 @@ function placeLabel(place: Place): string {
 const JOINING_SUBJECT: Record<Place["kind"], string> = {
   localFolder: "This folder",
   cloud: "This account",
+  s3: "This bucket",
   endpoint: "This endpoint",
 };
 
@@ -232,15 +253,15 @@ function SetupArchive({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [signingIn, setSigningIn] = useState<CloudKind | null>(null);
-  const [endpointOpen, setEndpointOpen] = useState(false);
-  const [checkingEndpoint, setCheckingEndpoint] = useState(false);
+  const [openForm, setOpenForm] = useState<"s3" | "endpoint" | null>(null);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const afterRestore = useAfterRestore();
   const cloudServices = useCloudServices();
 
-  // A cloud sign-in or endpoint check that was not used is dropped (a Dropbox sign-in revoked)
-  // when another place is chosen or the panel closes; a sign-in still waiting for the browser
-  // is cancelled.
+  // A cloud sign-in or a bucket or endpoint check that was not used is dropped (a Dropbox
+  // sign-in revoked) when another place is chosen or the panel closes; a sign-in still waiting
+  // for the browser is cancelled.
   const pendingCloud = useRef<string | null>(null);
   const mounted = useRef(true);
   const waitingForBrowser = useRef(false);
@@ -306,24 +327,46 @@ function SetupArchive({
     });
   }
 
-  async function chooseEndpoint(setup: EndpointSetup) {
+  /** Run a bucket or endpoint check; a passed one becomes the place. */
+  async function runCheck<T extends { connectionId: string; hasArchive: boolean }>(
+    check: () => Promise<SafeInvokeResult<T>>,
+    place: (result: T) => Place,
+  ) {
     setError(null);
-    setCheckingEndpoint(true);
-    const result = await checkEndpoint(setup);
+    setChecking(true);
+    const result = await check();
     if (!mounted.current) {
       if (result.ok) void discardCloudSignIn(result.value.connectionId);
       return;
     }
-    setCheckingEndpoint(false);
-    if (!result.ok) return setError(endpointCheckErrorText(result.error));
-    const check = result.value;
-    setEndpointOpen(false);
-    choosePlace({
-      kind: "endpoint",
-      connectionId: check.connectionId,
-      url: check.url,
-      hasArchive: check.hasArchive,
-    });
+    setChecking(false);
+    if (!result.ok) return setError(checkErrorText(result.error));
+    setOpenForm(null);
+    choosePlace(place(result.value));
+  }
+
+  function chooseEndpoint(setup: EndpointSetup) {
+    void runCheck(
+      () => checkEndpoint(setup),
+      (check) => ({
+        kind: "endpoint",
+        connectionId: check.connectionId,
+        url: check.url,
+        hasArchive: check.hasArchive,
+      }),
+    );
+  }
+
+  function chooseS3(setup: S3Setup) {
+    void runCheck(
+      () => checkS3(setup),
+      (check) => ({
+        kind: "s3",
+        connectionId: check.connectionId,
+        location: check.location,
+        hasArchive: check.hasArchive,
+      }),
+    );
   }
 
   const joining = place?.hasArchive ?? false;
@@ -361,7 +404,9 @@ function SetupArchive({
     onDone(connected.value.status, restored);
   }
 
-  const choosing = busy || signingIn !== null || checkingEndpoint;
+  const choosing = busy || signingIn !== null || checking;
+  const toggleForm = (form: "s3" | "endpoint") =>
+    setOpenForm((open) => (open === form ? null : form));
 
   return (
     <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
@@ -405,9 +450,21 @@ function SetupArchive({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setEndpointOpen((open) => !open)}
+            onClick={() => toggleForm("s3")}
             disabled={choosing}
-            aria-expanded={endpointOpen}
+            aria-expanded={openForm === "s3"}
+          >
+            <span className="flex items-center gap-1.5">
+              <Database className="h-3.5 w-3.5" />
+              S3-compatible storage
+            </span>
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => toggleForm("endpoint")}
+            disabled={choosing}
+            aria-expanded={openForm === "endpoint"}
           >
             <span className="flex items-center gap-1.5">
               <Server className="h-3.5 w-3.5" />
@@ -415,11 +472,14 @@ function SetupArchive({
             </span>
           </Button>
         </div>
-        {endpointOpen && (
+        {openForm === "s3" && (
+          <S3Form busy={checking} disabled={busy || signingIn !== null} onCheck={chooseS3} />
+        )}
+        {openForm === "endpoint" && (
           <EndpointForm
-            busy={checkingEndpoint}
+            busy={checking}
             disabled={busy || signingIn !== null}
-            onCheck={(setup) => void chooseEndpoint(setup)}
+            onCheck={chooseEndpoint}
           />
         )}
         {signingIn && (
@@ -681,7 +741,9 @@ function ConnectedArchive({
           ? `Stopping signs this device out of ${CLOUD_SERVICE_NAMES[status.provider]} and leaves the archive there; other devices keep using it.`
           : status.provider === "endpoint"
             ? "Stopping forgets this device's password or token for the endpoint and leaves the archive there; other devices keep using it."
-            : "Stopping leaves the archive in the folder; other devices keep using it."}
+            : status.provider === "s3"
+              ? "Stopping forgets this device's secret access key and leaves the archive in the bucket; other devices keep using it."
+              : "Stopping leaves the archive in the folder; other devices keep using it."}
       </p>
       {message && <p className="text-xs text-rim-success">{message}</p>}
       {error && (

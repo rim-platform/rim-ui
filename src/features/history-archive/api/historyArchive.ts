@@ -1,7 +1,7 @@
 /**
  * The desktop app's history archive: the local message cache written as encrypted per-device
- * files to a folder the user picks, to the app's folder in their Google Drive or Dropbox, or to
- * their own backup endpoint, and read back on another device. The work is on the Tauri side
+ * files to a folder the user picks, to the app's folder in their Google Drive or Dropbox, to an
+ * S3 bucket, or to their own backup endpoint, and read back on another device. The work is on the Tauri side
  * (`src-tauri/src/history_archive`). This module is its typed surface.
  */
 
@@ -12,12 +12,15 @@ import type { CacheAccount } from "../../messages/api/messageCache";
 export type CloudKind = "googleDrive" | "dropbox";
 
 /** Where an archive lives. */
-export type ArchiveProviderKind = "localFolder" | CloudKind | "endpoint";
+export type ArchiveProviderKind = "localFolder" | CloudKind | "s3" | "endpoint";
 
 export interface ArchiveStatus {
   configured: boolean;
   provider: ArchiveProviderKind | null;
-  /** The folder, the signed-in cloud account (an email address), or the endpoint's URL. */
+  /**
+   * The folder, the signed-in cloud account (an email address), `bucket/prefix on host` for S3,
+   * or the endpoint's URL.
+   */
   folder: string | null;
   archiveId: string | null;
   /** This installation's id; its files live under `devices/<deviceId>/` in the archive. */
@@ -70,9 +73,61 @@ export interface EndpointCheck {
   exclusiveCreate: boolean;
 }
 
+/** Where the bucket goes in an S3 request: `endpoint/bucket/key` or `bucket.endpoint/key`. */
+export type S3Addressing = "path" | "virtualHost";
+
+/** What the user typed to set up an S3 bucket. */
+export interface S3Setup {
+  endpoint: string;
+  /** Empty: `us-east-1`. */
+  region: string;
+  bucket: string;
+  prefix: string;
+  accessKeyId: string;
+  /** Kept in the secret vault once the archive is connected. */
+  secretAccessKey: string;
+  addressing: S3Addressing;
+  /** Plain HTTP to a host that is not this computer. */
+  allowInsecure: boolean;
+}
+
+/** An S3 bucket that passed the check, waiting for the archive's passphrase. */
+export interface S3Check {
+  connectionId: string;
+  /** `bucket/prefix on host`. */
+  location: string;
+  hasArchive: boolean;
+  version: number | null;
+  /** The storage refuses to overwrite with `If-None-Match: *`. */
+  conditionalWrites: boolean;
+}
+
+/** Virtual-hosted addressing for Amazon's own endpoints, path-style for any other. */
+export function defaultS3Addressing(endpoint: string): S3Addressing {
+  try {
+    const host = new URL(endpoint.trim()).hostname;
+    return host === "amazonaws.com" || host.endsWith(".amazonaws.com") ? "virtualHost" : "path";
+  } catch {
+    return "path";
+  }
+}
+
+/** Plain HTTP to a host other than this computer, which a check refuses unless allowed. */
+export function isRemotePlainHttp(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:") return false;
+  const host = parsed.hostname.replace(/^\[|\]$/g, "");
+  return !(host === "localhost" || host === "::1" || /^127\./.test(host));
+}
+
 /**
- * Where to connect an archive: a folder, or a cloud account just signed in to or a backup
- * endpoint just checked.
+ * Where to connect an archive: a folder, or a cloud account just signed in to, or an S3 bucket
+ * or a backup endpoint just checked.
  */
 export type ConnectTarget =
   { kind: "localFolder"; path: string } | { kind: "cloud"; connectionId: string };
@@ -83,10 +138,11 @@ export const CLOUD_SERVICE_NAMES: Record<CloudKind, string> = {
 };
 
 export const ENDPOINT_NAME = "Backup endpoint";
+export const S3_NAME = "S3";
 
 /**
- * What to show as an archive's place: the folder, "Google Drive (ada@example.com)", or
- * "Backup endpoint (https://…/backup)".
+ * What to show as an archive's place: the folder, "Google Drive (ada@example.com)",
+ * "S3 (rim/backups on s3.amazonaws.com)", or "Backup endpoint (https://…/backup)".
  */
 export function archiveLocation(status: ArchiveStatus): string {
   if (!status.folder) return "";
@@ -94,6 +150,7 @@ export function archiveLocation(status: ArchiveStatus): string {
     return `${CLOUD_SERVICE_NAMES[status.provider]} (${status.folder})`;
   }
   if (status.provider === "endpoint") return `${ENDPOINT_NAME} (${status.folder})`;
+  if (status.provider === "s3") return `${S3_NAME} (${status.folder})`;
   return status.folder;
 }
 
@@ -155,6 +212,13 @@ export const ArchiveErrorCode = {
   ENDPOINT_NOT_FOUND: "ARCHIVE_ENDPOINT_NOT_FOUND",
   ENDPOINT_NOT_JSON: "ARCHIVE_ENDPOINT_NOT_JSON",
   ENDPOINT_BROKEN: "ARCHIVE_ENDPOINT_BROKEN",
+  S3_CREDENTIALS: "ARCHIVE_S3_CREDENTIALS",
+  S3_FORBIDDEN: "ARCHIVE_S3_FORBIDDEN",
+  S3_NO_BUCKET: "ARCHIVE_S3_NO_BUCKET",
+  S3_REGION: "ARCHIVE_S3_REGION",
+  S3_CLOCK: "ARCHIVE_S3_CLOCK",
+  S3_NOT_S3: "ARCHIVE_S3_NOT_S3",
+  S3_BROKEN: "ARCHIVE_S3_BROKEN",
 } as const;
 
 export function pickArchiveFolder(): Promise<SafeInvokeResult<string | null>> {
@@ -194,8 +258,17 @@ export function checkEndpoint(setup: EndpointSetup): Promise<SafeInvokeResult<En
 }
 
 /**
- * Drop a cloud sign-in or endpoint check the user did not go on with (a Dropbox sign-in is
- * also revoked).
+ * Check an S3 bucket: write, read back, list and delete a probe object, then look for an
+ * archive. The secret access key stays in memory on the Tauri side until the archive is
+ * connected.
+ */
+export function checkS3(setup: S3Setup): Promise<SafeInvokeResult<S3Check>> {
+  return safeInvoke<S3Check>("history_archive_s3_check", { setup });
+}
+
+/**
+ * Drop a cloud sign-in or an endpoint or bucket check the user did not go on with (a Dropbox
+ * sign-in is also revoked).
  */
 export function discardCloudSignIn(connectionId: string): Promise<SafeInvokeResult<null>> {
   return safeInvoke<null>("history_archive_cloud_discard", { connectionId });

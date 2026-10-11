@@ -4,8 +4,8 @@ The desktop app writes the user's message history to a folder the user picks, en
 reads it back on another device (master plan Stage 2). There is no RIM server in this picture:
 the folder is the user's own (a local disk, a USB drive, a folder that Dropbox, Google Drive,
 OneDrive, iCloud Drive or Syncthing keeps in sync, the app's own folder in the user's Google
-Drive or Dropbox, reached through their APIs, or a backup endpoint the user runs), and only
-someone with the passphrase can read it.
+Drive or Dropbox, reached through their APIs, a bucket of S3-compatible storage, or a backup
+endpoint the user runs), and only someone with the passphrase can read it.
 
 This document is the format. Anyone may write a reader or writer from it. The implementation is
 `src-tauri/src/history_archive/`; the cache it is written from is `docs/local-message-cache.md`.
@@ -476,6 +476,45 @@ temporary file (or an exclusive open where there are no hard links).
 - **Write**: an upload in `overwrite` mode, which replaces the file whole.
 - **Create**: an upload in `add` mode with `autorename` off and `strict_conflict` on, which fails
   when the name is taken.
+
+### S3-compatible storage
+
+- **Place**: a bucket of any S3-compatible storage (Amazon S3, Cloudflare R2, Backblaze B2,
+  MinIO, Garage), under a prefix the user picks. The user types the endpoint URL, the region
+  (`us-east-1` when left empty; R2 takes `auto`), the bucket, the prefix, the access key id and
+  the secret access key. The secret is kept in the secret vault as
+  `history-archive-cloud-v1:<connection id>`; the settings file names the rest.
+- **Names**: an archive path's object key is `<prefix>/<path>`, so the bucket holds the local
+  layout under the prefix. Directories are the common prefixes of a `ListObjectsV2` listing
+  delimited by `/`, followed across every page.
+- **Addressing**: path-style (`<endpoint>/<bucket>/<key>`) or virtual-hosted
+  (`<bucket>.<endpoint host>/<key>`). Endpoints on `amazonaws.com` default to virtual-hosted,
+  every other endpoint to path-style; the user can switch.
+- **Signing**: AWS Signature Version 4 for the service `s3`, with the payload's SHA-256 in
+  `x-amz-content-sha256`, computed by the app (no AWS SDK) and pinned by the AWS test suite's
+  vectors.
+- **Write**: a `PutObject` of the whole file.
+- **Create**: a `PutObject` with `If-None-Match: *`, which the storage answers `412` when the
+  key is taken (a `409 ConditionalRequestConflict`, another device's conditional write of the
+  same key in flight, is retried). Storage that answers `501`, or that ignored the header during
+  the check, gets claims: the device stores the file as `.<name>.<12 random hex digits>.claim`
+  next to the target, lists the claims, keeps the oldest (`LastModified`, then key, so every
+  device picks the same one), and copies it to the target. `LastModified` has a resolution of
+  one second, so two devices that create an archive in the same second on such storage may
+  both keep their own claim when one lists before the other's claim is visible; the one whose
+  manifest was overwritten finds a different archive there on its next backup and is told so.
+- **Check**: `PutObject` of `.rim-probe-<16 random hex digits>` under the prefix, read back, the
+  same `PutObject` with `If-None-Match: *` (`412` means conditional writes), a listing of the
+  prefix, and a `DeleteObject` of the probe. A key that may not delete still passes (the archive
+  never deletes; the probe then stays). A failed check names the problem: the key or secret
+  refused, access denied, no such bucket, the wrong region, this computer's clock off, an
+  endpoint that is not S3, or the network and TLS failures every provider reports.
+- **The key needs**: `s3:GetObject`, `s3:PutObject` and `s3:ListBucket` on the bucket or prefix;
+  `s3:DeleteObject` only to remove the probe.
+- **What it learns**: object keys (file names), sizes and times, each device's IP address and
+  the access key id; nothing else.
+- HTTPS is required unless the endpoint is this computer or the user allows an unencrypted
+  connection.
 
 ### Backup endpoint
 
