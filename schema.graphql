@@ -1488,8 +1488,20 @@ type Mutation {
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
 	createPipeline(input: CreatePipelineInput!): PipelineGql!
+	"""
+	Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
+	of its workspace; anyone else gets `FORBIDDEN`.
+	"""
 	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
+	"""
+	Delete a pipeline. Allowed for its creator and for an Owner or Moderator of its
+	workspace; anyone else gets `FORBIDDEN`.
+	"""
 	deletePipeline(pipelineId: ID!): Boolean!
+	"""
+	Switch a pipeline on or off. Allowed for its creator and for an Owner or Moderator of
+	its workspace; anyone else gets `FORBIDDEN`.
+	"""
 	togglePipeline(pipelineId: ID!, enabled: Boolean!): PipelineGql!
 	"""
 	Update fields on the authenticated user's profile.
@@ -2067,9 +2079,16 @@ type Query {
 	unreadCounts(workspaceId: ID!): [UnreadCount!]!
 	serverMembers(serverId: ID!): [ServerMember!]!
 	pinnedMessages(serverId: ID!, conversationId: ID!): [Message!]!
+	"""
+	Presence of the workspace's members who sent a heartbeat. A guest sees only the members
+	they share a conversation with, as in the member directory.
+	"""
 	workspacePresence(workspaceId: ID!): [UserPresenceGql!]!
 	mutedConversations(serverId: ID!): [MutedConversation!]!
 	customEmojis(serverId: ID!): [CustomEmoji!]!
+	"""
+	The caller's own macros in the workspace. `FORBIDDEN` for a non-member.
+	"""
 	myMacros(serverId: ID!): [MacroDef!]!
 	macroByName(serverId: ID!, name: String!): MacroDef
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!

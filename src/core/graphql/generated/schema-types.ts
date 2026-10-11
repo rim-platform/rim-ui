@@ -1283,6 +1283,10 @@ export type Mutation = {
   deleteKeybind: Scalars['Boolean']['output'];
   deleteMacro: Scalars['Boolean']['output'];
   deleteMessage: Scalars['Boolean']['output'];
+  /**
+   * Delete a pipeline. Allowed for its creator and for an Owner or Moderator of its
+   * workspace; anyone else gets `FORBIDDEN`.
+   */
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
   deleteWorkspaceState: Scalars['Boolean']['output'];
@@ -1460,6 +1464,10 @@ export type Mutation = {
    * write fails with `TIMED_OUT`. Same targeting rules as `kickMember`. Audited.
    */
   timeoutMember: MemberTimeout;
+  /**
+   * Switch a pipeline on or off. Allowed for its creator and for an Owner or Moderator of
+   * its workspace; anyone else gets `FORBIDDEN`.
+   */
   togglePipeline: PipelineGql;
   toggleReaction: Array<ReactionGroup>;
   /** Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited. */
@@ -1503,6 +1511,10 @@ export type Mutation = {
    * daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
    */
   updateNotificationSettings: NotificationSettings;
+  /**
+   * Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
+   * of its workspace; anyone else gets `FORBIDDEN`.
+   */
   updatePipeline: PipelineGql;
   updateUserCommand: Command;
   /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
@@ -2393,6 +2405,7 @@ export type Query = {
   mutedConversations: Array<MutedConversation>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
+  /** The caller's own macros in the workspace. `FORBIDDEN` for a non-member. */
   myMacros: Array<MacroDef>;
   /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
@@ -2476,6 +2489,10 @@ export type Query = {
   unreadCounts: Array<UnreadCount>;
   /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
   workspacePlugins: Array<WorkspacePlugin>;
+  /**
+   * Presence of the workspace's members who sent a heartbeat. A guest sees only the members
+   * they share a conversation with, as in the member directory.
+   */
   workspacePresence: Array<UserPresenceGql>;
   workspaceState?: Maybe<WorkspaceStateEntryGql>;
   workspaceStateList: Array<WorkspaceStateEntryGql>;
