@@ -13,7 +13,7 @@ describe("useAgentStore", () => {
       activeConversationId: null,
       settings: {
         providerId: "anthropic",
-        modelId: "claude-sonnet-4-20250514",
+        modelId: "claude-sonnet-5-5",
         systemPrompt: "",
       },
       hasApiKey: false,

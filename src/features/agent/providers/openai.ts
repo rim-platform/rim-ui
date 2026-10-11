@@ -11,61 +11,35 @@ import type {
 } from "./types";
 import { buildRequestToolNameMap, type ToolNameMap } from "./toolNames";
 
-/** Static fallback — used when API is unreachable. */
+/** Static fallback — used until the live model list loads. */
 const STATIC_MODELS: AiModelDef[] = [
   {
-    id: "gpt-4.1",
-    name: "GPT-4.1",
-    contextWindow: 1_000_000,
-    supportsTools: true,
-    supportsStreaming: true,
-    inputPricePerMToken: 2.0,
-    outputPricePerMToken: 8.0,
-  },
-  {
-    id: "gpt-4.1-mini",
-    name: "GPT-4.1 Mini",
-    contextWindow: 1_000_000,
-    supportsTools: true,
-    supportsStreaming: true,
-    inputPricePerMToken: 0.4,
-    outputPricePerMToken: 1.6,
-  },
-  {
-    id: "gpt-4.1-nano",
-    name: "GPT-4.1 Nano",
-    contextWindow: 1_000_000,
-    supportsTools: true,
-    supportsStreaming: true,
-    inputPricePerMToken: 0.1,
-    outputPricePerMToken: 0.4,
-  },
-  {
-    id: "o3-mini",
-    name: "o3-mini",
-    contextWindow: 200_000,
-    supportsTools: true,
-    supportsStreaming: true,
-    inputPricePerMToken: 1.1,
-    outputPricePerMToken: 4.4,
-  },
-  {
-    id: "gpt-4o",
-    name: "GPT-4o",
+    id: "gpt-5.5",
+    name: "GPT-5.5",
     contextWindow: 128_000,
     supportsTools: true,
     supportsStreaming: true,
-    inputPricePerMToken: 2.5,
-    outputPricePerMToken: 10.0,
   },
   {
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
+    id: "gpt-5.4",
+    name: "GPT-5.4",
     contextWindow: 128_000,
     supportsTools: true,
     supportsStreaming: true,
-    inputPricePerMToken: 0.15,
-    outputPricePerMToken: 0.6,
+  },
+  {
+    id: "gpt-5.4-mini",
+    name: "GPT-5.4 Mini",
+    contextWindow: 128_000,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: "gpt-5.4-nano",
+    name: "GPT-5.4 Nano",
+    contextWindow: 128_000,
+    supportsTools: true,
+    supportsStreaming: true,
   },
 ];
 
