@@ -27,12 +27,8 @@ vi.mock("../../key-identity/api/keyIdentity", () => ({
   resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
 }));
 
-import {
-  checkSession,
-  OFFLINE_RECHECK_MAX_MS,
-  OFFLINE_RECHECK_MS,
-  useOfflineReconnect,
-} from "./useOfflineReconnect";
+import { RETRY_FIRST_MS, RETRY_MAX_MS } from "../../../shared/utils/retryWithBackoff";
+import { checkSession, useOfflineReconnect } from "./useOfflineReconnect";
 
 const networkDown = () => new TypeError("Failed to fetch");
 const unauthorized = () =>
@@ -117,7 +113,7 @@ describe("useOfflineReconnect", () => {
   it("does nothing while online", async () => {
     useOfflineStore.setState({ offline: false });
     renderHook(() => useOfflineReconnect(), { wrapper });
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS * 2));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS * 2));
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -126,7 +122,7 @@ describe("useOfflineReconnect", () => {
     requestMock.mockRejectedValue(networkDown());
     renderHook(() => useOfflineReconnect(), { wrapper });
 
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS));
     expect(requestMock).toHaveBeenCalledTimes(1);
     expect(useOfflineStore.getState().offline).toBe(true);
 
@@ -152,7 +148,7 @@ describe("useOfflineReconnect", () => {
       await act(() => vi.advanceTimersByTimeAsync(1));
       expect(requestMock).toHaveBeenCalledTimes(++expected);
     }
-    expect(OFFLINE_RECHECK_MAX_MS).toBe(120_000);
+    expect(RETRY_MAX_MS).toBe(120_000);
 
     // The network is back: check now, then the next wait is the first one again.
     await act(async () => {
@@ -160,7 +156,7 @@ describe("useOfflineReconnect", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(requestMock).toHaveBeenCalledTimes(++expected);
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS));
     expect(requestMock).toHaveBeenCalledTimes(expected + 1);
   });
 
@@ -169,12 +165,12 @@ describe("useOfflineReconnect", () => {
     const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     renderHook(() => useOfflineReconnect(), { wrapper });
 
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS * 4));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS * 4));
     expect(requestMock).not.toHaveBeenCalled();
 
     onLine.mockReturnValue(true);
     const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS * 4));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS * 4));
     expect(requestMock).not.toHaveBeenCalled();
 
     // Shown again: check right away.
@@ -202,7 +198,7 @@ describe("useOfflineReconnect", () => {
     requestMock.mockRejectedValue(unauthorized());
     renderHook(() => useOfflineReconnect(), { wrapper });
 
-    await act(() => vi.advanceTimersByTimeAsync(OFFLINE_RECHECK_MS));
+    await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS));
 
     expect(useAuthStore.getState().session).toBeNull();
     expect(useWorkspaceStore.getState().workspaceId).toBeNull();

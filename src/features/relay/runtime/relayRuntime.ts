@@ -17,9 +17,11 @@ import { onWsConnected, wsClient } from "../../../core/graphql/wsClient";
 import { logger } from "../../../core/logger";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
+import { retryWithBackoff } from "../../../shared/utils/retryWithBackoff";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { keyBackend } from "../../key-identity/api/keyBackend";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
+import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
 import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -208,34 +210,47 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
   };
 }
 
-/** Run the relay for the signed-in account. */
+/**
+ * Run the relay for the signed-in account. Until it has started, a failed start is tried again
+ * on a backoff timer (not while the app is offline), when the app leaves offline mode, and when
+ * the WebSocket connects.
+ */
 export function useRelayRuntime() {
   const userId = useAuthStore((s) => s.session?.userId);
   const qc = useQueryClient();
   useEffect(() => {
     if (!userId) return;
     let stop: (() => void) | null = null;
-    let cancelled = false;
-    const boot = () => {
-      stop?.();
-      stop = null;
-      start(userId, qc)
-        .then((stopper) => {
-          if (cancelled) stopper();
+    const retry = retryWithBackoff(
+      async (stopped) => {
+        if (useRelayStore.getState().info) return true;
+        stop?.();
+        stop = null;
+        try {
+          const stopper = await start(userId, qc);
+          if (stopped()) stopper();
           else stop = stopper;
-        })
-        .catch((err: unknown) => {
+          return true;
+        } catch (err) {
           logger.debug("[RIM:relay] the relay is off:", err);
-        });
+          return false;
+        }
+      },
+      () => !useOfflineStore.getState().offline,
+    );
+    retry.now();
+    const retryIfOff = () => {
+      if (!useRelayStore.getState().info) retry.now();
     };
-    boot();
     // A server that came back may run a newer version with the relay on.
-    const unsubscribe = onWsConnected(() => {
-      if (!useRelayStore.getState().info) boot();
+    const unsubscribeWs = onWsConnected(retryIfOff);
+    const unsubscribeOffline = useOfflineStore.subscribe((state, prev) => {
+      if (prev.offline && !state.offline) retryIfOff();
     });
     return () => {
-      cancelled = true;
-      unsubscribe();
+      retry.stop();
+      unsubscribeWs();
+      unsubscribeOffline();
       stop?.();
       setSpaceRouter(null);
       useRelayStore.getState().reset();

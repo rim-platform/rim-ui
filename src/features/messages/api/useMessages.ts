@@ -18,6 +18,7 @@ import { useConversation } from "../../conversations/api/useConversation";
 import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { requestCacheSync } from "../runtime/messageCacheSync";
+import { insertTimelineMessage, messageFromSend, type SentMessage } from "./timelineMessages";
 import {
   currentCacheAccount,
   encryptedStoreAccount,
@@ -183,19 +184,7 @@ export const SEND_MESSAGE_MUTATION = gql`
 `;
 
 interface SendMessageResponse {
-  sendMessage: {
-    id: string;
-    serverId: string;
-    conversationId: string;
-    threadId: string | null;
-    rootThreadId: string | null;
-    authorId: string;
-    text: string;
-    hasAttachments: boolean;
-    parentMessageId: string | null;
-    isDeleted: boolean;
-    sentAt: string;
-  };
+  sendMessage: SentMessage;
 }
 
 export function useSendMessageMutation() {
@@ -221,10 +210,10 @@ export function useSendMessageMutation() {
         },
       });
     },
-    onSuccess: (_data, vars) => {
-      // Note: messages query is NOT invalidated here because the WebSocket
-      // "NewMessage" event already appends the message to the cache.
-      // Invalidating would cause a double-update and scroll jump.
+    onSuccess: (data, vars) => {
+      // The sent message goes into the timeline at once, without waiting for the WebSocket's
+      // "NewMessage": whichever arrives second finds it there and changes nothing.
+      insertTimelineMessage(qc, vars.workspaceId, messageFromSend(data.sendMessage));
       qc.invalidateQueries({ queryKey: queryKeys.conversations(vars.workspaceId) });
     },
   });
