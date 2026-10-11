@@ -54,10 +54,10 @@ npm run tauri dev            # Full Tauri desktop dev
 npm run tauri build          # Production desktop build
 ```
 
-## History archive in Google Drive or Dropbox
+## History archive in Google Drive, Dropbox or OneDrive
 
 Settings > History can keep the encrypted history archive (`docs/specs/history-archive-v1.md`)
-in the user's own Google Drive or Dropbox, besides a folder on disk. The app talks to those APIs
+in the user's own Google Drive, Dropbox or OneDrive, besides a folder on disk. The app talks to those APIs
 directly; no RIM server is involved. Signing in needs an OAuth client of your own, given to the
 build as environment variables. A build without them simply does not offer that service. No
 client id or secret is committed to this repository.
@@ -68,6 +68,7 @@ client id or secret is committed to this repository.
 | `RIM_GOOGLE_CLIENT_SECRET` | Google Drive | yes, for Drive (see below) |
 | `RIM_DROPBOX_APP_KEY` | Dropbox | yes, for Dropbox |
 | `RIM_DROPBOX_REDIRECT_PORT` | Dropbox | no; default `53241` |
+| `RIM_MICROSOFT_CLIENT_ID` | OneDrive | yes, for OneDrive |
 
 They are read when the Rust side is compiled (`npm run tauri build`), and again at start-up,
 so a development run can set them in the shell before `npm run tauri dev`.
@@ -100,12 +101,27 @@ without registering it.
    `RIM_DROPBOX_REDIRECT_PORT`), and allow public clients (PKCE). Set the **App key** as
    `RIM_DROPBOX_APP_KEY`. The app secret is not used.
 
+**OneDrive**
+
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com/), App registrations, register
+   an app for **accounts in any organizational directory and personal Microsoft accounts**.
+2. Under Authentication, add the platform **Mobile and desktop applications** with the redirect
+   URI `http://localhost/callback` (Microsoft ignores the port of a `localhost` redirect, so the
+   app's one-shot port is accepted), and set **Allow public client flows** to yes.
+3. Under API permissions, add the Microsoft Graph delegated permissions `Files.ReadWrite.AppFolder`,
+   `User.Read` and `offline_access`. The archive lives in `Apps/<app name>/` in the user's
+   OneDrive, and the app sees nothing else.
+4. Set the **Application (client) ID** as `RIM_MICROSOFT_CLIENT_ID`. No client secret is used.
+
 Stopping backups on a device forgets its sign-in. RIM revokes a Dropbox sign-in too, but not a
 Google one: Google revokes an app's access on every device at once, so the user removes RIM under
 Google account settings, Security, Third-party apps with account access, when they want that.
+Microsoft has no way to revoke one device's sign-in; the user removes RIM's access under their
+Microsoft account's privacy settings (apps and services), or My Apps for a work account.
 
 An archive belongs to the OAuth client that wrote it: a build with a different Google client id
-sees a different `appDataFolder`, and a different Dropbox app a different `Apps/` folder.
+sees a different `appDataFolder`, a different Dropbox app a different `Apps/` folder, and a
+different Microsoft app a different OneDrive app folder.
 
 ## History archive in S3-compatible storage
 

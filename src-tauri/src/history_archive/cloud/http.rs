@@ -238,6 +238,22 @@ fn is_tls_failure(e: &reqwest::Error) -> bool {
     false
 }
 
+/// Percent-encode everything but RFC 3986's unreserved characters (`A-Z a-z 0-9 - . _ ~`),
+/// and `/` too unless `keep_slash`, as S3 signatures and Graph paths ask.
+pub(crate) fn percent_encode(value: &str, keep_slash: bool) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char)
+            }
+            b'/' if keep_slash => out.push('/'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 /// Never retry beyond 429 and 5xx.
 pub(crate) fn no_extra_retries(_: StatusCode, _: &[u8]) -> bool {
     false

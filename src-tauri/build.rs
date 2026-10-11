@@ -6,6 +6,7 @@ fn main() {
         "RIM_GOOGLE_CLIENT_SECRET",
         "RIM_DROPBOX_APP_KEY",
         "RIM_DROPBOX_REDIRECT_PORT",
+        "RIM_MICROSOFT_CLIENT_ID",
     ] {
         println!("cargo:rerun-if-env-changed={var}");
     }

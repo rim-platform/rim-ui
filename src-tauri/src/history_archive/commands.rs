@@ -11,8 +11,8 @@ use super::cloud::endpoint::{EndpointCheck, EndpointSetup};
 use super::cloud::s3::{S3Check, S3Setup};
 use super::cloud::{CloudAuthorization, CloudKind, CloudService};
 use super::{
-    ArchiveError, ArchiveStatus, ConnectOutcome, ConnectTarget, ExportReport, FolderInfo,
-    HistoryArchiveState, RestoreReport,
+    ArchiveError, ArchiveStatus, ConnectOutcome, ConnectTarget, DeviceBackup, ExportReport,
+    FolderInfo, HistoryArchiveState, RestoreReport,
 };
 use crate::message_cache::{AccountId, MessageCacheState};
 
@@ -67,7 +67,7 @@ pub fn history_archive_cloud_services(state: State<'_, HistoryArchiveState>) -> 
     state.cloud_services()
 }
 
-/// Sign in to Google Drive or Dropbox in the system browser and look for an archive in the
+/// Sign in to Google Drive, Dropbox or OneDrive in the system browser and look for an archive in the
 /// app's folder there. The webview never sees a token: the browser hands the code to a
 /// loopback listener on this side.
 #[tauri::command]
@@ -176,6 +176,16 @@ pub async fn history_archive_export(
     let state = state.inner().clone();
     let store = cache.store(&account)?;
     blocking(move || state.export(&store, &account)).await
+}
+
+/// Every device that backs this account up into the archive, and when each last did.
+#[tauri::command]
+pub async fn history_archive_devices(
+    state: State<'_, HistoryArchiveState>,
+    account: AccountId,
+) -> Result<Vec<DeviceBackup>, ArchiveError> {
+    let state = state.inner().clone();
+    blocking(move || state.devices(&account)).await
 }
 
 /// Merge every device's archived history into the cache.

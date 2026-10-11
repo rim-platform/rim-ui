@@ -210,6 +210,7 @@ pub fn run() {
             history_archive::commands::history_archive_cloud_discard,
             history_archive::commands::history_archive_endpoint_check,
             history_archive::commands::history_archive_s3_check,
+            history_archive::commands::history_archive_devices,
             history_archive::commands::history_archive_connect,
             history_archive::commands::history_archive_unlock,
             history_archive::commands::history_archive_disconnect,

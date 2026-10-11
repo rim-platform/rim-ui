@@ -1,4 +1,5 @@
-//! The Google Drive, Dropbox, S3 and backup endpoint providers against the fake services in
+//! The Google Drive, Dropbox, OneDrive, S3 and backup endpoint providers against the fake
+//! services in
 //! [`super::fake`]: sign-in and the S3 and endpoint checks, upload, list, download, token
 //! refresh, rate limits, an interrupted backup, and a restore on a second device. The endpoint
 //! also runs against the reference service in Python.
@@ -14,11 +15,12 @@ use super::super::tests::{message, Device, PASSPHRASE, TEST_COST};
 use super::super::{ArchiveError, ConnectTarget};
 use super::endpoint::{EndpointAuth, EndpointProblem};
 use super::fake::{approve, deny, FakeCloud, S3Conditional, ENDPOINT_TOKEN, S3_SECRET};
+use super::onedrive::{CHUNK, SIMPLE_UPLOAD_MAX};
 use super::s3::S3Problem;
 use super::{CloudConnections, CloudKind};
 use crate::message_cache::tests::{account, MockFeed};
 
-const KINDS: [CloudKind; 2] = [CloudKind::GoogleDrive, CloudKind::Dropbox];
+const KINDS: [CloudKind; 3] = CloudKind::ALL;
 
 /// Where an archive is kept in these tests: a cloud service signed in to, or an S3 bucket or
 /// the backup endpoint checked.
@@ -29,9 +31,10 @@ enum Backend {
     Endpoint,
 }
 
-const BACKENDS: [Backend; 4] = [
+const BACKENDS: [Backend; 5] = [
     Backend::Cloud(CloudKind::GoogleDrive),
     Backend::Cloud(CloudKind::Dropbox),
+    Backend::Cloud(CloudKind::OneDrive),
     Backend::S3,
     Backend::Endpoint,
 ];
@@ -96,8 +99,8 @@ fn set_up(
     }
 }
 
-/// How many provider revokes `n` sign-outs make: Dropbox revokes; Google, S3 and the endpoint
-/// do not.
+/// How many provider revokes `n` sign-outs make: Dropbox revokes; Google, OneDrive, S3 and
+/// the endpoint do not.
 fn expected_revokes(backend: Backend, n: usize) -> usize {
     match backend {
         Backend::Cloud(CloudKind::Dropbox) => n,
@@ -130,20 +133,23 @@ fn sign_in_uses_pkce_and_keeps_nothing_until_connected() {
         let exchange = cloud.state().exchanges[0].clone();
         assert!(exchange["redirect_uri"].starts_with(match kind {
             CloudKind::GoogleDrive => "http://127.0.0.1:",
-            CloudKind::Dropbox => "http://localhost:",
+            CloudKind::Dropbox | CloudKind::OneDrive => "http://localhost:",
         }));
         assert_eq!(exchange["code_verifier"].len(), 43);
         let secret = exchange.get("client_secret").map(String::as_str);
         match kind {
             CloudKind::GoogleDrive => assert_eq!(secret, Some("google-not-secret")),
-            CloudKind::Dropbox => assert_eq!(secret, None),
+            CloudKind::Dropbox | CloudKind::OneDrive => assert_eq!(secret, None),
         }
         // The write check left nothing behind, and nothing is in the keyring yet.
-        assert!(cloud.state().drive.is_empty() && cloud.state().dropbox.is_empty());
+        let state = cloud.state();
+        assert!(state.drive.is_empty() && state.dropbox.is_empty() && state.onedrive.is_empty());
+        drop(state);
         assert!(credentials.0.lock().unwrap().is_empty());
 
-        // A discarded Dropbox sign-in is revoked. A Google one is only dropped: Google
-        // revokes per account, which would sign out the user's other devices too.
+        // A discarded Dropbox sign-in is revoked. A Google one is only dropped (Google revokes
+        // per account, which would sign out the user's other devices too), and so is a
+        // OneDrive one (Microsoft cannot revoke one refresh token).
         connections.discard(&auth.connection_id);
         assert_eq!(
             cloud.state().revoked,
@@ -168,16 +174,30 @@ fn a_build_without_a_client_id_offers_no_cloud() {
     let cloud = FakeCloud::start();
     let mut settings = cloud.settings();
     settings.dropbox.client_id = None;
+    settings.microsoft.client_id = None;
     let connections = CloudConnections::new(
         settings,
         Arc::new(super::fake::MemoryCredentials::default()),
     );
-    let services = connections.services();
-    assert!(services[0].available && !services[1].available);
-    assert!(matches!(
-        connections.authorize(CloudKind::Dropbox, approve, |_| Ok(None)),
-        Err(ArchiveError::ServiceNotConfigured(_))
-    ));
+    let offered: Vec<(CloudKind, bool)> = connections
+        .services()
+        .iter()
+        .map(|s| (s.kind, s.available))
+        .collect();
+    assert_eq!(
+        offered,
+        vec![
+            (CloudKind::GoogleDrive, true),
+            (CloudKind::Dropbox, false),
+            (CloudKind::OneDrive, false),
+        ]
+    );
+    for kind in [CloudKind::Dropbox, CloudKind::OneDrive] {
+        assert!(matches!(
+            connections.authorize(kind, approve, |_| Ok(None)),
+            Err(ArchiveError::ServiceNotConfigured(_))
+        ));
+    }
 }
 
 #[test]
@@ -245,6 +265,11 @@ fn upload_list_download_and_overwrite() {
                 let paths: Vec<_> = state.dropbox.keys().cloned().collect();
                 assert_eq!(paths, files.map(|f| format!("/{f}")));
             }
+            Backend::Cloud(CloudKind::OneDrive) => {
+                // Paths under the app folder; the write check deleted its file.
+                let paths: Vec<_> = state.onedrive.keys().cloned().collect();
+                assert_eq!(paths, files);
+            }
             Backend::S3 => {
                 // Objects under the prefix; the storage takes conditional writes, so the create
                 // left no claims, and the check deleted its probe.
@@ -266,6 +291,7 @@ fn listings_follow_every_page() {
     let paged = [
         Backend::Cloud(CloudKind::GoogleDrive),
         Backend::Cloud(CloudKind::Dropbox),
+        Backend::Cloud(CloudKind::OneDrive),
         Backend::S3,
     ];
     for backend in paged {
@@ -367,6 +393,7 @@ fn rate_limits_and_server_errors_are_retried_with_backoff() {
                 ("POST /upload/drive/v3/files", "GET /drive/v3/files")
             }
             Backend::Cloud(CloudKind::Dropbox) => ("files/upload", "files/download"),
+            Backend::Cloud(CloudKind::OneDrive) => ("PUT /graph/", "GET /graph/"),
             Backend::S3 => ("PUT /s3/", "GET /s3/"),
             Backend::Endpoint => ("POST /ep/backup", "GET /ep/backup"),
         };
@@ -459,6 +486,52 @@ fn a_full_drive_is_not_writable() {
         provider.check_writable(),
         Err(ArchiveError::NotWritable(_))
     ));
+
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    let (_, provider) = sign_in(&connections, CloudKind::OneDrive);
+    cloud.fault(
+        "PUT /graph/",
+        507,
+        None,
+        json!({ "error": { "code": "quotaLimitReached" } }),
+        10,
+    );
+    assert!(matches!(
+        provider.check_writable(),
+        Err(ArchiveError::NotWritable(_))
+    ));
+}
+
+#[test]
+fn large_onedrive_uploads_go_through_an_upload_session() {
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    let (_, provider) = sign_in(&connections, CloudKind::OneDrive);
+
+    // A segment at the limit is a little over 4 MiB: three chunks, sent without the token.
+    let big: Vec<u8> = (0..SIMPLE_UPLOAD_MAX + CHUNK + 5)
+        .map(|i| (i % 251) as u8)
+        .collect();
+    let path = "accounts/t/devices/d/seg-0000000001.rimx";
+    provider.write(path, &big).unwrap();
+    assert_eq!(provider.read(path).unwrap().unwrap(), big);
+    assert_eq!(cloud.state().onedrive_chunks, 3);
+    assert_eq!(cloud.state().onedrive_chunks_with_token, 0);
+    provider.write(path, &big[..SIMPLE_UPLOAD_MAX + 1]).unwrap();
+    assert_eq!(
+        provider.read(path).unwrap().unwrap(),
+        &big[..SIMPLE_UPLOAD_MAX + 1]
+    );
+
+    // A create through a session fails like a small one when the name is taken.
+    assert!(!provider.create(path, &big).unwrap());
+    assert!(provider.create("accounts/t/devices/d/other", &big).unwrap());
+
+    // Up to the limit, one request.
+    let chunks = cloud.state().onedrive_chunks;
+    provider.write(path, &big[..SIMPLE_UPLOAD_MAX]).unwrap();
+    assert_eq!(cloud.state().onedrive_chunks, chunks);
 }
 
 #[test]
@@ -477,6 +550,9 @@ fn an_interrupted_backup_resumes_from_the_head() {
         let head_write = match backend {
             Backend::Cloud(CloudKind::GoogleDrive) => "PATCH /upload/drive/v3/files",
             Backend::Cloud(CloudKind::Dropbox) => "head.rimx",
+            Backend::Cloud(CloudKind::OneDrive) => {
+                "head.rimx:/content @microsoft.graph.conflictBehavior=replace PUT"
+            }
             Backend::S3 => "head.rimx PUT",
             Backend::Endpoint => "head.rimx POST",
         };
@@ -572,6 +648,7 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
         let (expected_kind, place) = match backend {
             Backend::Cloud(CloudKind::GoogleDrive) => ("googleDrive", "ada@example.com".into()),
             Backend::Cloud(CloudKind::Dropbox) => ("dropbox", "ada@example.com".into()),
+            Backend::Cloud(CloudKind::OneDrive) => ("oneDrive", "ada@example.com".into()),
             Backend::S3 => ("s3", "rim/backups/ada on 127.0.0.1".into()),
             Backend::Endpoint => ("endpoint", format!("{}/ep/backup", cloud.url())),
         };
