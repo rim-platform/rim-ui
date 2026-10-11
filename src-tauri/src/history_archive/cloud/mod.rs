@@ -1,12 +1,12 @@
-//! Cloud API providers of the history archive: Google Drive and Dropbox, spoken to directly
-//! from this app, with no RIM server in the path (nobody but the user's own drive holds
-//! their history).
+//! Cloud API providers of the history archive: Google Drive, Dropbox and the user's own
+//! backup endpoint, spoken to directly from this app, with no RIM server in the path (nobody
+//! but the user's own storage holds their history).
 //!
 //! - [`oauth`]: the desktop sign-in (system browser, loopback redirect, PKCE) and the access
 //!   tokens refreshed from a refresh token. Refresh tokens live in the secret vault, never in
 //!   the settings file.
 //! - [`http`]: retries with backoff for rate limits and transient failures.
-//! - [`google_drive`], [`dropbox`]: the [`ArchiveProvider`] implementations.
+//! - [`google_drive`], [`dropbox`], [`endpoint`]: the [`ArchiveProvider`] implementations.
 //!
 //! Each provider writes the same format as a local folder (`docs/specs/history-archive-v1.md`)
 //! and only needs the provider operations it already has: upload a new file, list, download,
@@ -14,9 +14,11 @@
 //!
 //! OAuth client ids are build configuration: `RIM_GOOGLE_CLIENT_ID` (with
 //! `RIM_GOOGLE_CLIENT_SECRET`) and `RIM_DROPBOX_APP_KEY`, read at build time or, for a
-//! development run, from the environment. A build without them offers no cloud providers.
+//! development run, from the environment. A build without them offers neither service; the
+//! backup endpoint needs no build configuration and is always offered.
 
 pub(crate) mod dropbox;
+pub(crate) mod endpoint;
 pub(crate) mod google_drive;
 pub(crate) mod http;
 pub(crate) mod oauth;
@@ -40,6 +42,7 @@ use crate::secret_store::SecretVault;
 use super::provider::ArchiveProvider;
 use super::{vault_error, ArchiveError};
 use dropbox::{DropboxEndpoints, DropboxProvider};
+use endpoint::{EndpointCheck, EndpointConnection, EndpointProvider, EndpointSetup};
 use google_drive::{DriveEndpoints, GoogleDriveProvider};
 use http::{Http, Reply, RetryPolicy};
 use oauth::{Loopback, OAuthApp, Pkce, TokenSource};
@@ -220,7 +223,7 @@ impl CredentialStore for VaultCredentials {
     }
 }
 
-/// The secret name of a connection's refresh token.
+/// The secret name of a connection's refresh token, or of an endpoint's password or token.
 fn credential_name(connection_id: &str) -> String {
     format!("history-archive-cloud-v1:{connection_id}")
 }
@@ -280,11 +283,26 @@ pub(crate) struct CloudAuthorization {
     pub version: Option<u32>,
 }
 
-struct Pending {
-    kind: CloudKind,
-    account: String,
-    tokens: Arc<TokenSource>,
+/// A connection waiting for the passphrase.
+enum Pending {
+    OAuth {
+        kind: CloudKind,
+        account: String,
+        tokens: Arc<TokenSource>,
+    },
+    Endpoint {
+        connection: EndpointConnection,
+        secret: Option<Zeroizing<String>>,
+    },
 }
+
+/// A connection as the account's settings name it.
+pub(crate) enum Connection {
+    OAuth(CloudKind, CloudConnection),
+    Endpoint(EndpointConnection),
+}
+
+const EXPIRED: &str = "that sign-in has expired; sign in again";
 
 /// Signed-in connections: the ones still waiting for a passphrase (in memory only, so an
 /// abandoned sign-in leaves nothing in the secret vault), and live token sources of kept ones.
@@ -363,7 +381,7 @@ impl CloudConnections {
         let connection_id = uuid::Uuid::new_v4().to_string();
         lock(&self.pending).insert(
             connection_id.clone(),
-            Pending {
+            Pending::OAuth {
                 kind,
                 account: account.clone(),
                 tokens,
@@ -383,46 +401,145 @@ impl CloudConnections {
         self.cancel.store(true, Ordering::SeqCst);
     }
 
+    /// Check the backup endpoint the user typed (the probe), then look into it. The
+    /// connection, with its secret in memory only, is held until [`Self::keep`] or
+    /// [`Self::discard`].
+    pub(crate) fn check_endpoint(
+        &self,
+        setup: EndpointSetup,
+        inspect: impl FnOnce(&dyn ArchiveProvider) -> Result<Option<u32>, ArchiveError>,
+    ) -> Result<EndpointCheck, ArchiveError> {
+        let url = endpoint::route_url(&setup.url, setup.allow_insecure)?;
+        let mut connection = EndpointConnection {
+            connection_id: uuid::Uuid::new_v4().to_string(),
+            url: url.to_string(),
+            auth: setup.auth,
+            allow_insecure: setup.allow_insecure,
+            exclusive_create: false,
+        };
+        let secret = setup.secret.filter(|_| connection.auth.needs_secret());
+        let checking = EndpointProvider::new(
+            self.endpoint_http(RetryPolicy::CHECK)?,
+            &connection,
+            secret.clone(),
+        )?;
+        connection.exclusive_create = checking.probe()?;
+        let version = inspect(
+            self.endpoint_provider(&connection, secret.clone())?
+                .as_ref(),
+        )?;
+        let check = EndpointCheck {
+            connection_id: connection.connection_id.clone(),
+            url: connection.url.clone(),
+            has_archive: version.is_some(),
+            version,
+            exclusive_create: connection.exclusive_create,
+        };
+        lock(&self.pending).insert(
+            check.connection_id.clone(),
+            Pending::Endpoint { connection, secret },
+        );
+        Ok(check)
+    }
+
     /// A pending connection's provider, for connecting the archive in it.
     pub(crate) fn pending_provider(
         &self,
         connection_id: &str,
-    ) -> Result<(CloudKind, CloudConnection, Box<dyn ArchiveProvider>), ArchiveError> {
+    ) -> Result<(Connection, Box<dyn ArchiveProvider>), ArchiveError> {
         let pending = lock(&self.pending);
-        let p = pending.get(connection_id).ok_or_else(|| {
-            ArchiveError::CloudAuth("that sign-in has expired; sign in again".into())
-        })?;
-        let connection = CloudConnection {
-            connection_id: connection_id.to_string(),
-            account: p.account.clone(),
-        };
-        Ok((
-            p.kind,
-            connection,
-            self.provider(p.kind, p.tokens.clone(), p.account.clone()),
-        ))
+        match pending.get(connection_id) {
+            None => Err(ArchiveError::CloudAuth(EXPIRED.into())),
+            Some(Pending::OAuth {
+                kind,
+                account,
+                tokens,
+            }) => {
+                let connection = CloudConnection {
+                    connection_id: connection_id.to_string(),
+                    account: account.clone(),
+                };
+                Ok((
+                    Connection::OAuth(*kind, connection),
+                    self.provider(*kind, tokens.clone(), account.clone()),
+                ))
+            }
+            Some(Pending::Endpoint { connection, secret }) => Ok((
+                Connection::Endpoint(connection.clone()),
+                self.endpoint_provider(connection, secret.clone())?,
+            )),
+        }
     }
 
-    /// Keep a pending connection: its refresh token goes to the secret vault.
+    /// Keep a pending connection: its refresh token, or the endpoint's password or token,
+    /// goes to the secret vault.
     pub(crate) fn keep(&self, connection_id: &str) -> Result<(), ArchiveError> {
         let Some(pending) = lock(&self.pending).remove(connection_id) else {
-            return Err(ArchiveError::CloudAuth(
-                "that sign-in has expired; sign in again".into(),
-            ));
+            return Err(ArchiveError::CloudAuth(EXPIRED.into()));
         };
-        pending
-            .tokens
-            .persist(self.credentials.clone(), credential_name(connection_id))?;
-        lock(&self.live).insert(connection_id.to_string(), pending.tokens);
+        let name = credential_name(connection_id);
+        match pending {
+            Pending::OAuth { tokens, .. } => {
+                tokens.persist(self.credentials.clone(), name)?;
+                lock(&self.live).insert(connection_id.to_string(), tokens);
+            }
+            Pending::Endpoint {
+                secret: Some(secret),
+                ..
+            } => self.credentials.set(&name, &secret)?,
+            Pending::Endpoint { secret: None, .. } => {}
+        }
         Ok(())
     }
 
     /// Drop a pending connection the user did not use, revoking its grant where that is
     /// this device's alone (see [`Self::revoke`]).
     pub(crate) fn discard(&self, connection_id: &str) {
-        if let Some(pending) = lock(&self.pending).remove(connection_id) {
-            self.revoke(pending.kind, pending.tokens);
+        if let Some(Pending::OAuth { kind, tokens, .. }) = lock(&self.pending).remove(connection_id)
+        {
+            self.revoke(kind, tokens);
         }
+    }
+
+    /// A kept endpoint's provider, with its secret from the vault.
+    pub(crate) fn open_endpoint(
+        &self,
+        connection: &EndpointConnection,
+    ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
+        let secret = if connection.auth.needs_secret() {
+            let stored = self
+                .credentials
+                .get(&credential_name(&connection.connection_id))?;
+            Some(stored.ok_or_else(|| {
+                ArchiveError::CloudAuth(
+                    "this device no longer holds the backup endpoint's password or token".into(),
+                )
+            })?)
+        } else {
+            None
+        };
+        self.endpoint_provider(connection, secret)
+    }
+
+    /// Forget a kept endpoint's password or token.
+    pub(crate) fn forget_endpoint(&self, connection_id: &str) -> Result<(), ArchiveError> {
+        self.credentials.delete(&credential_name(connection_id))
+    }
+
+    fn endpoint_http(&self, policy: RetryPolicy) -> Result<Http, ArchiveError> {
+        Http::new(endpoint::SERVICE, policy, http::no_extra_retries)
+    }
+
+    fn endpoint_provider(
+        &self,
+        connection: &EndpointConnection,
+        secret: Option<Zeroizing<String>>,
+    ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
+        Ok(Box::new(EndpointProvider::new(
+            self.endpoint_http(self.settings.retry)?,
+            connection,
+            secret,
+        )?))
     }
 
     /// A kept connection's provider.

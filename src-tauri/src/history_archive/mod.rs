@@ -14,8 +14,9 @@
 //!
 //! [`provider`] holds the storage trait and the local folder provider, which also covers
 //! folders kept in sync by Dropbox, Google Drive or Syncthing clients. [`cloud`] holds the
-//! Google Drive and Dropbox API providers and their sign-in. [`identity`] keeps each device's
-//! backup of the identity key and its wraps of the archive key under the identity key.
+//! Google Drive and Dropbox API providers and their sign-in, and the user's own backup
+//! endpoint. [`identity`] keeps each device's backup of the identity key and its wraps of the
+//! archive key under the identity key.
 
 pub(crate) mod commands;
 
@@ -37,9 +38,10 @@ use zeroize::Zeroizing;
 use crate::message_cache::{AccountId, CacheError, CacheStore};
 use crate::secret_store::{SecretVault, VaultError};
 use archive::Archive;
+use cloud::endpoint::{EndpointCheck, EndpointConnection, EndpointProblem, EndpointSetup};
 use cloud::{
     CloudAuthorization, CloudConnection, CloudConnections, CloudKind, CloudService, CloudSettings,
-    VaultCredentials,
+    Connection, VaultCredentials,
 };
 use crypto::{ArchiveKey, KdfCost};
 use provider::{ArchiveProvider, LocalFolderProvider};
@@ -54,6 +56,10 @@ pub(crate) enum ArchiveError {
     Unavailable(String),
     #[error("archive io error: {0}")]
     Io(String),
+    #[error("secure connection failed: {0}")]
+    Tls(String),
+    #[error("{1}")]
+    Endpoint(EndpointProblem, String),
     #[error("cannot write into the archive folder: {0}")]
     NotWritable(String),
     #[error("archive format: {0}")]
@@ -95,6 +101,8 @@ impl ArchiveError {
         match self {
             Self::Unavailable(_) => "ARCHIVE_UNAVAILABLE",
             Self::Io(_) => "ARCHIVE_IO",
+            Self::Tls(_) => "ARCHIVE_TLS",
+            Self::Endpoint(problem, _) => problem.code(),
             Self::NotWritable(_) => "ARCHIVE_NOT_WRITABLE",
             Self::Format(_) | Self::Unauthentic | Self::Crypto(_) => "ARCHIVE_FORMAT",
             Self::WrongPassphrase => "ARCHIVE_WRONG_PASSPHRASE",
@@ -192,43 +200,43 @@ enum ProviderConfig {
     },
     GoogleDrive(CloudConnection),
     Dropbox(CloudConnection),
+    Endpoint(EndpointConnection),
+}
+
+impl From<Connection> for ProviderConfig {
+    fn from(connection: Connection) -> Self {
+        match connection {
+            Connection::OAuth(CloudKind::GoogleDrive, c) => Self::GoogleDrive(c),
+            Connection::OAuth(CloudKind::Dropbox, c) => Self::Dropbox(c),
+            Connection::Endpoint(c) => Self::Endpoint(c),
+        }
+    }
 }
 
 impl ProviderConfig {
-    fn cloud(kind: CloudKind, connection: CloudConnection) -> Self {
-        match kind {
-            CloudKind::GoogleDrive => Self::GoogleDrive(connection),
-            CloudKind::Dropbox => Self::Dropbox(connection),
-        }
-    }
-
-    fn cloud_connection(&self) -> Option<(CloudKind, &CloudConnection)> {
-        match self {
-            Self::LocalFolder { .. } => None,
-            Self::GoogleDrive(c) => Some((CloudKind::GoogleDrive, c)),
-            Self::Dropbox(c) => Some((CloudKind::Dropbox, c)),
-        }
-    }
-
-    /// `localFolder`, `googleDrive` or `dropbox`, as the settings file names it.
+    /// `localFolder`, `googleDrive`, `dropbox` or `endpoint`, as the settings file names it.
     fn kind(&self) -> &'static str {
         match self {
             Self::LocalFolder { .. } => "localFolder",
             Self::GoogleDrive(_) => "googleDrive",
             Self::Dropbox(_) => "dropbox",
+            Self::Endpoint(_) => "endpoint",
         }
     }
 
-    /// What the user sees as the archive's place: the folder, or the cloud account.
+    /// What the user sees as the archive's place: the folder, the cloud account, or the
+    /// endpoint's URL.
     fn location(&self) -> String {
         match self {
             Self::LocalFolder { path } => path.clone(),
             Self::GoogleDrive(c) | Self::Dropbox(c) => c.account.clone(),
+            Self::Endpoint(c) => c.url.clone(),
         }
     }
 }
 
-/// Where to connect an account's archive: a folder, or a cloud account just signed in to.
+/// Where to connect an account's archive: a folder, or a cloud account just signed in to or
+/// an endpoint just checked.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum ConnectTarget {
@@ -244,9 +252,9 @@ pub(crate) enum ConnectTarget {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ArchiveStatus {
     pub configured: bool,
-    /// `localFolder`, `googleDrive` or `dropbox`.
+    /// `localFolder`, `googleDrive`, `dropbox` or `endpoint`.
     pub provider: Option<&'static str>,
-    /// The folder, or the cloud account's email address.
+    /// The folder, the cloud account's email address, or the endpoint's URL.
     pub folder: Option<String>,
     pub archive_id: Option<String>,
     pub device_id: String,
@@ -323,6 +331,7 @@ impl HistoryArchiveState {
             ProviderConfig::LocalFolder { path } => Ok(Box::new(LocalFolderProvider::new(path)?)),
             ProviderConfig::GoogleDrive(c) => self.cloud.open(CloudKind::GoogleDrive, c),
             ProviderConfig::Dropbox(c) => self.cloud.open(CloudKind::Dropbox, c),
+            ProviderConfig::Endpoint(c) => self.cloud.open_endpoint(c),
         }
     }
 
@@ -347,18 +356,35 @@ impl HistoryArchiveState {
         self.cloud.cancel();
     }
 
-    /// Drop a signed-in connection the user did not go on with.
+    /// Check a backup endpoint the user typed and look for an archive in it. The connection
+    /// waits for [`Self::connect`] with its passphrase.
+    pub(crate) fn endpoint_check(
+        &self,
+        setup: EndpointSetup,
+    ) -> Result<EndpointCheck, ArchiveError> {
+        self.cloud.check_endpoint(setup, |provider| {
+            Ok(Archive::inspect(provider)?.map(|m| m.version))
+        })
+    }
+
+    /// Drop a signed-in or checked connection the user did not go on with.
     pub(crate) fn cloud_discard(&self, connection_id: &str) {
         self.cloud.discard(connection_id);
     }
 
-    /// Sign out of a cloud connection this account no longer uses. A failure is logged: the
-    /// account has already moved on.
+    /// Sign out of a cloud connection this account no longer uses, or forget an endpoint's
+    /// secret. A failure is logged: the account has already moved on.
     fn forget_cloud(&self, provider: &ProviderConfig) {
-        if let Some((kind, connection)) = provider.cloud_connection() {
-            if let Err(e) = self.cloud.forget(kind, &connection.connection_id) {
-                log::warn!("[history_archive] could not forget a cloud sign-in: {e}");
+        let forgotten = match provider {
+            ProviderConfig::LocalFolder { .. } => return,
+            ProviderConfig::GoogleDrive(c) => {
+                self.cloud.forget(CloudKind::GoogleDrive, &c.connection_id)
             }
+            ProviderConfig::Dropbox(c) => self.cloud.forget(CloudKind::Dropbox, &c.connection_id),
+            ProviderConfig::Endpoint(c) => self.cloud.forget_endpoint(&c.connection_id),
+        };
+        if let Err(e) = forgotten {
+            log::warn!("[history_archive] could not forget a cloud sign-in: {e}");
         }
     }
 
@@ -456,10 +482,10 @@ impl HistoryArchiveState {
                 provider.check_writable()?;
                 (config, provider)
             }
-            // The sign-in already checked the cloud folder can be written.
+            // The sign-in or the endpoint check already wrote there.
             ConnectTarget::Cloud { connection_id } => {
-                let (kind, connection, provider) = self.cloud.pending_provider(connection_id)?;
-                (ProviderConfig::cloud(kind, connection), provider)
+                let (connection, provider) = self.cloud.pending_provider(connection_id)?;
+                (ProviderConfig::from(connection), provider)
             }
         };
         let (archive, created) = if Archive::inspect(provider.as_ref())?.is_some() {
@@ -474,7 +500,7 @@ impl HistoryArchiveState {
                             self.open_provider(&provider_config)?
                         }
                         ConnectTarget::Cloud { connection_id } => {
-                            self.cloud.pending_provider(connection_id)?.2
+                            self.cloud.pending_provider(connection_id)?.1
                         }
                     };
                     (Archive::unlock(provider, passphrase)?, false)

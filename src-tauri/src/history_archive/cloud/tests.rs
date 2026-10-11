@@ -1,6 +1,7 @@
-//! The Google Drive and Dropbox providers against the fake services in [`super::fake`]:
-//! sign-in, upload, list, download, token refresh, rate limits, an interrupted backup, and a
-//! restore on a second device.
+//! The Google Drive, Dropbox and backup endpoint providers against the fake services in
+//! [`super::fake`]: sign-in and the endpoint check, upload, list, download, token refresh,
+//! rate limits, an interrupted backup, and a restore on a second device. The endpoint also
+//! runs against the reference service in Python.
 
 use std::sync::Arc;
 
@@ -11,11 +12,26 @@ use super::super::format::Event;
 use super::super::provider::ArchiveProvider;
 use super::super::tests::{message, Device, PASSPHRASE, TEST_COST};
 use super::super::{ArchiveError, ConnectTarget};
-use super::fake::{approve, deny, FakeCloud};
+use super::endpoint::{EndpointAuth, EndpointProblem};
+use super::fake::{approve, deny, FakeCloud, ENDPOINT_TOKEN};
 use super::{CloudConnections, CloudKind};
 use crate::message_cache::tests::{account, MockFeed};
 
 const KINDS: [CloudKind; 2] = [CloudKind::GoogleDrive, CloudKind::Dropbox];
+
+/// Where an archive is kept in these tests: a cloud service signed in to, or the backup
+/// endpoint checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    Cloud(CloudKind),
+    Endpoint,
+}
+
+const BACKENDS: [Backend; 3] = [
+    Backend::Cloud(CloudKind::GoogleDrive),
+    Backend::Cloud(CloudKind::Dropbox),
+    Backend::Endpoint,
+];
 const DEVICE: &str = "0f0e0d0c-aaaa-4bbb-8ccc-123456789abc";
 const LABEL: &str = "http://localhost:8080/api\nalice";
 
@@ -28,15 +44,43 @@ fn sign_in(connections: &CloudConnections, kind: CloudKind) -> (String, Box<dyn 
         .unwrap();
     assert_eq!(auth.kind, kind);
     assert_eq!(auth.account, "ada@example.com");
-    let (_, _, provider) = connections.pending_provider(&auth.connection_id).unwrap();
+    let (_, provider) = connections.pending_provider(&auth.connection_id).unwrap();
     (auth.connection_id, provider)
 }
 
-/// How many provider revokes `n` sign-outs make: Dropbox revokes, Google does not.
-fn expected_revokes(kind: CloudKind, n: usize) -> usize {
-    match kind {
-        CloudKind::GoogleDrive => 0,
-        CloudKind::Dropbox => n,
+/// Check the fake's backup endpoint and return the pending connection's provider.
+fn check_endpoint(
+    cloud: &FakeCloud,
+    connections: &CloudConnections,
+) -> (String, Box<dyn ArchiveProvider>) {
+    let check = connections
+        .check_endpoint(cloud.endpoint_setup(), |p| {
+            Ok(Archive::inspect(p)?.map(|m| m.version))
+        })
+        .unwrap();
+    assert_eq!(check.url, format!("{}/ep/backup", cloud.url()));
+    let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+    (check.connection_id, provider)
+}
+
+/// Set `backend` up on the fake and return the pending connection's provider.
+fn set_up(
+    cloud: &FakeCloud,
+    connections: &CloudConnections,
+    backend: Backend,
+) -> (String, Box<dyn ArchiveProvider>) {
+    match backend {
+        Backend::Cloud(kind) => sign_in(connections, kind),
+        Backend::Endpoint => check_endpoint(cloud, connections),
+    }
+}
+
+/// How many provider revokes `n` sign-outs make: Dropbox revokes; Google and the endpoint
+/// do not.
+fn expected_revokes(backend: Backend, n: usize) -> usize {
+    match backend {
+        Backend::Cloud(CloudKind::Dropbox) => n,
+        _ => 0,
     }
 }
 
@@ -80,7 +124,10 @@ fn sign_in_uses_pkce_and_keeps_nothing_until_connected() {
         // A discarded Dropbox sign-in is revoked. A Google one is only dropped: Google
         // revokes per account, which would sign out the user's other devices too.
         connections.discard(&auth.connection_id);
-        assert_eq!(cloud.state().revoked, expected_revokes(kind, 1));
+        assert_eq!(
+            cloud.state().revoked,
+            expected_revokes(Backend::Cloud(kind), 1)
+        );
         assert!(!cloud.state().refresh_revoked);
         assert!(matches!(
             connections.pending_provider(&auth.connection_id),
@@ -114,10 +161,10 @@ fn a_build_without_a_client_id_offers_no_cloud() {
 
 #[test]
 fn upload_list_download_and_overwrite() {
-    for kind in KINDS {
+    for backend in BACKENDS {
         let cloud = FakeCloud::start();
         let (connections, _) = cloud.connections();
-        let (_, provider) = sign_in(&connections, kind);
+        let (_, provider) = set_up(&cloud, &connections, backend);
 
         assert_eq!(provider.read("rim-archive.json").unwrap(), None);
         assert!(provider.create("rim-archive.json", b"manifest").unwrap());
@@ -153,34 +200,35 @@ fn upload_list_download_and_overwrite() {
         assert_eq!(provider.list_dirs("accounts").unwrap(), vec!["t1"]);
         assert!(provider.list_dirs("accounts/none").unwrap().is_empty());
         assert!(provider.read("../escape").is_err());
-        assert!(provider.describe().contains("ada@example.com"));
+        let place = match backend {
+            Backend::Cloud(_) => "ada@example.com".to_string(),
+            Backend::Endpoint => format!("{}/ep/backup", cloud.url()),
+        };
+        assert!(provider.describe().contains(&place));
 
         let state = cloud.state();
-        match kind {
-            CloudKind::GoogleDrive => {
+        let files = [
+            "accounts/t1/devices/d1/head.rimx",
+            "accounts/t1/devices/d1/seg-0000000001.rimx",
+            "accounts/t1/devices/d2/head.rimx",
+            "rim-archive.json",
+        ];
+        match backend {
+            Backend::Cloud(CloudKind::GoogleDrive) => {
                 // One file per name, all in appDataFolder; the overwrite replaced in place.
-                assert_eq!(
-                    state.drive_names(),
-                    vec![
-                        "accounts/t1/devices/d1/head.rimx",
-                        "accounts/t1/devices/d1/seg-0000000001.rimx",
-                        "accounts/t1/devices/d2/head.rimx",
-                        "rim-archive.json",
-                    ]
-                );
+                assert_eq!(state.drive_names(), files);
                 assert!(state.drive.iter().all(|f| f.parents == ["appDataFolder"]));
             }
-            CloudKind::Dropbox => {
+            Backend::Cloud(CloudKind::Dropbox) => {
                 let paths: Vec<_> = state.dropbox.keys().cloned().collect();
-                assert_eq!(
-                    paths,
-                    vec![
-                        "/accounts/t1/devices/d1/head.rimx",
-                        "/accounts/t1/devices/d1/seg-0000000001.rimx",
-                        "/accounts/t1/devices/d2/head.rimx",
-                        "/rim-archive.json",
-                    ]
-                );
+                assert_eq!(paths, files.map(|f| format!("/{f}")));
+            }
+            Backend::Endpoint => {
+                // The service honours If-None-Match, so the create left no claim files; the
+                // check left one probe.
+                assert_eq!(state.endpoint_paths(), files);
+                assert_eq!(state.endpoint.len(), files.len() + 1);
+                assert_eq!(state.count("If-None-Match"), 0);
             }
         }
     }
@@ -278,14 +326,18 @@ fn a_rotated_refresh_token_is_saved() {
 
 #[test]
 fn rate_limits_and_server_errors_are_retried_with_backoff() {
-    for kind in KINDS {
+    for backend in BACKENDS {
         let cloud = FakeCloud::start();
         let (connections, _) = cloud.connections();
-        let (_, provider) = sign_in(&connections, kind);
-        let (upload, download) = match kind {
-            CloudKind::GoogleDrive => ("POST /upload/drive/v3/files", "GET /drive/v3/files"),
-            CloudKind::Dropbox => ("files/upload", "files/download"),
+        let (_, provider) = set_up(&cloud, &connections, backend);
+        let (upload, download) = match backend {
+            Backend::Cloud(CloudKind::GoogleDrive) => {
+                ("POST /upload/drive/v3/files", "GET /drive/v3/files")
+            }
+            Backend::Cloud(CloudKind::Dropbox) => ("files/upload", "files/download"),
+            Backend::Endpoint => ("POST /ep/backup", "GET /ep/backup"),
         };
+        let drive = backend == Backend::Cloud(CloudKind::GoogleDrive);
         cloud.fault(
             upload,
             429,
@@ -294,7 +346,7 @@ fn rate_limits_and_server_errors_are_retried_with_backoff() {
             2,
         );
         cloud.fault(download, 503, None, json!({}), 1);
-        if kind == CloudKind::GoogleDrive {
+        if drive {
             cloud.fault(
                 upload,
                 403,
@@ -307,7 +359,7 @@ fn rate_limits_and_server_errors_are_retried_with_backoff() {
         provider
             .write("accounts/t/devices/d/head.rimx", b"h")
             .unwrap();
-        let retries = if kind == CloudKind::GoogleDrive { 3 } else { 2 };
+        let retries = if drive { 3 } else { 2 };
         assert_eq!(cloud.state().count(upload) - before, retries + 1);
         assert_eq!(
             provider
@@ -364,10 +416,10 @@ fn a_full_drive_is_not_writable() {
 
 #[test]
 fn an_interrupted_backup_resumes_from_the_head() {
-    for kind in KINDS {
+    for backend in BACKENDS {
         let cloud = FakeCloud::start();
         let (connections, _) = cloud.connections();
-        let (id, provider) = sign_in(&connections, kind);
+        let (id, provider) = set_up(&cloud, &connections, backend);
         let archive = Archive::create(provider, PASSPHRASE, TEST_COST, chrono::Utc::now()).unwrap();
         archive
             .account(LABEL)
@@ -375,9 +427,10 @@ fn an_interrupted_backup_resumes_from_the_head() {
             .unwrap();
 
         // The connection drops after the new segment is uploaded, before the head lists it.
-        let head_write = match kind {
-            CloudKind::GoogleDrive => "PATCH /upload/drive/v3/files",
-            CloudKind::Dropbox => "head.rimx",
+        let head_write = match backend {
+            Backend::Cloud(CloudKind::GoogleDrive) => "PATCH /upload/drive/v3/files",
+            Backend::Cloud(CloudKind::Dropbox) => "head.rimx",
+            Backend::Endpoint => "head.rimx POST",
         };
         cloud.fault(head_write, 500, None, json!({}), 100);
         let failed = archive
@@ -391,14 +444,14 @@ fn an_interrupted_backup_resumes_from_the_head() {
 
         // Readers see only what the head commits to.
         let reader =
-            Archive::unlock(connections.pending_provider(&id).unwrap().2, PASSPHRASE).unwrap();
+            Archive::unlock(connections.pending_provider(&id).unwrap().1, PASSPHRASE).unwrap();
         let contents = reader.account(LABEL).read_all().unwrap();
         assert_eq!(contents.segments.len(), 1);
         assert!(contents.missing.is_empty() && contents.damaged.is_empty());
 
         // The next export, in a fresh session, writes the batch again over the orphan.
         let resumed = Archive::open(
-            connections.pending_provider(&id).unwrap().2,
+            connections.pending_provider(&id).unwrap().1,
             archive.id(),
             super::super::crypto::ArchiveKey::from_bytes(*archive.key().as_bytes()),
         )
@@ -417,7 +470,7 @@ fn an_interrupted_backup_resumes_from_the_head() {
             .collect();
         assert_eq!(all, events("c1", 1, 6));
 
-        if kind == CloudKind::GoogleDrive {
+        if backend == Backend::Cloud(CloudKind::GoogleDrive) {
             // The orphan was overwritten, not joined by a second file of its name.
             let names = cloud.state().drive_names();
             let mut unique = names.clone();
@@ -428,38 +481,60 @@ fn an_interrupted_backup_resumes_from_the_head() {
     }
 }
 
+/// Sign in to `backend` or check it on `device`: the pending connection's id, and the version
+/// of the archive found there.
+fn connect_place(device: &Device, cloud: &FakeCloud, backend: Backend) -> (String, Option<u32>) {
+    match backend {
+        Backend::Cloud(kind) => {
+            let auth = device.archive.cloud_authorize(kind, approve).unwrap();
+            assert_eq!(auth.has_archive, auth.version.is_some());
+            (auth.connection_id, auth.version)
+        }
+        Backend::Endpoint => {
+            let check = device
+                .archive
+                .endpoint_check(cloud.endpoint_setup())
+                .unwrap();
+            assert_eq!(check.has_archive, check.version.is_some());
+            (check.connection_id, check.version)
+        }
+    }
+}
+
 #[test]
 fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
-    for kind in KINDS {
+    for backend in BACKENDS {
         let cloud = FakeCloud::start();
         let (laptop_cloud, laptop_credentials) = cloud.connections();
         let laptop = Device::with_cloud("alice", laptop_cloud);
-        let auth = laptop.archive.cloud_authorize(kind, approve).unwrap();
-        assert!(!auth.has_archive);
-        let target = ConnectTarget::Cloud {
-            connection_id: auth.connection_id.clone(),
-        };
+        let (connection_id, version) = connect_place(&laptop, &cloud, backend);
+        assert_eq!(version, None);
+        let target = ConnectTarget::Cloud { connection_id };
         let outcome = laptop
             .archive
             .connect(&account("alice"), &target, PASSPHRASE)
             .unwrap();
         assert!(outcome.created);
         let status = outcome.status;
-        let expected_kind = match kind {
-            CloudKind::GoogleDrive => "googleDrive",
-            CloudKind::Dropbox => "dropbox",
+        let (expected_kind, place) = match backend {
+            Backend::Cloud(CloudKind::GoogleDrive) => ("googleDrive", "ada@example.com".into()),
+            Backend::Cloud(CloudKind::Dropbox) => ("dropbox", "ada@example.com".into()),
+            Backend::Endpoint => ("endpoint", format!("{}/ep/backup", cloud.url())),
         };
         assert_eq!(status.provider, Some(expected_kind));
-        assert_eq!(status.folder.as_deref(), Some("ada@example.com"));
+        assert_eq!(status.folder, Some(place));
         assert!(status.unlocked);
 
-        // The refresh token is in the keyring, not in the settings file.
+        // The refresh token or the endpoint's token is in the keyring, not in the settings
+        // file.
         assert_eq!(laptop_credentials.0.lock().unwrap().len(), 1);
         let settings_dir = laptop._data.path().join("history-archive");
         for entry in std::fs::read_dir(&settings_dir).unwrap() {
             let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
             assert!(
-                !text.contains("refresh-0") && !text.contains("access-"),
+                !text.contains("refresh-0")
+                    && !text.contains("access-")
+                    && !text.contains(ENDPOINT_TOKEN),
                 "{text}"
             );
         }
@@ -474,12 +549,9 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
         // A second device signs in to the same account and finds the archive.
         let (phone_cloud, phone_credentials) = cloud.connections();
         let phone = Device::with_cloud("alice", phone_cloud);
-        let auth = phone.archive.cloud_authorize(kind, approve).unwrap();
-        assert!(auth.has_archive);
-        assert_eq!(auth.version, Some(1));
-        let target = ConnectTarget::Cloud {
-            connection_id: auth.connection_id,
-        };
+        let (connection_id, version) = connect_place(&phone, &cloud, backend);
+        assert_eq!(version, Some(1));
+        let target = ConnectTarget::Cloud { connection_id };
         assert!(matches!(
             phone
                 .archive
@@ -495,11 +567,14 @@ fn a_new_device_restores_from_the_cloud_and_disconnecting_signs_out() {
         assert_eq!(report.messages, 12);
         assert_eq!(phone.timeline("c1").unwrap(), expected);
 
-        // Disconnecting forgets the refresh token and revokes this device's Dropbox grant;
-        // the laptop stays signed in.
+        // Disconnecting forgets the refresh token or the endpoint's token and revokes this
+        // device's Dropbox grant; the laptop stays signed in.
         let revoked = cloud.state().revoked;
         phone.archive.disconnect(&account("alice")).unwrap();
-        assert_eq!(cloud.state().revoked, revoked + expected_revokes(kind, 1));
+        assert_eq!(
+            cloud.state().revoked,
+            revoked + expected_revokes(backend, 1)
+        );
         assert!(!cloud.state().refresh_revoked);
         assert!(phone_credentials.0.lock().unwrap().is_empty());
         assert!(!phone.archive.status(&account("alice")).unwrap().configured);
@@ -558,4 +633,262 @@ fn providers_work_from_the_blocking_pool_of_an_async_runtime() {
         .unwrap()
     });
     assert_eq!(read.unwrap().unwrap(), b"h");
+}
+
+// ─── Backup endpoint ────────────────────────────────────────────────────────
+
+/// The problem an endpoint check with `setup` reports.
+fn check_problem(
+    connections: &CloudConnections,
+    setup: super::endpoint::EndpointSetup,
+) -> ArchiveError {
+    connections
+        .check_endpoint(setup, |_| Ok(None))
+        .map(|check| check.connection_id)
+        .unwrap_err()
+}
+
+#[test]
+fn the_endpoint_check_sends_each_auth_mode() {
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    let modes = [
+        (EndpointAuth::None, None),
+        (
+            EndpointAuth::Basic {
+                username: "ada".into(),
+            },
+            Some(("Authorization", "Basic YWRhOnB3")),
+        ),
+        (EndpointAuth::Bearer, Some(("Authorization", "Bearer pw"))),
+        (
+            EndpointAuth::Header {
+                name: "X-Api-Key".into(),
+            },
+            Some(("X-Api-Key", "pw")),
+        ),
+    ];
+    for (auth, header) in modes {
+        cloud.state().endpoint_auth = header.map(|(n, v)| (n.to_string(), v.to_string()));
+        let mut setup = cloud.endpoint_setup();
+        setup.secret = header.map(|_| zeroize::Zeroizing::new("pw".to_string()));
+        setup.auth = auth.clone();
+        let check = connections.check_endpoint(setup, |_| Ok(None)).unwrap();
+        assert!(check.exclusive_create, "{auth:?}");
+        let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+        provider.write("a/b", b"x").unwrap();
+        assert_eq!(provider.read("a/b").unwrap().unwrap(), b"x");
+    }
+
+    // A mode that takes a secret is refused without one, before anything is sent.
+    let mut setup = cloud.endpoint_setup();
+    setup.secret = None;
+    let before = cloud.state().log.len();
+    assert!(matches!(
+        check_problem(&connections, setup),
+        ArchiveError::Invalid(_)
+    ));
+    assert_eq!(cloud.state().log.len(), before);
+}
+
+#[test]
+fn the_endpoint_check_names_the_problem() {
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    let setup = FakeCloud::endpoint_setup;
+    let code = |setup| check_problem(&connections, setup).code();
+
+    let mut wrong_token = setup(&cloud);
+    wrong_token.secret = Some(zeroize::Zeroizing::new("not-it".into()));
+    let mut wrong_path = setup(&cloud);
+    wrong_path.url = format!("{}/ep/wrong", cloud.url());
+    let mut refused = setup(&cloud);
+    refused.url = "http://127.0.0.1:1".into();
+    // A server that answers a TLS handshake in plain HTTP.
+    let plain = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut tls = setup(&cloud);
+    tls.url = format!("https://{}", plain.local_addr().unwrap());
+    std::thread::spawn(move || {
+        use std::io::Write;
+        if let Ok((mut stream, _)) = plain.accept() {
+            let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n");
+        }
+    });
+    let mut insecure = setup(&cloud);
+    insecure.url = "http://backup.example.invalid/backup".into();
+
+    for (setup, expected) in [
+        (wrong_token, EndpointProblem::Unauthorized.code()),
+        (wrong_path, EndpointProblem::NotFound.code()),
+        (refused, "ARCHIVE_UNAVAILABLE"),
+        (tls, "ARCHIVE_TLS"),
+        (insecure, EndpointProblem::Insecure.code()),
+    ] {
+        let url = setup.url.clone();
+        assert_eq!(code(setup), expected, "{url}");
+    }
+
+    cloud.fault("POST /ep/backup", 403, None, json!({}), 1);
+    assert_eq!(code(setup(&cloud)), EndpointProblem::Forbidden.code());
+
+    // A listing that is not a JSON array of entries.
+    cloud.fault("list= GET", 200, None, json!("<html>"), 1);
+    assert_eq!(code(setup(&cloud)), EndpointProblem::NotJson.code());
+
+    // A service that takes the probe but returns something else.
+    cloud.fault("GET /ep/backup path=", 200, None, json!("other bytes"), 1);
+    assert_eq!(code(setup(&cloud)), EndpointProblem::Broken.code());
+}
+
+#[test]
+fn an_endpoint_without_exclusive_create_keeps_the_first_claim() {
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    cloud.state().endpoint_ignores_conditions = true;
+    let check = connections
+        .check_endpoint(cloud.endpoint_setup(), |_| Ok(None))
+        .unwrap();
+    assert!(!check.exclusive_create);
+    let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+
+    assert!(provider.create("rim-archive.json", b"mine").unwrap());
+    assert!(!provider.create("rim-archive.json", b"again").unwrap());
+    assert_eq!(provider.read("rim-archive.json").unwrap().unwrap(), b"mine");
+
+    // Another device's claim was stored first: this device writes that one's bytes and joins.
+    cloud.state().endpoint_race = Some("head.rimx".into());
+    assert!(!provider.create("devices/d1/head.rimx", b"mine").unwrap());
+    assert_eq!(
+        provider.read("devices/d1/head.rimx").unwrap().unwrap(),
+        b"the other device's"
+    );
+    let paths = cloud.state().endpoint_paths();
+    assert_eq!(paths.iter().filter(|p| p.ends_with(".claim")).count(), 3);
+    // Claims are files, not directories: listings of directories ignore them.
+    assert_eq!(provider.list_dirs("devices").unwrap(), vec!["d1"]);
+}
+
+/// The reference service in `docs/specs`, running on a free loopback port until dropped.
+struct ReferenceService {
+    child: std::process::Child,
+    url: String,
+    _dir: tempfile::TempDir,
+}
+
+impl ReferenceService {
+    /// `None` when this computer has no `python3`.
+    fn start(auth: &[&str]) -> Option<Self> {
+        use std::io::BufRead;
+        use std::process::{Command, Stdio};
+
+        if Command::new("python3").arg("--version").output().is_err() {
+            eprintln!("python3 is not installed: the reference backup endpoint is not tested");
+            return None;
+        }
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../docs/specs/backup-endpoint-reference.py");
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = Command::new("python3")
+            .arg("-I")
+            .arg(script)
+            .arg("--dir")
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .args(auth)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let url = line
+            .trim()
+            .strip_prefix("listening on ")
+            .unwrap_or_else(|| panic!("unexpected output: {line:?}"))
+            .to_string();
+        Some(Self {
+            child,
+            url,
+            _dir: dir,
+        })
+    }
+}
+
+impl Drop for ReferenceService {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn the_reference_service_holds_an_archive() {
+    let modes = [
+        (vec![], EndpointAuth::None),
+        (
+            vec!["--basic", "ada:pw"],
+            EndpointAuth::Basic {
+                username: "ada".into(),
+            },
+        ),
+        (vec!["--bearer", "pw"], EndpointAuth::Bearer),
+        (
+            vec!["--header", "X-Api-Key:pw"],
+            EndpointAuth::Header {
+                name: "X-Api-Key".into(),
+            },
+        ),
+    ];
+    let cloud = FakeCloud::start();
+    let (connections, _) = cloud.connections();
+    for (flags, auth) in modes {
+        let Some(service) = ReferenceService::start(&flags) else {
+            return;
+        };
+        let setup = |secret: &str| super::endpoint::EndpointSetup {
+            url: service.url.clone(),
+            auth: auth.clone(),
+            secret: Some(zeroize::Zeroizing::new(secret.to_string())),
+            allow_insecure: false,
+        };
+        if auth.needs_secret() {
+            assert!(
+                matches!(
+                    check_problem(&connections, setup("not-it")),
+                    ArchiveError::Endpoint(EndpointProblem::Unauthorized, _)
+                ),
+                "{auth:?}"
+            );
+        }
+        let check = connections
+            .check_endpoint(setup("pw"), |_| Ok(None))
+            .unwrap();
+        assert!(check.exclusive_create, "{auth:?}");
+        let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+
+        let archive = Archive::create(provider, PASSPHRASE, TEST_COST, chrono::Utc::now()).unwrap();
+        archive
+            .account(LABEL)
+            .append(DEVICE, &events("c1", 1, 3), 1_000)
+            .unwrap();
+        archive
+            .account(LABEL)
+            .append(DEVICE, &events("c1", 4, 5), 2_000)
+            .unwrap();
+        let (_, provider) = connections.pending_provider(&check.connection_id).unwrap();
+        assert!(!provider.create("rim-archive.json", b"another").unwrap());
+        assert_eq!(provider.read("devices/none").unwrap(), None);
+        assert!(provider.list_dirs("accounts/none").unwrap().is_empty());
+        let reader = Archive::unlock(provider, PASSPHRASE).unwrap();
+        let contents = reader.account(LABEL).read_all().unwrap();
+        assert_eq!(contents.devices, 1);
+        let all: Vec<Event> = contents
+            .segments
+            .into_iter()
+            .flat_map(|s| s.events)
+            .collect();
+        assert_eq!(all, events("c1", 1, 5), "{auth:?}");
+    }
 }

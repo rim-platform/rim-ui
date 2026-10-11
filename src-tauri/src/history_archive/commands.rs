@@ -7,6 +7,7 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
+use super::cloud::endpoint::{EndpointCheck, EndpointSetup};
 use super::cloud::{CloudAuthorization, CloudKind, CloudService};
 use super::{
     ArchiveError, ArchiveStatus, ConnectOutcome, ConnectTarget, ExportReport, FolderInfo,
@@ -85,13 +86,24 @@ pub async fn history_archive_cloud_authorize(
     .await
 }
 
+/// Check the user's backup endpoint (store, list and read back a probe file) and look for an
+/// archive in it. The password or token stays in memory until the archive is connected.
+#[tauri::command]
+pub async fn history_archive_endpoint_check(
+    state: State<'_, HistoryArchiveState>,
+    setup: EndpointSetup,
+) -> Result<EndpointCheck, ArchiveError> {
+    let state = state.inner().clone();
+    blocking(move || state.endpoint_check(setup)).await
+}
+
 /// Stop waiting for a sign-in in the browser.
 #[tauri::command]
 pub fn history_archive_cloud_cancel(state: State<'_, HistoryArchiveState>) {
     state.cloud_cancel();
 }
 
-/// Drop a signed-in cloud account the user did not go on with.
+/// Drop a signed-in cloud account or a checked endpoint the user did not go on with.
 #[tauri::command]
 pub async fn history_archive_cloud_discard(
     state: State<'_, HistoryArchiveState>,

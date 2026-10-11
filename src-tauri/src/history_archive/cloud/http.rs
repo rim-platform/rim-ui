@@ -37,6 +37,13 @@ impl RetryPolicy {
         ..Self::DEFAULT
     };
 
+    /// Checking a place the user is setting up: one retry, so a wrong address is reported in
+    /// seconds rather than after the whole backoff.
+    pub(crate) const CHECK: Self = Self {
+        attempts: 2,
+        ..Self::DEFAULT
+    };
+
     /// Exponential backoff with jitter: somewhere between half and all of the capped delay,
     /// so devices that failed together do not retry together.
     fn backoff(&self, retry: u32) -> Duration {
@@ -149,7 +156,7 @@ impl Http {
                         Err(_) => None,
                     }
                 }
-                Err(e) if last => return Err(self.unreachable(&e)),
+                Err(e) if last || is_tls_failure(&e) => return Err(self.unreachable(&e)),
                 Err(e) => {
                     log::info!(
                         "[history_archive] {} request failed: {e}; retrying",
@@ -170,7 +177,12 @@ impl Http {
     }
 
     fn unreachable(&self, e: &reqwest::Error) -> ArchiveError {
-        ArchiveError::Unavailable(format!("cannot reach {}: {e}", self.service))
+        let chain = error_chain(e);
+        if is_tls_failure(e) {
+            ArchiveError::Tls(format!("{}: {chain}", self.service))
+        } else {
+            ArchiveError::Unavailable(format!("cannot reach {}: {chain}", self.service))
+        }
     }
 
     /// The error for an answer the caller did not expect.
@@ -194,6 +206,36 @@ impl Http {
             ))
         }
     }
+}
+
+/// The error and its causes, which name what actually failed (refused, timed out, a
+/// certificate).
+fn error_chain(e: &reqwest::Error) -> String {
+    let mut chain = e.to_string();
+    let mut source = std::error::Error::source(e);
+    while let Some(cause) = source {
+        chain.push_str(": ");
+        chain.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    chain
+}
+
+/// A TLS handshake or certificate failure: not transient, and not the network's fault. Only
+/// the causes are read: the error's own message names the URL, whose host may contain any word.
+fn is_tls_failure(e: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(e);
+    while let Some(cause) = source {
+        let text = cause.to_string().to_ascii_lowercase();
+        if ["certificate", "tls", "ssl", "handshake"]
+            .iter()
+            .any(|word| text.contains(word))
+        {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
 }
 
 /// Never retry beyond 429 and 5xx.

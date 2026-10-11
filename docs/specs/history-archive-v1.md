@@ -3,8 +3,9 @@
 The desktop app writes the user's message history to a folder the user picks, encrypted, and
 reads it back on another device (master plan Stage 2). There is no RIM server in this picture:
 the folder is the user's own (a local disk, a USB drive, a folder that Dropbox, Google Drive,
-OneDrive, iCloud Drive or Syncthing keeps in sync, or the app's own folder in the user's Google
-Drive or Dropbox, reached through their APIs), and only someone with the passphrase can read it.
+OneDrive, iCloud Drive or Syncthing keeps in sync, the app's own folder in the user's Google
+Drive or Dropbox, reached through their APIs, or a backup endpoint the user runs), and only
+someone with the passphrase can read it.
 
 This document is the format. Anyone may write a reader or writer from it. The implementation is
 `src-tauri/src/history_archive/`; the cache it is written from is `docs/local-message-cache.md`.
@@ -476,6 +477,24 @@ temporary file (or an exclusive open where there are no hard links).
 - **Create**: an upload in `add` mode with `autorename` off and `strict_conflict` on, which fails
   when the name is taken.
 
+### Backup endpoint
+
+- **Place**: a service the user runs, at a URL they type, speaking the protocol of
+  `backup-endpoint-v1.md` (`GET` and `POST` on one `/backup` URL). Archive paths are its paths,
+  so the service holds exactly the local layout.
+- **Write**: a `POST` of the whole file.
+- **Create**: a `POST` with `If-None-Match: *`, which the service answers `412` when the name is
+  taken. A service that ignores the header gets claims instead: the device stores the file under
+  a hidden claim name, lists the directory, and copies the claim the listing names first to the
+  path.
+- **Sign-in**: none, HTTP Basic, or a token (`Authorization: Bearer`, or a header the user
+  names). The password or token is kept in the secret vault as
+  `history-archive-cloud-v1:<connection id>`, like a refresh token; the settings file names the
+  URL, the mode, and the user name or header name.
+- **What it learns**: file names, sizes and times, and each device's IP address; nothing else.
+- HTTPS is required unless the host is this computer or the user allows an unencrypted
+  connection.
+
 ### Sign-in and tokens
 
 - OAuth 2.0 for native apps (RFC 8252): the system browser signs the user in and redirects to a
@@ -504,8 +523,9 @@ temporary file (or an exclusive open where there are no hard links).
 
 A rate limit (HTTP 429, or a 403 naming a rate limit on Drive), a 5xx answer or a network
 failure is retried up to six attempts in all, waiting as `Retry-After` says (at most 60 s) or
-with exponential backoff and jitter from 0.5 s to 16 s. A service that stays busy fails the
-export, which runs again later.
+with exponential backoff and jitter from 0.5 s to 16 s. A TLS handshake or certificate failure
+is not retried: it is not transient. A service that stays busy fails the export, which runs
+again later.
 
 An export interrupted at any point resumes safely, because the head is the commit point:
 segments are written before the head that lists them, readers take segments only from the head,
@@ -516,6 +536,7 @@ same batch again under the same sequence numbers, replacing whatever the interru
 
 - OneDrive, iCloud Drive and other cloud APIs: a folder kept in sync by their desktop clients
   works.
+- WebDAV (Nextcloud, ownCloud); the backup endpoint's shape resembles it.
 - Telling a device that a cloud sign-in was revoked elsewhere before the next backup fails.
 - Compaction: every export adds segments. A later writer may merge a device's own segments into
   fewer (only that device may), listing the new ones in its head before deleting the old.
