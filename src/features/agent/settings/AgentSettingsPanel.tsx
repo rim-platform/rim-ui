@@ -15,6 +15,7 @@ import { Button } from "../../../shared/ui/Button";
 import { toast } from "../../../shared/toast/useToastStore";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAgentStore } from "../state/useAgentStore";
+import { useLiveModelsStore } from "../state/useLiveModelsStore";
 import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { AI_COMMANDS_OFF_MESSAGE } from "../aiCommandsOff";
@@ -223,6 +224,7 @@ export function AgentSettingsPanel() {
       const fetched = await tauriFetchModels(providerId);
       if (request !== modelsRequest.current) return;
       setDynamicModels(fetched.length > 0 ? fetched : null);
+      if (fetched.length > 0) useLiveModelsStore.getState().setModels(providerId, fetched);
       const store = useAgentStore.getState();
       if (fetched.length > 0 && !fetched.some((m) => m.id === store.settings.modelId)) {
         store.updateSettings({ modelId: fetched[0].id });
