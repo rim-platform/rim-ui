@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useId, lazy, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -13,6 +13,7 @@ import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
+import { handleVerticalStripKeys } from "../../../shared/ui/focusNavigation";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
 import {
@@ -190,26 +191,31 @@ type SettingsTab =
   | "account"
   | "about";
 
-const tabs: { key: SettingsTab; label: string }[] = [
-  { key: "profile", label: "Profile" },
-  { key: "keybinds", label: "Keybinds" },
-  { key: "keyboard", label: "Keyboard" },
-  { key: "commands", label: "Commands" },
-  { key: "macros", label: "Macros" },
-  { key: "pipelines", label: "Pipelines" },
-  { key: "plugins", label: "Plugins" },
-  { key: "plugin-ai", label: "Plugin AI" },
-  { key: "emoji", label: "Emoji" },
-  { key: "state", label: "State" },
-  { key: "agent", label: "AI Agent" },
-  { key: "messages", label: "Messages" },
-  { key: "notifications", label: "Notifications" },
-  { key: "history", label: "History" },
-  { key: "workspace", label: "Workspace" },
-  { key: "security", label: "Security" },
-  { key: "contacts", label: "Contacts" },
-  { key: "account", label: "Account" },
-  { key: "about", label: "About" },
+/** Sections of the settings navigation, in display order. */
+const groups = ["You", "Messaging", "Programmable", "Extensions", "Workspace", "About"] as const;
+
+type SettingsGroup = (typeof groups)[number];
+
+const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
+  { key: "profile", label: "Profile", group: "You" },
+  { key: "account", label: "Account", group: "You" },
+  { key: "security", label: "Security", group: "You" },
+  { key: "contacts", label: "Contacts", group: "You" },
+  { key: "messages", label: "Messages", group: "Messaging" },
+  { key: "notifications", label: "Notifications", group: "Messaging" },
+  { key: "history", label: "History", group: "Messaging" },
+  { key: "keybinds", label: "Keybinds", group: "Programmable" },
+  { key: "keyboard", label: "Keyboard", group: "Programmable" },
+  { key: "commands", label: "Commands", group: "Programmable" },
+  { key: "macros", label: "Macros", group: "Programmable" },
+  { key: "pipelines", label: "Pipelines", group: "Programmable" },
+  { key: "plugins", label: "Plugins", group: "Extensions" },
+  { key: "plugin-ai", label: "Plugin AI", group: "Extensions" },
+  { key: "state", label: "State", group: "Extensions" },
+  { key: "emoji", label: "Emoji", group: "Extensions" },
+  { key: "agent", label: "AI Agent", group: "Extensions" },
+  { key: "workspace", label: "Workspace", group: "Workspace" },
+  { key: "about", label: "About", group: "About" },
 ];
 
 export function SettingsPage() {
@@ -242,6 +248,11 @@ export function SettingsPage() {
   const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
     ? activeTab
     : "profile";
+  // Groups with no visible tab are left out, label included.
+  const visibleGroups = groups
+    .map((group) => ({ group, items: visibleTabs.filter((tab) => tab.group === group) }))
+    .filter(({ items }) => items.length > 0);
+  const groupIdPrefix = useId();
 
   // When the caller navigates to settings again (e.g. "Manage plugins" while
   // settings is already open), the surface updates but the component stays
@@ -269,56 +280,78 @@ export function SettingsPage() {
         </button>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex border-b border-rim-line px-8">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              "px-4 py-2.5 text-sm font-medium transition-colors",
-              shownTab === tab.key
-                ? "border-b-2 border-rim-accent text-rim-text"
-                : "text-rim-text-muted hover:text-rim-text",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-8 py-6">
-          <Suspense fallback={<SettingsLoadingSpinner />}>
-            {shownTab === "profile" && <ProfileSettings />}
-            {shownTab === "keybinds" && <KeybindSettings />}
-            {shownTab === "keyboard" && <KeyboardSettings />}
-            {shownTab === "commands" && <UserCommandSettings />}
-            {shownTab === "macros" && <MacroSettings />}
-            {shownTab === "pipelines" && <PipelineSettings />}
-            {shownTab === "plugins" && <PluginSettingsPage />}
-            {shownTab === "plugin-ai" && <PluginAiConsentPanel />}
-            {shownTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
-            {shownTab === "state" && <WorkspaceStateSettings serverId={workspaceId ?? undefined} />}
-            {shownTab === "agent" && <AgentSettingsPanel />}
-            {shownTab === "messages" && <MessageDisplaySettings />}
-            {shownTab === "notifications" && <NotificationSettings />}
-            {shownTab === "history" && <HistoryArchiveSettings />}
-            {shownTab === "workspace" && (
-              <div className="space-y-10">
-                <ModerationSettings serverId={workspaceId} />
-                <WorkspacePluginSettings serverId={workspaceId} />
+      <div className="flex min-h-0 flex-1">
+        {/* Section navigation */}
+        <nav
+          aria-label="Settings sections"
+          onKeyDown={handleVerticalStripKeys}
+          className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
+        >
+          {visibleGroups.map(({ group, items }) => {
+            const labelId = `${groupIdPrefix}-${group}`;
+            return (
+              <div key={group} role="group" aria-labelledby={labelId}>
+                <p
+                  id={labelId}
+                  className="px-3 pt-4 pb-1 text-[11px] uppercase tracking-wide text-rim-text-faint"
+                >
+                  {group}
+                </p>
+                {items.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    aria-current={shownTab === tab.key ? "page" : undefined}
+                    className={cn(
+                      "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                      shownTab === tab.key
+                        ? "bg-rim-panel-soft text-rim-text"
+                        : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-            )}
-            {shownTab === "security" && <KeyIdentitySettings />}
-            {shownTab === "contacts" && <ContactsSettings />}
-            {shownTab === "account" && (
-              <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
-            )}
-            {shownTab === "about" && <AboutRim />}
-          </Suspense>
+            );
+          })}
+        </nav>
+
+        {/* Tab content */}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-8 py-6">
+            <Suspense fallback={<SettingsLoadingSpinner />}>
+              {shownTab === "profile" && <ProfileSettings />}
+              {shownTab === "keybinds" && <KeybindSettings />}
+              {shownTab === "keyboard" && <KeyboardSettings />}
+              {shownTab === "commands" && <UserCommandSettings />}
+              {shownTab === "macros" && <MacroSettings />}
+              {shownTab === "pipelines" && <PipelineSettings />}
+              {shownTab === "plugins" && <PluginSettingsPage />}
+              {shownTab === "plugin-ai" && <PluginAiConsentPanel />}
+              {shownTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
+              {shownTab === "state" && (
+                <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
+              )}
+              {shownTab === "agent" && <AgentSettingsPanel />}
+              {shownTab === "messages" && <MessageDisplaySettings />}
+              {shownTab === "notifications" && <NotificationSettings />}
+              {shownTab === "history" && <HistoryArchiveSettings />}
+              {shownTab === "workspace" && (
+                <div className="space-y-10">
+                  <ModerationSettings serverId={workspaceId} />
+                  <WorkspacePluginSettings serverId={workspaceId} />
+                </div>
+              )}
+              {shownTab === "security" && <KeyIdentitySettings />}
+              {shownTab === "contacts" && <ContactsSettings />}
+              {shownTab === "account" && (
+                <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
+              )}
+              {shownTab === "about" && <AboutRim />}
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>

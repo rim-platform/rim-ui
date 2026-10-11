@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // Mock all sub-panels to avoid pulling in their complex dependencies
@@ -125,7 +125,22 @@ describe("SettingsPage", () => {
     expect(screen.getByText("AI Agent")).toBeInTheDocument();
     expect(screen.queryByText("AI Keys")).not.toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
-    expect(screen.getByText("About")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About" })).toBeInTheDocument();
+  });
+
+  it("groups the tabs under section labels and drops a group with nothing visible", () => {
+    renderSettings({ custom_emoji: ServerFeatureState.DISABLED });
+    expect(screen.getAllByRole("group")).toEqual(
+      ["You", "Messaging", "Programmable", "Extensions", "About"].map((name) =>
+        screen.getByRole("group", { name }),
+      ),
+    );
+    const extensions = screen.getByRole("group", { name: "Extensions" });
+    expect(
+      within(extensions)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Plugins", "Plugin AI", "State", "AI Agent"]);
   });
 
   it("reaches every tab and the close button by keyboard and opens Keyboard with Enter", async () => {
@@ -142,6 +157,16 @@ describe("SettingsPage", () => {
     keyboard.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByTestId("keyboard-settings")).toBeInTheDocument();
+  });
+
+  it("moves between tabs with Up and Down, across section labels", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    screen.getByRole("button", { name: "Contacts" }).focus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: "Messages" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(screen.getByRole("button", { name: "Security" })).toHaveFocus();
   });
 
   it("shows Profile tab content by default", () => {
@@ -194,7 +219,7 @@ describe("SettingsPage", () => {
     const user = userEvent.setup();
     renderSettings();
 
-    await user.click(screen.getByText("About"));
+    await user.click(screen.getByRole("button", { name: "About" }));
     // About panel renders an "About RIM" heading plus product blurb.
     expect(screen.getByRole("heading", { name: "About RIM" })).toBeInTheDocument();
     expect(screen.getByText("Version 9.9.9")).toBeInTheDocument();
