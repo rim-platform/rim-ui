@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, FolderOpen } from "lucide-react";
+import { Cloud, FolderOpen, Server } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import type { SafeInvokeError } from "../../../core/tauri/safeInvoke";
@@ -16,10 +16,12 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   ArchiveErrorCode,
   CLOUD_SERVICE_NAMES,
+  ENDPOINT_NAME,
   MIN_PASSPHRASE_LENGTH,
   archiveLocation,
   authorizeCloud,
   cancelCloudSignIn,
+  checkEndpoint,
   connectArchive,
   disconnectArchive,
   discardCloudSignIn,
@@ -34,8 +36,10 @@ import {
   type ArchiveStatus,
   type CloudKind,
   type ConnectTarget,
+  type EndpointSetup,
 } from "../api/historyArchive";
 import { describeExport, describeRestore } from "./archiveReports";
+import { EndpointForm } from "./EndpointForm";
 
 const inputClass =
   "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
@@ -55,9 +59,31 @@ function errorText(error: SafeInvokeError): string {
         return "The folder now holds a different archive. Stop backing up here and choose it again.";
       case ArchiveErrorCode.CLOUD_AUTH:
         return `The sign-in did not work or is no longer valid (${error.message}). Sign in again; if this archive is already set up, stop backing up here first.`;
+      case ArchiveErrorCode.TLS:
+        return "The secure connection failed: the server's certificate is not trusted here, or that address does not speak HTTPS.";
+      case ArchiveErrorCode.ENDPOINT_INSECURE:
+        return "That address is plain HTTP to another computer. Use https://, or allow an unencrypted connection if the network is yours.";
+      case ArchiveErrorCode.ENDPOINT_UNAUTHORIZED:
+        return "The backup endpoint refused the credentials (401). Check the user name and password, or the token.";
+      case ArchiveErrorCode.ENDPOINT_FORBIDDEN:
+        return "The backup endpoint accepted the credentials but refuses access (403).";
+      case ArchiveErrorCode.ENDPOINT_NOT_FOUND:
+        return "No backup endpoint answers at that address (404). The URL should lead to the service's /backup route.";
+      case ArchiveErrorCode.ENDPOINT_NOT_JSON:
+        return "Something answered, but not as a backup endpoint: its listing is not JSON. Check the URL.";
+      case ArchiveErrorCode.ENDPOINT_BROKEN:
+        return `The backup endpoint does not keep files correctly: ${error.message}.`;
     }
   }
   return error.message;
+}
+
+/** A failed endpoint check: "cannot be reached" means the address, not a drive. */
+function endpointCheckErrorText(error: SafeInvokeError): string {
+  if (error.kind === "backend_error" && error.code === ArchiveErrorCode.UNAVAILABLE) {
+    return "Nothing answers at that address. Check the URL and that the service is running.";
+  }
+  return errorText(error);
 }
 
 /**
@@ -88,9 +114,10 @@ export function HistoryArchiveSettings() {
       <div>
         <h2 className="text-base font-semibold text-rim-text">History</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Keep an encrypted copy of your message history in a folder you choose or in your own
-          Google Drive or Dropbox, and get it back on another device. A folder that OneDrive or
-          Syncthing keeps in sync carries it to your other computers too. RIM has no copy of it.
+          Keep an encrypted copy of your message history in a folder you choose, in your own Google
+          Drive or Dropbox, or on a server of your own, and get it back on another device. A folder
+          that OneDrive or Syncthing keeps in sync carries it to your other computers too. RIM has
+          no copy of it.
         </p>
       </div>
 
@@ -141,7 +168,10 @@ function useAfterRestore() {
   }, [qc, workspaceId]);
 }
 
-/** Where the archive being set up is: a folder, or a cloud account just signed in to. */
+/**
+ * Where the archive being set up is: a folder, a cloud account just signed in to, or a backup
+ * endpoint just checked.
+ */
 type Place =
   | { kind: "localFolder"; path: string; hasArchive: boolean }
   | {
@@ -150,7 +180,8 @@ type Place =
       connectionId: string;
       account: string;
       hasArchive: boolean;
-    };
+    }
+  | { kind: "endpoint"; connectionId: string; url: string; hasArchive: boolean };
 
 function placeTarget(place: Place): ConnectTarget {
   return place.kind === "localFolder"
@@ -159,10 +190,21 @@ function placeTarget(place: Place): ConnectTarget {
 }
 
 function placeLabel(place: Place): string {
-  return place.kind === "localFolder"
-    ? place.path
-    : `${CLOUD_SERVICE_NAMES[place.service]} (${place.account})`;
+  switch (place.kind) {
+    case "localFolder":
+      return place.path;
+    case "cloud":
+      return `${CLOUD_SERVICE_NAMES[place.service]} (${place.account})`;
+    case "endpoint":
+      return `${ENDPOINT_NAME} (${place.url})`;
+  }
 }
+
+const JOINING_SUBJECT: Record<Place["kind"], string> = {
+  localFolder: "This folder",
+  cloud: "This account",
+  endpoint: "This endpoint",
+};
 
 /** The cloud services this build can sign in to. */
 function useCloudServices(): CloudKind[] {
@@ -190,12 +232,15 @@ function SetupArchive({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [signingIn, setSigningIn] = useState<CloudKind | null>(null);
+  const [endpointOpen, setEndpointOpen] = useState(false);
+  const [checkingEndpoint, setCheckingEndpoint] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const afterRestore = useAfterRestore();
   const cloudServices = useCloudServices();
 
-  // A cloud sign-in that was not used is dropped (a Dropbox one revoked) when another place
-  // is chosen or the panel closes; a sign-in still waiting for the browser is cancelled.
+  // A cloud sign-in or endpoint check that was not used is dropped (a Dropbox sign-in revoked)
+  // when another place is chosen or the panel closes; a sign-in still waiting for the browser
+  // is cancelled.
   const pendingCloud = useRef<string | null>(null);
   const mounted = useRef(true);
   const waitingForBrowser = useRef(false);
@@ -214,7 +259,7 @@ function SetupArchive({
 
   function choosePlace(next: Place) {
     dropPendingCloud();
-    if (next.kind === "cloud") pendingCloud.current = next.connectionId;
+    if (next.kind !== "localFolder") pendingCloud.current = next.connectionId;
     setPlace(next);
     setPassphrase("");
     setConfirm("");
@@ -261,6 +306,26 @@ function SetupArchive({
     });
   }
 
+  async function chooseEndpoint(setup: EndpointSetup) {
+    setError(null);
+    setCheckingEndpoint(true);
+    const result = await checkEndpoint(setup);
+    if (!mounted.current) {
+      if (result.ok) void discardCloudSignIn(result.value.connectionId);
+      return;
+    }
+    setCheckingEndpoint(false);
+    if (!result.ok) return setError(endpointCheckErrorText(result.error));
+    const check = result.value;
+    setEndpointOpen(false);
+    choosePlace({
+      kind: "endpoint",
+      connectionId: check.connectionId,
+      url: check.url,
+      hasArchive: check.hasArchive,
+    });
+  }
+
   const joining = place?.hasArchive ?? false;
   const length = passphraseLength(passphrase);
   const tooShort = length < MIN_PASSPHRASE_LENGTH;
@@ -296,7 +361,7 @@ function SetupArchive({
     onDone(connected.value.status, restored);
   }
 
-  const choosing = busy || signingIn !== null;
+  const choosing = busy || signingIn !== null || checkingEndpoint;
 
   return (
     <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
@@ -337,7 +402,26 @@ function SetupArchive({
               </span>
             </Button>
           ))}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setEndpointOpen((open) => !open)}
+            disabled={choosing}
+            aria-expanded={endpointOpen}
+          >
+            <span className="flex items-center gap-1.5">
+              <Server className="h-3.5 w-3.5" />
+              Your own server
+            </span>
+          </Button>
         </div>
+        {endpointOpen && (
+          <EndpointForm
+            busy={checkingEndpoint}
+            disabled={busy || signingIn !== null}
+            onCheck={(setup) => void chooseEndpoint(setup)}
+          />
+        )}
         {signingIn && (
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-rim-text-muted">
@@ -361,7 +445,7 @@ function SetupArchive({
         >
           <p className="text-xs text-rim-text-muted">
             {joining
-              ? `${place.kind === "localFolder" ? "This folder" : "This account"} already holds a RIM history archive. Enter its passphrase to add this device; your history is restored from it.`
+              ? `${JOINING_SUBJECT[place.kind]} already holds a RIM history archive. Enter its passphrase to add this device; your history is restored from it.`
               : `Set a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. Every device needs it to read your history, and nobody can recover it if you forget it.`}
           </p>
           <label className="block text-sm font-medium text-rim-text">
@@ -595,7 +679,9 @@ function ConnectedArchive({
       <p className="text-xs text-rim-text-faint">
         {status.provider === "googleDrive" || status.provider === "dropbox"
           ? `Stopping signs this device out of ${CLOUD_SERVICE_NAMES[status.provider]} and leaves the archive there; other devices keep using it.`
-          : "Stopping leaves the archive in the folder; other devices keep using it."}
+          : status.provider === "endpoint"
+            ? "Stopping forgets this device's password or token for the endpoint and leaves the archive there; other devices keep using it."
+            : "Stopping leaves the archive in the folder; other devices keep using it."}
       </p>
       {message && <p className="text-xs text-rim-success">{message}</p>}
       {error && (

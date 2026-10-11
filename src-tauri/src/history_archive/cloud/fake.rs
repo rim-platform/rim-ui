@@ -1,8 +1,9 @@
 //! Test doubles for the cloud providers: an in-memory credential store, and a fake Google
-//! Drive, Dropbox and OAuth token endpoint on a local HTTP server, holding files in memory.
-//! Only the API surface the providers use is implemented, with the behaviors they rely on
-//! (Drive's duplicate names and `appDataFolder`, Dropbox's upload modes and 409 errors,
-//! bearer tokens that expire, rate limits on demand).
+//! Drive, Dropbox, backup endpoint and OAuth token endpoint on a local HTTP server, holding
+//! files in memory. Only the API surface the providers use is implemented, with the behaviors
+//! they rely on (Drive's duplicate names and `appDataFolder`, Dropbox's upload modes and 409
+//! errors, the endpoint's `If-None-Match` and listing order, bearer tokens that expire, rate
+//! limits on demand).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -13,6 +14,7 @@ use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 use super::super::ArchiveError;
+use super::endpoint::{EndpointAuth, EndpointSetup};
 use super::http::RetryPolicy;
 use super::{CloudConnections, CloudSettings, CredentialStore};
 
@@ -101,6 +103,14 @@ pub(crate) struct Response {
 }
 
 impl Response {
+    fn empty(status: u16) -> Self {
+        Self {
+            status,
+            headers: Vec::new(),
+            body: Vec::new(),
+        }
+    }
+
     fn json(status: u16, value: Value) -> Self {
         Self {
             status,
@@ -177,8 +187,8 @@ impl Drop for FakeServer {
 
 // ─── Fake cloud ─────────────────────────────────────────────────────────────
 
-/// An injected failure: the next `times` requests whose "METHOD /path Dropbox-API-Arg" line
-/// contains `matching` get `status` (with `Retry-After` and `body`).
+/// An injected failure: the next `times` requests whose log line (see [`log_line`]) contains
+/// `matching` get `status` (with `Retry-After` and `body`).
 pub(crate) struct Fault {
     pub matching: String,
     pub status: u16,
@@ -230,8 +240,17 @@ pub(crate) struct CloudState {
     /// Entries per `list_folder` page (Drive pages are `pageSize` or this).
     pub page_size: usize,
 
+    /// The backup endpoint's files, in the order they were first stored.
+    pub endpoint: Vec<(String, Vec<u8>)>,
+    /// The header the endpoint asks for, name and value; `None` lets anyone in.
+    pub endpoint_auth: Option<(String, String)>,
+    /// The endpoint ignores `If-None-Match`, as a service without exclusive create does.
+    pub endpoint_ignores_conditions: bool,
+    /// When a claim for this name is stored, another device's claim lands first.
+    pub endpoint_race: Option<String>,
+
     pub faults: Vec<Fault>,
-    /// "METHOD /path" of every request.
+    /// The log line of every request.
     pub log: Vec<String>,
 }
 
@@ -250,6 +269,18 @@ impl CloudState {
     pub(crate) fn count(&self, line: &str) -> usize {
         self.log.iter().filter(|l| l.contains(line)).count()
     }
+
+    /// The endpoint's paths, sorted, without the probes its checks left.
+    pub(crate) fn endpoint_paths(&self) -> Vec<String> {
+        let mut paths: Vec<_> = self
+            .endpoint
+            .iter()
+            .map(|(p, _)| p.clone())
+            .filter(|p| !p.starts_with(".rim-probe-"))
+            .collect();
+        paths.sort();
+        paths
+    }
 }
 
 /// A fake Google Drive, Dropbox and token endpoint, and settings pointing at them.
@@ -259,6 +290,8 @@ pub(crate) struct FakeCloud {
 }
 
 pub(crate) const GOOD_CODE: &str = "good-code";
+/// The token the fake backup endpoint takes unless a test says otherwise.
+pub(crate) const ENDPOINT_TOKEN: &str = "endpoint-token";
 
 impl FakeCloud {
     pub(crate) fn start() -> Self {
@@ -267,11 +300,27 @@ impl FakeCloud {
             refresh_token: "refresh-0".into(),
             email: "ada@example.com".into(),
             page_size: 1000,
+            endpoint_auth: Some(("Authorization".into(), format!("Bearer {ENDPOINT_TOKEN}"))),
             ..CloudState::default()
         }));
         let handler_state = state.clone();
         let server = FakeServer::start(move |req| handle(&mut handler_state.lock().unwrap(), req));
         Self { state, server }
+    }
+
+    pub(crate) fn url(&self) -> &str {
+        &self.server.url
+    }
+
+    /// What the user types to use the fake backup endpoint: its base URL (the route is
+    /// appended) and its bearer token.
+    pub(crate) fn endpoint_setup(&self) -> EndpointSetup {
+        EndpointSetup {
+            url: format!("{}/ep", self.server.url),
+            auth: EndpointAuth::Bearer,
+            secret: Some(Zeroizing::new(ENDPOINT_TOKEN.into())),
+            allow_insecure: false,
+        }
     }
 
     pub(crate) fn state(&self) -> std::sync::MutexGuard<'_, CloudState> {
@@ -361,9 +410,20 @@ fn unauthorized() -> Response {
     Response::json(401, json!({ "error": "invalid_token" }))
 }
 
+/// "METHOD /path" and then Dropbox's argument header, or the backup endpoint's query followed
+/// by the method again, so a fault can match one method on one file (`head.rimx POST`).
+fn log_line(req: &Request) -> String {
+    let arg = if req.path.starts_with("/ep/") {
+        let query: Vec<String> = req.query.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        format!("{} {}", query.join("&"), req.method)
+    } else {
+        req.header("Dropbox-API-Arg").unwrap_or("").to_string()
+    };
+    format!("{} {} {arg}", req.method, req.path)
+}
+
 fn handle(state: &mut CloudState, req: Request) -> Response {
-    let arg = req.header("Dropbox-API-Arg").unwrap_or("").to_string();
-    let line = format!("{} {} {arg}", req.method, req.path);
+    let line = log_line(&req);
     state.log.push(line.clone());
     if let Some(fault) = state
         .faults
@@ -389,6 +449,9 @@ fn handle(state: &mut CloudState, req: Request) -> Response {
             return Response::json(200, json!({}));
         }
         _ => {}
+    }
+    if let Some(rest) = req.path.strip_prefix("/ep/") {
+        return endpoint(state, &req, rest);
     }
     let bearer = format!("Bearer {}", state.access_token);
     if req.header("Authorization") != Some(bearer.as_str()) {
@@ -494,11 +557,7 @@ fn drive_api(state: &mut CloudState, req: &Request, rest: &str) -> Response {
         }
         "DELETE" => {
             state.drive.remove(index);
-            Response {
-                status: 204,
-                headers: Vec::new(),
-                body: Vec::new(),
-            }
+            Response::empty(204)
         }
         _ => Response::json(400, json!({})),
     }
@@ -653,5 +712,81 @@ fn dropbox(state: &mut CloudState, req: &Request, rest: &str) -> Response {
             )
         }
         _ => Response::json(404, json!({ "error_summary": "no such endpoint" })),
+    }
+}
+
+// ─── Backup endpoint ────────────────────────────────────────────────────────
+
+fn endpoint(state: &mut CloudState, req: &Request, rest: &str) -> Response {
+    if rest != "backup" {
+        return Response::empty(404);
+    }
+    if let Some((name, value)) = &state.endpoint_auth {
+        if req.header(name) != Some(value.as_str()) {
+            return Response::empty(401);
+        }
+    }
+    match (req.method.as_str(), req.query("path"), req.query("list")) {
+        ("GET", Some(path), _) => match state.endpoint.iter().find(|(p, _)| p == path) {
+            Some((_, bytes)) => Response::bytes(bytes.clone()),
+            None => Response::empty(404),
+        },
+        ("GET", None, Some(dir)) => {
+            let prefix = if dir.is_empty() {
+                String::new()
+            } else {
+                format!("{dir}/")
+            };
+            let mut entries: Vec<(String, bool)> = Vec::new();
+            for (path, _) in &state.endpoint {
+                let Some(rest) = path.strip_prefix(&prefix) else {
+                    continue;
+                };
+                let entry = match rest.split_once('/') {
+                    Some((sub, _)) => (sub.to_string(), true),
+                    None => (rest.to_string(), false),
+                };
+                if !entries.contains(&entry) {
+                    entries.push(entry);
+                }
+            }
+            if entries.is_empty() && !dir.is_empty() {
+                return Response::empty(404);
+            }
+            let listing = entries
+                .into_iter()
+                .map(|(name, dir)| json!({ "name": name, "dir": dir }))
+                .collect();
+            Response::json(200, Value::Array(listing))
+        }
+        ("POST", Some(path), _) => {
+            let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
+            if let Some(race) = state.endpoint_race.clone() {
+                if name.starts_with(&format!(".{race}.")) {
+                    state.endpoint_race = None;
+                    let other = format!(".{race}.0123456789ab.claim");
+                    let other = if dir.is_empty() {
+                        other
+                    } else {
+                        format!("{dir}/{other}")
+                    };
+                    state.endpoint.push((other, b"the other device's".to_vec()));
+                }
+            }
+            let existing = state.endpoint.iter().position(|(p, _)| p == path);
+            let exclusive = req.header("If-None-Match") == Some("*");
+            match existing {
+                Some(_) if exclusive && !state.endpoint_ignores_conditions => Response::empty(412),
+                Some(i) => {
+                    state.endpoint[i].1 = req.body.clone();
+                    Response::empty(204)
+                }
+                None => {
+                    state.endpoint.push((path.to_string(), req.body.clone()));
+                    Response::empty(201)
+                }
+            }
+        }
+        _ => Response::empty(400),
     }
 }

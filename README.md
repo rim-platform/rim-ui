@@ -107,6 +107,17 @@ Google account settings, Security, Third-party apps with account access, when th
 An archive belongs to the OAuth client that wrote it: a build with a different Google client id
 sees a different `appDataFolder`, and a different Dropbox app a different `Apps/` folder.
 
+## History archive on your own server
+
+Settings > History, "Your own server", keeps the archive on a service the user runs: one URL
+answering `GET` and `POST`, specified in `docs/specs/backup-endpoint-v1.md`. It needs no build
+configuration and is always offered. `docs/specs/backup-endpoint-reference.py` is a complete
+service in one Python file (standard library only) that stores the files under a directory:
+
+```sh
+python3 docs/specs/backup-endpoint-reference.py --dir ~/rim-backup --bearer <token>
+```
+
 ## Architecture
 
 See `AGENTS.md` for detailed architecture, conventions, and agent guidance.

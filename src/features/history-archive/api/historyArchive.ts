@@ -1,8 +1,7 @@
 /**
- * The desktop app's history archive (master plan Stage 2): the local message cache written as
- * encrypted per-device files to a folder the user picks, or to the app's folder in their Google
- * Drive or Dropbox, and read back on another device. The format is
- * `docs/specs/history-archive-v1.md`; the work is on the Tauri side
+ * The desktop app's history archive: the local message cache written as encrypted per-device
+ * files to a folder the user picks, to the app's folder in their Google Drive or Dropbox, or to
+ * their own backup endpoint, and read back on another device. The work is on the Tauri side
  * (`src-tauri/src/history_archive`). This module is its typed surface.
  */
 
@@ -13,12 +12,12 @@ import type { CacheAccount } from "../../messages/api/messageCache";
 export type CloudKind = "googleDrive" | "dropbox";
 
 /** Where an archive lives. */
-export type ArchiveProviderKind = "localFolder" | CloudKind;
+export type ArchiveProviderKind = "localFolder" | CloudKind | "endpoint";
 
 export interface ArchiveStatus {
   configured: boolean;
   provider: ArchiveProviderKind | null;
-  /** The folder, or the signed-in cloud account (an email address). */
+  /** The folder, the signed-in cloud account (an email address), or the endpoint's URL. */
   folder: string | null;
   archiveId: string | null;
   /** This installation's id; its files live under `devices/<deviceId>/` in the archive. */
@@ -43,7 +42,38 @@ export interface CloudAuthorization {
   version: number | null;
 }
 
-/** Where to connect an archive: a folder, or a cloud account just signed in to. */
+/** How requests to a backup endpoint prove who sends them; the secret is the password or token. */
+export type EndpointAuth =
+  | { mode: "none" }
+  | { mode: "basic"; username: string }
+  | { mode: "bearer" }
+  | { mode: "header"; name: string };
+
+/** What the user typed to set up a backup endpoint. */
+export interface EndpointSetup {
+  url: string;
+  auth: EndpointAuth;
+  /** The password or token; kept in the secret vault once the archive is connected. */
+  secret: string | null;
+  /** Plain HTTP to a host that is not this computer. */
+  allowInsecure: boolean;
+}
+
+/** A backup endpoint that passed the check, waiting for the archive's passphrase. */
+export interface EndpointCheck {
+  connectionId: string;
+  /** The URL requests go to (the `/backup` route). */
+  url: string;
+  hasArchive: boolean;
+  version: number | null;
+  /** The endpoint refuses to overwrite with `If-None-Match: *`. */
+  exclusiveCreate: boolean;
+}
+
+/**
+ * Where to connect an archive: a folder, or a cloud account just signed in to or a backup
+ * endpoint just checked.
+ */
 export type ConnectTarget =
   { kind: "localFolder"; path: string } | { kind: "cloud"; connectionId: string };
 
@@ -52,12 +82,18 @@ export const CLOUD_SERVICE_NAMES: Record<CloudKind, string> = {
   dropbox: "Dropbox",
 };
 
-/** What to show as an archive's place: the folder, or "Google Drive (ada@example.com)". */
+export const ENDPOINT_NAME = "Backup endpoint";
+
+/**
+ * What to show as an archive's place: the folder, "Google Drive (ada@example.com)", or
+ * "Backup endpoint (https://…/backup)".
+ */
 export function archiveLocation(status: ArchiveStatus): string {
   if (!status.folder) return "";
   if (status.provider === "googleDrive" || status.provider === "dropbox") {
     return `${CLOUD_SERVICE_NAMES[status.provider]} (${status.folder})`;
   }
+  if (status.provider === "endpoint") return `${ENDPOINT_NAME} (${status.folder})`;
   return status.folder;
 }
 
@@ -111,6 +147,14 @@ export const ArchiveErrorCode = {
   CLOUD_AUTH: "ARCHIVE_CLOUD_AUTH",
   CANCELLED: "ARCHIVE_CANCELLED",
   SERVICE_NOT_CONFIGURED: "ARCHIVE_SERVICE_NOT_CONFIGURED",
+  TLS: "ARCHIVE_TLS",
+  INVALID: "INVALID_ARGS",
+  ENDPOINT_INSECURE: "ARCHIVE_ENDPOINT_INSECURE",
+  ENDPOINT_UNAUTHORIZED: "ARCHIVE_ENDPOINT_UNAUTHORIZED",
+  ENDPOINT_FORBIDDEN: "ARCHIVE_ENDPOINT_FORBIDDEN",
+  ENDPOINT_NOT_FOUND: "ARCHIVE_ENDPOINT_NOT_FOUND",
+  ENDPOINT_NOT_JSON: "ARCHIVE_ENDPOINT_NOT_JSON",
+  ENDPOINT_BROKEN: "ARCHIVE_ENDPOINT_BROKEN",
 } as const;
 
 export function pickArchiveFolder(): Promise<SafeInvokeResult<string | null>> {
@@ -141,7 +185,18 @@ export function cancelCloudSignIn(): Promise<SafeInvokeResult<null>> {
   return safeInvoke<null>("history_archive_cloud_cancel");
 }
 
-/** Drop a cloud sign-in the user did not go on with (a Dropbox one is also revoked). */
+/**
+ * Check a backup endpoint: store, list and read back a probe file, then look for an archive.
+ * The secret stays in memory on the Tauri side until the archive is connected.
+ */
+export function checkEndpoint(setup: EndpointSetup): Promise<SafeInvokeResult<EndpointCheck>> {
+  return safeInvoke<EndpointCheck>("history_archive_endpoint_check", { setup });
+}
+
+/**
+ * Drop a cloud sign-in or endpoint check the user did not go on with (a Dropbox sign-in is
+ * also revoked).
+ */
 export function discardCloudSignIn(connectionId: string): Promise<SafeInvokeResult<null>> {
   return safeInvoke<null>("history_archive_cloud_discard", { connectionId });
 }

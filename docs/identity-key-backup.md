@@ -48,7 +48,8 @@ recovery phrase once ("Turn on backup") and keeps the backup key from then on.
 ## Trying it
 
 Two computers (or two OS users, each with its own secret vault), the same server, and an archive
-both can reach (a shared folder, or the same Google Drive or Dropbox account):
+both can reach (a shared folder, the same Google Drive or Dropbox account, or the same backup
+endpoint):
 
 1. On computer A, sign in and set up key sign-in in Settings > Security. Save the recovery kit.
 2. On A, set up the history archive in Settings > History. Back in Settings > Security,

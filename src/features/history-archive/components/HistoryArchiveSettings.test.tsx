@@ -491,6 +491,131 @@ describe("HistoryArchiveSettings", () => {
   });
 });
 
+describe("HistoryArchiveSettings with a backup endpoint", () => {
+  const url = "https://backup.example.com/backup";
+  const atEndpoint: ArchiveStatus = { ...connected, provider: "endpoint", folder: url };
+  const checked = {
+    connectionId: "ep-1",
+    url,
+    hasArchive: false,
+    version: null,
+    exclusiveCreate: true,
+  };
+
+  beforeEach(() => {
+    tauri.available = true;
+    mockInvoke.mockReset();
+    Object.values(identityBackup).forEach((fn) => fn.mockReset());
+    identityBackup.backUpIdentityKeyQuietly.mockResolvedValue(undefined);
+    useAuthStore.setState({ session: { userId: "ada" } });
+  });
+
+  async function openEndpointForm() {
+    fireEvent.click(await screen.findByRole("button", { name: /Your own server/ }));
+  }
+
+  it("checks the endpoint with a token in a named header and starts an archive there", async () => {
+    const check = vi.fn(() => checked);
+    const connect = vi.fn(() => ({ status: atEndpoint, created: true }));
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_endpoint_check: check,
+      history_archive_connect: connect,
+      history_archive_export: { segments: 0, messages: 0, conversations: 0 },
+    });
+    renderSettings();
+
+    await openEndpointForm();
+    const submit = screen.getByRole("button", { name: "Check endpoint" });
+    type("Endpoint URL", "https://backup.example.com");
+    fireEvent.change(screen.getByLabelText("Sign-in"), { target: { value: "header" } });
+    type("Header name", "X-Api-Key");
+    // A mode with a secret waits for it.
+    expect(submit).toBeDisabled();
+    type("Token", "t0ken");
+    fireEvent.click(submit);
+
+    expect(await screen.findByText(`Backup endpoint (${url})`)).toBeInTheDocument();
+    expect(check).toHaveBeenCalledWith({
+      setup: {
+        url: "https://backup.example.com",
+        auth: { mode: "header", name: "X-Api-Key" },
+        secret: "t0ken",
+        allowInsecure: false,
+      },
+    });
+    // The form and its secret are gone once the endpoint is chosen.
+    expect(screen.queryByLabelText("Token")).not.toBeInTheDocument();
+
+    type("Passphrase", "correct horse battery staple");
+    type("Repeat passphrase", "correct horse battery staple");
+    fireEvent.click(screen.getByRole("button", { name: "Create archive" }));
+
+    expect(await screen.findByText("Backing up to")).toBeInTheDocument();
+    expect(connect).toHaveBeenCalledWith({
+      account: { endpoint: expect.any(String), userId: "ada" },
+      target: { kind: "cloud", connectionId: "ep-1" },
+      passphrase: "correct horse battery staple",
+    });
+    expect(screen.getByText(`Backup endpoint (${url})`)).toBeInTheDocument();
+    expect(screen.getByText(/forgets this device's password or token/)).toBeInTheDocument();
+  });
+
+  it("asks before using plain HTTP to another computer, and not for this one", async () => {
+    const check = vi.fn(() => ({ ...checked, hasArchive: true, version: 1 }));
+    backend({ history_archive_status: unconfigured, history_archive_endpoint_check: check });
+    renderSettings();
+
+    await openEndpointForm();
+    type("Endpoint URL", "http://127.0.0.1:8787");
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    type("Endpoint URL", "http://nas.home.arpa:8787");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Allow an unencrypted connection/ }));
+    fireEvent.change(screen.getByLabelText("Sign-in"), { target: { value: "basic" } });
+    type("User name", "ada");
+    type("Password", "pw");
+    fireEvent.click(screen.getByRole("button", { name: "Check endpoint" }));
+
+    expect(await screen.findByText(/This endpoint already holds/)).toBeInTheDocument();
+    expect(check).toHaveBeenCalledWith({
+      setup: {
+        url: "http://nas.home.arpa:8787",
+        auth: { mode: "basic", username: "ada" },
+        secret: "pw",
+        allowInsecure: true,
+      },
+    });
+  });
+
+  it("names what is wrong with the endpoint", async () => {
+    const problems: [string, RegExp][] = [
+      ["ARCHIVE_UNAVAILABLE", /Nothing answers at that address/],
+      ["ARCHIVE_TLS", /secure connection failed/],
+      ["ARCHIVE_ENDPOINT_UNAUTHORIZED", /refused the credentials \(401\)/],
+      ["ARCHIVE_ENDPOINT_FORBIDDEN", /refuses access \(403\)/],
+      ["ARCHIVE_ENDPOINT_NOT_FOUND", /No backup endpoint answers at that address \(404\)/],
+      ["ARCHIVE_ENDPOINT_NOT_JSON", /its listing is not JSON/],
+      ["ARCHIVE_ENDPOINT_INSECURE", /plain HTTP to another computer/],
+    ];
+    let next = 0;
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_endpoint_check: () => {
+        throw { kind: problems[next++][0], message: "detail" };
+      },
+    });
+    renderSettings();
+
+    await openEndpointForm();
+    type("Endpoint URL", "https://backup.example.com");
+    for (const [, expected] of problems) {
+      fireEvent.click(screen.getByRole("button", { name: "Check endpoint" }));
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(expected));
+    }
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+  });
+});
+
 describe("report wording", () => {
   it("describes exports", () => {
     expect(describeExport({ segments: 0, messages: 0, conversations: 0 })).toBe(
