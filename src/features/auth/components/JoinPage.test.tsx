@@ -40,6 +40,7 @@ const mockPreviewData = {
       serverId: "server-1",
       serverName: "Acme Corp",
       invitedByDisplayName: "Alice",
+      ownerDisplayName: "Olga",
     },
   },
   isPending: false,
@@ -78,6 +79,13 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (
     selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
   ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
+}));
+
+// The signed-in account's workspaces.
+const myServers = vi.hoisted(() => ({ data: [] as unknown[] }));
+
+vi.mock("../../workspaces/api/useMyServers", () => ({
+  useMyServers: () => myServers,
 }));
 
 const desktop = vi.hoisted(() => ({ value: false }));
@@ -139,6 +147,7 @@ describe("JoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;
+    myServers.data = [];
     mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
   });
 
@@ -334,6 +343,50 @@ describe("JoinPage", () => {
     renderAtPath("/join/ws-token-abc");
 
     expect(screen.getByText("Join workspace")).toBeInTheDocument();
+  });
+
+  it("names the inviter and the workspace owner, signed in or not", () => {
+    const { unmount } = renderAtPath("/join/ws-token-abc");
+    expect(screen.getByText("Invited by Alice · Owned by Olga")).toBeInTheDocument();
+    unmount();
+
+    mockSession = { userId: "existing-user" };
+    mockUsePreviewInviteToken.mockReturnValue({
+      ...mockPreviewData,
+      data: {
+        ...mockPreviewData.data,
+        workspace: { ...mockPreviewData.data.workspace, ownerDisplayName: null },
+      },
+      refetch: vi.fn(),
+    });
+    renderAtPath("/join/ws-token-abc");
+    expect(screen.getByText("Invited by Alice")).toBeInTheDocument();
+  });
+
+  it("signed in: says when another of the account's workspaces shares the name", () => {
+    mockSession = { userId: "existing-user" };
+    const other = { id: "server-2", name: "acme corp ", owner: null };
+    myServers.data = [other];
+    const { unmount } = renderAtPath("/join/ws-token-abc");
+    expect(
+      screen.getByText("You already belong to a workspace named acme corp."),
+    ).toBeInTheDocument();
+    unmount();
+
+    myServers.data = [{ ...other, owner: { id: "u-9", username: "bo", displayName: null } }];
+    const { unmount: unmountOwned } = renderAtPath("/join/ws-token-abc");
+    expect(
+      screen.getByText("You already belong to a workspace named acme corp, owned by bo."),
+    ).toBeInTheDocument();
+    unmountOwned();
+
+    // The invite's own workspace and a different name are not collisions.
+    myServers.data = [
+      { ...other, id: "server-1" },
+      { id: "server-3", name: "Acme", owner: null },
+    ];
+    renderAtPath("/join/ws-token-abc");
+    expect(screen.queryByText(/You already belong/)).not.toBeInTheDocument();
   });
 
   it("optional displayName field is rendered but not required", () => {

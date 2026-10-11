@@ -4,6 +4,7 @@ import { MessagesSquare, Plus } from "lucide-react";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
+import { ownerName, workspaceLabels } from "../../features/workspaces/workspaceLabel";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { cn } from "../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
@@ -24,8 +25,18 @@ export function WorkspaceRail() {
     .map((space) => ({
       id: space.spaceId,
       name: space.name ?? "Workspace",
-      where: origins[space.hostServerId] ?? space.hostServerId,
+      ownerName: space.ownerName,
+      origin: origins[space.hostServerId] ?? space.hostServerId,
     }));
+  const workspaces = [
+    ...(servers ?? []).map((server) => ({
+      id: server.id,
+      name: server.name,
+      ownerName: ownerName(server.owner),
+    })),
+    ...elsewhere,
+  ];
+  const labels = workspaceLabels(workspaces);
   const inDirectSpace = useRelayStore(
     (s) =>
       Boolean(workspaceId) &&
@@ -58,24 +69,22 @@ export function WorkspaceRail() {
         </button>
       )}
 
-      {[
-        ...(servers ?? []).map((server) => ({ ...server, where: null as string | null })),
-        ...elsewhere,
-      ].map((server) => {
+      {workspaces.map((server, index) => {
         const active = server.id === workspaceId;
+        const label = labels[index];
         return (
           <button
             key={server.id}
             type="button"
-            title={server.where ? `${server.name} (on ${server.where})` : server.name}
-            aria-label={server.where ? `${server.name} (on ${server.where})` : server.name}
+            title={label}
+            aria-label={label}
             aria-pressed={active}
             onClick={() => setWorkspaceId(server.id)}
             onMouseEnter={() =>
               useHoverContextStore.getState().setTarget({
                 kind: "workspace",
                 workspaceId: server.id,
-                label: server.name,
+                label,
               })
             }
             onMouseLeave={() => useHoverContextStore.getState().clear()}

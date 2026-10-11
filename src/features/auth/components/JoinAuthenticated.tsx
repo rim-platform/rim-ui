@@ -15,13 +15,20 @@
  * - `token` — raw invite token from the URL param.
  * - `tokenType` — discriminator returned by the preview query.
  * - `workspaceName` — shown in the header when `tokenType === "WORKSPACE"`.
+ * - `workspaceId`, `invitedBy`, `ownerName` — the rest of the invite's preview.
+ *
+ * A workspace invite also says when the account already belongs to another workspace of the
+ * same name, with that one's owner, so the two can be told apart.
  */
 
 import { useNavigate } from "react-router-dom";
 
 import { useJoinServerByInviteMutation } from "../../settings/api/useInviteMutations";
+import { useMyServers } from "../../workspaces/api/useMyServers";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { ownerName as shownOwnerName, sameWorkspaceName } from "../../workspaces/workspaceLabel";
 import { InviteTokenType } from "../types";
+import { InviteByline } from "./InviteByline";
 
 interface JoinAuthenticatedProps {
   /** Raw invite token from the `:token` URL param. */
@@ -30,6 +37,28 @@ interface JoinAuthenticatedProps {
   tokenType: InviteTokenType;
   /** Workspace name shown in the header (workspace tokens only). */
   workspaceName?: string;
+  /** The invite's workspace (workspace tokens only). */
+  workspaceId?: string;
+  /** Who sent the invite (workspace tokens only). */
+  invitedBy?: string;
+  /** The invite's workspace owner; null when it has none. */
+  ownerName?: string | null;
+}
+
+/** One muted line naming another workspace of this account that shares the invite's name. */
+function SameNameNotice({ name, workspaceId }: { name: string; workspaceId?: string }) {
+  const { data: servers } = useMyServers();
+  const twin = servers?.find(
+    (server) => server.id !== workspaceId && sameWorkspaceName(server.name, name),
+  );
+  if (!twin) return null;
+  const owner = shownOwnerName(twin.owner);
+  return (
+    <p className="text-xs text-rim-text-faint">
+      You already belong to a workspace named {twin.name.trim()}
+      {owner ? `, owned by ${owner}` : ""}.
+    </p>
+  );
 }
 
 /**
@@ -48,7 +77,14 @@ interface JoinAuthenticatedProps {
  * auto-join arm. The default arm uses a `never`-typed binding so the failure
  * is observable at compile time, not via a thrown error in production.
  */
-export function JoinAuthenticated({ token, tokenType, workspaceName }: JoinAuthenticatedProps) {
+export function JoinAuthenticated({
+  token,
+  tokenType,
+  workspaceName,
+  workspaceId,
+  invitedBy,
+  ownerName,
+}: JoinAuthenticatedProps) {
   const navigate = useNavigate();
   const joinServer = useJoinServerByInviteMutation();
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
@@ -84,6 +120,7 @@ export function JoinAuthenticated({ token, tokenType, workspaceName }: JoinAuthe
                   ? `You have been invited to join ${workspaceName}`
                   : "You have been invited to join a workspace"}
               </p>
+              <InviteByline invitedBy={invitedBy} ownerName={ownerName} />
             </header>
 
             <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
@@ -91,6 +128,7 @@ export function JoinAuthenticated({ token, tokenType, workspaceName }: JoinAuthe
                 <p className="text-sm text-rim-text-muted">
                   Click below to accept the invitation and join the workspace.
                 </p>
+                {workspaceName && <SameNameNotice name={workspaceName} workspaceId={workspaceId} />}
                 {joinServer.error && (
                   <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
                     {joinServer.error instanceof Error

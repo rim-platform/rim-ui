@@ -29,6 +29,7 @@
  * - `token` — raw token string (`null` for open registration).
  * - `workspaceName` — workspace name shown in the header when `variant === "WORKSPACE"`.
  * - `workspaceId` — the invite's workspace, from its preview, when `variant === "WORKSPACE"`.
+ * - `invitedBy`, `ownerName` — who invited and who owns the workspace, from its preview.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
  */
 
@@ -39,6 +40,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
 import { checkDisplayName } from "../displayName";
 import { InviteTokenType } from "../types";
+import { InviteByline } from "./InviteByline";
 import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
@@ -65,6 +67,10 @@ interface JoinFormProps {
   workspaceName?: string;
   /** The invite's workspace, from its preview, when `variant === "WORKSPACE"`. */
   workspaceId?: string;
+  /** Who sent the workspace invite, from its preview. */
+  invitedBy?: string;
+  /** The invite's workspace owner, from its preview; null when it has none. */
+  ownerName?: string | null;
   /** Offer only the key signup: the server takes no password signup without a token. */
   keyOnly?: boolean;
   /**
@@ -123,6 +129,8 @@ export function JoinForm({
   token,
   workspaceName,
   workspaceId,
+  invitedBy,
+  ownerName,
   keyOnly = false,
   onSuccess,
 }: JoinFormProps) {
@@ -235,7 +243,10 @@ export function JoinForm({
           <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
           <p className="mt-1 text-sm text-rim-text-muted">{headerCopy(variant, workspaceName)}</p>
           {variant === InviteTokenType.WORKSPACE && workspaceName && (
-            <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>
+            <>
+              <InviteByline invitedBy={invitedBy} ownerName={ownerName} />
+              <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>
+            </>
           )}
         </header>
 

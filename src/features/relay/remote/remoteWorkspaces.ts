@@ -8,6 +8,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import {
   fetchRemoteWorkspaceName,
+  fetchRemoteWorkspaceOwner,
   fetchStreamHeads,
   joinRemoteWorkspace,
   remoteJoinChallenge,
@@ -17,7 +18,7 @@ import { relayCrypto } from "../crypto/relayCrypto";
 import { activeProcessor as relayProcessor } from "../stream/activeProcessor";
 import { allRecords, getRecord, putRecord, type DelegationRecord } from "../state/relayDb";
 import { pinServer } from "../state/serverPins";
-import { accountKey, registerSpace, remoteWorkspaces, setSpaceName } from "../state/spaces";
+import { accountKey, registerSpace, remoteWorkspaces, setSpaceDetails } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
 import { renewDue, type RenewOutcome } from "./delegations";
 import { parseInviteLink } from "./inviteLink";
@@ -63,16 +64,23 @@ export async function joinWithInvite(text: string): Promise<JoinedWorkspace> {
     },
     now: () => Date.now(),
   });
-  await refreshWorkspaceName(joined.workspaceId);
+  await refreshWorkspaceDetails(joined.workspaceId);
   return joined;
 }
 
-/** Ask a workspace's host for its name and remember it for the rail. */
-export async function refreshWorkspaceName(workspaceId: string): Promise<void> {
+/** Ask a workspace's host for its name and its owner, separately, and keep them for the rail. */
+export async function refreshWorkspaceDetails(workspaceId: string): Promise<void> {
   try {
-    await setSpaceName(workspaceId, await fetchRemoteWorkspaceName(workspaceId));
+    await setSpaceDetails(workspaceId, { name: await fetchRemoteWorkspaceName(workspaceId) });
   } catch (err) {
     logger.debug("[RIM:relay] a remote workspace's name is not known yet:", err);
+  }
+  try {
+    await setSpaceDetails(workspaceId, {
+      ownerName: await fetchRemoteWorkspaceOwner(workspaceId),
+    });
+  } catch (err) {
+    logger.debug("[RIM:relay] a remote workspace's owner is not known yet:", err);
   }
 }
 

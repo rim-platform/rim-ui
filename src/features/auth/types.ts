@@ -33,6 +33,8 @@ export interface WorkspaceInvitePreview {
   serverId: string;
   serverName: string;
   invitedByDisplayName: string;
+  /** The owner's display name, else username; null when the workspace has no owner. */
+  ownerDisplayName: string | null;
 }
 
 /**

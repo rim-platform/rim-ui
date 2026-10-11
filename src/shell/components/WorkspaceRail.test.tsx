@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
@@ -12,13 +12,14 @@ vi.mock("../../features/workspaces/state/useWorkspaceStore", () => ({
   ),
 }));
 
+const alphaBeta = [
+  { id: "ws-1", name: "Alpha", owner: { id: "u-1", username: "alice", displayName: "Alice" } },
+  { id: "ws-2", name: "Beta", owner: { id: "u-2", username: "bob", displayName: null } },
+];
+const myServers = vi.hoisted(() => ({ data: [] as unknown[] }));
+
 vi.mock("../../features/workspaces/api/useMyServers", () => ({
-  useMyServers: () => ({
-    data: [
-      { id: "ws-1", name: "Alpha" },
-      { id: "ws-2", name: "Beta" },
-    ],
-  }),
+  useMyServers: () => myServers,
 }));
 
 vi.mock("../../features/workspaces/components/AddWorkspaceDialog", () => ({
@@ -33,6 +34,21 @@ function renderWithQuery(ui: React.ReactElement) {
 }
 
 describe("WorkspaceRail", () => {
+  beforeEach(() => {
+    myServers.data = alphaBeta;
+  });
+
+  it("adds the owner to a workspace's title only when another one shares its name", () => {
+    myServers.data = [...alphaBeta, { ...alphaBeta[1], id: "ws-3", name: "alpha" }];
+    renderWithQuery(<WorkspaceRail />);
+    expect(screen.getByRole("button", { name: "Alpha (Alice)" })).toHaveAttribute(
+      "title",
+      "Alpha (Alice)",
+    );
+    expect(screen.getByTitle("alpha (bob)")).toBeInTheDocument();
+    expect(screen.getByTitle("Beta")).toBeInTheDocument();
+  });
+
   it("renders workspace buttons for each server", () => {
     renderWithQuery(<WorkspaceRail />);
     expect(screen.getByTitle("Alpha")).toBeInTheDocument();

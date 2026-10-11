@@ -1114,6 +1114,9 @@ type Message {
 	attachments: [Attachment!]!
 	parentMessageId: ID
 	forwardedFromMessageId: ID
+	"""
+	The forwarded message; null when the viewer cannot read its conversation or it is gone.
+	"""
 	forwardedFrom: Message
 	isDeleted: Boolean!
 	sentAt: DateTime!
@@ -2190,7 +2193,8 @@ type Query {
 	"""
 	principalDevices(principalIds: [String!]!): [PrincipalDevices!]!
 	"""
-	This server's id, roles and direct space. Readable without a session.
+	This server's id, roles and direct space. Readable without a session; a signed-in local
+	user of a relay becomes a guest of the direct space, if not one yet.
 	"""
 	relayInfo: RelayInfo!
 	"""
@@ -2581,6 +2585,12 @@ type Server {
 	there is no "not a member" variant to represent here.
 	"""
 	viewerRole: ServerMemberRoleGql!
+	"""
+	The account holding the owner role; null when there is none, as in the direct space or
+	once the owner's account is deleted. Workspace metadata: every member sees it, guests
+	included.
+	"""
+	owner: User
 }
 
 """
@@ -3006,12 +3016,16 @@ type UserPresenceGql {
 
 """
 Minimal workspace info included in a workspace-invite preview. The workspace name and the
-inviter's display name are shown to anyone holding the invite link.
+inviter's and owner's display names are shown to anyone holding the invite link.
 """
 type WorkspaceInvitePreviewGql {
 	serverId: ID!
 	serverName: String!
 	invitedByDisplayName: String!
+	"""
+	The workspace owner's display name, else username; null when the workspace has no owner.
+	"""
+	ownerDisplayName: String
 }
 
 type WorkspacePlugin {
@@ -3041,7 +3055,8 @@ type WorkspacePlugin {
 	publisherKeyLog: [SignedStatement!]!
 	signatureStatus: PluginSignatureStatus!
 	"""
-	Who approved the entry last; null once that account is deleted.
+	Who approved the entry last; null once that account is deleted, and for a guest who
+	shares no conversation with them.
 	"""
 	approvedBy: User
 	approvedAt: DateTime!

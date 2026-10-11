@@ -272,6 +272,20 @@ export const REMOTE_WORKSPACE_QUERY = gql`
   }
 `;
 
+/** A workspace's owner, in a query of its own so a host without the field still gives the name. */
+export const REMOTE_WORKSPACE_OWNER_QUERY = gql`
+  query RemoteWorkspaceOwner($serverId: ID!) {
+    server(serverId: $serverId) {
+      id
+      owner {
+        id
+        username
+        displayName
+      }
+    }
+  }
+`;
+
 /** Sent to a server directly, to sign in there with this device's key. */
 export const KEY_LOGIN_CHALLENGE_MUTATION = gql`
   mutation KeyLoginChallenge {

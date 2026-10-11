@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useMyServers } from "../api/useMyServers";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
+import { ownerName, workspaceLabels } from "../workspaceLabel";
 import { EmptyWorkspaceState } from "./EmptyWorkspaceState";
 
 export function WorkspaceSelector() {
@@ -40,6 +41,10 @@ export function WorkspaceSelector() {
     return <EmptyWorkspaceState />;
   }
 
+  const labels = workspaceLabels(
+    servers.map((server) => ({ name: server.name, ownerName: ownerName(server.owner) })),
+  );
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-sm space-y-6">
@@ -51,7 +56,7 @@ export function WorkspaceSelector() {
         </header>
 
         <ul className="space-y-2">
-          {servers.map((server) => (
+          {servers.map((server, index) => (
             <li key={server.id}>
               <button
                 type="button"
@@ -62,7 +67,7 @@ export function WorkspaceSelector() {
                   {server.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-rim-text">{server.name}</p>
+                  <p className="text-sm font-medium text-rim-text">{labels[index]}</p>
                   <p className="truncate text-xs text-rim-text-faint">{server.id}</p>
                 </div>
               </button>
