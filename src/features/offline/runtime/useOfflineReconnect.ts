@@ -22,6 +22,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { isSessionRefused } from "../../../core/graphql/errors";
 import { onWsConnected } from "../../../core/graphql/wsClient";
+import { retryWithBackoff } from "../../../shared/utils/retryWithBackoff";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
@@ -36,9 +37,6 @@ const SESSION_CHECK_QUERY = gql`
     }
   }
 `;
-
-export const OFFLINE_RECHECK_MS = 15_000;
-export const OFFLINE_RECHECK_MAX_MS = 120_000;
 
 export type SessionCheck = "online" | "signedOut" | "offline";
 
@@ -60,74 +58,39 @@ export function useOfflineReconnect() {
 
   useEffect(() => {
     if (!offline || !userId) return;
-    let cancelled = false;
-    let checking = false;
-    let delay = OFFLINE_RECHECK_MS;
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    /** One check; `true` when it ran and the app stays offline. */
-    async function recheck(): Promise<boolean> {
-      if (cancelled || checking) return false;
-      checking = true;
-      try {
-        const result = await checkSession(userId!);
-        if (cancelled) return false;
-        if (result === "online") {
-          useOfflineStore.getState().setOffline(false);
-          void queryClient.invalidateQueries();
-        } else if (result === "signedOut") {
-          useOfflineStore.getState().setOffline(false);
-          // As a sign-out from the user menu: back to sign-in with nothing of the session left.
-          useAuthStore.getState().clearSession();
-          useWorkspaceStore.getState().clearWorkspaceId();
-          useShellStore.getState().reset();
-          queryClient.clear();
-        }
-        return result === "offline";
-      } finally {
-        checking = false;
+    /** One check; `true` once the app is no longer offline. */
+    async function recheck(stopped: () => boolean): Promise<boolean> {
+      const result = await checkSession(userId!);
+      if (stopped()) return true;
+      if (result === "online") {
+        useOfflineStore.getState().setOffline(false);
+        void queryClient.invalidateQueries();
+      } else if (result === "signedOut") {
+        useOfflineStore.getState().setOffline(false);
+        // As a sign-out from the user menu: back to sign-in with nothing of the session left.
+        useAuthStore.getState().clearSession();
+        useWorkspaceStore.getState().clearWorkspaceId();
+        useShellStore.getState().reset();
+        queryClient.clear();
       }
+      return result !== "offline";
     }
 
-    function schedule() {
-      clearTimeout(timer);
-      if (!cancelled) timer = setTimeout(() => void tick(), delay);
-    }
-
-    async function tick() {
-      // The `online` and `visibilitychange` events check as soon as it is worth it.
-      if (!navigator.onLine || document.hidden) {
-        schedule();
-        return;
-      }
-      if (await recheck()) {
-        delay = Math.min(delay * 2, OFFLINE_RECHECK_MAX_MS);
-        schedule();
-      }
-    }
-
-    /** The network, the window or the WebSocket came back: check now and restart the backoff. */
-    async function signal() {
-      if (checking || document.hidden) return;
-      delay = OFFLINE_RECHECK_MS;
-      clearTimeout(timer);
-      if (await recheck()) schedule();
-    }
-
-    const onSignal = () => void signal();
-    const onVisibility = () => {
-      if (!document.hidden) onSignal();
+    // The `online` and `visibilitychange` events check as soon as it is worth it.
+    const retry = retryWithBackoff(recheck, () => navigator.onLine && !document.hidden);
+    /** The network, the window or the WebSocket came back: check now. */
+    const onSignal = () => {
+      if (!document.hidden) retry.now();
     };
-    schedule();
     window.addEventListener("online", onSignal);
-    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("visibilitychange", onSignal);
     const unsubscribeWs = onWsConnected(onSignal);
 
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      retry.stop();
       window.removeEventListener("online", onSignal);
-      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("visibilitychange", onSignal);
       unsubscribeWs();
     };
   }, [offline, userId, queryClient]);
