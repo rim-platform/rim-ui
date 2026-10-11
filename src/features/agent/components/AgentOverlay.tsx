@@ -5,6 +5,7 @@ import { Z } from "../../../shared/ui/zIndex";
 import { cn } from "../../../shared/ui/cn";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { useAgentStore } from "../state/useAgentStore";
+import { liveModel, useLiveModelsStore } from "../state/useLiveModelsStore";
 import type { AgentMessage } from "../state/useAgentStore";
 import { runAgent } from "../runtime/agentEngine";
 import type { AiMessage } from "../providers/types";
@@ -88,6 +89,9 @@ export function AgentOverlay() {
   const toolActivity = useAgentStore((s) => s.toolActivity);
   const usage = useAgentStore((s) => s.usage);
   const settings = useAgentStore((s) => s.settings);
+  const modelLabel = useLiveModelsStore(
+    (s) => liveModel(s.byProvider, settings.providerId, settings.modelId)?.name ?? settings.modelId,
+  );
   const close = useAgentStore((s) => s.close);
   const reset = useAgentStore((s) => s.reset);
   const startNewConversation = useAgentStore((s) => s.startNewConversation);
@@ -313,7 +317,7 @@ export function AgentOverlay() {
             <Plus className="h-3.5 w-3.5" />
           </button>
           <span className="ml-auto text-[10px] text-rim-text-faint">
-            {settings.providerId} / {settings.modelId.split("-").slice(0, 2).join("-")}
+            {settings.providerId} / {modelLabel}
           </span>
           <button
             type="button"
