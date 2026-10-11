@@ -98,7 +98,7 @@ export const useAgentStore = create<AgentState>()(
 
       settings: {
         providerId: oldSettings.providerId ?? "anthropic",
-        modelId: oldSettings.modelId ?? "claude-sonnet-4-20250514",
+        modelId: oldSettings.modelId ?? "claude-sonnet-5-5",
         systemPrompt: oldSettings.systemPrompt ?? "",
       },
 

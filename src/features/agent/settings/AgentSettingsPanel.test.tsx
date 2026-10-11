@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // ──────────────────────────────────────────────────────────────
 // Hoist mocks — must precede any import that transitively loads the module
@@ -40,8 +40,8 @@ vi.mock("../providers/anthropic", () => ({
       name: "Anthropic Claude",
       models: [
         {
-          id: "claude-sonnet-4-20250514",
-          name: "Claude Sonnet 4",
+          id: "claude-sonnet-5-5",
+          name: "Claude Sonnet 5.5",
           contextWindow: 200_000,
           supportsTools: true,
           supportsStreaming: true,
@@ -58,8 +58,8 @@ vi.mock("../providers/openai", () => ({
       name: "OpenAI",
       models: [
         {
-          id: "gpt-4o",
-          name: "GPT-4o",
+          id: "gpt-5.4",
+          name: "GPT-5.4",
           contextWindow: 128_000,
           supportsTools: true,
           supportsStreaming: true,
@@ -78,7 +78,7 @@ vi.mock("../providers/registry", () => ({
 // available both inside the vi.mock factory (hoisted) and in test body resets.
 const { agentStoreState } = vi.hoisted(() => {
   const agentStoreState = {
-    settings: { providerId: "anthropic", modelId: "claude-sonnet-4-20250514", systemPrompt: "" },
+    settings: { providerId: "anthropic", modelId: "claude-sonnet-5-5", systemPrompt: "" },
     hasApiKey: false,
     updateSettings: vi.fn((patch: Record<string, unknown>) => {
       Object.assign(agentStoreState.settings, patch);
@@ -111,6 +111,55 @@ function setup(features: FakeFeatures = {}) {
   return render(<AgentSettingsPanel />, { wrapper: withServerInfo(features) });
 }
 
+type IpcAnswer = unknown | ((args: Record<string, unknown>) => Promise<unknown>);
+
+/**
+ * Answers each IPC command from `answers`: a function is called with the
+ * command's arguments, any other value resolves as is. Unlisted commands see
+ * no key and an empty model list.
+ */
+function answerIpc(answers: Record<string, IpcAnswer>) {
+  const all: Record<string, IpcAnswer> = {
+    is_provider_key_configured: false,
+    agent_list_models: { data: [] },
+    ...answers,
+  };
+  mockInvoke.mockImplementation((cmd: string, args: Record<string, unknown>) => {
+    const answer = all[cmd];
+    return typeof answer === "function" ? answer(args) : Promise.resolve(answer);
+  });
+}
+
+/** Calls of one IPC command so far. */
+function ipcCalls(cmd: string) {
+  return mockInvoke.mock.calls.filter(([called]: [string]) => called === cmd);
+}
+
+/** Waits until the model picker shows and its model fetch has finished. */
+async function modelsSettled() {
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /Refresh models/i })).toBeEnabled();
+  });
+}
+
+/** An Anthropic model list whose newest entry is Claude Opus 5.5. */
+const ANTHROPIC_LIVE = {
+  data: [
+    {
+      id: "claude-sonnet-5-5",
+      display_name: "Claude Sonnet 5.5",
+      type: "model",
+      created_at: "2026-08-01T00:00:00Z",
+    },
+    {
+      id: "claude-opus-5-5",
+      display_name: "Claude Opus 5.5",
+      type: "model",
+      created_at: "2026-09-01T00:00:00Z",
+    },
+  ],
+};
+
 // ──────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────
@@ -121,15 +170,11 @@ describe("AgentSettingsPanel", () => {
     // Reset store state
     agentStoreState.settings = {
       providerId: "anthropic",
-      modelId: "claude-sonnet-4-20250514",
+      modelId: "claude-sonnet-5-5",
       systemPrompt: "",
     };
     agentStoreState.hasApiKey = false;
-    // Default: no key configured
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-      return Promise.resolve(undefined);
-    });
+    answerIpc({});
   });
 
   // ── Rendering ────────────────────────────────────────────────
@@ -191,10 +236,7 @@ describe("AgentSettingsPanel", () => {
   });
 
   it("shows 'Key set' pill when keyring returns true", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-      return Promise.resolve(undefined);
-    });
+    answerIpc({ is_provider_key_configured: true });
     setup();
     await waitFor(() => {
       expect(screen.getByText("Key set")).toBeInTheDocument();
@@ -204,14 +246,14 @@ describe("AgentSettingsPanel", () => {
   // ── Verify & Save — valid key flow ───────────────────────────
 
   describe("Verify & Save — valid key", () => {
-    it("calls agent_validate_provided_key THEN set_provider_key in that order", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "valid" });
-        if (cmd === "set_provider_key") return Promise.resolve(undefined);
-        return Promise.resolve(undefined);
+    beforeEach(() => {
+      answerIpc({
+        agent_validate_provided_key: { kind: "valid" },
+        agent_list_models: ANTHROPIC_LIVE,
       });
+    });
 
+    it("calls agent_validate_provided_key THEN set_provider_key in that order", async () => {
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -239,13 +281,6 @@ describe("AgentSettingsPanel", () => {
     });
 
     it("shows 'Key verified and saved.' inline and success toast on valid", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "valid" });
-        if (cmd === "set_provider_key") return Promise.resolve(undefined);
-        return Promise.resolve(undefined);
-      });
-
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -261,13 +296,6 @@ describe("AgentSettingsPanel", () => {
     });
 
     it("does NOT call agent_validate_credentials (old retired command)", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "valid" });
-        if (cmd === "set_provider_key") return Promise.resolve(undefined);
-        return Promise.resolve(undefined);
-      });
-
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -282,18 +310,30 @@ describe("AgentSettingsPanel", () => {
       );
       expect(oldCmdCalls).toHaveLength(0);
     });
+
+    it("fetches the live model list once the key is saved", async () => {
+      setup();
+      await waitFor(() => screen.getByText("No key configured"));
+
+      fireEvent.change(screen.getByPlaceholderText("sk-ant-..."), {
+        target: { value: "sk-ant-valid" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+      await modelsSettled();
+
+      expect(screen.getByRole("option", { name: "Claude Opus 5.5" })).toBeInTheDocument();
+      expect(ipcCalls("agent_list_models")).toHaveLength(1);
+    });
   });
 
   // ── Verify & Save — invalid key ──────────────────────────────
 
   describe("Verify & Save — invalid key", () => {
-    it("shows 'Invalid key — not saved' and does NOT call set_provider_key", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "invalid" });
-        return Promise.resolve(undefined);
-      });
+    beforeEach(() => {
+      answerIpc({ agent_validate_provided_key: { kind: "invalid" } });
+    });
 
+    it("shows 'Invalid key — not saved' and does NOT call set_provider_key", async () => {
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -313,12 +353,6 @@ describe("AgentSettingsPanel", () => {
     });
 
     it("does NOT call clear_provider_key on invalid (existing key preserved)", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "invalid" });
-        return Promise.resolve(undefined);
-      });
-
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -335,12 +369,6 @@ describe("AgentSettingsPanel", () => {
     });
 
     it("success toast NOT fired on invalid", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key") return Promise.resolve({ kind: "invalid" });
-        return Promise.resolve(undefined);
-      });
-
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -358,11 +386,8 @@ describe("AgentSettingsPanel", () => {
 
   describe("Network error flow", () => {
     it("shows network error inline, warning toast, and does NOT save key", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        if (cmd === "agent_validate_provided_key")
-          return Promise.resolve({ kind: "network_error", message: "connection refused" });
-        return Promise.resolve(undefined);
+      answerIpc({
+        agent_validate_provided_key: { kind: "network_error", message: "connection refused" },
       });
 
       setup();
@@ -395,10 +420,7 @@ describe("AgentSettingsPanel", () => {
 
   describe("Delete key flow", () => {
     it("shows delete button when key is configured", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        return Promise.resolve(undefined);
-      });
+      answerIpc({ is_provider_key_configured: true });
 
       setup();
       await waitFor(() => {
@@ -408,11 +430,7 @@ describe("AgentSettingsPanel", () => {
     });
 
     it("clicking delete calls clear_provider_key and flips pill to 'No key configured'", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        if (cmd === "clear_provider_key") return Promise.resolve(undefined);
-        return Promise.resolve(undefined);
-      });
+      answerIpc({ is_provider_key_configured: true });
 
       setup();
       await waitFor(() => screen.getByText("Key set"));
@@ -437,11 +455,6 @@ describe("AgentSettingsPanel", () => {
 
   describe("Provider switch", () => {
     it("calls updateSettings with the new providerId on provider change", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        return Promise.resolve(undefined);
-      });
-
       setup();
       await waitFor(() => screen.getByText("No key configured"));
 
@@ -458,11 +471,6 @@ describe("AgentSettingsPanel", () => {
 
     it("calls is_provider_key_configured for the initial provider on mount", async () => {
       // On mount the effect fires once for the initially-selected provider.
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-        return Promise.resolve(undefined);
-      });
-
       setup();
 
       await waitFor(() => {
@@ -478,25 +486,17 @@ describe("AgentSettingsPanel", () => {
   // ── Model picker gating ──────────────────────────────────────
 
   it("model picker is hidden when no key is configured", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-      return Promise.resolve(undefined);
-    });
-
     setup();
     await waitFor(() => screen.getByText("No key configured"));
 
     // Model select and refresh-models button should not be present.
     expect(screen.queryByRole("button", { name: /Refresh models/i })).not.toBeInTheDocument();
     // No model option text visible.
-    expect(screen.queryByText("Claude Sonnet 4")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claude Sonnet 5.5")).not.toBeInTheDocument();
   });
 
   it("model picker is visible when key is configured", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-      return Promise.resolve(undefined);
-    });
+    answerIpc({ is_provider_key_configured: true });
 
     setup();
     await waitFor(() => screen.getByText("Key set"));
@@ -507,11 +507,6 @@ describe("AgentSettingsPanel", () => {
   // ── System prompt gating ─────────────────────────────────────
 
   it("system prompt textarea is hidden when no key is configured", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(false);
-      return Promise.resolve(undefined);
-    });
-
     setup();
     await waitFor(() => screen.getByText("No key configured"));
 
@@ -521,10 +516,7 @@ describe("AgentSettingsPanel", () => {
   });
 
   it("system prompt textarea is visible when key is configured", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-      return Promise.resolve(undefined);
-    });
+    answerIpc({ is_provider_key_configured: true });
 
     setup();
     await waitFor(() => screen.getByText("Key set"));
@@ -534,97 +526,76 @@ describe("AgentSettingsPanel", () => {
     ).toBeInTheDocument();
   });
 
-  // ── Model picker interactions ────────────────────────────────
+  // ── Live model list ──────────────────────────────────────────
 
-  describe("Model picker (when key configured)", () => {
-    beforeEach(() => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        return Promise.resolve(undefined);
-      });
+  describe("Live model list", () => {
+    it("opening the panel with a key fetches the list once and selects its newest model", async () => {
+      agentStoreState.settings.modelId = "claude-sonnet-4-20250514";
+      answerIpc({ is_provider_key_configured: true, agent_list_models: ANTHROPIC_LIVE });
+
+      setup();
+      await modelsSettled();
+
+      expect(screen.getByRole("option", { name: "Claude Opus 5.5" })).toBeInTheDocument();
+      expect(screen.getByText("2 models loaded from API")).toBeInTheDocument();
+      expect(agentStoreState.updateSettings).toHaveBeenCalledWith({ modelId: "claude-opus-5-5" });
+      expect(ipcCalls("agent_list_models")).toEqual([
+        ["agent_list_models", { provider: "anthropic" }],
+      ]);
     });
 
-    it("refresh-models button calls agent_list_models", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        if (cmd === "agent_list_models")
-          return Promise.resolve({
-            data: [
-              { id: "claude-sonnet-4-20250514", display_name: "Claude Sonnet 4", type: "model" },
-            ],
-          });
-        return Promise.resolve(undefined);
+    it("a failed fetch keeps the fallback list and shows the error without a toast", async () => {
+      answerIpc({
+        is_provider_key_configured: true,
+        agent_list_models: () => Promise.reject("provider returned error 500: overloaded"),
       });
 
       setup();
-      await waitFor(() => screen.getByText("Key set"));
+      await modelsSettled();
 
-      fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
-
-      await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("agent_list_models", {
-          provider: "anthropic",
-        });
-      });
+      expect(screen.getByText("provider returned error 500: overloaded")).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Claude Sonnet 5.5" })).toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(toast.warning).not.toHaveBeenCalled();
     });
 
-    it("shows models count after successful fetch", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        if (cmd === "agent_list_models")
-          return Promise.resolve({
-            data: [
-              { id: "claude-sonnet-4-20250514", display_name: "Claude Sonnet 4", type: "model" },
-              { id: "claude-haiku-3-5-20241022", display_name: "Claude Haiku", type: "model" },
-            ],
-          });
-        return Promise.resolve(undefined);
-      });
+    it("an empty list keeps the fallback list", async () => {
+      answerIpc({ is_provider_key_configured: true });
 
       setup();
-      await waitFor(() => screen.getByText("Key set"));
+      await modelsSettled();
 
-      fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText(/models loaded from API/)).toBeInTheDocument();
-      });
+      expect(screen.getByRole("option", { name: "Claude Sonnet 5.5" })).toBeInTheDocument();
+      expect(screen.queryByText(/models loaded from API/)).not.toBeInTheDocument();
     });
 
-    it("shows error message when agent_list_models fails", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        if (cmd === "agent_list_models") return Promise.reject(new Error("API unreachable"));
-        return Promise.resolve(undefined);
-      });
+    it("refresh-models button fetches the list again", async () => {
+      answerIpc({ is_provider_key_configured: true, agent_list_models: ANTHROPIC_LIVE });
 
       setup();
-      await waitFor(() => screen.getByText("Key set"));
-
+      await modelsSettled();
       fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
+      await modelsSettled();
 
-      await waitFor(() => {
-        expect(screen.getByText("API unreachable")).toBeInTheDocument();
-      });
+      expect(ipcCalls("agent_list_models")).toHaveLength(2);
     });
 
-    it("does not crash on empty model list from API", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "is_provider_key_configured") return Promise.resolve(true);
-        if (cmd === "agent_list_models") return Promise.resolve({ data: [] });
-        return Promise.resolve(undefined);
+    it("drops a list that arrives after the provider changed", async () => {
+      const anthropicList = Promise.withResolvers<unknown>();
+      answerIpc({
+        is_provider_key_configured: ({ provider }: Record<string, unknown>) =>
+          Promise.resolve(provider === "anthropic"),
+        agent_list_models: () => anthropicList.promise,
       });
 
-      setup();
-      await waitFor(() => screen.getByText("Key set"));
+      const view = setup();
+      await waitFor(() => expect(ipcCalls("agent_list_models")).toHaveLength(1));
+      fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "openai" } });
+      view.rerender(<AgentSettingsPanel />);
+      await waitFor(() => screen.getByText("No key configured"));
+      await act(async () => anthropicList.resolve(ANTHROPIC_LIVE));
 
-      // Should not throw — the models select still renders with static fallback.
-      fireEvent.click(screen.getByRole("button", { name: /Refresh models/i }));
-
-      // No crash — component stays mounted.
-      await waitFor(() => {
-        expect(screen.getByText("Key set")).toBeInTheDocument();
-      });
+      expect(agentStoreState.settings).toMatchObject({ providerId: "openai", modelId: "gpt-5.4" });
     });
   });
 

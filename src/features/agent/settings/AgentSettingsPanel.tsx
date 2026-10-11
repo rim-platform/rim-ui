@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Eye,
@@ -22,6 +22,12 @@ import type { AiModelDef } from "../providers/types";
 import { getProvider } from "../providers/registry";
 import { createAnthropicProvider } from "../providers/anthropic";
 import { createOpenAiProvider } from "../providers/openai";
+import {
+  mapAnthropicModels,
+  mapOpenAiModels,
+  type AnthropicModelEntry,
+  type OpenAiModelEntry,
+} from "../providers/liveModels";
 
 // ──────────────────────────────────────────────────────────────
 // Provider metadata
@@ -104,48 +110,11 @@ async function tauriValidateProvidedKey(
  */
 async function tauriFetchModels(provider: string): Promise<AiModelDef[]> {
   if (provider === "anthropic") {
-    const data = await invoke<{ data: { id: string; display_name: string; type: string }[] }>(
-      "agent_list_models",
-      { provider },
-    );
-    return data.data
-      .filter((m) => m.type === "model")
-      .map((m) => {
-        const staticModels = getStaticModelsForProvider("anthropic");
-        const staticMatch = staticModels.find((s) => s.id === m.id);
-        return {
-          id: m.id,
-          name: m.display_name || m.id,
-          contextWindow: staticMatch?.contextWindow ?? 200_000,
-          supportsTools: true,
-          supportsStreaming: true,
-          inputPricePerMToken: staticMatch?.inputPricePerMToken,
-          outputPricePerMToken: staticMatch?.outputPricePerMToken,
-        };
-      });
+    const list = await invoke<{ data: AnthropicModelEntry[] }>("agent_list_models", { provider });
+    return mapAnthropicModels(list.data);
   }
-
-  // openai
-  const CHAT_PREFIXES = ["gpt", "o"];
-  const data = await invoke<{ data: { id: string; owned_by: string }[] }>("agent_list_models", {
-    provider,
-  });
-  const staticModels = getStaticModelsForProvider("openai");
-  return data.data
-    .filter((m) => CHAT_PREFIXES.some((p) => m.id.startsWith(p)))
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((m) => {
-      const staticMatch = staticModels.find((s) => s.id === m.id);
-      return {
-        id: m.id,
-        name: m.id,
-        contextWindow: staticMatch?.contextWindow ?? 128_000,
-        supportsTools: true,
-        supportsStreaming: true,
-        inputPricePerMToken: staticMatch?.inputPricePerMToken,
-        outputPricePerMToken: staticMatch?.outputPricePerMToken,
-      };
-    });
+  const list = await invoke<{ data: OpenAiModelEntry[] }>("agent_list_models", { provider });
+  return mapOpenAiModels(list.data);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -163,6 +132,13 @@ type VerifyState =
   | { kind: "invalid" }
   | { kind: "network_error"; message: string }
   | { kind: "error"; message: string };
+
+/** Message of a rejected IPC call: Tauri rejects with the error's string form. */
+function errorText(err: unknown, fallback: string): string {
+  if (typeof err === "string" && err.length > 0) return err;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
 
 // ──────────────────────────────────────────────────────────────
 // Static model fallback
@@ -228,15 +204,42 @@ export function AgentSettingsPanel() {
   const [dynamicModels, setDynamicModels] = useState<AiModelDef[] | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  // Bumped on every model fetch and provider change; a fetch whose number is
+  // no longer current drops its result.
+  const modelsRequest = useRef(0);
 
   const currentMeta = PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0]!;
   const models = dynamicModels ?? getStaticModelsForProvider(settings.providerId);
   const canVerifyAndSave = keyInput.trim().length > 0 && verifyState.kind !== "verifying";
 
+  // ── Live model list ─────────────────────────────────────────────────────────
+  // Fetches the provider's models and selects the newest when the current
+  // model is not offered. A failure keeps the static list and shows the error.
+  const loadModels = useCallback(async (providerId: string) => {
+    const request = ++modelsRequest.current;
+    setFetchingModels(true);
+    setModelsError(null);
+    try {
+      const fetched = await tauriFetchModels(providerId);
+      if (request !== modelsRequest.current) return;
+      setDynamicModels(fetched.length > 0 ? fetched : null);
+      const store = useAgentStore.getState();
+      if (fetched.length > 0 && !fetched.some((m) => m.id === store.settings.modelId)) {
+        store.updateSettings({ modelId: fetched[0].id });
+      }
+    } catch (err) {
+      if (request !== modelsRequest.current) return;
+      setModelsError(errorText(err, "Failed to fetch models"));
+    } finally {
+      if (request === modelsRequest.current) setFetchingModels(false);
+    }
+  }, []);
+
   // ── On mount / provider change: check keyring presence ─────────────────────
   useEffect(() => {
     if (!capabilities.agent) return;
     let cancelled = false;
+    modelsRequest.current++;
     void tauriIsProviderKeyConfigured(settings.providerId).then((configured) => {
       if (cancelled) return;
       setKeyConfigured(configured);
@@ -246,11 +249,13 @@ export function AgentSettingsPanel() {
       setVerifyState({ kind: "idle" });
       setDynamicModels(null);
       setModelsError(null);
+      setFetchingModels(false);
+      if (configured) void loadModels(settings.providerId);
     });
     return () => {
       cancelled = true;
     };
-  }, [settings.providerId, capabilities.agent]);
+  }, [settings.providerId, capabilities.agent, loadModels]);
 
   // ── Provider switch ─────────────────────────────────────────────────────────
   function handleProviderChange(providerId: string) {
@@ -283,6 +288,7 @@ export function AgentSettingsPanel() {
         setKeyInput("");
         useAgentStore.getState().setHasApiKey(true);
         toast.success(`${currentMeta.name} key verified and saved.`);
+        void loadModels(currentMeta.id);
       } else if (outcome.kind === "invalid") {
         // Invalid key — keyring untouched; existing key preserved.
         setVerifyState({ kind: "invalid" });
@@ -319,21 +325,9 @@ export function AgentSettingsPanel() {
   }
 
   // ── Refresh models ──────────────────────────────────────────────────────────
-  async function handleFetchModels() {
+  function handleFetchModels() {
     if (!keyConfigured) return;
-    setFetchingModels(true);
-    setModelsError(null);
-    try {
-      const fetched = await tauriFetchModels(settings.providerId);
-      setDynamicModels(fetched);
-      if (fetched.length > 0 && !fetched.find((m) => m.id === settings.modelId)) {
-        updateSettings({ modelId: fetched[0].id });
-      }
-    } catch (err) {
-      setModelsError(err instanceof Error ? err.message : "Failed to fetch models");
-    } finally {
-      setFetchingModels(false);
-    }
+    void loadModels(settings.providerId);
   }
 
   return (
@@ -524,7 +518,7 @@ export function AgentSettingsPanel() {
                 </select>
                 <button
                   type="button"
-                  onClick={() => void handleFetchModels()}
+                  onClick={handleFetchModels}
                   disabled={fetchingModels}
                   className="rounded border border-rim-line bg-rim-void px-3 py-2 text-xs text-rim-text-muted transition hover:text-rim-text disabled:opacity-40"
                   title="Fetch latest models from provider"

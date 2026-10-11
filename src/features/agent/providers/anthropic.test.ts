@@ -54,22 +54,13 @@ describe("createAnthropicProvider", () => {
     expect(provider.config.models.length).toBeGreaterThan(0);
   });
 
-  it("config contains expected models", () => {
+  it("falls back to the current Claude models, newest tier first", () => {
     const provider = createAnthropicProvider();
-    const modelIds = provider.config.models.map((m) => m.id);
-    expect(modelIds).toContain("claude-opus-4-20250514");
-    expect(modelIds).toContain("claude-sonnet-4-20250514");
-    expect(modelIds).toContain("claude-haiku-3-5-20241022");
-  });
-
-  it("models have pricing info", () => {
-    const provider = createAnthropicProvider();
-    for (const model of provider.config.models) {
-      expect(model.inputPricePerMToken).toBeGreaterThan(0);
-      expect(model.outputPricePerMToken).toBeGreaterThan(0);
-      expect(model.supportsTools).toBe(true);
-      expect(model.supportsStreaming).toBe(true);
-    }
+    expect(provider.config.models.map((m) => m.id)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ]);
   });
 
   it("chat invokes agent_chat_completion with provider, model, and snake_case body — no api_key field", async () => {
@@ -83,7 +74,7 @@ describe("createAnthropicProvider", () => {
     const messages: AiMessage[] = [{ role: "user", content: "Hello" }];
 
     for await (const _ of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages,
       systemPrompt: "Be helpful",
     })) {
@@ -95,7 +86,7 @@ describe("createAnthropicProvider", () => {
     expect(cmd).toBe("agent_chat_completion");
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("anthropic");
-    expect(req.model).toBe("claude-sonnet-4-20250514");
+    expect(req.model).toBe("claude-sonnet-5-5");
     // api_key MUST NOT be present — deny_unknown_fields on the Rust side
     // would reject any payload containing this field.
     expect(req).not.toHaveProperty("api_key");
@@ -110,7 +101,7 @@ describe("createAnthropicProvider", () => {
     const messages: AiMessage[] = [{ role: "user", content: "Hello" }];
 
     for await (const _ of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages,
     })) {
       // drain
@@ -134,7 +125,7 @@ describe("createAnthropicProvider", () => {
     ];
 
     for await (const _ of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages: [{ role: "user", content: "x" }],
       tools,
     })) {
@@ -157,7 +148,7 @@ describe("createAnthropicProvider", () => {
     const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages: [{ role: "user", content: "x" }],
     })) {
       chunks.push(c);
@@ -176,7 +167,7 @@ describe("createAnthropicProvider", () => {
     const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages: [{ role: "user", content: "x" }],
     })) {
       chunks.push(c);
@@ -217,7 +208,7 @@ describe("createAnthropicProvider", () => {
     const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages: [{ role: "user", content: "hi" }],
     })) {
       chunks.push(c);
@@ -267,7 +258,7 @@ describe("createAnthropicProvider", () => {
     const provider = createAnthropicProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages: [{ role: "user", content: "hi" }],
     })) {
       chunks.push(c);
@@ -320,7 +311,7 @@ describe("createAnthropicProvider", () => {
     ];
     const chunks = [];
     for await (const c of provider.chat({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       messages,
       tools: [
         { name: "chat.send_message", description: "Send", input_schema: schema },

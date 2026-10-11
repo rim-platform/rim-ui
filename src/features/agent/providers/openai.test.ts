@@ -45,12 +45,14 @@ describe("createOpenAiProvider", () => {
     expect(provider.config.models.length).toBeGreaterThan(0);
   });
 
-  it("config contains expected models", () => {
+  it("falls back to the current GPT models, newest first", () => {
     const provider = createOpenAiProvider();
-    const modelIds = provider.config.models.map((m) => m.id);
-    expect(modelIds).toContain("gpt-4.1");
-    expect(modelIds).toContain("gpt-4o");
-    expect(modelIds).toContain("gpt-4o-mini");
+    expect(provider.config.models.map((m) => m.id)).toEqual([
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.4-nano",
+    ]);
   });
 
   it("chat invokes agent_chat_completion with provider=openai, snake_case body — no api_key field", async () => {
@@ -64,7 +66,7 @@ describe("createOpenAiProvider", () => {
     const messages: AiMessage[] = [{ role: "user", content: "Hi" }];
 
     for await (const _ of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages,
       systemPrompt: "Be helpful",
     })) {
@@ -76,7 +78,7 @@ describe("createOpenAiProvider", () => {
     expect(cmd).toBe("agent_chat_completion");
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("openai");
-    expect(req.model).toBe("gpt-4o");
+    expect(req.model).toBe("gpt-5.4");
     // api_key MUST NOT be present — deny_unknown_fields rejects it.
     expect(req).not.toHaveProperty("api_key");
     expect(req.max_tokens).toBe(4096);
@@ -90,7 +92,7 @@ describe("createOpenAiProvider", () => {
 
     const provider = createOpenAiProvider();
     for await (const _ of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
     })) {
       // drain
@@ -112,7 +114,7 @@ describe("createOpenAiProvider", () => {
     ];
 
     for await (const _ of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
       tools,
     })) {
@@ -151,7 +153,7 @@ describe("createOpenAiProvider", () => {
       },
     ];
 
-    for await (const _ of provider.chat({ model: "gpt-4o", messages })) {
+    for await (const _ of provider.chat({ model: "gpt-5.4", messages })) {
       // drain
     }
 
@@ -173,7 +175,7 @@ describe("createOpenAiProvider", () => {
     const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
     })) {
       chunks.push(c);
@@ -187,7 +189,7 @@ describe("createOpenAiProvider", () => {
     const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
     })) {
       chunks.push(c);
@@ -221,7 +223,7 @@ describe("createOpenAiProvider", () => {
     const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
     })) {
       chunks.push(c);
@@ -278,7 +280,7 @@ describe("createOpenAiProvider", () => {
     const provider = createOpenAiProvider();
     const chunks = [];
     for await (const c of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages: [{ role: "user", content: "Hi" }],
     })) {
       chunks.push(c);
@@ -333,7 +335,7 @@ describe("createOpenAiProvider", () => {
     ];
     const chunks = [];
     for await (const c of provider.chat({
-      model: "gpt-4o",
+      model: "gpt-5.4",
       messages,
       tools: [
         { name: "chat.send_message", description: "Send", input_schema: schema },
