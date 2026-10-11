@@ -32,6 +32,7 @@ fn no_cloud() -> CloudConnections {
     let mut settings = CloudSettings::from_env();
     settings.google.client_id = None;
     settings.dropbox.client_id = None;
+    settings.microsoft.client_id = None;
     CloudConnections::new(
         settings,
         Arc::new(super::cloud::fake::MemoryCredentials::default()),
@@ -684,6 +685,75 @@ fn two_devices_share_a_folder_without_touching_each_others_files() {
     assert_eq!(report.conversations, 2);
     assert_eq!(phone.ids("c1").len(), 4);
     assert_eq!(phone.ids("c2").len(), 2);
+}
+
+#[test]
+fn each_devices_last_export_is_read_from_its_head() {
+    let folder = tempfile::tempdir().unwrap();
+    let laptop = Device::new("alice");
+    let desktop = Device::new("alice");
+    assert!(matches!(
+        laptop.archive.devices(&account("alice")),
+        Err(ArchiveError::NotConfigured)
+    ));
+    laptop.connect(folder.path());
+    desktop.connect(folder.path());
+    // Connected, but nothing exported yet: no device has a head.
+    assert!(laptop
+        .archive
+        .devices(&account("alice"))
+        .unwrap()
+        .is_empty());
+
+    let mut feed = MockFeed::new(1000);
+    feed.send_many("c1", 3);
+    laptop.track("c1");
+    laptop.sync(&mut feed);
+    desktop.track("c1");
+    desktop.sync(&mut feed);
+    let before = chrono::Utc::now().timestamp_millis();
+    desktop.export();
+    laptop.export();
+
+    let devices = laptop.archive.devices(&account("alice")).unwrap();
+    assert_eq!(
+        devices
+            .iter()
+            .map(|d| (d.device_id.clone(), d.this_device, d.segments, d.unreadable))
+            .collect::<Vec<_>>(),
+        vec![
+            (laptop.device_id(), true, 1, false),
+            (desktop.device_id(), false, 1, false),
+        ]
+    );
+    assert!(devices
+        .iter()
+        .all(|d| d.last_export_ms.is_some_and(|ms| ms >= before)));
+
+    // A damaged head is reported, not skipped; a device folder without a head (its first
+    // export has not synced here yet) has no last export.
+    let desktop_head = names(folder.path())
+        .into_iter()
+        .find(|n| n.contains(&desktop.device_id()) && n.ends_with("head.rimx"))
+        .unwrap();
+    std::fs::write(folder.path().join(&desktop_head), b"not a head").unwrap();
+    let pending = "0f0e0d0c-0000-4000-8000-000000000001";
+    let devices_dir = folder
+        .path()
+        .join(&desktop_head)
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .to_path_buf();
+    std::fs::create_dir(devices_dir.join(pending)).unwrap();
+    let devices = desktop.archive.devices(&account("alice")).unwrap();
+    let find = |id: &str| devices.iter().find(|d| d.device_id == id).unwrap();
+    assert!(find(&desktop.device_id()).this_device);
+    assert!(find(&desktop.device_id()).unreadable);
+    assert_eq!(find(&desktop.device_id()).last_export_ms, None);
+    assert!(!find(pending).unreadable);
+    assert_eq!(find(pending).last_export_ms, None);
+    assert!(find(&laptop.device_id()).last_export_ms.is_some());
 }
 
 // ─── Restore ────────────────────────────────────────────────────────────────

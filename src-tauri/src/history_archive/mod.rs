@@ -14,8 +14,8 @@
 //!
 //! [`provider`] holds the storage trait and the local folder provider, which also covers
 //! folders kept in sync by Dropbox, Google Drive or Syncthing clients. [`cloud`] holds the
-//! Google Drive and Dropbox API providers and their sign-in, S3-compatible storage, and the
-//! user's own backup endpoint. [`identity`] keeps each device's backup of the identity key and its wraps of the
+//! Google Drive, Dropbox and OneDrive API providers and their sign-in, S3-compatible storage,
+//! and the user's own backup endpoint. [`identity`] keeps each device's backup of the identity key and its wraps of the
 //! archive key under the identity key.
 
 pub(crate) mod commands;
@@ -204,6 +204,7 @@ enum ProviderConfig {
     },
     GoogleDrive(CloudConnection),
     Dropbox(CloudConnection),
+    OneDrive(CloudConnection),
     Endpoint(EndpointConnection),
     S3(S3Connection),
 }
@@ -213,6 +214,7 @@ impl From<Connection> for ProviderConfig {
         match connection {
             Connection::OAuth(CloudKind::GoogleDrive, c) => Self::GoogleDrive(c),
             Connection::OAuth(CloudKind::Dropbox, c) => Self::Dropbox(c),
+            Connection::OAuth(CloudKind::OneDrive, c) => Self::OneDrive(c),
             Connection::Endpoint(c) => Self::Endpoint(c),
             Connection::S3(c) => Self::S3(c),
         }
@@ -220,13 +222,14 @@ impl From<Connection> for ProviderConfig {
 }
 
 impl ProviderConfig {
-    /// `localFolder`, `googleDrive`, `dropbox`, `s3` or `endpoint`, as the settings file names
-    /// it.
+    /// `localFolder`, `googleDrive`, `dropbox`, `oneDrive`, `s3` or `endpoint`, as the
+    /// settings file names it.
     fn kind(&self) -> &'static str {
         match self {
             Self::LocalFolder { .. } => "localFolder",
             Self::GoogleDrive(_) => "googleDrive",
             Self::Dropbox(_) => "dropbox",
+            Self::OneDrive(_) => "oneDrive",
             Self::Endpoint(_) => "endpoint",
             Self::S3(_) => "s3",
         }
@@ -237,7 +240,7 @@ impl ProviderConfig {
     fn location(&self) -> String {
         match self {
             Self::LocalFolder { path } => path.clone(),
-            Self::GoogleDrive(c) | Self::Dropbox(c) => c.account.clone(),
+            Self::GoogleDrive(c) | Self::Dropbox(c) | Self::OneDrive(c) => c.account.clone(),
             Self::Endpoint(c) => c.url.clone(),
             Self::S3(c) => c.location(),
         }
@@ -261,7 +264,7 @@ pub(crate) enum ConnectTarget {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ArchiveStatus {
     pub configured: bool,
-    /// `localFolder`, `googleDrive`, `dropbox`, `s3` or `endpoint`.
+    /// `localFolder`, `googleDrive`, `dropbox`, `oneDrive`, `s3` or `endpoint`.
     pub provider: Option<&'static str>,
     /// The folder, the cloud account's email address, the endpoint's URL, or
     /// `bucket/prefix on host`.
@@ -293,6 +296,20 @@ pub(crate) struct ExportReport {
     pub segments: usize,
     pub messages: usize,
     pub conversations: usize,
+}
+
+/// One device's backups of an account, from its head.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeviceBackup {
+    pub device_id: String,
+    pub this_device: bool,
+    /// When the device last wrote its head (Unix ms): its last export that had something to
+    /// back up. `None` before its first one.
+    pub last_export_ms: Option<i64>,
+    pub segments: usize,
+    /// The head is there but could not be read (damaged, or written under another key).
+    pub unreadable: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -341,6 +358,7 @@ impl HistoryArchiveState {
             ProviderConfig::LocalFolder { path } => Ok(Box::new(LocalFolderProvider::new(path)?)),
             ProviderConfig::GoogleDrive(c) => self.cloud.open(CloudKind::GoogleDrive, c),
             ProviderConfig::Dropbox(c) => self.cloud.open(CloudKind::Dropbox, c),
+            ProviderConfig::OneDrive(c) => self.cloud.open(CloudKind::OneDrive, c),
             ProviderConfig::Endpoint(c) => self.cloud.open_endpoint(c),
             ProviderConfig::S3(c) => self.cloud.open_s3(c),
         }
@@ -400,6 +418,7 @@ impl HistoryArchiveState {
                 self.cloud.forget(CloudKind::GoogleDrive, &c.connection_id)
             }
             ProviderConfig::Dropbox(c) => self.cloud.forget(CloudKind::Dropbox, &c.connection_id),
+            ProviderConfig::OneDrive(c) => self.cloud.forget(CloudKind::OneDrive, &c.connection_id),
             ProviderConfig::Endpoint(c) => self.cloud.forget_secret(&c.connection_id),
             ProviderConfig::S3(c) => self.cloud.forget_secret(&c.connection_id),
         };
@@ -665,6 +684,42 @@ impl HistoryArchiveState {
                 .mark_archived(archive.id(), &device_id, &batch)?;
         }
         Ok(report)
+    }
+
+    /// Every device that backs this account up into the archive, from the devices' heads:
+    /// this device first, then the most recent export first. Reads only the heads, and does
+    /// not wait for an export in progress (heads are written whole).
+    pub(crate) fn devices(&self, account: &AccountId) -> Result<Vec<DeviceBackup>, ArchiveError> {
+        let archive = self.open_archive(account)?;
+        let this_device = self.device_id()?;
+        let mut devices: Vec<DeviceBackup> = archive
+            .account(&account.label())
+            .device_heads()?
+            .into_iter()
+            .map(|(device_id, head)| {
+                let (head, unreadable) = match head {
+                    Ok(head) => (head, false),
+                    Err(e) => {
+                        log::warn!("[history_archive] unreadable device head: {e}");
+                        (None, true)
+                    }
+                };
+                DeviceBackup {
+                    this_device: device_id == this_device,
+                    last_export_ms: head.as_ref().map(|h| h.updated_at_ms),
+                    segments: head.as_ref().map_or(0, |h| h.segments.len()),
+                    unreadable,
+                    device_id,
+                }
+            })
+            .collect();
+        devices.sort_by(|a, b| {
+            b.this_device
+                .cmp(&a.this_device)
+                .then(b.last_export_ms.cmp(&a.last_export_ms))
+                .then(a.device_id.cmp(&b.device_id))
+        });
+        Ok(devices)
     }
 
     /// Read every device's segments and merge them into the account's cache (`store`).

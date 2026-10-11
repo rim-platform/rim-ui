@@ -1,9 +1,11 @@
 //! Test doubles for the cloud providers: an in-memory credential store, and a fake Google
-//! Drive, Dropbox, S3 bucket, backup endpoint and OAuth token endpoint on a local HTTP server,
-//! holding files in memory. Only the API surface the providers use is implemented, with the
-//! behaviors they rely on (Drive's duplicate names and `appDataFolder`, Dropbox's upload modes
-//! and 409 errors, S3's signatures, conditional writes and delimited listings, the endpoint's
-//! `If-None-Match` and listing order, bearer tokens that expire, rate limits on demand).
+//! Drive, Dropbox, OneDrive (Microsoft Graph), S3 bucket, backup endpoint and OAuth token
+//! endpoint on a local HTTP server, holding files in memory. Only the API surface the
+//! providers use is implemented, with the behaviors they rely on (Drive's duplicate names and
+//! `appDataFolder`, Dropbox's upload modes and 409 errors, Graph's conflict behavior, upload
+//! sessions and next links, S3's signatures, conditional writes and delimited listings, the
+//! endpoint's `If-None-Match` and listing order, bearer tokens that expire, rate limits on
+//! demand).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -239,6 +241,17 @@ pub(crate) struct CloudState {
     pub drive_race: Option<String>,
 
     pub dropbox: BTreeMap<String, Vec<u8>>,
+
+    /// The OneDrive app folder's files by path.
+    pub onedrive: BTreeMap<String, Vec<u8>>,
+    /// Open upload sessions by id: the path, whether a taken name fails it, and the bytes so
+    /// far.
+    onedrive_sessions: HashMap<String, (String, bool, Vec<u8>)>,
+    /// Upload session chunks received, and how many of them carried an access token.
+    pub onedrive_chunks: usize,
+    pub onedrive_chunks_with_token: usize,
+    /// Where the fake is, for the URLs it hands out.
+    base_url: String,
     /// Entries per `list_folder` page (Drive pages are `pageSize` or this).
     pub page_size: usize,
 
@@ -340,6 +353,7 @@ impl FakeCloud {
         }));
         let handler_state = state.clone();
         let server = FakeServer::start(move |req| handle(&mut handler_state.lock().unwrap(), req));
+        state.lock().unwrap().base_url = server.url.clone();
         Self { state, server }
     }
 
@@ -398,7 +412,11 @@ impl FakeCloud {
     pub(crate) fn settings(&self) -> CloudSettings {
         let url = &self.server.url;
         let mut settings = CloudSettings::from_env();
-        for service in [&mut settings.google, &mut settings.dropbox] {
+        for service in [
+            &mut settings.google,
+            &mut settings.dropbox,
+            &mut settings.microsoft,
+        ] {
             service.authorize_url = format!("{url}/authorize");
             service.token_url = format!("{url}/token");
             service.redirect_port = 0;
@@ -411,6 +429,9 @@ impl FakeCloud {
         settings.drive.upload = format!("{url}/upload/drive/v3");
         settings.dropbox_api.api = format!("{url}/dbx/api/2");
         settings.dropbox_api.content = format!("{url}/dbx/content/2");
+        settings.microsoft.client_id = Some("onedrive-client".into());
+        settings.microsoft.client_secret = None;
+        settings.onedrive.api = format!("{url}/graph/v1.0");
         settings.retry = RetryPolicy {
             attempts: 4,
             base_delay: Duration::from_millis(1),
@@ -460,11 +481,14 @@ fn unauthorized() -> Response {
     Response::json(401, json!({ "error": "invalid_token" }))
 }
 
-/// "METHOD /path" and then Dropbox's argument header, or the backup endpoint's or S3's query
-/// followed by the method again, so a fault can match one method on one file
+/// "METHOD /path" and then Dropbox's argument header, or the backup endpoint's, S3's or
+/// Graph's query followed by the method again, so a fault can match one method on one file
 /// (`head.rimx POST`).
 fn log_line(req: &Request) -> String {
-    let arg = if req.path.starts_with("/ep/") || req.path.starts_with("/s3/") {
+    let arg = if ["/ep/", "/s3/", "/graph"]
+        .iter()
+        .any(|p| req.path.starts_with(p))
+    {
         let query: Vec<String> = req.query.iter().map(|(k, v)| format!("{k}={v}")).collect();
         if query.is_empty() {
             req.method.clone()
@@ -511,6 +535,10 @@ fn handle(state: &mut CloudState, req: Request) -> Response {
     if let Some(rest) = req.path.strip_prefix("/s3/") {
         return s3(state, &req, rest);
     }
+    // An upload session's URL is its own authorization.
+    if let Some(session) = req.path.strip_prefix("/graph-upload/") {
+        return onedrive_chunk(state, &req, session);
+    }
     let bearer = format!("Bearer {}", state.access_token);
     if req.header("Authorization") != Some(bearer.as_str()) {
         return unauthorized();
@@ -521,6 +549,8 @@ fn handle(state: &mut CloudState, req: Request) -> Response {
         drive_upload(state, &req, rest)
     } else if let Some(rest) = req.path.strip_prefix("/dbx/") {
         dropbox(state, &req, rest)
+    } else if let Some(rest) = req.path.strip_prefix("/graph/v1.0") {
+        onedrive(state, &req, rest)
     } else {
         Response::json(404, json!({ "error": "no such endpoint" }))
     }
@@ -943,7 +973,8 @@ fn s3_verify(state: &CloudState, req: &Request) -> Result<(), Response> {
             service: scope[3],
         },
         time,
-    );
+    )
+    .unwrap();
     if expected != auth {
         return Err(s3_error(403, "SignatureDoesNotMatch"));
     }
@@ -1047,4 +1078,175 @@ fn s3_list(state: &CloudState, req: &Request) -> Response {
     }
     xml.push_str("</ListBucketResult>");
     s3_xml(200, xml)
+}
+
+// ─── OneDrive ───────────────────────────────────────────────────────────────
+
+fn graph_error(status: u16, code: &str) -> Response {
+    Response::json(
+        status,
+        json!({ "error": { "code": code, "message": code } }),
+    )
+}
+
+fn onedrive_item(path: &str) -> Value {
+    json!({ "id": format!("item-{path}"), "name": path.rsplit('/').next().unwrap() })
+}
+
+fn onedrive(state: &mut CloudState, req: &Request, rest: &str) -> Response {
+    if rest == "/me" {
+        // A personal account: no `mail`, the sign-in name is the address.
+        return Response::json(
+            200,
+            json!({ "mail": null, "userPrincipalName": state.email }),
+        );
+    }
+    let Some(rest) = rest.strip_prefix("/me/drive/special/approot") else {
+        return graph_error(404, "itemNotFound");
+    };
+    let (path, action) = match rest.strip_prefix(":/") {
+        Some(addressed) => {
+            let (path, action) = addressed.rsplit_once(':').unwrap();
+            (percent_decode(path), action)
+        }
+        None => (String::new(), rest),
+    };
+    let fail_on_conflict = |value: Option<&str>| value == Some("fail");
+    match (req.method.as_str(), action) {
+        ("GET", "/content") => match state.onedrive.get(&path) {
+            Some(bytes) => Response::bytes(bytes.clone()),
+            None => graph_error(404, "itemNotFound"),
+        },
+        ("PUT", "/content") => {
+            if req.body.len() > super::onedrive::SIMPLE_UPLOAD_MAX {
+                return graph_error(413, "requestBodyTooLarge");
+            }
+            let fail = fail_on_conflict(req.query("@microsoft.graph.conflictBehavior"));
+            if fail && state.onedrive.contains_key(&path) {
+                return graph_error(409, "nameAlreadyExists");
+            }
+            let created = state
+                .onedrive
+                .insert(path.clone(), req.body.clone())
+                .is_none();
+            Response::json(if created { 201 } else { 200 }, onedrive_item(&path))
+        }
+        ("POST", "/createUploadSession") => {
+            let fail =
+                fail_on_conflict(req.json()["item"]["@microsoft.graph.conflictBehavior"].as_str());
+            if fail && state.onedrive.contains_key(&path) {
+                return graph_error(409, "nameAlreadyExists");
+            }
+            let id = format!("session-{}", state.onedrive_sessions.len());
+            state
+                .onedrive_sessions
+                .insert(id.clone(), (path, fail, Vec::new()));
+            Response::json(
+                200,
+                json!({ "uploadUrl": format!("{}/graph-upload/{id}", state.base_url) }),
+            )
+        }
+        ("GET", "/children") => {
+            let prefix = if path.is_empty() {
+                String::new()
+            } else {
+                format!("{path}/")
+            };
+            let mut entries: Vec<(String, bool)> = Vec::new();
+            for key in state.onedrive.keys() {
+                let Some(rest) = key.strip_prefix(&prefix) else {
+                    continue;
+                };
+                let entry = match rest.split_once('/') {
+                    Some((sub, _)) => (sub.to_string(), true),
+                    None => (rest.to_string(), false),
+                };
+                if !entries.contains(&entry) {
+                    entries.push(entry);
+                }
+            }
+            if entries.is_empty() && !path.is_empty() {
+                return graph_error(404, "itemNotFound");
+            }
+            let start: usize = req.query("$skiptoken").map_or(0, |t| t.parse().unwrap());
+            let top = req
+                .query("$top")
+                .and_then(|t| t.parse::<usize>().ok())
+                .unwrap_or(200)
+                .min(state.page_size);
+            let page: Vec<Value> = entries
+                .iter()
+                .skip(start)
+                .take(top)
+                .map(|(name, folder)| {
+                    if *folder {
+                        json!({ "name": name, "folder": { "childCount": 1 } })
+                    } else {
+                        json!({ "name": name, "file": {} })
+                    }
+                })
+                .collect();
+            let mut body = json!({ "value": page });
+            if start + top < entries.len() {
+                let item = if path.is_empty() {
+                    String::new()
+                } else {
+                    format!(":/{path}:")
+                };
+                body["@odata.nextLink"] = json!(format!(
+                    "{}/graph/v1.0/me/drive/special/approot{item}/children?$top={top}&$skiptoken={}",
+                    state.base_url,
+                    start + top
+                ));
+            }
+            Response::json(200, body)
+        }
+        ("DELETE", "") => match state.onedrive.remove(&path) {
+            Some(_) => Response::empty(204),
+            None => graph_error(404, "itemNotFound"),
+        },
+        _ => graph_error(400, "invalidRequest"),
+    }
+}
+
+/// One chunk of an upload session: `Content-Range: bytes <first>-<last>/<total>`, in order,
+/// each but the last a multiple of 320 KiB.
+fn onedrive_chunk(state: &mut CloudState, req: &Request, session: &str) -> Response {
+    state.onedrive_chunks += 1;
+    if req.header("Authorization").is_some() {
+        state.onedrive_chunks_with_token += 1;
+    }
+    let range = req.header("Content-Range").unwrap().to_string();
+    let (span, total) = range
+        .strip_prefix("bytes ")
+        .unwrap()
+        .split_once('/')
+        .unwrap();
+    let (first, last) = span.split_once('-').unwrap();
+    let (first, last, total): (usize, usize, usize) = (
+        first.parse().unwrap(),
+        last.parse().unwrap(),
+        total.parse().unwrap(),
+    );
+    let Some((_, _, received)) = state.onedrive_sessions.get_mut(session) else {
+        return graph_error(404, "itemNotFound");
+    };
+    assert_eq!(first, received.len(), "chunks out of order");
+    assert_eq!(req.body.len(), last - first + 1);
+    if last + 1 < total {
+        assert_eq!(req.body.len() % (320 * 1024), 0);
+    }
+    received.extend_from_slice(&req.body);
+    if last + 1 < total {
+        return Response::json(
+            202,
+            json!({ "nextExpectedRanges": [format!("{}-", last + 1)] }),
+        );
+    }
+    let (path, fail, bytes) = state.onedrive_sessions.remove(session).unwrap();
+    if fail && state.onedrive.contains_key(&path) {
+        return graph_error(409, "nameAlreadyExists");
+    }
+    state.onedrive.insert(path.clone(), bytes);
+    Response::json(201, onedrive_item(&path))
 }

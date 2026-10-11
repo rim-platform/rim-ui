@@ -53,6 +53,7 @@ const inDrive: ArchiveStatus = {
 const noCloud = [
   { kind: "googleDrive", available: false },
   { kind: "dropbox", available: false },
+  { kind: "oneDrive", available: false },
 ];
 const bothClouds = [
   { kind: "googleDrive", available: true },
@@ -61,10 +62,11 @@ const bothClouds = [
 
 /**
  * Answers Tauri commands by name; a function value is called with the command's args. This
- * build offers no cloud service unless `answers` says otherwise.
+ * build offers no cloud service, and the archive lists no devices, unless `answers` says
+ * otherwise.
  */
 function backend(answers: Record<string, unknown>) {
-  answers = { history_archive_cloud_services: noCloud, ...answers };
+  answers = { history_archive_cloud_services: noCloud, history_archive_devices: [], ...answers };
   mockInvoke.mockImplementation(async (command: string, args: unknown) => {
     if (!(command in answers)) throw new Error(`unexpected command ${command}`);
     const answer = answers[command];
@@ -345,11 +347,13 @@ describe("HistoryArchiveSettings", () => {
       history_archive_cloud_services: [
         { kind: "googleDrive", available: true },
         { kind: "dropbox", available: false },
+        { kind: "oneDrive", available: true },
       ],
     });
     renderSettings();
 
     expect(await screen.findByRole("button", { name: /Google Drive/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OneDrive/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Dropbox/ })).not.toBeInTheDocument();
   });
 
@@ -741,6 +745,90 @@ describe("HistoryArchiveSettings with an S3 bucket", () => {
       await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(expected));
     }
     expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+  });
+});
+
+describe("HistoryArchiveSettings device backups", () => {
+  const inOneDrive: ArchiveStatus = {
+    ...connected,
+    provider: "oneDrive",
+    folder: "ada@example.com",
+  };
+  const day = 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    tauri.available = true;
+    mockInvoke.mockReset();
+    useAuthStore.setState({ session: { userId: "ada" } });
+  });
+
+  it("shows when each device last backed up and points out one silent for a week", async () => {
+    const devices = vi.fn(() => [
+      {
+        deviceId: connected.deviceId,
+        thisDevice: true,
+        lastExportMs: Date.now() - 60_000,
+        segments: 4,
+        unreadable: false,
+      },
+      {
+        deviceId: "22222222-aaaa-4bbb-8ccc-123456789abc",
+        thisDevice: false,
+        lastExportMs: Date.now() - 8 * day,
+        segments: 9,
+        unreadable: false,
+      },
+      {
+        deviceId: "33333333-aaaa-4bbb-8ccc-123456789abc",
+        thisDevice: false,
+        lastExportMs: Date.now() - 6 * day,
+        segments: 2,
+        unreadable: false,
+      },
+      {
+        deviceId: "44444444-aaaa-4bbb-8ccc-123456789abc",
+        thisDevice: false,
+        lastExportMs: null,
+        segments: 0,
+        unreadable: false,
+      },
+      {
+        deviceId: "55555555-aaaa-4bbb-8ccc-123456789abc",
+        thisDevice: false,
+        lastExportMs: null,
+        segments: 0,
+        unreadable: true,
+      },
+    ]);
+    backend({
+      history_archive_status: inOneDrive,
+      history_archive_devices: devices,
+      history_archive_export: { segments: 1, messages: 3, conversations: 1 },
+    });
+    renderSettings();
+
+    expect(await screen.findByText("OneDrive (ada@example.com)")).toBeInTheDocument();
+    expect(screen.getByText(/signs this device out of OneDrive/)).toBeInTheDocument();
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toHaveTextContent(/This device 0f0e0d0c: last backup/);
+    expect(rows[3]).toHaveTextContent("Device 44444444: no backup yet");
+    expect(rows[4]).toHaveTextContent("Device 55555555: its backup list cannot be read");
+    // Only the device silent for over seven days is pointed out.
+    const warnings = screen.getAllByText(/Nothing backed up from it for over seven days/);
+    expect(warnings).toHaveLength(1);
+    expect(rows[1]).toContainElement(warnings[0]);
+
+    // A backup from here reads the devices again.
+    fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
+    await waitFor(() => expect(devices).toHaveBeenCalledTimes(2));
+  });
+
+  it("says when no device has backed up yet", async () => {
+    backend({ history_archive_status: connected });
+    renderSettings();
+
+    expect(await screen.findByText("No device has backed up yet.")).toBeInTheDocument();
   });
 });
 

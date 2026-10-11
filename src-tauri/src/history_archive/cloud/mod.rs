@@ -1,5 +1,5 @@
-//! Cloud API providers of the history archive: Google Drive, Dropbox, S3-compatible storage
-//! and the user's own backup endpoint, spoken to directly from this app, with no RIM server in
+//! Cloud API providers of the history archive: Google Drive, Dropbox, OneDrive,
+//! S3-compatible storage and the user's own backup endpoint, spoken to directly from this app, with no RIM server in
 //! the path (nobody but the user's own storage holds their history).
 //!
 //! - [`oauth`]: the desktop sign-in (system browser, loopback redirect, PKCE) and the access
@@ -7,17 +7,18 @@
 //!   the settings file.
 //! - [`http`]: retries with backoff for rate limits and transient failures.
 //! - [`sigv4`]: the request signing S3 takes.
-//! - [`google_drive`], [`dropbox`], [`s3`], [`endpoint`]: the [`ArchiveProvider`]
-//!   implementations.
+//! - [`google_drive`], [`dropbox`], [`onedrive`], [`s3`], [`endpoint`]: the
+//!   [`ArchiveProvider`] implementations.
 //!
 //! Each provider writes the same format as a local folder (`docs/specs/history-archive-v1.md`)
 //! and only needs the provider operations it already has: upload a new file, list, download,
 //! and overwrite one small file (a device's head).
 //!
 //! OAuth client ids are build configuration: `RIM_GOOGLE_CLIENT_ID` (with
-//! `RIM_GOOGLE_CLIENT_SECRET`) and `RIM_DROPBOX_APP_KEY`, read at build time or, for a
-//! development run, from the environment. A build without them offers neither service; S3 and
-//! the backup endpoint need no build configuration and are always offered.
+//! `RIM_GOOGLE_CLIENT_SECRET`), `RIM_DROPBOX_APP_KEY` and `RIM_MICROSOFT_CLIENT_ID`, read at
+//! build time or, for a development run, from the environment. A build without one does not
+//! offer that service; S3 and the backup endpoint need no build configuration and are always
+//! offered.
 
 pub(crate) mod claims;
 pub(crate) mod dropbox;
@@ -25,6 +26,7 @@ pub(crate) mod endpoint;
 pub(crate) mod google_drive;
 pub(crate) mod http;
 pub(crate) mod oauth;
+pub(crate) mod onedrive;
 pub(crate) mod s3;
 pub(crate) mod sigv4;
 
@@ -51,6 +53,7 @@ use endpoint::{EndpointCheck, EndpointConnection, EndpointProvider, EndpointSetu
 use google_drive::{DriveEndpoints, GoogleDriveProvider};
 use http::{Http, Reply, RetryPolicy};
 use oauth::{Loopback, OAuthApp, Pkce, TokenSource};
+use onedrive::{OneDriveEndpoints, OneDriveProvider};
 use s3::{S3Check, S3Connection, S3Provider, S3Setup};
 
 /// The cloud services an archive can live in.
@@ -59,13 +62,17 @@ use s3::{S3Check, S3Connection, S3Provider, S3Setup};
 pub(crate) enum CloudKind {
     GoogleDrive,
     Dropbox,
+    OneDrive,
 }
 
 impl CloudKind {
+    pub(crate) const ALL: [Self; 3] = [Self::GoogleDrive, Self::Dropbox, Self::OneDrive];
+
     pub(crate) fn service(self) -> &'static str {
         match self {
             Self::GoogleDrive => google_drive::SERVICE,
             Self::Dropbox => dropbox::SERVICE,
+            Self::OneDrive => onedrive::SERVICE,
         }
     }
 }
@@ -77,7 +84,8 @@ pub(crate) struct ServiceSettings {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     /// The redirect URI's host: Google takes `127.0.0.1` on any port; Dropbox only takes
-    /// redirect URIs registered with the app, so it gets `localhost` on a fixed port.
+    /// redirect URIs registered with the app, so it gets `localhost` on a fixed port; Microsoft
+    /// takes a registered `http://localhost` redirect on any port.
     pub redirect_host: &'static str,
     /// 0: any free port.
     pub redirect_port: u16,
@@ -92,6 +100,8 @@ pub(crate) struct CloudSettings {
     pub drive: DriveEndpoints,
     pub dropbox: ServiceSettings,
     pub dropbox_api: DropboxEndpoints,
+    pub microsoft: ServiceSettings,
+    pub onedrive: OneDriveEndpoints,
     pub retry: RetryPolicy,
     /// How long the browser sign-in may take.
     pub sign_in_timeout: Duration,
@@ -153,6 +163,22 @@ impl CloudSettings {
                 api: "https://api.dropboxapi.com/2".into(),
                 content: "https://content.dropboxapi.com/2".into(),
             },
+            // The `common` authority signs in personal and work or school accounts alike.
+            microsoft: ServiceSettings {
+                client_id: setting(
+                    env("RIM_MICROSOFT_CLIENT_ID"),
+                    option_env!("RIM_MICROSOFT_CLIENT_ID"),
+                ),
+                client_secret: None,
+                redirect_host: "localhost",
+                redirect_port: 0,
+                authorize_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+                    .into(),
+                token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".into(),
+            },
+            onedrive: OneDriveEndpoints {
+                api: "https://graph.microsoft.com/v1.0".into(),
+            },
             retry: RetryPolicy::DEFAULT,
             sign_in_timeout: Duration::from_secs(5 * 60),
         }
@@ -162,6 +188,7 @@ impl CloudSettings {
         match kind {
             CloudKind::GoogleDrive => &self.google,
             CloudKind::Dropbox => &self.dropbox,
+            CloudKind::OneDrive => &self.microsoft,
         }
     }
 
@@ -176,6 +203,7 @@ impl CloudSettings {
         let (scopes, extra) = match kind {
             CloudKind::GoogleDrive => (google_drive::SCOPES, google_drive::AUTHORIZE_EXTRA),
             CloudKind::Dropbox => (dropbox::SCOPES, dropbox::AUTHORIZE_EXTRA),
+            CloudKind::OneDrive => (onedrive::SCOPES, onedrive::AUTHORIZE_EXTRA),
         };
         Ok(OAuthApp {
             client_id,
@@ -190,7 +218,7 @@ impl CloudSettings {
     fn http(&self, kind: CloudKind, policy: RetryPolicy) -> Result<Http, ArchiveError> {
         let classify = match kind {
             CloudKind::GoogleDrive => google_drive::is_rate_limited,
-            CloudKind::Dropbox => http::no_extra_retries,
+            CloudKind::Dropbox | CloudKind::OneDrive => http::no_extra_retries,
         };
         Http::new(kind.service(), policy, classify)
     }
@@ -345,7 +373,7 @@ impl CloudConnections {
     }
 
     pub(crate) fn services(&self) -> Vec<CloudService> {
-        [CloudKind::GoogleDrive, CloudKind::Dropbox]
+        CloudKind::ALL
             .into_iter()
             .map(|kind| CloudService {
                 kind,
@@ -690,6 +718,11 @@ impl CloudConnections {
                 self.settings.dropbox_api.clone(),
                 account,
             )),
+            CloudKind::OneDrive => Box::new(OneDriveProvider::new(
+                tokens,
+                self.settings.onedrive.clone(),
+                account,
+            )),
         }
     }
 
@@ -705,6 +738,7 @@ impl CloudConnections {
             CloudKind::Dropbox => {
                 DropboxProvider::account_email(tokens, &self.settings.dropbox_api)
             }
+            CloudKind::OneDrive => OneDriveProvider::account_email(tokens, &self.settings.onedrive),
         }
     }
 
@@ -715,9 +749,11 @@ impl CloudConnections {
     /// token removes the user's whole grant to the OAuth client and invalidates the refresh
     /// tokens of every other device signed in to that account, so stopping backups on one
     /// device would stop them on all. A Google sign-in is only forgotten locally; the user
-    /// removes RIM's access everywhere in their Google account settings.
+    /// removes RIM's access everywhere in their Google account settings. Microsoft's identity
+    /// platform has no endpoint that revokes one refresh token, so a OneDrive sign-in is only
+    /// forgotten locally too.
     fn revoke(&self, kind: CloudKind, tokens: Arc<TokenSource>) {
-        if kind == CloudKind::GoogleDrive {
+        if kind != CloudKind::Dropbox {
             return;
         }
         let http = match self.settings.http(kind, RetryPolicy::ONCE) {

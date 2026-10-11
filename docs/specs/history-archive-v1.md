@@ -4,8 +4,8 @@ The desktop app writes the user's message history to a folder the user picks, en
 reads it back on another device (master plan Stage 2). There is no RIM server in this picture:
 the folder is the user's own (a local disk, a USB drive, a folder that Dropbox, Google Drive,
 OneDrive, iCloud Drive or Syncthing keeps in sync, the app's own folder in the user's Google
-Drive or Dropbox, reached through their APIs, a bucket of S3-compatible storage, or a backup
-endpoint the user runs), and only someone with the passphrase can read it.
+Drive, Dropbox or OneDrive, reached through their APIs, a bucket of S3-compatible storage, or a
+backup endpoint the user runs), and only someone with the passphrase can read it.
 
 This document is the format. Anyone may write a reader or writer from it. The implementation is
 `src-tauri/src/history_archive/`; the cache it is written from is `docs/local-message-cache.md`.
@@ -145,6 +145,10 @@ The plaintext of `head.rimx` is JSON:
   ]
 }
 ```
+
+A device's `updatedAtMs` is when it last exported something. Settings shows it per device as
+the device's last backup, and points out a device whose last backup is older than seven days
+(one that has nothing new to back up writes no head, so this is a hint, not an alarm).
 
 A reader takes a device's segments from its head, not from a directory listing, and checks each
 file against its `sha256`. A listed segment that is not in the folder yet (a sync client still
@@ -477,6 +481,22 @@ temporary file (or an exclusive open where there are no hard links).
 - **Create**: an upload in `add` mode with `autorename` off and `strict_conflict` on, which fails
   when the name is taken.
 
+### OneDrive
+
+- **Place**: the app folder (`Apps/<app name>/`, Microsoft Graph's special folder `approot`) of
+  the user's OneDrive, with the scope `Files.ReadWrite.AppFolder`: the app sees nothing else.
+  Personal and work or school accounts sign in alike (the `common` authority). Archive paths are
+  Graph item paths under the folder (`/me/drive/special/approot:/<path>:`), so the folder holds
+  exactly the local layout, as with Dropbox.
+- **Write**: an upload with `@microsoft.graph.conflictBehavior=replace`, which replaces the file
+  whole: one `PUT` of the content up to 4 MiB, and above that an upload session
+  (`createUploadSession`, then chunks of 3.2 MiB, a multiple of the 320 KiB Graph asks for, sent
+  to the session's own URL without the access token). A segment at its size limit is a little
+  over 4 MiB, so it takes a session.
+- **Create**: the same upload with `@microsoft.graph.conflictBehavior=fail`, which Graph answers
+  `409` when the name is taken (at the session's creation or its last chunk).
+- **What it learns**: file names, sizes and times, and each device's IP address; nothing else.
+
 ### S3-compatible storage
 
 - **Place**: a bucket of any S3-compatible storage (Amazon S3, Cloudflare R2, Backblaze B2,
@@ -540,7 +560,8 @@ temporary file (or an exclusive open where there are no hard links).
   one-shot listener on the loopback interface; PKCE (S256) protects the code, and a random
   `state` must match. Google redirects to `http://127.0.0.1:<any free port>/callback`; Dropbox
   only accepts registered redirect URIs, so it uses `http://localhost:<fixed port>/callback`
-  (53241 unless the build says otherwise).
+  (53241 unless the build says otherwise); Microsoft takes the registered
+  `http://localhost/callback` on any port, so it uses `http://localhost:<any free port>/callback`.
 - The refresh token is kept in the secret vault as `history-archive-cloud-v1:<connection id>`.
   The account's archive settings file names the provider, the connection id and the signed-in
   email address, never a token. Access tokens live in memory and are refreshed shortly before
@@ -552,7 +573,10 @@ temporary file (or an exclusive open where there are no hard links).
   devices signed in. Google cannot: revoking any token removes the user's whole grant to the
   OAuth client and invalidates every device's refresh tokens, so RIM never calls Google's
   revoke endpoint, and a user who wants RIM's access gone everywhere removes it in their
-  Google account settings (Security, Third-party apps with account access). Google keeps a
+  Google account settings (Security, Third-party apps with account access). Microsoft's identity
+  platform has no endpoint that revokes one refresh token, so a OneDrive sign-in is only
+  forgotten on the device too; the user removes RIM's access in their Microsoft account's
+  privacy settings (or My Apps, for a work account). Google keeps a
   limited number of refresh tokens per user and client and silently drops the oldest beyond
   it, so a device that has been signed in very many times may need to sign in again. The
   archive itself stays.
@@ -573,8 +597,7 @@ same batch again under the same sequence numbers, replacing whatever the interru
 
 ## Not in version 1
 
-- OneDrive, iCloud Drive and other cloud APIs: a folder kept in sync by their desktop clients
-  works.
+- iCloud Drive and other cloud APIs: a folder kept in sync by their desktop clients works.
 - WebDAV (Nextcloud, ownCloud); the backup endpoint's shape resembles it.
 - Telling a device that a cloud sign-in was revoked elsewhere before the next backup fails.
 - Compaction: every export adds segments. A later writer may merge a device's own segments into

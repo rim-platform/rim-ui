@@ -337,7 +337,7 @@ impl S3Provider {
     /// to.
     fn url(&self, key: &str, query: &[(String, String)]) -> Result<(Url, String), ArchiveError> {
         let base_path = self.endpoint.path().trim_end_matches('/');
-        let encoded_key = sigv4::uri_encode(key, true);
+        let encoded_key = super::http::percent_encode(key, true);
         let host = self.endpoint.host_str().unwrap_or_default();
         let (host, path) = match self.connection.addressing {
             Addressing::Path if key.is_empty() => (
@@ -367,7 +367,8 @@ impl S3Provider {
         Ok((url, host))
     }
 
-    /// Send a signed request, signing each attempt anew.
+    /// Send a signed request. It is signed once: a signature stays valid for 15 minutes,
+    /// longer than every retry of it together.
     fn send(
         &self,
         method: Method,
@@ -384,31 +385,31 @@ impl S3Provider {
             region: &self.connection.region,
             service: "s3",
         };
+        let now = Utc::now();
+        let date = now.format(sigv4::AMZ_DATE).to_string();
+        let mut headers = vec![
+            ("host", host.as_str()),
+            ("x-amz-content-sha256", payload_hash.as_str()),
+            ("x-amz-date", date.as_str()),
+        ];
+        if if_none_match {
+            headers.push(("if-none-match", "*"));
+        }
+        let authorization = sigv4::authorization(
+            &sigv4::Request {
+                method: method.as_str(),
+                path: url.path(),
+                query,
+                headers: &headers,
+                payload_hash: &payload_hash,
+            },
+            &signing_key,
+            now,
+        )?;
         self.http.send(|client| {
-            let now = Utc::now();
-            let date = now.format(sigv4::AMZ_DATE).to_string();
-            let mut headers = vec![
-                ("host", host.as_str()),
-                ("x-amz-content-sha256", payload_hash.as_str()),
-                ("x-amz-date", date.as_str()),
-            ];
-            if if_none_match {
-                headers.push(("if-none-match", "*"));
-            }
-            let authorization = sigv4::authorization(
-                &sigv4::Request {
-                    method: method.as_str(),
-                    path: url.path(),
-                    query,
-                    headers: &headers,
-                    payload_hash: &payload_hash,
-                },
-                &signing_key,
-                now,
-            );
             let mut request = client
                 .request(method.clone(), url.clone())
-                .header(reqwest::header::AUTHORIZATION, authorization)
+                .header(reqwest::header::AUTHORIZATION, &authorization)
                 .header(
                     HeaderName::from_static("x-amz-content-sha256"),
                     &payload_hash,

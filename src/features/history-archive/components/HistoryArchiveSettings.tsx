@@ -19,6 +19,7 @@ import {
   ENDPOINT_NAME,
   MIN_PASSPHRASE_LENGTH,
   S3_NAME,
+  archiveDevicesQueryKey,
   archiveLocation,
   authorizeCloud,
   cancelCloudSignIn,
@@ -28,6 +29,7 @@ import {
   disconnectArchive,
   discardCloudSignIn,
   exportArchive,
+  isCloudKind,
   getArchiveStatus,
   inspectArchiveFolder,
   listCloudServices,
@@ -41,6 +43,7 @@ import {
   type EndpointSetup,
   type S3Setup,
 } from "../api/historyArchive";
+import { ArchiveDevices } from "./ArchiveDevices";
 import { describeExport, describeRestore } from "./archiveReports";
 import { EndpointForm } from "./EndpointForm";
 import { S3Form } from "./S3Form";
@@ -132,9 +135,9 @@ export function HistoryArchiveSettings() {
         <h2 className="text-base font-semibold text-rim-text">History</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
           Keep an encrypted copy of your message history in a folder you choose, in your own Google
-          Drive or Dropbox, in an S3 bucket, or on a server of your own, and get it back on another
-          device. A folder that OneDrive or Syncthing keeps in sync carries it to your other
-          computers too. RIM has no copy of it.
+          Drive, Dropbox or OneDrive, in an S3 bucket, or on a server of your own, and get it back
+          on another device. A folder that iCloud Drive or Syncthing keeps in sync carries it to
+          your other computers too. RIM has no copy of it.
         </p>
       </div>
 
@@ -669,6 +672,7 @@ function ConnectedArchive({
   const [message, setMessage] = useState<string | null>(notice?.message ?? null);
   const [error, setError] = useState<string | null>(notice?.error ?? null);
   const afterRestore = useAfterRestore();
+  const qc = useQueryClient();
 
   async function run(kind: "export" | "restore" | "disconnect") {
     setBusy(kind);
@@ -676,8 +680,12 @@ function ConnectedArchive({
     setError(null);
     if (kind === "export") {
       const result = await exportArchive(account);
-      if (result.ok) setMessage(describeExport(result.value));
-      else setError(errorText(result.error));
+      if (result.ok) {
+        setMessage(describeExport(result.value));
+        void qc.invalidateQueries({ queryKey: archiveDevicesQueryKey(account) });
+      } else {
+        setError(errorText(result.error));
+      }
     } else if (kind === "restore") {
       const result = await restoreArchive(account);
       if (result.ok) {
@@ -708,6 +716,7 @@ function ConnectedArchive({
           <span className="font-mono">{status.deviceId.slice(0, 8)}</span>.
         </p>
       </div>
+      <ArchiveDevices account={account} />
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
@@ -737,7 +746,7 @@ function ConnectedArchive({
         </Button>
       </div>
       <p className="text-xs text-rim-text-faint">
-        {status.provider === "googleDrive" || status.provider === "dropbox"
+        {isCloudKind(status.provider)
           ? `Stopping signs this device out of ${CLOUD_SERVICE_NAMES[status.provider]} and leaves the archive there; other devices keep using it.`
           : status.provider === "endpoint"
             ? "Stopping forgets this device's password or token for the endpoint and leaves the archive there; other devices keep using it."

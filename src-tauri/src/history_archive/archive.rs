@@ -138,6 +138,9 @@ pub(crate) struct ArchiveContents {
     pub devices: usize,
 }
 
+/// A device's head as read: `None` before its first export, an error when it cannot be read.
+pub(crate) type HeadRead = Result<Option<DeviceHead>, ArchiveError>;
+
 pub(crate) struct AccountArchive<'a> {
     archive: &'a Archive,
     tag: String,
@@ -177,6 +180,21 @@ impl AccountArchive<'_> {
             ));
         }
         Ok(Some(head))
+    }
+
+    /// Every device folder of this account with its head: `None` before the device's first
+    /// export, an error when the head cannot be read.
+    pub(crate) fn device_heads(&self) -> Result<Vec<(String, HeadRead)>, ArchiveError> {
+        Ok(self
+            .provider()
+            .list_dirs(&devices_dir(&self.tag))?
+            .into_iter()
+            .filter(|id| check_id(id).is_ok())
+            .map(|id| {
+                let head = self.read_head(&id);
+                (id, head)
+            })
+            .collect())
     }
 
     /// Append `events` as new segments of `device_id`, then list them in its head. Segments

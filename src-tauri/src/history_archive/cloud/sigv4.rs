@@ -8,6 +8,9 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
+use super::super::ArchiveError;
+use super::http::percent_encode;
+
 const ALGORITHM: &str = "AWS4-HMAC-SHA256";
 
 /// `x-amz-date`'s format.
@@ -16,22 +19,6 @@ pub(crate) const AMZ_DATE: &str = "%Y%m%dT%H%M%SZ";
 /// Hex SHA-256 of a payload, as `x-amz-content-sha256` and the canonical request carry it.
 pub(crate) fn payload_hash(payload: &[u8]) -> String {
     hex::encode(Sha256::digest(payload))
-}
-
-/// Percent-encode everything but the unreserved characters (`A-Z a-z 0-9 - . _ ~`), and `/`
-/// too unless `keep_slash`.
-pub(crate) fn uri_encode(value: &str, keep_slash: bool) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(byte as char)
-            }
-            b'/' if keep_slash => out.push('/'),
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
 }
 
 /// A request to sign.
@@ -59,7 +46,7 @@ pub(crate) struct Key<'a> {
 pub(crate) fn canonical_query(query: &[(String, String)]) -> String {
     let mut pairs: Vec<(String, String)> = query
         .iter()
-        .map(|(k, v)| (uri_encode(k, false), uri_encode(v, false)))
+        .map(|(k, v)| (percent_encode(k, false), percent_encode(v, false)))
         .collect();
     pairs.sort();
     pairs
@@ -74,10 +61,11 @@ fn canonical_value(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn hmac(key: &[u8], message: &str) -> Vec<u8> {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).expect("HMAC takes any key length");
+fn hmac(key: &[u8], message: &str) -> Result<Vec<u8>, ArchiveError> {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
+        .map_err(|e| ArchiveError::Crypto(format!("request signing key: {e}")))?;
     mac.update(message.as_bytes());
-    mac.finalize().into_bytes().to_vec()
+    Ok(mac.finalize().into_bytes().to_vec())
 }
 
 /// The canonical request, and the signed headers' names it lists.
@@ -124,19 +112,23 @@ pub(crate) fn string_to_sign(canonical_request: &str, key: &Key, time: DateTime<
 }
 
 /// The `Authorization` header of `request` at `time`, which must be its `x-amz-date`.
-pub(crate) fn authorization(request: &Request, key: &Key, time: DateTime<Utc>) -> String {
+pub(crate) fn authorization(
+    request: &Request,
+    key: &Key,
+    time: DateTime<Utc>,
+) -> Result<String, ArchiveError> {
     let (canonical, signed_headers) = canonical_request(request);
     let date = time.format("%Y%m%d").to_string();
-    let signing_key = [key.region, key.service, "aws4_request"].iter().fold(
-        hmac(format!("AWS4{}", key.secret).as_bytes(), &date),
-        |k, part| hmac(&k, part),
-    );
-    let signature = hex::encode(hmac(&signing_key, &string_to_sign(&canonical, key, time)));
-    format!(
+    let mut signing_key = hmac(format!("AWS4{}", key.secret).as_bytes(), &date)?;
+    for part in [key.region, key.service, "aws4_request"] {
+        signing_key = hmac(&signing_key, part)?;
+    }
+    let signature = hex::encode(hmac(&signing_key, &string_to_sign(&canonical, key, time))?);
+    Ok(format!(
         "{ALGORITHM} Credential={}/{}, SignedHeaders={signed_headers}, Signature={signature}",
         key.access_key_id,
         scope(key, time)
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -187,7 +179,10 @@ mod tests {
         let (canonical, _) = canonical_request(&request);
         assert_eq!(canonical, expected.0);
         assert_eq!(string_to_sign(&canonical, &SUITE, suite_time()), expected.1);
-        assert_eq!(authorization(&request, &SUITE, suite_time()), expected.2);
+        assert_eq!(
+            authorization(&request, &SUITE, suite_time()).unwrap(),
+            expected.2
+        );
     }
 
     #[test]
@@ -301,16 +296,16 @@ mod tests {
             string_to_sign(&canonical, &key, time),
             "AWS4-HMAC-SHA256\n20130524T000000Z\n20130524/us-east-1/s3/aws4_request\n7344ae5b7ee6c3e7e6b0fe0640412a37625d1fbfff95c48bbb2dc43964946972"
         );
-        assert!(authorization(&request, &key, time).ends_with(
+        assert!(authorization(&request, &key, time).unwrap().ends_with(
             "Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"
         ));
     }
 
     #[test]
     fn values_are_encoded_as_signature_v4_asks() {
-        assert_eq!(uri_encode("a b/c+d~e", true), "a%20b/c%2Bd~e");
-        assert_eq!(uri_encode("a/b", false), "a%2Fb");
-        assert_eq!(uri_encode("ü", false), "%C3%BC");
+        assert_eq!(percent_encode("a b/c+d~e", true), "a%20b/c%2Bd~e");
+        assert_eq!(percent_encode("a/b", false), "a%2Fb");
+        assert_eq!(percent_encode("ü", false), "%C3%BC");
         assert_eq!(
             canonical_query(&[
                 ("prefix".into(), "a/b".into()),

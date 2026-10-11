@@ -1,7 +1,7 @@
 /**
  * The desktop app's history archive: the local message cache written as encrypted per-device
- * files to a folder the user picks, to the app's folder in their Google Drive or Dropbox, to an
- * S3 bucket, or to their own backup endpoint, and read back on another device. The work is on the Tauri side
+ * files to a folder the user picks, to the app's folder in their Google Drive, Dropbox or
+ * OneDrive, to an S3 bucket, or to their own backup endpoint, and read back on another device. The work is on the Tauri side
  * (`src-tauri/src/history_archive`). This module is its typed surface.
  */
 
@@ -9,7 +9,7 @@ import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvok
 import type { CacheAccount } from "../../messages/api/messageCache";
 
 /** The cloud services an archive can live in. */
-export type CloudKind = "googleDrive" | "dropbox";
+export type CloudKind = "googleDrive" | "dropbox" | "oneDrive";
 
 /** Where an archive lives. */
 export type ArchiveProviderKind = "localFolder" | CloudKind | "s3" | "endpoint";
@@ -135,7 +135,13 @@ export type ConnectTarget =
 export const CLOUD_SERVICE_NAMES: Record<CloudKind, string> = {
   googleDrive: "Google Drive",
   dropbox: "Dropbox",
+  oneDrive: "OneDrive",
 };
+
+/** Whether an archive's place is a cloud service signed in to. */
+export function isCloudKind(kind: ArchiveProviderKind | null): kind is CloudKind {
+  return kind !== null && kind in CLOUD_SERVICE_NAMES;
+}
 
 export const ENDPOINT_NAME = "Backup endpoint";
 export const S3_NAME = "S3";
@@ -146,7 +152,7 @@ export const S3_NAME = "S3";
  */
 export function archiveLocation(status: ArchiveStatus): string {
   if (!status.folder) return "";
-  if (status.provider === "googleDrive" || status.provider === "dropbox") {
+  if (isCloudKind(status.provider)) {
     return `${CLOUD_SERVICE_NAMES[status.provider]} (${status.folder})`;
   }
   if (status.provider === "endpoint") return `${ENDPOINT_NAME} (${status.folder})`;
@@ -170,6 +176,20 @@ export interface ExportReport {
   messages: number;
   conversations: number;
 }
+
+/** One device's backups of the account, from its entry in the archive. */
+export interface DeviceBackup {
+  deviceId: string;
+  thisDevice: boolean;
+  /** When the device last backed something up (Unix ms); `null` before its first backup. */
+  lastExportMs: number | null;
+  segments: number;
+  /** Its entry is there but cannot be read. */
+  unreadable: boolean;
+}
+
+/** A device whose last backup is older than this is pointed out. */
+export const STALE_BACKUP_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface RestoreReport {
   devices: number;
@@ -297,6 +317,18 @@ export function disconnectArchive(account: CacheAccount): Promise<SafeInvokeResu
 
 export function exportArchive(account: CacheAccount): Promise<SafeInvokeResult<ExportReport>> {
   return safeInvoke<ExportReport>("history_archive_export", { account });
+}
+
+/** The query of the account's devices in the archive. */
+export function archiveDevicesQueryKey(account: CacheAccount) {
+  return ["historyArchiveDevices", account.endpoint, account.userId] as const;
+}
+
+/** Every device backing this account up into the archive, and when each last did. */
+export function listArchiveDevices(
+  account: CacheAccount,
+): Promise<SafeInvokeResult<DeviceBackup[]>> {
+  return safeInvoke<DeviceBackup[]>("history_archive_devices", { account });
 }
 
 export function restoreArchive(account: CacheAccount): Promise<SafeInvokeResult<RestoreReport>> {
