@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 use super::super::crypto::random_bytes;
 use super::super::provider::{check_path, ArchiveProvider};
 use super::super::ArchiveError;
+use super::claims;
 use super::http::{Http, Reply};
 
 /// Named in errors.
@@ -22,8 +23,6 @@ pub(crate) const SERVICE: &str = "the backup endpoint";
 const ROUTE: &str = "backup";
 /// The probe's file name starts with this; a random suffix follows.
 const PROBE_PREFIX: &str = ".rim-probe-";
-/// A create's claim files end with this.
-const CLAIM_SUFFIX: &str = ".claim";
 
 /// What a failed endpoint check found, so the user is told the actual problem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,11 +126,30 @@ pub(crate) struct EndpointCheck {
 }
 
 /// The route's URL for what the user typed: the URL itself when its path ends in `/backup`,
-/// else `/backup` under it. Only `http` and `https` without credentials, query or fragment;
-/// plain HTTP only to this computer unless `allow_insecure`.
+/// else `/backup` under it.
 pub(crate) fn route_url(typed: &str, allow_insecure: bool) -> Result<Url, ArchiveError> {
-    let invalid = |why: &str| ArchiveError::Invalid(format!("backup endpoint URL: {why}"));
-    let mut url = Url::parse(typed.trim()).map_err(|e| invalid(&e.to_string()))?;
+    let mut url = service_url(typed, allow_insecure, "backup endpoint URL")?;
+    let mut segments: Vec<String> = url
+        .path_segments()
+        .map(|s| s.filter(|p| !p.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
+    if segments.last().map(String::as_str) != Some(ROUTE) {
+        segments.push(ROUTE.to_string());
+    }
+    url.set_path(&format!("/{}", segments.join("/")));
+    Ok(url)
+}
+
+/// A service's URL as the user typed it (`what` names it in errors): `http` or `https` without
+/// credentials, query or fragment, and plain HTTP only to this computer unless
+/// `allow_insecure`.
+pub(crate) fn service_url(
+    typed: &str,
+    allow_insecure: bool,
+    what: &str,
+) -> Result<Url, ArchiveError> {
+    let invalid = |why: &str| ArchiveError::Invalid(format!("{what}: {why}"));
+    let url = Url::parse(typed.trim()).map_err(|e| invalid(&e.to_string()))?;
     match url.scheme() {
         "https" => {}
         "http" if allow_insecure || is_loopback(&url) => {}
@@ -157,14 +175,6 @@ pub(crate) fn route_url(typed: &str, allow_insecure: bool) -> Result<Url, Archiv
     if url.query().is_some() || url.fragment().is_some() {
         return Err(invalid("it must not have a query (?) or a fragment (#)"));
     }
-    let mut segments: Vec<String> = url
-        .path_segments()
-        .map(|s| s.filter(|p| !p.is_empty()).map(str::to_string).collect())
-        .unwrap_or_default();
-    if segments.last().map(String::as_str) != Some(ROUTE) {
-        segments.push(ROUTE.to_string());
-    }
-    url.set_path(&format!("/{}", segments.join("/")));
     Ok(url)
 }
 
@@ -180,15 +190,6 @@ fn is_loopback(url: &Url) -> bool {
 struct Entry {
     name: String,
     dir: bool,
-}
-
-/// `dir/name`, or `name` in the root.
-fn join(dir: &str, name: &str) -> String {
-    if dir.is_empty() {
-        name.to_string()
-    } else {
-        format!("{dir}/{name}")
-    }
 }
 
 pub(crate) struct EndpointProvider {
@@ -361,18 +362,14 @@ impl EndpointProvider {
         if self.read(path)?.is_some() {
             return Ok(false);
         }
-        let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
-        let prefix = format!(".{name}.");
-        let claim = format!(
-            "{prefix}{}{CLAIM_SUFFIX}",
-            hex::encode(random_bytes::<6>()?)
-        );
-        self.upload(&join(dir, &claim), bytes)?;
+        let (dir, name) = claims::split(path);
+        let claim = claims::new_claim(name)?;
+        self.upload(&claims::join(dir, &claim), bytes)?;
         let first = self
             .list(dir)?
             .unwrap_or_default()
             .into_iter()
-            .find(|e| !e.dir && e.name.starts_with(&prefix) && e.name.ends_with(CLAIM_SUFFIX))
+            .find(|e| !e.dir && claims::is_claim(&e.name, name))
             .ok_or_else(|| {
                 problem(
                     EndpointProblem::Broken,
@@ -383,7 +380,7 @@ impl EndpointProvider {
             self.upload(path, bytes)?;
             return Ok(true);
         }
-        let kept = self.read(&join(dir, &first.name))?.ok_or_else(|| {
+        let kept = self.read(&claims::join(dir, &first.name))?.ok_or_else(|| {
             problem(
                 EndpointProblem::Broken,
                 "the backup endpoint lists a file it does not return",

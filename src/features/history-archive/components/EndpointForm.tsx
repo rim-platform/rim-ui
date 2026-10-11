@@ -1,10 +1,8 @@
 import { useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
-import type { EndpointAuth, EndpointSetup } from "../api/historyArchive";
-
-const inputClass =
-  "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
+import { isRemotePlainHttp, type EndpointAuth, type EndpointSetup } from "../api/historyArchive";
+import { InsecureConsent, archiveInputClass as inputClass } from "./formParts";
 
 type AuthMode = EndpointAuth["mode"];
 
@@ -14,19 +12,6 @@ const AUTH_MODES: { mode: AuthMode; label: string }[] = [
   { mode: "bearer", label: "Token (Authorization: Bearer)" },
   { mode: "header", label: "Token in a header you name" },
 ];
-
-/** Plain HTTP to a host other than this computer, which the check refuses unless allowed. */
-function isRemotePlainHttp(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url.trim());
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:") return false;
-  const host = parsed.hostname.replace(/^\[|\]$/g, "");
-  return !(host === "localhost" || host === "::1" || /^127\./.test(host));
-}
 
 /**
  * The fields of a backup endpoint: its URL, how requests authenticate, and the password or
@@ -96,18 +81,11 @@ export function EndpointForm({
         />
       </label>
       {plainHttp && (
-        <label className="flex items-start gap-2 text-xs text-rim-text-muted">
-          <input
-            type="checkbox"
-            checked={allowInsecure}
-            onChange={(e) => setAllowInsecure(e.target.checked)}
-            className="mt-0.5 accent-rim-accent"
-          />
-          <span>
-            Allow an unencrypted connection. The archive stays encrypted, but the password or token
-            travels in the clear: only on a network you trust.
-          </span>
-        </label>
+        <InsecureConsent
+          checked={allowInsecure}
+          onChange={setAllowInsecure}
+          secret="the password or token"
+        />
       )}
       <label className="block text-sm font-medium text-rim-text">
         Sign-in

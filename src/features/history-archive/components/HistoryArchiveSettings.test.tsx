@@ -616,6 +616,134 @@ describe("HistoryArchiveSettings with a backup endpoint", () => {
   });
 });
 
+describe("HistoryArchiveSettings with an S3 bucket", () => {
+  const location = "rim/ada on s3.eu-central-1.amazonaws.com";
+  const inBucket: ArchiveStatus = { ...connected, provider: "s3", folder: location };
+  const checked = {
+    connectionId: "s3-1",
+    location,
+    hasArchive: false,
+    version: null,
+    conditionalWrites: true,
+  };
+
+  beforeEach(() => {
+    tauri.available = true;
+    mockInvoke.mockReset();
+    Object.values(identityBackup).forEach((fn) => fn.mockReset());
+    identityBackup.backUpIdentityKeyQuietly.mockResolvedValue(undefined);
+    useAuthStore.setState({ session: { userId: "ada" } });
+  });
+
+  async function fillBucket(endpoint: string) {
+    fireEvent.click(await screen.findByRole("button", { name: /S3-compatible storage/ }));
+    type("Endpoint URL", endpoint);
+    type("Bucket", "rim");
+    type("Access key ID", "AKID");
+  }
+
+  it("checks the bucket and starts an archive in it", async () => {
+    const check = vi.fn(() => checked);
+    const connect = vi.fn(() => ({ status: inBucket, created: true }));
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_s3_check: check,
+      history_archive_connect: connect,
+      history_archive_export: { segments: 0, messages: 0, conversations: 0 },
+    });
+    renderSettings();
+
+    await fillBucket("https://s3.eu-central-1.amazonaws.com");
+    type("Region", "eu-central-1");
+    type("Prefix", "ada");
+    // Amazon's endpoints take the bucket in the host name.
+    expect(screen.getByLabelText("Addressing")).toHaveValue("virtualHost");
+    const submit = screen.getByRole("button", { name: "Check bucket" });
+    expect(submit).toBeDisabled();
+    type("Secret access key", "s3cret");
+    fireEvent.click(submit);
+
+    expect(await screen.findByText(`S3 (${location})`)).toBeInTheDocument();
+    expect(check).toHaveBeenCalledWith({
+      setup: {
+        endpoint: "https://s3.eu-central-1.amazonaws.com",
+        region: "eu-central-1",
+        bucket: "rim",
+        prefix: "ada",
+        accessKeyId: "AKID",
+        secretAccessKey: "s3cret",
+        addressing: "virtualHost",
+        allowInsecure: false,
+      },
+    });
+    expect(screen.queryByLabelText("Secret access key")).not.toBeInTheDocument();
+
+    type("Passphrase", "correct horse battery staple");
+    type("Repeat passphrase", "correct horse battery staple");
+    fireEvent.click(screen.getByRole("button", { name: "Create archive" }));
+
+    expect(await screen.findByText("Backing up to")).toBeInTheDocument();
+    expect(connect).toHaveBeenCalledWith({
+      account: { endpoint: expect.any(String), userId: "ada" },
+      target: { kind: "cloud", connectionId: "s3-1" },
+      passphrase: "correct horse battery staple",
+    });
+    expect(screen.getByText(`S3 (${location})`)).toBeInTheDocument();
+    expect(screen.getByText(/forgets this device's secret access key/)).toBeInTheDocument();
+  });
+
+  it("addresses other storage by path unless the user picks, and asks before plain HTTP", async () => {
+    const check = vi.fn(() => ({ ...checked, hasArchive: true, version: 1 }));
+    backend({ history_archive_status: unconfigured, history_archive_s3_check: check });
+    renderSettings();
+
+    await fillBucket("http://minio.home.arpa:9000");
+    expect(screen.getByLabelText("Addressing")).toHaveValue("path");
+    fireEvent.change(screen.getByLabelText("Addressing"), { target: { value: "virtualHost" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Allow an unencrypted connection/ }));
+    type("Secret access key", "s3cret");
+    fireEvent.click(screen.getByRole("button", { name: "Check bucket" }));
+
+    expect(await screen.findByText(/This bucket already holds/)).toBeInTheDocument();
+    expect(check).toHaveBeenCalledWith({
+      setup: expect.objectContaining({
+        endpoint: "http://minio.home.arpa:9000",
+        region: "",
+        addressing: "virtualHost",
+        allowInsecure: true,
+      }),
+    });
+  });
+
+  it("names what is wrong with the bucket", async () => {
+    const problems: [string, RegExp][] = [
+      ["ARCHIVE_UNAVAILABLE", /Nothing answers at that address/],
+      ["ARCHIVE_S3_CREDENTIALS", /refused the access key or the secret/],
+      ["ARCHIVE_S3_FORBIDDEN", /may not use this bucket or prefix/],
+      ["ARCHIVE_S3_NO_BUCKET", /no bucket of that name/],
+      ["ARCHIVE_S3_REGION", /in another region/],
+      ["ARCHIVE_S3_CLOCK", /clock is too far off/],
+      ["ARCHIVE_S3_NOT_S3", /not as S3 storage/],
+    ];
+    let next = 0;
+    backend({
+      history_archive_status: unconfigured,
+      history_archive_s3_check: () => {
+        throw { kind: problems[next++][0], message: "detail" };
+      },
+    });
+    renderSettings();
+
+    await fillBucket("https://s3.example.com");
+    type("Secret access key", "s3cret");
+    for (const [, expected] of problems) {
+      fireEvent.click(screen.getByRole("button", { name: "Check bucket" }));
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(expected));
+    }
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
+  });
+});
+
 describe("report wording", () => {
   it("describes exports", () => {
     expect(describeExport({ segments: 0, messages: 0, conversations: 0 })).toBe(

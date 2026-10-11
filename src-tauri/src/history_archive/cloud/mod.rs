@@ -1,12 +1,14 @@
-//! Cloud API providers of the history archive: Google Drive, Dropbox and the user's own
-//! backup endpoint, spoken to directly from this app, with no RIM server in the path (nobody
-//! but the user's own storage holds their history).
+//! Cloud API providers of the history archive: Google Drive, Dropbox, S3-compatible storage
+//! and the user's own backup endpoint, spoken to directly from this app, with no RIM server in
+//! the path (nobody but the user's own storage holds their history).
 //!
 //! - [`oauth`]: the desktop sign-in (system browser, loopback redirect, PKCE) and the access
 //!   tokens refreshed from a refresh token. Refresh tokens live in the secret vault, never in
 //!   the settings file.
 //! - [`http`]: retries with backoff for rate limits and transient failures.
-//! - [`google_drive`], [`dropbox`], [`endpoint`]: the [`ArchiveProvider`] implementations.
+//! - [`sigv4`]: the request signing S3 takes.
+//! - [`google_drive`], [`dropbox`], [`s3`], [`endpoint`]: the [`ArchiveProvider`]
+//!   implementations.
 //!
 //! Each provider writes the same format as a local folder (`docs/specs/history-archive-v1.md`)
 //! and only needs the provider operations it already has: upload a new file, list, download,
@@ -14,14 +16,17 @@
 //!
 //! OAuth client ids are build configuration: `RIM_GOOGLE_CLIENT_ID` (with
 //! `RIM_GOOGLE_CLIENT_SECRET`) and `RIM_DROPBOX_APP_KEY`, read at build time or, for a
-//! development run, from the environment. A build without them offers neither service; the
-//! backup endpoint needs no build configuration and is always offered.
+//! development run, from the environment. A build without them offers neither service; S3 and
+//! the backup endpoint need no build configuration and are always offered.
 
+pub(crate) mod claims;
 pub(crate) mod dropbox;
 pub(crate) mod endpoint;
 pub(crate) mod google_drive;
 pub(crate) mod http;
 pub(crate) mod oauth;
+pub(crate) mod s3;
+pub(crate) mod sigv4;
 
 #[cfg(test)]
 pub(crate) mod fake;
@@ -46,6 +51,7 @@ use endpoint::{EndpointCheck, EndpointConnection, EndpointProvider, EndpointSetu
 use google_drive::{DriveEndpoints, GoogleDriveProvider};
 use http::{Http, Reply, RetryPolicy};
 use oauth::{Loopback, OAuthApp, Pkce, TokenSource};
+use s3::{S3Check, S3Connection, S3Provider, S3Setup};
 
 /// The cloud services an archive can live in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -223,7 +229,8 @@ impl CredentialStore for VaultCredentials {
     }
 }
 
-/// The secret name of a connection's refresh token, or of an endpoint's password or token.
+/// The secret name of a connection's refresh token, an endpoint's password or token, or an S3
+/// secret access key.
 fn credential_name(connection_id: &str) -> String {
     format!("history-archive-cloud-v1:{connection_id}")
 }
@@ -294,12 +301,17 @@ enum Pending {
         connection: EndpointConnection,
         secret: Option<Zeroizing<String>>,
     },
+    S3 {
+        connection: S3Connection,
+        secret: Zeroizing<String>,
+    },
 }
 
 /// A connection as the account's settings name it.
 pub(crate) enum Connection {
     OAuth(CloudKind, CloudConnection),
     Endpoint(EndpointConnection),
+    S3(S3Connection),
 }
 
 const EXPIRED: &str = "that sign-in has expired; sign in again";
@@ -442,6 +454,39 @@ impl CloudConnections {
         Ok(check)
     }
 
+    /// Check the S3 bucket the user typed (the probe), then look into it. The connection, with
+    /// its secret in memory only, is held until [`Self::keep`] or [`Self::discard`].
+    pub(crate) fn check_s3(
+        &self,
+        setup: S3Setup,
+        inspect: impl FnOnce(&dyn ArchiveProvider) -> Result<Option<u32>, ArchiveError>,
+    ) -> Result<S3Check, ArchiveError> {
+        let mut connection = S3Connection::from_setup(&setup)?;
+        let secret = setup
+            .secret_access_key
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| ArchiveError::Invalid("enter the secret access key".into()))?;
+        let checking = S3Provider::new(
+            self.s3_http(RetryPolicy::CHECK)?,
+            &connection,
+            secret.clone(),
+        )?;
+        connection.conditional_writes = checking.probe()?;
+        let version = inspect(self.s3_provider(&connection, secret.clone())?.as_ref())?;
+        let check = S3Check {
+            connection_id: connection.connection_id.clone(),
+            location: connection.location(),
+            has_archive: version.is_some(),
+            version,
+            conditional_writes: connection.conditional_writes,
+        };
+        lock(&self.pending).insert(
+            check.connection_id.clone(),
+            Pending::S3 { connection, secret },
+        );
+        Ok(check)
+    }
+
     /// A pending connection's provider, for connecting the archive in it.
     pub(crate) fn pending_provider(
         &self,
@@ -468,11 +513,15 @@ impl CloudConnections {
                 Connection::Endpoint(connection.clone()),
                 self.endpoint_provider(connection, secret.clone())?,
             )),
+            Some(Pending::S3 { connection, secret }) => Ok((
+                Connection::S3(connection.clone()),
+                self.s3_provider(connection, secret.clone())?,
+            )),
         }
     }
 
-    /// Keep a pending connection: its refresh token, or the endpoint's password or token,
-    /// goes to the secret vault.
+    /// Keep a pending connection: its refresh token, the endpoint's password or token, or the
+    /// S3 secret access key goes to the secret vault.
     pub(crate) fn keep(&self, connection_id: &str) -> Result<(), ArchiveError> {
         let Some(pending) = lock(&self.pending).remove(connection_id) else {
             return Err(ArchiveError::CloudAuth(EXPIRED.into()));
@@ -486,7 +535,8 @@ impl CloudConnections {
             Pending::Endpoint {
                 secret: Some(secret),
                 ..
-            } => self.credentials.set(&name, &secret)?,
+            }
+            | Pending::S3 { secret, .. } => self.credentials.set(&name, &secret)?,
             Pending::Endpoint { secret: None, .. } => {}
         }
         Ok(())
@@ -507,27 +557,59 @@ impl CloudConnections {
         connection: &EndpointConnection,
     ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
         let secret = if connection.auth.needs_secret() {
-            let stored = self
-                .credentials
-                .get(&credential_name(&connection.connection_id))?;
-            Some(stored.ok_or_else(|| {
-                ArchiveError::CloudAuth(
-                    "this device no longer holds the backup endpoint's password or token".into(),
-                )
-            })?)
+            Some(self.stored_secret(
+                &connection.connection_id,
+                "the backup endpoint's password or token",
+            )?)
         } else {
             None
         };
         self.endpoint_provider(connection, secret)
     }
 
-    /// Forget a kept endpoint's password or token.
-    pub(crate) fn forget_endpoint(&self, connection_id: &str) -> Result<(), ArchiveError> {
+    /// A kept bucket's provider, with its secret access key from the vault.
+    pub(crate) fn open_s3(
+        &self,
+        connection: &S3Connection,
+    ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
+        let secret = self.stored_secret(&connection.connection_id, "the S3 secret access key")?;
+        self.s3_provider(connection, secret)
+    }
+
+    /// A kept connection's secret from the vault; `what` names it when it is gone.
+    fn stored_secret(
+        &self,
+        connection_id: &str,
+        what: &str,
+    ) -> Result<Zeroizing<String>, ArchiveError> {
+        self.credentials
+            .get(&credential_name(connection_id))?
+            .ok_or_else(|| ArchiveError::CloudAuth(format!("this device no longer holds {what}")))
+    }
+
+    /// Forget a kept endpoint's password or token, or a bucket's secret access key.
+    pub(crate) fn forget_secret(&self, connection_id: &str) -> Result<(), ArchiveError> {
         self.credentials.delete(&credential_name(connection_id))
     }
 
     fn endpoint_http(&self, policy: RetryPolicy) -> Result<Http, ArchiveError> {
         Http::new(endpoint::SERVICE, policy, http::no_extra_retries)
+    }
+
+    fn s3_http(&self, policy: RetryPolicy) -> Result<Http, ArchiveError> {
+        Http::new(s3::SERVICE, policy, s3::is_retryable_conflict)
+    }
+
+    fn s3_provider(
+        &self,
+        connection: &S3Connection,
+        secret: Zeroizing<String>,
+    ) -> Result<Box<dyn ArchiveProvider>, ArchiveError> {
+        Ok(Box::new(S3Provider::new(
+            self.s3_http(self.settings.retry)?,
+            connection,
+            secret,
+        )?))
     }
 
     fn endpoint_provider(

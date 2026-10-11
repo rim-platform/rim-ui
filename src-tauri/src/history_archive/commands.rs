@@ -8,6 +8,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use super::cloud::endpoint::{EndpointCheck, EndpointSetup};
+use super::cloud::s3::{S3Check, S3Setup};
 use super::cloud::{CloudAuthorization, CloudKind, CloudService};
 use super::{
     ArchiveError, ArchiveStatus, ConnectOutcome, ConnectTarget, ExportReport, FolderInfo,
@@ -97,13 +98,25 @@ pub async fn history_archive_endpoint_check(
     blocking(move || state.endpoint_check(setup)).await
 }
 
+/// Check an S3 bucket (write, read back, list and delete a probe object) and look for an
+/// archive in it. The secret access key stays in memory until the archive is connected.
+#[tauri::command]
+pub async fn history_archive_s3_check(
+    state: State<'_, HistoryArchiveState>,
+    setup: S3Setup,
+) -> Result<S3Check, ArchiveError> {
+    let state = state.inner().clone();
+    blocking(move || state.s3_check(setup)).await
+}
+
 /// Stop waiting for a sign-in in the browser.
 #[tauri::command]
 pub fn history_archive_cloud_cancel(state: State<'_, HistoryArchiveState>) {
     state.cloud_cancel();
 }
 
-/// Drop a signed-in cloud account or a checked endpoint the user did not go on with.
+/// Drop a signed-in cloud account, or a checked endpoint or bucket, the user did not go on
+/// with.
 #[tauri::command]
 pub async fn history_archive_cloud_discard(
     state: State<'_, HistoryArchiveState>,
