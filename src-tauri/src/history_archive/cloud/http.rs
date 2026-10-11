@@ -221,12 +221,21 @@ fn error_chain(e: &reqwest::Error) -> String {
     chain
 }
 
-/// A TLS handshake or certificate failure: not transient, and not the network's fault.
+/// A TLS handshake or certificate failure: not transient, and not the network's fault. Only
+/// the causes are read: the error's own message names the URL, whose host may contain any word.
 fn is_tls_failure(e: &reqwest::Error) -> bool {
-    let chain = error_chain(e).to_ascii_lowercase();
-    ["certificate", "tls", "ssl", "handshake"]
-        .iter()
-        .any(|word| chain.contains(word))
+    let mut source = std::error::Error::source(e);
+    while let Some(cause) = source {
+        let text = cause.to_string().to_ascii_lowercase();
+        if ["certificate", "tls", "ssl", "handshake"]
+            .iter()
+            .any(|word| text.contains(word))
+        {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
 }
 
 /// Never retry beyond 429 and 5xx.
