@@ -2,6 +2,7 @@ import type { AiMessage, AiContentBlock } from "../providers/types";
 import { getProvider } from "../providers/registry";
 import { getAllToolDefinitions, getTool } from "../tools/registry";
 import { useAgentStore } from "../state/useAgentStore";
+import { liveModel, useLiveModelsStore } from "../state/useLiveModelsStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { logger } from "../../../core/logger";
@@ -121,7 +122,8 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
 
   // Context window management
   const modelDef = provider.config.models.find((m) => m.id === modelId);
-  const contextWindow = modelDef?.contextWindow ?? 128_000;
+  const live = liveModel(useLiveModelsStore.getState().byProvider, providerId, modelId);
+  const contextWindow = live?.contextWindow ?? modelDef?.contextWindow ?? 128_000;
   trimToContextWindow(messages, contextWindow);
 
   const tools = getAllToolDefinitions();
