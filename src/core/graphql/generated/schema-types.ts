@@ -2330,6 +2330,12 @@ export type Query = {
   /**
    * The AI-callable commands the caller may run, for an AI agent to discover its tools.
    *
+   * Filtered as `commands` filters: a command the server runs is listed only when
+   * `workspaceId` names a workspace the caller is a member of, their role there may run it,
+   * and they hold each of its required capabilities; the commands the client runs itself are
+   * always listed. A listed command is one `executeCommand` runs for the caller in that
+   * workspace, apart from a confirmation, a timeout in force and the arguments given.
+   *
    * With `intentPhrase` the commands are ranked by how well the phrase matches their
    * intent samples, title and natural-language description. `limit` defaults to 50 and is
    * capped at 100. `workspaceId` scopes the list to one workspace, including its AI-callable
@@ -2339,6 +2345,19 @@ export type Query = {
    * `RATE_LIMITED`. Fails with `FEATURE_DISABLED` while the AI command surface is off.
    */
   commandDiscover: Array<Command>;
+  /**
+   * The commands the caller may run on `surface` (default `PALETTE`), sorted by id.
+   *
+   * A command the server runs is listed only when `commandContext.workspaceId` names a
+   * workspace the caller is a member of, their role there may run it, and they hold each of
+   * its required capabilities. The commands the client runs itself are listed in every
+   * context. A listed command is one `executeCommand` runs for the caller in that context,
+   * apart from a confirmation, a timeout in force and the arguments given. Naming the direct
+   * space makes the caller a guest of it.
+   *
+   * `AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
+   * workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+   */
   commands: Array<Command>;
   /** The caller's contacts, oldest first. */
   contacts: Array<Contact>;
@@ -2475,8 +2494,8 @@ export type Query = {
   /** Active bans of the workspace, newest first. Owner/Moderator only. */
   serverBans: Array<ServerBan>;
   /**
-   * The server's release version, API version, features and audit retention. Readable
-   * without a session.
+   * The server's release version, API version, features, audit retention, instance notice
+   * and terms URL. Readable without a session.
    */
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
@@ -3122,6 +3141,16 @@ export type ServerInfo = {
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
   /** Every optional feature with its state on this instance. */
   features: Array<ServerFeatureInfo>;
+  /**
+   * A short text the operator shows people on this instance, at most 500 characters; null
+   * when there is none.
+   */
+  instanceNotice?: Maybe<Scalars['String']['output']>;
+  /**
+   * The terms of service a signup accepts, an absolute http(s) URL; null when the instance
+   * has none. A signup sends it back as `acceptedTermsUrl`.
+   */
+  termsUrl?: Maybe<Scalars['String']['output']>;
   /** The server's release version, e.g. `0.1.0`. */
   version: Scalars['String']['output'];
 };
@@ -3187,6 +3216,12 @@ export type SignedStatementInput = {
  */
 export type SignupWithInviteInput = {
   /**
+   * The terms of service the person accepted: `serverInfo.termsUrl`, sent back unchanged.
+   * Required when the server has terms (`VALIDATION` when missing or different); ignored
+   * when it has none.
+   */
+  acceptedTermsUrl?: InputMaybe<Scalars['String']['input']>;
+  /**
    * Optional display name (1–80 chars when present). Falls back to `username`
    * when absent or blank after trim.
    */
@@ -3219,6 +3254,8 @@ export type SignupWithInvitePayloadGql = {
  * invite-only mode, none in open mode. In pow mode it takes one token or `proofOfWork`.
  */
 export type SignupWithKeyInput = {
+  /** The terms of service the person accepted, as for `signupWithInvite`. */
+  acceptedTermsUrl?: InputMaybe<Scalars['String']['input']>;
   /** Certificate of the device signing up; the new session belongs to it. */
   device: SignedStatementInput;
   /**
