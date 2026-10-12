@@ -6,6 +6,9 @@
  * - `"INSTANCE"`: header says "Create your RIM account." No workspace name. Routes via `instanceInviteToken`.
  * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
  *
+ * The server's instance notice shows at the top. When the server has terms of service, both
+ * signups ask for "I accept the terms of use" and send the terms URL back as `acceptedTermsUrl`.
+ *
  * On the desktop the page also offers "Create account with a key" (`KeySignupForm`): an
  * account with no password and no email, signed in by a key kept on this computer. With
  * `keyOnly` (a relay in pow mode, no token) it offers only that.
@@ -37,12 +40,15 @@ import { useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { isTermsRefusal, useSignupTerms } from "../api/useSignupTerms";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
+import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { checkDisplayName } from "../displayName";
 import { InviteTokenType } from "../types";
 import { InviteByline } from "./InviteByline";
 import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
+import { TermsAcceptance } from "./TermsAcceptance";
 
 /**
  * Email validation regex mirroring the backend's pragmatic email regex.
@@ -151,6 +157,7 @@ export function JoinForm({
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const signup = useSignupWithInviteMutation();
+  const terms = useSignupTerms();
 
   /**
    * Validates the email field client-side. Sets inline error and returns
@@ -193,6 +200,7 @@ export function JoinForm({
    * - `displayName`: omitted entirely from the payload when blank after trim
    *   (NOT sent as `""`). Falls back to `username` server-side.
    * - Token fields: from `tokenFields`.
+   * - `acceptedTermsUrl`: the server's terms URL once accepted, absent without terms.
    */
   function buildInput() {
     const trimmedDisplayName = displayName.trim();
@@ -202,6 +210,7 @@ export function JoinForm({
       password,
       ...(trimmedDisplayName.length > 0 ? { displayName: trimmedDisplayName } : {}),
       ...tokenFields(variant, token),
+      ...terms.fields,
     };
   }
 
@@ -223,6 +232,7 @@ export function JoinForm({
         onSuccess(data.signupWithInvite.userId, data.signupWithInvite.serverId ?? null);
       },
       onError: (err) => {
+        if (terms.noteFailure(err)) return;
         const mapped = mapSignupError(err);
         if (mapped?.field === "email") {
           setEmailError(mapped.message);
@@ -234,11 +244,16 @@ export function JoinForm({
   }
 
   const canSubmit =
-    username.trim().length > 0 && email.trim().length > 0 && password.trim().length >= 8;
+    username.trim().length > 0 &&
+    email.trim().length > 0 &&
+    password.trim().length >= 8 &&
+    terms.satisfied;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
+        <InstanceNotice />
+
         <header className="text-center">
           <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
           <p className="mt-1 text-sm text-rim-text-muted">{headerCopy(variant, workspaceName)}</p>
@@ -300,7 +315,8 @@ export function JoinForm({
                 hint="If left blank, your username will be shown."
                 error={displayNameError}
               />
-              {(formError || signup.error) && !emailError && (
+              <TermsAcceptance terms={terms} disabled={signup.isPending} />
+              {(formError || (signup.error && !isTermsRefusal(signup.error))) && !emailError && (
                 <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
                   {formError ?? graphqlErrorMessage(signup.error, "Registration failed.")}
                 </p>

@@ -14,6 +14,7 @@ import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 
 const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
@@ -190,7 +191,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       }
       onSave();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to save pipeline");
+      toast.error(graphqlErrorMessage(err, "Failed to save pipeline"));
     }
   }, [
     name,
@@ -451,7 +452,7 @@ export function PipelineSettings() {
       try {
         await deletePipeline.mutateAsync({ pipelineId, serverId: workspaceId });
       } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : "Failed to delete pipeline");
+        toast.error(graphqlErrorMessage(err, "Failed to delete pipeline"));
       }
     },
     [deletePipeline, workspaceId],
@@ -463,7 +464,7 @@ export function PipelineSettings() {
       try {
         await togglePipeline.mutateAsync({ pipelineId, enabled, serverId: workspaceId });
       } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : "Failed to toggle pipeline");
+        toast.error(graphqlErrorMessage(err, "Failed to toggle pipeline"));
       }
     },
     [togglePipeline, workspaceId],

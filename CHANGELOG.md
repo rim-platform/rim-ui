@@ -35,5 +35,24 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   `latest`), built with the GraphQL endpoint `/api` so it serves any domain, signed with cosign
   keyless by the release workflow and with an SPDX SBOM attested to it and attached to the
   GitHub release. rim-server's `deploy/compose.yml` runs it.
+- The server's instance notice (GraphQL `ServerInfo.instanceNotice`) shows as a short plain-text
+  banner at the top of sign-in, both sign-up forms and Settings, About.
+- On a server with terms of service (`ServerInfo.termsUrl`), sign-up with a password or a key
+  asks for "I accept the terms of use" with a link to them, opened in the system browser on the
+  desktop and a new tab on the web, and sends the URL back as `acceptedTermsUrl`. A refusal over
+  the terms shows at the checkbox. Servers without terms, or older ones, sign up as before.
+
+### Changed
+
+- A rate-limited request (`RATE_LIMITED`, or HTTP 429 `rate_limited` from the server's
+  per-address limit) reads "Slow down: try again in N s" wherever a failed change is shown, a
+  refused message stays in the composer, and a query retries only after the wait the server
+  names.
+- A server that blocked this address (HTTP 403 `blocked`) is named as such on sign-in, in the
+  connection banner and in the offline banner, instead of reading as offline or signing out.
+- A WebSocket upgrade the server refuses for too many connections says so in the connection
+  banner and is tried again after 30 seconds, doubling up to five minutes, rather than every few
+  seconds. A subscription refused with `TOO_MANY_SUBSCRIPTIONS` raises one notice that some live
+  updates are off and is not retried.
 
 [Unreleased]: https://github.com/rim-platform/rim-ui/commits/master

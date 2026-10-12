@@ -2037,9 +2037,28 @@ type ProfileCard {
 }
 
 type Query {
+	"""
+	The commands the caller may run on `surface` (default `PALETTE`), sorted by id.
+	
+	A command the server runs is listed only when `commandContext.workspaceId` names a
+	workspace the caller is a member of, their role there may run it, and they hold each of
+	its required capabilities. The commands the client runs itself are listed in every
+	context. A listed command is one `executeCommand` runs for the caller in that context,
+	apart from a confirmation, a timeout in force and the arguments given. Naming the direct
+	space makes the caller a guest of it.
+	
+	`AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
+	workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+	"""
 	commands(surface: CommandSurface, commandContext: CommandContextInput): [Command!]!
 	"""
 	The AI-callable commands the caller may run, for an AI agent to discover its tools.
+	
+	Filtered as `commands` filters: a command the server runs is listed only when
+	`workspaceId` names a workspace the caller is a member of, their role there may run it,
+	and they hold each of its required capabilities; the commands the client runs itself are
+	always listed. A listed command is one `executeCommand` runs for the caller in that
+	workspace, apart from a confirmation, a timeout in force and the arguments given.
 	
 	With `intentPhrase` the commands are ranked by how well the phrase matches their
 	intent samples, title and natural-language description. `limit` defaults to 50 and is
@@ -2233,8 +2252,8 @@ type Query {
 	"""
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
-	The server's release version, API version, features and audit retention. Readable
-	without a session.
+	The server's release version, API version, features, audit retention, instance notice
+	and terms URL. Readable without a session.
 	"""
 	serverInfo: ServerInfo!
 }
@@ -2669,6 +2688,16 @@ type ServerInfo {
 	forever.
 	"""
 	auditRetentionDays: Int
+	"""
+	A short text the operator shows people on this instance, at most 500 characters; null
+	when there is none.
+	"""
+	instanceNotice: String
+	"""
+	The terms of service a signup accepts, an absolute http(s) URL; null when the instance
+	has none. A signup sends it back as `acceptedTermsUrl`.
+	"""
+	termsUrl: String
 }
 
 type ServerMember {
@@ -2751,6 +2780,12 @@ input SignupWithInviteInput {
 	password: String!
 	instanceInviteToken: String
 	workspaceInviteToken: String
+	"""
+	The terms of service the person accepted: `serverInfo.termsUrl`, sent back unchanged.
+	Required when the server has terms (`VALIDATION` when missing or different); ignored
+	when it has none.
+	"""
+	acceptedTermsUrl: String
 }
 
 """
@@ -2796,6 +2831,10 @@ input SignupWithKeyInput {
 	the descriptor's `powBits` zero bits.
 	"""
 	proofOfWork: String
+	"""
+	The terms of service the person accepted, as for `signupWithInvite`.
+	"""
+	acceptedTermsUrl: String
 }
 
 type StartedDeviceLink {

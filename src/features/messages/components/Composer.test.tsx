@@ -281,6 +281,35 @@ describe("Composer — slow mode and timeouts (Track 1.2)", () => {
     );
   });
 
+  it.each([
+    [12, "Slow down: try again in 12 s"],
+    [undefined, "Slow down: try again in a moment"],
+  ])(
+    "RATE_LIMITED outside slow mode (%s s) says to slow down and keeps the text",
+    async (retryAfterSeconds, message) => {
+      serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+        "mutation SendMessage": () => {
+          throw Object.assign(new Error("rate limit exceeded (serialized)"), {
+            response: {
+              errors: [
+                {
+                  message: "rate limit exceeded",
+                  extensions: { code: "RATE_LIMITED", retryAfterSeconds },
+                },
+              ],
+            },
+          });
+        },
+      });
+      renderComposer();
+      await send("one more");
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message));
+      expect(screen.getByRole("textbox")).toHaveValue("one more");
+      expect(screen.queryByTestId("slow-mode-indicator")).not.toBeInTheDocument();
+    },
+  );
+
   it("shows the timed-out banner and disables the composer from the member directory", async () => {
     const until = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     serve(makeConversation(), ServerMemberRoleGql.MEMBER, {

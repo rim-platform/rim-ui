@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { ClientError } from "graphql-request";
 
+import { AddressBlockedError } from "../../../core/graphql/errors";
 import type { SessionRecord } from "../../offline/api/offlineSession";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useAuthStore } from "../state/useAuthStore";
@@ -129,6 +130,16 @@ describe("useSessionHydration", () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(useOfflineStore.getState().offline).toBe(false);
     expect(saveSessionRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("stays on sign-in, online and with the record kept, when the server blocked the address", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockRejectedValue(new AddressBlockedError());
+    const result = await hydrate();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(useOfflineStore.getState().offline).toBe(false);
+    expect(saveSessionRecordMock).not.toHaveBeenCalled();
+    expect(resumeWithDeviceKeyMock).not.toHaveBeenCalled();
   });
 
   it("stays signed out offline without a record (never signed in on this device)", async () => {

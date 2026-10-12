@@ -25,6 +25,7 @@ import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
 import {
   graphqlErrorCode,
   graphqlErrorMessage,
+  RATE_LIMITED,
   retryAfterSeconds,
   TIMED_OUT,
 } from "../../../core/graphql/errors";
@@ -154,14 +155,15 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
 
   /**
    * Shows the server's message for a failed send. An archived (or no longer visible)
-   * conversation also refetches, so the composer flips to the archived bar. Slow mode and
-   * timeouts give the text back, since the message never left.
+   * conversation also refetches, so the composer flips to the archived bar. A rate limit
+   * (slow mode, or the server's message and request limits) and a timeout give the text back,
+   * since the message never left.
    */
   function handleSendError(err: unknown, fallback: string, unsentText?: string) {
     if (reportFeatureDisabled(err, qc)) return;
     const code = graphqlErrorCode(err);
     const waitSeconds = retryAfterSeconds(err);
-    if (waitSeconds !== undefined) {
+    if (waitSeconds !== undefined && slowModeSeconds > 0 && !isModerator) {
       useSlowModeStore.getState().markRateLimited(conversationId, waitSeconds);
       toast.error(slowModeWaitMessage(waitSeconds));
     } else {
@@ -170,7 +172,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
     if (noteTimedOutError(workspaceId, err)) {
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
     }
-    if (unsentText !== undefined && (waitSeconds !== undefined || code === TIMED_OUT)) {
+    if (unsentText !== undefined && (code === RATE_LIMITED || code === TIMED_OUT)) {
       restoreText(unsentText);
     }
     if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {

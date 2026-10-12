@@ -17,11 +17,16 @@ const SERVER_INFO_QUERY = gql`
         reason
       }
       auditRetentionDays
+      instanceNotice
+      termsUrl
     }
   }
 `;
 
-/** The same without `auditRetentionDays`, for a server older than audit retention. */
+/**
+ * The same without `auditRetentionDays`, `instanceNotice` and `termsUrl`, for a server older
+ * than audit retention.
+ */
 const SERVER_FEATURES_QUERY = gql`
   query ServerFeatures {
     serverInfo {
@@ -57,10 +62,11 @@ function refusedByServer(err: unknown): boolean {
 }
 
 /**
- * The connected server's release version, API version, features and audit retention; needs no
- * session. Each query a server refuses falls back to the next older one. A server older than
- * audit retention leaves `auditRetentionDays` undefined (unknown, unlike `null`, which keeps rows
- * forever); one older than `features` runs every feature, so it reads as listing none.
+ * The connected server's release version, API version, features, audit retention, instance
+ * notice and terms URL; needs no session. Each query a server refuses falls back to the next
+ * older one. A server older than the instance notice leaves `auditRetentionDays`,
+ * `instanceNotice` and `termsUrl` undefined (unknown, unlike `null`: rows kept forever, no
+ * notice, no terms); one older than `features` runs every feature, so it reads as listing none.
  */
 export async function fetchServerInfo(): Promise<ServerInfo> {
   for (const query of [SERVER_INFO_QUERY, SERVER_FEATURES_QUERY]) {

@@ -68,7 +68,12 @@ vi.mock("../../key-identity/components/LinkThisDevice", () => ({
 
 import { LoginPage } from "./LoginPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
-import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import {
+  withServerInfo,
+  type FakeFeatures,
+  type FakeServerDetails,
+} from "../../../test/serverInfo";
+import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 describe("LoginPage", () => {
@@ -82,12 +87,12 @@ describe("LoginPage", () => {
     });
   });
 
-  function renderPage(features: FakeFeatures = {}) {
+  function renderPage(features: FakeFeatures = {}, details: FakeServerDetails = {}) {
     return render(
       <MemoryRouter initialEntries={["/login"]}>
         <LoginPage />
       </MemoryRouter>,
-      { wrapper: withServerInfo(features) },
+      { wrapper: withServerInfo(features, details) },
     );
   }
 
@@ -205,5 +210,33 @@ describe("LoginPage", () => {
     password.focus();
     await user.keyboard("{Enter}");
     expect(mockLoginMutate).toHaveBeenCalled();
+  });
+
+  it("shows the server's instance notice at the top, as plain text", () => {
+    renderPage({}, { instanceNotice: "Run by **Acme**.\nBe kind." });
+    const notice = screen.getByRole("note", { name: "Notice from this server" });
+    expect(notice).toHaveTextContent("Run by **Acme**. Be kind.");
+    expect(notice.querySelector("strong")).toBeNull();
+  });
+
+  it.each([null, undefined, "  "])("shows no notice when the server gives %j", (notice) => {
+    renderPage({}, { instanceNotice: notice });
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("says the address is blocked when the server refused it", () => {
+    useEdgeStore.setState({ blocked: true });
+    try {
+      renderPage();
+      expect(screen.getByRole("alert")).toHaveTextContent("This address is blocked on this server");
+      expect(screen.getByText("Address blocked")).toBeInTheDocument();
+    } finally {
+      useEdgeStore.setState({ blocked: false });
+    }
+  });
+
+  it("shows no blocked state otherwise", () => {
+    renderPage();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

@@ -22,6 +22,7 @@ import {
   WorkspaceStateScopeGql,
 } from "../index";
 import type { WorkspaceStateEntryGql, SetWorkspaceStateInput } from "../index";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,7 @@ function EntryEditor({ serverId, scope, existingEntry, onClose }: EntryEditorPro
       toast.success(isEditing ? `Updated "${key}"` : `Created "${key}"`);
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save";
+      const msg = graphqlErrorMessage(err, "Failed to save");
       setError(msg);
     }
   }, [key, valueStr, ttlMinutes, serverId, scope, isEditing, setWorkspaceState, onClose]);
@@ -430,7 +431,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
         await deleteWorkspaceState.mutateAsync({ serverId, key, scope });
         toast.success(`Deleted "${key}"`);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to delete";
+        const msg = graphqlErrorMessage(err, "Failed to delete");
         toast.error(msg);
       }
     },

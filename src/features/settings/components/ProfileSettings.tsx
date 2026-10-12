@@ -3,6 +3,7 @@ import { Camera, Loader2 } from "lucide-react";
 
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useUpdateProfileMutation, uploadAvatar } from "../api/useUpdateProfile";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { cn } from "../../../shared/ui/cn";
 
 function resizeImageToBlob(file: File, size: number): Promise<Blob> {
@@ -107,7 +108,7 @@ export function ProfileSettings() {
         bio: bio || undefined,
       });
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save profile.");
+      setSaveError(graphqlErrorMessage(err, "Failed to save profile."));
     }
   }, [displayName, statusText, bio, updateProfile]);
 

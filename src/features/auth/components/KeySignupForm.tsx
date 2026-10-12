@@ -29,8 +29,10 @@ import {
 } from "../../key-identity/api/keyIdentity";
 import { SaveRecoveryKit } from "../../key-identity/components/SaveRecoveryKit";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
+import { useSignupTerms } from "../api/useSignupTerms";
 import { checkDisplayName } from "../displayName";
 import { JoinField } from "./JoinField";
+import { TermsAcceptance } from "./TermsAcceptance";
 
 /** The token fields of `signupWithKey`: one for an invite link, none in open mode. */
 export type KeySignupTokens = Pick<KeySignupFields, "instanceInviteToken" | "workspaceInviteToken">;
@@ -149,7 +151,8 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
  * Creates an account from a key kept on this computer, with no password and no email: the
  * person picks a username, saves the recovery kit of the new keys, and the account is created
  * with them. On a relay that asks for a proof-of-work instead of an invite, this device finds
- * it first, which the person can cancel. After a refusal they can try again with the same keys,
+ * it first, which the person can cancel. A server with terms of service has the person accept
+ * them before the keys are made. After a refusal they can try again with the same keys,
  * so the saved kit stays valid, or discard the keys. Desktop only.
  */
 export function KeySignupForm({
@@ -170,6 +173,7 @@ export function KeySignupForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [proving, setProving] = useState<Proving | null>(null);
+  const terms = useSignupTerms();
   // The draft to give up on if the page closes before the account is created.
   const pending = useRef<EnrollmentDraft | null>(null);
   // Stops the proof-of-work under way.
@@ -226,6 +230,7 @@ export function KeySignupForm({
             username: username.trim(),
             ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
             ...tokens,
+            ...terms.fields,
           },
           {
             onProofOfWork: (bits) => setProving({ bits, startedAt: Date.now() }),
@@ -236,6 +241,7 @@ export function KeySignupForm({
     } catch (err) {
       // Cancelled by the person: nothing to tell them, and Create account starts again.
       if (err instanceof PowCancelled) return;
+      if (terms.noteFailure(err)) return;
       // The draft stays: trying again uses the same keys, so the saved kit stays valid.
       const mapped = signupError(err);
       if (mapped.field === "username") setUsernameError(mapped.message);
@@ -288,9 +294,11 @@ export function KeySignupForm({
     setSaved(false);
   }
 
-  const canSubmit = draft
-    ? saved && username.trim().length > 0
-    : username.trim().length > 0 && deviceName.trim().length > 0;
+  const canSubmit =
+    terms.satisfied &&
+    (draft
+      ? saved && username.trim().length > 0
+      : username.trim().length > 0 && deviceName.trim().length > 0);
 
   return (
     <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
@@ -331,6 +339,7 @@ export function KeySignupForm({
         />
       )}
       {draft && <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />}
+      <TermsAcceptance terms={terms} disabled={busy} />
       {proving && (
         <ProofOfWorkStatus proving={proving} onCancel={() => stopProof.current?.abort()} />
       )}

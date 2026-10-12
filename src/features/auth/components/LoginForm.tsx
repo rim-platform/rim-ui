@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useLoginMutation } from "../api/useAuthMutations";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 
@@ -48,7 +49,7 @@ function Field({ label, value, onChange, placeholder, type = "text" }: FieldProp
 
 function MutationError({ error }: { error: unknown }) {
   if (!error) return null;
-  const msg = error instanceof Error ? error.message : "Unknown error";
+  const msg = graphqlErrorMessage(error, "Sign-in failed. Try again.");
   return (
     <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
       {msg}

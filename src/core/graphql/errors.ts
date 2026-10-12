@@ -16,6 +16,23 @@ export const TIMED_OUT = "TIMED_OUT";
 /** Too many requests (also slow mode); extension `retryAfterSeconds`. */
 export const RATE_LIMITED = "RATE_LIMITED";
 
+/** A subscription past the WebSocket connection's limit; extension `limit`. */
+export const TOO_MANY_SUBSCRIPTIONS = "TOO_MANY_SUBSCRIPTIONS";
+
+/** What the client says when the server refuses this address with 403 `blocked`. */
+export const ADDRESS_BLOCKED_MESSAGE = "This address is blocked on this server";
+
+/**
+ * The server answered 403 `{"error":"blocked"}`: the operator blocked this client's address. It
+ * says nothing about the session.
+ */
+export class AddressBlockedError extends Error {
+  constructor() {
+    super(ADDRESS_BLOCKED_MESSAGE);
+    this.name = "AddressBlockedError";
+  }
+}
+
 interface GraphQLErrorLike {
   message?: unknown;
   extensions?: { code?: unknown; [key: string]: unknown };
@@ -78,6 +95,12 @@ export function disabledFeatureOf(err: unknown): string | undefined {
   return typeof feature === "string" && feature ? feature : undefined;
 }
 
+/** The wording for a `RATE_LIMITED` refusal, with the seconds to wait when the server gave them. */
+export function rateLimitedMessage(seconds: number | undefined): string {
+  if (seconds === undefined) return "Slow down: try again in a moment";
+  return `Slow down: try again in ${Math.max(1, Math.ceil(seconds))} s`;
+}
+
 /** The wording for an `UPSTREAM_UNAVAILABLE` failure. */
 export const UPSTREAM_UNAVAILABLE_MESSAGE =
   "Another server this needs could not be reached. Try again later.";
@@ -88,6 +111,7 @@ export const UPSTREAM_UNAVAILABLE_MESSAGE =
  * such as an internal error while the database is down, say nothing about the session.
  */
 export function isSessionRefused(err: unknown): boolean {
+  if (err instanceof AddressBlockedError) return false;
   if (graphqlErrorCode(err) === UNAUTHENTICATED) return true;
   if (typeof err !== "object" || err === null) return false;
   const status = (err as { response?: { status?: unknown } }).response?.status;
@@ -116,12 +140,13 @@ export function timedOutMessage(until: string): string {
 /**
  * The server's human-readable message for a failed request, else `err.message`, else
  * `fallback`. A `TIMED_OUT` error reads "You are timed out until …", a `FEATURE_DISABLED` one
- * "<Feature> is switched off on this server", and an `UPSTREAM_UNAVAILABLE` one names no
- * server id, wherever they surface.
+ * "<Feature> is switched off on this server", a `RATE_LIMITED` one "Slow down: try again in
+ * N s", and an `UPSTREAM_UNAVAILABLE` one names no server id, wherever they surface.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);
   if (until) return timedOutMessage(until);
+  if (graphqlErrorCode(err) === RATE_LIMITED) return rateLimitedMessage(retryAfterSeconds(err));
   const feature = disabledFeatureOf(err);
   if (feature) return featureOffMessage(feature);
   if (graphqlErrorCode(err) === UPSTREAM_UNAVAILABLE) return UPSTREAM_UNAVAILABLE_MESSAGE;

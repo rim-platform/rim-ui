@@ -21,6 +21,7 @@ import {
   AboutServerFeatures,
   AboutServerVersion,
 } from "../../updater/components/AboutServer";
+import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 
@@ -89,6 +90,8 @@ function AboutRim() {
         <h2 className="text-base font-semibold text-rim-text">About RIM</h2>
         <p className="mt-1 text-sm text-rim-text-muted">A programmable communication workspace.</p>
       </div>
+
+      <InstanceNotice />
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-4">
         <div className="flex items-center gap-3">

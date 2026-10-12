@@ -86,7 +86,27 @@ describe("useServerInfo", () => {
     expect(result.current.info?.auditRetentionDays).toBe(days);
   });
 
-  it("reads a server older than audit retention with its features and no retention", async () => {
+  it("reads the server's instance notice and terms URL", async () => {
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: {
+          version: "0.6.0",
+          apiVersion: CLIENT_API_VERSION,
+          features: [],
+          auditRetentionDays: null,
+          instanceNotice: "Run by Acme.",
+          termsUrl: "https://acme.example/terms",
+        },
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info?.instanceNotice).toBe("Run by Acme.");
+    expect(result.current.info?.termsUrl).toBe("https://acme.example/terms");
+  });
+
+  it("reads a server older than audit retention with its features, no retention, notice or terms", async () => {
     const features = [{ key: "attachments", state: "DISABLED", reason: null }];
     server.use(
       http.post("*/api", async ({ request }) => {
@@ -106,6 +126,8 @@ describe("useServerInfo", () => {
     await waitFor(() => expect(result.current.info).toBeDefined());
     expect(result.current.info?.features).toEqual(features);
     expect(result.current.info).not.toHaveProperty("auditRetentionDays");
+    expect(result.current.info).not.toHaveProperty("instanceNotice");
+    expect(result.current.info).not.toHaveProperty("termsUrl");
     expect(result.current.unreachable).toBe(false);
   });
 

@@ -7,20 +7,19 @@ import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { WorkspaceEvent } from "./types";
 
 let connectedHandler: (() => void) | null = null;
-let subscribeObserver: { next: (result: { data?: { workspaceEvents: string } }) => void } | null =
-  null;
+interface Observer {
+  next: (result: { data?: { workspaceEvents: string } }) => void;
+  error: (err: unknown) => void;
+}
+
+let subscribeObserver: Observer | null = null;
 
 vi.mock("../graphql/wsClient", () => ({
   wsClient: {
-    subscribe: vi.fn(
-      (
-        _request: unknown,
-        observer: { next: (result: { data?: { workspaceEvents: string } }) => void },
-      ) => {
-        subscribeObserver = observer;
-        return () => {};
-      },
-    ),
+    subscribe: vi.fn((_request: unknown, observer: Observer) => {
+      subscribeObserver = observer;
+      return () => {};
+    }),
   },
   onWsConnected: vi.fn((handler: () => void) => {
     connectedHandler = handler;
@@ -50,6 +49,7 @@ import type { ConversationSummaryPage } from "../../features/conversations/types
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
+import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
@@ -130,6 +130,35 @@ describe("useWorkspaceEvents unknown events", () => {
       }),
     ).not.toThrow();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkspaceEvents subscription limit", () => {
+  beforeEach(() => {
+    connectedHandler = null;
+    subscribeObserver = null;
+    vi.clearAllMocks();
+  });
+
+  it("shows a TOO_MANY_SUBSCRIPTIONS refusal as a notice and does not subscribe again", async () => {
+    const { wsClient } = await import("../graphql/wsClient");
+    const qc = new QueryClient();
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+
+    subscribeObserver?.error([
+      {
+        message: "too many subscriptions",
+        extensions: { code: "TOO_MANY_SUBSCRIPTIONS", limit: 1 },
+      },
+    ]);
+
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith(
+      "Some live updates are off",
+      expect.objectContaining({ id: SUBSCRIPTION_LIMIT_TOAST_ID }),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(wsClient.subscribe).toHaveBeenCalledTimes(1);
   });
 });
 
