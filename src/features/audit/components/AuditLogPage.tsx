@@ -8,6 +8,7 @@ import { FORBIDDEN, graphqlErrorCode } from "../../../core/graphql/errors";
 import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/schema-types";
 import type { AuditLogEntry } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
 import { canModerate } from "../../workspaces/role";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -147,6 +148,22 @@ function AuditRow({ entry }: AuditRowProps) {
   );
 }
 
+/**
+ * How long the server keeps audit entries; nothing while loading or when the server does not
+ * report it.
+ */
+function RetentionNote() {
+  const days = useServerInfo().info?.auditRetentionDays;
+  if (days === undefined) return null;
+  return (
+    <span className="text-xs text-rim-text-faint" data-testid="audit-retention-note">
+      {days === null
+        ? "Entries are kept forever"
+        : `Entries are kept for ${days} day${days === 1 ? "" : "s"}`}
+    </span>
+  );
+}
+
 // ── Scope ──────────────────────────────────────────────────────────────────
 
 interface AuditScope {
@@ -255,6 +272,7 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
           </button>
           <ClipboardList className="h-4 w-4 text-rim-accent" />
           <h1 className="text-lg font-semibold text-rim-text">Audit Log</h1>
+          <RetentionNote />
         </div>
         <button
           type="button"

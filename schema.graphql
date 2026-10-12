@@ -2233,7 +2233,8 @@ type Query {
 	"""
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
-	The server's release version, API version and features. Readable without a session.
+	The server's release version, API version, features and audit retention. Readable
+	without a session.
 	"""
 	serverInfo: ServerInfo!
 }
@@ -2663,6 +2664,11 @@ type ServerInfo {
 	Every optional feature with its state on this instance.
 	"""
 	features: [ServerFeatureInfo!]!
+	"""
+	Days a command audit row is kept before it is exported and deleted; null keeps rows
+	forever.
+	"""
+	auditRetentionDays: Int
 }
 
 type ServerMember {
