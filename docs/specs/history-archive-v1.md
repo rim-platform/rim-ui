@@ -1,7 +1,7 @@
 # History archive format, version 1
 
 The desktop app writes the user's message history to a folder the user picks, encrypted, and
-reads it back on another device (master plan Stage 2). There is no RIM server in this picture:
+reads it back on another device. There is no RIM server in this picture:
 the folder is the user's own (a local disk, a USB drive, a folder that Dropbox, Google Drive,
 OneDrive, iCloud Drive or Syncthing keeps in sync, the app's own folder in the user's Google
 Drive, Dropbox or OneDrive, reached through their APIs, a bucket of S3-compatible storage, or a
@@ -50,7 +50,7 @@ This document is the format. Anyone may write a reader or writer from it. The im
 - **Head**: the device's list of its segments. Only that device ever writes its head, and it
   writes it whole (temporary file, then rename) after the segments it lists.
 
-**Why immutable per-device files.** The master plan sketched one file per conversation and
+**Why immutable per-device files.** An earlier sketch had one file per conversation and
 month, appended in place. Version 1 deliberately departs from that: a sync client (Dropbox,
 Google Drive, OneDrive, Syncthing) that uploads a file while another device appends to it turns
 the race into a "conflicted copy" or a lost write, and the Google Drive and Dropbox APIs cannot
@@ -178,7 +178,7 @@ attachments, link previews or reactions in `payload`).
 - `sentAtUs`: microseconds since the epoch.
 - `payload`: the rest of the message as the app renders it (the `MessageWithReactions`
   fragment), without `text`.
-- `sig`: the author's signature. Messages archived before Stage 3 (identity keys) carry `null`
+- `sig`: the author's signature. Messages archived before identity keys carry `null`
   and are **unsigned**: readers accept them and must not treat them as a failed verification.
   Until then, integrity comes from the AEAD: nobody without the archive key can forge or alter a
   file.
@@ -435,7 +435,7 @@ seed's wrap key, for the same archive id and account tag, with nonce
 - **Anything else is version 2**: a new envelope, cipher, key derivation, layout, or a change in
   what an existing field means. A reader refuses an archive whose `version` is newer than it
   knows, and tells the user to update.
-- Following the master plan's compatibility rule, each release reads the current and the
+- By the project's compatibility rule, each release reads the current and the
   previous version. A writer that upgrades an archive must keep it readable by the previous
   release until the archive's manifest says otherwise.
 
@@ -602,8 +602,8 @@ same batch again under the same sequence numbers, replacing whatever the interru
 - Telling a device that a cloud sign-in was revoked elsewhere before the next backup fails.
 - Compaction: every export adds segments. A later writer may merge a device's own segments into
   fewer (only that device may), listing the new ones in its head before deleting the old.
-- Signed messages and rollback detection (a drive restoring an older head) come with Stage 3
-  identity keys.
+- Signed messages and rollback detection (a drive restoring an older head) come with identity
+  keys.
 - Unlocking with the identity key when joining an archive on a new device: the wrap is offered
   only to a device that already has the archive set up and lost its key.
 - Restore reads the whole account into memory before writing it to the cache.

@@ -304,9 +304,9 @@ describe("JoinForm — INSTANCE token routing", () => {
   });
 });
 
-// ── Hawkeye SF2 — displayName 1–80 character guard ───────────────────────────
+// ── displayName 1–80 character guard ─────────────────────────────────────────
 
-describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
+describe("JoinForm — displayName length guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -346,7 +346,7 @@ describe("JoinForm — Hawkeye SF2: displayName length guard", () => {
     // Client-side guard fires — no server round-trip.
     expect(mockSignupMutate).not.toHaveBeenCalled();
 
-    // Locked copy from spec (Hawkeye SF2).
+    // Locked copy from spec.
     expect(screen.getByText("Display name must be at most 80 characters.")).toBeInTheDocument();
   });
 

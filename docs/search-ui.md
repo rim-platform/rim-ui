@@ -1,6 +1,6 @@
-# Search UI (Track B1)
+# Search UI
 
-Covers the frontend of Track B1's full-text message search: the paginated
+Covers the frontend of full-text message search: the paginated
 `useSearchMessages` hook, the `SearchOverlay` flat-list UI, `SearchSnippet`'s
 sanitization, and the operator-discovery affordance. Backend contract and operator
 semantics: `../rim-server/docs/search.md`.
@@ -72,7 +72,7 @@ operator-based query with no free-text component, e.g. `from:@alice`), `SearchSn
 falls back to the plain `text`, rendered as ordinary React children (auto-escaped, no
 highlight — there's nothing server-side to highlight).
 
-## Local search (desktop app, PR 10)
+## Local search (desktop app)
 
 The desktop app also searches its encrypted local message cache (`docs/local-message-cache.md`,
 "Local search"). The behaviour, kept deliberately simple:

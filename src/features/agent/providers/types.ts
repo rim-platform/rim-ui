@@ -56,7 +56,7 @@ export type AiStreamChunk =
  * "provider said the key is bad" (user must fix the key) from "we couldn't
  * reach the provider" (user must fix their network). Pre-fix both paths
  * collapsed to `false` and produced a misleading "Invalid API key" toast
- * on a DNS/TLS failure (Hawkeye WARN #4).
+ * on a DNS/TLS failure.
  */
 export type ValidationOutcome =
   { kind: "valid" } | { kind: "invalid" } | { kind: "network_error"; message: string };

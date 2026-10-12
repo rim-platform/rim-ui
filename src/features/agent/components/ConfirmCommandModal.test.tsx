@@ -132,7 +132,7 @@ describe("ConfirmCommandModal — args block", () => {
   // Parity gate with backend `rim_services::command::sensitivity::
   // mask_for_display` VENDOR_PREFIXES list. If the backend adds or drops a
   // prefix, this table must move in lockstep — drift here is the "masked
-  // in UI, logged plain" failure mode Widow N4 named.
+  // in UI, logged plain" failure mode.
   //
   // Each probe uses a value-shape-only trigger: the arg key `credential`
   // name-matches `SENSITIVE_ARG_NAME_RE`, so we use `detect` (a key that

@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Tauri 2 desktop client for RIM — a programmable communication workspace, not another
-chat app. Commands, keybinds, macros, and plugins are the product; chat is the
-communication layer. React 19 frontend bundled with Vite, minimal Rust backend shell.
+The RIM client, a programmable communication workspace rather than another chat app:
+commands, keybinds, macros and plugins are the product, chat is the communication layer. One
+React 19 frontend bundled with Vite ships as the Tauri 2 desktop app and as the web app a RIM
+server deployment serves.
 
 ## Build & Dev Commands
 
@@ -135,6 +136,20 @@ Comments say what the item is and what it does, briefly: no history, no spec sec
 no references to docs, plans, stages or PR numbers. Commit messages: a plain imperative first
 line (≤ 72 chars) and a body that says why; no trailers (no `Co-Authored-By`).
 
-## Also Read
+## Product and Trust Guidance
 
-- `AGENTS.md` in this repo has detailed product direction, naming guidance, security/trust UX expectations, and agent workflow rules.
+- Commands are the shared execution unit of the palette, keybinds, context actions, macros,
+  plugins and the AI agent. Keybind handlers trigger commands and hold no workflow logic of
+  their own; plugins extend the shared command and keybind systems rather than adding parallel
+  ones.
+- Context (selected message, current conversation, focused surface) is typed runtime state, kept
+  apart from command arguments.
+- Device-local keybinds and UI state belong to this client; shared persisted state (keybind
+  layers, macros, pipelines, workspace state) belongs to the server.
+- Use "workspace" in user-facing copy, even where a server identifier still says "server".
+- Capabilities and trust boundaries are first-class UI. Local process execution, filesystem
+  access and outbound network access are explicit in the UI; capability prompts say exactly what
+  is granted; whether an action is built-in, user-defined, plugin-provided or AI-proposed stays
+  visible when it matters for safety. Security-sensitive flows fail visibly, never as a silent
+  no-op.
+- Message and thread lists follow the server's cursor pagination and ordering, never offsets.

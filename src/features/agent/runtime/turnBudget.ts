@@ -2,7 +2,7 @@ import { CommandSensitivity } from "../../../core/graphql/generated/schema-types
 import type { RegisteredTool } from "../tools/types";
 
 /**
- * Per-turn spending caps (M1 from Fury v2 §3.x).
+ * Per-turn spending caps.
  *
  * - `MAX_PARALLEL_TOOL_CALLS` bounds how many tool_use blocks we honor in a
  *   single model round. The LLM can request more; the excess is rejected

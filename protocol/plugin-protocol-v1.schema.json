@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dvorakj31/rim-ui/blob/master/protocol/plugin-protocol-v1.schema.json",
+  "$id": "https://github.com/rim-platform/rim-ui/blob/master/protocol/plugin-protocol-v1.schema.json",
   "title": "RIM plugin protocol v1",
   "description": "The frozen wire contract between the RIM desktop host and a plugin process. Each $defs entry ending in Request, Response or Notification is one complete frame, with an example. Shapes in this file never change within v1; new methods may be added, which is why both sides ignore unknown notifications and answer unknown requests with METHOD_NOT_FOUND. The host implementation is src-tauri/src/plugin_host/protocol.rs, and its conformance tests check every example here against the frames the host builds.",
   "x-framing": {

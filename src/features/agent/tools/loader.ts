@@ -420,7 +420,7 @@ export async function loadAgentTools(): Promise<MergeResult> {
   // Snapshot the intended hardcoded set, then clear the registry so we can
   // re-populate atomically. This makes loadAgentTools idempotent — calling
   // it twice never leaves a dropped builtin handler shadowing a backend
-  // winner under the same name (Hawkeye P2-B5 WARN).
+  // winner under the same name.
   //
   // Post-#55 the hardcoded set is exactly one tool — `get_current_context`,
   // the documented carve-out (see `getCurrentContext.ts` for rationale).

@@ -1,6 +1,5 @@
 /**
- * Derive a confirmation verb from a command id, per Tony's resolution to
- * Scott §10 #1 (`confirm-command-modal-spec.md`). The backend does NOT yet
+ * Derive a confirmation verb from a command id. The backend does NOT yet
  * carry a `confirmation_verb` field; we own the derivation rule until a
  * future Phase ships it.
  *

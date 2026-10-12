@@ -1,0 +1,53 @@
+# Documentation
+
+The product contracts this client implements (the command, keybind, context, plugin and
+capability models, and the specifications for key identity, device linking, encryption and
+server-to-server) live in `rim-server`'s `docs/`. The pages here say how the client implements
+them.
+
+## The app
+
+- `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
+  pane.
+- `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.
+- `search-ui.md`: the search overlay, server search and the desktop's local search.
+- `error-boundaries.md`: the three tiers of React error boundary and their reset keys.
+- `version-skew.md`: which operations an older server refuses, and `npm run skew:check`.
+- `updater.md`: in-app updates, the signing key and `latest.json`.
+- `eslint-prettier.md`: the lint and format gates.
+
+## Identity and encryption
+
+- `device-linking-desktop.md`: linking a computer with a code, on the desktop.
+- `web-linked-device.md`: the web app as a linked device.
+- `identity-key-backup.md`: the identity key's copy in the history archive.
+- `e2ee-desktop.md`: encrypted DMs and groups on the desktop.
+- `e2ee-web.md`: encrypted DMs and groups in the web app.
+- `rim-mls.md`: the `rim_mls` crate, the MLS engine both builds use.
+- `relay-client.md`: reaching DMs, groups and workspaces on other servers through the relay.
+
+## Storage on the device
+
+- `secret-vault.md`: the encrypted file that holds the desktop app's secrets.
+- `local-message-cache.md`: the encrypted message cache, local search and the archive's source.
+
+## Plugins
+
+- `web-plugins.md`: sandboxed web plugins on the desktop and the web.
+- `workspace-plugins.md`: workspace plugin registries and signed manifests.
+- `plugin-chat-methods.md`: the `rim.chat.*` methods a plugin reads and posts messages with.
+
+The plugin protocol itself is `../protocol/plugin-protocol-v1.schema.json`, and the SDK is
+`../sdk/plugin-sdk/README.md`.
+
+## Specifications
+
+Normative, versioned formats in `specs/`:
+
+- `specs/history-archive-v1.md`: the encrypted history archive format.
+- `specs/backup-endpoint-v1.md`: the protocol of a backup endpoint a user runs.
+- `specs/backup-endpoint-reference.py`: a complete backup endpoint in one Python file.
+
+## Records
+
+- `decisions/`: sealed decision records (`decisions/README.md` indexes them).

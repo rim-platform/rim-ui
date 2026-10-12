@@ -82,7 +82,7 @@ none: it only answers the host.
 The `ui.notify` capability gate is exercised by the panel's postMessage
 handler in `pluginBridge.ts` (front-end side only in Phase 1).
 
-## Manual smoke-test recipe (for Jakub)
+## Manual smoke-test recipe
 
 Run this after building and starting `npm run tauri dev`:
 

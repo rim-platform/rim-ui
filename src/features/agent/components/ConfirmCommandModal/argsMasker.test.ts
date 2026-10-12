@@ -146,7 +146,7 @@ describe("maskForDisplay", () => {
 // Parity guard — mirrors the canonical list in
 // `rim-server/rim_services/src/command/sensitivity.rs:159` (VENDOR_PREFIXES).
 // If this test fails, either the backend list changed without updating the
-// frontend or vice versa. Drift = "masked in UI, logged plain" (Widow N4).
+// frontend or vice versa. Drift = "masked in UI, logged plain".
 // Cross-repo gate: a PR that touches either list must touch the other.
 describe("VENDOR_PREFIXES parity with backend", () => {
   const EXPECTED_BACKEND_PREFIXES = [
