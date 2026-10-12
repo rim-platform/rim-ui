@@ -57,6 +57,20 @@ export function graphqlErrorExtension(err: unknown, key: string): unknown {
   return firstGraphQLError(err)?.extensions?.[key];
 }
 
+/**
+ * Whether the server refused the request's document itself, as one older than a field or
+ * mutation the request names does: GraphQL errors, none carrying a code.
+ */
+export function isSchemaRefusal(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const errors = (err as { response?: { errors?: unknown } }).response?.errors;
+  if (!Array.isArray(errors) || errors.length === 0) return false;
+  return errors.every((e: unknown) => {
+    const code = (e as GraphQLErrorLike | null)?.extensions?.code;
+    return code === undefined || code === null;
+  });
+}
+
 /** The request carried no valid session (an absent, expired or revoked cookie). */
 export const UNAUTHENTICATED = "UNAUTHENTICATED";
 

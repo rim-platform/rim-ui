@@ -7,12 +7,18 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { AccountDeletionSection } from "../../account-deletion/components/AccountDeletionSection";
 
 interface AccountSettingsProps {
   onNavigateToProfile: () => void;
+  /** Opens Settings → Workspace, where an owned workspace is handed over or deleted. */
+  onNavigateToWorkspace: () => void;
 }
 
-export function AccountSettings({ onNavigateToProfile }: AccountSettingsProps) {
+export function AccountSettings({
+  onNavigateToProfile,
+  onNavigateToWorkspace,
+}: AccountSettingsProps) {
   const { data: user, isPending: userLoading } = useCurrentUser();
   const logoutMutation = useLogoutMutation();
   const clearSession = useAuthStore((s) => s.clearSession);
@@ -124,6 +130,16 @@ export function AccountSettings({ onNavigateToProfile }: AccountSettingsProps) {
           {loggingOut ? "Signing out..." : "Sign out"}
         </button>
       </section>
+
+      {user && (
+        <>
+          <hr className="border-rim-line my-6" />
+          <AccountDeletionSection
+            username={user.username}
+            onOpenWorkspaceSettings={onNavigateToWorkspace}
+          />
+        </>
+      )}
 
       <Dialog open={showSignOutDialog} onClose={() => setShowSignOutDialog(false)} title="Sign out">
         <p className="text-sm text-rim-text-muted mb-4">Are you sure you want to sign out?</p>

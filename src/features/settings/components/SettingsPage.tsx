@@ -69,6 +69,11 @@ const KeyIdentitySettings = lazy(() =>
     default: m.KeyIdentitySettings,
   })),
 );
+const WorkspaceOwnerSettings = lazy(() =>
+  import("./WorkspaceOwnerSettings").then((m) => ({
+    default: m.WorkspaceOwnerSettings,
+  })),
+);
 const ContactsSettings = lazy(() =>
   import("../../relay/components/ContactsSettings").then((m) => ({
     default: m.ContactsSettings,
@@ -353,12 +358,16 @@ export function SettingsPage() {
                 <div className="space-y-10">
                   <ModerationSettings serverId={workspaceId} />
                   <WorkspacePluginSettings serverId={workspaceId} />
+                  <WorkspaceOwnerSettings serverId={workspaceId} />
                 </div>
               )}
               {shownTab === "security" && <KeyIdentitySettings />}
               {shownTab === "contacts" && <ContactsSettings />}
               {shownTab === "account" && (
-                <AccountSettings onNavigateToProfile={() => setActiveTab("profile")} />
+                <AccountSettings
+                  onNavigateToProfile={() => setActiveTab("profile")}
+                  onNavigateToWorkspace={() => setActiveTab("workspace")}
+                />
               )}
               {shownTab === "about" && <AboutRim />}
             </Suspense>

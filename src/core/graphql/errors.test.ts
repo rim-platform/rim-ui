@@ -11,6 +11,7 @@ import {
   RATE_LIMITED,
   TIMED_OUT,
   graphqlErrorExtension,
+  isSchemaRefusal,
   isSessionRefused,
   retryAfterSeconds,
   timedOutMessage,
@@ -155,5 +156,23 @@ describe("disabledFeatureOf", () => {
     expect(graphqlErrorMessage(featureDisabled, "fallback")).toBe(
       "Custom emoji is switched off on this server",
     );
+  });
+});
+
+describe("isSchemaRefusal", () => {
+  it("is true for errors without a code, as a server answers a field it does not have", () => {
+    const unknownField = {
+      response: {
+        errors: [{ message: 'Unknown field "deletionScheduledFor" on type "User".' }],
+      },
+    };
+    expect(isSchemaRefusal(unknownField)).toBe(true);
+  });
+
+  it("is false for coded errors, plain errors and answers without errors", () => {
+    expect(isSchemaRefusal(forbidden)).toBe(false);
+    expect(isSchemaRefusal(new Error("Failed to fetch"))).toBe(false);
+    expect(isSchemaRefusal({ response: { errors: [] } })).toBe(false);
+    expect(isSchemaRefusal(null)).toBe(false);
   });
 });
