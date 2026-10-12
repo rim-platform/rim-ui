@@ -2,7 +2,16 @@
   "name": "rim-ui",
   "private": true,
   "version": "0.1.0",
+  "description": "RIM desktop and web client: a programmable communication workspace",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/rim-platform/rim-ui",
+  "bugs": {
+    "url": "https://github.com/rim-platform/rim-ui/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rim-platform/rim-ui.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

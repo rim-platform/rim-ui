@@ -61,7 +61,7 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
  * `@tauri-apps/plugin-dialog` is not yet a declared dependency.  The Tauri webview
  * exposes the full filesystem path via `file.path` (Tauri-injected property) when
  * running in the desktop shell.  On web the picker is disabled.
- * Flag to vision: adding `@tauri-apps/plugin-dialog` would give a nicer native OS
+ * Adding `@tauri-apps/plugin-dialog` would give a nicer native OS
  * folder picker — current approach is functional but less polished.
  */
 export function PluginSettingsPage() {

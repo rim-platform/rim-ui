@@ -22,7 +22,7 @@
  * **Password policy note:**
  * The form shows a hardcoded "8 character minimum" hint. The backend enforces
  * its own rules and surfaces field errors on rejection.
- * // TODO: sync with iron-man when `passwordPolicy` is added to server config.
+ * // TODO: sync with the server when `passwordPolicy` is added to server config.
  *
  * Props:
  * - `variant` — token type discriminator; controls header copy and mutation input.
@@ -175,7 +175,7 @@ export function JoinForm({
   }
 
   /**
-   * Validates the displayName field client-side (Hawkeye SF2).
+   * Validates the displayName field client-side.
    * Only validates when non-empty after trim — the field is optional.
    * Returns `false` and sets an inline error when the trimmed value exceeds
    * 80 characters (matching the backend's 1–80 char constraint).

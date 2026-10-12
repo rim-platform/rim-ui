@@ -2,8 +2,6 @@
 
 - **Date:** 2026-04-29
 - **Status:** Accepted
-- **Author:** spider-man
-- **Reviewers:** vision, nick-fury
 
 ---
 
@@ -109,7 +107,7 @@ than the simple-mode header-comment format.
 
 ## Decision 5 — Plugins are desktop-only for v1 (Q3 lock)
 
-**Decision:** Jakub locked Q3 on 2026-04-29 to desktop-only for v1.
+**Decision:** Q3 was locked on 2026-04-29 to desktop-only for v1.
 
 **Implementation:** `PluginSettingsPage` checks `capabilities.pluginHost`
 from the `useRuntime()` hook (not `import.meta.env.TAURI`).  When false, a
@@ -124,7 +122,7 @@ from the `useRuntime()` hook (not `import.meta.env.TAURI`).  When false, a
 
 ---
 
-## Manual smoke-test recipe (for Jakub)
+## Manual smoke-test recipe
 
 **Prerequisites:**
 - Python 3.8+ on `$PATH`.
@@ -179,7 +177,7 @@ npm run tauri dev
 
 ---
 
-## Phase 2 smoke-test recipe — local-install + TOFU fingerprint (for Jakub)
+## Phase 2 smoke-test recipe — local-install + TOFU fingerprint
 
 **Prerequisites:**
 - All Phase 1 prerequisites met.
@@ -282,13 +280,13 @@ npm run tauri dev
 3. **`@tauri-apps/plugin-dialog` is not installed — folder picker uses `<input webkitdirectory>`.**
    The "Install from local folder" button uses a hidden `<input type="file" webkitdirectory>`
    because `@tauri-apps/plugin-dialog` was not a declared dependency and adding it
-   requires flagging to vision.  The webkitdirectory approach works in the Tauri
+   needs a separate decision.  The webkitdirectory approach works in the Tauri
    webview (full path is available via `file.path`) but is less polished than a native
-   OS dialog.  Flag to vision: add `tauri-plugin-dialog` + `@tauri-apps/plugin-dialog`
+   OS dialog.  Proposed: add `tauri-plugin-dialog` + `@tauri-apps/plugin-dialog`
    for a native folder picker experience.
 
 4. **`plugin_install_from_git` does not record a bundle fingerprint.**
    `plugin_install_from_git` predates Phase 2 TOFU.  It stores `bundle_fingerprint: ""`
    in the `PluginRecord` (via the default), so the fingerprint gate is a no-op for
    git-installed plugins until a follow-up patches `git_install.rs` to call
-   `compute_bundle_fingerprint` after cloning.  Flagged to vision for Phase 3.
+   `compute_bundle_fingerprint` after cloning.  Flagged for Phase 3.

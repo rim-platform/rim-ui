@@ -112,9 +112,9 @@ describe("sanitizeToolError", () => {
   });
 
   it("strips absolute unix paths", () => {
-    const out = sanitizeToolError(new Error("ENOENT at /home/kuba/secrets/db.sqlite"));
+    const out = sanitizeToolError(new Error("ENOENT at /home/alice/secrets/db.sqlite"));
     expect(out).toContain("[path]");
-    expect(out).not.toContain("/home/kuba");
+    expect(out).not.toContain("/home/alice");
   });
 
   it("strips Windows absolute paths", () => {

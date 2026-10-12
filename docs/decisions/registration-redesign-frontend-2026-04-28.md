@@ -3,12 +3,12 @@
 
 # Registration Redesign — Frontend Specification
 
-**Author:** Vision (Frontend / UX Architect)
+**Author:** Frontend and UX design
 **Date:** 2026-04-28
-**Status:** r2 — contract reconciled with iron-man's backend spec; product decisions locked by Jakub
+**Status:** r2 — contract reconciled with the backend spec; product decisions locked by the maintainer
 **Changelog (r2):** Renamed to `registrationMode` enum (was `openRegistration` boolean) and `signupWithInvite` mutation (was `acceptInvite`). Collapsed invite errors from 3 codes to 2 (`INVALID_TOKEN`, `EXPIRED_TOKEN`). Instance-invite admin UI dropped (CLI-only this phase). Empty-state copy and optional `displayName` locked.
 **Scope:** UI/UX + routing + state for the multi-tenant invite-only registration model. No backend implementation.
-**Drives:** spider-man's implementation pass.
+**Drives:** the frontend implementation pass.
 **Supersedes:** the legacy `AuthGate` "Login | Bootstrap" tabbed surface and the speculative TODO in `JoinPage.tsx::JoinWithRegistration`.
 
 ---
@@ -72,7 +72,7 @@ Today `AppShell` renders `<AuthGate>` inline when there is no session. After thi
 - A session-less user landing on `/messages/foo` should be sent to `/login?return_to=/messages/foo` and bounced back after auth. Today the inline `AuthGate` strips this context.
 - Web build compatibility: deep-link return-to is a feature web users will expect (desktop is more forgiving). Designing it in now is cheaper than retrofitting.
 
-`AuthGate` becomes a thin redirect shim (`useEffect → navigate("/login", { state: { returnTo } })`) and is eventually deleted once `AppShell`'s gate inlines the redirect. Spider-man should land both in the same PR — leaving a vestigial `AuthGate` is worse than deleting it.
+`AuthGate` becomes a thin redirect shim (`useEffect → navigate("/login", { state: { returnTo } })`) and is eventually deleted once `AppShell`'s gate inlines the redirect. Land both in the same PR — leaving a vestigial `AuthGate` is worse than deleting it.
 
 ### 2.3 `/welcome` — rejected
 
@@ -119,7 +119,7 @@ I considered a dedicated `/welcome` route for the empty-workspace state. Rejecte
 
 ### 3.3 Empty-state copy
 
-**Invite-only mode (default) — LOCKED by Jakub:**
+**Invite-only mode (default) — LOCKED by the maintainer:**
 
 > No account? Ask your workspace admin for an invite.
 
@@ -157,10 +157,10 @@ Replace the line above with a horizontal divider (`─── OR ───`) and 
    - If `joinedWorkspaceId` is present (workspace invite): set workspace, navigate to `/`.
    - If absent (instance invite): navigate to `/`. `AppShell` sees `myServers === []` and renders the empty-workspace state.
 
-### 4.2 Form fields (LOCKED by Jakub)
+### 4.2 Form fields (LOCKED by the maintainer)
 
 - **Email** — required. Backend enforces uniqueness; frontend shows inline error on backend rejection.
-- **Password** — required. Frontend shows minimum length hint (8 chars, pulled from `serverConfig`-style policy if backend exposes it; otherwise hardcoded with a `// TODO sync with iron-man` comment — flag in §8 contract assumptions).
+- **Password** — required. Frontend shows minimum length hint (8 chars, pulled from `serverConfig`-style policy if backend exposes it; otherwise hardcoded with a `// TODO sync with the backend` comment — flag in §8 contract assumptions).
 - **Display name** — optional, ships at signup. ~~Defaults to email-localpart server-side if blank.~~ **SUPERSEDED — see §13b:** server-side fallback is `username`, not email-localpart. Locked: the field is in the form, marked optional, no deferred-to-settings branch.
 
 ### 4.3 Already-authenticated case
@@ -169,7 +169,7 @@ The current `JoinPage` has a `JoinAuthenticated` branch — if the user is alrea
 
 ### 4.4 Error states
 
-Iron-man's contract returns two codes (collapsed from the three I originally assumed). `INVALID_TOKEN` covers missing, consumed, and revoked indistinguishably; `EXPIRED_TOKEN` is broken out because expiry is not exploitable info.
+The backend contract returns two codes (collapsed from the three I originally assumed). `INVALID_TOKEN` covers missing, consumed, and revoked indistinguishably; `EXPIRED_TOKEN` is broken out because expiry is not exploitable info.
 
 | Backend code | Frontend copy |
 |---|---|
@@ -273,22 +273,22 @@ Unchanged. `useAuthStore` remains the source of truth for `{ userId }`. `useSess
 | Operation | Name | Used by | Status |
 |---|---|---|---|
 | Query | `registrationMode` (top-level; FE wraps as `ServerConfig`) | `useServerConfig` | SHIPPED — see §8.2 item 1 supersedure |
-| Query | `previewInviteToken(token)` | `usePreviewInviteToken` | NEW — Fury pushing iron-man to add this in parallel |
-| Mutation | `signupWithInvite(input)` | `useSignupWithInviteMutation` | NEW — iron-man shipped this name (was `acceptInvite` in r1) |
+| Query | `previewInviteToken(token)` | `usePreviewInviteToken` | NEW — requested from the backend in parallel |
+| Mutation | `signupWithInvite(input)` | `useSignupWithInviteMutation` | NEW — the backend shipped this name (was `acceptInvite` in r1) |
 | Mutation | `login` | `useLoginMutation` | EXISTS, no change |
 | Mutation | `joinServerByInvite` | `useJoinServerMutation` | EXISTS, no change (still used by `JoinAuthenticated`) |
 | Query | `myServers` | `useMyServers` | EXISTS, no change (drives empty-state branch) |
 
-### 8.2 Contract (reconciled with iron-man's r1 backend spec)
+### 8.2 Contract (reconciled with the r1 backend spec)
 
-1. **`serverConfig` query shape.** **SUPERSEDED (Hawkeye SD2) — backend shipped a top-level `registrationMode` query, not a nested `serverConfig` wrapper.** Actual shape:
+1. **`serverConfig` query shape.** **SUPERSEDED (review finding SD2) — backend shipped a top-level `registrationMode` query, not a nested `serverConfig` wrapper.** Actual shape:
    ```graphql
    enum RegistrationMode { OPEN INVITE_ONLY }
    type Query { registrationMode: RegistrationMode! }
    ```
    The frontend `useServerConfig` hook (`src/features/auth/api/useServerConfig.ts`) issues `query RegistrationMode { registrationMode }` and wraps the scalar in a `ServerConfig` shape on the JS side: `{ registrationMode }`. Rationale: simpler GraphQL surface today (one scalar field, no wrapper type), while the FE keeps its own `ServerConfig` interface internally for forward-compat — when the server later grows additional config fields (password policy, branding, feature flags), they slot into the existing JS shape and the hook signature stays stable. Frontend imports `RegistrationMode` from `schema-types.ts` after `npm run codegen` — never hand-write the enum values.
 
-2. **`previewInviteToken` query shape.** Assumed (Fury is pushing iron-man to add this in parallel; not in iron-man's r1 backend spec yet):
+2. **`previewInviteToken` query shape.** Assumed (requested from the backend in parallel; not in the r1 backend spec yet):
    ```graphql
    type InvitePreview {
      tokenType: InviteTokenType!  # WORKSPACE | INSTANCE | BOOTSTRAP
@@ -298,7 +298,7 @@ Unchanged. `useAuthStore` remains the source of truth for `{ userId }`. `useSess
    enum InviteTokenType { WORKSPACE | INSTANCE | BOOTSTRAP }
    type Query { previewInviteToken(token: String!): InvitePreview! }
    ```
-   **Update:** the shipped backend split `BOOTSTRAP` out as its own enum variant (originally folded under `INSTANCE`). Frontend `JoinForm` shares one copy variant across `BOOTSTRAP` and `INSTANCE`; the split is observable only in `buildInput()` (token routing field) and in `JoinAuthenticated`'s error-vs-join branch. Errors come back as typed GraphQL errors with extensions: `{ code: "INVALID_TOKEN" | "EXPIRED_TOKEN" }`. If iron-man's eventual shape diverges further, Fury sends a follow-up; don't guess.
+   **Update:** the shipped backend split `BOOTSTRAP` out as its own enum variant (originally folded under `INSTANCE`). Frontend `JoinForm` shares one copy variant across `BOOTSTRAP` and `INSTANCE`; the split is observable only in `buildInput()` (token routing field) and in `JoinAuthenticated`'s error-vs-join branch. Errors come back as typed GraphQL errors with extensions: `{ code: "INVALID_TOKEN" | "EXPIRED_TOKEN" }`. If the backend's eventual shape diverges further, a follow-up says so; don't guess.
 
 3. **`signupWithInvite` mutation shape.** Reconciled:
    ```graphql
@@ -316,28 +316,28 @@ Unchanged. `useAuthStore` remains the source of truth for `{ userId }`. `useSess
    ```
    Sets the session cookie on success (same pattern as `login`).
 
-4. **Bootstrap mutation lifecycle.** `bootstrap` mutation stays in the SDL but is called only by the CLI now — never by the UI. `useBootstrapMutation` (the hook) is not deleted in this PR; flag for a follow-up after iron-man's diff lands and we're sure no other surface uses it.
+4. **Bootstrap mutation lifecycle.** `bootstrap` mutation stays in the SDL but is called only by the CLI now — never by the UI. `useBootstrapMutation` (the hook) is not deleted in this PR; flag for a follow-up after the backend diff lands and we're sure no other surface uses it.
 
-5. **Password policy.** Backend enforces password rules and surfaces them as field errors on `signupWithInvite`. Frontend shows a hardcoded "8 char minimum" hint with a `// TODO` until iron-man adds a `passwordPolicy` field to `serverConfig`.
+5. **Password policy.** Backend enforces password rules and surfaces them as field errors on `signupWithInvite`. Frontend shows a hardcoded "8 char minimum" hint with a `// TODO` until the backend adds a `passwordPolicy` field to `serverConfig`.
 
 6. **Instance-invite admin surface.** LOCKED OUT OF SCOPE this phase. No frontend wraps `createInstanceInvite` / `revokeInstanceInvite` / `listInstanceInvites`. Operators generate instance invites via the `rim_server` CLI and hand the resulting `/join/:token` URL out-of-band. Workspace-invite admin (already shipping via existing surfaces) is unaffected. See §12.
 
 ### 8.3 Codegen
 
-After iron-man ships the SDL diff, run:
+After the backend ships the SDL diff, run:
 
 ```
 curl -s http://localhost:8080/api/sdl > schema.graphql
 npm run codegen
 ```
 
-Frontend hooks must use generated input types (`SignupWithInviteInput`, `InviteTokenType`, `RegistrationMode`) per the CLAUDE.md rule. Spider-man must NOT hand-write the enum values for `tokenType` or `registrationMode`.
+Frontend hooks must use generated input types (`SignupWithInviteInput`, `InviteTokenType`, `RegistrationMode`) per the CLAUDE.md rule. Do NOT hand-write the enum values for `tokenType` or `registrationMode`.
 
 ---
 
 ## 9. Tests required
 
-Spider-man writes both tests AND docs for every new component and hook. No exceptions. The build is green or it goes back. Test count target: **16 new tests** across 8 new files.
+The implementation writes both tests AND docs for every new component and hook. No exceptions. The build is green or it goes back. Test count target: **16 new tests** across 8 new files.
 
 ### 9.1 Component tests
 
@@ -387,31 +387,31 @@ Spider-man writes both tests AND docs for every new component and hook. No excep
 
 ### 9.3 Existing tests to update
 
-- `AuthGate.test.tsx`: DELETE (component is gone). Spider-man should confirm with a grep that no other test imports `AuthGate`.
+- `AuthGate.test.tsx`: DELETE (component is gone). Confirm with a grep that no other test imports `AuthGate`.
 - Any test mocking `useBootstrapMutation` for UI scenarios: re-evaluate, likely delete the bootstrap-mode assertions.
 
 ### 9.4 Docs to write
 
 Each new component gets a JSDoc block at the top of the file describing its role, route, and prop contract. Each new hook gets a JSDoc block describing the GraphQL operation it wraps and the return shape. The `useSessionHydration` block is a good template (`src/features/auth/api/useSessionHydration.ts:19-26`).
 
-In addition: spider-man updates `docs/ui-shell.md` with a one-paragraph note on the new `/login` and `/join` routes if the doc describes routing.
+In addition: update `docs/ui-shell.md` with a one-paragraph note on the new `/login` and `/join` routes if the doc describes routing.
 
 ---
 
-## 10. Open questions for Jakub
+## 10. Open questions
 
-Both r1 questions are now LOCKED by Jakub:
+Both r1 questions are now LOCKED by the maintainer:
 
 1. **Empty-state copy on `/login` (invite-only).** LOCKED: *"No account? Ask your workspace admin for an invite."* Tested as exact string in §9.1.
 2. **Display name field on `/join`.** LOCKED: optional, ships at signup, server-side default to email-localpart.
 
-No outstanding questions blocking spider-man. `previewInviteToken` shipped with the BOOTSTRAP/INSTANCE/WORKSPACE three-variant enum; see §8.2 item 2.
+No outstanding questions blocking the implementation. `previewInviteToken` shipped with the BOOTSTRAP/INSTANCE/WORKSPACE three-variant enum; see §8.2 item 2.
 
 ---
 
 ## 11. Web-build compatibility
 
-This is a hard rule from Fury and a hard rule from CLAUDE.md. Audit:
+This is a hard rule of the project and of CLAUDE.md. Audit:
 
 | Concern | Status |
 |---|---|
@@ -424,39 +424,39 @@ This is a hard rule from Fury and a hard rule from CLAUDE.md. Audit:
 
 **No place in this spec requires a Tauri-only API.** The runtime capability layer correctly stays out of the auth flow.
 
-One genuinely hard area I want to flag for future reference (NOT this spec's scope): the `/join/:token` deep link in a web build needs to handle the case where the user clicks an invite email link in a browser tab while the Tauri desktop app is also open. That's a deep-link handoff problem (fairly common: Slack, Linear, etc.). Out of scope today; flag if Fury wants a separate spec.
+One genuinely hard area I want to flag for future reference (NOT this spec's scope): the `/join/:token` deep link in a web build needs to handle the case where the user clicks an invite email link in a browser tab while the Tauri desktop app is also open. That's a deep-link handoff problem (fairly common: Slack, Linear, etc.). Out of scope today; it gets a separate spec if wanted.
 
 ---
 
-## 12. Out of scope (per Fury)
+## 12. Out of scope
 
-- Backend implementation (iron-man).
+- Backend implementation.
 - Email verification UI (deferred).
 - SAML / OIDC flows.
 - Plugin-related onboarding.
 - Deep-link handoff between web and desktop builds (see §11).
 - Password policy UI beyond the inline minimum-length hint.
 - "Resend invite" admin surface (different feature).
-- **Instance-invite admin UI (this phase, locked by Jakub).** No GraphQL admin mutations wrapped, no list/create/revoke surfaces. Operators use `rim_server` CLI to mint instance invites and hand the `/join/:token` URL out-of-band. The `/join/:token` flow itself is in scope and handles instance tokens normally; only the admin-facing management UI is out. Workspace-invite admin is unaffected.
+- **Instance-invite admin UI (this phase, locked by the maintainer).** No GraphQL admin mutations wrapped, no list/create/revoke surfaces. Operators use `rim_server` CLI to mint instance invites and hand the `/join/:token` URL out-of-band. The `/join/:token` flow itself is in scope and handles instance tokens normally; only the admin-facing management UI is out. Workspace-invite admin is unaffected.
 
-If something in here grows mid-implementation, spider-man stops and pings me before drifting.
+If something in here grows mid-implementation, stop and raise it before drifting.
 
 ---
 
-## 13. Hard rules (restated for spider-man)
+## 13. Hard rules (restated for the implementation)
 
 1. Every new component AND hook gets tests AND docs. The build gate (`npm run build && npm test`) must be green before "done."
 2. No `git commit`, no `git push`, no `git merge`. Specs and code only.
-3. No hand-written GraphQL enums. Run `npm run codegen` after iron-man ships SDL.
+3. No hand-written GraphQL enums. Run `npm run codegen` after the backend ships SDL.
 4. No Tauri-only assumptions. Every component in this spec must work in a future web build with no rewrites.
-5. Hawkeye review is mandatory before reporting done — per CLAUDE.md.
-6. If anything in this spec is ambiguous, ping me. Do not guess.
+5. Code review is mandatory before reporting done, per CLAUDE.md.
+6. If anything in this spec is ambiguous, ask. Do not guess.
 
 ---
 
 ## 14. Component summary (handoff manifest)
 
-**NEW files spider-man creates:**
+**NEW files the implementation creates:**
 - `src/features/auth/components/LoginPage.tsx`
 - `src/features/auth/components/LoginForm.tsx`
 - `src/features/auth/components/HealthIndicator.tsx`
@@ -492,13 +492,12 @@ If something in here grows mid-implementation, spider-man stops and pings me bef
 ---
 
 *"A login screen is the front door. We've been hanging two doors on the same hinge for a year. Time to pick one."*
-— Vision
 
 ---
 
 ## Amendment 2026-04-28b — email + displayName at signup
 
-Backend (iron-man, specced not yet implemented) extends `SignupWithInviteInput` with a required `email` and an optional `displayName`. Scoped to `signupWithInvite` ONLY — `acceptInvite` is untouched (Jakub's call: that mutation runs against an authenticated principal, no UX change needed). This amendment updates §4 (`JoinForm`), §8 (contract), and §9 (test floor) to match.
+The backend (specced, not yet implemented) extends `SignupWithInviteInput` with a required `email` and an optional `displayName`. Scoped to `signupWithInvite` ONLY — `acceptInvite` is untouched (the maintainer's call: that mutation runs against an authenticated principal, no UX change needed). This amendment updates §4 (`JoinForm`), §8 (contract), and §9 (test floor) to match.
 
 ### A. Contract delta (supersedes §8.2 item 3)
 
@@ -513,7 +512,7 @@ input SignupWithInviteInput {
 
 Note the displayName fallback changed: it is now **username**, not email-localpart. Update §4.2 mental model accordingly. New typed GraphQL error code: `EMAIL_TAKEN`.
 
-**Display fallback (ruling 2026-04-28, Jakub):** when `displayName` is omitted or empty after trim, the user's display name is set server-side to their `username`. (This supersedes §4.2 r2 which referenced email-localpart fallback — that section was written before email was added to the signup input. Iron-man marking §4.2 r2 as superseded in the backend spec in parallel.)
+**Display fallback (ruling 2026-04-28):** when `displayName` is omitted or empty after trim, the user's display name is set server-side to their `username`. (This supersedes §4.2 r2 which referenced email-localpart fallback — that section was written before email was added to the signup input. The backend spec marks §4.2 r2 as superseded in parallel.)
 
 ### B. JoinForm field additions (§4.2)
 
@@ -541,11 +540,11 @@ Append to the error table — same map that holds `INVALID_TOKEN` / `EXPIRED_TOK
 |---|---|---|
 | `EMAIL_TAKEN` | "This email is already in use. Try logging in instead." | Inline field error on the email input in `JoinForm`, not a top-level toast. |
 
-Surfaces inline next to the email field (matching the pattern other field-level mutation errors will use). Not in `InvalidTokenState` — that component is for token-preview failures, not signup-submit failures. Spider-man: extend `JoinForm`'s error mapping, don't push this into `InvalidTokenState`.
+Surfaces inline next to the email field (matching the pattern other field-level mutation errors will use). Not in `InvalidTokenState` — that component is for token-preview failures, not signup-submit failures. Extend `JoinForm`'s error mapping, don't push this into `InvalidTokenState`.
 
 ### D. Test floor additions (§9.1)
 
-Four new tests on `JoinPage.test.tsx` / `JoinForm.test.tsx` (whichever level the form logic lands at — spider-man's call, but the assertions live with the form component):
+Four new tests on `JoinPage.test.tsx` / `JoinForm.test.tsx` (whichever level the form logic lands at is the implementer's call, but the assertions live with the form component):
 
 17. **Malformed email rejected client-side.** Type `"not-an-email"`, submit; mutation is NOT called; inline error renders next to the email field. Asserts the regex is wired in.
 18. **`EMAIL_TAKEN` from server surfaces inline.** Mock the mutation to reject with extension code `EMAIL_TAKEN`; assert the exact locked copy `"This email is already in use. Try logging in instead."` renders next to the email field.
@@ -558,11 +557,11 @@ Previous floor: **16 new component tests** + ~7 hook tests. New floor: **20 new 
 
 ### F. Hooks
 
-No new hooks. `useSignupWithInviteMutation` consumes the regenerated `SignupWithInviteInput` after `npm run codegen` runs against iron-man's updated SDL. Spider-man: do NOT hand-write `email` / `displayName` into a local input type — wait for codegen, import the generated `SignupWithInviteInput`, fail loudly if the field shape mismatches.
+No new hooks. `useSignupWithInviteMutation` consumes the regenerated `SignupWithInviteInput` after `npm run codegen` runs against the backend's updated SDL. Do NOT hand-write `email` / `displayName` into a local input type — wait for codegen, import the generated `SignupWithInviteInput`, fail loudly if the field shape mismatches.
 
 ### G. Out of scope for this amendment
 
-- `acceptInvite` mutation (untouched per Jakub).
+- `acceptInvite` mutation (untouched).
 - Email verification flow (still deferred per §12).
 - "Did you mean..." email typo suggestion UX.
 - Display-name uniqueness checks (none — usernames remain the unique handle).
@@ -578,5 +577,3 @@ No new hooks. `useSignupWithInviteMutation` consumes the regenerated `SignupWith
 | `EMAIL_TAKEN` error | `"This email is already in use. Try logging in instead."` |
 
 These are contract strings — tests assert against them verbatim, same convention as the §3.3 invite-only empty-state copy.
-
-— Vision

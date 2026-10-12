@@ -1,8 +1,8 @@
 # Local message cache
 
 The desktop app keeps the messages of the conversations you open in an encrypted database on
-this device (master plan Stage 2, PR 9). The timeline shows the cached copy first and falls back
-to it when the server cannot be reached. The web app has no cache and behaves as before.
+this device. The timeline shows the cached copy first and falls back to it when the server
+cannot be reached. The web app has no cache and behaves as before.
 
 ## Storage
 
@@ -10,19 +10,19 @@ to it when the server cannot be reached. The web app has no cache and behaves as
   builds a vendored OpenSSL). Files live in `<app data>/message-cache/`, one per account, named
   after a hash of (GraphQL endpoint, user id). The account is also written inside the file, so a
   database is never served to another account.
-- One random 256-bit key per installation, stored in the secret vault (`message-cache-key-v1`,
-  see `secret-vault.md`), whose own key is in the OS credential store (on Linux the desktop
-  keyring service, see below). All key handling is in `key.rs`; Stage 3 re-wraps this key under
-  the device key. If the key is lost, the unreadable files are deleted and the cache refills from
-  the server. If the vault cannot be opened, every cache call fails softly, the timeline reads
-  from the server, and the app says once per run that the local cache is off and why. The
-  failure is kept until the app restarts, so a locked keyring's unlock prompt, once dismissed, is
-  not shown again on every cache call.
+- One random 256-bit key per installation, stored in the secret vault (`message-cache-key-v1`, see
+  `secret-vault.md`), whose own key is in the OS credential store (on Linux the desktop keyring
+  service, see below). All key handling is in `key.rs`; key identity re-wraps this key under the
+  device key. If the key is lost, the unreadable files are deleted and the cache refills from the
+  server. If the vault cannot be opened, every cache call fails softly, the timeline reads from
+  the server, and the app says once per run that the local cache is off and why. The failure is
+  kept until the app restarts, so a locked keyring's unlock prompt, once dismissed, is not shown
+  again on every cache call.
 - On Linux the credential store is the Secret Service (GNOME Keyring, KWallet, KeePassXC) over
   D-Bus. With none running, or with the keyring locked, the cache stays off with an error that
   says so; nothing falls back to a store that would not survive a reboot.
 - Signing out keeps the account's database on the device (it is encrypted, and history on the
-  user's own device is the point of Stage 2); signing back in to the same account reuses it. A
+  user's own device is the point of the cache); signing back in to the same account reuses it. A
   sync still in flight when the signed-in account changes is discarded before it is applied.
 - `message.text` is its own column, and `message.seq` is an `INTEGER PRIMARY KEY` that upserts
   never change, so the local search index (below) points at rows that survive a `VACUUM`.
@@ -30,7 +30,7 @@ to it when the server cannot be reached. The web app has no cache and behaves as
 - The schema is versioned with `PRAGMA user_version` (`SCHEMA_VERSION` in `store.rs`); each
   version is one migration step that commits with its version number.
 
-## Local search (PR 10)
+## Local search
 
 Schema v2 adds `message_fts`, an external-content FTS5 index over `message.text`
 (`content='message'`, `content_rowid='seq'`, `unicode61` with diacritics folded). It is a table of
@@ -52,7 +52,7 @@ the same SQLCipher database, so it is encrypted like the rest; there is no sidec
 
 How the search overlay uses it is in `docs/search-ui.md`.
 
-## History archive (Stage 2)
+## History archive
 
 Schema v3 numbers every change to a message or to a conversation's sync state (`change_seq`,
 from `change_counter`, set by triggers), so the history archive exports exactly what changed

@@ -39,8 +39,8 @@ interface ModerationDialogProps {
 }
 
 /**
- * Confirmation for moderation actions in the dangerous-action style of
- * `docs/ux/confirm-command-modal-spec.md`: a severity-coloured left border and chip, Cancel
+ * Confirmation for moderation actions in the dangerous-action style of the command
+ * confirmation modal: a severity-coloured left border and chip, Cancel
  * focused first, Escape always cancels, Ctrl/Cmd+Enter confirms, and a failure shows the
  * server's message inline with Close / Retry instead of closing.
  */

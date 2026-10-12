@@ -1,28 +1,89 @@
-# RIM — Desktop Client
+# RIM client
 
-Tauri 2 desktop client for RIM — a programmable communication workspace.
+RIM is a programmable communication workspace. Chat is the medium; the product is what people
+build on top of it: a command palette over every action, keybinds for anything, macros that
+chain commands, pipelines that react to events, plugins that add panels and commands, and a
+bring-your-own-model AI agent that acts through the same commands behind a human confirmation.
+A person is a key pair rather than an account on one server, and DMs and private groups are
+end-to-end encrypted. The product vision and the server live in the separate `rim-server`
+repository.
 
-This is the desktop runtime that hosts the command palette, keybind engine, plugin
-system, and communication surfaces. Built with React 19 + TypeScript + Vite + Tailwind
-CSS v4 on top of Tauri 2 (Rust).
+This repository is the client, in two builds from one React 19 and TypeScript code base:
 
-## What This App Does
+- **The desktop app**, a Tauri 2 shell around the React app, for Linux, macOS and Windows. It
+  holds the identity key, runs local plugin processes, keeps an encrypted message cache and opens
+  offline.
+- **The web app**, the same React app as static files, which a RIM server deployment serves on
+  its own domain. It signs in with a password or as a linked device of a desktop app, and runs
+  web plugins. It has no identity key, no local plugin processes, no AI agent and no updater.
 
-- Hosts the keyboard-first communication UI (conversations, messages, threads).
-- Runs the command palette — fuzzy-searchable launcher for all app and plugin actions.
-- Manages user-defined keybinds with context-aware dispatch.
-- Executes chainable macro commands.
-- Hosts client-side plugins (panels, commands, context actions, local behaviors).
-- Connects to the RIM backend via GraphQL for persisted state.
+## What is in it
 
-## Quick Start
+- **Command palette.** A fuzzy launcher over every built-in, user, macro and plugin command,
+  with typed arguments, piping one command's output into the next with `|`, and confirmations
+  for dangerous commands.
+- **Keybinds and the Vim profile.** Context-aware keybinds with server-stored layers and
+  device-local overrides, three built-in profiles (Minimal, Vim, Mouse-friendly), and profile
+  export and import (`docs/keyboard.md`).
+- **Macros and pipelines.** Macros chain commands, and the macro builder can draft one with the
+  AI agent; pipelines are server-side rules that run commands when events happen. Channel lenses
+  filter a timeline, and workspace state is a key-value store commands can read and write.
+- **Plugins.** Local process plugins (`DesktopLocalProcess`) run on the desktop under the plugin
+  host, with capability prompts and a trust-on-first-use bundle fingerprint. Web plugins
+  (`WebSandboxed`) run in a sandboxed frame on the desktop and the web. A workspace can keep a
+  registry of plugins whose manifests their publisher signed (`docs/web-plugins.md`,
+  `docs/workspace-plugins.md`, `docs/plugin-chat-methods.md`).
+- **Key identity and device linking.** The desktop app enrolls an identity key, signs in with a
+  certified device key, recovers the account with a recovery kit, and links other computers or
+  a browser with a code (`docs/device-linking-desktop.md`, `docs/web-linked-device.md`,
+  `docs/identity-key-backup.md`).
+- **Encrypted DMs and groups.** MLS through OpenMLS, in Rust on the desktop and compiled to
+  WebAssembly in the web app; channels stay plaintext (`docs/e2ee-desktop.md`,
+  `docs/e2ee-web.md`, `docs/rim-mls.md`).
+- **Relays.** The app talks only to its own server and reaches DMs, groups and workspaces homed
+  elsewhere through it, with a request inbox for messages from strangers
+  (`docs/relay-client.md`).
+- **Local message cache and history archive.** The desktop app keeps opened conversations in an
+  encrypted SQLCipher database with local search, and can export history to an encrypted archive
+  in a folder, Google Drive, Dropbox, OneDrive, S3-compatible storage or a backup endpoint the
+  user runs (`docs/local-message-cache.md`, `docs/specs/history-archive-v1.md`).
+- **AI agent.** Desktop only. The user brings an Anthropic or OpenAI key, kept in the secret
+  vault; the agent calls the server's AI-callable commands and every dangerous call waits for
+  the user's confirmation. It works in encrypted conversations only where the user switches it
+  on.
+- **Updater.** The desktop app can update itself with Tauri's signed updater. It ships dormant
+  and is configured per release build (`docs/updater.md`).
+- **The rest of chat.** Threads, replies, reactions, pins, mentions, attachments, link previews,
+  custom emoji, full-text search, presence and typing, notification rules and an inbox,
+  moderation and the workspace audit log.
+
+## Quickstart
+
+Prerequisites: Node.js 22 and a RIM server. Start one from `rim-server` (its README has the
+quickstart); by default the client expects the GraphQL endpoint at `http://localhost:8080/api`.
 
 ```sh
-npm install
-npm run tauri dev
+npm ci
 ```
 
-Requires the RIM backend running at `localhost:8080`. See `../rim-server/README.md`.
+**Desktop.** Also needs Rust (stable) and, on Linux, the libraries below.
+
+```sh
+npm run tauri dev            # the desktop app with hot reload
+npm run tauri build          # installers for this platform
+```
+
+**Web.** The Vite dev server serves the web app on port 1420. A server reached from that origin
+needs `RIM_CORS_ALLOWED_ORIGIN=http://localhost:1420`.
+
+```sh
+npm run dev
+```
+
+`VITE_GRAPHQL_ENDPOINT` sets the server, at build time, for both builds (`.env.example`). For a
+deployment, `Dockerfile` builds the web app into an nginx image; `rim-server`'s
+`deploy/compose.yml` builds it from a checkout of this repository and serves it on the server's
+domain with the endpoint `/api`.
 
 ### Linux build dependencies
 
@@ -34,44 +95,45 @@ sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libdbus-1-dev pkg-config \
   libayatana-appindicator3-dev librsvg2-dev libxdo-dev
 ```
 
-On Fedora: `webkit2gtk4.1-devel openssl-devel dbus-devel pkgconf-pkg-config libappindicator-gtk3-devel librsvg2-devel libxdo-devel`.
+On Fedora:
+
+```sh
+sudo dnf install webkit2gtk4.1-devel openssl-devel dbus-devel pkgconf-pkg-config \
+  libappindicator-gtk3-devel librsvg2-devel libxdo-devel
+```
 
 At run time the app keeps its secrets (the message cache key, history archive keys, the offline
 session record, device keys, AI provider keys) in an encrypted file whose key is in the desktop
-keyring service, the Secret Service provided by GNOME Keyring, KWallet or KeePassXC (see
-`docs/secret-vault.md`). Without one running in the session, saving an AI key fails and the
+keyring service, the Secret Service provided by GNOME Keyring, KWallet or KeePassXC
+(`docs/secret-vault.md`). Without one running in the session, saving an AI key fails and the
 local message cache stays off, each with an error that says so, and the app cannot open
 offline.
 
-## Commands
+## Build configuration
 
-```sh
-npm install                  # Install dependencies
-npm run dev                  # Vite dev server only (port 1420)
-npm run build                # TypeScript check + Vite production build
-npm run codegen              # Generate GraphQL types (needs backend running)
-npm run tauri dev            # Full Tauri desktop dev
-npm run tauri build          # Production desktop build
-```
+A build needs no secrets. The optional services below are compiled in from environment
+variables; a build without them does not offer that service. No client id, secret or key is
+committed to this repository.
 
-## History archive in Google Drive, Dropbox or OneDrive
-
-Settings > History can keep the encrypted history archive (`docs/specs/history-archive-v1.md`)
-in the user's own Google Drive, Dropbox or OneDrive, besides a folder on disk. The app talks to those APIs
-directly; no RIM server is involved. Signing in needs an OAuth client of your own, given to the
-build as environment variables. A build without them simply does not offer that service. No
-client id or secret is committed to this repository.
-
-| Variable | Service | Needed |
+| Variable | Read by | Effect |
 |---|---|---|
-| `RIM_GOOGLE_CLIENT_ID` | Google Drive | yes, for Drive |
-| `RIM_GOOGLE_CLIENT_SECRET` | Google Drive | yes, for Drive (see below) |
-| `RIM_DROPBOX_APP_KEY` | Dropbox | yes, for Dropbox |
-| `RIM_DROPBOX_REDIRECT_PORT` | Dropbox | no; default `53241` |
-| `RIM_MICROSOFT_CLIENT_ID` | OneDrive | yes, for OneDrive |
+| `VITE_GRAPHQL_ENDPOINT` | Vite | The server's GraphQL endpoint (default `http://localhost:8080/api`) |
+| `RIM_GOOGLE_CLIENT_ID`, `RIM_GOOGLE_CLIENT_SECRET` | `src-tauri` | History archive in Google Drive |
+| `RIM_DROPBOX_APP_KEY` | `src-tauri` | History archive in Dropbox |
+| `RIM_DROPBOX_REDIRECT_PORT` | `src-tauri` | Dropbox sign-in port (default `53241`) |
+| `RIM_MICROSOFT_CLIENT_ID` | `src-tauri` | History archive in OneDrive |
+| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `tauri build` | Signs updater artifacts |
 
-They are read when the Rust side is compiled (`npm run tauri build`), and again at start-up,
-so a development run can set them in the shell before `npm run tauri dev`.
+The `RIM_*` variables are read when the Rust side is compiled (`npm run tauri build`) and again
+at start-up, so a development run can set them in the shell before `npm run tauri dev`. The
+updater also needs its public key and endpoints in `src-tauri/updater.json`, which is committed
+empty; `docs/updater.md` explains the key pair and `latest.json`.
+
+### History archive in Google Drive, Dropbox or OneDrive
+
+Settings > History can keep the encrypted history archive in the user's own Google Drive,
+Dropbox or OneDrive, besides a folder on disk. The app talks to those APIs directly; no RIM
+server is involved. Signing in needs an OAuth client of your own.
 
 **Google Drive**
 
@@ -103,14 +165,15 @@ without registering it.
 
 **OneDrive**
 
-1. In the [Microsoft Entra admin center](https://entra.microsoft.com/), App registrations, register
-   an app for **accounts in any organizational directory and personal Microsoft accounts**.
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com/), App registrations,
+   register an app for **accounts in any organizational directory and personal Microsoft
+   accounts**.
 2. Under Authentication, add the platform **Mobile and desktop applications** with the redirect
    URI `http://localhost/callback` (Microsoft ignores the port of a `localhost` redirect, so the
    app's one-shot port is accepted), and set **Allow public client flows** to yes.
-3. Under API permissions, add the Microsoft Graph delegated permissions `Files.ReadWrite.AppFolder`,
-   `User.Read` and `offline_access`. The archive lives in `Apps/<app name>/` in the user's
-   OneDrive, and the app sees nothing else.
+3. Under API permissions, add the Microsoft Graph delegated permissions
+   `Files.ReadWrite.AppFolder`, `User.Read` and `offline_access`. The archive lives in
+   `Apps/<app name>/` in the user's OneDrive, and the app sees nothing else.
 4. Set the **Application (client) ID** as `RIM_MICROSOFT_CLIENT_ID`. No client secret is used.
 
 Stopping backups on a device forgets its sign-in. RIM revokes a Dropbox sign-in too, but not a
@@ -123,39 +186,65 @@ An archive belongs to the OAuth client that wrote it: a build with a different G
 sees a different `appDataFolder`, a different Dropbox app a different `Apps/` folder, and a
 different Microsoft app a different OneDrive app folder.
 
-## History archive in S3-compatible storage
+### History archive in S3-compatible storage or on your own server
 
-Settings > History, "S3-compatible storage", keeps the archive in a bucket of Amazon S3,
-Cloudflare R2, Backblaze B2, MinIO, Garage or any other S3-compatible storage, under a prefix.
-It needs no build configuration and is always offered; the user types the endpoint, region,
-bucket, prefix and an access key. Give that key `s3:GetObject`, `s3:PutObject` and
-`s3:ListBucket` on the bucket or prefix (and `s3:DeleteObject` to let the setup check remove its
-probe), nothing more.
+These need no build configuration and are always offered.
 
-## History archive on your own server
+- **S3-compatible storage** keeps the archive in a bucket of Amazon S3, Cloudflare R2,
+  Backblaze B2, MinIO, Garage or any other S3-compatible storage, under a prefix. The user types
+  the endpoint, region, bucket, prefix and an access key. Give that key `s3:GetObject`,
+  `s3:PutObject` and `s3:ListBucket` on the bucket or prefix (and `s3:DeleteObject` to let the
+  setup check remove its probe), nothing more.
+- **Your own server** keeps the archive on a service the user runs: one URL answering `GET` and
+  `POST`, specified in `docs/specs/backup-endpoint-v1.md`. `docs/specs/backup-endpoint-reference.py`
+  is a complete service in one Python file (standard library only) that stores the files under
+  a directory:
 
-Settings > History, "Your own server", keeps the archive on a service the user runs: one URL
-answering `GET` and `POST`, specified in `docs/specs/backup-endpoint-v1.md`. It needs no build
-configuration and is always offered. `docs/specs/backup-endpoint-reference.py` is a complete
-service in one Python file (standard library only) that stores the files under a directory:
+  ```sh
+  python3 docs/specs/backup-endpoint-reference.py --dir ~/rim-backup --bearer <token>
+  ```
+
+## Development
 
 ```sh
-python3 docs/specs/backup-endpoint-reference.py --dir ~/rim-backup --bearer <token>
+npm run lint                 # ESLint, 0 errors required
+npm run format:check         # Prettier
+npm run build                # TypeScript check and Vite build
+npm test                     # Vitest
+npm run sdk:typecheck        # the plugin SDK and the TypeScript example plugins
+
+# The Tauri side, from src-tauri/
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
 ```
 
-## Architecture
+`npm run codegen` regenerates the GraphQL types from `schema.graphql`, which is exported from a
+running server. `npm run build:wasm` rebuilds the web app's MLS module after a change to the
+Rust MLS crates, and `npm run skew:check` lists the operations an older server would refuse
+(`docs/version-skew.md`). `CLAUDE.md` has the architecture and the conventions;
+`CONTRIBUTING.md` has the rules for a pull request.
 
-See `AGENTS.md` for detailed architecture, conventions, and agent guidance.
+## Plugins
 
-## Product Direction
+`sdk/plugin-sdk` is the TypeScript SDK for plugin protocol v1, whose frozen wire contract is
+`protocol/plugin-protocol-v1.schema.json`. `plugins/` holds examples:
 
-The backend repository (`../rim-server`) is the source of truth for product contracts:
+- `plugins/hello-world`: the reference local process plugin, in Python with no dependencies.
+- `plugins/template-ts`: a starting point for a TypeScript plugin.
+- `plugins/k8s-pods`: lists a Kubernetes namespace's pods and restarts one after confirmation.
+- `plugins/github-prs`: a web plugin listing the open pull requests of public GitHub
+  repositories.
 
-- `../rim-server/docs/vision.md` — product vision and positioning
-- `../rim-server/ROADMAP.md` — implementation phases
-- `../rim-server/docs/command_model.md` — command system contract
-- `../rim-server/docs/keybind_model.md` — keybind system contract
-- `../rim-server/docs/plugin_model.md` — plugin system contract
+## Documentation
+
+`docs/README.md` lists every document in `docs/`. The product contracts the client implements,
+such as the command, keybind, context, plugin and capability models and the specifications for
+key identity, device linking, encryption and server-to-server, are in `rim-server`'s `docs/`.
+
+## Security
+
+Report a vulnerability privately, as `SECURITY.md` describes, never in a public issue.
 
 ## License
 

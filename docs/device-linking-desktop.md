@@ -1,10 +1,10 @@
 # Device linking (desktop)
 
 A computer that holds the account's identity key shows a code; another computer pastes it and
-gets a device key of its own, certified by the identity key, and signs in with it (master plan
-Stage 3, S3-5). The contract, with the code format, the channel cryptography and the known-answer
-vectors, is `../rim-server/docs/specs/device-linking-v1.md`; this page says where the desktop
-app implements it.
+gets a device key of its own, certified by the identity key, and signs in with it. The contract,
+with the code format, the channel cryptography and the known-answer vectors, is
+`../rim-server/docs/specs/device-linking-v1.md`; this page says where the desktop app implements
+it.
 
 ## What lives where
 

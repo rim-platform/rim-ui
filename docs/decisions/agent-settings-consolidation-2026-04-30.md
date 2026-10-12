@@ -1,6 +1,6 @@
-> **Status:** Draft 2026-04-30 — design only, awaiting `nick-fury` review and `spider-man` implementation.
-> **Author:** Vision (Frontend / UX Architect)
-> **Drives:** `spider-man`'s implementation pass to merge `AgentSettingsPanel` and `AiProviderKeySettings` into one panel, fixing Jakub's findings #3 ("AI agent and AI keys, why? Just have one settings for setting up the agents.") and #4 ("AI agent cannot be saved").
+> **Status:** Draft 2026-04-30: design only, awaiting review and implementation.
+> **Author:** Frontend and UX design
+> **Drives:** The implementation pass that merges `AgentSettingsPanel` and `AiProviderKeySettings` into one panel, fixing the maintainer's findings #3 ("AI agent and AI keys, why? Just have one settings for setting up the agents.") and #4 ("AI agent cannot be saved").
 > **Scope:** Tactical merge of two duplicate settings panels and a deliberate cutover from Stronghold-backed key storage to OS-keyring. NOT a redesign of the agent runtime, NOT a Phase 6 MCP-bridge initiative, NOT touching macros / pipelines / Plugin AI consent panels.
 
 # Agent Settings Consolidation — Stronghold → OS Keyring + Single "AI" Tab
@@ -15,7 +15,7 @@ Three things change:
 2. **OS keyring is the single source of truth.** Stronghold-backed `keyStore.ts` is retired for API keys. The runtime (`agent_chat_completion`) already reads from the keyring; the new panel writes there too. One read path, one write path.
 3. **One-shot migration on first launch.** If a user has a key in Stronghold but not in the keyring, we copy it across silently and emit one info toast. The orphaned Stronghold entry is then deleted. This avoids a forced re-entry of API keys for existing desktop users.
 
-A latent bug fix falls out of #2: the chat path is currently broken end-to-end (see §6). The merge is necessary anyway, but it also unblocks Jakub's finding #4. Fixing that bug *without* the merge would still leave users staring at two confusing tabs that disagree.
+A latent bug fix falls out of #2: the chat path is currently broken end-to-end (see §6). The merge is necessary anyway, but it also unblocks finding #4. Fixing that bug *without* the merge would still leave users staring at two confusing tabs that disagree.
 
 ---
 
@@ -77,7 +77,7 @@ This reads as a half-finished refactor: the security goal (move custody to Rust)
 Justification:
 
 1. **The runtime already reads from keyring.** `agent_chat_completion` is keyring-only. Picking Stronghold would mean either (a) reverting the Rust runtime to read Stronghold or (b) maintaining a bridge where Rust sucks the key out of Stronghold via a new IPC at every chat call. Both are more work than just finishing the cutover that's already 80% done.
-2. **Security: keyring is strictly better.** Under Phase 5 / Option B, the raw key bytes never enter the JS heap. With Stronghold, the JS side has to call `loadApiKey()` and pass the string into an `invoke()` arg — even with `Zeroizing<String>` on the Rust side, the JS string is GC-eligible but not *zeroed* and is exposed for the duration of the heap allocation. Black Widow's §C2 (referenced in `agent_proxy.rs:2`) closed the webview-direct-to-provider path; keyring-only closes the JS-heap exposure window too.
+2. **Security: keyring is strictly better.** Under Phase 5 / Option B, the raw key bytes never enter the JS heap. With Stronghold, the JS side has to call `loadApiKey()` and pass the string into an `invoke()` arg — even with `Zeroizing<String>` on the Rust side, the JS string is GC-eligible but not *zeroed* and is exposed for the duration of the heap allocation. The security review's §C2 (referenced in `agent_proxy.rs:2`) closed the webview-direct-to-provider path; keyring-only closes the JS-heap exposure window too.
 3. **Simplicity: one store, one read path.** Today there are two stores, two write surfaces, and the read path (Rust) only ever reads one of them. The user experience consequence is finding #4. The architectural consequence is that nobody can answer "where is my key?" without tracing five files.
 4. **Validate-before-save is already a property of the keyring path.** The `AiProviderKeySettings` flow (`tauriValidateProvidedKey` → on `valid` → `tauriSetProviderKey`) is the security-correct contract. We must not regress to `AgentSettingsPanel`'s on-blur unvalidated save.
 
@@ -165,7 +165,7 @@ All `rim-*` tokens preserved from the current `AiProviderKeySettings` (`rim-line
 
 ### 4.5. Security warning banner placement
 
-The `rim-warm/30` data-leakage banner sits **directly under the subhead, above the provider selector**. This is the position used in both current panels; it must remain the first thing the user sees. Per Black Widow's "trust UX" rule, security copy is sticky and prominent, not buried.
+The `rim-warm/30` data-leakage banner sits **directly under the subhead, above the provider selector**. This is the position used in both current panels; it must remain the first thing the user sees. Per the "trust UX" rule, security copy is sticky and prominent, not buried.
 
 ### 4.6. Provider switching behaviour
 
@@ -233,7 +233,7 @@ The merge fixes finding #4, **but there are two compounding bugs underneath it t
 - `src-tauri/src/agent_proxy.rs:96–98` literally states: "any caller still sending the old `api_key` field gets a deserialization error instead of silently hitting `KeyNotConfigured` (Pete's #8 must remove `api_key` from the JS call site before this endpoint works)."
 - `src-tauri/src/agent_proxy.rs:749–755` has a regression test that locks this behaviour in: a payload with `api_key` MUST be rejected.
 
-So **today, every chat call from the agent overlay rejects at the IPC boundary** with a deserialization error. The user sees an error toast but doesn't know why; from their perspective, they entered the key, the panel said "API key is valid", and the agent still won't respond. This is finding #4's most likely concrete failure mode — except the failure isn't at *save*, it's at *dispatch*. The save (in `AgentSettingsPanel`) does succeed (writes to Stronghold), and the validation (the "Test" button) does succeed (because `validateCredentials` calls a different command, `agent_validate_credentials`, which has its own bug — see §6.3). Then the user types a prompt, hits enter, and the chat call rejects. To Jakub this presents as "AI agent cannot be saved" because the symptom is downstream of the save and feels indistinguishable.
+So **today, every chat call from the agent overlay rejects at the IPC boundary** with a deserialization error. The user sees an error toast but doesn't know why; from their perspective, they entered the key, the panel said "API key is valid", and the agent still won't respond. This is finding #4's most likely concrete failure mode — except the failure isn't at *save*, it's at *dispatch*. The save (in `AgentSettingsPanel`) does succeed (writes to Stronghold), and the validation (the "Test" button) does succeed (because `validateCredentials` calls a different command, `agent_validate_credentials`, which has its own bug — see §6.3). Then the user types a prompt, hits enter, and the chat call rejects. To the user this presents as "AI agent cannot be saved" because the symptom is downstream of the save and feels indistinguishable.
 
 ### 6.3. Bug B: `validateCredentials` and `fetchModels` JS providers pass `apiKey` but Rust commands don't accept it
 
@@ -243,7 +243,7 @@ So **today, every chat call from the agent overlay rejects at the IPC boundary**
 - `src-tauri/src/agent_proxy.rs:326–332` defines `agent_validate_credentials(provider: Provider)` — **only one parameter**, reads from keyring.
 - `src-tauri/src/agent_proxy.rs:386–416` defines `agent_list_models(provider: Provider)` — **only one parameter**, reads from keyring.
 
-Tauri's `invoke` is permissive about extra args (they're ignored when the command's parameter names don't match), so this isn't a hard reject — but it means: **the "Test" button in `AgentSettingsPanel` is validating against whatever is currently in the keyring, NOT the key the user just typed.** If the keyring has no key for that provider, the call fails with `KeyNotConfigured`; the panel would surface this as a network_error (because `anthropic.ts:256–259`'s catch block flips any invoke reject to `network_error`). If the keyring HAS a key (e.g. left over from a previous keyring-backed save), the panel reports "valid" against THAT key, which may not be the one the user just typed. This is genuinely confusing and is part of Jakub's overall "this doesn't work" experience.
+Tauri's `invoke` is permissive about extra args (they're ignored when the command's parameter names don't match), so this isn't a hard reject — but it means: **the "Test" button in `AgentSettingsPanel` is validating against whatever is currently in the keyring, NOT the key the user just typed.** If the keyring has no key for that provider, the call fails with `KeyNotConfigured`; the panel would surface this as a network_error (because `anthropic.ts:256–259`'s catch block flips any invoke reject to `network_error`). If the keyring HAS a key (e.g. left over from a previous keyring-backed save), the panel reports "valid" against THAT key, which may not be the one the user just typed. This is genuinely confusing and is part of the overall "this doesn't work" experience.
 
 `AiProviderKeySettings` does NOT have this bug — it uses `agent_validate_provided_key` (which DOES take `api_key`, see `agent_proxy.rs:343–349`) for the "Verify & Save" path. So the keyring panel's validation is correct; the Stronghold panel's is broken.
 
@@ -251,9 +251,9 @@ Tauri's `invoke` is permissive about extra args (they're ignored when the comman
 
 **The UI merge alone does not fix the underlying chat dispatch bug.** Bug A in §6.2 must be patched independently — in the JS provider files. The patch is small: remove the `api_key` field from `proxyRequest` in `anthropic.ts:133` and `openai.ts:184`, and remove the `loadKey()` call that fed it. The provider becomes a stateless wrapper around `agent_chat_completion`; the keyring is the source of truth and Rust handles the read inline.
 
-**The merge incidentally removes Bug B's failure surface.** After the merge, validation is always done via `agent_validate_provided_key` (which takes `api_key`) before the key is ever in the keyring; `agent_validate_credentials` (the bugged one) goes unused. We can leave the Rust command alone — it's still useful for a "re-test stored key" flow if we ever want one — but the JS provider's `validateCredentials` call site (anthropic.ts:252, openai.ts:295) becomes dead code and should be deleted by spider-man, along with the `validateCredentials` method on the provider interface itself.
+**The merge incidentally removes Bug B's failure surface.** After the merge, validation is always done via `agent_validate_provided_key` (which takes `api_key`) before the key is ever in the keyring; `agent_validate_credentials` (the bugged one) goes unused. We can leave the Rust command alone — it's still useful for a "re-test stored key" flow if we ever want one — but the JS provider's `validateCredentials` call site (anthropic.ts:252, openai.ts:295) becomes dead code and should be deleted, along with the `validateCredentials` method on the provider interface itself.
 
-**The merge fully fixes #4** if and only if Bug A is also patched. Spider-man's task list (§7) sequences this so the broken chat path is fixed first, before the panels are touched.
+**The merge fully fixes #4** if and only if Bug A is also patched. The task list (§7) sequences this so the broken chat path is fixed first, before the panels are touched.
 
 ### 6.5. Other suspect code paths I checked and ruled out
 
@@ -264,7 +264,7 @@ Tauri's `invoke` is permissive about extra args (they're ignored when the comman
 
 ---
 
-## 7. Spider-man's task list
+## 7. Task list
 
 Order matters. Steps 1–2 fix the broken chat dispatch (Bug A) BEFORE the UI is touched, so we don't ship a UI that "saves" but still doesn't dispatch. Steps 3–6 do the UI merge. Steps 7–8 wire migration. Step 9 cleans up.
 
@@ -316,15 +316,15 @@ Order matters. Steps 1–2 fix the broken chat dispatch (Bug A) BEFORE the UI is
    - Drop the `loadKey` parameter from `createAnthropicProvider` and `createOpenAiProvider`. Update the registry / call sites in `AgentOverlay.tsx`, `useMacroAgent.ts`, and any tests.
    - Remove the now-unused exports from `runtime/keyStore.ts` (`saveApiKey`, `withKey`, `ProviderKeyMissingError`) IF grep confirms no other consumer. `loadApiKey` and `deleteApiKey` are still needed by `migrateApiKeys.ts`. Once migration ships and bakes for one release, a follow-up issue can delete the entire `keyStore.ts` module.
 
-10. **Run `npm run build` and `npm test`.** Both must be green. Per Jakub's "test gate required before reporting done" memory rule: report format is "N/N tests pass + build green".
+10. **Run `npm run build` and `npm test`.** Both must be green. Report the result as "N/N tests pass + build green".
 
-11. **Hand back to Hawkeye for review.** Per the repo's mandatory code-review rule.
+11. **Hand back for review.** Per the repo's mandatory code-review rule.
 
 ---
 
 ## 8. Test plan
 
-Spider-man writes / updates these. Do not ship without them.
+The implementation writes or updates these. Do not ship without them.
 
 ### 8.1. New tests
 
@@ -371,9 +371,9 @@ Spider-man writes / updates these. Do not ship without them.
 
 - Existing tests for `saveApiKey`, `loadApiKey`, `deleteApiKey` stay green during the migration phase — they're still exercised by `migrateApiKeys`. Once `keyStore.ts` is fully retired in a follow-up release, delete the file.
 
-### 8.3. Manual smoke tests (Jakub or Fury)
+### 8.3. Manual smoke tests
 
-These cannot run from this shell (CSP smoke verification needs human, per memory). Static evidence will be provided by spider-man; live observation is human-driven:
+These need a person at the app (CSP smoke verification cannot be automated). The implementation provides static evidence; live observation is human-driven:
 
 - **Fresh install, no Stronghold key:** open Settings → AI Agent → enter key → Verify & Save → confirm "Key set" pill → close Settings → open agent overlay (Cmd+K or whatever shortcut is bound) → send a prompt → response streams.
 - **Existing user with Stronghold key:** before update, set a key via the legacy "AI Agent" panel. After update, open the app — toast "Migrated API keys to OS keyring" appears once → open Settings → AI Agent → confirm "Key set" pill is on without needing to re-enter → send a prompt → response streams.
@@ -383,11 +383,11 @@ These cannot run from this shell (CSP smoke verification needs human, per memory
 
 ---
 
-## 9. Open questions for `nick-fury`
+## 9. Open questions for review
 
 1. **Tab label: "AI Agent" or "AI"?** I picked "AI Agent" because it preserves the existing label and the `agent` route key. "AI" is shorter but ambiguous (Plugin AI is a separate tab). Confirm or override.
 2. **Macro-builder AI usage.** `useMacroAgent.ts` is currently part of the migration path (its presence-check changes from `loadApiKey` to `is_provider_key_configured`). Should the macro builder also stop falling back to its own provider-registry entry and instead piggyback on the AgentOverlay's? Out of scope here unless you say otherwise — but flagging it because the macro-AI path has the same Stronghold-vs-keyring split-brain.
-3. **Toast variant for migration.** Does `toast.info` exist, or only `success` / `warning` / `error`? If only the latter three, use `success`. Spider-man should confirm during step 7.
+3. **Toast variant for migration.** Does `toast.info` exist, or only `success` / `warning` / `error`? If only the latter three, use `success`. Confirm during step 7.
 4. **`migrate_provider_keys` Rust command.** Leave it dormant for now (option (b) in §5.2)? I recommend yes; deleting it is a separate cleanup.
 
 ---
@@ -402,4 +402,4 @@ These cannot run from this shell (CSP smoke verification needs human, per memory
 - Plugin API surface unaffected (this is a settings-panel merge, not a plugin API change). ✓
 - No keyboard shortcuts added or hardcoded. ✓
 - State stays at the lowest level that needs it (local component state for transient verify flow, zustand for cross-panel persisted settings). ✓
-- Every new function/component spider-man writes has tests AND docs specified in §7 and §8. ✓
+- Every new function/component the implementation adds has tests AND docs specified in §7 and §8. ✓

@@ -1,6 +1,5 @@
 /**
- * Cross-channel destination detector, per Tony's resolution to Scott §10 #2
- * (`confirm-command-modal-spec.md`).
+ * Cross-channel destination detector for the confirmation modal.
  *
  * Phase 4 uses a closed frontend list of "destination-bearing arg names".
  * If a command's args carry one of these AND its value differs from the

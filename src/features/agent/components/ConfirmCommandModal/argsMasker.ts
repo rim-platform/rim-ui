@@ -2,8 +2,7 @@
  * Frontend mirror of `rim_services::command::sensitivity::mask_for_display`
  * (see `rim-server/rim_services/src/command/sensitivity.rs:248`). MUST stay
  * in lockstep with the backend regex + vendor-prefix list — drift produces
- * the "value masked in UI but logged plain" failure mode that Widow N4
- * named.
+ * the "value masked in UI but logged plain" failure mode.
  *
  * The backend redaction policy:
  *  - Recursive walk over JSON.

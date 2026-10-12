@@ -1,6 +1,6 @@
-> **Status:** Draft 2026-05-01 — design only, awaiting `nick-fury` review and `spider-man` implementation.
-> **Author:** Vision (Frontend / UX Architect)
-> **Drives:** `spider-man`'s implementation pass to add a first-class result surface for single-command backend results in the palette, and to remove the toast preview shipped post finding 5.
+> **Status:** Draft 2026-05-01: design only, awaiting review and implementation.
+> **Author:** Frontend and UX design
+> **Drives:** The implementation pass that adds a first-class result surface for single-command backend results in the palette, and removes the toast preview shipped after finding 5.
 > **Scope:** Single-command backend results dispatched via the command palette. NOT pipeline results (`PipelineResultView` is untouched). NOT agent tool results (`agent/tools/registry.ts` is untouched). NOT plugin command results (separate bridge, also out of scope). NO backend changes — payload shapes are fixed.
 
 # Command Result Surface — single-command backend results
@@ -17,7 +17,7 @@ Three things change visibly:
 
 Virtualisation is `@tanstack/react-virtual`, already in the bundle (`package.json:20`). No new dependency.
 
-The deciding question — when Jakub runs `list_channels`, does he want to (i) glance and dismiss, (ii) navigate from a row, (iii) keep it open while doing something else — is answered (i) primarily, with (ii) on a row click that closes the palette. (iii) is not the palette's job; it would push us toward a docked panel and pollute the shell with a third long-lived surface that does not earn its keep. The palette is already a transient tool; a transient result panel matches it.
+The deciding question — when the user runs `list_channels`, do they want to (i) glance and dismiss, (ii) navigate from a row, (iii) keep it open while doing something else — is answered (i) primarily, with (ii) on a row click that closes the palette. (iii) is not the palette's job; it would push us toward a docked panel and pollute the shell with a third long-lived surface that does not earn its keep. The palette is already a transient tool; a transient result panel matches it.
 
 ---
 
@@ -26,7 +26,7 @@ The deciding question — when Jakub runs `list_channels`, does he want to (i) g
 | What | Where | Behaviour |
 |---|---|---|
 | Single-command success path | `CommandPalette.tsx:205-239` (`executeSelected`) | Closes palette before result arrives (line 214), then `toast.success(\`${command.title}${payloadPreview}\`)` where `payloadPreview` is `\` — \${String(result.payload).slice(0, 80)}\`` (lines 228-232). |
-| Object payloads | same | `String({...})` produces `[object Object]`. Jakub sees `"List Channels — [object Object]"`. |
+| Object payloads | same | `String({...})` produces `[object Object]`. The user sees `"List Channels — [object Object]"`. |
 | 100-row payloads | same | Even with `result.message` ("100 channels found") the toast can't show the data — toast is wrong frame. |
 | Pipe path | `CommandPalette.tsx:154-203` + `PipelineResultView.tsx` | Stays open, renders `PipelineResultView` in a footer slot (`CommandPalette.tsx:399-404`). Shows per-stage status, message, collapsible payload JSON. |
 | Errors | `CommandPalette.tsx:225-226, 234-235` | `toast.error(\`${command.title}: ${...}\`)`. Unchanged here. |
@@ -103,7 +103,7 @@ A command surfaces a result panel iff:
 - `result.payload` is non-null, AND
 - the command is not in the "single-object confirmation" set above (except `admin.invite_member`).
 
-Every other success path → small toast with `result.message`, palette closes. Every error → `toast.error`, palette closes. The decision is centralised in one helper in the new `commandResult/` module so spider-man cannot scatter it.
+Every other success path → small toast with `result.message`, palette closes. Every error → `toast.error`, palette closes. The decision is centralised in one helper in the new `commandResult/` module so it cannot be scattered.
 
 ---
 
@@ -113,7 +113,7 @@ Every other success path → small toast with `result.message`, palette closes. 
 
 Reasoning, against the alternatives:
 
-- **(b) Replace main surface.** Tempting for the 1000-row case, but it forces a context-loss transition — Jakub came in via a transient palette and now finds himself on a full-window page he has to navigate away from. The 1000-row argument also doesn't survive contact with the data: the four list commands cap at 100 (channels), 50 (search), 100 (recent), and "however many members the workspace has" (the only true unbounded case). For unbounded members, virtualisation in an inline panel handles 1000+ rows fine — `@tanstack/react-virtual` is exactly the tool. The membership of a workspace is also not infinite in any realistic deployment. Promoting a transient tool to a full main-surface page when 90% of uses are "glance and dismiss" is the wrong tradeoff.
+- **(b) Replace main surface.** Tempting for the 1000-row case, but it forces a context-loss transition: the user came in via a transient palette and now finds themselves on a full-window page they have to navigate away from. The 1000-row argument also doesn't survive contact with the data: the four list commands cap at 100 (channels), 50 (search), 100 (recent), and "however many members the workspace has" (the only true unbounded case). For unbounded members, virtualisation in an inline panel handles 1000+ rows fine — `@tanstack/react-virtual` is exactly the tool. The membership of a workspace is also not infinite in any realistic deployment. Promoting a transient tool to a full main-surface page when 90% of uses are "glance and dismiss" is the wrong tradeoff.
 - **(c) Side pane / docked tool panel.** Earns its keep when the user *needs* the result alongside other work. None of the listed commands have that pattern. This is also a heavier shell change and breaks the principle that a tool panel is for things you want to keep open across navigations (like the thread pane). Rejected.
 - **(d) Modal dialog.** Explicitly excluded by the brief, and rightly so.
 
@@ -181,7 +181,7 @@ Empty list: "No results." (using `rim-text-muted`). Loading state lives on the p
 
 Top of the panel, single text input. Filters rows by string-includes against the renderer-declared "filterable" fields (e.g. `MemberListRenderer.filterableFields = ["username", "role"]`). Cheap, big win on 100-row member lists. Re-uses microfuzz the same way the command list does (`CommandPalette.tsx:72-77`), so the matching feel is consistent.
 
-The filter input does not eat the keyboard. It only focuses when explicitly clicked or when the user presses `Tab` from the search input. While the result panel is mounted, ArrowUp/Down/Enter still navigate the command list above — this is important: the user typing more characters in the main palette input is filtering the *commands*, not the *result*. The result filter is opt-in. (Open question for Fury / Jakub at §11.)
+The filter input does not eat the keyboard. It only focuses when explicitly clicked or when the user presses `Tab` from the search input. While the result panel is mounted, ArrowUp/Down/Enter still navigate the command list above — this is important: the user typing more characters in the main palette input is filtering the *commands*, not the *result*. The result filter is opt-in. (Open question at §11.)
 
 ### 4.5. Virtualisation
 
@@ -238,7 +238,7 @@ The classification table lives in `src/features/commands/results/cutover.ts` as 
 
 ### 7.1. Where the result state lives
 
-**Local `useState` inside `CommandPalette`,** mirroring `pipelineResult` at `CommandPalette.tsx:50`. The result is meaningful only while the palette is open; once it closes, the result is gone. Lifting to a zustand store would create a question about persistence across palette opens that we don't want to answer (Jakub will not want yesterday's `list_channels` result re-appearing tomorrow).
+**Local `useState` inside `CommandPalette`,** mirroring `pipelineResult` at `CommandPalette.tsx:50`. The result is meaningful only while the palette is open; once it closes, the result is gone. Lifting to a zustand store would create a question about persistence across palette opens that we don't want to answer (the user will not want yesterday's `list_channels` result re-appearing tomorrow).
 
 ```tsx
 const [commandResult, setCommandResult] = useState<{
@@ -312,7 +312,7 @@ No new keybindings beyond Esc-to-dismiss. The shortcuts file is untouched (`useR
 
 ---
 
-## 8. Spider-man's task list
+## 8. Task list
 
 Order matters. Each step ships green tests + docs.
 
@@ -322,12 +322,12 @@ Order matters. Each step ships green tests + docs.
 4. **Build `ListResultRenderer`.** Takes a `rows: T[]`, a `RowComponent`, a `rowHeight`, a `filterableFields: (keyof T)[]`, and an optional `onRowClick(row)`. Wires `useVirtualizer`, the filter input, the empty-state. Tests: renders 1000 rows without freezing the test runner (assert <50 rendered DOM nodes); filter narrows rows; row click fires `onRowClick`; empty state renders. Doc: jsdoc + props table.
 5. **Build `KeyValueRenderer`.** Label/value table with per-row copy. Tests: renders given pairs; copy button writes to clipboard (mock `navigator.clipboard.writeText`); JSON value gets pretty-printed; null payload renders empty card. Doc: jsdoc.
 6. **Build per-command renderers.** `ChannelListRenderer`, `MemberListRenderer`, `MessageListRenderer`, `StateListRenderer`. Each is a thin wrapper over `ListResultRenderer` with its row component. Tests per renderer: renders sample payload; row click invokes the right action (mock `useShellStore`, `useCommandStore`); shows empty state; respects design tokens. Docs: jsdoc + a screenshot block in the README is nice-to-have (skip if costly).
-7. **Build `CommandResultPanel`.** Composes header + filter + the chosen renderer (via `findRenderer`). Header shows `command.title`, row count from the renderer (call back via a `getRowCount` prop, or pass `result.message` if it already says "100 channels found"; Vision prefers the latter — backend already counts). Tests: renders panel for a list result; renders panel for a key-value result; renders fallback for unknown shape; close button clears the result. Doc: jsdoc.
+7. **Build `CommandResultPanel`.** Composes header + filter + the chosen renderer (via `findRenderer`). Header shows `command.title`, row count from the renderer (call back via a `getRowCount` prop, or pass `result.message` if it already says "100 channels found"; the latter is preferred because the backend already counts). Tests: renders panel for a list result; renders panel for a key-value result; renders fallback for unknown shape; close button clears the result. Doc: jsdoc.
 8. **Wire into `CommandPalette.tsx`.** Add `commandResult` state, route via `classifyResult`, render `<CommandResultPanel>` in the existing footer slot below the command list (above the existing `pipelineResult` slot, since they are mutually exclusive). Adjust `handleKeyDown` for Esc / Backspace / Enter / Tab per §7.5. Tests: dispatching `chat.list_channels` mock → panel renders, palette stays open; dispatching `chat.mark_as_read` → no panel, palette closes, success toast fires; dispatching error → no panel, palette closes, error toast fires; Esc clears panel before closing palette.
 9. **Remove the toast preview.** Delete lines 228-232 of `CommandPalette.tsx` (the `payloadPreview` block). Replace with the dispatch table from §6. Tests already cover this; verify the snapshot does not contain `[object Object]` in any code path.
 10. **Run full gate.** `npm run build` AND `npm test`. Both green. Report format: "N/N tests pass + build green."
 
-Estimate: ~1 day for spider-man including review feedback. Steps 1-3 are foundational and small; steps 4-6 are the meat; 7-9 are wiring.
+Estimate: ~1 day including review feedback. Steps 1-3 are foundational and small; steps 4-6 are the meat; 7-9 are wiring.
 
 ---
 
@@ -390,11 +390,11 @@ Enumerated, not written. Where a test belongs to a step in §8, I've noted it; t
 
 ---
 
-## 11. Open questions for Fury / Jakub
+## 11. Open questions
 
-1. **Filter focus model.** §4.4 leaves the result-panel filter as opt-in (Tab to focus). Alternative: when `commandResult` is set, the main palette input *becomes* the filter input for the result, and pressing `|` or Esc returns it to command-list filtering. This is more elegant but needs a clear visual cue ("filter result" placeholder, an icon swap). Which does Jakub want? Default: opt-in; change is small if the answer is the second.
-2. **Row click for `chat.search_messages` and `chat.get_recent_messages`.** Both return `id` (or for `get_recent_messages`, currently *don't* — `chat.rs:309-318` only projects `{author, text, sentAt}`, no id). Without an id we can't navigate-to-message. Either we: (a) document that recent-messages rows are non-clickable, or (b) ask iron-man to add `id` to the recent-messages projection (one-line backend change, no PII concern). Vision recommends (b) but flags it as a backend ask out of scope; not blocking this design.
-3. **`admin.invite_member` token visibility.** The token is a credential. We render it in plaintext with a copy button. That matches what the existing dialog does, but is it worth a "click to reveal" gate? Defer to Jakub on UX vs friction. Default: plaintext + copy.
+1. **Filter focus model.** §4.4 leaves the result-panel filter as opt-in (Tab to focus). Alternative: when `commandResult` is set, the main palette input *becomes* the filter input for the result, and pressing `|` or Esc returns it to command-list filtering. This is more elegant but needs a clear visual cue ("filter result" placeholder, an icon swap). Which is wanted? Default: opt-in; change is small if the answer is the second.
+2. **Row click for `chat.search_messages` and `chat.get_recent_messages`.** Both return `id` (or for `get_recent_messages`, currently *don't* — `chat.rs:309-318` only projects `{author, text, sentAt}`, no id). Without an id we can't navigate-to-message. Either we: (a) document that recent-messages rows are non-clickable, or (b) ask the backend to add `id` to the recent-messages projection (one-line backend change, no PII concern). This design recommends (b) but flags it as a backend ask out of scope; not blocking this design.
+3. **`admin.invite_member` token visibility.** The token is a credential. We render it in plaintext with a copy button. That matches what the existing dialog does, but is it worth a "click to reveal" gate? Defer to the maintainer on UX vs friction. Default: plaintext + copy.
 4. **Scope of the renderer registry's first cut.** We ship six curated renderers (channels, members, messages, state-list, key-value, fallback). Anything missing from §2 that should ship in v1? `chat.create_channel` etc. fall into the toast path so they don't need renderers. Plugin commands explicitly out of scope.
 
 ---
@@ -404,5 +404,5 @@ Enumerated, not written. Where a test belongs to a step in §8, I've noted it; t
 - Surface lives **inline below the palette input**, palette stays open, Esc dismisses.
 - Renderer strategy: **registry first with auto-inference fallback**.
 - Virtualisation: **`@tanstack/react-virtual`** (already in `package.json:20`, no new dep).
-- ADR path: `/home/kuba/RustroverProjects/rim-ui/docs/decisions/command-result-surface-2026-05-01.md`.
-- Open questions for Fury / Jakub: see §11 (filter focus model; row-click for recent-messages without id; invite-token visibility; renderer set v1).
+- ADR path: `docs/decisions/command-result-surface-2026-05-01.md`.
+- Open questions: see §11 (filter focus model; row-click for recent-messages without id; invite-token visibility; renderer set v1).
