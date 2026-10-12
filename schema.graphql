@@ -2252,8 +2252,8 @@ type Query {
 	"""
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
-	The server's release version, API version, features, audit retention, instance notice
-	and terms URL. Readable without a session.
+	The server's release version, API version, features, audit retention, instance notice,
+	terms URL and limits. Readable without a session.
 	"""
 	serverInfo: ServerInfo!
 }
@@ -2698,6 +2698,68 @@ type ServerInfo {
 	has none. A signup sends it back as `acceptedTermsUrl`.
 	"""
 	termsUrl: String
+	"""
+	The instance-wide caps, so a client can show "5 of 5" before it tries.
+	"""
+	limits: ServerLimits!
+}
+
+"""
+The instance-wide caps; each is null when this instance sets none, but devices and DM
+requests always have one. Creating one more past a cap answers `VALIDATION` naming it.
+"""
+type ServerLimits {
+	"""
+	Workspaces one user owns.
+	"""
+	workspacesPerUser: Int
+	"""
+	Members of one workspace; the direct space has no cap.
+	"""
+	membersPerWorkspace: Int
+	"""
+	Channels of one workspace, public and private.
+	"""
+	channelsPerWorkspace: Int
+	"""
+	Devices on one account: the stricter of the instance cap and the relay quota.
+	"""
+	devicesPerUser: Int
+	"""
+	DM requests one user sends to strangers per day: the stricter of the instance cap and
+	the relay quota.
+	"""
+	dmRequestsPerDay: Int
+	"""
+	Macros of one workspace.
+	"""
+	macrosPerWorkspace: Int
+	"""
+	Pipelines of one workspace.
+	"""
+	pipelinesPerWorkspace: Int
+	"""
+	Plugins of one workspace's registry.
+	"""
+	pluginsPerWorkspace: Int
+	"""
+	Invites one user creates per day.
+	"""
+	invitesPerUserPerDay: Int
+	"""
+	Uses one invite may have.
+	"""
+	inviteMaxUses: Int
+	"""
+	Bytes of one message's text.
+	"""
+	messageBytes: Int
+	"""
+	Hours after its creation during which an account cannot create a workspace or send a
+	DM request to a stranger, and sends messages at a lower rate; `me.probationEndsAt` says
+	when the caller's ends.
+	"""
+	probationHours: Int
 }
 
 type ServerMember {
@@ -3046,6 +3108,11 @@ type User {
 	see this id, and the host maps a provisional `rimp0_` id to it once.
 	"""
 	principalId: String
+	"""
+	When the account leaves probation, while it is in it. Read on `me` only; null for
+	everyone else and once probation is over.
+	"""
+	probationEndsAt: DateTime
 }
 
 input UserCommandStepInput {
