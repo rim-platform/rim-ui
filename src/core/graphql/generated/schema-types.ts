@@ -17,6 +17,15 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown; }
 };
 
+/** A pending account deletion. */
+export type AccountDeletionSchedule = {
+  /**
+   * When the grace period ends and the account is purged. Until then the account works as
+   * before and `cancelAccountDeletion` keeps it.
+   */
+  scheduledFor: Scalars['DateTime']['output'];
+};
+
 export type AddWorkspacePluginInput = {
   /** Only for a bundle source; omitted, this server's copy, which must have been uploaded. */
   bundleUrl?: InputMaybe<Scalars['String']['input']>;
@@ -582,6 +591,18 @@ export type DeleteMessageInput = {
 
 export type DeleteUserCommandInput = {
   commandId: Scalars['String']['input'];
+};
+
+/** Delete a workspace and everything in it. */
+export type DeleteWorkspaceInput = {
+  /** The workspace's name, typed again to confirm. */
+  confirmName: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+export type DeleteWorkspacePayload = {
+  /** Whether the workspace was deleted. */
+  deleted: Scalars['Boolean']['output'];
 };
 
 export type DeleteWorkspaceStateInput = {
@@ -1255,6 +1276,15 @@ export type Mutation = {
   banMember: ServerBan;
   /** Ignore a principal's pending requests and refuse its invites and key package claims. */
   blockPrincipal: Scalars['Boolean']['output'];
+  /**
+   * Cancel the signed-in account's pending deletion during its grace period. Returns whether
+   * a deletion was pending.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   */
+  cancelAccountDeletion: Scalars['Boolean']['output'];
   /** Cancel a link from either device, with or without a session. */
   cancelDeviceLink: Scalars['Boolean']['output'];
   /** One key package per device waiting to be added; devices with none usable are left out. */
@@ -1285,6 +1315,20 @@ export type Mutation = {
    */
   deletePipeline: Scalars['Boolean']['output'];
   deleteUserCommand: Scalars['Boolean']['output'];
+  /**
+   * Delete the workspace for good: its members, channels and conversations with their
+   * messages and files, invites, pins, workspace state, keybinds, pipelines, macros, plugins
+   * and custom emoji, and the notification rules scoped to it. Every member gets
+   * `MemberLeft` for themself and their event stream for the workspace ends; after that the
+   * workspace answers `NOT_FOUND` or `FORBIDDEN` like one they never joined.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   * - `FORBIDDEN`: the caller is not the owner.
+   * - `VALIDATION`: the direct space, or `confirmName` is not the workspace's name.
+   */
+  deleteWorkspace: DeleteWorkspacePayload;
   deleteWorkspaceState: Scalars['Boolean']['output'];
   /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
@@ -1371,6 +1415,31 @@ export type Mutation = {
    * message (`CONFLICT` on a second report). Audited (`chat.report_message`).
    */
   reportMessage: MessageReport;
+  /**
+   * Schedule the signed-in account for deletion once the grace period ends (14 days unless
+   * the operator set `RIM_ACCOUNT_DELETION_GRACE_DAYS`, 0 to 30). Every other session of the
+   * account ends now; this one keeps working, and `cancelAccountDeletion` keeps the account
+   * until the grace period ends. `me.deletionScheduledFor` shows the pending deletion.
+   *
+   * Then the account is purged: its sessions, devices, keys, workspace memberships,
+   * plaintext messages, files and personal settings are removed, workspaces where it was the
+   * only member are deleted, and its username becomes free. The user row stays as a
+   * tombstone (`deleted-<id prefix>`, "Deleted account", no email, password or key) that
+   * cannot sign in and shows in no member list or search; it stays the author of the
+   * account's encrypted messages, which are kept so the conversations' history does not
+   * shift, and of a deleted message others replied to. The tombstone keeps the account's
+   * key identity id, so the same key identity cannot sign up on this server again.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   * - `FORBIDDEN`: a person from another server, who deletes their account at their relay.
+   * - `VALIDATION`: `confirmUsername` is not the account's username, or the account owns a
+   * workspace that has other members: hand it over (`transferWorkspaceOwnership`) or delete
+   * it (`deleteWorkspace`) first.
+   * - `CONFLICT`: a deletion is already pending.
+   */
+  requestAccountDeletion: AccountDeletionSchedule;
   /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
   /**
@@ -1466,6 +1535,19 @@ export type Mutation = {
    */
   togglePipeline: PipelineGql;
   toggleReaction: Array<ReactionGroup>;
+  /**
+   * Make another member the workspace's owner. The caller becomes a moderator; a workspace
+   * has exactly one owner, so this is the only way the owner role moves (`setMemberRole`
+   * never grants it). Both role changes are announced with `MemberRoleChanged`.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   * - `FORBIDDEN`: the caller is not the owner.
+   * - `NOT_FOUND`: `userId` is not a member.
+   * - `VALIDATION`: the direct space, a guest as the new owner, or the caller themself.
+   */
+  transferWorkspaceOwnership: Server;
   /** Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited. */
   unbanMember: Scalars['Boolean']['output'];
   unblockPrincipal: Scalars['Boolean']['output'];
@@ -1691,6 +1773,11 @@ export type MutationDeleteUserCommandArgs = {
 };
 
 
+export type MutationDeleteWorkspaceArgs = {
+  input: DeleteWorkspaceInput;
+};
+
+
 export type MutationDeleteWorkspaceStateArgs = {
   input: DeleteWorkspaceStateInput;
 };
@@ -1866,6 +1953,11 @@ export type MutationReportMessageArgs = {
 };
 
 
+export type MutationRequestAccountDeletionArgs = {
+  input: RequestAccountDeletionInput;
+};
+
+
 export type MutationRequestMlsReaddArgs = {
   input: RequestMlsReaddInput;
 };
@@ -1998,6 +2090,11 @@ export type MutationTogglePipelineArgs = {
 
 export type MutationToggleReactionArgs = {
   input: ToggleReactionInput;
+};
+
+
+export type MutationTransferWorkspaceOwnershipArgs = {
+  input: TransferWorkspaceOwnershipInput;
 };
 
 
@@ -2956,6 +3053,12 @@ export enum ReportOutcome {
   RESOLVED = 'RESOLVED'
 }
 
+/** Ask for the signed-in account to be deleted. */
+export type RequestAccountDeletionInput = {
+  /** The account's username, typed again to confirm. */
+  confirmUsername: Scalars['String']['input'];
+};
+
 export type RequestMlsReaddInput = {
   conversationId: Scalars['ID']['input'];
   /** The `mls-readd` statement, signed by the session's device key. */
@@ -3386,6 +3489,13 @@ export type ToggleReactionInput = {
   serverId: Scalars['ID']['input'];
 };
 
+/** Hand a workspace's ownership to another member. */
+export type TransferWorkspaceOwnershipInput = {
+  serverId: Scalars['ID']['input'];
+  /** The member, not a guest, who becomes the owner. */
+  userId: Scalars['ID']['input'];
+};
+
 export enum TypedVerbGql {
   CLOSE = 'CLOSE',
   CONFIGURE = 'CONFIGURE',
@@ -3512,6 +3622,13 @@ export type UploadTicket = {
 export type User = {
   avatarUrl?: Maybe<Scalars['String']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
+  /**
+   * When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);
+   * null while none is pending, and always null except on `me`. Once it runs, the account is
+   * purged and only a tombstone named "Deleted account" stays as the author of its encrypted
+   * messages.
+   */
+  deletionScheduledFor?: Maybe<Scalars['DateTime']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   /**

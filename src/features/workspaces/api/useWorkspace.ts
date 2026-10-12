@@ -15,7 +15,7 @@ const SERVER_QUERY = gql`
   }
 `;
 
-interface ServerDetail {
+export interface ServerDetail {
   id: string;
   name: string;
   viewerRole: ServerMemberRoleGql;

@@ -33,6 +33,16 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- Deleting your account, from Settings → Account, on a server that offers it: the page says
+  what is deleted, that your key identity cannot sign up on this server again and that owned
+  workspaces with other members are handed over or deleted first, asks for your username, and
+  shows the date the server schedules the deletion for, after its grace period. Until then a
+  banner across the app says when, with Cancel. A server's refusal is shown in place, with a
+  link to Workspace settings when it is about a workspace you own; a person whose account
+  another server holds is sent to their relay.
+- In Settings → Workspace, the owner can hand the workspace to another member who is not a
+  guest and stay on as a moderator, or delete the workspace with its name typed back, which
+  takes it off the rail. Older servers show none of this.
 - Release images: every release tag publishes the web client as
   `ghcr.io/rim-platform/rim-web:<version>` (also `<major>.<minor>`, `sha-<short sha>` and
   `latest`), built with the GraphQL endpoint `/api` so it serves any domain, signed with cosign

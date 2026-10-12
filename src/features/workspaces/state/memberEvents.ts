@@ -55,17 +55,25 @@ export function handleMemberRoleChanged(
   qc.invalidateQueries({ queryKey: ["commands"] });
 }
 
-/**
- * A member was kicked or banned. For anyone else, refetch the member directory. For the
- * viewer, leave the workspace: drop it from `myServers`, clear the selection (the workspace
- * selector then opens the next workspace, or the empty state) and say why with a toast.
- */
-export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: string): void {
-  if (userId !== currentUserId(qc)) {
-    qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
-    return;
-  }
+/** Workspaces this client is deleting: the `MemberLeft` the deletion sends needs no toast. */
+const departing = new Set<string>();
 
+/** Marks a workspace this client is about to delete. */
+export function expectDeparture(workspaceId: string): void {
+  departing.add(workspaceId);
+}
+
+/** Unmarks a workspace whose deletion failed. */
+export function forgetDeparture(workspaceId: string): void {
+  departing.delete(workspaceId);
+}
+
+/**
+ * Drops a workspace the viewer is no longer in: removes it from `myServers` and, when it is
+ * open, clears the selection (the workspace selector then opens the next workspace, or the
+ * empty state). Safe to call again for the same workspace.
+ */
+export function leaveWorkspace(qc: QueryClient, workspaceId: string): void {
   qc.setQueryData<CachedServer[]>(queryKeys.myServers(), (old) =>
     old?.filter((server) => server.id !== workspaceId),
   );
@@ -77,5 +85,20 @@ export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: s
     useWorkspaceStore.getState().clearWorkspaceId();
   }
   qc.invalidateQueries({ queryKey: queryKeys.myServers() });
+}
+
+/**
+ * A member was kicked or banned, or the workspace was deleted. For anyone else, refetch the
+ * member directory. For the viewer, leave the workspace and say why with a toast, unless this
+ * client is deleting it.
+ */
+export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: string): void {
+  if (userId !== currentUserId(qc)) {
+    qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+    return;
+  }
+
+  leaveWorkspace(qc, workspaceId);
+  if (departing.delete(workspaceId)) return;
   toast.info("You were removed from this workspace");
 }

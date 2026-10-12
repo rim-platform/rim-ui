@@ -88,6 +88,9 @@ vi.mock("../../plugins/registry/components/WorkspacePluginSettings", () => ({
 vi.mock("./ModerationSettings", () => ({
   ModerationSettings: () => <div data-testid="moderation-settings">Moderation</div>,
 }));
+vi.mock("./WorkspaceOwnerSettings", () => ({
+  WorkspaceOwnerSettings: () => null,
+}));
 
 vi.mock("../../updater/components/AboutUpdates", () => ({
   AboutVersion: () => <p>Version 9.9.9</p>,

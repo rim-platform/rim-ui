@@ -90,6 +90,9 @@ export const queryKeys = {
   serverInfo: ["serverInfo"] as const,
   // When the signed-in account's probation ends; under `me` so a refresh of the account covers it.
   probation: (userId?: string) => ["me", "probation", userId] as const,
+  // Whether the server offers account deletion, and when the signed-in account's pending deletion
+  // runs. Its own root, so a refresh of `me` does not ask a server that refused it again.
+  accountDeletion: (userId?: string) => ["accountDeletion", userId] as const,
   previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
   workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
   // Track 1.3 notification rules: the viewer's settings, inbox (keyed by the unread-only filter;
