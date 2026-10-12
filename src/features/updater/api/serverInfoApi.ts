@@ -16,6 +16,22 @@ const SERVER_INFO_QUERY = gql`
         state
         reason
       }
+      auditRetentionDays
+    }
+  }
+`;
+
+/** The same without `auditRetentionDays`, for a server older than audit retention. */
+const SERVER_FEATURES_QUERY = gql`
+  query ServerFeatures {
+    serverInfo {
+      version
+      apiVersion
+      features {
+        key
+        state
+        reason
+      }
     }
   }
 `;
@@ -41,17 +57,20 @@ function refusedByServer(err: unknown): boolean {
 }
 
 /**
- * The connected server's release version, API version and features; needs no session. A
- * server that refuses `features` predates them and runs every feature, so it reads as listing
- * none.
+ * The connected server's release version, API version, features and audit retention; needs no
+ * session. Each query a server refuses falls back to the next older one. A server older than
+ * audit retention leaves `auditRetentionDays` undefined (unknown, unlike `null`, which keeps rows
+ * forever); one older than `features` runs every feature, so it reads as listing none.
  */
 export async function fetchServerInfo(): Promise<ServerInfo> {
-  try {
-    const res = await graphqlClient.request<ServerInfoResponse>(SERVER_INFO_QUERY);
-    return { ...res.serverInfo, features: res.serverInfo.features ?? [] };
-  } catch (err) {
-    if (!refusedByServer(err)) throw err;
-    const res = await graphqlClient.request<ServerInfoResponse>(SERVER_VERSION_QUERY);
-    return { ...res.serverInfo, features: [] };
+  for (const query of [SERVER_INFO_QUERY, SERVER_FEATURES_QUERY]) {
+    try {
+      const res = await graphqlClient.request<ServerInfoResponse>(query);
+      return { ...res.serverInfo, features: res.serverInfo.features ?? [] };
+    } catch (err) {
+      if (!refusedByServer(err)) throw err;
+    }
   }
+  const res = await graphqlClient.request<ServerInfoResponse>(SERVER_VERSION_QUERY);
+  return { ...res.serverInfo, features: [] };
 }

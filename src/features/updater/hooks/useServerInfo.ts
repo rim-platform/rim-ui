@@ -10,7 +10,10 @@ export const NEWER_SERVER_API_MESSAGE =
 
 /** What the client knows about the server it talks to. */
 export interface ServerInfoView {
-  /** The server's versions and features; `undefined` while loading or when it could not be read. */
+  /**
+   * The server's versions, features and audit retention; `undefined` while loading or when it
+   * could not be read.
+   */
   info: ServerInfo | undefined;
   /** The query failed: the server is down, or too old to answer it. */
   unreachable: boolean;

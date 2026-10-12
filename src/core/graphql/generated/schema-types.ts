@@ -2479,7 +2479,10 @@ export type Query = {
   server: Server;
   /** Active bans of the workspace, newest first. Owner/Moderator only. */
   serverBans: Array<ServerBan>;
-  /** The server's release version, API version and features. Readable without a session. */
+  /**
+   * The server's release version, API version, features and audit retention. Readable
+   * without a session.
+   */
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
   /**
@@ -3117,6 +3120,11 @@ export enum ServerFeatureState {
 export type ServerInfo = {
   /** The major version of this GraphQL API. */
   apiVersion: Scalars['Int']['output'];
+  /**
+   * Days a command audit row is kept before it is exported and deleted; null keeps rows
+   * forever.
+   */
+  auditRetentionDays?: Maybe<Scalars['Int']['output']>;
   /** Every optional feature with its state on this instance. */
   features: Array<ServerFeatureInfo>;
   /** The server's release version, e.g. `0.1.0`. */

@@ -1,28 +1,38 @@
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
+import { serverInfoQueryClient } from "../../../test/serverInfo";
+import { RuntimeProvider } from "../../../core/runtime/RuntimeProvider";
+import { queryKeys } from "../../../core/query/keys";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import {
   AuditOutcomeGql,
   ServerMemberRoleGql,
   TypedVerbGql,
+  type ServerInfo,
 } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
-// `listAuditLog` requests; the workspace query is answered by `serverMock`.
+// `listAuditLog` requests; the workspace query is answered by `serverMock`, and `serverInfo`
+// is left loading.
 const requestMock = vi.fn();
 const serverMock = vi.fn();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
-    request: (document: unknown, variables: unknown) =>
-      String(document).includes("listAuditLog")
+    request: (document: unknown, variables: unknown) => {
+      const text = String(document);
+      if (text.includes("serverInfo")) return new Promise(() => {});
+      return text.includes("listAuditLog")
         ? requestMock(document, variables)
-        : serverMock(document, variables),
+        : serverMock(document, variables);
+    },
   },
 }));
 
@@ -82,6 +92,23 @@ function makePage(
       },
     },
   };
+}
+
+/** Renders the page for a server that already reported `retention` in its server info. */
+function renderWithRetention(retention: Pick<ServerInfo, "auditRetentionDays">) {
+  const client = serverInfoQueryClient();
+  client.setQueryData<ServerInfo>(
+    queryKeys.serverInfo,
+    (info) => info && { ...info, ...retention },
+  );
+  function Providers({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>
+        <RuntimeProvider>{children}</RuntimeProvider>
+      </QueryClientProvider>
+    );
+  }
+  return render(<AuditLogPage />, { wrapper: Providers });
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -361,5 +388,24 @@ describe("AuditLogPage", () => {
     expect(requestMock.mock.calls[1][1]).toMatchObject({
       pagination: expect.objectContaining({ after: "cursor-abc" }),
     });
+  });
+
+  it.each([
+    [90, "Entries are kept for 90 days"],
+    [1, "Entries are kept for 1 day"],
+    [null, "Entries are kept forever"],
+  ])("says how long the server keeps entries when it reports %s days", (days, text) => {
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    renderWithRetention({ auditRetentionDays: days });
+
+    expect(screen.getByTestId("audit-retention-note")).toHaveTextContent(text);
+  });
+
+  it("says nothing about retention for a server that does not report it", () => {
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    renderWithRetention({});
+
+    expect(screen.getByRole("heading", { name: "Audit Log" })).toBeInTheDocument();
+    expect(screen.queryByTestId("audit-retention-note")).not.toBeInTheDocument();
   });
 });

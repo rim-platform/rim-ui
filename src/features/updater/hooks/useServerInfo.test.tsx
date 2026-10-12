@@ -69,11 +69,51 @@ describe("useServerInfo", () => {
     expect(result.current.info?.features).toEqual(features);
   });
 
-  it("reads a server older than features as listing none", async () => {
+  it.each([90, null])("reads the server's audit retention of %s days", async (days) => {
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: {
+          version: "0.5.0",
+          apiVersion: CLIENT_API_VERSION,
+          features: [],
+          auditRetentionDays: days,
+        },
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info?.auditRetentionDays).toBe(days);
+  });
+
+  it("reads a server older than audit retention with its features and no retention", async () => {
+    const features = [{ key: "attachments", state: "DISABLED", reason: null }];
     server.use(
       http.post("*/api", async ({ request }) => {
         const body = (await request.json()) as { operationName?: string };
         if (body.operationName === "ServerInfo") {
+          return HttpResponse.json({
+            errors: [{ message: 'Unknown field "auditRetentionDays" on type "ServerInfo"' }],
+          });
+        }
+        return HttpResponse.json({
+          data: { serverInfo: { version: "0.4.0", apiVersion: 1, features } },
+        });
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info?.features).toEqual(features);
+    expect(result.current.info).not.toHaveProperty("auditRetentionDays");
+    expect(result.current.unreachable).toBe(false);
+  });
+
+  it("reads a server older than features as listing none", async () => {
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        if (body.operationName !== "ServerVersion") {
           return HttpResponse.json({
             errors: [{ message: 'Unknown field "features" on type "ServerInfo"' }],
           });
