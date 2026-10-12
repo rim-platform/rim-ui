@@ -1,3 +1,14 @@
+"""
+A pending account deletion.
+"""
+type AccountDeletionSchedule {
+	"""
+	When the grace period ends and the account is purged. Until then the account works as
+	before and `cancelAccountDeletion` keeps it.
+	"""
+	scheduledFor: DateTime!
+}
+
 input AddWorkspacePluginInput {
 	serverId: ID!
 	statement: SignedStatementInput!
@@ -648,6 +659,24 @@ input DeleteMessageInput {
 
 input DeleteUserCommandInput {
 	commandId: String!
+}
+
+"""
+Delete a workspace and everything in it.
+"""
+input DeleteWorkspaceInput {
+	serverId: ID!
+	"""
+	The workspace's name, typed again to confirm.
+	"""
+	confirmName: String!
+}
+
+type DeleteWorkspacePayload {
+	"""
+	Whether the workspace was deleted.
+	"""
+	deleted: Boolean!
 }
 
 input DeleteWorkspaceStateInput {
@@ -1755,6 +1784,67 @@ type Mutation {
 	signature, and attempts are limited per IP. Returns the host's signed acknowledgement.
 	"""
 	applyRemoteRevocation(revocation: SignedStatementInput!): SignedStatement!
+	"""
+	Make another member the workspace's owner. The caller becomes a moderator; a workspace
+	has exactly one owner, so this is the only way the owner role moves (`setMemberRole`
+	never grants it). Both role changes are announced with `MemberRoleChanged`.
+	
+	# Errors
+	
+	- `UNAUTHENTICATED`: no session.
+	- `FORBIDDEN`: the caller is not the owner.
+	- `NOT_FOUND`: `userId` is not a member.
+	- `VALIDATION`: the direct space, a guest as the new owner, or the caller themself.
+	"""
+	transferWorkspaceOwnership(input: TransferWorkspaceOwnershipInput!): Server!
+	"""
+	Delete the workspace for good: its members, channels and conversations with their
+	messages and files, invites, pins, workspace state, keybinds, pipelines, macros, plugins
+	and custom emoji, and the notification rules scoped to it. Every member gets
+	`MemberLeft` for themself and their event stream for the workspace ends; after that the
+	workspace answers `NOT_FOUND` or `FORBIDDEN` like one they never joined.
+	
+	# Errors
+	
+	- `UNAUTHENTICATED`: no session.
+	- `FORBIDDEN`: the caller is not the owner.
+	- `VALIDATION`: the direct space, or `confirmName` is not the workspace's name.
+	"""
+	deleteWorkspace(input: DeleteWorkspaceInput!): DeleteWorkspacePayload!
+	"""
+	Schedule the signed-in account for deletion once the grace period ends (14 days unless
+	the operator set `RIM_ACCOUNT_DELETION_GRACE_DAYS`, 0 to 30). Every other session of the
+	account ends now; this one keeps working, and `cancelAccountDeletion` keeps the account
+	until the grace period ends. `me.deletionScheduledFor` shows the pending deletion.
+	
+	Then the account is purged: its sessions, devices, keys, workspace memberships,
+	plaintext messages, files and personal settings are removed, workspaces where it was the
+	only member are deleted, and its username becomes free. The user row stays as a
+	tombstone (`deleted-<id prefix>`, "Deleted account", no email, password or key) that
+	cannot sign in and shows in no member list or search; it stays the author of the
+	account's encrypted messages, which are kept so the conversations' history does not
+	shift, and of a deleted message others replied to. The tombstone keeps the account's
+	key identity id, so the same key identity cannot sign up on this server again.
+	
+	# Errors
+	
+	- `UNAUTHENTICATED`: no session.
+	- `FORBIDDEN`: a person from another server, who deletes their account at their relay.
+	- `VALIDATION`: `confirmUsername` is not the account's username, or the account owns a
+	workspace that has other members: hand it over (`transferWorkspaceOwnership`) or delete
+	it (`deleteWorkspace`) first.
+	- `CONFLICT`: a deletion is already pending.
+	"""
+	requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionSchedule!
+	"""
+	Cancel the signed-in account's pending deletion during its grace period. Returns whether
+	a deletion was pending.
+	
+	# Errors
+	
+	- `UNAUTHENTICATED`: no session.
+	"""
+	cancelAccountDeletion: Boolean!
 }
 
 input MuteConversationInput {
@@ -2455,6 +2545,16 @@ enum ReportOutcome {
 	DISMISSED
 }
 
+"""
+Ask for the signed-in account to be deleted.
+"""
+input RequestAccountDeletionInput {
+	"""
+	The account's username, typed again to confirm.
+	"""
+	confirmUsername: String!
+}
+
 input RequestMlsReaddInput {
 	serverId: ID!
 	conversationId: ID!
@@ -2965,6 +3065,17 @@ input ToggleReactionInput {
 	emoji: String!
 }
 
+"""
+Hand a workspace's ownership to another member.
+"""
+input TransferWorkspaceOwnershipInput {
+	serverId: ID!
+	"""
+	The member, not a guest, who becomes the owner.
+	"""
+	userId: ID!
+}
+
 enum TypedVerbGql {
 	READ
 	WRITE
@@ -3113,6 +3224,13 @@ type User {
 	everyone else and once probation is over.
 	"""
 	probationEndsAt: DateTime
+	"""
+	When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);
+	null while none is pending, and always null except on `me`. Once it runs, the account is
+	purged and only a tombstone named "Deleted account" stays as the author of its encrypted
+	messages.
+	"""
+	deletionScheduledFor: DateTime
 }
 
 input UserCommandStepInput {
