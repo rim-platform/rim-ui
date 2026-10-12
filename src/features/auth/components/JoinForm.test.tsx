@@ -17,17 +17,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
+import { renderWithServerInfo, type FakeServerDetails } from "../../../test/serverInfo";
+
 const mockSignupMutate = vi.fn();
+/** The mutation's last error, as the hook reports it. */
+const signupState = vi.hoisted(() => ({ error: null as unknown }));
 
 vi.mock("../api/useSignupWithInviteMutation", () => ({
   useSignupWithInviteMutation: () => ({
     mutate: mockSignupMutate,
     isPending: false,
-    error: null,
+    error: signupState.error,
   }),
 }));
 
@@ -39,9 +43,11 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
 vi.mock("./KeySignupForm");
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import { JoinForm } from "./JoinForm";
 import { InviteTokenType } from "../types";
+import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 
 // The web app, unless a test says otherwise.
 beforeEach(() => {
@@ -50,7 +56,7 @@ beforeEach(() => {
 
 /** Renders `JoinForm` inside a router so any internal Links don't break. */
 function renderWorkspaceJoinForm(onSuccess = vi.fn()) {
-  return render(
+  return renderWithServerInfo(
     <MemoryRouter>
       <JoinForm
         variant={InviteTokenType.WORKSPACE}
@@ -64,7 +70,7 @@ function renderWorkspaceJoinForm(onSuccess = vi.fn()) {
 
 /** Renders `JoinForm` with an INSTANCE token variant. */
 function renderInstanceJoinForm(onSuccess = vi.fn()) {
-  return render(
+  return renderWithServerInfo(
     <MemoryRouter>
       <JoinForm variant={InviteTokenType.INSTANCE} token="instance-tok-123" onSuccess={onSuccess} />
     </MemoryRouter>,
@@ -323,7 +329,7 @@ describe("JoinForm — displayName length guard", () => {
 
   it("rejects a displayName longer than 80 characters client-side — mutation not called", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithServerInfo(
       <MemoryRouter>
         <JoinForm
           variant={InviteTokenType.WORKSPACE}
@@ -363,7 +369,7 @@ describe("JoinForm — displayName length guard", () => {
     );
 
     const user = userEvent.setup();
-    render(
+    renderWithServerInfo(
       <MemoryRouter>
         <JoinForm
           variant={InviteTokenType.WORKSPACE}
@@ -404,7 +410,7 @@ describe("JoinForm — displayName length guard", () => {
     );
 
     const user = userEvent.setup();
-    render(
+    renderWithServerInfo(
       <MemoryRouter>
         <JoinForm
           variant={InviteTokenType.WORKSPACE}
@@ -444,7 +450,7 @@ describe("JoinForm — create account with a key", () => {
     token: string | null,
     onSuccess = vi.fn(),
   ) {
-    return render(
+    return renderWithServerInfo(
       <MemoryRouter>
         <JoinForm variant={variant} token={token} onSuccess={onSuccess} />
       </MemoryRouter>,
@@ -499,7 +505,7 @@ describe("JoinForm — create account with a key", () => {
   });
 
   it("offers only the key, with no token, on a relay that takes key signups with a proof-of-work", () => {
-    render(
+    renderWithServerInfo(
       <MemoryRouter>
         <JoinForm variant="OPEN" token={null} keyOnly onSuccess={vi.fn()} />
       </MemoryRouter>,
@@ -523,5 +529,131 @@ describe("JoinForm — create account with a key", () => {
 
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("password")).toBeNull();
+  });
+});
+
+describe("JoinForm — instance notice and terms of service", () => {
+  const TERMS = "https://acme.example/terms";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    signupState.error = null;
+  });
+
+  function renderWithServer(details: FakeServerDetails) {
+    return renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm
+          variant={InviteTokenType.WORKSPACE}
+          token="tok-abc"
+          workspaceName="Acme Corp"
+          onSuccess={vi.fn()}
+        />
+      </MemoryRouter>,
+      details,
+    );
+  }
+
+  async function fillValid(user: ReturnType<typeof userEvent.setup>) {
+    await fillValidBase(user);
+    await user.type(screen.getByPlaceholderText("you@example.com"), "ada@example.com");
+  }
+
+  const submitButton = () => screen.getByRole("button", { name: "Create account" });
+  const termsBox = () => screen.getByRole("checkbox", { name: "I accept the terms of use" });
+
+  it("shows the server's notice at the top, and none without one", () => {
+    const { unmount } = renderWithServer({ instanceNotice: "Run by Acme." });
+    expect(screen.getByRole("note", { name: "Notice from this server" })).toHaveTextContent(
+      "Run by Acme.",
+    );
+    unmount();
+
+    renderWithServer({ instanceNotice: null });
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("links the terms, opening them in a new tab on the web", () => {
+    renderWithServer({ termsUrl: TERMS });
+    const link = screen.getByRole("link", { name: TERMS });
+    expect(link).toHaveAttribute("href", TERMS);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("opens the terms in the system browser on the desktop", async () => {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      const user = userEvent.setup();
+      renderWithServer({ termsUrl: TERMS });
+      await user.click(screen.getByRole("link", { name: TERMS }));
+      await waitFor(() => expect(openUrl).toHaveBeenCalledWith(TERMS));
+    } finally {
+      delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
+  });
+
+  it("keeps Create account disabled until the terms are accepted, then sends their URL", async () => {
+    const user = userEvent.setup();
+    renderWithServer({ termsUrl: TERMS });
+    await fillValid(user);
+
+    expect(submitButton()).toBeDisabled();
+    await user.click(termsBox());
+    expect(submitButton()).toBeEnabled();
+    await user.click(submitButton());
+
+    expect(mockSignupMutate).toHaveBeenCalledOnce();
+    expect(mockSignupMutate.mock.calls[0][0]).toMatchObject({ acceptedTermsUrl: TERMS });
+  });
+
+  it("shows a refusal over the terms at the checkbox and unticks it", async () => {
+    const refusal = {
+      response: {
+        errors: [
+          {
+            message:
+              "the terms of service must be accepted: send the server's terms URL as the accepted terms",
+            extensions: { code: "VALIDATION" },
+          },
+        ],
+      },
+    };
+    mockSignupMutate.mockImplementation(
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => {
+        signupState.error = refusal;
+        opts.onError(refusal);
+      },
+    );
+    const user = userEvent.setup();
+    renderWithServer({ termsUrl: TERMS });
+    await fillValid(user);
+    await user.click(termsBox());
+    await user.click(submitButton());
+
+    expect(screen.getByRole("alert")).toHaveTextContent(TERMS_REFUSED_MESSAGE);
+    expect(termsBox()).not.toBeChecked();
+    expect(termsBox()).toHaveAccessibleDescription(TERMS_REFUSED_MESSAGE);
+    expect(submitButton()).toBeDisabled();
+
+    await user.click(termsBox());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/terms of service must be accepted/)).not.toBeInTheDocument();
+  });
+
+  it("signs up as before on a server without terms or too old to say", async () => {
+    for (const details of [{ termsUrl: null }, {}]) {
+      const user = userEvent.setup();
+      const { unmount } = renderWithServer(details);
+      await fillValid(user);
+
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      await user.click(submitButton());
+      expect(mockSignupMutate).toHaveBeenCalledOnce();
+      expect(mockSignupMutate.mock.calls[0][0]).not.toHaveProperty("acceptedTermsUrl");
+      mockSignupMutate.mockClear();
+      unmount();
+    }
   });
 });

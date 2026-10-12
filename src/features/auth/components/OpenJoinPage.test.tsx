@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+
+import { renderWithServerInfo } from "../../../test/serverInfo";
 
 const mockNavigate = vi.fn();
 
@@ -57,7 +59,7 @@ describe("OpenJoinPage", () => {
   });
 
   function renderPage() {
-    return render(
+    return renderWithServerInfo(
       <MemoryRouter>
         <OpenJoinPage />
       </MemoryRouter>,

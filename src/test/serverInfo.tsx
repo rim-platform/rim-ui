@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
 
 import { ServerFeatureState, type ServerInfo } from "../core/graphql/generated/schema-types";
 import { queryKeys } from "../core/query/keys";
@@ -10,8 +11,17 @@ export type FakeFeatures = Partial<
   Record<ServerFeatureKey, ServerFeatureState | { state: ServerFeatureState; reason: string }>
 >;
 
-/** A server that lists every known feature, enabled unless `features` says otherwise. */
-export function fakeServerInfo(features: FakeFeatures = {}): ServerInfo {
+/** Server info fields other than the version and the features, such as `termsUrl`. */
+export type FakeServerDetails = Partial<Omit<ServerInfo, "features">>;
+
+/**
+ * A server that lists every known feature, enabled unless `features` says otherwise, with
+ * `details` over its other fields.
+ */
+export function fakeServerInfo(
+  features: FakeFeatures = {},
+  details: FakeServerDetails = {},
+): ServerInfo {
   return {
     version: "0.4.0",
     apiVersion: 1,
@@ -21,20 +31,31 @@ export function fakeServerInfo(features: FakeFeatures = {}): ServerInfo {
       if (typeof given === "string") return { key, state: given, reason: null };
       return { key, state: given.state, reason: given.reason };
     }),
+    ...details,
   };
 }
 
-/** A query client that already holds `fakeServerInfo(features)`, so nothing is fetched. */
-export function serverInfoQueryClient(features: FakeFeatures = {}): QueryClient {
+/**
+ * A query client that already holds `fakeServerInfo(features, details)`, so nothing is fetched.
+ */
+export function serverInfoQueryClient(
+  features: FakeFeatures = {},
+  details: FakeServerDetails = {},
+): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(queryKeys.serverInfo, fakeServerInfo(features));
+  client.setQueryData(queryKeys.serverInfo, fakeServerInfo(features, details));
   return client;
 }
 
-/** A render wrapper whose server reports `features`. */
-export function withServerInfo(features: FakeFeatures = {}) {
-  const client = serverInfoQueryClient(features);
+/** A render wrapper whose server reports `features` and `details`. */
+export function withServerInfo(features: FakeFeatures = {}, details: FakeServerDetails = {}) {
+  const client = serverInfoQueryClient(features, details);
   return function ServerInfoProvider({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
+}
+
+/** Renders `ui` against a server with every feature on and `details`, such as its `termsUrl`. */
+export function renderWithServerInfo(ui: ReactElement, details: FakeServerDetails = {}) {
+  return render(ui, { wrapper: withServerInfo({}, details) });
 }

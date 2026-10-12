@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+
+import { renderWithServerInfo } from "../../../test/serverInfo";
 
 const mockNavigate = vi.fn();
 const mockSignupMutate = vi.fn();
@@ -108,7 +110,7 @@ describe("JoinPage — no-referrer meta tag (L3)", () => {
   });
 
   it("injects a no-referrer meta tag into document.head on mount", () => {
-    const { unmount } = render(
+    const { unmount } = renderWithServerInfo(
       <MemoryRouter initialEntries={["/join/tok-abc"]}>
         <Routes>
           <Route path="/join/:token" element={<JoinPage />} />
@@ -127,7 +129,7 @@ describe("JoinPage — no-referrer meta tag (L3)", () => {
   });
 
   it("removes the no-referrer meta tag from document.head on unmount", () => {
-    const { unmount } = render(
+    const { unmount } = renderWithServerInfo(
       <MemoryRouter initialEntries={["/join/tok-abc"]}>
         <Routes>
           <Route path="/join/:token" element={<JoinPage />} />
@@ -152,7 +154,7 @@ describe("JoinPage", () => {
   });
 
   function renderAtPath(path: string) {
-    return render(
+    return renderWithServerInfo(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/join/:token" element={<JoinPage />} />
@@ -462,7 +464,7 @@ describe("JoinPage — create account with a key (desktop)", () => {
   });
 
   function renderAtPath(path: string) {
-    return render(
+    return renderWithServerInfo(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/join/:token" element={<JoinPage />} />

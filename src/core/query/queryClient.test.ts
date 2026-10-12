@@ -1,12 +1,18 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 
 import { useToastStore } from "../../shared/toast";
 import { toast } from "../../shared/toast";
-import { graphqlErrorMessage } from "../graphql/errors";
+import { AddressBlockedError, graphqlErrorMessage } from "../graphql/errors";
 import { FeatureDisabledError } from "../serverFeatures";
 import { queryKeys } from "./keys";
-import { createAppQueryClient, featureDisabledToastId, reportFeatureDisabled } from "./queryClient";
+import {
+  createAppQueryClient,
+  featureDisabledToastId,
+  queryRetryDelay,
+  reportFeatureDisabled,
+  shouldRetryQuery,
+} from "./queryClient";
 
 const emojiOff = Object.assign(new Error("serialized"), {
   response: {
@@ -85,5 +91,52 @@ describe("createAppQueryClient", () => {
       .catch(() => undefined);
 
     expect(toasts()).toHaveLength(0);
+  });
+});
+
+describe("query retries", () => {
+  const rateLimited = (retryAfterSeconds?: number) =>
+    Object.assign(new Error("serialized"), {
+      response: {
+        errors: [
+          {
+            message: "Too many requests from this address",
+            extensions: { code: "RATE_LIMITED", retryAfterSeconds },
+          },
+        ],
+      },
+    });
+
+  afterEach(() => vi.useRealTimers());
+
+  it("retries once, and never for a blocked address", () => {
+    expect(shouldRetryQuery(0, new Error("boom"))).toBe(true);
+    expect(shouldRetryQuery(1, new Error("boom"))).toBe(false);
+    expect(shouldRetryQuery(0, new AddressBlockedError())).toBe(false);
+  });
+
+  it("waits the seconds a rate limit names, else backs off", () => {
+    expect(queryRetryDelay(0, rateLimited(45))).toBe(45_000);
+    expect(queryRetryDelay(0, rateLimited())).toBe(30_000);
+    expect(queryRetryDelay(0, new Error("boom"))).toBe(1000);
+    expect(queryRetryDelay(5, new Error("boom"))).toBe(30_000);
+  });
+
+  it("holds a rate-limited query's retry until the server's wait is over", async () => {
+    vi.useFakeTimers();
+    const client = createAppQueryClient();
+    const queryFn = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(rateLimited(5))
+      .mockResolvedValue("ok");
+    const observer = new QueryObserver(client, { queryKey: ["limited"], queryFn });
+    const stop = observer.subscribe(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(4_900);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    expect(observer.getCurrentResult().data).toBe("ok");
+    stop();
   });
 });

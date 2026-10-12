@@ -101,13 +101,17 @@ vi.mock("../../updater/components/AboutServer", () => ({
 
 import { SettingsPage } from "./SettingsPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
-import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import {
+  withServerInfo,
+  type FakeFeatures,
+  type FakeServerDetails,
+} from "../../../test/serverInfo";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 
-function renderSettings(features: FakeFeatures = {}) {
-  return render(<SettingsPage />, { wrapper: withServerInfo(features) });
+function renderSettings(features: FakeFeatures = {}, details: FakeServerDetails = {}) {
+  return render(<SettingsPage />, { wrapper: withServerInfo(features, details) });
 }
 
 describe("SettingsPage", () => {
@@ -220,6 +224,20 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByText("Account"));
     expect(screen.getByTestId("account-settings")).toBeInTheDocument();
+  });
+
+  it("shows the server's instance notice at the top of About, and none without one", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderSettings({}, { instanceNotice: "Run by Acme." });
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.getByRole("note", { name: "Notice from this server" })).toHaveTextContent(
+      "Run by Acme.",
+    );
+    unmount();
+
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
   it("switches to About tab and shows about panel", async () => {

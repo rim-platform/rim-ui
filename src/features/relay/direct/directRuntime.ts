@@ -7,6 +7,7 @@
 import { createClient } from "graphql-ws";
 
 import type { WorkspaceEvent } from "../../../core/events/types";
+import { reportSubscriptionLimit } from "../../../core/graphql/subscriptionErrors";
 import { onWsConnected, onWsDisconnected } from "../../../core/graphql/wsClient";
 import { logger } from "../../../core/logger";
 import { fetchRelayInfo } from "../api/relayApi";
@@ -69,7 +70,10 @@ function openHostEvents(
             logger.warn("[RIM:relay] a direct event failed:", err);
           }
         },
-        error: (err) => logger.warn(`[RIM:relay] ${host}'s events failed:`, err),
+        error: (err) => {
+          if (reportSubscriptionLimit(`[RIM:relay] ${host}'s events`, err)) return;
+          logger.warn(`[RIM:relay] ${host}'s events failed:`, err);
+        },
         complete: () => undefined,
       },
     ),

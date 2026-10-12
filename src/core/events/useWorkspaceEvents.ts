@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
+import { reportSubscriptionLimit } from "../graphql/subscriptionErrors";
 import { logger } from "../logger";
 import { toast } from "../../shared/toast";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
@@ -113,6 +114,7 @@ export function useWorkspaceEvents(workspaceId: string | null) {
           }
         },
         error: (err) => {
+          if (reportSubscriptionLimit("[RIM:WS] workspaceEvents", err)) return;
           logger.error("[RIM:WS] Subscription error:", err);
         },
         complete: () => {

@@ -1,6 +1,7 @@
 import { GraphQLClient } from "graphql-request";
 
 import { getGraphqlEndpoint } from "./config";
+import { asGraphqlResponse } from "./edgeRefusals";
 
 const CSRF_COOKIE = "rim_csrf";
 const CSRF_HEADER = "x-csrf-token";
@@ -54,14 +55,17 @@ export function spaceOfRequest(body: string): string | null {
   );
 }
 
-/** `fetch` that sends a request about a space on another server to its host. */
-const routingFetch: typeof fetch = (input, init) => {
+/**
+ * `fetch` that sends a request about a space on another server to its host, and turns the
+ * server's edge refusals into errors the GraphQL client reports.
+ */
+const routingFetch: typeof fetch = async (input, init) => {
   if (spaceRouter && typeof init?.body === "string") {
     const space = spaceOfRequest(init.body);
     const host = space ? spaceRouter.hostOf(space) : null;
-    if (host) return spaceRouter.send(host, init.body);
+    if (host) return asGraphqlResponse(await spaceRouter.send(host, init.body));
   }
-  return fetch(input, init);
+  return asGraphqlResponse(await fetch(input, init));
 };
 
 export function createGraphqlClient(): GraphQLClient {

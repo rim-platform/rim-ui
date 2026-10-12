@@ -15,6 +15,9 @@
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
  * the login page is never shown to an authenticated user.
  *
+ * **Server notices:** the operator's instance notice at the top, and an alert when the server
+ * blocked this address.
+ *
  * **Key sign-in:** above the password form, "Sign in with this device" for each account this
  * computer, or this browser once linked, holds a key for; below it, "Link this device" with a
  * code from another device and, on the desktop, recovery with a recovery kit.
@@ -23,7 +26,10 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 
+import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
+import { ADDRESS_BLOCKED_MESSAGE } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useAuthStore } from "../state/useAuthStore";
 import { useSessionHydration } from "../api/useSessionHydration";
 import { useServerConfig } from "../api/useServerConfig";
@@ -46,6 +52,7 @@ export function LoginPage() {
   const setSession = useAuthStore((s) => s.setSession);
   const { data: serverConfig } = useServerConfig();
   const { capabilities } = useRuntime();
+  const blocked = useEdgeStore((s) => s.blocked);
 
   // If already authenticated, send directly to the intended destination.
   useEffect(() => {
@@ -83,12 +90,27 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
+        <InstanceNotice />
+
         <header className="text-center">
           <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
           <p className="mt-1 text-sm text-rim-text-muted">Sign in to your workspace</p>
         </header>
 
         <HealthIndicator />
+
+        {blocked && (
+          <div
+            role="alert"
+            className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          >
+            <p className="font-medium">{ADDRESS_BLOCKED_MESSAGE}</p>
+            <p className="mt-1 text-xs">
+              The server refuses every request from this network address. Ask whoever runs it if you
+              think this is a mistake.
+            </p>
+          </div>
+        )}
 
         <DeviceKeySignIn onSuccess={handleLoginSuccess} />
 

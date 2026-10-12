@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ClientError } from "graphql-request";
 
+import { queryKeys } from "../../../core/query/keys";
+import { fakeServerInfo, type FakeServerDetails } from "../../../test/serverInfo";
 import { createTestQueryClient } from "../../../test/utils";
 
 const api = vi.hoisted(() => ({
@@ -24,6 +26,7 @@ vi.mock("../../../core/graphql/config", () => ({
 
 import { KeyChallengeFailed, type KeySignupOptions } from "../../key-identity/api/keyIdentity";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
+import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer".split(
@@ -51,8 +54,10 @@ function serverError(code: string, message = code, extensions: Record<string, un
 function renderForm(
   tokens: KeySignupTokens = { instanceInviteToken: "inst-tok" },
   workspaceId?: string,
+  details: FakeServerDetails = {},
 ) {
   const qc = createTestQueryClient();
+  qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, details));
   const invalidate = vi.spyOn(qc, "invalidateQueries");
   const onSuccess = vi.fn();
   const onBusyChange = vi.fn();
@@ -409,5 +414,73 @@ describe("KeySignupForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /copy kit/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not copy/i);
+  });
+
+  describe("terms of service", () => {
+    const TERMS = "https://acme.example/terms";
+    const termsBox = () => screen.getByRole("checkbox", { name: "I accept the terms of use" });
+    const kitBox = () => screen.getByRole("checkbox", { name: /saved my recovery kit/i });
+
+    it("keeps Create keys disabled until the terms are accepted, then sends their URL", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+      renderForm(undefined, undefined, { termsUrl: TERMS });
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+
+      expect(screen.getByRole("link", { name: TERMS })).toHaveAttribute("href", TERMS);
+      expect(screen.getByRole("button", { name: /create keys/i })).toBeDisabled();
+      await user.click(termsBox());
+      await user.click(screen.getByRole("button", { name: /create keys/i }));
+      await screen.findByLabelText("Recovery phrase");
+      await user.click(kitBox());
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.signupWithKey).toHaveBeenCalledWith(
+        draft,
+        { username: "ada", instanceInviteToken: "inst-tok", acceptedTermsUrl: TERMS },
+        expect.anything(),
+      );
+    });
+
+    it("shows a refusal over the terms at the checkbox, unticks it and keeps the keys", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockRejectedValue(
+        serverError(
+          "VALIDATION",
+          "the terms of service must be accepted: send the server's terms URL as the accepted terms",
+        ),
+      );
+      renderForm(undefined, undefined, { termsUrl: TERMS });
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+      await user.click(termsBox());
+      await user.click(screen.getByRole("button", { name: /create keys/i }));
+      await screen.findByLabelText("Recovery phrase");
+      await user.click(kitBox());
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(await screen.findByText(TERMS_REFUSED_MESSAGE)).toBeInTheDocument();
+      expect(termsBox()).not.toBeChecked();
+      expect(screen.getByRole("button", { name: /^create account$/i })).toBeDisabled();
+      expect(screen.getByLabelText("Recovery phrase")).toBeInTheDocument();
+    });
+
+    it("asks nothing and sends no terms on a server without them", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+      renderForm(undefined, undefined, { termsUrl: null });
+
+      await reachKit(user);
+      // Only the recovery kit's checkbox.
+      expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.signupWithKey.mock.calls[0][1]).not.toHaveProperty("acceptedTermsUrl");
+    });
   });
 });

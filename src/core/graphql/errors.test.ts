@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 
 import { FeatureDisabledError } from "../serverFeatures";
 import {
+  AddressBlockedError,
+  ADDRESS_BLOCKED_MESSAGE,
   disabledFeatureOf,
   FORBIDDEN,
   graphqlErrorCode,
@@ -9,6 +11,7 @@ import {
   RATE_LIMITED,
   TIMED_OUT,
   graphqlErrorExtension,
+  isSessionRefused,
   retryAfterSeconds,
   timedOutMessage,
   timedOutUntil,
@@ -101,6 +104,27 @@ describe("Track 1.2 error extensions", () => {
   it("words a TIMED_OUT failure as the timed-out message everywhere", () => {
     expect(graphqlErrorMessage(timedOut, "fallback")).toBe(timedOutMessage(until));
     expect(timedOutMessage(until)).toMatch(/^You are timed out until /);
+  });
+
+  it("words a RATE_LIMITED failure with the seconds to wait, rounded up", () => {
+    expect(graphqlErrorMessage(slowMode, "fallback")).toBe("Slow down: try again in 12 s");
+    const fractional = withExtensions("x", { code: RATE_LIMITED, retryAfterSeconds: 0.2 });
+    expect(graphqlErrorMessage(fractional, "fallback")).toBe("Slow down: try again in 1 s");
+  });
+
+  it("words a RATE_LIMITED failure without seconds as a moment", () => {
+    expect(graphqlErrorMessage(withExtensions("x", { code: RATE_LIMITED }), "fallback")).toBe(
+      "Slow down: try again in a moment",
+    );
+  });
+});
+
+describe("AddressBlockedError", () => {
+  it("reads as the blocked message and says nothing about the session", () => {
+    const blocked = new AddressBlockedError();
+    expect(graphqlErrorMessage(blocked, "fallback")).toBe(ADDRESS_BLOCKED_MESSAGE);
+    expect(isSessionRefused(blocked)).toBe(false);
+    expect(isSessionRefused({ response: { status: 403 } })).toBe(true);
   });
 });
 

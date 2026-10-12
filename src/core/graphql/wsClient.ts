@@ -1,6 +1,7 @@
 import { createClient } from "graphql-ws";
 
-import { getWsEndpoint } from "./config";
+import { getApiOrigin, getWsEndpoint } from "./config";
+import { readEdgeRefusal, useEdgeStore, type EdgeRefusal } from "./edgeRefusals";
 
 type ConnectionListener = () => void;
 
@@ -30,6 +31,12 @@ export function onWsDisconnected(listener: ConnectionListener): () => void {
 /** Maximum backoff delay between reconnection attempts (ms). */
 const MAX_BACKOFF_MS = 10_000;
 
+/** First wait after an upgrade the server refused (too many connections, a blocked address). */
+const REFUSED_BACKOFF_MS = 30_000;
+
+/** Longest wait between upgrades the server keeps refusing (ms). */
+const MAX_REFUSED_BACKOFF_MS = 300_000;
+
 /**
  * Keepalive ping interval (ms).
  * Detects dead connections (e.g. after laptop sleep, network switch) by
@@ -44,6 +51,69 @@ const PONG_TIMEOUT_MS = 5_000;
 // Singleton state — tied to the single wsClient instance below.
 let activeSocket: WebSocket | null = null;
 let pongTimeoutId: ReturnType<typeof setTimeout> | undefined;
+/** Whether the socket of the latest attempt opened, so its upgrade was accepted. */
+let attemptOpened = false;
+
+/**
+ * Why the server refused the WebSocket upgrade, or `null`. A browser hides the status of a
+ * failed upgrade, so the same URL is asked over plain HTTP: the server's edge refuses that
+ * request as it refused the upgrade (403 `blocked`, 429 `rate_limited` or
+ * `too_many_connections`), and anything else is no refusal.
+ */
+export async function probeUpgradeRefusal(): Promise<EdgeRefusal> {
+  try {
+    const response = await fetch(`${getApiOrigin()}/api/ws`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    return await readEdgeRefusal(response);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The wait before the next connection attempt after `retries` failed ones: exponential from
+ * one second up to ten; from thirty seconds up to five minutes after a refused upgrade; the
+ * server's `retryAfterSeconds` after a rate-limited one.
+ */
+export function reconnectDelayMs(retries: number, refusal: EdgeRefusal): number {
+  if (refusal?.kind === "rateLimited" && refusal.retryAfterSeconds !== undefined) {
+    return Math.max(1000, refusal.retryAfterSeconds * 1000);
+  }
+  if (refusal) return Math.min(REFUSED_BACKOFF_MS * 2 ** retries, MAX_REFUSED_BACKOFF_MS);
+  return Math.min(1000 * 2 ** retries, MAX_BACKOFF_MS);
+}
+
+/**
+ * Waits `delay` ms. An `interruptible` wait ends early when the browser regains network
+ * connectivity or the tab becomes visible again, so the retry fires without the full backoff.
+ */
+function pause(delay: number, interruptible: boolean): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+
+    function done() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      window.removeEventListener("online", done);
+      document.removeEventListener("visibilitychange", onVisible);
+      resolve();
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        done();
+      }
+    }
+
+    const timer = setTimeout(done, delay);
+    if (!interruptible) return;
+    window.addEventListener("online", done);
+    document.addEventListener("visibilitychange", onVisible);
+  });
+}
 
 export const wsClient = createClient({
   // Use a function so the URL is resolved on each connection attempt,
@@ -56,41 +126,28 @@ export const wsClient = createClient({
   // Ping the server every 15 s to detect dead connections quickly.
   keepAlive: KEEPALIVE_MS,
 
+  // A failed upgrade is retried too; the probe below tells a refusal from an outage.
+  shouldRetry: () => true,
+
   retryWait: async (retries) => {
-    // Exponential backoff: 1 s → 2 s → 4 s → 8 s → cap at 10 s.
-    const delay = Math.min(1000 * 2 ** retries, MAX_BACKOFF_MS);
-
-    // The delay is interruptible: if the browser regains network connectivity
-    // or the tab becomes visible again we resolve immediately so the retry
-    // fires without waiting for the full backoff window.
-    await new Promise<void>((resolve) => {
-      let settled = false;
-
-      function done() {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener("online", done);
-        document.removeEventListener("visibilitychange", onVisible);
-        resolve();
-      }
-
-      const timer = setTimeout(done, delay);
-
-      function onVisible() {
-        if (document.visibilityState === "visible") {
-          done();
-        }
-      }
-
-      window.addEventListener("online", done);
-      document.addEventListener("visibilitychange", onVisible);
-    });
+    // An attempt whose socket never opened was refused or could not reach the server; a
+    // refusal waits longer, and is not cut short by the network or the tab coming back.
+    const refusal = attemptOpened ? null : await probeUpgradeRefusal();
+    useEdgeStore.getState().setTooManyConnections(refusal?.kind === "tooManyConnections");
+    await pause(reconnectDelayMs(retries, refusal), refusal === null);
   },
 
   on: {
+    connecting: () => {
+      attemptOpened = false;
+    },
+    opened: () => {
+      attemptOpened = true;
+    },
     connected: (socket) => {
       activeSocket = socket as WebSocket;
+      useEdgeStore.getState().setTooManyConnections(false);
+      useEdgeStore.getState().setBlocked(false);
       connectionListeners.forEach((fn) => fn());
     },
     closed: () => {

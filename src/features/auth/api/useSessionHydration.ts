@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { isSessionRefused } from "../../../core/graphql/errors";
+import { AddressBlockedError, isSessionRefused } from "../../../core/graphql/errors";
 import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
 import { loadSessionRecord, saveSessionRecord } from "../../offline/api/offlineSession";
@@ -62,8 +62,10 @@ export function useSessionHydration() {
         } catch (err) {
           // The server answered: stay logged out, and when it refused the session, record that
           // so an offline start does not open the account either. It could not be reached:
-          // open the recorded account offline, if there is one.
+          // open the recorded account offline, if there is one. It blocked this address: stay
+          // on sign-in, which says so, and keep the record.
           if (cancelled || record?.state !== "signedIn") return;
+          if (err instanceof AddressBlockedError) return;
           if (isServerUnreachable(err)) {
             useOfflineStore.getState().setOffline(true);
             setSession({ userId: record.userId });
