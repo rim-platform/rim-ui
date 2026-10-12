@@ -64,7 +64,7 @@ hmac = "0.12"
 ed25519-dalek = "2"
 # The recovery phrase (src/key_identity/recovery_kit.rs): the BIP39 English word list and its
 # checksum. Only the word encoding is used; the key comes from HKDF, not BIP39's PBKDF2 seed.
-bip39 = { version = "2.2", default-features = false, features = ["zeroize"] }
+bip39 = { version = "3.0", default-features = false, features = ["zeroize"] }
 # Device linking (src/key_identity/device_link.rs): AES-256-GCM seals the offer and the answer,
 # as WebCrypto can on the web client (no ChaCha20 there).
 aes-gcm = "0.10"
