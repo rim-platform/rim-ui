@@ -44,6 +44,7 @@ impl From<rim_mls::Error> for Failure {
             E::Decrypt(_) => "E2EE_DECRYPT",
             E::Mls(_) => "E2EE_MLS",
             E::Crypto(_) => "E2EE_CRYPTO",
+            E::InvalidPeerKey { .. } => "E2EE_INVALID_PEER_KEY",
         };
         let epoch = match &e {
             E::AwaitingReadd(epoch) => Some(*epoch),

@@ -23,6 +23,7 @@ mod franking;
 mod group;
 mod group_id;
 mod identity;
+mod peer_key;
 mod provider;
 mod ranking;
 mod readd;

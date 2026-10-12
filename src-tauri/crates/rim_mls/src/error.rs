@@ -53,6 +53,12 @@ pub enum Error {
     /// A cryptographic primitive failed.
     #[error("crypto: {0}")]
     Crypto(String),
+    /// Another device's HPKE public key does not have the length of the suite's X-Wing key.
+    #[error(
+        "the {what} has {len} bytes, an X-Wing public key has {}",
+        crate::peer_key::XWING_PUBLIC_KEY_LEN
+    )]
+    InvalidPeerKey { what: String, len: usize },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
