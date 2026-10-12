@@ -20,6 +20,9 @@ jobs:
           cache: "npm"
       - name: Install Dependencies
         run: npm ci
+      # Production dependencies only: the dev toolchain (codegen, test runner) never ships.
+      - name: Dependency Audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Lint
         run: npm run lint
       - name: Format Check
@@ -63,6 +66,22 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Tests
         run: cargo test
+
+  cargo_audit:
+    name: Cargo Audit (src-tauri)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Prebuilt binary: compiling cargo-audit from source takes minutes per run.
+      - uses: taiki-e/install-action@cargo-audit
+      # Blocking: allowed advisories, each with its justification, live in
+      # src-tauri/.cargo/audit.toml.
+      - name: Cargo Audit
+        run: cargo audit
 
   build:
     name: Build
