@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 
 const requestMock = vi.fn();
 
@@ -52,8 +54,16 @@ describe("pipeline api hooks", () => {
     qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   });
 
+  afterEach(() => useRelayStore.getState().reset());
+
   it("does not query without a workspace", () => {
     renderHook(() => usePipelines(undefined), { wrapper });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("does not query in a direct space", () => {
+    startRelayWithDirectSpace();
+    renderHook(() => usePipelines(DIRECT_SPACE_ID), { wrapper });
     expect(requestMock).not.toHaveBeenCalled();
   });
 

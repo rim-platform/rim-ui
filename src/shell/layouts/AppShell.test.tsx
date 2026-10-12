@@ -15,7 +15,10 @@ import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 vi.mock("../../features/auth/api/useSessionHydration", () => ({
   useSessionHydration: () => ({ isHydrating: false }),
 }));
-vi.mock("../../core/events/useWorkspaceEvents", () => ({ useWorkspaceEvents: () => {} }));
+const useWorkspaceEventsMock = vi.hoisted(() => vi.fn());
+vi.mock("../../core/events/useWorkspaceEvents", () => ({
+  useWorkspaceEvents: useWorkspaceEventsMock,
+}));
 vi.mock("../../features/offline/runtime/useOfflineReconnect", () => ({
   useOfflineReconnect: () => {},
 }));
@@ -34,6 +37,10 @@ vi.mock("../../features/key-identity/runtime/useResumeDeviceLinks", () => ({
   useResumeDeviceLinks: () => {},
 }));
 vi.mock("../../features/relay/runtime/relayRuntime", () => ({ useRelayRuntime: () => {} }));
+vi.mock("../../features/relay/runtime/useDirectSpaceRuntime", () => ({
+  useDirectSpaceRuntime: () => {},
+  useLocalDirectSpaceId: () => "direct-1",
+}));
 vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
   usePluginPrincipalSync: () => {},
 }));
@@ -168,5 +175,30 @@ describe("AppShell — conversation side-panel error boundaries", () => {
     expect(screen.getByText("Pinned messages failed to load")).toBeInTheDocument();
     // The rest of the shell stays mounted.
     expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
+  });
+});
+
+describe("AppShell — workspace event subscriptions", () => {
+  beforeEach(() => {
+    useWorkspaceEventsMock.mockClear();
+    useAuthStore.setState({ session: { userId: "u1" } });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("subscribes the open workspace", () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    renderShell();
+    expect(useWorkspaceEventsMock).toHaveBeenLastCalledWith("ws-1");
+  });
+
+  it("leaves the open direct space to the subscription made at sign-in", () => {
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    renderShell();
+    expect(useWorkspaceEventsMock).toHaveBeenLastCalledWith(null);
   });
 });

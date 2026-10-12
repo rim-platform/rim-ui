@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -11,6 +11,8 @@ import {
 } from "./useWorkspaceState";
 import { WorkspaceStateScopeGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 
 function createWrapper() {
   const qc = new QueryClient({
@@ -122,6 +124,25 @@ describe("useWorkspaceStateList", () => {
     });
 
     expect(result.current.fetchStatus).toBe("idle");
+  });
+});
+
+describe("workspace state in a direct space", () => {
+  afterEach(() => useRelayStore.getState().reset());
+
+  it("asks for no entry and no list", () => {
+    startRelayWithDirectSpace();
+    const { Wrapper } = createWrapper();
+    const { result } = renderHook(
+      () => ({
+        entry: useWorkspaceState(DIRECT_SPACE_ID, "theme.mode"),
+        list: useWorkspaceStateList(DIRECT_SPACE_ID, "theme."),
+      }),
+      { wrapper: Wrapper },
+    );
+
+    expect(result.current.entry.fetchStatus).toBe("idle");
+    expect(result.current.list.fetchStatus).toBe("idle");
   });
 });
 

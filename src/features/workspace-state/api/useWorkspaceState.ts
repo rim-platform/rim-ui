@@ -9,6 +9,7 @@ import {
   type SetWorkspaceStateInput,
   type DeleteWorkspaceStateInput,
 } from "../../../core/graphql/generated/schema-types";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 
 // --- Re-exports for convenience ---
 
@@ -95,16 +96,18 @@ interface SetWorkspaceStateResponse {
 
 // --- Hooks ---
 
+/** One workspace state entry; not fetched in a direct space, which has no workspace state. */
 export function useWorkspaceState(
   serverId: string | undefined,
   key: string | undefined,
   scope?: WorkspaceStateScopeGql,
 ) {
   const resolvedScope = scope ?? WorkspaceStateScopeGql.SERVER;
+  const direct = useIsDirectSpace(serverId);
 
   return useQuery({
     queryKey: queryKeys.workspaceState(serverId, resolvedScope, key),
-    enabled: Boolean(serverId && key),
+    enabled: Boolean(serverId && key) && !direct,
     staleTime: 10_000,
     queryFn: async () => {
       const res = await graphqlClient.request<WorkspaceStateResponse>(WorkspaceStateDocument, {
@@ -117,6 +120,7 @@ export function useWorkspaceState(
   });
 }
 
+/** Workspace state entries under `prefix`; not fetched in a direct space. */
 export function useWorkspaceStateList(
   serverId: string | undefined,
   prefix: string,
@@ -124,10 +128,11 @@ export function useWorkspaceStateList(
   limit?: number,
 ) {
   const resolvedScope = scope ?? WorkspaceStateScopeGql.SERVER;
+  const direct = useIsDirectSpace(serverId);
 
   return useQuery({
     queryKey: queryKeys.workspaceStateList(serverId, resolvedScope, prefix),
-    enabled: Boolean(serverId),
+    enabled: Boolean(serverId) && !direct,
     staleTime: 10_000,
     queryFn: async () => {
       const res = await graphqlClient.request<WorkspaceStateListResponse>(

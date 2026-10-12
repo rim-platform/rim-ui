@@ -21,7 +21,7 @@ export function useUnreadEventHandler() {
           payload.conversationId === useShellStore.getState().selectedConversationId;
 
         if (!isOwnMessage && !isActiveConversation) {
-          useUnreadStore.getState().increment(payload.conversationId);
+          useUnreadStore.getState().increment(payload.conversationId, payload.workspaceId);
         }
       },
     );

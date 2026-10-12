@@ -21,6 +21,13 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Fixed
+
+- Direct messages show their unread badge at sign-in: the client subscribes to this relay's
+  direct space as soon as the session exists instead of when Direct messages is opened. It no
+  longer asks the direct space for custom emoji, plugins, pipelines, workspace state or
+  channels, and Settings hides those tabs there.
+
 ### Added
 
 - Release images: every release tag publishes the web client as

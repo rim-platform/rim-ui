@@ -13,7 +13,7 @@ import { e2eeSession } from "../../e2ee/runtime/session";
 import { isWebAccount } from "../../e2ee/web/webAccount";
 import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
 import { startDirectConversation, type DirectMember } from "../../relay/conversations/startDirect";
-import { useRelayStore } from "../../relay/state/useRelayStore";
+import { useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
@@ -49,11 +49,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
 
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const relayOn = useRelayStore((s) => s.info !== null);
-  const inDirectSpace = useRelayStore(
-    (s) =>
-      Boolean(workspaceId) &&
-      (s.info?.directSpaceId === workspaceId || s.spaces[workspaceId ?? ""]?.kind === "direct"),
-  );
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
   const createMutation = useCreateConversationMutation();
   // Guests may open DMs but not create groups (the server refuses with FORBIDDEN), so their

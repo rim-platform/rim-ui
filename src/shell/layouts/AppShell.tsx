@@ -49,6 +49,10 @@ import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
+import {
+  useDirectSpaceRuntime,
+  useLocalDirectSpaceId,
+} from "../../features/relay/runtime/useDirectSpaceRuntime";
 import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { StatusBar } from "../components/StatusBar";
@@ -74,6 +78,8 @@ export function AppShell() {
   useOfflineReconnect();
   useResumeDeviceLinks();
   useRelayRuntime();
+  useDirectSpaceRuntime();
+  useUnreadEventHandler();
   usePluginPrincipalSync();
   usePluginChatRelay();
   useWebPluginRuntime();
@@ -133,7 +139,10 @@ export function AppShell() {
 
 function WorkspaceShell() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  useWorkspaceEvents(workspaceId);
+  // This relay's direct space is subscribed from sign-in by `useDirectSpaceRuntime`.
+  const directSpaceId = useLocalDirectSpaceId();
+  const subscribedHere = workspaceId === directSpaceId ? null : workspaceId;
+  useWorkspaceEvents(subscribedHere);
   useMessageCacheSync(workspaceId);
   useE2eeRuntime(workspaceId);
   useUnreadCounts(workspaceId ?? undefined);
@@ -142,10 +151,9 @@ function WorkspaceShell() {
   useHeartbeat(workspaceId);
   usePluginEvents();
   useStatusExpiration();
-  useUnreadEventHandler();
   usePresenceEventHandler();
   useTypingEventHandler();
-  useNotificationEventHandler(workspaceId);
+  useNotificationEventHandler(subscribedHere);
 
   const { capabilities } = useRuntime();
   const mainSurface = useShellStore((s) => s.mainSurface);

@@ -117,6 +117,15 @@ export function isDirectSpace(spaceId: string | null | undefined): boolean {
   return info?.directSpaceId === spaceId || spaces[spaceId]?.kind === "direct";
 }
 
+/** Whether `spaceId` is a direct space, kept current as `relayInfo` and the spaces load. */
+export function useIsDirectSpace(spaceId: string | null | undefined): boolean {
+  return useRelayStore(
+    (s) =>
+      Boolean(spaceId) &&
+      (s.info?.directSpaceId === spaceId || s.spaces[spaceId ?? ""]?.kind === "direct"),
+  );
+}
+
 /** The host of a space on another server, or `null` for a space this relay hosts. */
 export function hostOf(spaceId: string | null | undefined): string | null {
   if (!spaceId) return null;

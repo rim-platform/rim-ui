@@ -156,6 +156,7 @@ export function applyWorkspaceEvent(
   ) {
     if (event.type === "NewMessage") {
       eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
+        workspaceId,
         conversationId: event.conversation_id,
         authorId: event.message.author_id,
       });
@@ -181,6 +182,7 @@ export function applyWorkspaceEvent(
       // Unread tracking via event bus; the feature filters (own message, active conversation).
       // Desktop notifications are decided by the server and arrive as `NotificationDue`.
       eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
+        workspaceId,
         conversationId: event.conversation_id,
         authorId: event.message.author_id,
       });

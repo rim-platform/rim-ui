@@ -236,7 +236,7 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   "chat.mark_all_as_read": () => {
     const workspaceId = useWorkspaceStore.getState().workspaceId;
     if (workspaceId) {
-      useUnreadStore.getState().markAllRead();
+      useUnreadStore.getState().markAllRead(workspaceId);
       graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
         toast.error("Failed to mark all as read");
       });

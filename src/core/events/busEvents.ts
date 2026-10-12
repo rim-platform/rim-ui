@@ -9,6 +9,7 @@
 import type { NotificationDueReason } from "./types";
 
 export interface UnreadIncrementEvent {
+  workspaceId: string;
   conversationId: string;
   authorId: string;
 }

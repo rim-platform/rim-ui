@@ -9,7 +9,9 @@ import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
-import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
+import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
+import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
+import { useIsDirectSpace } from "../../features/relay/state/useRelayStore";
 import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { cn } from "../../shared/ui/cn";
@@ -33,8 +35,15 @@ export function SideRail() {
   const openPluginPanel = useShellStore((s) => s.openPluginPanel);
   const { data: user } = useCurrentUser();
   const { data: plugins } = usePluginList();
-  const unreadCounts = useUnreadStore((s) => s.counts);
-  const totalUnread = Object.values(unreadCounts).reduce((sum, n) => sum + n, 0);
+  // The open space's unread messages; in a direct space, those of every direct space.
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const inDirectSpace = useIsDirectSpace(workspaceId);
+  const directSpaceIds = useDirectSpaceIds();
+  const totalUnread = useUnreadStore((s) =>
+    unreadTotal(s.counts, s.spaceOf, (space) =>
+      inDirectSpace ? directSpaceIds.includes(space) : space === workspaceId,
+    ),
+  );
 
   const avatarInitial = (user?.displayName ?? user?.username ?? "?").charAt(0).toUpperCase();
 

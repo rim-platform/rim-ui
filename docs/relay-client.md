@@ -26,6 +26,7 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/features/relay/inbox/autoAccept.ts`, `components/DmRequestInbox.tsx` | Message requests |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
 | `src/features/relay/runtime/relayRuntime.ts` | Start-up and wiring (`useRelayRuntime`, mounted in `AppShell`) |
+| `src/features/relay/runtime/useDirectSpaceRuntime.ts` | This relay's direct space from sign-in (`useDirectSpaceRuntime`, mounted in `AppShell`) |
 | `src/features/relay/remote/` | Workspaces on other servers: invite links, joining, delegations and their renewal, the relay's own key, a revocation's fan-out, switching relays |
 | `src/features/relay/direct/` | Talking to a server directly: the transport (`directTransport.ts`), GraphQL over it, the socket shim for `graphql-ws`, the direct connection and its runtime, one-off calls |
 | `src-tauri/src/relay/direct.rs` | The desktop's direct sessions: discovery fetches, GraphQL with each server's own cookie jar, WebSockets with that cookie |
@@ -127,6 +128,15 @@ four groups of four characters.
 "Direct messages" at the top of the workspace rail opens this relay's direct space. Its list
 merges the DMs and groups of every direct space this account uses (this relay's, and those of
 relays where someone started a conversation with this person); opening one switches to its space.
+
+This relay's direct space is live from sign-in, whichever space is open: once `relayInfo`
+answers, the app loads its unread counts and unread notification count, subscribes to its
+`workspaceEvents` and shows the notifications the server sends there, so the Direct messages
+entry carries its unread badge before it is opened. A reconnect restores that subscription as it
+does the open space's, and the open space's own subscription leaves the direct space alone, so
+each of its events applies once. The app sends no workspace-only query about a direct space: no
+custom emoji, workspace plugins, pipelines, workspace state or channels, and keybinds are asked
+for without a workspace. Settings hides Pipelines, State and Emoji there.
 
 New DMs and groups start in this relay's direct space whenever every member has a principal id:
 from the contact picker there, or from a workspace's member picker when everyone picked has one.

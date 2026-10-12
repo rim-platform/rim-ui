@@ -14,7 +14,7 @@ import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
-import { useRelayStore } from "../../relay/state/useRelayStore";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
 import { DirectConversationList } from "./DirectConversationList";
@@ -29,11 +29,7 @@ interface ConversationListProps {
  */
 export function ConversationList(props: ConversationListProps) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const direct = useRelayStore(
-    (s) =>
-      Boolean(workspaceId) &&
-      (s.info?.directSpaceId === workspaceId || s.spaces[workspaceId ?? ""]?.kind === "direct"),
-  );
+  const direct = useIsDirectSpace(workspaceId);
   return direct ? <DirectConversationList /> : <WorkspaceConversationList {...props} />;
 }
 
