@@ -37,3 +37,6 @@ src-tauri/target/
 # Python bytecode (plugins/hello-world runs under the conformance tests)
 __pycache__/
 *.pyc
+
+# Work plans stay local; docs/ documents the application only.
+/plans/
