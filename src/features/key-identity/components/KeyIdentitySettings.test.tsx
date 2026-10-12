@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { limitsQueryClient } from "../../../test/limits";
+import type { ServerLimits } from "../../../core/graphql/generated/schema-types";
 import type { MyKeyIdentity } from "../api/keyIdentity";
 
 const api = vi.hoisted(() => ({
@@ -96,8 +98,9 @@ function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
   });
 }
 
-function renderSettings() {
-  const qc = createTestQueryClient();
+/** Renders the settings, against a server reporting `caps` when given. */
+function renderSettings(caps?: Partial<ServerLimits>) {
+  const qc = caps ? limitsQueryClient(caps) : createTestQueryClient();
   return render(
     <QueryClientProvider client={qc}>
       <KeyIdentitySettings />
@@ -273,6 +276,51 @@ describe("KeyIdentitySettings", () => {
 
     expect(api.revokeDevice).toHaveBeenCalledWith(enrolled, "d-other");
     expect(screen.getByRole("button", { name: /link a device/i })).toBeInTheDocument();
+  });
+
+  it.each([
+    [5, "2 of 5 devices", true],
+    [2, "2 of 2 devices. This instance allows 2 devices per user.", false],
+  ])("counts the active devices against a cap of %i", async (devicesPerUser, note, canLink) => {
+    const removed = {
+      ...enrolled.devices[1],
+      deviceId: "d-old",
+      revokedAt: "2026-10-10T07:00:00Z",
+    };
+    api.fetchMyKeyIdentity.mockResolvedValue({
+      ...enrolled,
+      devices: [...enrolled.devices, removed],
+    });
+    api.syncKeyLog.mockResolvedValue({
+      principalId: "rimp1_alice",
+      seq: 0,
+      holdsIdentityKey: true,
+    });
+    api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
+    renderSettings({ devicesPerUser });
+
+    const link = await screen.findByRole("button", { name: /link a device/i });
+    expect(screen.getByTestId("limit-note")).toHaveTextContent(note);
+    if (canLink) {
+      expect(link).toBeEnabled();
+    } else {
+      expect(link).toBeDisabled();
+      expect(screen.getByText("Remove a device to link another.")).toBeInTheDocument();
+    }
+  });
+
+  it("shows no device count on a server that reports no cap", async () => {
+    api.fetchMyKeyIdentity.mockResolvedValue(enrolled);
+    api.syncKeyLog.mockResolvedValue({
+      principalId: "rimp1_alice",
+      seq: 0,
+      holdsIdentityKey: true,
+    });
+    api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
+    renderSettings();
+
+    expect(await screen.findByRole("button", { name: /link a device/i })).toBeEnabled();
+    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
   });
 
   it("replaces the identity key after a confirmation", async () => {

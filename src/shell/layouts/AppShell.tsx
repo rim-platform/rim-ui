@@ -54,6 +54,7 @@ import {
   useLocalDirectSpaceId,
 } from "../../features/relay/runtime/useDirectSpaceRuntime";
 import { RelayNotices } from "../../features/relay/components/RelayNotices";
+import { ProbationBanner } from "../../features/limits/components/ProbationBanner";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
@@ -117,6 +118,7 @@ export function AppShell() {
     return (
       <div className="flex h-screen flex-col bg-rim-void text-rim-text">
         {capabilities.customTitleBar && <TitleBar />}
+        <ProbationBanner />
         <div className="min-h-0 flex-1">
           <WorkspaceSelector />
         </div>
@@ -130,6 +132,7 @@ export function AppShell() {
       <OfflineBanner />
       <ConnectionBanner />
       <RelayNotices />
+      <ProbationBanner />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>

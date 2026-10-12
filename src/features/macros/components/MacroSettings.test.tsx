@@ -3,8 +3,13 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { limitsQueryClient } from "../../../test/limits";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
+import {
+  callsTo,
+  graphqlError,
+  routeRequests,
+} from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
 
@@ -60,9 +65,14 @@ function serve(executeMacro: (variables: Record<string, unknown>) => unknown) {
   });
 }
 
-function renderSettings() {
+/** Renders the settings, against a server whose macro cap is `macrosPerWorkspace` when given. */
+function renderSettings(macrosPerWorkspace?: number) {
+  const client =
+    macrosPerWorkspace === undefined
+      ? createTestQueryClient()
+      : limitsQueryClient({ macrosPerWorkspace });
   render(
-    <QueryClientProvider client={createTestQueryClient()}>
+    <QueryClientProvider client={client}>
       <MacroSettings />
       <ConfirmCommandModal />
     </QueryClientProvider>,
@@ -170,5 +180,49 @@ describe("MacroSettings running a macro", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Macro failed: needs a proof"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("MacroSettings macro cap", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  it("shows the workspace's cap, which it cannot count", async () => {
+    serve(() => ({}));
+    renderSettings(10);
+    expect(await screen.findByTestId("limit-note")).toHaveTextContent(
+      "Up to 10 macros per workspace",
+    );
+  });
+
+  it("shows no cap on a server without one", async () => {
+    serve(() => ({}));
+    renderSettings();
+    expect(await screen.findByText("Cleanup")).toBeInTheDocument();
+    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
+  });
+
+  it("shows the server's refusal of a macro past the cap", async () => {
+    routeRequests(requestMock, {
+      "query MyMacros": () => ({ myMacros: [macro] }),
+      "query Commands": () => ({ commands: [deleteCommand] }),
+      "mutation CreateMacro": () => {
+        throw graphqlError("VALIDATION", "this instance allows 1 macros per workspace");
+      },
+    });
+    renderSettings(1);
+    fireEvent.click(await screen.findByRole("button", { name: /new macro/i }));
+    fireEvent.change(screen.getByPlaceholderText("My macro"), { target: { value: "Second" } });
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: "chat.delete_message" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("this instance allows 1 macros per workspace"),
+    );
   });
 });

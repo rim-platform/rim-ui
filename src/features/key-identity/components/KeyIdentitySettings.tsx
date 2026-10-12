@@ -13,6 +13,9 @@ import { followRevocation } from "../../relay/remote/useRevocationStore";
 import { RelaySpacesSettings } from "../../relay/components/RelaySpacesSettings";
 import { RelaySwitchPanel } from "../../relay/components/RelaySwitchPanel";
 import { useRelaySwitchStore } from "../../relay/remote/relaySwitchLive";
+import { LimitNote } from "../../limits/components/LimitNote";
+import { limitView } from "../../limits/limits";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import {
   abandonEnrollment,
   beginEnrollment,
@@ -281,6 +284,12 @@ function KeyIdentityOverview({
   const [error, setError] = useState<string | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
+  const deviceLimit = limitView(
+    useServerInfo().limits?.devicesPerUser,
+    identity.devices.filter((d) => !d.revokedAt).length,
+    ["device", "devices"],
+    "devices per user",
+  );
 
   // Keep the profile card in step with the name, the devices and the identity key; a relay
   // switch publishes its own cards.
@@ -350,6 +359,7 @@ function KeyIdentityOverview({
 
       <section className="rounded-lg border border-rim-line bg-rim-panel p-4">
         <p className="text-sm font-medium text-rim-text">Devices</p>
+        <LimitNote limit={deviceLimit} className="mt-1" />
         <ul className="mt-2 divide-y divide-rim-line">
           {identity.devices.map((device) => {
             const isThis = device.deviceId === local.data?.deviceId;
@@ -414,7 +424,13 @@ function KeyIdentityOverview({
 
       {holdsIdentityKey && <RelaySwitchPanel identity={identity} displayName={me.displayName} />}
 
-      {holdsIdentityKey && <LinkDevicePanel identity={identity} displayName={me.displayName} />}
+      {holdsIdentityKey && (
+        <LinkDevicePanel
+          identity={identity}
+          displayName={me.displayName}
+          full={deviceLimit?.full ? "Remove a device to link another." : null}
+        />
+      )}
 
       {holdsIdentityKey && (
         <section className="space-y-2 rounded-lg border border-rim-line bg-rim-panel p-4">

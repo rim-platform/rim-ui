@@ -49,14 +49,17 @@ function timeLeft(expiresAt: string, now: number): string {
 
 /**
  * Settings > Security > "Link a device": the code as a QR code and as text, then the new
- * device's name and fingerprint to confirm. Shown only where the identity key is held.
+ * device's name and fingerprint to confirm. Shown only where the identity key is held. `full`
+ * says why no device can be linked while the account has as many as the instance allows.
  */
 export function LinkDevicePanel({
   identity,
   displayName,
+  full = null,
 }: {
   identity: MyKeyIdentity;
   displayName: string;
+  full?: string | null;
 }) {
   const qc = useQueryClient();
   const [step, setStep] = useState<Step>({ kind: "idle" });
@@ -185,9 +188,12 @@ export function LinkDevicePanel({
       </div>
 
       {step.kind === "idle" && (
-        <Button size="sm" onClick={() => void start()}>
-          Link a device
-        </Button>
+        <>
+          <Button size="sm" disabled={Boolean(full)} onClick={() => void start()}>
+            Link a device
+          </Button>
+          {full && <p className="text-xs text-rim-warm">{full}</p>}
+        </>
       )}
 
       {step.kind === "starting" && <p className="text-sm text-rim-text-muted">Starting...</p>}

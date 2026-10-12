@@ -5,6 +5,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../test/mocks/server";
 import { mockGraphQLQuery } from "../../../test/mocks/graphql";
 import { TestProviders } from "../../../test/utils";
+import { fakeLimits } from "../../../test/limits";
 import { CLIENT_API_VERSION } from "../api/serverInfoApi";
 import { useServerInfo } from "./useServerInfo";
 
@@ -104,6 +105,53 @@ describe("useServerInfo", () => {
     await waitFor(() => expect(result.current.info).toBeDefined());
     expect(result.current.info?.instanceNotice).toBe("Run by Acme.");
     expect(result.current.info?.termsUrl).toBe("https://acme.example/terms");
+  });
+
+  it("reads the server's limits", async () => {
+    const limits = fakeLimits({ workspacesPerUser: 5, messageBytes: 4000, probationHours: 24 });
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: { version: "0.7.0", apiVersion: CLIENT_API_VERSION, features: [], limits },
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.limits).toEqual(limits);
+    expect(result.current.info?.limits).toEqual(limits);
+  });
+
+  it("reads a server older than instance limits with its notice and no limits", async () => {
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        if (body.operationName === "ServerInfo") {
+          return HttpResponse.json({
+            errors: [{ message: 'Unknown field "limits" on type "ServerInfo"' }],
+          });
+        }
+        return HttpResponse.json({
+          data: {
+            serverInfo: {
+              version: "0.6.0",
+              apiVersion: 1,
+              features: [],
+              auditRetentionDays: 30,
+              instanceNotice: "Run by Acme.",
+              termsUrl: null,
+            },
+          },
+        });
+      }),
+    );
+    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+
+    await waitFor(() => expect(result.current.info).toBeDefined());
+    expect(result.current.info?.instanceNotice).toBe("Run by Acme.");
+    expect(result.current.info?.auditRetentionDays).toBe(30);
+    expect(result.current.info).not.toHaveProperty("limits");
+    expect(result.current.limits).toBeUndefined();
+    expect(result.current.unreachable).toBe(false);
   });
 
   it("reads a server older than audit retention with its features, no retention, notice or terms", async () => {

@@ -37,9 +37,16 @@ import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import { useSlowModeStore } from "../state/useSlowModeStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { limitReachedText, utf8Bytes } from "../../limits/limits";
 import { reportFeatureDisabled } from "../../../core/query/queryClient";
 import { ComposerInput } from "./ComposerInput";
-import { OfflineComposerNotice, SlowModeIndicator, TimedOutBanner } from "./ComposerNotices";
+import {
+  MessageBytesCounter,
+  OfflineComposerNotice,
+  SlowModeIndicator,
+  TimedOutBanner,
+} from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { SendBlock } from "../../e2ee/hooks/useE2eeConversation";
@@ -121,6 +128,9 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
   const slowModeBlockedUntil = useSlowModeStore((s) => s.blockedUntil[conversationId]);
   // Without attachments on the server, the composer offers no attach button and takes no drop.
   const attachments = useServerFeature("attachments").enabled;
+  // The instance's cap on a message's text in UTF-8 bytes; null without one.
+  const byteCap = useServerInfo().limits?.messageBytes ?? null;
+  const textBytes = byteCap === null ? 0 : utf8Bytes(text.trim());
 
   // Load draft on mount and when conversationId changes
   useEffect(() => {
@@ -178,6 +188,13 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
     if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {
       refetchConversation();
     }
+  }
+
+  /** Refuses `sent` when its text is over the instance's byte cap; the composer keeps it. */
+  function refuseOverByteCap(sent: string): boolean {
+    if (byteCap === null || utf8Bytes(sent) <= byteCap) return false;
+    toast.error(limitReachedText(byteCap, "bytes of text per message"));
+    return true;
   }
 
   function restoreText(value: string) {
@@ -251,6 +268,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
     for (const [username, userId] of mentionMapRef.current) {
       processed = processed.split(`@${username}`).join(`<@${userId}>`);
     }
+    if (refuseOverByteCap(processed)) return;
     const filesToUpload = pendingFiles.map((pf) => pf.file);
 
     // Revoke blob URLs before clearing
@@ -338,6 +356,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
     const members = serverMembers ?? [];
     const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
     const body = toPrincipalMentions(text, mentionMapRef.current, principalOf);
+    if (refuseOverByteCap(body)) return;
     const files = pendingFiles.map((pf) => pf.file);
     pendingFiles.forEach((pf) => {
       if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
@@ -480,6 +499,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
         />
       </fieldset>
+      <MessageBytesCounter bytes={textBytes} cap={byteCap} />
     </form>
   );
 }

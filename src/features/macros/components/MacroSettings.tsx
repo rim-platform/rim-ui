@@ -23,6 +23,10 @@ import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { LimitNote } from "../../limits/components/LimitNote";
+import { limitView } from "../../limits/limits";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { AiMacroBuilder } from "./AiMacroBuilder";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
 import { runMacro } from "../runtime/runMacro";
@@ -114,8 +118,10 @@ function MacroEditor({
         });
       }
       onSave();
-    } catch {
-      toast.error(initial ? "Failed to update macro" : "Failed to create macro");
+    } catch (err) {
+      toast.error(
+        graphqlErrorMessage(err, initial ? "Failed to update macro" : "Failed to create macro"),
+      );
     }
   }, [name, description, steps, initial, serverId, createMacro, updateMacro, onSave]);
 
@@ -251,6 +257,13 @@ export function MacroSettings() {
   const { data: macros, isLoading } = useMyMacros(workspaceId ?? undefined);
   const { data: commands } = useCommands("PALETTE");
   const deleteMacro = useDeleteMacroMutation();
+  // The client lists only its own macros, so it shows the workspace's cap without a count.
+  const macroLimit = limitView(
+    useServerInfo().limits?.macrosPerWorkspace,
+    undefined,
+    ["macro", "macros"],
+    "macros per workspace",
+  );
 
   const [editing, setEditing] = useState<Macro | "new" | null>(null);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
@@ -341,6 +354,8 @@ export function MacroSettings() {
           </button>
         </div>
       </div>
+
+      <LimitNote limit={macroLimit} />
 
       <AiMacroBuilder
         open={aiBuilderOpen}

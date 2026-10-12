@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as renderPlain, screen, waitFor, within } from "@testing-library/react";
 
 import { renderWithProviders as render } from "../../../test/utils";
+import { withLimits } from "../../../test/limits";
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { useToastStore } from "../../../shared/toast";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -130,6 +131,27 @@ describe("PipelineSettings list states", () => {
     expect(screen.getByText("Trigger: Member Joined")).toBeInTheDocument();
     expect(screen.getByText("2 actions")).toBeInTheDocument();
     expect(callsTo("Pipelines")).toEqual([{ serverId: "ws-1" }]);
+  });
+});
+
+describe("PipelineSettings pipeline cap", () => {
+  it.each([
+    [5, "2 of 5 pipelines", false],
+    [2, "2 of 2 pipelines. This instance allows 2 pipelines per workspace.", true],
+  ])("counts the workspace's pipelines against a cap of %i", async (cap, note, full) => {
+    renderPlain(<PipelineSettings />, { wrapper: withLimits({ pipelinesPerWorkspace: cap }) });
+    await screen.findByText("Escalate urgent");
+    expect(screen.getByTestId("limit-note")).toHaveTextContent(note);
+    expect(screen.getByRole("button", { name: /new pipeline/i }).hasAttribute("disabled")).toBe(
+      full,
+    );
+  });
+
+  it("shows no count on a server without a pipeline cap", async () => {
+    renderPlain(<PipelineSettings />, { wrapper: withLimits({}) });
+    await screen.findByText("Escalate urgent");
+    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new pipeline/i })).toBeEnabled();
   });
 });
 

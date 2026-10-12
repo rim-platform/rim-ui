@@ -18,6 +18,8 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import { selectDirectConversation } from "../state/directSelection";
+import { useProbationEnd } from "../../limits/api/useProbation";
+import { probationText } from "../../limits/limits";
 import { MemberPicker } from "./MemberPicker";
 
 interface NewMessagePickerProps {
@@ -52,6 +54,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
   const createMutation = useCreateConversationMutation();
+  const probationEnd = useProbationEnd();
   // Guests may open DMs but not create groups (the server refuses with FORBIDDEN), so their
   // picker keeps a single selection.
   const isGuest = useIsGuest(workspaceId ?? undefined);
@@ -166,6 +169,17 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
             onEscape={onClose}
             autoFocus
           />
+        )}
+
+        {/* Probation: a DM request to someone outside the contacts and workspaces waits */}
+        {inDirectSpace && probationEnd && (
+          <p
+            data-testid="new-message-probation"
+            className="border-t border-rim-line px-4 py-2 text-xs text-rim-warm"
+          >
+            {probationText("message strangers", probationEnd)} Until then, message your contacts and
+            people in your workspaces.
+          </p>
         )}
 
         {/* Error */}

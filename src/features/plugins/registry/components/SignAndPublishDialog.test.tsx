@@ -7,6 +7,7 @@ import {
   WorkspacePluginStatus,
 } from "../../../../core/graphql/generated/schema-types";
 import { serverInfoQueryClient, type FakeFeatures } from "../../../../test/serverInfo";
+import { limitsQueryClient } from "../../../../test/limits";
 import type { MyKeyIdentity } from "../../../key-identity/api/keyIdentity";
 import { encodeBase64, sha256Hex } from "../../web/bundle";
 import { readSignatureFile } from "../signatureFile";
@@ -16,6 +17,10 @@ import { helloWebBundle, INCEPTION, PUBLISHER, SIGNED_HELLO_WEB } from "../testi
 import { HELLO_WEB_MANIFEST } from "../../web/testing/helloWeb";
 
 const role = vi.hoisted(() => ({ moderator: true }));
+// The workspace registry's entries, as `useWorkspacePlugins` answers.
+const registry = vi.hoisted(() => ({
+  entries: [] as { pluginId: string; version?: string; publisherName?: string }[],
+}));
 
 vi.mock("../signing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../signing")>()),
@@ -29,7 +34,7 @@ vi.mock("../../../key-identity/api/keyBackend", async (importOriginal) => ({
 }));
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
-  useWorkspacePlugins: () => ({ data: [] }),
+  useWorkspacePlugins: () => ({ data: registry.entries }),
   uploadPluginBundle: vi.fn(async () => ({ sha256: SHA, size: 1605, url: "/x" })),
   addWorkspacePlugin: vi.fn(async () => ({})),
   updateWorkspacePlugin: vi.fn(),
@@ -72,8 +77,13 @@ function builtSource(): SigningSource {
   };
 }
 
-async function signIt(features?: FakeFeatures) {
-  const qc = features ? serverInfoQueryClient(features) : new QueryClient();
+async function signIt(features?: FakeFeatures | QueryClient) {
+  const qc =
+    features instanceof QueryClient
+      ? features
+      : features
+        ? serverInfoQueryClient(features)
+        : new QueryClient();
   render(
     <QueryClientProvider client={qc}>
       <SignAndPublishDialog plugin={installedHello()} identity={identity} onClose={() => {}} />
@@ -91,6 +101,7 @@ describe("Sign and publish", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     role.moderator = true;
+    registry.entries = [];
     useWorkspaceStore.setState({ workspaceId: SERVER });
     vi.mocked(signingSourceOf).mockResolvedValue(builtSource());
     vi.mocked(signPluginManifest).mockResolvedValue(SIGNED_HELLO_WEB);
@@ -158,5 +169,21 @@ describe("Sign and publish", () => {
     await signIt({ workspace_plugins: ServerFeatureState.DISABLED });
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export…" })).toBeInTheDocument();
+  });
+
+  it("holds a new plugin back from a full registry, saying why", async () => {
+    registry.entries = [{ pluginId: "dev.example.other" }];
+    await signIt(limitsQueryClient({ pluginsPerWorkspace: 1 }));
+    expect(screen.getByText("This instance allows 1 plugins per workspace.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+  });
+
+  it("publishes over an entry of a full registry, which keeps the count", async () => {
+    registry.entries = [
+      { pluginId: "dev.example.hello-web", version: "0.0.9", publisherName: "Ada" },
+    ];
+    await signIt(limitsQueryClient({ pluginsPerWorkspace: 1 }));
+    expect(screen.queryByText(/This instance allows/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
   });
 });

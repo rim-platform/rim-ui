@@ -8,6 +8,7 @@ import {
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { serverInfoQueryClient, type FakeFeatures } from "../../../test/serverInfo";
+import { limitsQueryClient } from "../../../test/limits";
 import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast/useToastStore";
@@ -471,5 +472,64 @@ describe("Composer — attachments switch", () => {
       }),
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Composer — message byte cap", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "m-1" } }),
+    });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  async function typeWithCap(messageBytes: number | null, text: string) {
+    render(
+      <QueryClientProvider client={limitsQueryClient({ messageBytes })}>
+        <Composer workspaceId="ws-1" conversationId="conv-1" />
+      </QueryClientProvider>,
+    );
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: text } });
+    return textbox;
+  }
+
+  it("shows the UTF-8 byte count only near the cap", async () => {
+    const textbox = await typeWithCap(100, "a".repeat(89));
+    expect(screen.queryByTestId("message-bytes-counter")).not.toBeInTheDocument();
+
+    fireEvent.change(textbox, { target: { value: "é".repeat(45) } });
+    expect(screen.getByTestId("message-bytes-counter")).toHaveTextContent(/^90 of 100 bytes$/);
+  });
+
+  it("shows no counter on a server without a byte cap", async () => {
+    await typeWithCap(null, "a".repeat(5000));
+    expect(screen.queryByTestId("message-bytes-counter")).not.toBeInTheDocument();
+  });
+
+  it("refuses a message over the cap in the server's words and keeps the text", async () => {
+    const textbox = await typeWithCap(100, "a".repeat(101));
+    expect(screen.getByTestId("message-bytes-counter")).toHaveTextContent(
+      "101 of 100 bytes: too long to send",
+    );
+
+    fireEvent.submit(textbox.closest("form")!);
+
+    expect(toast.error).toHaveBeenCalledWith("This instance allows 100 bytes of text per message.");
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
+    expect(textbox).toHaveValue("a".repeat(101));
+  });
+
+  it("sends a message at the cap", async () => {
+    const textbox = await typeWithCap(100, "a".repeat(100));
+    fireEvent.submit(textbox.closest("form")!);
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

@@ -88,6 +88,8 @@ export const queryKeys = {
   serverConfig: () => ["serverConfig"] as const,
   // The server's release and API version; read once per session.
   serverInfo: ["serverInfo"] as const,
+  // When the signed-in account's probation ends; under `me` so a refresh of the account covers it.
+  probation: (userId?: string) => ["me", "probation", userId] as const,
   previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
   workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
   // Track 1.3 notification rules: the viewer's settings, inbox (keyed by the unread-only filter;

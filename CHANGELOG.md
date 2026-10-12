@@ -23,6 +23,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Creating a macro that the server refuses shows the server's reason, such as the instance's
+  macro cap, instead of a bare "Failed to create macro"; a refused invite shows the server's
+  message instead of the raw response.
 - Direct messages show their unread badge at sign-in: the client subscribes to this relay's
   direct space as soon as the session exists instead of when Direct messages is opened. It no
   longer asks the direct space for custom emoji, plugins, pipelines, workspace state or
@@ -41,6 +44,20 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   asks for "I accept the terms of use" with a link to them, opened in the system browser on the
   desktop and a new tab on the web, and sends the URL back as `acceptedTermsUrl`. A refusal over
   the terms shows at the checkbox. Servers without terms, or older ones, sign up as before.
+- On a server that reports its instance caps (GraphQL `ServerInfo.limits`), the places that
+  create things show them before the server refuses: "4 of 5 workspaces" in both new-workspace
+  dialogs, which disable Create at the cap with the reason; "3 of 5 devices" in Settings,
+  Security, which holds Link a device at the cap; "2 of 5 pipelines", which disables New
+  Pipeline at the cap; the registry's plugin count in Workspace settings, Plugins, and a refused
+  publish of a new plugin to a full registry; and the cap alone where the client cannot count,
+  for channels, macros and daily invites. A new invite asks for no more uses than the instance
+  allows, and a refusal for the daily invite cap says it is reached instead of blaming the email
+  address. With a message cap, the composer counts UTF-8 bytes near it and refuses to send over
+  it in the server's words, keeping the text. A server without the caps behaves as before.
+- A new account on probation (`me.probationEndsAt`) sees "New account: you can create workspaces
+  and message strangers after HH:MM" across the top of the app until that time, without a
+  reload. The new-workspace dialogs give the same reason and hold Create, and the direct space's
+  new-message picker says when strangers can be messaged.
 
 ### Changed
 

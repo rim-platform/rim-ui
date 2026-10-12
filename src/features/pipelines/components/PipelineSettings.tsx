@@ -16,6 +16,9 @@ import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-t
 import { cn } from "../../../shared/ui/cn";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
+import { LimitNote } from "../../limits/components/LimitNote";
+import { limitView } from "../../limits/limits";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 
 const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
   { value: PipelineTriggerKindGql.NEW_MESSAGE, label: "New Message" },
@@ -441,6 +444,12 @@ export function PipelineSettings() {
   const { data: pipelines, isLoading, isError } = usePipelines(workspaceId ?? undefined);
   const deletePipeline = useDeletePipelineMutation();
   const togglePipeline = useTogglePipelineMutation();
+  const pipelineLimit = limitView(
+    useServerInfo().limits?.pipelinesPerWorkspace,
+    pipelines?.length,
+    ["pipeline", "pipelines"],
+    "pipelines per workspace",
+  );
 
   const [editing, setEditing] = useState<Pipeline | "new" | null>(null);
 
@@ -494,11 +503,14 @@ export function PipelineSettings() {
         <button
           type="button"
           onClick={() => setEditing("new")}
-          className="flex items-center gap-1 rounded-lg bg-rim-accent px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rim-accent/90"
+          disabled={pipelineLimit?.full}
+          className="flex items-center gap-1 rounded-lg bg-rim-accent px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-4 w-4" /> New Pipeline
         </button>
       </div>
+
+      <LimitNote limit={pipelineLimit} />
 
       {isLoading && <p className="text-sm text-rim-text-muted">Loading pipelines...</p>}
 
