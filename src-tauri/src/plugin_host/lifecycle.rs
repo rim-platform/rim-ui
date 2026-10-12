@@ -104,8 +104,8 @@ pub fn check_ai_consent_required(
         let ai_ids = manifest.ai_callable_command_ids();
         let current_ai: std::collections::HashSet<&str> =
             ai_ids.iter().map(|s| s.as_str()).collect();
-        // We can't recover the old set from just the hash, but hash change + any ai_callable
-        // commands means we must require re-consent (conservative: Widow H3).
+        // The old set cannot be recovered from the hash, so a changed hash with any
+        // ai_callable commands, old or new, requires consent again.
         if !current_ai.is_empty() || !record.approved_ai_commands.is_empty() {
             return Err(LifecycleError::AiConsentRequired);
         }

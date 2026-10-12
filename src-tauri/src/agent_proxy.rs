@@ -146,9 +146,7 @@ pub enum ProxyError {
 
 /// Outcome of `agent_validate_credentials`. Distinguishes "provider said no"
 /// (Invalid) from "we never reached the provider" (NetworkError) so the UI
-/// can tell the user to check the key vs check their connection — pre-#59
-/// both paths collapsed to `Ok(false)` and Hawkeye WARN #4 flagged the UX
-/// confusion (user fixes wrong thing).
+/// can tell the user whether to check the key or their connection.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ValidationOutcome {
