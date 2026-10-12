@@ -6,6 +6,7 @@ import type { ChannelListFilter } from "../../../core/graphql/generated/schema-t
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import type { ConversationSummaryPage } from "../types";
 
 const ChannelsDocument = gql`
@@ -41,12 +42,14 @@ async function fetchChannels(serverId: string, filter: ChannelListFilter) {
 
 /**
  * Every channel the viewer can see that is not archived: public channels (joined or not) plus
- * the private channels they belong to. Backs the browse dialog and the channel pickers.
+ * the private channels they belong to. Backs the browse dialog and the channel pickers. Not
+ * fetched in a direct space, which has no channels.
  */
 export function useChannels(workspaceId?: string) {
+  const direct = useIsDirectSpace(workspaceId);
   return useQuery({
     queryKey: queryKeys.channels(workspaceId),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && !direct,
     staleTime: 30_000,
     queryFn: () => fetchChannels(workspaceId!, BROWSE_FILTER),
   });
@@ -54,12 +57,14 @@ export function useChannels(workspaceId?: string) {
 
 /**
  * Channels the viewer has joined, archived ones included. Backs the sidebar, so the desktop app
- * keeps a copy and shows it when the server cannot be reached (offlineSnapshot.ts).
+ * keeps a copy and shows it when the server cannot be reached (offlineSnapshot.ts). Not fetched
+ * in a direct space.
  */
 export function useJoinedChannels(workspaceId?: string) {
+  const direct = useIsDirectSpace(workspaceId);
   return useQuery({
     queryKey: queryKeys.joinedChannels(workspaceId),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && !direct,
     staleTime: 30_000,
     networkMode: "offlineFirst",
     queryFn: () =>

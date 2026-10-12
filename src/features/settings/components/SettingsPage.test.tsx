@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -68,9 +68,11 @@ vi.mock("../../../shell/state/useShellStore", () => ({
     selector(mockShellState as unknown as Record<string, unknown>),
 }));
 
+// The open space — mutable per test.
+const mockWorkspace = { workspaceId: "ws-1" };
+
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
-  useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ workspaceId: "ws-1" }),
+  useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) => selector(mockWorkspace),
 }));
 
 // The viewer's moderation role — mutable per test.
@@ -101,6 +103,8 @@ import { SettingsPage } from "./SettingsPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
+import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 
 function renderSettings(features: FakeFeatures = {}) {
   return render(<SettingsPage />, { wrapper: withServerInfo(features) });
@@ -112,7 +116,10 @@ describe("SettingsPage", () => {
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
     mockGate.canModerate = false;
+    mockWorkspace.workspaceId = "ws-1";
   });
+
+  afterEach(() => useRelayStore.getState().reset());
 
   it("renders with header and tabs", () => {
     renderSettings();
@@ -336,5 +343,18 @@ describe("SettingsPage", () => {
       expect(screen.queryByRole("button", { name: "Emoji" })).not.toBeInTheDocument();
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
+  });
+
+  it("hides Pipelines, State and Emoji in a direct space, even when deep-linked", () => {
+    startRelayWithDirectSpace();
+    mockWorkspace.workspaceId = DIRECT_SPACE_ID;
+    mockShellState.mainSurface = { kind: "settings", tab: "pipelines" };
+    renderSettings();
+
+    for (const name of ["Pipelines", "State", "Emoji"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole("button", { name: "Keybinds" })).toBeInTheDocument();
+    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 });

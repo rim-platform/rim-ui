@@ -36,7 +36,7 @@ export function useUnreadCounts(workspaceId?: string) {
           counts[item.conversationId] = item.count;
         }
       }
-      useUnreadStore.getState().setCounts(counts);
+      useUnreadStore.getState().setCounts(workspaceId!, counts);
 
       return res.unreadCounts;
     },

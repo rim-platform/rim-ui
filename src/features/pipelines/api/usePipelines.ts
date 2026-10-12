@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import type {
   PipelineGql,
   CreatePipelineInput,
@@ -84,10 +85,12 @@ const TogglePipelineDocument = gql`
   }
 `;
 
+/** The workspace's pipelines; not fetched in a direct space, which has none. */
 export function usePipelines(serverId?: string) {
+  const direct = useIsDirectSpace(serverId);
   return useQuery({
     queryKey: queryKeys.pipelines(serverId),
-    enabled: Boolean(serverId),
+    enabled: Boolean(serverId) && !direct,
     staleTime: 30_000,
     queryFn: async () => {
       const res = await graphqlClient.request<{ pipelines: Pipeline[] }>(PipelinesDocument, {

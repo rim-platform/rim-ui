@@ -14,6 +14,7 @@ import type {
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { BUNDLE_MEDIA_TYPE } from "../web/bundle";
 
 /** One registry entry as this client selects it. */
@@ -61,11 +62,15 @@ export async function fetchWorkspacePlugins(serverId: string): Promise<RegistryE
   return res.workspacePlugins;
 }
 
-/** The registry of `serverId`, refetched when a `WorkspacePluginChanged` event arrives. */
+/**
+ * The registry of `serverId`, refetched when a `WorkspacePluginChanged` event arrives. Not
+ * fetched in a direct space, which has no registry.
+ */
 export function useWorkspacePlugins(serverId: string | null | undefined, enabled = true) {
+  const direct = useIsDirectSpace(serverId);
   return useQuery({
     queryKey: queryKeys.workspacePlugins(serverId),
-    enabled: Boolean(serverId) && enabled,
+    enabled: Boolean(serverId) && enabled && !direct,
     staleTime: 60_000,
     queryFn: () => fetchWorkspacePlugins(serverId as string),
   });

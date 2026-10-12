@@ -5,7 +5,9 @@ import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceS
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
 import { ownerName, workspaceLabels } from "../../features/workspaces/workspaceLabel";
-import { useRelayStore } from "../../features/relay/state/useRelayStore";
+import { useIsDirectSpace, useRelayStore } from "../../features/relay/state/useRelayStore";
+import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
+import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { cn } from "../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { useHoverContextStore } from "../state/useHoverContextStore";
@@ -37,10 +39,10 @@ export function WorkspaceRail() {
     ...elsewhere,
   ];
   const labels = workspaceLabels(workspaces);
-  const inDirectSpace = useRelayStore(
-    (s) =>
-      Boolean(workspaceId) &&
-      (s.info?.directSpaceId === workspaceId || s.spaces[workspaceId ?? ""]?.kind === "direct"),
+  const inDirectSpace = useIsDirectSpace(workspaceId);
+  const directSpaceIds = useDirectSpaceIds();
+  const directUnread = useUnreadStore((s) =>
+    unreadTotal(s.counts, s.spaceOf, (space) => directSpaceIds.includes(space)),
   );
 
   return (
@@ -55,17 +57,27 @@ export function WorkspaceRail() {
         <button
           type="button"
           title="Direct messages"
-          aria-label="Direct messages"
+          aria-label={
+            directUnread > 0 ? `Direct messages (${directUnread} unread)` : "Direct messages"
+          }
           aria-pressed={inDirectSpace}
           onClick={() => setWorkspaceId(directSpaceId)}
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl transition",
+            "relative flex h-9 w-9 items-center justify-center rounded-xl transition",
             inDirectSpace
               ? "bg-gradient-to-br from-rim-accent to-rim-accent text-rim-void"
               : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
           )}
         >
           <MessagesSquare className="h-4 w-4" />
+          {directUnread > 0 && (
+            <span
+              aria-hidden
+              className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rim-danger px-1 text-[10px] font-bold leading-none text-rim-text"
+            >
+              {directUnread > 99 ? "99+" : directUnread}
+            </span>
+          )}
         </button>
       )}
 

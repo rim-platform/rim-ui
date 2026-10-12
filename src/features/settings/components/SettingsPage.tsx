@@ -22,6 +22,7 @@ import {
   AboutServerVersion,
 } from "../../updater/components/AboutServer";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -191,6 +192,9 @@ type SettingsTab =
   | "account"
   | "about";
 
+/** Tabs that edit what only a workspace has: hidden in a direct space. */
+const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = ["pipelines", "state", "emoji"];
+
 /** Sections of the settings navigation, in display order. */
 const groups = ["You", "Messaging", "Programmable", "Extensions", "Workspace", "About"] as const;
 
@@ -242,8 +246,12 @@ export function SettingsPage() {
   const canModerate = useCanModerate(workspaceId ?? undefined);
   // Emoji management needs custom emoji on the server.
   const customEmoji = useServerFeature("custom_emoji").enabled;
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const visibleTabs = tabs.filter(
-    (tab) => (tab.key !== "workspace" || canModerate) && (tab.key !== "emoji" || customEmoji),
+    (tab) =>
+      (tab.key !== "workspace" || canModerate) &&
+      (tab.key !== "emoji" || customEmoji) &&
+      !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
   const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
     ? activeTab

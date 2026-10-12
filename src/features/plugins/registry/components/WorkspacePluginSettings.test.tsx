@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -8,6 +8,8 @@ import { ServerFeatureState } from "../../../../core/graphql/generated/schema-ty
 import { RuntimeProvider } from "../../../../core/runtime/RuntimeProvider";
 import { server } from "../../../../test/mocks/server";
 import { serverInfoQueryClient, type FakeFeatures } from "../../../../test/serverInfo";
+import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../../test/directSpace";
+import { useRelayStore } from "../../../relay/state/useRelayStore";
 
 vi.mock("../../../workspaces/api/useMyServerRole", () => ({ useCanModerate: () => true }));
 
@@ -27,7 +29,7 @@ function serveRegistry(): { calls: number } {
   return seen;
 }
 
-function renderSettings(features: FakeFeatures = {}) {
+function renderSettings(features: FakeFeatures = {}, serverId = "ws-1") {
   const client = serverInfoQueryClient(features);
   function Providers({ children }: { children: ReactNode }) {
     return (
@@ -36,10 +38,12 @@ function renderSettings(features: FakeFeatures = {}) {
       </QueryClientProvider>
     );
   }
-  return render(<WorkspacePluginSettings serverId="ws-1" />, { wrapper: Providers });
+  return render(<WorkspacePluginSettings serverId={serverId} />, { wrapper: Providers });
 }
 
 describe("WorkspacePluginSettings and the workspace_plugins switch", () => {
+  afterEach(() => useRelayStore.getState().reset());
+
   it("shows the registry while the server runs workspace plugins", async () => {
     const seen = serveRegistry();
     renderSettings();
@@ -56,6 +60,15 @@ describe("WorkspacePluginSettings and the workspace_plugins switch", () => {
       screen.getByText("Workspace plugins are switched off on this server."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add from files/i })).not.toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(seen.calls).toBe(0);
+  });
+
+  it("asks for no registry in a direct space", async () => {
+    startRelayWithDirectSpace();
+    const seen = serveRegistry();
+    renderSettings({}, DIRECT_SPACE_ID);
+
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(seen.calls).toBe(0);
   });

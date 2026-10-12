@@ -3,7 +3,7 @@ import { History } from "lucide-react";
 
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { fetchConversationPredecessor, type PredecessorView } from "../api/relayApi";
-import { useRelayStore } from "../state/useRelayStore";
+import { useIsDirectSpace, useRelayStore } from "../state/useRelayStore";
 
 /** The direct space this account uses on `host` (this relay's own when `host` is this relay). */
 function directSpaceOn(host: string): string | null {
@@ -28,9 +28,7 @@ export function ConversationContinuity({
   conversationId: string;
 }) {
   const qc = useQueryClient();
-  const direct = useRelayStore(
-    (s) => s.info?.directSpaceId === workspaceId || s.spaces[workspaceId]?.kind === "direct",
-  );
+  const direct = useIsDirectSpace(workspaceId);
   const here = useRelayStore(
     (s) => s.spaces[workspaceId]?.hostServerId ?? s.info?.serverId ?? null,
   );

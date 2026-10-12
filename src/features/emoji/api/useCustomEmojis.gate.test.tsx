@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { server } from "../../../test/mocks/server";
+import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { withServerInfo } from "../../../test/serverInfo";
 import { useCustomEmojis } from "./useCustomEmojis";
 
@@ -31,6 +33,8 @@ function serveEmoji(): { calls: number } {
 }
 
 describe("useCustomEmojis and the custom_emoji switch", () => {
+  afterEach(() => useRelayStore.getState().reset());
+
   it("loads the workspace's emoji while the server runs custom emoji", async () => {
     const seen = serveEmoji();
     const { result } = renderHook(() => useCustomEmojis("ws-1"), { wrapper: withServerInfo() });
@@ -43,6 +47,18 @@ describe("useCustomEmojis and the custom_emoji switch", () => {
     const seen = serveEmoji();
     const { result } = renderHook(() => useCustomEmojis("ws-1"), {
       wrapper: withServerInfo({ custom_emoji: ServerFeatureState.DISABLED }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(result.current.emojis).toEqual([]);
+    expect(seen.calls).toBe(0);
+  });
+
+  it("asks for nothing and offers none in a direct space", async () => {
+    startRelayWithDirectSpace();
+    const seen = serveEmoji();
+    const { result } = renderHook(() => useCustomEmojis(DIRECT_SPACE_ID), {
+      wrapper: withServerInfo(),
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
