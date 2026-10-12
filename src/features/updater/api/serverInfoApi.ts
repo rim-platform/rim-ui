@@ -1,13 +1,51 @@
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import type { ServerInfo } from "../../../core/graphql/generated/schema-types";
+import type { ServerInfo, ServerLimits } from "../../../core/graphql/generated/schema-types";
 
 /** The major GraphQL API version this client speaks. */
 export const CLIENT_API_VERSION = 1;
 
+/**
+ * What the client knows about the server: `limits` is undefined for a server older than
+ * instance limits, which reports none.
+ */
+export type KnownServerInfo = Omit<ServerInfo, "limits"> & { limits?: ServerLimits };
+
 const SERVER_INFO_QUERY = gql`
   query ServerInfo {
+    serverInfo {
+      version
+      apiVersion
+      features {
+        key
+        state
+        reason
+      }
+      auditRetentionDays
+      instanceNotice
+      termsUrl
+      limits {
+        workspacesPerUser
+        membersPerWorkspace
+        channelsPerWorkspace
+        devicesPerUser
+        dmRequestsPerDay
+        macrosPerWorkspace
+        pipelinesPerWorkspace
+        pluginsPerWorkspace
+        invitesPerUserPerDay
+        inviteMaxUses
+        messageBytes
+        probationHours
+      }
+    }
+  }
+`;
+
+/** The same without `limits`, for a server older than instance limits. */
+const SERVER_POLICY_QUERY = gql`
+  query ServerPolicy {
     serverInfo {
       version
       apiVersion
@@ -52,7 +90,7 @@ const SERVER_VERSION_QUERY = gql`
 `;
 
 interface ServerInfoResponse {
-  serverInfo: ServerInfo;
+  serverInfo: KnownServerInfo;
 }
 
 /** Whether the server answered with GraphQL errors, as opposed to not answering at all. */
@@ -63,13 +101,14 @@ function refusedByServer(err: unknown): boolean {
 
 /**
  * The connected server's release version, API version, features, audit retention, instance
- * notice and terms URL; needs no session. Each query a server refuses falls back to the next
- * older one. A server older than the instance notice leaves `auditRetentionDays`,
- * `instanceNotice` and `termsUrl` undefined (unknown, unlike `null`: rows kept forever, no
- * notice, no terms); one older than `features` runs every feature, so it reads as listing none.
+ * notice, terms URL and limits; needs no session. Each query a server refuses falls back to the
+ * next older one. A server older than instance limits leaves `limits` undefined; one older than
+ * the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
+ * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
+ * `features` runs every feature, so it reads as listing none.
  */
-export async function fetchServerInfo(): Promise<ServerInfo> {
-  for (const query of [SERVER_INFO_QUERY, SERVER_FEATURES_QUERY]) {
+export async function fetchServerInfo(): Promise<KnownServerInfo> {
+  for (const query of [SERVER_INFO_QUERY, SERVER_POLICY_QUERY, SERVER_FEATURES_QUERY]) {
     try {
       const res = await graphqlClient.request<ServerInfoResponse>(query);
       return { ...res.serverInfo, features: res.serverInfo.features ?? [] };

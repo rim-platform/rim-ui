@@ -10,10 +10,12 @@ import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import { FeatureOffNotice } from "../../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../../updater/hooks/useServerFeature";
+import { useServerInfo } from "../../../updater/hooks/useServerInfo";
+import { LimitNote } from "../../../limits/components/LimitNote";
 import { useCanModerate } from "../../../workspaces/api/useMyServerRole";
 import { removeWorkspacePlugin, updateWorkspacePlugin, type RegistryEntry } from "../api";
 import { useRegistryItems } from "../hooks";
-import { sourceLine, statusWord } from "../model";
+import { registryLimit, sourceLine, statusWord } from "../model";
 import { PUBLISHER_RECOVERED_TEXT } from "../verify";
 import { AddFromFilesDialog } from "./AddFromFilesDialog";
 import { TrustBadge } from "./TrustBadge";
@@ -28,6 +30,7 @@ export function WorkspacePluginSettings({ serverId }: { serverId: string | null 
   const registry = useServerFeature("workspace_plugins");
   const { items, members, workspaceName } = useRegistryItems(serverId);
   const entries = items.map((i) => i.check.entry);
+  const limit = registryLimit(useServerInfo().limits?.pluginsPerWorkspace, entries.length);
   const [adding, setAdding] = useState<{ replacing?: RegistryEntry } | null>(null);
   const [removing, setRemoving] = useState<RegistryEntry | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -83,6 +86,7 @@ export function WorkspacePluginSettings({ serverId }: { serverId: string | null 
           Add from files
         </Button>
       </div>
+      <LimitNote limit={limit} />
       {items.length === 0 ? (
         <p className="text-xs text-rim-text-muted">
           No plugins yet. Publish one from Settings &gt; Plugins on a desktop that holds your

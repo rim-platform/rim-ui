@@ -86,4 +86,17 @@ describe("useCreateInviteMutation", () => {
       },
     });
   });
+
+  it("sends fewer uses when asked", async () => {
+    requestMock.mockResolvedValue({ createInvite: { inviteToken: "t", inviteId: "i" } });
+    const { result } = renderHook(() => useCreateInviteMutation(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ serverId: "ws-1", maxUses: 3 });
+    });
+
+    expect(requestMock.mock.calls[0][1]).toEqual({
+      input: { serverId: "ws-1", maxUses: 3, role: "MEMBER" },
+    });
+  });
 });

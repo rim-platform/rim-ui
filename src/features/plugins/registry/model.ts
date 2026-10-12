@@ -3,10 +3,16 @@
 // on its own.
 
 import { WorkspacePluginStatus } from "../../../core/graphql/generated/schema-types";
+import { limitView, type LimitView } from "../../limits/limits";
 import { runtimeKind, type PluginInfo, type PluginInstallSource } from "../types";
 import type { EntryCheck, VerifiedEntry } from "./verify";
 
 const PRINCIPAL_PREFIX = "rimp1_";
+
+/** The registry's entries against the instance's plugin cap; `null` without a cap. */
+export function registryLimit(cap: number | null | undefined, entries: number): LimitView | null {
+  return limitView(cap, entries, ["plugin", "plugins"], "plugins per workspace");
+}
 
 /** `rimp1_` and the first 8 characters after it: how a badge names a principal. */
 export function shortPrincipal(principalId: string): string {

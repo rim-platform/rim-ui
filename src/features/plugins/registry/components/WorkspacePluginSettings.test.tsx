@@ -8,6 +8,7 @@ import { ServerFeatureState } from "../../../../core/graphql/generated/schema-ty
 import { RuntimeProvider } from "../../../../core/runtime/RuntimeProvider";
 import { server } from "../../../../test/mocks/server";
 import { serverInfoQueryClient, type FakeFeatures } from "../../../../test/serverInfo";
+import { limitsQueryClient } from "../../../../test/limits";
 import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../../test/directSpace";
 import { useRelayStore } from "../../../relay/state/useRelayStore";
 
@@ -29,8 +30,11 @@ function serveRegistry(): { calls: number } {
   return seen;
 }
 
-function renderSettings(features: FakeFeatures = {}, serverId = "ws-1") {
-  const client = serverInfoQueryClient(features);
+function renderSettings(
+  features: FakeFeatures = {},
+  serverId = "ws-1",
+  client = serverInfoQueryClient(features),
+) {
   function Providers({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
@@ -71,5 +75,20 @@ describe("WorkspacePluginSettings and the workspace_plugins switch", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(seen.calls).toBe(0);
+  });
+});
+
+describe("WorkspacePluginSettings and the plugin cap", () => {
+  it("counts the registry's plugins against the cap", async () => {
+    serveRegistry();
+    renderSettings({}, "ws-1", limitsQueryClient({ pluginsPerWorkspace: 3 }));
+    expect(await screen.findByTestId("limit-note")).toHaveTextContent(/^0 of 3 plugins$/);
+  });
+
+  it("shows no count on a server without a plugin cap", () => {
+    serveRegistry();
+    renderSettings({}, "ws-1", limitsQueryClient({}));
+    expect(screen.getByRole("button", { name: /add from files/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
   });
 });

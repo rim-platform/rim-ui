@@ -2,17 +2,21 @@ import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 
-import { ServerFeatureState, type ServerInfo } from "../core/graphql/generated/schema-types";
+import { ServerFeatureState } from "../core/graphql/generated/schema-types";
 import { queryKeys } from "../core/query/keys";
 import { SERVER_FEATURE_LABELS, type ServerFeatureKey } from "../core/serverFeatures";
+import type { KnownServerInfo } from "../features/updater/api/serverInfoApi";
 
 /** Features to report other than enabled: a state, or a state with its reason. */
 export type FakeFeatures = Partial<
   Record<ServerFeatureKey, ServerFeatureState | { state: ServerFeatureState; reason: string }>
 >;
 
-/** Server info fields other than the version and the features, such as `termsUrl`. */
-export type FakeServerDetails = Partial<Omit<ServerInfo, "features">>;
+/**
+ * Server info fields other than the version and the features, such as `termsUrl` or `limits`;
+ * without `limits` the server reads as older than instance limits.
+ */
+export type FakeServerDetails = Partial<Omit<KnownServerInfo, "features">>;
 
 /**
  * A server that lists every known feature, enabled unless `features` says otherwise, with
@@ -21,7 +25,7 @@ export type FakeServerDetails = Partial<Omit<ServerInfo, "features">>;
 export function fakeServerInfo(
   features: FakeFeatures = {},
   details: FakeServerDetails = {},
-): ServerInfo {
+): KnownServerInfo {
   return {
     version: "0.4.0",
     apiVersion: 1,

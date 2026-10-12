@@ -3,17 +3,23 @@ import { useState } from "react";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
+import { LimitNote } from "../../limits/components/LimitNote";
 import { useCreateServerMutation } from "../api/useCreateServer";
+import {
+  useWorkspaceCreationLimit,
+  type WorkspaceCreationLimit,
+} from "../hooks/useWorkspaceCreationLimit";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 
 export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
   const create = useCreateServerMutation();
+  const { limit, blocked } = useWorkspaceCreationLimit();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || blocked) return;
 
     create.mutate(
       { name: name.trim() },
@@ -43,6 +49,8 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
           />
         </label>
 
+        <WorkspaceCreationNote limit={limit} blocked={blocked} />
+
         {create.error && (
           <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
             {graphqlErrorMessage(create.error, "Failed to create workspace")}
@@ -52,7 +60,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
         <Button
           type="submit"
           variant="primary"
-          disabled={!name.trim()}
+          disabled={!name.trim() || Boolean(blocked)}
           isLoading={create.isPending}
           className="w-full"
         >
@@ -60,5 +68,22 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }) {
         </Button>
       </form>
     </Dialog>
+  );
+}
+
+/**
+ * The workspace cap and, while creating one is refused for probation, why. Shared by both
+ * create-workspace dialogs; a reached cap gives its own reason.
+ */
+export function WorkspaceCreationNote({ limit, blocked }: WorkspaceCreationLimit) {
+  return (
+    <>
+      <LimitNote limit={limit} />
+      {blocked && !limit?.full && (
+        <p data-testid="workspace-creation-blocked" className="text-xs text-rim-warm">
+          {blocked}
+        </p>
+      )}
+    </>
   );
 }

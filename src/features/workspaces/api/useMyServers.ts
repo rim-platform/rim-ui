@@ -36,9 +36,11 @@ export async function fetchMyServers(): Promise<Server[]> {
   return res.myServers;
 }
 
-export function useMyServers() {
+/** The workspaces this account is a member of; `enabled` false only reads what is cached. */
+export function useMyServers(enabled = true) {
   return useQuery({
     queryKey: queryKeys.myServers(),
+    enabled,
     staleTime: 60_000,
     // Runs offline too: the desktop app answers from its saved copy (offlineSnapshot.ts).
     networkMode: "offlineFirst",

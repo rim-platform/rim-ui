@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { renderWithProviders } from "../../../test/utils";
+import { renderWithLimits } from "../../../test/limits";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -115,5 +116,25 @@ describe("NewMessagePicker", () => {
     await user.click(await screen.findByRole("option", { name: "Bob" }));
     await user.keyboard("{Control>}{Enter}{/Control}");
     expect(await screen.findByText(/cannot receive encrypted messages/)).toBeInTheDocument();
+  });
+
+  it("tells a new account on probation in the direct space when it can message strangers", async () => {
+    relayApi.fetchContacts.mockResolvedValue([]);
+    const endsAt = new Date(Date.now() + 3_600_000).toISOString();
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    const { unmount } = renderWithLimits(
+      <NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />,
+      {},
+      endsAt,
+    );
+    expect(screen.getByTestId("new-message-probation")).toHaveTextContent(
+      /^New account: you can message strangers after .+\. Until then, message your contacts and people in your workspaces\.$/,
+    );
+    unmount();
+
+    // Members of a workspace are no strangers, so its picker says nothing.
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    renderWithLimits(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />, {}, endsAt);
+    expect(screen.queryByTestId("new-message-probation")).not.toBeInTheDocument();
   });
 });

@@ -10,6 +10,9 @@ import { useCreateConversationMutation } from "../api/useCreateConversation";
 import { useAddConversationMembersMutation } from "../api/useChannelMembership";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { LimitNote } from "../../limits/components/LimitNote";
+import { limitView } from "../../limits/limits";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { MemberPicker } from "./MemberPicker";
 
 const PRIVATE_CHANNEL_HINT =
@@ -24,6 +27,13 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
   const create = useCreateConversationMutation();
   const addMembers = useAddConversationMembersMutation();
   const isSubmitting = create.isPending || addMembers.isPending;
+  // The client sees only the channels it may, so it shows the cap without a count.
+  const channelLimit = limitView(
+    useServerInfo().limits?.channelsPerWorkspace,
+    undefined,
+    ["channel", "channels"],
+    "channels per workspace",
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -127,6 +137,8 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
         </div>
+
+        <LimitNote limit={channelLimit} />
 
         {create.error && (
           <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">

@@ -2494,8 +2494,8 @@ export type Query = {
   /** Active bans of the workspace, newest first. Owner/Moderator only. */
   serverBans: Array<ServerBan>;
   /**
-   * The server's release version, API version, features, audit retention, instance notice
-   * and terms URL. Readable without a session.
+   * The server's release version, API version, features, audit retention, instance notice,
+   * terms URL and limits. Readable without a session.
    */
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
@@ -3146,6 +3146,8 @@ export type ServerInfo = {
    * when there is none.
    */
   instanceNotice?: Maybe<Scalars['String']['output']>;
+  /** The instance-wide caps, so a client can show "5 of 5" before it tries. */
+  limits: ServerLimits;
   /**
    * The terms of service a signup accepts, an absolute http(s) URL; null when the instance
    * has none. A signup sends it back as `acceptedTermsUrl`.
@@ -3153,6 +3155,44 @@ export type ServerInfo = {
   termsUrl?: Maybe<Scalars['String']['output']>;
   /** The server's release version, e.g. `0.1.0`. */
   version: Scalars['String']['output'];
+};
+
+/**
+ * The instance-wide caps; each is null when this instance sets none, but devices and DM
+ * requests always have one. Creating one more past a cap answers `VALIDATION` naming it.
+ */
+export type ServerLimits = {
+  /** Channels of one workspace, public and private. */
+  channelsPerWorkspace?: Maybe<Scalars['Int']['output']>;
+  /** Devices on one account: the stricter of the instance cap and the relay quota. */
+  devicesPerUser?: Maybe<Scalars['Int']['output']>;
+  /**
+   * DM requests one user sends to strangers per day: the stricter of the instance cap and
+   * the relay quota.
+   */
+  dmRequestsPerDay?: Maybe<Scalars['Int']['output']>;
+  /** Uses one invite may have. */
+  inviteMaxUses?: Maybe<Scalars['Int']['output']>;
+  /** Invites one user creates per day. */
+  invitesPerUserPerDay?: Maybe<Scalars['Int']['output']>;
+  /** Macros of one workspace. */
+  macrosPerWorkspace?: Maybe<Scalars['Int']['output']>;
+  /** Members of one workspace; the direct space has no cap. */
+  membersPerWorkspace?: Maybe<Scalars['Int']['output']>;
+  /** Bytes of one message's text. */
+  messageBytes?: Maybe<Scalars['Int']['output']>;
+  /** Pipelines of one workspace. */
+  pipelinesPerWorkspace?: Maybe<Scalars['Int']['output']>;
+  /** Plugins of one workspace's registry. */
+  pluginsPerWorkspace?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Hours after its creation during which an account cannot create a workspace or send a
+   * DM request to a stranger, and sends messages at a lower rate; `me.probationEndsAt` says
+   * when the caller's ends.
+   */
+  probationHours?: Maybe<Scalars['Int']['output']>;
+  /** Workspaces one user owns. */
+  workspacesPerUser?: Maybe<Scalars['Int']['output']>;
 };
 
 export type ServerMember = {
@@ -3479,6 +3519,11 @@ export type User = {
    * see this id, and the host maps a provisional `rimp0_` id to it once.
    */
   principalId?: Maybe<Scalars['String']['output']>;
+  /**
+   * When the account leaves probation, while it is in it. Read on `me` only; null for
+   * everyone else and once probation is over.
+   */
+  probationEndsAt?: Maybe<Scalars['DateTime']['output']>;
   statusText?: Maybe<Scalars['String']['output']>;
   username: Scalars['String']['output'];
 };

@@ -12,6 +12,7 @@ vi.mock("../api/useJoinServer", () => ({
   useJoinServerMutation: () => ({ ...local, reset: vi.fn(), isPending: false, error: null }),
 }));
 
+import { withLimits } from "../../../test/limits";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
 
@@ -93,5 +94,17 @@ describe("AddWorkspaceDialog", () => {
     await user.click(screen.getByRole("button", { name: "Join" }));
     expect(local.mutate).toHaveBeenCalledWith("rim_inv_local", expect.anything());
     expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+
+  it("gives a new account on probation the reason on the create choice and holds the form", async () => {
+    const user = userEvent.setup();
+    render(<AddWorkspaceDialog onClose={vi.fn()} />, {
+      wrapper: withLimits({}, new Date(Date.now() + 3_600_000).toISOString()),
+    });
+    expect(screen.getByText(/^New account: you can create workspaces after/)).toBeInTheDocument();
+    await user.click(screen.getByText("Create New"));
+    await user.type(screen.getByRole("textbox"), "Ops");
+    expect(screen.getByTestId("workspace-creation-blocked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
   });
 });

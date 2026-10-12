@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { withLimits } from "../../../test/limits";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import {
@@ -132,5 +133,16 @@ describe("NewChannelDialog", () => {
     typeName("   ");
     submit();
     expect(callsTo(requestMock, "mutation CreateConversation")).toHaveLength(0);
+  });
+
+  it("shows the instance's channel cap, which it cannot count, and nothing without one", () => {
+    const { unmount } = render(<NewChannelDialog onClose={vi.fn()} />, {
+      wrapper: withLimits({ channelsPerWorkspace: 50 }),
+    });
+    expect(screen.getByTestId("limit-note")).toHaveTextContent("Up to 50 channels per workspace");
+    unmount();
+
+    renderDialog();
+    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
   });
 });

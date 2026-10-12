@@ -112,6 +112,9 @@ vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
+vi.mock("../../features/limits/components/ProbationBanner", () => ({
+  ProbationBanner: () => null,
+}));
 vi.mock("../../features/audit/components/AuditLogPage", () => ({ AuditLogPage: () => null }));
 vi.mock("../components/StatusBar", () => ({ StatusBar: () => null }));
 vi.mock("../navigation/FocusPulse", () => ({ FocusPulse: () => null }));

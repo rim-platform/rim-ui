@@ -2,13 +2,17 @@ import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
-import { useCreateInviteMutation } from "../api/useInviteMutations";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { DEFAULT_INVITE_USES, useCreateInviteMutation } from "../api/useInviteMutations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { LimitNote } from "../../limits/components/LimitNote";
+import { isLimitRefusal, limitView } from "../../limits/limits";
 
 type InviteRole = ServerMemberRoleGql.MEMBER | ServerMemberRoleGql.GUEST;
 
@@ -38,12 +42,13 @@ const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
  *
  * The only user-supplied, validatable field on `CreateInviteInput` is
  * `recipientEmail` (Track B3) — `serverId`/`maxUses` aren't user input here —
- * so a backend `VALIDATION` error on this mutation always means the email
- * address was rejected server-side (e.g. passed client validation but failed
- * a stricter server check). Returns `null` for any other error shape, which
- * falls back to the generic error banner.
+ * so a backend `VALIDATION` error on this mutation means the email address was
+ * rejected server-side (e.g. passed client validation but failed a stricter
+ * server check), unless it names one of the instance's caps. Returns `null` for
+ * any other error shape, which falls back to the generic error banner.
  */
 function mapCreateInviteError(err: unknown): string | null {
+  if (isLimitRefusal(err)) return null;
   if (err && typeof err === "object") {
     const e = err as { response?: { errors?: Array<{ extensions?: { code?: string } }> } };
     const code = e.response?.errors?.[0]?.extensions?.code;
@@ -63,6 +68,20 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [role, setRole] = useState<InviteRole>(ServerMemberRoleGql.MEMBER);
   const email = useServerFeature("email");
+  const limits = useServerInfo().limits;
+  const usesCap = limits?.inviteMaxUses;
+  const maxUses = usesCap != null && usesCap < DEFAULT_INVITE_USES ? usesCap : undefined;
+  const dailyCap = limits?.invitesPerUserPerDay;
+  // The client has no count of today's invites; a refusal for the daily cap means it is reached.
+  const refusedDaily =
+    isLimitRefusal(createInvite.error) &&
+    graphqlErrorMessage(createInvite.error, "").includes("invites per user per day");
+  const dailyLimit = limitView(
+    dailyCap,
+    refusedDaily ? (dailyCap ?? undefined) : undefined,
+    ["invite in the last 24 hours", "invites in the last 24 hours"],
+    "invites per user per day",
+  );
 
   function handleGenerate() {
     if (!workspaceId) return;
@@ -73,7 +92,12 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
     }
     setEmailError(null);
     createInvite.mutate(
-      { serverId: workspaceId, role, ...(trimmed ? { recipientEmail: trimmed } : {}) },
+      {
+        serverId: workspaceId,
+        role,
+        ...(trimmed ? { recipientEmail: trimmed } : {}),
+        ...(maxUses !== undefined ? { maxUses } : {}),
+      },
       {
         onSuccess: (data) => {
           const link = `${window.location.origin}/join/${data.createInvite.inviteToken}`;
@@ -110,9 +134,9 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
     onClose();
   }
 
-  // A field-level email error already explains the failure; don't also show
-  // the generic banner for the same error.
-  const showGenericError = createInvite.error && !emailError;
+  // A field-level email error or the daily cap already explains the failure; don't also
+  // show the generic banner for the same error.
+  const showGenericError = createInvite.error && !emailError && !(refusedDaily && dailyLimit);
 
   return (
     <Dialog open={open} onClose={handleClose} title="Invite member">
@@ -177,11 +201,17 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
             ) : (
               <FeatureOffNotice feature="email" view={email} />
             )}
+            {usesCap != null && (
+              <p className="text-xs text-rim-text-muted">
+                {maxUses === 1
+                  ? "Each link can be used once."
+                  : `Each link can be used up to ${maxUses ?? DEFAULT_INVITE_USES} times.`}
+              </p>
+            )}
+            <LimitNote limit={dailyLimit} />
             {showGenericError && (
               <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                {createInvite.error instanceof Error
-                  ? createInvite.error.message
-                  : "Failed to create invite"}
+                {graphqlErrorMessage(createInvite.error, "Failed to create invite")}
               </p>
             )}
             <button

@@ -5,12 +5,14 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useToastStore } from "../../../shared/toast";
 
 vi.mock("../api/useInviteMutations", () => ({
+  DEFAULT_INVITE_USES: 10,
   useCreateInviteMutation: vi.fn(),
 }));
 
 import { useCreateInviteMutation } from "../api/useInviteMutations";
 import { InviteDialog } from "./InviteDialog";
 import { withServerInfo, type FakeFeatures } from "../../../test/serverInfo";
+import { withLimits } from "../../../test/limits";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 function renderDialog(features: FakeFeatures = {}) {
@@ -30,6 +32,17 @@ function mockCreateInvite({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial mock of a large TanStack Query mutation result
   } as any);
 }
+
+const DAILY_REFUSAL = {
+  response: {
+    errors: [
+      {
+        message: "this instance allows 5 invites per user per day",
+        extensions: { code: "VALIDATION" },
+      },
+    ],
+  },
+};
 
 /** jsdom has no Clipboard API; stub it so the copy-button handler is testable. */
 function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
@@ -167,5 +180,61 @@ describe("InviteDialog", () => {
     });
 
     expect(useToastStore.getState().toasts[0]?.title).toBe("Couldn't copy — copy manually");
+  });
+
+  it.each([
+    [3, { maxUses: 3 }, "Each link can be used up to 3 times."],
+    [1, { maxUses: 1 }, "Each link can be used once."],
+    [50, {}, "Each link can be used up to 10 times."],
+  ])("asks for no more uses than the instance's cap of %i", (cap, uses, text) => {
+    const mutate = vi.fn();
+    mockCreateInvite({ mutate });
+    render(<InviteDialog open onClose={() => {}} />, {
+      wrapper: withLimits({ inviteMaxUses: cap }),
+    });
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+    expect(mutate).toHaveBeenCalledWith(
+      { serverId: "ws-1", role: "MEMBER", ...uses },
+      expect.anything(),
+    );
+  });
+
+  it("shows the daily invite cap, and that it is reached once the server refuses", () => {
+    mockCreateInvite();
+    const { rerender } = render(<InviteDialog open onClose={() => {}} />, {
+      wrapper: withLimits({ invitesPerUserPerDay: 5 }),
+    });
+    expect(screen.getByTestId("limit-note")).toHaveTextContent(
+      /^Up to 5 invites per user per day$/,
+    );
+
+    const mutate = vi.fn((_input, options) => options?.onError?.(DAILY_REFUSAL));
+    mockCreateInvite({ mutate, error: DAILY_REFUSAL });
+    rerender(<InviteDialog open onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/email invite/i), {
+      target: { value: "teammate@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(screen.getByTestId("limit-note")).toHaveTextContent(
+      "5 of 5 invites in the last 24 hours. This instance allows 5 invites per user per day.",
+    );
+    expect(
+      screen.queryByText("That doesn't look like a valid email address."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/this instance allows 5 invites/)).not.toBeInTheDocument();
+  });
+
+  it("shows the server's message, not the raw response, for another refusal", () => {
+    mockCreateInvite({
+      error: {
+        response: { errors: [{ message: "permission denied", extensions: { code: "FORBIDDEN" } }] },
+        message: 'permission denied: {"response":{}}',
+      },
+    });
+    renderDialog();
+    expect(screen.getByText("permission denied")).toBeInTheDocument();
   });
 });

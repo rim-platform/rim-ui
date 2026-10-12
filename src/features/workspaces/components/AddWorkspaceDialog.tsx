@@ -12,6 +12,8 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { useCreateServerMutation } from "../api/useCreateServer";
 import { useJoinServerMutation } from "../api/useJoinServer";
+import { useWorkspaceCreationLimit } from "../hooks/useWorkspaceCreationLimit";
+import { WorkspaceCreationNote } from "./CreateWorkspaceDialog";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { isInviteLink } from "../../relay/remote/inviteLink";
 import { joinWithInvite } from "../../relay/remote/remoteWorkspaces";
@@ -35,10 +37,11 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
   const joinRemote = useMutation({ mutationFn: joinWithInvite });
   const remote = isInviteLink(inviteCode);
   const joining = remote ? joinRemote : join;
+  const creation = useWorkspaceCreationLimit();
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || creation.blocked) return;
 
     create.mutate(
       { name: name.trim() },
@@ -117,7 +120,9 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
               <Building2 className="h-4 w-4 text-rim-text-muted" />
               Create New
             </div>
-            <div className="text-xs text-rim-text-muted">Start your own workspace</div>
+            <div className="text-xs text-rim-text-muted">
+              {creation.blocked ?? "Start your own workspace"}
+            </div>
           </button>
 
           <button
@@ -151,6 +156,8 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
             />
           </label>
 
+          <WorkspaceCreationNote {...creation} />
+
           {create.error && (
             <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
               {formatError(create.error)}
@@ -160,7 +167,7 @@ export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
           <Button
             type="submit"
             variant="primary"
-            disabled={!name.trim()}
+            disabled={!name.trim() || Boolean(creation.blocked)}
             isLoading={create.isPending}
             className="w-full"
           >

@@ -20,10 +20,11 @@ import { useCanModerate } from "../../../workspaces/api/useMyServerRole";
 import { useWorkspace } from "../../../workspaces/api/useWorkspace";
 import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
 import { useServerFeature } from "../../../updater/hooks/useServerFeature";
+import { useServerInfo } from "../../../updater/hooks/useServerInfo";
 import type { PluginInfo } from "../../types";
 import { useWorkspacePlugins } from "../api";
 import { messageOf } from "../installer";
-import { formatSize, statusWord } from "../model";
+import { formatSize, registryLimit, statusWord } from "../model";
 import { publishStatement } from "../publish";
 import { signatureFileStem, writeSignatureFile } from "../signatureFile";
 import {
@@ -115,6 +116,10 @@ export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPubli
 
   const keyLog = logStatements(identity.keyLog);
   const existing = entries?.find((e) => e.pluginId === source?.pluginId);
+  const pluginCap = useServerInfo().limits?.pluginsPerWorkspace;
+  const registry = entries ? registryLimit(pluginCap, entries.length) : null;
+  // Replacing an entry keeps the count; only a new one is refused at the cap.
+  const registryFull = !existing && registry?.full ? registry.reason : null;
 
   async function pick() {
     setError(null);
@@ -254,6 +259,7 @@ export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPubli
                 Replaces {existing.version} signed by {existing.publisherName}
               </p>
             )}
+            {registryFull && <p className="text-rim-warm">{registryFull}</p>}
             <label className="flex items-center gap-2">
               <span>Status in {workspace?.name ?? "this workspace"}</span>
               <select
@@ -278,7 +284,12 @@ export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPubli
               >
                 Export…
               </Button>
-              <Button size="sm" isLoading={busy} onClick={() => void publish()}>
+              <Button
+                size="sm"
+                isLoading={busy}
+                disabled={Boolean(registryFull)}
+                onClick={() => void publish()}
+              >
                 Publish
               </Button>
             </div>
