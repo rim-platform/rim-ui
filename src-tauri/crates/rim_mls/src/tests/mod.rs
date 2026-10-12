@@ -1,5 +1,6 @@
 mod formats;
 mod hardening;
+mod peer_keys;
 mod providers;
 mod raw;
 mod sequencer;

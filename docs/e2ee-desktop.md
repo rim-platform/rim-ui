@@ -148,6 +148,11 @@ What this device holds the server to, whatever it answers later:
 - **Commits.** A Commit whose proposals are not exactly the adds and removes its summary names,
   or that carries any proposal other than Add and Remove, is never merged: the group waits for
   a re-add and the committer is named as misbehaving.
+- **Peer keys.** Another device's HPKE public key must be 1,216 bytes, an X-Wing key of suite
+  0x004F. A key package with a key of another length is not added, a Commit that leaves one in
+  the tree is never merged (the group waits for a re-add, the committer is named as
+  misbehaving), a Welcome whose tree holds one is refused, and this device's own Commit fails
+  rather than encrypt to one, unless it removes that device.
 - **Key logs.** The first key log verified for a principal pins its head (`e2ee_peer`). A served
   log must contain the pinned head; a shorter or forked one is refused ("<name>'s identity
   changed in a way RIM cannot verify", reason `keyLogForked`) and the pin moves only along valid

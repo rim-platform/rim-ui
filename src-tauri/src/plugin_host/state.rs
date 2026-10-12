@@ -18,8 +18,8 @@ pub struct PluginRecord {
     /// AI command IDs the user has explicitly consented to expose to the agent.
     #[serde(default)]
     pub approved_ai_commands: Vec<String>,
-    /// SHA-256 hex of the manifest JSON at install time. Re-consent required when
-    /// the ai_callable command set changes (Widow H3 v1→v2 drift protection).
+    /// SHA-256 hex of the manifest JSON at install time. A different hash on a later
+    /// install requires the user to consent again to the plugin's ai_callable commands.
     #[serde(default)]
     pub manifest_hash: String,
     /// SHA-256 hex of the entire bundle contents (all files, sorted deterministically)

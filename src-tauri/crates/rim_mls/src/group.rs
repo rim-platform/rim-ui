@@ -20,6 +20,7 @@ use crate::error::{Error, Result};
 use crate::franking::franking_commitment;
 use crate::group_id::ConversationGroup;
 use crate::identity::{DeviceRef, Leaf};
+use crate::peer_key::{check_commit_targets, check_key_package, check_tree};
 use crate::provider::{Crypto, Provider};
 use crate::storage::{sealed::Backend, KvStorage, Records};
 use crate::CIPHER_SUITE;
@@ -90,7 +91,8 @@ pub enum CommitOutcome {
     OwnMerged(MergedCommit),
     /// The Commit was not merged: the group stays at `epoch` and waits for a re-add.
     /// `committer` is set when the Commit decrypted but broke a rule (proposals other than Add
-    /// and Remove, or a summary that does not name them): that device misbehaved.
+    /// and Remove, a summary that does not name them, or a key of the wrong length): that device
+    /// misbehaved.
     CannotProcess {
         epoch: u64,
         reason: String,
@@ -345,8 +347,9 @@ pub(crate) fn leaf_index_of(group: &MlsGroup, device: &DeviceRef) -> Result<Leaf
         .ok_or_else(|| Error::NotInGroup(format!("{}/{}", device.principal_id, device.device_id)))
 }
 
-/// Read a claimed key package and check that it is valid and names the device it was claimed for.
-fn claimed_key_package<C: Crypto>(
+/// Read a claimed key package and check that it is valid, names the device it was claimed for and
+/// carries keys of the suite's length.
+pub(crate) fn claimed_key_package<C: Crypto>(
     crypto: &C,
     claimed: &ClaimedKeyPackage,
 ) -> Result<(KeyPackage, Vec<u8>)> {
@@ -366,6 +369,13 @@ fn claimed_key_package<C: Crypto>(
             "key package: the credential names another device".into(),
         ));
     }
+    check_key_package(
+        &key_package,
+        &format!(
+            "{}/{}",
+            claimed.device.principal_id, claimed.device.device_id
+        ),
+    )?;
     let key_package_ref = key_package
         .hash_ref(crypto)
         .map_err(Error::mls)?
@@ -411,6 +421,7 @@ fn stage_commit<C: Crypto>(
         indices.push(leaf_index_of(mls_group, device)?);
         summary.removes.push(device.clone());
     }
+    check_commit_targets(mls_group, &indices)?;
     let epoch = epoch_of(mls_group);
     mls_group.set_aad(summary.to_bytes());
     let signer = identity.signer(crypto);
@@ -631,6 +642,25 @@ pub(crate) fn process_commit<C: Crypto>(
             .to_string();
         return cannot_process(backend, &group, &mut record, epoch, reason, committer);
     }
+    // Never merged either: every later Commit in the group would encrypt to a key of the wrong
+    // length.
+    let tree = staged
+        .export_ratchet_tree(provider.crypto(), mls_group.export_ratchet_tree())
+        .map_err(Error::mls)?;
+    match tree.as_ref().map_or(Ok(()), check_tree) {
+        Ok(()) => {}
+        Err(e @ Error::InvalidPeerKey { .. }) => {
+            return cannot_process(
+                backend,
+                &group,
+                &mut record,
+                epoch,
+                e.to_string(),
+                committer,
+            );
+        }
+        Err(e) => return Err(e),
+    }
     let self_removed = staged.self_removed();
     mls_group
         .merge_staged_commit(&provider, *staged)
@@ -741,9 +771,10 @@ fn check_summary<C: Crypto>(
     Ok((matches, added, removed))
 }
 
-/// Join a group from a Welcome. The Welcome must be for `group`. State this device holds for the
-/// same group is replaced only by a Welcome to a later epoch, or while the group waits for a
-/// re-add: an older Welcome delivered again would roll the group back.
+/// Join a group from a Welcome. The Welcome must be for `group`, and every key in its tree must
+/// have the suite's length. State this device holds for the same group is replaced only by a
+/// Welcome to a later epoch, or while the group waits for a re-add: an older Welcome delivered
+/// again would roll the group back.
 pub(crate) fn join<C: Crypto>(
     crypto: &C,
     backend: &dyn Backend,
@@ -786,6 +817,7 @@ pub(crate) fn join<C: Crypto>(
         .ok()
         .and_then(|leaf| credential_device(leaf.credential()));
     let mls_group = staged.into_group(&provider).map_err(Error::mls)?;
+    check_tree(&mls_group.export_ratchet_tree())?;
     save_record(backend, &group, &GroupRecord::default())?;
     Ok(Joined {
         group,
