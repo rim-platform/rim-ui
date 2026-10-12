@@ -36,7 +36,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 # Direct connections to another server (src/relay/direct.rs): a WebSocket carrying that
 # server's session cookie, which the webview's own socket cannot.
-tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.30.0", features = ["native-tls"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 # In-app updates and the relaunch that applies them. Kept on the same minor as their npm
