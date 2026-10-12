@@ -1,0 +1,38 @@
+# Configuration for `cargo audit` (https://github.com/rustsec/rustsec), run from `src-tauri/`.
+#
+# The three advisories below are in the libcrux crates that `openmls_libcrux_crypto` 0.4.0, the
+# MLS provider of `crates/rim_mls`, links. Unlike on the server they are compiled into the
+# desktop app and the web MLS module. No fix is reachable: 0.4.0 is the newest
+# `openmls_libcrux_crypto`, it requires `libcrux-hmac-drbg` 0.0.1 and `hpke-rs-libcrux` 0.7,
+# and `hpke-rs-libcrux` 0.7 pins `libcrux-kem` `=0.0.9`. All three go once an
+# `openmls_libcrux_crypto` release moves to `hpke-rs` 0.8 and `libcrux-hmac-drbg` 0.0.2;
+# `rim_mls` pins it exactly, so that upgrade is its own change.
+#
+# RUSTSEC-2026-0329 — `HmacDrbgRng::fill_bytes` in `libcrux-hmac-drbg` 0.0.1 panics on an
+# output length that is a non-zero multiple of 65,536. Compiled, but the affected function is
+# never called: `openmls_libcrux_crypto` draws randomness through the fallible `HmacDrbg`
+# (`generate`, in chunks of at most `MAX_GENERATE_BYTES`), and nothing in the dependency
+# graph or this workspace uses `HmacDrbgRng`.
+#
+# RUSTSEC-2026-0330 — `PublicKey::encapsulate_derand` in `libcrux-kem` 0.0.9 panics on a seed
+# shorter than 32 bytes. Compiled, but never called: `hpke-rs-libcrux` encapsulates with
+# `PublicKey::encapsulate`, which draws its own seed from the provider's RNG, and neither
+# OpenMLS, `hpke-rs` nor this workspace calls `encapsulate_derand`.
+#
+# RUSTSEC-2026-0331 — `PublicKey::decode` / `PrivateKey::decode` in `libcrux-kem` 0.0.9 panic
+# on a hybrid key shorter than its type. Reachable: the groups use X-Wing
+# (MLS_128_MLKEM768X25519_AES128GCM_SHA256_Ed25519), and HPKE encryption to a peer decodes
+# the peer's X-Wing public key, which panics below 1,184 bytes. Neither OpenMLS's key package
+# and leaf node validation nor the server checks that key's length, so a device that publishes
+# a signed key package with a short init key, or a member that commits a short leaf
+# encryption key, makes the Add or Commit that encrypts to it panic. The impact is
+# availability only: on the desktop the panic stays inside the `spawn_blocking` task of the
+# e2ee command (`src/e2ee/commands.rs`), which returns an error and rolls back its cache
+# transaction; in the web build it traps the WebAssembly module call. Private keys are always
+# this device's own, and the X-Wing private key decode does not panic.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0329",
+    "RUSTSEC-2026-0330",
+    "RUSTSEC-2026-0331",
+]
