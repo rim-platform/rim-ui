@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
+import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
@@ -78,6 +79,7 @@ export function AppShell() {
   const session = useAuthStore((s) => s.session);
   const { isHydrating } = useSessionHydration();
   useOfflineReconnect();
+  useSessionEndedSignOut();
   useResumeDeviceLinks();
   useRelayRuntime();
   useDirectSpaceRuntime();

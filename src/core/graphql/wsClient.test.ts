@@ -10,7 +10,7 @@ vi.mock("graphql-ws", () => ({
 }));
 
 import { useEdgeStore } from "./edgeRefusals";
-import { onWsConnected, onWsDisconnected, reconnectDelayMs } from "./wsClient";
+import { onWsConnected, onWsDisconnected, onWsSessionEnded, reconnectDelayMs } from "./wsClient";
 
 /** The options wsClient created its graphql-ws client with. */
 const options = vi.mocked(createClient).mock.calls[0][0] as ClientOptions;
@@ -83,8 +83,29 @@ describe("wsClient reconnection", () => {
     vi.unstubAllGlobals();
   });
 
+  /** The socket closed with `code`, as graphql-ws reports it. */
+  const closedWith = (code: number) => new CloseEvent("close", { code });
+
   it("retries a failed upgrade rather than ending the subscriptions", () => {
     expect(options.shouldRetry?.(new Event("error"))).toBe(true);
+  });
+
+  it("retries a dropped connection but not one closed because the session ended", () => {
+    expect(options.shouldRetry?.(closedWith(1006))).toBe(true);
+    expect(options.shouldRetry?.(closedWith(4401))).toBe(false);
+  });
+
+  it("tells the session-ended listeners once on a 4401 close and arms no timer", () => {
+    const ended = vi.fn();
+    const off = onWsSessionEnded(ended);
+
+    options.on?.closed?.(closedWith(4401));
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+
+    options.on?.closed?.(closedWith(1006));
+    expect(ended).toHaveBeenCalledTimes(1);
+    off();
   });
 
   it("backs off from 1 s to 10 s, from 30 s to 5 min after a refusal, or as told", () => {

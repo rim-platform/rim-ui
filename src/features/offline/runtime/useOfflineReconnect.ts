@@ -23,11 +23,10 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { isSessionRefused } from "../../../core/graphql/errors";
 import { onWsConnected } from "../../../core/graphql/wsClient";
 import { retryWithBackoff } from "../../../shared/utils/retryWithBackoff";
-import { useShellStore } from "../../../shell/state/useShellStore";
+import { signOutLocally } from "../../auth/runtime/signOut";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useOfflineStore } from "../state/useOfflineStore";
 
 const SESSION_CHECK_QUERY = gql`
@@ -67,12 +66,8 @@ export function useOfflineReconnect() {
         useOfflineStore.getState().setOffline(false);
         void queryClient.invalidateQueries();
       } else if (result === "signedOut") {
-        useOfflineStore.getState().setOffline(false);
         // As a sign-out from the user menu: back to sign-in with nothing of the session left.
-        useAuthStore.getState().clearSession();
-        useWorkspaceStore.getState().clearWorkspaceId();
-        useShellStore.getState().reset();
-        queryClient.clear();
+        signOutLocally(queryClient);
       }
       return result !== "offline";
     }

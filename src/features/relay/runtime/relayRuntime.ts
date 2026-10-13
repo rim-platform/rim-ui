@@ -14,7 +14,10 @@ import type { WorkspaceEvent } from "../../../core/events/types";
 import { setSpaceRouter } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { onWsConnected, wsClient } from "../../../core/graphql/wsClient";
-import { reportSubscriptionLimit } from "../../../core/graphql/subscriptionErrors";
+import {
+  isSessionEndedClose,
+  reportSubscriptionLimit,
+} from "../../../core/graphql/subscriptionErrors";
 import { logger } from "../../../core/logger";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
@@ -182,6 +185,8 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
       },
       error: (err) => {
         if (reportSubscriptionLimit("[RIM:relay] relayStream", err)) return;
+        // The session ended: the app signs out, nothing to report here.
+        if (isSessionEndedClose(err)) return;
         logger.warn("[RIM:relay] relayStream failed:", err);
       },
       complete: () => logger.debug("[RIM:relay] relayStream completed"),

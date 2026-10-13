@@ -3,7 +3,7 @@ import { useAuthStore } from "./useAuthStore";
 
 describe("useAuthStore", () => {
   beforeEach(() => {
-    useAuthStore.setState({ session: null });
+    useAuthStore.setState({ session: null, sessionEnded: false });
   });
 
   it("starts with null session", () => {
@@ -25,6 +25,15 @@ describe("useAuthStore", () => {
     useAuthStore.getState().setSession({ userId: "user-1" });
     useAuthStore.getState().clearSession();
     expect(useAuthStore.getState().session).toBeNull();
+  });
+
+  it("marks a session the server ended until the next session starts", () => {
+    useAuthStore.getState().setSession({ userId: "user-1" });
+    useAuthStore.getState().endSession();
+    expect(useAuthStore.getState()).toMatchObject({ session: null, sessionEnded: true });
+
+    useAuthStore.getState().setSession({ userId: "user-1" });
+    expect(useAuthStore.getState().sessionEnded).toBe(false);
   });
 
   it("clearSession is safe when already null", () => {

@@ -15,8 +15,8 @@
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
  * the login page is never shown to an authenticated user.
  *
- * **Server notices:** the operator's instance notice at the top, and an alert when the server
- * blocked this address.
+ * **Server notices:** the operator's instance notice at the top, an alert when the server
+ * blocked this address, and a note when the server ended the last session.
  *
  * **Key sign-in:** above the password form, "Sign in with this device" for each account this
  * computer, or this browser once linked, holds a key for; below it, "Link this device" with a
@@ -33,6 +33,7 @@ import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useAuthStore } from "../state/useAuthStore";
 import { useSessionHydration } from "../api/useSessionHydration";
 import { useServerConfig } from "../api/useServerConfig";
+import { SESSION_ENDED_MESSAGE } from "../runtime/signOut";
 import { RegistrationMode } from "../types";
 import { LoginForm } from "./LoginForm";
 import { HealthIndicator } from "./HealthIndicator";
@@ -53,6 +54,7 @@ export function LoginPage() {
   const { data: serverConfig } = useServerConfig();
   const { capabilities } = useRuntime();
   const blocked = useEdgeStore((s) => s.blocked);
+  const sessionEnded = useAuthStore((s) => s.sessionEnded);
 
   // If already authenticated, send directly to the intended destination.
   useEffect(() => {
@@ -110,6 +112,15 @@ export function LoginPage() {
               think this is a mistake.
             </p>
           </div>
+        )}
+
+        {sessionEnded && (
+          <p
+            role="status"
+            className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text"
+          >
+            {SESSION_ENDED_MESSAGE}
+          </p>
         )}
 
         <DeviceKeySignIn onSuccess={handleLoginSuccess} />

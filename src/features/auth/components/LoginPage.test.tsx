@@ -36,9 +36,15 @@ vi.mock("../api/useSessionHydration", () => ({
 // Auth store: always null session to avoid redirect-to-login side effects.
 // The LoginPage component renders null when session is truthy, so keeping it
 // consistently null ensures the form is always rendered during tests.
+const sessionEnded = vi.hoisted(() => ({ value: false }));
 vi.mock("../state/useAuthStore", () => ({
-  useAuthStore: (selector: (s: { session: null; setSession: typeof mockSetSession }) => unknown) =>
-    selector({ session: null, setSession: mockSetSession }),
+  useAuthStore: (
+    selector: (s: {
+      session: null;
+      sessionEnded: boolean;
+      setSession: typeof mockSetSession;
+    }) => unknown,
+  ) => selector({ session: null, sessionEnded: sessionEnded.value, setSession: mockSetSession }),
 }));
 
 // Default server config: INVITE_ONLY
@@ -80,6 +86,7 @@ describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     desktop.value = false;
+    sessionEnded.value = false;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "INVITE_ONLY" },
       isPending: false,
@@ -238,5 +245,15 @@ describe("LoginPage", () => {
   it("shows no blocked state otherwise", () => {
     renderPage();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("says the session ended when the server ended it, and nothing otherwise", () => {
+    const { unmount } = renderPage();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    unmount();
+
+    sessionEnded.value = true;
+    renderPage();
+    expect(screen.getByRole("status")).toHaveTextContent("Your session ended. Sign in again.");
   });
 });
