@@ -37,6 +37,7 @@ import { SESSION_ENDED_MESSAGE } from "../runtime/signOut";
 import { RegistrationMode } from "../types";
 import { LoginForm } from "./LoginForm";
 import { HealthIndicator } from "./HealthIndicator";
+import { RestoringSession } from "./RestoringSession";
 import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/DeviceKeySignIn";
 import { LinkThisDevice } from "../../key-identity/components/LinkThisDevice";
 
@@ -65,11 +66,7 @@ export function LoginPage() {
   }, [isHydrating, session, navigate, location.state]);
 
   if (isHydrating) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
-        <p className="text-sm text-rim-text-muted">Restoring session...</p>
-      </div>
-    );
+    return <RestoringSession />;
   }
 
   // While already navigating away, render nothing to avoid flicker.

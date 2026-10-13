@@ -7,9 +7,11 @@
  * 2. Calls `usePreviewInviteToken(token)` — no auth required.
  * 3. While loading: shows a loading skeleton.
  * 4. On preview error: shows `InvalidTokenState` with a code-keyed copy.
- * 5. If user is authenticated: renders `JoinAuthenticated` (workspace join or
+ * 5. While `useSessionHydration` checks the session cookie (a fresh tab starts with an empty
+ *    auth store): shows "Restoring session...".
+ * 6. If user is authenticated: renders `JoinAuthenticated` (workspace join or
  *    instance-token error).
- * 6. Otherwise: renders `JoinForm` with the appropriate variant copy.
+ * 7. Otherwise: renders `JoinForm` with the appropriate variant copy.
  *
  * Post-signup navigation:
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
@@ -32,10 +34,12 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { usePreviewInviteToken, extractInviteErrorCode } from "../api/usePreviewInviteToken";
+import { useSessionHydration } from "../api/useSessionHydration";
 import { InviteTokenType } from "../types";
 import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
+import { RestoringSession } from "./RestoringSession";
 
 /**
  * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
@@ -57,6 +61,7 @@ function useNoReferrerMeta(): void {
 export function JoinPage() {
   useNoReferrerMeta();
   const { token } = useParams<{ token: string }>();
+  const { isHydrating } = useSessionHydration();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
@@ -69,6 +74,7 @@ export function JoinPage() {
   return (
     <JoinPageWithToken
       token={token}
+      isHydrating={isHydrating}
       isAuthenticated={!!session}
       onSignupSuccess={(userId, serverId) => {
         setSession({ userId });
@@ -115,11 +121,18 @@ function inviteTokenTypeToJoinFormVariant(tokenType: InviteTokenType): InviteTok
 
 interface JoinPageWithTokenProps {
   token: string;
+  /** The session cookie is still being checked, so who is signed in is not known yet. */
+  isHydrating: boolean;
   isAuthenticated: boolean;
   onSignupSuccess: (userId: string, serverId: string | null) => void;
 }
 
-function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPageWithTokenProps) {
+function JoinPageWithToken({
+  token,
+  isHydrating,
+  isAuthenticated,
+  onSignupSuccess,
+}: JoinPageWithTokenProps) {
   const { data: preview, isPending, error, refetch } = usePreviewInviteToken(token);
 
   if (isPending) {
@@ -144,6 +157,10 @@ function JoinPageWithToken({ token, isAuthenticated, onSignupSuccess }: JoinPage
         }
       />
     );
+  }
+
+  if (isHydrating) {
+    return <RestoringSession />;
   }
 
   if (isAuthenticated) {

@@ -45,7 +45,7 @@ export function ContactsSettings() {
       ) : (
         <>
           <OwnContactLink principalId={principalId} />
-          <AddContact />
+          <AddContact me={principalId} />
           <ContactList />
         </>
       )}
@@ -86,23 +86,33 @@ function OwnContactLink({ principalId }: { principalId: string }) {
   );
 }
 
-function AddContact() {
+/** Adding someone from their contact link or QR code; the viewer's own link is refused. */
+function AddContact({ me }: { me: string }) {
   const [text, setText] = useState("");
   const [scanning, setScanning] = useState(false);
   const [link, setLink] = useState<ContactLink | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const read = useCallback((value: string) => {
-    setText(value);
-    setScanning(false);
-    try {
-      setLink(parseContactLink(value));
-      setProblem(null);
-    } catch (err) {
-      setLink(null);
-      setProblem(err instanceof Error ? err.message : "this is not a RIM contact link");
-    }
-  }, []);
+  const read = useCallback(
+    (value: string) => {
+      setText(value);
+      setScanning(false);
+      try {
+        const parsed = parseContactLink(value);
+        if (parsed.principalId === me) {
+          setLink(null);
+          setProblem("this is your own contact link");
+          return;
+        }
+        setLink(parsed);
+        setProblem(null);
+      } catch (err) {
+        setLink(null);
+        setProblem(err instanceof Error ? err.message : "this is not a RIM contact link");
+      }
+    },
+    [me],
+  );
 
   return (
     <section className="space-y-2 rounded-lg border border-rim-line bg-rim-panel p-4">

@@ -13,6 +13,9 @@
  *
  * Post-signup: navigate to `/`. `AppShell` shows the empty-workspace state
  * because the new account has no workspace memberships.
+ *
+ * A signed-in account has no use for the form: once `useSessionHydration` has checked the
+ * session cookie, it is sent on to `/`.
  */
 
 import { useEffect } from "react";
@@ -21,8 +24,10 @@ import { useNavigate } from "react-router-dom";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAuthStore } from "../state/useAuthStore";
 import { useServerConfig } from "../api/useServerConfig";
+import { useSessionHydration } from "../api/useSessionHydration";
 import { RegistrationMode } from "../types";
 import { JoinForm } from "./JoinForm";
+import { RestoringSession } from "./RestoringSession";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 /**
@@ -34,6 +39,8 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 export function OpenJoinPage() {
   const navigate = useNavigate();
   const { data: serverConfig, isPending } = useServerConfig();
+  const { isHydrating } = useSessionHydration();
+  const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
   const { capabilities } = useRuntime();
@@ -43,16 +50,29 @@ export function OpenJoinPage() {
     serverConfig?.registrationMode === RegistrationMode.OPEN ||
     (isPow && capabilities.identityKeys);
 
+  useEffect(() => {
+    if (!isHydrating && session) navigate("/", { replace: true });
+  }, [isHydrating, session, navigate]);
+
   // Redirect to /login when invite-only (or still loading — safe default).
   useEffect(() => {
-    if (isPending || canSignUp) return;
+    if (isPending || canSignUp || isHydrating || session) return;
 
     const timer = setTimeout(() => {
       navigate("/login", { replace: true });
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [isPending, canSignUp, navigate]);
+  }, [isPending, canSignUp, isHydrating, session, navigate]);
+
+  if (isHydrating) {
+    return <RestoringSession />;
+  }
+
+  // While already navigating away, render nothing to avoid flicker.
+  if (session) {
+    return null;
+  }
 
   if (isPending) {
     return (

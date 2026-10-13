@@ -5,6 +5,7 @@ import { cn } from "../../../shared/ui/cn";
 import { useContacts, useVerifiedIdentity } from "../api/useContacts";
 import type { ContactView } from "../api/relayApi";
 import { useContactStore } from "../contacts/useContactStore";
+import { useRelayStore } from "../state/useRelayStore";
 
 export interface PickedContact {
   principalId: string;
@@ -14,7 +15,8 @@ export interface PickedContact {
 
 /**
  * Multi-select over the contact list, for a new DM or group in the direct space. Contacts are
- * named by the alias given here or their verified card.
+ * named by the alias given here or their verified card. The viewer's own principal is never
+ * offered: the server refuses a conversation with only yourself.
  */
 export function ContactPicker({
   selected,
@@ -28,16 +30,18 @@ export function ContactPicker({
   onEscape: () => void;
 }) {
   const contacts = useContacts();
+  const me = useRelayStore((s) => s.account?.principalId ?? null);
   const [query, setQuery] = useState("");
   const [names, setNames] = useState<Record<string, string>>({});
   const aliases = useContactStore((s) => s.aliases);
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (contacts.data ?? []).filter((c) => {
+      if (c.principalId === me) return false;
       const name = aliases[c.principalId] ?? names[c.principalId] ?? "";
       return !needle || name.toLowerCase().includes(needle) || c.principalId.includes(needle);
     });
-  }, [contacts.data, query, aliases, names]);
+  }, [contacts.data, me, query, aliases, names]);
 
   const rememberName = useCallback((principalId: string, name: string) => {
     setNames((n) => (n[principalId] === name ? n : { ...n, [principalId]: name }));

@@ -81,6 +81,24 @@ describe("NewMessagePicker", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("leaves the viewer's own principal out of the contacts offered in the direct space", async () => {
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    relayApi.fetchContacts.mockResolvedValue([
+      { principalId: "rimp1_me", relayUrls: [], addedAt: "" },
+      { principalId: "rimp1_bob", relayUrls: [], addedAt: "" },
+    ]);
+    identity.fetchVerifiedIdentity.mockImplementation((principalId: string) =>
+      Promise.resolve({
+        identity: {},
+        card: { displayName: principalId === "rimp1_me" ? "Me" : "Bob", relays: [], version: 1 },
+      }),
+    );
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    expect(await screen.findByRole("option", { name: "Bob" })).toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(identity.fetchVerifiedIdentity).not.toHaveBeenCalledWith("rimp1_me", []);
+  });
+
   it("starts a DM with workspace members who have principal ids in the direct space", async () => {
     const user = userEvent.setup();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });

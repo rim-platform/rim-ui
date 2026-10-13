@@ -77,6 +77,13 @@ vi.mock("../state/useAuthStore", () => ({
   ) => selector({ session: mockSession, setSession: mockSetSession }),
 }));
 
+// Whether the session cookie is still being checked; the session it restores is `mockSession`.
+const hydration = vi.hoisted(() => ({ isHydrating: false }));
+
+vi.mock("../api/useSessionHydration", () => ({
+  useSessionHydration: () => ({ isHydrating: hydration.isHydrating, isAuthenticated: false }),
+}));
+
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (
     selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
@@ -149,6 +156,7 @@ describe("JoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;
+    hydration.isHydrating = false;
     myServers.data = [];
     mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
   });
@@ -345,6 +353,25 @@ describe("JoinPage", () => {
     renderAtPath("/join/ws-token-abc");
 
     expect(screen.getByText("Join workspace")).toBeInTheDocument();
+  });
+
+  it("waits for the session cookie, then offers the restored account the workspace", () => {
+    hydration.isHydrating = true;
+    const { rerender } = renderAtPath("/join/ws-token-abc");
+    expect(screen.getByText("Restoring session...")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+
+    hydration.isHydrating = false;
+    mockSession = { userId: "existing-user" };
+    rerender(
+      <MemoryRouter initialEntries={["/join/ws-token-abc"]}>
+        <Routes>
+          <Route path="/join/:token" element={<JoinPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Join workspace")).toBeInTheDocument();
+    expect(screen.queryByText("Create account")).not.toBeInTheDocument();
   });
 
   it("names the inviter and the workspace owner, signed in or not", () => {
