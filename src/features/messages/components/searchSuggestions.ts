@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import type { ConversationDirectory } from "../api/localSearch";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
 
-/** The search operators the server understands (rim-server `docs/search.md`). */
+/** The search operators the server understands. */
 export type OperatorKey = "from" | "in" | "has" | "before" | "after";
 
 const OPERATOR = /^(from|in|has|before|after):/;
