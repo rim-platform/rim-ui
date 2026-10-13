@@ -1276,8 +1276,16 @@ input LoginInput {
 	password: String!
 }
 
+"""
+Payload returned from `login` and `loginWithKey`.
+"""
 type LoginPayload {
 	userId: ID!
+	"""
+	The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+	"""
+	csrfToken: String!
 }
 
 type MacroDef {
@@ -3236,7 +3244,7 @@ input SignupWithInviteInput {
 }
 
 """
-Payload returned from `signupWithInvite`.
+Payload returned from `signupWithInvite` and `signupWithKey`.
 
 `server_id` is `Some` only when a `workspaceInviteToken` was used;
 the instance-invite and open paths land in "no workspaces yet" state.
@@ -3244,6 +3252,11 @@ the instance-invite and open paths land in "no workspaces yet" state.
 type SignupWithInvitePayloadGql {
 	userId: ID!
 	serverId: ID
+	"""
+	The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+	"""
+	csrfToken: String!
 }
 
 """

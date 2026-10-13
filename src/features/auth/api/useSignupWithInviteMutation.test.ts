@@ -4,6 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 import { server } from "../../../test/mocks/server";
 import { mockGraphQLMutation } from "../../../test/mocks/graphql";
 import { TestProviders } from "../../../test/utils";
+import { useAuthStore } from "../state/useAuthStore";
 import { useSignupWithInviteMutation } from "./useSignupWithInviteMutation";
 
 vi.mock("../../../core/graphql/config", () => ({
@@ -15,12 +16,13 @@ describe("useSignupWithInviteMutation", () => {
     vi.clearAllMocks();
   });
 
-  it("calls mutation with workspace invite token and returns userId + serverId", async () => {
+  it("calls mutation with workspace invite token, returns userId + serverId and keeps the csrfToken", async () => {
     server.use(
       mockGraphQLMutation("SignupWithInvite", {
         signupWithInvite: {
           userId: "user-abc",
           serverId: "server-xyz",
+          csrfToken: "tok-signup",
         },
       }),
     );
@@ -41,6 +43,8 @@ describe("useSignupWithInviteMutation", () => {
 
     expect(response?.signupWithInvite.userId).toBe("user-abc");
     expect(response?.signupWithInvite.serverId).toBe("server-xyz");
+    expect(useAuthStore.getState().csrfToken).toBe("tok-signup");
+    useAuthStore.setState({ csrfToken: null });
   });
 
   it("calls mutation with instance invite token and returns null serverId", async () => {

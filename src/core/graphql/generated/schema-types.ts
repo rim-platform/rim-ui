@@ -1065,7 +1065,13 @@ export type LoginInput = {
   username: Scalars['String']['input'];
 };
 
+/** Payload returned from `login` and `loginWithKey`. */
 export type LoginPayload = {
+  /**
+   * The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+   * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+   */
+  csrfToken: Scalars['String']['output'];
   userId: Scalars['ID']['output'];
 };
 
@@ -3576,12 +3582,17 @@ export type SignupWithInviteInput = {
 };
 
 /**
- * Payload returned from `signupWithInvite`.
+ * Payload returned from `signupWithInvite` and `signupWithKey`.
  *
  * `server_id` is `Some` only when a `workspaceInviteToken` was used;
  * the instance-invite and open paths land in "no workspaces yet" state.
  */
 export type SignupWithInvitePayloadGql = {
+  /**
+   * The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+   * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+   */
+  csrfToken: Scalars['String']['output'];
   serverId?: Maybe<Scalars['ID']['output']>;
   userId: Scalars['ID']['output'];
 };

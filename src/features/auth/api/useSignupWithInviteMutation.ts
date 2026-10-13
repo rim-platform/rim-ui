@@ -8,7 +8,7 @@
  * must be absent.
  *
  * The backend sets session and CSRF cookies on success, matching the behavior
- * of the `login` mutation.
+ * of the `login` mutation; the payload's `csrfToken` is kept for the desktop app.
  *
  * **Input fields (per amendment 2026-04-28b, reconciled with SDL):**
  * - `username` — required; user-facing unique handle.
@@ -32,11 +32,22 @@
 import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
-import { graphqlClient } from "../../../core/graphql/client";
 import type { SignupWithInviteInput } from "../../../core/graphql/generated/schema-types";
+import { signInRequest } from "./signInRequest";
 
 const SIGNUP_WITH_INVITE_MUTATION = gql`
   mutation SignupWithInvite($input: SignupWithInviteInput!) {
+    signupWithInvite(input: $input) {
+      userId
+      serverId
+      csrfToken
+    }
+  }
+`;
+
+/** The same without `csrfToken`, for a server older than it. */
+const SIGNUP_WITH_INVITE_WITHOUT_CSRF_TOKEN_MUTATION = gql`
+  mutation SignupWithInviteWithoutCsrfToken($input: SignupWithInviteInput!) {
     signupWithInvite(input: $input) {
       userId
       serverId
@@ -48,6 +59,7 @@ export interface SignupWithInviteResponse {
   signupWithInvite: {
     userId: string;
     serverId: string | null;
+    csrfToken?: string;
   };
 }
 
@@ -67,6 +79,11 @@ export interface SignupWithInviteResponse {
 export function useSignupWithInviteMutation() {
   return useMutation({
     mutationFn: (input: SignupWithInviteInput) =>
-      graphqlClient.request<SignupWithInviteResponse>(SIGNUP_WITH_INVITE_MUTATION, { input }),
+      signInRequest<SignupWithInviteResponse>(
+        "signupWithInvite",
+        SIGNUP_WITH_INVITE_MUTATION,
+        SIGNUP_WITH_INVITE_WITHOUT_CSRF_TOKEN_MUTATION,
+        { input },
+      ),
   });
 }

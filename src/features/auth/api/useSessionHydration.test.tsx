@@ -65,7 +65,7 @@ describe("useSessionHydration", () => {
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
     saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
     resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
-    useAuthStore.setState({ session: null });
+    useAuthStore.setState({ session: null, csrfToken: null });
     useOfflineStore.setState({ offline: false });
   });
 
@@ -77,14 +77,61 @@ describe("useSessionHydration", () => {
     expect(useOfflineStore.getState().offline).toBe(false);
   });
 
-  it("opens the recorded account offline when the server cannot be reached", async () => {
+  it("puts the recorded CSRF token back before the session the server confirms", async () => {
+    loadSessionRecordMock.mockResolvedValue({
+      state: "signedIn",
+      endpoint,
+      userId: "alice",
+      csrfToken: "tok-alice",
+    });
+    requestMock.mockResolvedValue({ me: { id: "alice" } });
+    const tokenAtSignIn: (string | null)[] = [];
+    const off = useAuthStore.subscribe((s, prev) => {
+      if (s.session && !prev.session) tokenAtSignIn.push(s.csrfToken);
+    });
+
+    await hydrate();
+    off();
+
+    expect(tokenAtSignIn).toEqual(["tok-alice"]);
+  });
+
+  it("keeps no token from a record without one, or from another account's record", async () => {
     loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockResolvedValue({ me: { id: "alice" } });
+    await hydrate();
+    expect(useAuthStore.getState().csrfToken).toBeNull();
+
+    useAuthStore.setState({ session: null });
+    loadSessionRecordMock.mockResolvedValue({
+      state: "signedIn",
+      endpoint,
+      userId: "bob",
+      csrfToken: "tok-bob",
+    });
+    await hydrate();
+    expect(useAuthStore.getState()).toMatchObject({
+      session: { userId: "alice" },
+      csrfToken: null,
+    });
+  });
+
+  it("opens the recorded account offline, with its CSRF token, when the server cannot be reached", async () => {
+    loadSessionRecordMock.mockResolvedValue({
+      state: "signedIn",
+      endpoint,
+      userId: "alice",
+      csrfToken: "tok-alice",
+    });
     requestMock.mockRejectedValue(networkDown());
 
     const result = await hydrate();
 
     expect(result.current.isAuthenticated).toBe(true);
-    expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
+    expect(useAuthStore.getState()).toMatchObject({
+      session: { userId: "alice" },
+      csrfToken: "tok-alice",
+    });
     expect(useOfflineStore.getState().offline).toBe(true);
   });
 
@@ -157,6 +204,7 @@ describe("useSessionHydration", () => {
     const result = await hydrate();
 
     expect(result.current.isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().csrfToken).toBeNull();
     expect(requestMock).not.toHaveBeenCalled();
   });
 });

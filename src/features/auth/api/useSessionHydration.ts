@@ -5,7 +5,11 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { AddressBlockedError, isSessionRefused } from "../../../core/graphql/errors";
 import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
-import { loadSessionRecord, saveSessionRecord } from "../../offline/api/offlineSession";
+import {
+  loadSessionRecord,
+  saveSessionRecord,
+  type SessionRecord,
+} from "../../offline/api/offlineSession";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useAuthStore } from "../state/useAuthStore";
 
@@ -21,6 +25,13 @@ interface MeResponse {
   me: { id: string };
 }
 
+/** Puts the CSRF token the record kept for `userId` back into the auth store. */
+function restoreCsrfToken(record: SessionRecord | null, userId: string) {
+  if (record?.state === "signedIn" && record.userId === userId && record.csrfToken) {
+    useAuthStore.getState().setCsrfToken(record.csrfToken);
+  }
+}
+
 /**
  * Attempts to restore a session from an existing `rim_session` cookie.
  *
@@ -31,7 +42,8 @@ interface MeResponse {
  *
  * On the desktop app the session record (`offlineSession.ts`) adds two cases: after an
  * explicit sign-out the app stays on sign-in without asking the server, and when the server
- * cannot be reached the recorded account opens offline from the local cache. When the server
+ * cannot be reached the recorded account opens offline from the local cache. Either way the
+ * recorded CSRF token for that account goes back into the auth store. When the server
  * refuses the recorded account's session and this device holds that account's key, the app
  * signs in again with the key (key identity, Stage 3).
  */
@@ -57,6 +69,7 @@ export function useSessionHydration() {
         try {
           const res = await graphqlClient.request<MeResponse>(ME_QUERY);
           if (!cancelled && res.me?.id) {
+            restoreCsrfToken(record, res.me.id);
             setSession({ userId: res.me.id });
           }
         } catch (err) {
@@ -68,6 +81,7 @@ export function useSessionHydration() {
           if (err instanceof AddressBlockedError) return;
           if (isServerUnreachable(err)) {
             useOfflineStore.getState().setOffline(true);
+            restoreCsrfToken(record, record.userId);
             setSession({ userId: record.userId });
           } else if (isSessionRefused(err)) {
             // The cookie is gone or expired. With a device key for that account, sign in again

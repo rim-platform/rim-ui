@@ -33,6 +33,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - When the server ends the session (a sign-out elsewhere, a password reset, a revoked device, an
   expired session) and closes the live connection with code 4401, the app returns to sign-in
   with "Your session ended. Sign in again." instead of reconnecting with a dead session.
+- The desktop app sends the CSRF token that signing in returns and keeps it across restarts, so
+  mutations and uploads work against a server on another host, whose cookie the app cannot
+  read. A server too old to return the token still signs in as before.
 
 ### Added
 

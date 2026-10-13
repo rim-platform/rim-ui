@@ -4,7 +4,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
-import { getCookie, graphqlClient } from "../../../core/graphql/client";
+import { graphqlClient } from "../../../core/graphql/client";
+import { csrfHeader } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import type {
   AddWorkspacePluginInput,
@@ -104,9 +105,6 @@ export interface UploadedBundle {
   url: string;
 }
 
-const CSRF_COOKIE = "rim_csrf";
-const CSRF_HEADER = "x-csrf-token";
-
 /**
  * Upload a bundle to the workspace's server, with the session and the CSRF header. A server
  * with workspace plugins switched off refuses it with a `FeatureDisabledError`.
@@ -116,9 +114,10 @@ export async function uploadPluginBundle(
   bytes: Uint8Array,
   fetchImpl: typeof fetch = fetch,
 ): Promise<UploadedBundle> {
-  const headers: Record<string, string> = { "Content-Type": BUNDLE_MEDIA_TYPE };
-  const csrf = getCookie(CSRF_COOKIE);
-  if (csrf) headers[CSRF_HEADER] = csrf;
+  const headers: Record<string, string> = {
+    "Content-Type": BUNDLE_MEDIA_TYPE,
+    ...csrfHeader(),
+  };
   const response = await fetchImpl(
     `${getApiOrigin()}/api/plugin-bundles/${encodeURIComponent(serverId)}`,
     {

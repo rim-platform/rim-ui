@@ -19,7 +19,7 @@ describe("persistSessionRecord", () => {
 
   beforeEach(() => {
     save.mockClear();
-    useAuthStore.setState({ session: null });
+    useAuthStore.setState({ session: null, csrfToken: null });
     unsubscribe = persistSessionRecord(save);
   });
 
@@ -31,6 +31,19 @@ describe("persistSessionRecord", () => {
 
     expect(save.mock.calls).toEqual([
       [{ state: "signedIn", endpoint, userId: "alice" }],
+      [{ state: "signedOut", endpoint }],
+    ]);
+  });
+
+  it("keeps the sign-in's CSRF token, records a new one, and drops it with the sign-out", () => {
+    useAuthStore.getState().setCsrfToken("tok-1");
+    useAuthStore.getState().setSession({ userId: "alice" });
+    useAuthStore.getState().setCsrfToken("tok-2");
+    useAuthStore.getState().clearSession();
+
+    expect(save.mock.calls).toEqual([
+      [{ state: "signedIn", endpoint, userId: "alice", csrfToken: "tok-1" }],
+      [{ state: "signedIn", endpoint, userId: "alice", csrfToken: "tok-2" }],
       [{ state: "signedOut", endpoint }],
     ]);
   });
