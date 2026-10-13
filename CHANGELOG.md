@@ -45,6 +45,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The typing indicator names who is typing instead of "undefined is typing...": it uses the
   name a contact was given here, the name the server sends, or the workspace's member list,
   and says "Someone" when none of them knows the person.
+- A workspace joined from an invite link while signed in shows in the workspace rail at once,
+  without reloading the page.
 
 ### Added
 

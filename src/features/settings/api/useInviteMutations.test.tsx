@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
 
 const requestMock = vi.fn();
 
@@ -13,7 +14,7 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
-import { useCreateInviteMutation } from "./useInviteMutations";
+import { useCreateInviteMutation, useJoinServerByInviteMutation } from "./useInviteMutations";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({
@@ -98,5 +99,29 @@ describe("useCreateInviteMutation", () => {
     expect(requestMock.mock.calls[0][1]).toEqual({
       input: { serverId: "ws-1", maxUses: 3, role: "MEMBER" },
     });
+  });
+});
+
+describe("useJoinServerByInviteMutation", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it("refetches the workspace list after joining", async () => {
+    requestMock.mockResolvedValue({ joinServerByInvite: { serverId: "ws-2" } });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useJoinServerByInviteMutation(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync("tok");
+    });
+
+    expect(requestMock.mock.calls[0][1]).toEqual({ input: { inviteToken: "tok" } });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
   });
 });
