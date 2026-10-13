@@ -7,6 +7,7 @@ import { queryKeys } from "../../../core/query/keys";
 import type { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { findCachedConversation } from "../../conversations/api/useConversation";
+import { memberName } from "../../workspaces/api/memberName";
 import {
   authorDisplayName,
   notificationConversationLabel,
@@ -59,12 +60,6 @@ interface ContextResponse {
   message?: CachedMessage | null;
 }
 
-interface CachedMember {
-  userId: string;
-  username?: string;
-  displayName?: string | null;
-}
-
 export interface NotificationContent {
   title: string;
   authorName: string;
@@ -108,16 +103,6 @@ export function findCachedMessage(
     if (hit) return hit;
   }
   return undefined;
-}
-
-function memberName(qc: QueryClient, workspaceId: string, userId: string): string | undefined {
-  const members = qc.getQueryData<CachedMember[]>(queryKeys.serverMembers(workspaceId));
-  const member = members?.find((m) => m.userId === userId);
-  if (member) return member.displayName || member.username || undefined;
-  const me = qc.getQueryData<{ id: string; username: string; displayName?: string | null }>(
-    queryKeys.me,
-  );
-  return me && me.id === userId ? authorDisplayName(me) : undefined;
 }
 
 /**

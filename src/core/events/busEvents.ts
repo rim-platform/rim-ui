@@ -26,6 +26,7 @@ export interface PresenceChangedEvent {
 export interface TypingStartedEvent {
   conversationId: string;
   userId: string;
+  /** The name to show for the typist, resolved when the event arrives. */
   username: string;
 }
 
