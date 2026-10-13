@@ -16,6 +16,7 @@ import { ToastContainer } from "../../shared/toast";
 import { AgentOverlay } from "../../features/agent/components/AgentOverlay";
 import { ConfirmCommandModal } from "../../features/agent/components/ConfirmCommandModal";
 import { useUnreadCounts } from "../../features/conversations/api/useUnreadCounts";
+import { useAllWorkspaceUnreadCounts } from "../../features/conversations/api/useAllWorkspaceUnreadCounts";
 import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
 import { useWorkspacePresence } from "../../features/presence/api/useWorkspacePresence";
 import { useMessageCacheSync } from "../../features/messages/runtime/messageCacheSync";
@@ -154,6 +155,7 @@ function WorkspaceShell() {
   useMessageCacheSync(workspaceId);
   useE2eeRuntime(workspaceId);
   useUnreadCounts(workspaceId ?? undefined);
+  useAllWorkspaceUnreadCounts(workspaceId);
   useMutedConversations(workspaceId ?? undefined);
   useWorkspacePresence(workspaceId);
   useHeartbeat(workspaceId);

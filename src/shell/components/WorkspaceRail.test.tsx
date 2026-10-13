@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { expectReachableByKeyboard } from "../../test/keyboard";
+import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 
 // Mock the hooks that WorkspaceRail uses
 vi.mock("../../features/workspaces/state/useWorkspaceStore", () => ({
@@ -36,6 +37,15 @@ function renderWithQuery(ui: React.ReactElement) {
 describe("WorkspaceRail", () => {
   beforeEach(() => {
     myServers.data = alphaBeta;
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+  });
+
+  it("badges another workspace with its unread messages and not the open one", () => {
+    useUnreadStore.getState().setCounts("ws-1", { c1: 4 });
+    useUnreadStore.getState().setCounts("ws-2", { c2: 2, c3: 1 });
+    renderWithQuery(<WorkspaceRail />);
+    expect(screen.getByRole("button", { name: "Alpha" })).toHaveTextContent(/^A$/);
+    expect(screen.getByRole("button", { name: "Beta (3 unread)" })).toHaveTextContent("B3");
   });
 
   it("adds the owner to a workspace's title only when another one shares its name", () => {

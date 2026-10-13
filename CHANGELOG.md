@@ -97,6 +97,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   shows what the block did, and the IP deny list with Unblock and a block form taking an
   optional expiry in days. Everyone else, and anyone on an older server, sees no such tab; the
   page says it is for operators only when opened directly.
+- Each workspace in the workspace rail other than the open one shows an unread badge, like
+  Direct messages; the counts are refreshed every minute and when the window regains focus.
 
 ### Changed
 
