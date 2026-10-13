@@ -26,6 +26,7 @@ import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 import { computeGroups } from "./timeline/computeGroups";
 import { useNewMessagesDivider } from "./timeline/useNewMessagesDivider";
+import { useMarkSeen } from "./timeline/useMarkSeen";
 import { useTimelineHandlers } from "./timeline/useTimelineHandlers";
 import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
@@ -100,13 +101,32 @@ export function MessageTimeline() {
   );
 
   const isAtBottomRef = useRef(true);
-  const { firstNewIndex, dividerFading, onScrollPosition } = useNewMessagesDivider({
+  const {
+    firstNewIndex,
+    dividerFading,
+    onScrollPosition: onDividerScrollPosition,
+  } = useNewMessagesDivider({
     workspaceId,
     conversationId,
     items,
     isLensActive,
     isAtBottomRef,
   });
+  const { onScrollPosition: onSeenScrollPosition } = useMarkSeen({
+    workspaceId,
+    conversationId,
+    items,
+    isLensActive,
+    currentUserId,
+    isAtBottomRef,
+  });
+  const onScrollPosition = useCallback(
+    (atBottom: boolean) => {
+      onDividerScrollPosition(atBottom);
+      onSeenScrollPosition(atBottom);
+    },
+    [onDividerScrollPosition, onSeenScrollPosition],
+  );
 
   const editingIndex = useMemo(
     () => (editingMessageId ? items.findIndex((m) => m.id === editingMessageId) : -1),

@@ -47,6 +47,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   and says "Someone" when none of them knows the person.
 - A workspace joined from an invite link while signed in shows in the workspace rail at once,
   without reloading the page.
+- The Inbox unread badge no longer comes back for conversations already read: opening a
+  conversation and reaching its newest message tells the server it is read, as does a new
+  message arriving while you are at the bottom.
 
 ### Added
 

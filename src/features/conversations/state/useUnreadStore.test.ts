@@ -42,6 +42,14 @@ describe("useUnreadStore", () => {
     expect(useUnreadStore.getState().counts["conv2"]).toBe(2);
   });
 
+  it("forgets a read conversation's space, so no total counts it", () => {
+    useUnreadStore.getState().setCounts("ws", { conv1: 5 });
+    useUnreadStore.getState().markRead("conv1");
+    const { counts, spaceOf } = useUnreadStore.getState();
+    expect(spaceOf).toEqual({});
+    expect(unreadTotal(counts, spaceOf, (space) => space === "ws")).toBe(0);
+  });
+
   it("markRead is a no-op for already-read conversations", () => {
     const before = useUnreadStore.getState();
     useUnreadStore.getState().markRead("nonexistent");

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../test/utils";
 import { expectReachableByKeyboard } from "../../test/keyboard";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useShellStore } from "../state/useShellStore";
 
 const requestMock = vi.fn();
@@ -93,5 +94,32 @@ describe("SideRail — keyboard", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(avatar).toHaveFocus();
+  });
+});
+
+describe("SideRail — unread", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useShellStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("badges Inbox with the open workspace's unread and drops the badge once all are read", () => {
+    useUnreadStore.getState().setCounts("srv-1", { c1: 2, c2: 1 });
+    useUnreadStore.getState().setCounts("srv-2", { c3: 5 });
+    renderWithProviders(<SideRail />);
+    expect(screen.getByRole("button", { name: "Inbox (3 unread)" })).toHaveTextContent("3");
+
+    act(() => {
+      useUnreadStore.getState().markRead("c1");
+      useUnreadStore.getState().markRead("c2");
+    });
+    expect(screen.getByRole("button", { name: "Inbox" })).toHaveTextContent("");
   });
 });

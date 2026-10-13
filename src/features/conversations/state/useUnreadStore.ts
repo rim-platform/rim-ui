@@ -72,9 +72,11 @@ export const useUnreadStore = create<UnreadState>((set) => ({
   markRead: (conversationId) =>
     set((state) => {
       if (!state.counts[conversationId]) return state;
-      const next = { ...state.counts };
-      delete next[conversationId];
-      return { counts: next };
+      const counts = { ...state.counts };
+      const spaceOf = { ...state.spaceOf };
+      delete counts[conversationId];
+      delete spaceOf[conversationId];
+      return { counts, spaceOf };
     }),
   markAllRead: (spaceId) => set((state) => withoutSpace(state.counts, state.spaceOf, spaceId)),
   watermarks: {},
