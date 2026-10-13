@@ -823,6 +823,123 @@ export type InboxCursorOutput = {
   lastActivityAt: Scalars['DateTime']['output'];
 };
 
+/** An abuse report filed with this server, by a local user or from the abuse address. */
+export type InstanceAbuseReport = {
+  /** When the report was filed. */
+  createdAt: Scalars['DateTime']['output'];
+  /** The report's id. */
+  id: Scalars['ID']['output'];
+  /** Why the report was filed. */
+  reason: Scalars['String']['output'];
+  /**
+   * The local user who filed the report; null for one the operator filed from the abuse
+   * address.
+   */
+  reporterUserId?: Maybe<Scalars['ID']['output']>;
+  /** The reporter's username; null with `reporterUserId`. */
+  reporterUsername?: Maybe<Scalars['String']['output']>;
+  /** The DM request the report was filed on; null for one filed otherwise. */
+  requestId?: Maybe<Scalars['ID']['output']>;
+  /** Whether the report is resolved. */
+  resolved: Scalars['Boolean']['output'];
+  /** When the report was resolved; null while it is open. */
+  resolvedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** The principal reported (`rimp1_…`); null for a report naming only a server. */
+  subjectPrincipalId?: Maybe<Scalars['String']['output']>;
+  /** The server reported (`rims1_…`); null for a report naming only a principal. */
+  subjectServerId?: Maybe<Scalars['String']['output']>;
+  /**
+   * The username of the account holding the reported principal here; null when no local
+   * account holds it.
+   */
+  subjectUsername?: Maybe<Scalars['String']['output']>;
+};
+
+/** A local account, as the moderation queue names it. */
+export type InstanceAccount = {
+  /** When the account was created. */
+  createdAt: Scalars['DateTime']['output'];
+  /** The account's principal (`rimp1_…`); null for an account that never enrolled a key. */
+  principalId?: Maybe<Scalars['String']['output']>;
+  /** The account's user id. */
+  userId: Scalars['ID']['output'];
+  /** The account's username. */
+  username: Scalars['String']['output'];
+};
+
+/**
+ * An address or range on this server's IP deny list, refused on every route but the liveness
+ * probe.
+ */
+export type InstanceIpBlock = {
+  /** The address or range in CIDR form, IPv4 or IPv6. */
+  cidr: Scalars['String']['output'];
+  /** When the block was made, or its reason and expiry last replaced. */
+  createdAt: Scalars['DateTime']['output'];
+  /** Whether the block has expired and is no longer in force. */
+  expired: Scalars['Boolean']['output'];
+  /** When the block lifts; null for a block that lasts until it is removed. */
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  /** Why the address or range was blocked. */
+  reason: Scalars['String']['output'];
+};
+
+/** What blocking an address or range did. */
+export type InstanceIpBlockOutcome = {
+  /** The block now in force. */
+  block: InstanceIpBlock;
+  /** False when the range was blocked already; its reason and expiry were replaced. */
+  newlyBlocked: Scalars['Boolean']['output'];
+};
+
+/**
+ * A principal this server refuses: its sessions were ended, and its signups, logins and
+ * deliveries are refused.
+ */
+export type InstancePrincipalBlock = {
+  /** When the principal was blocked. */
+  createdAt: Scalars['DateTime']['output'];
+  /** The principal blocked (`rimp1_…`). */
+  principalId: Scalars['String']['output'];
+  /** Why the principal was blocked. */
+  reason: Scalars['String']['output'];
+  /**
+   * The username of the account holding the principal here; null when no local account
+   * holds it.
+   */
+  username?: Maybe<Scalars['String']['output']>;
+};
+
+/** What blocking one principal or account did. */
+export type InstancePrincipalBlockOutcome = {
+  /** The local account blocked; null when no local account holds the principal. */
+  account?: Maybe<InstanceAccount>;
+  /** Whether the account's email is now refused at signup and password login. */
+  emailBlocked: Scalars['Boolean']['output'];
+  /** How many of the account's sessions were ended. */
+  endedSessions: Scalars['Int']['output'];
+  /** How many pending DM requests from the principal were ignored. */
+  ignoredRequests: Scalars['Int']['output'];
+  /** The accounts the account's invites created, oldest first. */
+  invitees: Array<InstanceAccount>;
+  /** False when it was blocked already; its reason was replaced. */
+  newlyBlocked: Scalars['Boolean']['output'];
+  /** The principal blocked; null for an account of a cascade that has no key identity. */
+  principalId?: Maybe<Scalars['String']['output']>;
+  /** The reason recorded; a cascade's accounts carry an "(invited by …)" suffix. */
+  reason: Scalars['String']['output'];
+  /** How many of the account's invites with uses left were revoked. */
+  revokedInvites: Scalars['Int']['output'];
+};
+
+/** What lifting a principal's block did. */
+export type InstancePrincipalUnblockOutcome = {
+  /** Whether the account's email was blocked and no longer is. */
+  emailUnblocked: Scalars['Boolean']['output'];
+  /** Whether the principal was blocked. */
+  lifted: Scalars['Boolean']['output'];
+};
+
 /**
  * Read-only preview of a registration token.
  *
@@ -1342,6 +1459,35 @@ export type Mutation = {
   heartbeat: Scalars['Boolean']['output'];
   /** Delete the request's held items and drop later items of the conversation. */
   ignoreDmRequest: DmRequest;
+  /**
+   * Block an address or range, or replace the reason and expiry of its block. A running
+   * server applies it within 30 seconds. Instance operators only; anyone else gets
+   * `FORBIDDEN`.
+   */
+  instanceBlockIp: InstanceIpBlockOutcome;
+  /**
+   * Block a principal on this server: its pending DM requests are ignored, and the account
+   * holding it here has its sessions ended, its invites with uses left revoked and its
+   * email refused. Returns one outcome per account blocked, the principal's first. Instance
+   * operators only; anyone else gets `FORBIDDEN`.
+   */
+  instanceBlockPrincipal: Array<InstancePrincipalBlockOutcome>;
+  /**
+   * Mark an abuse report resolved; `NOT_FOUND` when there is no such report. Instance
+   * operators only; anyone else gets `FORBIDDEN`.
+   */
+  instanceResolveReport: InstanceAbuseReport;
+  /**
+   * Lift the block on an address or range, named as it was blocked or in any form naming
+   * the same range. Returns whether there was one. A running server applies it within 30
+   * seconds. Instance operators only; anyone else gets `FORBIDDEN`.
+   */
+  instanceUnblockIp: Scalars['Boolean']['output'];
+  /**
+   * Lift a principal's block and its account's email block. Ended sessions and revoked
+   * invites stay ended. Instance operators only; anyone else gets `FORBIDDEN`.
+   */
+  instanceUnblockPrincipal: InstancePrincipalUnblockOutcome;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   /**
@@ -1825,6 +1971,35 @@ export type MutationHeartbeatArgs = {
 
 export type MutationIgnoreDmRequestArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationInstanceBlockIpArgs = {
+  cidr: Scalars['String']['input'];
+  expiresInDays?: InputMaybe<Scalars['Int']['input']>;
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationInstanceBlockPrincipalArgs = {
+  cascade?: Scalars['Boolean']['input'];
+  principalId: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationInstanceResolveReportArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationInstanceUnblockIpArgs = {
+  cidr: Scalars['String']['input'];
+};
+
+
+export type MutationInstanceUnblockPrincipalArgs = {
+  principalId: Scalars['String']['input'];
 };
 
 
@@ -2476,6 +2651,21 @@ export type Query = {
   dmRequests: Array<DmRequest>;
   inboxConversations: ConversationPage;
   /**
+   * This server's IP deny list, expired blocks included, oldest first. Instance operators
+   * only; anyone else gets `FORBIDDEN`.
+   */
+  instanceIpBlocks: Array<InstanceIpBlock>;
+  /**
+   * The principals this server refuses, newest first. Instance operators only; anyone
+   * else gets `FORBIDDEN`.
+   */
+  instancePrincipalBlocks: Array<InstancePrincipalBlock>;
+  /**
+   * Abuse reports filed with this server, oldest first. Instance operators only; anyone
+   * else gets `FORBIDDEN`.
+   */
+  instanceReports: Array<InstanceAbuseReport>;
+  /**
    * The public key log of a principal enrolled on this server, oldest first; empty when none
    * is. No session needed: a person who lost every device reads the head here to sign a
    * recovery rotation (`rotateIdentityKey`).
@@ -2689,6 +2879,11 @@ export type QueryInboxConversationsArgs = {
   dir: PageDir;
   limit: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryInstanceReportsArgs = {
+  openOnly?: Scalars['Boolean']['input'];
 };
 
 
@@ -3631,6 +3826,12 @@ export type User = {
   deletionScheduledFor?: Maybe<Scalars['DateTime']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  /**
+   * Whether the account is an instance operator, who may run the instance moderation queue
+   * (`instanceReports` and the other `instance…` roots). Read on `me` only; false for
+   * everyone else.
+   */
+  instanceOperator: Scalars['Boolean']['output'];
   /**
    * Key-based principal id (`rimp1_...`) once the account enrolled a key; null before. Plugins
    * see this id, and the host maps a provisional `rimp0_` id to it once.

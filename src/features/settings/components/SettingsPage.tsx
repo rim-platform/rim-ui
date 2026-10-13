@@ -24,6 +24,7 @@ import {
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { useIsInstanceOperator } from "../../instance-moderation/api/instanceModeration";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -72,6 +73,11 @@ const KeyIdentitySettings = lazy(() =>
 const WorkspaceOwnerSettings = lazy(() =>
   import("./WorkspaceOwnerSettings").then((m) => ({
     default: m.WorkspaceOwnerSettings,
+  })),
+);
+const InstanceModerationSettings = lazy(() =>
+  import("../../instance-moderation/components/InstanceModerationSettings").then((m) => ({
+    default: m.InstanceModerationSettings,
   })),
 );
 const ContactsSettings = lazy(() =>
@@ -198,13 +204,22 @@ type SettingsTab =
   | "security"
   | "contacts"
   | "account"
+  | "moderation"
   | "about";
 
 /** Tabs that edit what only a workspace has: hidden in a direct space. */
 const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = ["pipelines", "state", "emoji"];
 
 /** Sections of the settings navigation, in display order. */
-const groups = ["You", "Messaging", "Programmable", "Extensions", "Workspace", "About"] as const;
+const groups = [
+  "You",
+  "Messaging",
+  "Programmable",
+  "Extensions",
+  "Workspace",
+  "Instance",
+  "About",
+] as const;
 
 type SettingsGroup = (typeof groups)[number];
 
@@ -227,6 +242,7 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "emoji", label: "Emoji", group: "Extensions" },
   { key: "agent", label: "AI Agent", group: "Extensions" },
   { key: "workspace", label: "Workspace", group: "Workspace" },
+  { key: "moderation", label: "Moderation", group: "Instance" },
   { key: "about", label: "About", group: "About" },
 ];
 
@@ -255,15 +271,20 @@ export function SettingsPage() {
   // Emoji management needs custom emoji on the server.
   const customEmoji = useServerFeature("custom_emoji").enabled;
   const inDirectSpace = useIsDirectSpace(workspaceId);
+  // Instance moderation is listed for instance operators only. Opened directly by anyone else,
+  // the page says it is for operators instead of falling back to Profile.
+  const { isOperator } = useIsInstanceOperator();
   const visibleTabs = tabs.filter(
     (tab) =>
       (tab.key !== "workspace" || canModerate) &&
+      (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
-  const shownTab: SettingsTab = visibleTabs.some((tab) => tab.key === activeTab)
-    ? activeTab
-    : "profile";
+  const shownTab: SettingsTab =
+    activeTab === "moderation" || visibleTabs.some((tab) => tab.key === activeTab)
+      ? activeTab
+      : "profile";
   // Groups with no visible tab are left out, label included.
   const visibleGroups = groups
     .map((group) => ({ group, items: visibleTabs.filter((tab) => tab.group === group) }))
@@ -363,6 +384,7 @@ export function SettingsPage() {
               )}
               {shownTab === "security" && <KeyIdentitySettings />}
               {shownTab === "contacts" && <ContactsSettings />}
+              {shownTab === "moderation" && <InstanceModerationSettings />}
               {shownTab === "account" && (
                 <AccountSettings
                   onNavigateToProfile={() => setActiveTab("profile")}

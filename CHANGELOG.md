@@ -71,6 +71,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   and message strangers after HH:MM" across the top of the app until that time, without a
   reload. The new-workspace dialogs give the same reason and hold Create, and the direct space's
   new-message picker says when strangers can be messaged.
+- Instance operators (`me.instanceOperator`) get Settings → Instance → Moderation: the
+  server's abuse reports with Resolve and a Block principal shortcut, blocked principals with
+  Unblock and a block form (optionally cascading to the accounts their invites created) that
+  shows what the block did, and the IP deny list with Unblock and a block form taking an
+  optional expiry in days. Everyone else, and anyone on an older server, sees no such tab; the
+  page says it is for operators only when opened directly.
 
 ### Changed
 
