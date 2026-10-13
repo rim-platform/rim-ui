@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 import type { ConversationSummary, ConversationSummaryPage } from "../types";
@@ -54,6 +55,15 @@ export function useConversation(workspaceId?: string | null, conversationId?: st
     placeholderData: () => findCachedConversation(qc, ws, id),
     queryFn: () => requestConversation(ws!, id!),
   });
+}
+
+/** Whether the conversation is a direct conversation between two people; false until known. */
+export function useIsDirectConversation(
+  workspaceId?: string | null,
+  conversationId?: string | null,
+): boolean {
+  const { data } = useConversation(workspaceId, conversationId);
+  return data?.conversationType === ConversationTypeEnum.DIRECT;
 }
 
 async function requestConversation(

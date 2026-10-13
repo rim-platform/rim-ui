@@ -336,7 +336,7 @@ export function MessageTimeline() {
         />
       )}
 
-      <TypingIndicator conversationId={conversationId} />
+      <TypingIndicator workspaceId={workspaceId} conversationId={conversationId} />
       {workspaceId && <EncryptionNotices workspaceId={workspaceId} e2ee={e2ee} />}
       {workspaceId && (
         <Composer

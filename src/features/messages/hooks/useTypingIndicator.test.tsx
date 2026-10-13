@@ -4,7 +4,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { createTestQueryClient } from "../../../test/utils";
-import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
+import {
+  callsTo,
+  makeConversation,
+  routeRequests,
+} from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
 
@@ -16,8 +22,15 @@ vi.mock("../../../core/graphql/client", () => ({
 
 import { useTypingIndicator } from "./useTypingIndicator";
 
-function renderIndicator() {
+/** The hook in conv-1 of ws-1, a conversation of `conversationType`. */
+function renderIndicator(conversationType = ConversationTypeEnum.DIRECT) {
+  const conversation = makeConversation({ conversationType });
+  routeRequests(requestMock, {
+    "query Conversation(": () => ({ conversation }),
+    "mutation StartTyping": () => ({ startTyping: true }),
+  });
   const qc = createTestQueryClient();
+  qc.setQueryData(queryKeys.conversation("ws-1", "conv-1"), conversation);
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
@@ -29,7 +42,6 @@ const starts = () => callsTo(requestMock, "mutation StartTyping");
 describe("useTypingIndicator", () => {
   beforeEach(() => {
     requestMock.mockReset();
-    routeRequests(requestMock, { "mutation StartTyping": () => ({ startTyping: true }) });
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
   });
@@ -68,6 +80,18 @@ describe("useTypingIndicator", () => {
     act(() => result.current.handleKeystroke("   "));
     act(() => result.current.handleKeystroke("a"));
 
+    await waitFor(() => expect(starts()).toHaveLength(1));
+  });
+
+  it("announces typing in a direct conversation only, never in a channel or a group", async () => {
+    for (const type of [ConversationTypeEnum.CHANNEL, ConversationTypeEnum.GROUP]) {
+      const result = renderIndicator(type);
+      act(() => result.current.handleKeystroke("hello"));
+    }
+    expect(starts()).toEqual([]);
+
+    const direct = renderIndicator(ConversationTypeEnum.DIRECT);
+    act(() => direct.current.handleKeystroke("hello"));
     await waitFor(() => expect(starts()).toHaveLength(1));
   });
 });

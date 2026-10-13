@@ -104,6 +104,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- "<name> is typing..." is shown in direct messages only. Channels, groups and threads show no
+  typing, and the app no longer announces typing there.
 - A rate-limited request (`RATE_LIMITED`, or HTTP 429 `rate_limited` from the server's
   per-address limit) reads "Slow down: try again in N s" wherever a failed change is shown, a
   refused message stays in the composer, and a query retries only after the wait the server
