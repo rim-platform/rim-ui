@@ -13,8 +13,10 @@ const START_TYPING = gql`
 `;
 
 /**
- * Hook that tracks keystrokes and calls startTyping mutation (throttled).
- * Returns an onKeyDown handler to attach to the Composer textarea.
+ * Announces typing in a conversation through the startTyping mutation, at most once per
+ * `THROTTLE_MS`. `handleKeystroke` takes the composer text after the keystroke and stays quiet
+ * while it is blank; `markSent` lifts the throttle once a message went out, so the next
+ * keystroke announces typing again at once.
  */
 export function useTypingIndicator(workspaceId: string, conversationId: string) {
   const lastSentRef = useRef(0);
@@ -29,7 +31,8 @@ export function useTypingIndicator(workspaceId: string, conversationId: string) 
       graphqlClient.request(START_TYPING, vars),
   });
 
-  const handleKeystroke = useCallback(() => {
+  const handleKeystroke = useCallback((text: string) => {
+    if (!text.trim()) return;
     const now = Date.now();
     if (now - lastSentRef.current < THROTTLE_MS) return;
     lastSentRef.current = now;
@@ -42,5 +45,9 @@ export function useTypingIndicator(workspaceId: string, conversationId: string) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { handleKeystroke };
+  const markSent = useCallback(() => {
+    lastSentRef.current = 0;
+  }, []);
+
+  return { handleKeystroke, markSent };
 }

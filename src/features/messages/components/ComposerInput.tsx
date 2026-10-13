@@ -47,7 +47,8 @@ interface ComposerInputProps {
   text: string;
   onTextChange: (value: string) => void;
   onSubmit: () => void;
-  onKeystroke: () => void;
+  /** Called with the text after each change. */
+  onKeystroke: (value: string) => void;
   saveDraftDebounced: (text: string) => void;
   isSubmitting: boolean;
   isUploading: boolean;
@@ -163,7 +164,7 @@ export function ComposerInput({
     const cursorPos = e.currentTarget.selectionStart ?? value.length;
     onTextChange(value);
     saveDraftDebounced(value);
-    onKeystroke();
+    onKeystroke(value);
 
     // Auto-resize
     const el = e.currentTarget;

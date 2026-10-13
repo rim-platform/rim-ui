@@ -9,6 +9,8 @@ interface TypingEntry {
 interface TypingState {
   typingByConversation: Record<string, TypingEntry[]>;
   addTyping: (conversationId: string, userId: string, username: string) => void;
+  /** Drops `userId`'s entry in `conversationId`, e.g. once their message arrives. */
+  removeTyping: (conversationId: string, userId: string) => void;
   removeExpired: () => void;
 }
 
@@ -28,6 +30,19 @@ export const useTypingStore = create<TypingState>((set) => ({
           [conversationId]: [...filtered, { userId, username, expiresAt }],
         },
       };
+    }),
+  removeTyping: (conversationId, userId) =>
+    set((state) => {
+      const existing = state.typingByConversation[conversationId];
+      if (!existing?.some((e) => e.userId === userId)) return state;
+      const next = { ...state.typingByConversation };
+      const remaining = existing.filter((e) => e.userId !== userId);
+      if (remaining.length > 0) {
+        next[conversationId] = remaining;
+      } else {
+        delete next[conversationId];
+      }
+      return { typingByConversation: next };
     }),
   removeExpired: () =>
     set((state) => {
