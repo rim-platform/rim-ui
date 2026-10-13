@@ -3,8 +3,10 @@
  *
  * The webview keeps the session cookie; the record, in the secret vault, says who was signed in
  * to which server, so a cold start that cannot reach the server can still open that account's
- * local cache instead of stopping at sign-in. An explicit sign-out is recorded too, so the
- * next start lands on sign-in even if the server never heard of the sign-out.
+ * local cache instead of stopping at sign-in. It also keeps the session's CSRF token, which the
+ * app cannot read from a cookie set by a server on another host. An explicit sign-out is
+ * recorded too, so the next start lands on sign-in even if the server never heard of the
+ * sign-out.
  *
  * Everything is best-effort: in the web app, or if the keyring fails, there is no record and
  * the app behaves as before.
@@ -18,7 +20,7 @@ import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 
 export type SessionRecord =
-  | { state: "signedIn"; endpoint: string; userId: string }
+  | { state: "signedIn"; endpoint: string; userId: string; csrfToken?: string }
   | { state: "signedOut"; endpoint: string };
 
 /**
@@ -51,8 +53,8 @@ export async function saveSessionRecord(record: SessionRecord): Promise<void> {
 
 /**
  * Keep the record in step with the auth store: every sign-in (login, sign-up, a restored
- * session) records the account, and a cleared session records the sign-out. Returns the
- * unsubscribe function.
+ * session) records the account with its CSRF token, a new token for the signed-in account
+ * records that, and a cleared session records the sign-out. Returns the unsubscribe function.
  */
 export function persistSessionRecord(
   save: (record: SessionRecord) => Promise<void> = saveSessionRecord,
@@ -60,8 +62,13 @@ export function persistSessionRecord(
   return useAuthStore.subscribe((state, prev) => {
     const userId = state.session?.userId ?? null;
     const prevUserId = prev.session?.userId ?? null;
-    if (userId === prevUserId) return;
+    if (userId === prevUserId && (userId === null || state.csrfToken === prev.csrfToken)) return;
     const endpoint = getGraphqlEndpoint();
-    void save(userId ? { state: "signedIn", endpoint, userId } : { state: "signedOut", endpoint });
+    const csrfToken = state.csrfToken ?? undefined;
+    void save(
+      userId
+        ? { state: "signedIn", endpoint, userId, ...(csrfToken && { csrfToken }) }
+        : { state: "signedOut", endpoint },
+    );
   });
 }

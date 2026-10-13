@@ -3,8 +3,9 @@
 //! On a cold start the webview checks its session cookie with the server's `me` query. When
 //! the server cannot be reached, this record says who was signed in, so the app skips the
 //! sign-in screen and shows that account's local message cache (`message_cache`) until the
-//! server answers again. The session itself stays in the webview's cookie: no token is kept
-//! here, only who the account is.
+//! server answers again. The session itself stays in the webview's cookie: the record keeps who
+//! the account is and the session's CSRF token, which the app sends in `X-CSRF-Token` because
+//! it cannot read the cookie of a server on another host. It never keeps the session token.
 //!
 //! An explicit sign-out is recorded too (`SignedOut`): the next start then lands on sign-in
 //! even if the server still accepts the old cookie (the sign-out request failed offline).
@@ -29,7 +30,13 @@ const SECRET_NAME: &str = "offline-session-v1";
 )]
 pub(crate) enum SessionRecord {
     /// Signed in to `endpoint` as `user_id`.
-    SignedIn { endpoint: String, user_id: String },
+    SignedIn {
+        endpoint: String,
+        user_id: String,
+        /// The session's CSRF token from the sign-in; absent in a record written without one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        csrf_token: Option<String>,
+    },
     /// The user signed out of `endpoint`.
     SignedOut { endpoint: String },
 }
@@ -187,6 +194,7 @@ mod tests {
         SessionRecord::SignedIn {
             endpoint: ENDPOINT.into(),
             user_id: user.into(),
+            csrf_token: None,
         }
     }
 
@@ -248,6 +256,27 @@ mod tests {
                 endpoint: ENDPOINT.into()
             }
         );
+    }
+
+    #[test]
+    fn the_csrf_token_round_trips_and_may_be_absent() {
+        let (_, state) = memory_state();
+        let with_token = SessionRecord::SignedIn {
+            endpoint: ENDPOINT.into(),
+            user_id: "user-1".into(),
+            csrf_token: Some("tok".into()),
+        };
+        state.save(&with_token).unwrap();
+        assert_eq!(state.load(ENDPOINT), Some(with_token.clone()));
+        assert_eq!(
+            serde_json::to_value(&with_token).unwrap()["csrfToken"],
+            serde_json::json!("tok")
+        );
+        let parsed: SessionRecord = serde_json::from_value(
+            serde_json::json!({ "state": "signedIn", "endpoint": ENDPOINT, "userId": "user-1" }),
+        )
+        .unwrap();
+        assert_eq!(parsed, signed_in("user-1"));
     }
 
     #[test]
