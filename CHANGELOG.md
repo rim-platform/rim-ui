@@ -45,6 +45,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- Message search suggests operator values as you type: `from:` lists workspace members, `in:`
+  your channels, `has:` its values, and `before:`/`after:` today's date; ↑/↓ move, Enter, Tab or
+  a click inserts, Esc closes the list.
 - Deleting your account, from Settings → Account, on a server that offers it: the page says
   what is deleted, that your key identity cannot sign up on this server again and that owned
   workspaces with other members are handed over or deleted first, asks for your username, and
