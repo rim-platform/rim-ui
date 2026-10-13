@@ -27,11 +27,23 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 }));
 
 const mockSetSession = vi.fn();
+// The session restored from the cookie, and whether that check is still running.
+const auth = vi.hoisted(() => ({
+  session: null as { userId: string } | null,
+  isHydrating: false,
+}));
 
 vi.mock("../state/useAuthStore", () => ({
   useAuthStore: (
-    selector: (s: { session: null; setSession: (s: { userId: string }) => void }) => unknown,
-  ) => selector({ session: null, setSession: mockSetSession }),
+    selector: (s: {
+      session: { userId: string } | null;
+      setSession: (s: { userId: string }) => void;
+    }) => unknown,
+  ) => selector({ session: auth.session, setSession: mockSetSession }),
+}));
+
+vi.mock("../api/useSessionHydration", () => ({
+  useSessionHydration: () => ({ isHydrating: auth.isHydrating, isAuthenticated: false }),
 }));
 
 const mockUseServerConfig = vi.fn();
@@ -56,6 +68,8 @@ describe("OpenJoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     desktop.value = false;
+    auth.session = null;
+    auth.isHydrating = false;
   });
 
   function renderPage() {
@@ -77,6 +91,25 @@ describe("OpenJoinPage", () => {
     expect(screen.getByText("Create account")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("yourname")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
+  });
+
+  it("waits for the session cookie, then sends a signed-in account on to the app", () => {
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "OPEN" }, isPending: false });
+    auth.isHydrating = true;
+    const { rerender } = renderPage();
+    expect(screen.getByText("Restoring session...")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    auth.isHydrating = false;
+    auth.session = { userId: "existing-user" };
+    rerender(
+      <MemoryRouter>
+        <OpenJoinPage />
+      </MemoryRouter>,
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
   });
 
   it("renders invite-only forbidden state when registrationMode is INVITE_ONLY", () => {

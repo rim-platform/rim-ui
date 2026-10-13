@@ -36,6 +36,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The desktop app sends the CSRF token that signing in returns and keeps it across restarts, so
   mutations and uploads work against a server on another host, whose cookie the app cannot
   read. A server too old to return the token still signs in as before.
+- An invite link opened in a new tab while signed in offers "Join workspace" to that account
+  instead of the sign-up form: the page waits for the session to be restored first, and the
+  open sign-up page sends a signed-in account on to the app.
+- The direct space no longer offers your own account as a contact: the new-message picker
+  leaves it out, adding a contact refuses your own contact link, and a contact the server
+  refuses shows the server's reason.
 
 ### Added
 

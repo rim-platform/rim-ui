@@ -87,6 +87,40 @@ describe("ContactsSettings", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/not a RIM contact link/);
   });
 
+  it("refuses the viewer's own contact link without asking the server", async () => {
+    const user = userEvent.setup();
+    startRelay();
+    api.fetchContacts.mockResolvedValue([]);
+    renderWithProviders(<ContactsSettings />);
+    await user.click(screen.getByLabelText("Contact link"));
+    await user.paste(`rim-contact:1:${ME}:http://localhost:8080`);
+    expect(screen.getByRole("alert")).toHaveTextContent("this is your own contact link");
+    expect(screen.queryByRole("button", { name: "Add contact" })).not.toBeInTheDocument();
+    expect(identity.fetchVerifiedIdentity).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's refusal to add a contact as it gave it", async () => {
+    const user = userEvent.setup();
+    startRelay();
+    api.fetchContacts.mockResolvedValue([]);
+    const refusal = "cannot add yourself as a contact";
+    // A graphql-request ClientError: its own message embeds the whole response.
+    api.addContact.mockRejectedValue(
+      Object.assign(new Error(`${refusal}: {"response":{"errors":[]}}`), {
+        response: { errors: [{ message: refusal, extensions: { code: "VALIDATION" } }] },
+      }),
+    );
+    identity.fetchVerifiedIdentity.mockResolvedValue({
+      identity: {},
+      card: { version: 1, displayName: "Bob", relays: [] },
+    });
+    renderWithProviders(<ContactsSettings />);
+    await user.click(screen.getByLabelText("Contact link"));
+    await user.paste(`rim-contact:1:${BOB}:https://relay-b.example`);
+    await user.click(await screen.findByRole("button", { name: "Add contact" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(new RegExp(`^${refusal}$`));
+  });
+
   it("lists contacts by the name given here, and removes one", async () => {
     const user = userEvent.setup();
     startRelay();
