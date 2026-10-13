@@ -82,6 +82,16 @@ vi.mock("../../workspaces/api/useMyServerRole", () => ({
   useCanModerate: () => mockGate.canModerate,
 }));
 
+// Whether the viewer is an instance operator — mutable per test.
+const mockOperator = { isOperator: false };
+
+vi.mock("../../instance-moderation/api/instanceModeration", () => ({
+  useIsInstanceOperator: () => ({ isOperator: mockOperator.isOperator, isPending: false }),
+}));
+vi.mock("../../instance-moderation/components/InstanceModerationSettings", () => ({
+  InstanceModerationSettings: () => <div data-testid="instance-moderation">Instance</div>,
+}));
+
 vi.mock("../../plugins/registry/components/WorkspacePluginSettings", () => ({
   WorkspacePluginSettings: () => null,
 }));
@@ -123,6 +133,7 @@ describe("SettingsPage", () => {
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
     mockGate.canModerate = false;
+    mockOperator.isOperator = false;
     mockWorkspace.workspaceId = "ws-1";
   });
 
@@ -342,6 +353,27 @@ describe("SettingsPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Workspace" }));
       expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+    });
+  });
+
+  describe("Moderation tab", () => {
+    it("is hidden for a non-operator, whom a deep link takes to the operators-only page", async () => {
+      mockShellState.mainSurface = { kind: "settings", tab: "moderation" };
+      renderSettings();
+      expect(screen.queryByRole("group", { name: "Instance" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Moderation" })).not.toBeInTheDocument();
+      expect(await screen.findByTestId("instance-moderation")).toBeInTheDocument();
+      expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
+    });
+
+    it("is offered to an instance operator under Instance", async () => {
+      mockOperator.isOperator = true;
+      const user = userEvent.setup();
+      renderSettings();
+
+      const instance = screen.getByRole("group", { name: "Instance" });
+      await user.click(within(instance).getByRole("button", { name: "Moderation" }));
+      expect(await screen.findByTestId("instance-moderation")).toBeInTheDocument();
     });
   });
 

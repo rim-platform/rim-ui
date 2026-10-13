@@ -106,6 +106,13 @@ export const queryKeys = {
   relayContacts: ["relayContacts"] as const,
   dmRequests: (status?: string | null) => ["dmRequests", status ?? null] as const,
   remoteIdentity: (principalId?: string) => ["remoteIdentity", principalId] as const,
+  // Whether the signed-in account is an instance operator; under `me` like probation.
+  instanceOperator: (userId?: string) => ["me", "instanceOperator", userId] as const,
+  // The instance moderation queue: abuse reports keyed by the open-only filter, principal blocks
+  // and the IP deny list. The `["instanceModeration"]` prefix covers all three.
+  instanceReports: (openOnly: boolean) => ["instanceModeration", "reports", openOnly] as const,
+  instancePrincipalBlocks: ["instanceModeration", "principalBlocks"] as const,
+  instanceIpBlocks: ["instanceModeration", "ipBlocks"] as const,
 };
 
 /**

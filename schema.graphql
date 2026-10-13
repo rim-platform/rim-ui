@@ -926,6 +926,201 @@ type InboxCursorOutput {
 }
 
 """
+An abuse report filed with this server, by a local user or from the abuse address.
+"""
+type InstanceAbuseReport {
+	"""
+	The report's id.
+	"""
+	id: ID!
+	"""
+	The local user who filed the report; null for one the operator filed from the abuse
+	address.
+	"""
+	reporterUserId: ID
+	"""
+	The reporter's username; null with `reporterUserId`.
+	"""
+	reporterUsername: String
+	"""
+	The principal reported (`rimp1_…`); null for a report naming only a server.
+	"""
+	subjectPrincipalId: String
+	"""
+	The username of the account holding the reported principal here; null when no local
+	account holds it.
+	"""
+	subjectUsername: String
+	"""
+	The server reported (`rims1_…`); null for a report naming only a principal.
+	"""
+	subjectServerId: String
+	"""
+	The DM request the report was filed on; null for one filed otherwise.
+	"""
+	requestId: ID
+	"""
+	Why the report was filed.
+	"""
+	reason: String!
+	"""
+	When the report was filed.
+	"""
+	createdAt: DateTime!
+	"""
+	When the report was resolved; null while it is open.
+	"""
+	resolvedAt: DateTime
+	"""
+	Whether the report is resolved.
+	"""
+	resolved: Boolean!
+}
+
+"""
+A local account, as the moderation queue names it.
+"""
+type InstanceAccount {
+	"""
+	The account's user id.
+	"""
+	userId: ID!
+	"""
+	The account's username.
+	"""
+	username: String!
+	"""
+	The account's principal (`rimp1_…`); null for an account that never enrolled a key.
+	"""
+	principalId: String
+	"""
+	When the account was created.
+	"""
+	createdAt: DateTime!
+}
+
+"""
+An address or range on this server's IP deny list, refused on every route but the liveness
+probe.
+"""
+type InstanceIpBlock {
+	"""
+	The address or range in CIDR form, IPv4 or IPv6.
+	"""
+	cidr: String!
+	"""
+	Why the address or range was blocked.
+	"""
+	reason: String!
+	"""
+	When the block lifts; null for a block that lasts until it is removed.
+	"""
+	expiresAt: DateTime
+	"""
+	When the block was made, or its reason and expiry last replaced.
+	"""
+	createdAt: DateTime!
+	"""
+	Whether the block has expired and is no longer in force.
+	"""
+	expired: Boolean!
+}
+
+"""
+What blocking an address or range did.
+"""
+type InstanceIpBlockOutcome {
+	"""
+	The block now in force.
+	"""
+	block: InstanceIpBlock!
+	"""
+	False when the range was blocked already; its reason and expiry were replaced.
+	"""
+	newlyBlocked: Boolean!
+}
+
+"""
+A principal this server refuses: its sessions were ended, and its signups, logins and
+deliveries are refused.
+"""
+type InstancePrincipalBlock {
+	"""
+	The principal blocked (`rimp1_…`).
+	"""
+	principalId: String!
+	"""
+	The username of the account holding the principal here; null when no local account
+	holds it.
+	"""
+	username: String
+	"""
+	Why the principal was blocked.
+	"""
+	reason: String!
+	"""
+	When the principal was blocked.
+	"""
+	createdAt: DateTime!
+}
+
+"""
+What blocking one principal or account did.
+"""
+type InstancePrincipalBlockOutcome {
+	"""
+	The principal blocked; null for an account of a cascade that has no key identity.
+	"""
+	principalId: String
+	"""
+	False when it was blocked already; its reason was replaced.
+	"""
+	newlyBlocked: Boolean!
+	"""
+	The local account blocked; null when no local account holds the principal.
+	"""
+	account: InstanceAccount
+	"""
+	The reason recorded; a cascade's accounts carry an "(invited by …)" suffix.
+	"""
+	reason: String!
+	"""
+	How many of the account's sessions were ended.
+	"""
+	endedSessions: Int!
+	"""
+	How many pending DM requests from the principal were ignored.
+	"""
+	ignoredRequests: Int!
+	"""
+	How many of the account's invites with uses left were revoked.
+	"""
+	revokedInvites: Int!
+	"""
+	Whether the account's email is now refused at signup and password login.
+	"""
+	emailBlocked: Boolean!
+	"""
+	The accounts the account's invites created, oldest first.
+	"""
+	invitees: [InstanceAccount!]!
+}
+
+"""
+What lifting a principal's block did.
+"""
+type InstancePrincipalUnblockOutcome {
+	"""
+	Whether the principal was blocked.
+	"""
+	lifted: Boolean!
+	"""
+	Whether the account's email was blocked and no longer is.
+	"""
+	emailUnblocked: Boolean!
+}
+
+"""
 Read-only preview of a registration token.
 
 Does NOT consume the token. Workspace-invite previews carry server and
@@ -1845,6 +2040,76 @@ type Mutation {
 	- `UNAUTHENTICATED`: no session.
 	"""
 	cancelAccountDeletion: Boolean!
+	"""
+	Block a principal on this server: its pending DM requests are ignored, and the account
+	holding it here has its sessions ended, its invites with uses left revoked and its
+	email refused. Returns one outcome per account blocked, the principal's first. Instance
+	operators only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceBlockPrincipal(
+		"""
+		The principal to block (`rimp1_…`).
+		"""
+		principalId: String!,
+		"""
+		Why it is blocked, 1 to 1000 characters.
+		"""
+		reason: String!,
+		"""
+		Also block every account its invites created, recursively.
+		"""
+		cascade: Boolean! = false
+	): [InstancePrincipalBlockOutcome!]!
+	"""
+	Lift a principal's block and its account's email block. Ended sessions and revoked
+	invites stay ended. Instance operators only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceUnblockPrincipal(
+		"""
+		The principal to unblock (`rimp1_…`).
+		"""
+		principalId: String!
+	): InstancePrincipalUnblockOutcome!
+	"""
+	Mark an abuse report resolved; `NOT_FOUND` when there is no such report. Instance
+	operators only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceResolveReport(
+		"""
+		The report's id.
+		"""
+		id: ID!
+	): InstanceAbuseReport!
+	"""
+	Block an address or range, or replace the reason and expiry of its block. A running
+	server applies it within 30 seconds. Instance operators only; anyone else gets
+	`FORBIDDEN`.
+	"""
+	instanceBlockIp(
+		"""
+		An address or a CIDR range, IPv4 or IPv6.
+		"""
+		cidr: String!,
+		"""
+		Why it is blocked, 1 to 1000 characters.
+		"""
+		reason: String!,
+		"""
+		Days until the block lifts, 1 to 365; null blocks until it is removed.
+		"""
+		expiresInDays: Int
+	): InstanceIpBlockOutcome!
+	"""
+	Lift the block on an address or range, named as it was blocked or in any form naming
+	the same range. Returns whether there was one. A running server applies it within 30
+	seconds. Instance operators only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceUnblockIp(
+		"""
+		The address or CIDR range to unblock.
+		"""
+		cidr: String!
+	): Boolean!
 }
 
 input MuteConversationInput {
@@ -2346,6 +2611,26 @@ type Query {
 	terms URL and limits. Readable without a session.
 	"""
 	serverInfo: ServerInfo!
+	"""
+	Abuse reports filed with this server, oldest first. Instance operators only; anyone
+	else gets `FORBIDDEN`.
+	"""
+	instanceReports(
+		"""
+		Only the reports not yet resolved.
+		"""
+		openOnly: Boolean! = true
+	): [InstanceAbuseReport!]!
+	"""
+	The principals this server refuses, newest first. Instance operators only; anyone
+	else gets `FORBIDDEN`.
+	"""
+	instancePrincipalBlocks: [InstancePrincipalBlock!]!
+	"""
+	This server's IP deny list, expired blocks included, oldest first. Instance operators
+	only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceIpBlocks: [InstanceIpBlock!]!
 }
 
 type ReactionGroup {
@@ -3231,6 +3516,12 @@ type User {
 	messages.
 	"""
 	deletionScheduledFor: DateTime
+	"""
+	Whether the account is an instance operator, who may run the instance moderation queue
+	(`instanceReports` and the other `instance…` roots). Read on `me` only; false for
+	everyone else.
+	"""
+	instanceOperator: Boolean!
 }
 
 input UserCommandStepInput {
