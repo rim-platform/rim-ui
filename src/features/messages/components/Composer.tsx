@@ -113,7 +113,7 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const executeCommand = useExecuteCommandMutation();
-  const { handleKeystroke } = useTypingIndicator(workspaceId, conversationId);
+  const { handleKeystroke, markSent } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const sendBlocked = Boolean(encryption?.sendBlock);
@@ -202,7 +202,9 @@ function MessageComposer({ workspaceId, conversationId, encryption }: ComposerPr
     draftStore.getState().setDraft(conversationId, value);
   }
 
+  /** Records a sent message: lifts the typing throttle and starts any slow-mode wait. */
   function noteSent() {
+    markSent();
     if (slowModeSeconds > 0 && !isModerator) {
       useSlowModeStore.getState().markSent(conversationId, slowModeSeconds);
     }

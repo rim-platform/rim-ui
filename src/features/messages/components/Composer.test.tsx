@@ -28,6 +28,7 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
+const markTypingSent = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
@@ -41,7 +42,7 @@ vi.mock("../../../shared/toast/useToastStore", () => ({
   useToastStore: vi.fn(),
 }));
 vi.mock("../hooks/useTypingIndicator", () => ({
-  useTypingIndicator: () => ({ handleKeystroke: () => {} }),
+  useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: markTypingSent }),
 }));
 
 import { Composer } from "./Composer";
@@ -531,5 +532,34 @@ describe("Composer — message byte cap", () => {
     fireEvent.submit(textbox.closest("form")!);
     await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer — typing indicator", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    markTypingSent.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("lifts the typing throttle once a message is sent, not before", async () => {
+    let answer: (value: unknown) => void = () => {};
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => new Promise((resolve) => (answer = resolve)),
+    });
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "hello" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
+    expect(markTypingSent).not.toHaveBeenCalled();
+
+    answer({ sendMessage: { id: "m-1" } });
+    await waitFor(() => expect(markTypingSent).toHaveBeenCalledTimes(1));
   });
 });

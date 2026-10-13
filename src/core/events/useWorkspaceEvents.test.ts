@@ -4,7 +4,7 @@ import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
-import type { WorkspaceEvent } from "./types";
+import type { MessageEventData, WorkspaceEvent } from "./types";
 
 let connectedHandler: (() => void) | null = null;
 interface Observer {
@@ -53,12 +53,51 @@ import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
 import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { eventBus } from "./eventBus";
-import { BUS_EVENTS, type TypingStartedEvent } from "./busEvents";
+import { BUS_EVENTS, type TypingStartedEvent, type TypingStoppedEvent } from "./busEvents";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
 function emitWorkspaceEvent(event: WorkspaceEvent) {
   subscribeObserver?.next({ data: { workspaceEvents: JSON.stringify(event) } });
+}
+
+/** The encryption block of an encrypted message event. */
+const ENCRYPTION: MessageEventData["encryption"] = {
+  incarnation: 1,
+  epoch: 2,
+  sender_device_id: "d-2",
+  ciphertext: "AAEC",
+  franking_receipt: "cmVjZWlwdA",
+  franking_key_id: 1,
+  sent_at_us: "1791504000123456",
+};
+
+/** A `NewMessage` from u-2 in `conversationId` of ws-1, encrypted when `encryption` is given. */
+function newMessage(
+  conversationId: string,
+  encryption: MessageEventData["encryption"] = null,
+): WorkspaceEvent {
+  return {
+    type: "NewMessage",
+    workspace_id: "ws-1",
+    conversation_id: conversationId,
+    message: {
+      id: "m-1",
+      server_id: "ws-1",
+      conversation_id: conversationId,
+      thread_id: null,
+      root_thread_id: null,
+      author_id: "u-2",
+      text: encryption ? null : "hi",
+      has_attachments: false,
+      parent_message_id: null,
+      forwarded_from_message_id: null,
+      is_deleted: false,
+      sent_at: "2026-10-09T10:00:00Z",
+      reactions: [],
+      encryption,
+    },
+  };
 }
 
 function wrapperFor(qc: QueryClient) {
@@ -420,35 +459,7 @@ describe("useWorkspaceEvents encrypted conversations", () => {
     });
     renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
 
-    emitWorkspaceEvent({
-      type: "NewMessage",
-      workspace_id: "ws-1",
-      conversation_id: "c-enc",
-      message: {
-        id: "m-1",
-        server_id: "ws-1",
-        conversation_id: "c-enc",
-        thread_id: null,
-        root_thread_id: null,
-        author_id: "u-2",
-        text: null,
-        has_attachments: false,
-        parent_message_id: null,
-        forwarded_from_message_id: null,
-        is_deleted: false,
-        sent_at: "2026-10-09T10:00:00Z",
-        reactions: [],
-        encryption: {
-          incarnation: 1,
-          epoch: 2,
-          sender_device_id: "d-2",
-          ciphertext: "AAEC",
-          franking_receipt: "cmVjZWlwdA",
-          franking_key_id: 1,
-          sent_at_us: "1791504000123456",
-        },
-      },
-    });
+    emitWorkspaceEvent(newMessage("c-enc", ENCRYPTION));
 
     const data = qc.getQueryData<{ pages: { items: unknown[] }[] }>(key);
     expect(data?.pages[0].items).toEqual([]);
@@ -504,5 +515,22 @@ describe("useWorkspaceEvents typing", () => {
   it("prefers the name this person gave the typist as a contact", () => {
     useContactStore.setState({ aliases: { rimp1_bob: "My Bob" } });
     expect(typingNameFor({ username: "bob", display_name: "Bobby" }, [BOB])).toBe("My Bob");
+  });
+
+  it("a message ends its author's typing in that conversation, encrypted or not", () => {
+    const stopped: TypingStoppedEvent[] = [];
+    const off = eventBus.on<TypingStoppedEvent>(BUS_EVENTS.TYPING_STOPPED, (e) => {
+      stopped.push(e);
+    });
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(new QueryClient()) });
+
+    emitWorkspaceEvent(newMessage("c-1"));
+    emitWorkspaceEvent(newMessage("c-enc", ENCRYPTION));
+    off();
+
+    expect(stopped).toEqual([
+      { conversationId: "c-1", userId: "u-2" },
+      { conversationId: "c-enc", userId: "u-2" },
+    ]);
   });
 });

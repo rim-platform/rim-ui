@@ -24,7 +24,7 @@ vi.mock("../../../shared/toast/useToastStore", () => ({
   useToastStore: vi.fn(),
 }));
 vi.mock("../hooks/useTypingIndicator", () => ({
-  useTypingIndicator: () => ({ handleKeystroke: () => {} }),
+  useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: () => {} }),
 }));
 vi.mock("../../e2ee/runtime/send", () => ({
   sendEncrypted,

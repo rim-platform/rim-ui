@@ -1,13 +1,18 @@
 import { useEffect } from "react";
+
+import { useIsDirectConversation } from "../../conversations/api/useConversation";
 import { useTypingStore } from "../state/useTypingStore";
 
 const EMPTY_ENTRIES: { userId: string; username: string; expiresAt: number }[] = [];
 
 interface TypingIndicatorProps {
+  workspaceId: string | null;
   conversationId: string;
 }
 
-export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
+/** "<name> is typing..." under a direct conversation's timeline; nothing elsewhere. */
+export function TypingIndicator({ workspaceId, conversationId }: TypingIndicatorProps) {
+  const direct = useIsDirectConversation(workspaceId, conversationId);
   const rawEntries = useTypingStore((s) => s.typingByConversation[conversationId]);
   const entries = rawEntries ?? EMPTY_ENTRIES;
   const removeExpired = useTypingStore((s) => s.removeExpired);
@@ -19,7 +24,7 @@ export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
     return () => clearInterval(interval);
   }, [entries.length, removeExpired]);
 
-  if (entries.length === 0) return null;
+  if (!direct || entries.length === 0) return null;
 
   const names = entries.map((e) => e.username);
   let label: string;

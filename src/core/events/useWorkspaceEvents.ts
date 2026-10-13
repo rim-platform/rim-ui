@@ -37,6 +37,7 @@ import type {
   UnreadMarkReadEvent,
   PresenceChangedEvent,
   TypingStartedEvent,
+  TypingStoppedEvent,
   WorkspaceStateChangedEvent,
   WorkspaceStateDeletedEvent,
   PipelineFiredEvent,
@@ -173,6 +174,14 @@ export function applyWorkspaceEvent(
     event.type === "MessageDeleted"
   ) {
     requestCacheSync(workspaceId, [event.conversation_id]);
+  }
+
+  // A message from someone ends their typing indicator in that conversation.
+  if (event.type === "NewMessage") {
+    eventBus.emit<TypingStoppedEvent>(BUS_EVENTS.TYPING_STOPPED, {
+      conversationId: event.conversation_id,
+      userId: event.message.author_id,
+    });
   }
 
   // An encrypted message carries no text: the cache decrypts it and the timeline re-reads it.

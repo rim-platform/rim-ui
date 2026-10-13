@@ -23,6 +23,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- "<name> is typing..." goes away as soon as that person's message arrives instead of lingering
+  for a few seconds, and the first keystroke after sending announces typing again at once.
 - Creating a macro that the server refuses shows the server's reason, such as the instance's
   macro cap, instead of a bare "Failed to create macro"; a refused invite shows the server's
   message instead of the raw response.
@@ -102,6 +104,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- "<name> is typing..." is shown in direct messages only. Channels, groups and threads show no
+  typing, and the app no longer announces typing there.
 - A rate-limited request (`RATE_LIMITED`, or HTTP 429 `rate_limited` from the server's
   per-address limit) reads "Slow down: try again in N s" wherever a failed change is shown, a
   refused message stays in the composer, and a query retries only after the wait the server

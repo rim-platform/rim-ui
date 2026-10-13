@@ -30,6 +30,12 @@ export interface TypingStartedEvent {
   username: string;
 }
 
+/** Someone stopped typing in a conversation: their message arrived. */
+export interface TypingStoppedEvent {
+  conversationId: string;
+  userId: string;
+}
+
 /** A server-decided notification for the viewer (`NotificationDue`), ready to render. */
 export interface NotificationDueBusEvent {
   workspaceId: string;
@@ -73,6 +79,7 @@ export const BUS_EVENTS = {
   UNREAD_MARK_READ: "unread:markRead",
   PRESENCE_CHANGED: "presence:changed",
   TYPING_STARTED: "typing:started",
+  TYPING_STOPPED: "typing:stopped",
   NOTIFICATION_DUE: "notification:due",
   WORKSPACE_STATE_CHANGED: "workspaceState:changed",
   WORKSPACE_STATE_DELETED: "workspaceState:deleted",
