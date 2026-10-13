@@ -51,6 +51,9 @@ import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceS
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
 import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
+import { useContactStore } from "../../features/relay/contacts/useContactStore";
+import { eventBus } from "./eventBus";
+import { BUS_EVENTS, type TypingStartedEvent } from "./busEvents";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
@@ -449,5 +452,57 @@ describe("useWorkspaceEvents encrypted conversations", () => {
 
     const data = qc.getQueryData<{ pages: { items: unknown[] }[] }>(key);
     expect(data?.pages[0].items).toEqual([]);
+  });
+});
+
+describe("useWorkspaceEvents typing", () => {
+  const BOB = { userId: "u-2", username: "bob", displayName: "Bob B", principalId: "rimp1_bob" };
+
+  beforeEach(() => {
+    subscribeObserver = null;
+    vi.clearAllMocks();
+    useContactStore.setState({ aliases: {} });
+  });
+
+  /** The name the typing indicator is handed for `event`, with `members` cached for ws-1. */
+  function typingNameFor(
+    event: Partial<Extract<WorkspaceEvent, { type: "TypingStarted" }>>,
+    members?: (typeof BOB)[],
+  ): string | undefined {
+    const qc = new QueryClient();
+    if (members) qc.setQueryData(queryKeys.serverMembers("ws-1"), members);
+    let shown: string | undefined;
+    const off = eventBus.on<TypingStartedEvent>(BUS_EVENTS.TYPING_STARTED, (e) => {
+      shown = e.username;
+    });
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    emitWorkspaceEvent({
+      type: "TypingStarted",
+      workspace_id: "ws-1",
+      conversation_id: "c-1",
+      user_id: "u-2",
+      ...event,
+    });
+    off();
+    return shown;
+  }
+
+  it("names the typist by the event's display name, else its username", () => {
+    expect(typingNameFor({ username: "bob", display_name: "Bobby" }, [BOB])).toBe("Bobby");
+    expect(typingNameFor({ username: "bob", display_name: null }, [BOB])).toBe("bob");
+  });
+
+  it("names the typist from the cached members when the event carries no name", () => {
+    expect(typingNameFor({}, [BOB])).toBe("Bob B");
+    expect(typingNameFor({}, [{ ...BOB, displayName: "" }])).toBe("bob");
+  });
+
+  it("says Someone when neither the event nor the caches name the typist", () => {
+    expect(typingNameFor({})).toBe("Someone");
+  });
+
+  it("prefers the name this person gave the typist as a contact", () => {
+    useContactStore.setState({ aliases: { rimp1_bob: "My Bob" } });
+    expect(typingNameFor({ username: "bob", display_name: "Bobby" }, [BOB])).toBe("My Bob");
   });
 });

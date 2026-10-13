@@ -42,6 +42,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The direct space no longer offers your own account as a contact: the new-message picker
   leaves it out, adding a contact refuses your own contact link, and a contact the server
   refuses shows the server's reason.
+- The typing indicator names who is typing instead of "undefined is typing...": it uses the
+  name a contact was given here, the name the server sends, or the workspace's member list,
+  and says "Someone" when none of them knows the person.
 
 ### Added
 

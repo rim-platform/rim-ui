@@ -16,6 +16,8 @@ import {
 } from "../../features/messages/api/timelineMessages";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
 import { hostOf } from "../../features/relay/state/useRelayStore";
+import { useContactStore } from "../../features/relay/contacts/useContactStore";
+import { cachedMember, memberName } from "../../features/workspaces/api/memberName";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
@@ -132,6 +134,26 @@ export function useWorkspaceEvents(workspaceId: string | null) {
       unsubscribeRef.current = null;
     };
   }, [workspaceId, qc]);
+}
+
+/**
+ * The name shown for whoever started typing: the alias this person gave them as a contact, else
+ * the name the event carries, else the cached member's, else "Someone".
+ */
+function typingName(
+  qc: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  event: Extract<WorkspaceEvent, { type: "TypingStarted" }>,
+): string {
+  const principalId = cachedMember(qc, workspaceId, event.user_id)?.principalId;
+  const alias = principalId ? useContactStore.getState().aliases[principalId] : undefined;
+  return (
+    alias ||
+    event.display_name ||
+    event.username ||
+    memberName(qc, workspaceId, event.user_id) ||
+    "Someone"
+  );
 }
 
 /**
@@ -362,7 +384,7 @@ export function applyWorkspaceEvent(
       eventBus.emit<TypingStartedEvent>(BUS_EVENTS.TYPING_STARTED, {
         conversationId: event.conversation_id,
         userId: event.user_id,
-        username: event.username,
+        username: typingName(qc, workspaceId, event),
       });
       break;
     }

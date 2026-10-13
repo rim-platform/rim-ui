@@ -136,7 +136,9 @@ export type WorkspaceEvent =
       workspace_id: string;
       conversation_id: string;
       user_id: string;
-      username: string;
+      /** Sent by servers that name the typist; older ones send only the ids. */
+      username?: string;
+      display_name?: string | null;
     }
   | {
       type: "MessagePinned";
