@@ -29,7 +29,11 @@ describe("useSessionEndedSignOut", () => {
   );
 
   beforeEach(() => {
-    useAuthStore.setState({ session: { userId: "alice" }, sessionEnded: false });
+    useAuthStore.setState({
+      session: { userId: "alice" },
+      sessionEnded: false,
+      csrfToken: "tok-alice",
+    });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useOfflineStore.setState({ offline: true });
     queryClient.setQueryData(["me"], { id: "alice" });
@@ -48,7 +52,11 @@ describe("useSessionEndedSignOut", () => {
     serverCloses(4401);
 
     expect(clear).toHaveBeenCalledTimes(1);
-    expect(useAuthStore.getState()).toMatchObject({ session: null, sessionEnded: true });
+    expect(useAuthStore.getState()).toMatchObject({
+      session: null,
+      sessionEnded: true,
+      csrfToken: null,
+    });
     expect(useWorkspaceStore.getState().workspaceId).toBeNull();
     expect(useOfflineStore.getState().offline).toBe(false);
     expect(queryClient.getQueryData(["me"])).toBeUndefined();

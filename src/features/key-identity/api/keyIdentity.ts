@@ -32,6 +32,7 @@ import type {
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
+import { signInRequest } from "../../auth/api/signInRequest";
 import { MAX_CARD_RELAYS } from "../../relay/contacts/contactLink";
 import {
   readRegistration,
@@ -131,6 +132,16 @@ const LOGIN_WITH_KEY_MUTATION = gql`
   mutation LoginWithKey($proof: SignedStatementInput!) {
     loginWithKey(proof: $proof) {
       userId
+      csrfToken
+    }
+  }
+`;
+
+/** The same without `csrfToken`, for a server older than it. */
+const LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
+  mutation LoginWithKeyWithoutCsrfToken($proof: SignedStatementInput!) {
+    loginWithKey(proof: $proof) {
+      userId
     }
   }
 `;
@@ -145,6 +156,17 @@ const ENROLL_MUTATION = gql`
 
 const SIGNUP_WITH_KEY_MUTATION = gql`
   mutation SignupWithKey($input: SignupWithKeyInput!) {
+    signupWithKey(input: $input) {
+      userId
+      serverId
+      csrfToken
+    }
+  }
+`;
+
+/** The same without `csrfToken`, for a server older than it. */
+const SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
+  mutation SignupWithKeyWithoutCsrfToken($input: SignupWithKeyInput!) {
     signupWithKey(input: $input) {
       userId
       serverId
@@ -297,8 +319,10 @@ export async function signInWithDeviceKey(principalId: string): Promise<string> 
     challengeId,
     nonce,
   });
-  const res = await graphqlClient.request<{ loginWithKey: { userId: string } }>(
+  const res = await signInRequest<{ loginWithKey: { userId: string } }>(
+    "loginWithKey",
     LOGIN_WITH_KEY_MUTATION,
+    LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
     { proof },
   );
   // Best-effort: link the keys to the account now that the server named it.
@@ -581,8 +605,10 @@ export async function signupWithKey(
   let result: KeySignupResult;
   signupsInFlight += 1;
   try {
-    const res = await graphqlClient.request<{ signupWithKey: SignupWithInvitePayloadGql }>(
+    const res = await signInRequest<{ signupWithKey: SignupWithInvitePayloadGql }>(
+      "signupWithKey",
       SIGNUP_WITH_KEY_MUTATION,
+      SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
       { input },
     );
     result = { userId: res.signupWithKey.userId, serverId: res.signupWithKey.serverId ?? null };

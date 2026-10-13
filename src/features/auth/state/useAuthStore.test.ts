@@ -27,6 +27,16 @@ describe("useAuthStore", () => {
     expect(useAuthStore.getState().session).toBeNull();
   });
 
+  it("drops the CSRF token the sign-in returned when the session is cleared or ended", () => {
+    useAuthStore.getState().setCsrfToken("tok");
+    useAuthStore.getState().clearSession();
+    expect(useAuthStore.getState().csrfToken).toBeNull();
+
+    useAuthStore.getState().setCsrfToken("tok");
+    useAuthStore.getState().endSession();
+    expect(useAuthStore.getState().csrfToken).toBeNull();
+  });
+
   it("marks a session the server ended until the next session starts", () => {
     useAuthStore.getState().setSession({ userId: "user-1" });
     useAuthStore.getState().endSession();

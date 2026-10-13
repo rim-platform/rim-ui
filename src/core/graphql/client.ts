@@ -1,15 +1,8 @@
 import { GraphQLClient } from "graphql-request";
 
 import { getGraphqlEndpoint } from "./config";
+import { CSRF_HEADER, csrfToken } from "./csrf";
 import { asGraphqlResponse } from "./edgeRefusals";
-
-const CSRF_COOKIE = "rim_csrf";
-const CSRF_HEADER = "x-csrf-token";
-
-export function getCookie(name: string): string | undefined {
-  const row = document.cookie.split("; ").find((r) => r.startsWith(`${name}=`));
-  return row ? decodeURIComponent(row.split("=")[1]) : undefined;
-}
 
 /**
  * Where requests for a space on another server go: the relay registers one once it knows
@@ -73,7 +66,7 @@ export function createGraphqlClient(): GraphQLClient {
     credentials: "include",
     fetch: routingFetch,
     requestMiddleware: (request) => {
-      const csrf = getCookie(CSRF_COOKIE);
+      const csrf = csrfToken();
       if (!csrf) return request;
 
       const headers = new Headers(request.headers as HeadersInit | undefined);

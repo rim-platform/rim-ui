@@ -9,7 +9,7 @@
 
 import { GraphQLClient } from "graphql-request";
 
-import { getCookie } from "../../../core/graphql/client";
+import { csrfHeader } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { utf8 } from "../../key-identity/browser/bytes";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -86,8 +86,7 @@ async function attempt(
   });
   const headers: Record<string, string> = deviceRequestHeaders(signed);
   if (request.contentType) headers["Content-Type"] = request.contentType;
-  const csrf = getCookie("rim_csrf");
-  if (csrf && request.method === "POST") headers["x-csrf-token"] = csrf;
+  if (request.method === "POST") Object.assign(headers, csrfHeader());
 
   let res: Response;
   try {

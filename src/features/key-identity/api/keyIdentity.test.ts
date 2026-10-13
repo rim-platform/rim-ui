@@ -19,6 +19,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: () => true,
 }));
 
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   abandonEnrollment,
   abandonKeySignup,
@@ -96,6 +97,7 @@ function commands(): string[] {
 beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
+  useAuthStore.setState({ csrfToken: null });
 });
 
 describe("signInWithDeviceKey", () => {
@@ -103,13 +105,14 @@ describe("signInWithDeviceKey", () => {
     backend(
       {
         KeyLoginChallenge: CHALLENGE,
-        LoginWithKey: { loginWithKey: { userId: "user-1" } },
+        LoginWithKey: { loginWithKey: { userId: "user-1", csrfToken: "tok-key-login" } },
         MeKeyAccount: ME(PRINCIPAL),
       },
       { key_identity_sign_login: STATEMENT },
     );
 
     await expect(signInWithDeviceKey(PRINCIPAL)).resolves.toBe("user-1");
+    expect(useAuthStore.getState().csrfToken).toBe("tok-key-login");
     expect(invokeMock).toHaveBeenCalledWith("key_identity_sign_login", {
       endpoint: ENDPOINT,
       principalId: PRINCIPAL,
@@ -327,10 +330,10 @@ describe("signupWithKey", () => {
     },
   };
   const fields = { username: " ada ", displayName: "Ada", workspaceInviteToken: "ws-tok" };
-  const created = { signupWithKey: { userId: "user-1", serverId: "srv-1" } };
+  const created = { signupWithKey: { userId: "user-1", serverId: "srv-1", csrfToken: "tok-key" } };
   const LOG = { keyLog: [{ seq: 0, statement: STATEMENT }] };
 
-  it("stores and signs the draft's keys, creates the account, settles and publishes the card", async () => {
+  it("stores and signs the draft's keys, creates the account, keeps its csrfToken, settles and publishes the card", async () => {
     backend(
       {
         KeyLoginChallenge: CHALLENGE,
@@ -345,6 +348,7 @@ describe("signupWithKey", () => {
       userId: "user-1",
       serverId: "srv-1",
     });
+    expect(useAuthStore.getState().csrfToken).toBe("tok-key");
     expect(invokeMock).toHaveBeenCalledWith("key_identity_sign_signup", {
       draftId: draft.draftId,
       endpoint: ENDPOINT,

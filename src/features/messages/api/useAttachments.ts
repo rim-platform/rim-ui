@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
-import { graphqlClient, getCookie } from "../../../core/graphql/client";
+import { graphqlClient } from "../../../core/graphql/client";
+import { csrfHeader } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 import { ATTACHMENT_FIELDS } from "../../../graphql/fragments/message";
@@ -104,9 +105,6 @@ export function useDeleteAttachmentMutation() {
   });
 }
 
-const CSRF_COOKIE = "rim_csrf";
-const CSRF_HEADER = "x-csrf-token";
-
 /**
  * Upload a file to the REST endpoint using the upload token from createAttachment. A file for
  * a space on another server goes through the relay to its host, as exact multipart bytes the
@@ -143,15 +141,11 @@ export async function uploadFileRest(
     return;
   }
 
-  const headers: Record<string, string> = {};
-  const csrf = getCookie(CSRF_COOKIE);
-  if (csrf) headers[CSRF_HEADER] = csrf;
-
   const res = await fetch(uploadUrl, {
     method: "POST",
     body: formData,
     credentials: "include",
-    headers,
+    headers: csrfHeader(),
   });
 
   if (!res.ok) {
