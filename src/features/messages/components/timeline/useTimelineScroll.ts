@@ -141,7 +141,7 @@ export function useTimelineScroll({
       if (firstNewIndex >= 0) {
         virtualizer.scrollToIndex(firstNewIndex, { align: "start" });
       } else {
-        virtualizer.scrollToIndex(items.length - 1, { align: "end" });
+        virtualizer.scrollToEnd();
       }
       return;
     }
@@ -165,7 +165,7 @@ export function useTimelineScroll({
     if (last.id !== prevLastId) {
       const isOwnMessage = currentUserId !== undefined && last.author?.id === currentUserId;
       if (isAtBottomRef.current || isOwnMessage) {
-        virtualizer.scrollToIndex(items.length - 1, { align: "end", behavior: "smooth" });
+        virtualizer.scrollToEnd({ behavior: "smooth" });
       }
     }
   }, [listKey, items, firstNewIndex, currentUserId, virtualizer, isAtBottomRef]);
