@@ -7,6 +7,7 @@ vi.mock("../../shared/toast", () => ({
 import { toast } from "../../shared/toast";
 import { logger } from "../logger";
 import {
+  isSessionEndedClose,
   isSubscriptionLimit,
   reportSubscriptionLimit,
   SUBSCRIPTION_LIMIT_TOAST_ID,
@@ -15,6 +16,15 @@ import {
 const refused = [
   { message: "too many subscriptions", extensions: { code: "TOO_MANY_SUBSCRIPTIONS", limit: 8 } },
 ];
+
+describe("session ended close", () => {
+  it("tells the server's 4401 close from other closes and errors", () => {
+    expect(isSessionEndedClose(new CloseEvent("close", { code: 4401 }))).toBe(true);
+    expect(isSessionEndedClose(new CloseEvent("close", { code: 1006 }))).toBe(false);
+    expect(isSessionEndedClose(refused)).toBe(false);
+    expect(isSessionEndedClose(null)).toBe(false);
+  });
+});
 
 describe("subscription limit", () => {
   afterEach(() => vi.clearAllMocks());

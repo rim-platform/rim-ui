@@ -5,8 +5,8 @@ import { ClipboardList, Inbox, LogOut, Puzzle, Search, Settings, Sparkles } from
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
-import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
+import { signOutLocally } from "../../features/auth/runtime/signOut";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
@@ -152,7 +152,6 @@ export function SideRail() {
 function UserMenu({ avatarInitial, username }: { avatarInitial: string; username?: string }) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [statusPosition, setStatusPosition] = useState<{ x: number; y: number } | null>(null);
-  const clearSession = useAuthStore((s) => s.clearSession);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const logout = useLogoutMutation();
   const queryClient = useQueryClient();
@@ -169,19 +168,9 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
     if (logout.isPending) return;
     setMenuPosition(null);
     logout.mutate(undefined, {
-      onSuccess: () => {
-        clearSession();
-        useWorkspaceStore.getState().clearWorkspaceId();
-        useShellStore.getState().reset();
-        queryClient.clear();
-      },
-      onError: () => {
-        // Still clear local state — user wanted to log out
-        clearSession();
-        useWorkspaceStore.getState().clearWorkspaceId();
-        useShellStore.getState().reset();
-        queryClient.clear();
-      },
+      onSuccess: () => signOutLocally(queryClient),
+      // Still clear local state — user wanted to log out
+      onError: () => signOutLocally(queryClient),
     });
   }
 

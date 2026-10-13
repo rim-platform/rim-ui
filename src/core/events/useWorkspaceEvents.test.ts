@@ -40,6 +40,7 @@ vi.mock("../../shared/toast", () => ({
 }));
 
 import { toast } from "../../shared/toast";
+import { logger } from "../logger";
 import { useShellStore } from "../../shell/state/useShellStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
@@ -159,6 +160,20 @@ describe("useWorkspaceEvents subscription limit", () => {
     );
     expect(toast.error).not.toHaveBeenCalled();
     expect(wsClient.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends quietly when the server closed the connection because the session ended", async () => {
+    const { wsClient } = await import("../graphql/wsClient");
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const qc = new QueryClient();
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+
+    subscribeObserver?.error(new CloseEvent("close", { code: 4401 }));
+
+    expect(error).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(wsClient.subscribe).toHaveBeenCalledTimes(1);
+    error.mockRestore();
   });
 });
 

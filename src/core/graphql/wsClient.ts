@@ -2,11 +2,13 @@ import { createClient } from "graphql-ws";
 
 import { getApiOrigin, getWsEndpoint } from "./config";
 import { readEdgeRefusal, useEdgeStore, type EdgeRefusal } from "./edgeRefusals";
+import { isSessionEndedClose } from "./subscriptionErrors";
 
 type ConnectionListener = () => void;
 
 const connectionListeners = new Set<ConnectionListener>();
 const disconnectionListeners = new Set<ConnectionListener>();
+const sessionEndedListeners = new Set<ConnectionListener>();
 
 /** Register a callback invoked every time the WebSocket (re)connects. */
 export function onWsConnected(listener: ConnectionListener): () => void {
@@ -21,6 +23,17 @@ export function onWsDisconnected(listener: ConnectionListener): () => void {
   disconnectionListeners.add(listener);
   return () => {
     disconnectionListeners.delete(listener);
+  };
+}
+
+/**
+ * Register a callback invoked when the server closes the WebSocket because the session ended.
+ * Nothing reconnects after that close; the app has to sign in again.
+ */
+export function onWsSessionEnded(listener: ConnectionListener): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
   };
 }
 
@@ -126,8 +139,9 @@ export const wsClient = createClient({
   // Ping the server every 15 s to detect dead connections quickly.
   keepAlive: KEEPALIVE_MS,
 
-  // A failed upgrade is retried too; the probe below tells a refusal from an outage.
-  shouldRetry: () => true,
+  // A failed upgrade is retried too; the probe below tells a refusal from an outage. A close
+  // for an ended session is not: the session is gone, and only signing in again helps.
+  shouldRetry: (event) => !isSessionEndedClose(event),
 
   retryWait: async (retries) => {
     // An attempt whose socket never opened was refused or could not reach the server; a
@@ -150,10 +164,11 @@ export const wsClient = createClient({
       useEdgeStore.getState().setBlocked(false);
       connectionListeners.forEach((fn) => fn());
     },
-    closed: () => {
+    closed: (event) => {
       activeSocket = null;
       clearTimeout(pongTimeoutId);
       disconnectionListeners.forEach((fn) => fn());
+      if (isSessionEndedClose(event)) sessionEndedListeners.forEach((fn) => fn());
     },
     ping: (received) => {
       if (!received) {

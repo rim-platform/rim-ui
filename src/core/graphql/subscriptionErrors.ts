@@ -5,6 +5,9 @@ import { TOO_MANY_SUBSCRIPTIONS } from "./errors";
 /** The id of the notice that live updates hit the subscription limit; one at a time. */
 export const SUBSCRIPTION_LIMIT_TOAST_ID = "too-many-subscriptions";
 
+/** The close code the server ends a WebSocket with once the session behind it has ended. */
+export const SESSION_ENDED_CLOSE_CODE = 4401;
+
 /** The subscriptions whose refusal was already logged, by label. */
 const logged = new Set<string>();
 
@@ -19,6 +22,18 @@ export function isSubscriptionLimit(err: unknown): boolean {
       typeof e === "object" &&
       e !== null &&
       (e as { extensions?: { code?: unknown } }).extensions?.code === TOO_MANY_SUBSCRIPTIONS,
+  );
+}
+
+/**
+ * Whether a subscription's error, or a WebSocket close, is the server closing the connection
+ * because its session ended. graphql-ws hands the sink the close event itself.
+ */
+export function isSessionEndedClose(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === SESSION_ENDED_CLOSE_CODE
   );
 }
 

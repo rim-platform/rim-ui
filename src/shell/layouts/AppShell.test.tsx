@@ -22,6 +22,7 @@ vi.mock("../../core/events/useWorkspaceEvents", () => ({
 vi.mock("../../features/offline/runtime/useOfflineReconnect", () => ({
   useOfflineReconnect: () => {},
 }));
+vi.mock("../../features/auth/runtime/signOut", () => ({ useSessionEndedSignOut: () => {} }));
 vi.mock("../../features/conversations/api/useUnreadCounts", () => ({
   useUnreadCounts: () => {},
 }));

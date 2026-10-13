@@ -30,6 +30,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   direct space as soon as the session exists instead of when Direct messages is opened. It no
   longer asks the direct space for custom emoji, plugins, pipelines, workspace state or
   channels, and Settings hides those tabs there.
+- When the server ends the session (a sign-out elsewhere, a password reset, a revoked device, an
+  expired session) and closes the live connection with code 4401, the app returns to sign-in
+  with "Your session ended. Sign in again." instead of reconnecting with a dead session.
 
 ### Added
 
