@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
@@ -20,6 +20,11 @@ vi.mock("../../conversations/api/useChannels", () => ({
 vi.mock("../../conversations/api/useInboxConversations", () => ({
   useInboxConversations: () => ({ data: undefined }),
 }));
+
+vi.mock("../../workspaces/api/useServerMembers", async () => {
+  const { workspaceMembers } = await import("../../conversations/__fixtures__/conversations");
+  return { useServerMembers: () => ({ data: workspaceMembers }) };
+});
 
 vi.mock("../runtime/messageCacheSync", () => ({
   requestCacheSync: (...args: unknown[]) => requestCacheSyncMock(...args),
@@ -250,6 +255,69 @@ describe("SearchOverlay", () => {
 
       fireEvent.keyDown(dialog, { key: "Escape" });
       expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+    });
+  });
+
+  describe("operator suggestions", () => {
+    /** The focused search input with `value` typed and the caret at `caret`. */
+    function typeInSearch(value: string, caret = value.length): HTMLInputElement {
+      const input = screen.getByPlaceholderText(/from:@user/) as HTMLInputElement;
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value } });
+      input.setSelectionRange(caret, caret);
+      fireEvent.select(input);
+      return input;
+    }
+
+    it("lists members for from:@ and Enter inserts the picked one instead of opening a result", () => {
+      const setSelectedConversationId = vi.fn();
+      useShellStore.setState({ setSelectedConversationId });
+      mockSearchResult([makeItem()]);
+      render(<SearchOverlay />);
+      const input = typeInSearch("from:@ deploy", "from:@".length);
+
+      const options = screen.getAllByRole("option");
+      expect(options.map((o) => o.textContent)).toEqual(["Alice@alice", "Bob@bob", "Me Myself@me"]);
+
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(useSearchOverlayStore.getState().query).toBe("from:@bob deploy");
+      expect(input.selectionStart).toBe("from:@bob ".length);
+      expect(setSelectedConversationId).not.toHaveBeenCalled();
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("inserts a clicked suggestion and keeps the input focused", () => {
+      render(<SearchOverlay />);
+      const input = typeInSearch("in:#gen");
+
+      fireEvent.click(screen.getByRole("option", { name: "#general" }));
+
+      expect(useSearchOverlayStore.getState().query).toBe("in:#general ");
+      expect(document.activeElement).toBe(input);
+    });
+
+    it("Tab inserts the selected has: value", () => {
+      render(<SearchOverlay />);
+      const input = typeInSearch("has:l");
+
+      fireEvent.keyDown(input, { key: "Tab" });
+
+      expect(useSearchOverlayStore.getState().query).toBe("has:link ");
+    });
+
+    it("Escape closes only the popover; the next Escape goes on to the query", () => {
+      render(<SearchOverlay />);
+      const input = typeInSearch("from:");
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(useSearchOverlayStore.getState()).toMatchObject({ isOpen: true, query: "from:" });
+
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(useSearchOverlayStore.getState().query).toBe("");
     });
   });
 });

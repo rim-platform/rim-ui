@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Loader2, X, Clock, Info } from "lucide-react";
 
 import { Z } from "../../../shared/ui/zIndex";
@@ -16,11 +16,19 @@ import {
 } from "../api/localSearch";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useServerMembers, type ServerMember } from "../../workspaces/api/useServerMembers";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
 import { useInboxConversations } from "../../conversations/api/useInboxConversations";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { SearchSnippet } from "./SearchSnippet";
+import { SearchSuggestionsPopover } from "./SearchSuggestionsPopover";
+import {
+  SEARCH_SUGGESTIONS_ID,
+  applySuggestion,
+  useOperatorSuggestions,
+  type Suggestion,
+} from "./searchSuggestions";
 
 /** Operator legend shown in the "Search tips" popover. Mirrors `../rim-server/docs/search.md`. */
 const SEARCH_OPERATORS: { operator: string; example: string; meaning: string }[] = [
@@ -37,6 +45,8 @@ const SEARCH_OPERATORS: { operator: string; example: string; meaning: string }[]
 ];
 
 const PREFETCH_THRESHOLD = 5;
+
+const NO_MEMBERS: ServerMember[] = [];
 
 export function SearchOverlay() {
   const isOpen = useSearchOverlayStore((s) => s.isOpen);
@@ -55,6 +65,7 @@ export function SearchOverlay() {
   const { data: channelsData } = useChannels(workspaceId ?? undefined);
   const { data: joinedData } = useJoinedChannels(workspaceId ?? undefined);
   const { data: inboxData } = useInboxConversations(workspaceId ?? undefined);
+  const { data: membersData } = useServerMembers(workspaceId ?? undefined);
   // The conversations the user can see now: titles for local hits, `in:#name` for local
   // search, and the visibility check before a local hit joins the server's results.
   const directory = useMemo(
@@ -96,6 +107,53 @@ export function SearchOverlay() {
   const [tipsOpen, setTipsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Operator value suggestions for the token at the caret, shown while the input has focus.
+  const [caret, setCaret] = useState(0);
+  const [inputFocused, setInputFocused] = useState(false);
+  // The highlighted row and the token it was chosen in; a new token starts at the first row.
+  const [suggestionPick, setSuggestionPick] = useState<{ at: string | null; index: number }>({
+    at: null,
+    index: 0,
+  });
+  // The query and token start Escape dismissed the popover at; typing or moving to another
+  // token shows it again.
+  const [dismissedAt, setDismissedAt] = useState<string | null>(null);
+  // Where the caret goes once an inserted suggestion has rendered.
+  const pendingCaret = useRef<number | null>(null);
+  const { token, suggestions } = useOperatorSuggestions(
+    query,
+    caret,
+    membersData ?? NO_MEMBERS,
+    directory,
+  );
+  const tokenAt = token ? `${token.start}:${query}` : null;
+  const suggestionsOpen =
+    inputFocused && !tipsOpen && suggestions.length > 0 && dismissedAt !== tokenAt;
+  const activeSuggestion =
+    suggestionPick.at === tokenAt ? Math.min(suggestionPick.index, suggestions.length - 1) : 0;
+  const setSuggestionIndex = useCallback(
+    (index: number) => setSuggestionPick({ at: tokenAt, index }),
+    [tokenAt],
+  );
+
+  useLayoutEffect(() => {
+    if (pendingCaret.current === null) return;
+    inputRef.current?.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [query]);
+
+  const pickSuggestion = useCallback(
+    (suggestion: Suggestion) => {
+      if (!token) return;
+      const next = applySuggestion(query, token, suggestion.insert);
+      pendingCaret.current = next.caret;
+      setCaret(next.caret);
+      setQuery(next.query);
+      inputRef.current?.focus();
+    },
+    [token, query, setQuery],
+  );
 
   // Channel name lookup
   const channelNameMap = useMemo(() => {
@@ -174,6 +232,28 @@ export function SearchOverlay() {
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      // The suggestion popover takes these keys while it is open.
+      if (suggestionsOpen) {
+        switch (event.key) {
+          case "ArrowDown":
+            event.preventDefault();
+            setSuggestionIndex(Math.min(activeSuggestion + 1, suggestions.length - 1));
+            return;
+          case "ArrowUp":
+            event.preventDefault();
+            setSuggestionIndex(Math.max(activeSuggestion - 1, 0));
+            return;
+          case "Enter":
+          case "Tab":
+            event.preventDefault();
+            pickSuggestion(suggestions[activeSuggestion]);
+            return;
+          case "Escape":
+            event.preventDefault();
+            setDismissedAt(tokenAt);
+            return;
+        }
+      }
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
@@ -205,6 +285,12 @@ export function SearchOverlay() {
       }
     },
     [
+      suggestionsOpen,
+      activeSuggestion,
+      setSuggestionIndex,
+      suggestions,
+      pickSuggestion,
+      tokenAt,
       navCount,
       isLoadMoreSelected,
       isFetchingNextPage,
@@ -256,7 +342,20 @@ export function SearchOverlay() {
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setCaret(e.target.selectionStart ?? e.target.value.length);
+            }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestionsOpen}
+            aria-controls={suggestionsOpen ? SEARCH_SUGGESTIONS_ID : undefined}
+            aria-activedescendant={
+              suggestionsOpen ? `${SEARCH_SUGGESTIONS_ID}-${activeSuggestion}` : undefined
+            }
             placeholder="Search — try from:@user, in:#channel, has:link, before:2026-01-01"
             className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
           />
@@ -284,6 +383,15 @@ export function SearchOverlay() {
             >
               <X className="h-3.5 w-3.5" />
             </button>
+          )}
+
+          {suggestionsOpen && (
+            <SearchSuggestionsPopover
+              suggestions={suggestions}
+              selectedIndex={activeSuggestion}
+              onPick={pickSuggestion}
+              onHover={setSuggestionIndex}
+            />
           )}
 
           {tipsOpen && (
@@ -440,7 +548,7 @@ export function SearchOverlay() {
             <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
           </span>
           <span>
-            <kbd className="font-mono">Enter</kbd> jump
+            <kbd className="font-mono">Enter</kbd> {suggestionsOpen ? "insert" : "jump"}
           </span>
           <span>
             <kbd className="font-mono">Esc</kbd> close
