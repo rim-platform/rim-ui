@@ -112,6 +112,7 @@ vi.mock("./MessageItem", async (importOriginal) => {
 });
 
 import { MessageTimeline } from "./MessageTimeline";
+import { MARK_SEEN_DELAY_MS } from "./timeline/useMarkSeen";
 
 // --- Layout harness -------------------------------------------------------
 // jsdom does no layout, and the timeline is virtualized: with a zero-height
@@ -596,6 +597,30 @@ describe("MessageTimeline virtualization", () => {
 
     expect(messageList().scrollTop).toBe(maxScrollTop());
     expect(screen.getByText("message 139")).toBeInTheDocument();
+  });
+
+  it("tells the server a conversation is read when it opens at the bottom without scrolling", async () => {
+    setMessages(range(0, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 0 }));
+    await settle();
+
+    // Three rows fit the viewport: opening this conversation fires no scroll event.
+    const short = range(100, 103).map((m) => ({ ...m, conversationId: "conv-2" }));
+    useUnreadStore.getState().setCounts("ws-1", { "conv-2": 3 });
+    setMessages(short);
+    act(() => useShellStore.setState({ selectedConversationId: "conv-2" }));
+    rerender(<MessageTimeline />);
+    await settle();
+    await act(() => new Promise((resolve) => setTimeout(resolve, MARK_SEEN_DELAY_MS)));
+
+    expect(markAsRead.mutate).toHaveBeenCalledWith({
+      conversationId: "conv-2",
+      workspaceId: "ws-1",
+      readAt: short[2].sentAt,
+    });
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
   });
 
   it("keeps the row being edited mounted while it is scrolled out of view", async () => {

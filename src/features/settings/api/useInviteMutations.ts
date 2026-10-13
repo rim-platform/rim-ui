@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
 
 const CREATE_INVITE_MUTATION = gql`
   mutation CreateInvite($input: CreateInviteInput!) {
@@ -71,11 +72,16 @@ export function useCreateInviteMutation() {
   });
 }
 
+/** Joins a workspace by invite; the workspace list is refetched so the rail shows it. */
 export function useJoinServerByInviteMutation() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (inviteToken: string) =>
       graphqlClient.request<JoinServerByInviteResponse>(JOIN_SERVER_BY_INVITE_MUTATION, {
         input: { inviteToken },
       }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.myServers() });
+    },
   });
 }

@@ -26,6 +26,9 @@ vi.mock("../../features/auth/runtime/signOut", () => ({ useSessionEndedSignOut: 
 vi.mock("../../features/conversations/api/useUnreadCounts", () => ({
   useUnreadCounts: () => {},
 }));
+vi.mock("../../features/conversations/api/useAllWorkspaceUnreadCounts", () => ({
+  useAllWorkspaceUnreadCounts: () => {},
+}));
 vi.mock("../../features/conversations/api/useMutedConversations", () => ({
   useMutedConversations: () => {},
 }));

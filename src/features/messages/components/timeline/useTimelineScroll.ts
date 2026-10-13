@@ -15,6 +15,13 @@ const ESTIMATED_ROW_HEIGHT: Record<DisplayDensity, number> = {
 export const LIST_PADDING_Y = 12;
 const AT_BOTTOM_THRESHOLD = 50;
 
+/** Whether `container` is scrolled to (within a few pixels of) its end. */
+function isScrolledToBottom(container: HTMLElement): boolean {
+  return (
+    container.scrollHeight - container.scrollTop - container.clientHeight < AT_BOTTOM_THRESHOLD
+  );
+}
+
 interface TimelineScrollItem {
   id: string;
   author?: { id: string } | null;
@@ -106,8 +113,7 @@ export function useTimelineScroll({
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const atBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < AT_BOTTOM_THRESHOLD;
+    const atBottom = isScrolledToBottom(container);
     isAtBottomRef.current = atBottom;
     onScrollPosition?.(atBottom);
   }, [isAtBottomRef, onScrollPosition]);
@@ -143,6 +149,8 @@ export function useTimelineScroll({
       } else {
         virtualizer.scrollToEnd();
       }
+      // A list that fits needs no scroll, so no scroll event would replace the previous list's value.
+      isAtBottomRef.current = isScrolledToBottom(container);
       return;
     }
 

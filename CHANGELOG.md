@@ -45,6 +45,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The typing indicator names who is typing instead of "undefined is typing...": it uses the
   name a contact was given here, the name the server sends, or the workspace's member list,
   and says "Someone" when none of them knows the person.
+- A workspace joined from an invite link while signed in shows in the workspace rail at once,
+  without reloading the page.
+- The Inbox unread badge no longer comes back for conversations already read: opening a
+  conversation and reaching its newest message tells the server it is read, as does a new
+  message arriving while you are at the bottom.
 
 ### Added
 
@@ -92,6 +97,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   shows what the block did, and the IP deny list with Unblock and a block form taking an
   optional expiry in days. Everyone else, and anyone on an older server, sees no such tab; the
   page says it is for operators only when opened directly.
+- Each workspace in the workspace rail other than the open one shows an unread badge, like
+  Direct messages; the counts are refreshed every minute and when the window regains focus.
 
 ### Changed
 
