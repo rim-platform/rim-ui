@@ -40,7 +40,7 @@ tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 # In-app updates and the relaunch that applies them. Kept on the same minor as their npm
-# packages and on lines that build against tauri 2.10.
+# packages and on lines that build against the tauri minor in use.
 tauri-plugin-updater = "~2.13.2"
 tauri-plugin-process = "~2.4.0"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
