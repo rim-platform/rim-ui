@@ -33,7 +33,7 @@ sha2 = "0.10"
 hmac = "0.12"
 hkdf = "0.12"
 aes-gcm = "0.10"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 
 # The browser build: OpenMLS reads the clock through `web-time`, and randomness comes from
 # WebCrypto.
