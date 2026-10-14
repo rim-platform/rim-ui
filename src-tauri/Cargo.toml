@@ -32,7 +32,7 @@ tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt",
 log = "0.4"
 libc = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+reqwest = { version = "0.13", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 # Direct connections to another server (src/relay/direct.rs): a WebSocket carrying that
 # server's session cookie, which the webview's own socket cannot.
