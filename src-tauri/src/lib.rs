@@ -236,6 +236,8 @@ pub fn run() {
             key_identity::commands::key_identity_restore_draft_keys,
             key_identity::commands::key_identity_forget_unconfirmed,
             key_identity::commands::key_identity_discard_enrollment,
+            key_identity::commands::key_identity_recovery_kit,
+            key_identity::commands::key_identity_confirm_recovery_kit,
             key_identity::commands::key_identity_settle,
             key_identity::commands::key_identity_sign_login,
             key_identity::commands::key_identity_sign_device_request,

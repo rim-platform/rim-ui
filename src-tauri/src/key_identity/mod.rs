@@ -6,9 +6,10 @@
 //! for signatures, never read a key.
 //!
 //! - **Enrollment** creates an identity key, a recovery key and a device key. The recovery key
-//!   is shown once, as the 12-word phrase of the recovery kit, and never stored. The identity
-//!   and device keys are written to the secret vault before the server is asked to enroll them, so
-//!   an enrolled account never ends up without its keys; keys the server never accepted are
+//!   is never stored; the recovery kit's secret it comes from (its 12-word phrase) stays with
+//!   the identity key until the person confirms they saved the kit. The identity and device
+//!   keys are written to the secret vault before the server is asked to enroll them, so an
+//!   enrolled account never ends up without its keys; keys the server never accepted are
 //!   cleaned up later.
 //! - **Key-only signup** uses the same draft for an account that does not exist yet: its keys
 //!   are stored before `signupWithKey` is sent and linked to the new account once it answers.
@@ -104,7 +105,7 @@ pub(crate) struct LocalAccount {
     pub(crate) confirmed: bool,
 }
 
-/// A started enrollment: the new principal id and the recovery kit to show once.
+/// A started enrollment: the new principal id and the recovery kit.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EnrollmentDraft {
@@ -116,6 +117,27 @@ pub(crate) struct EnrollmentDraft {
     pub(crate) recovery_kit: Zeroizing<String>,
     /// The kit's 12 words in order, to show as a numbered grid.
     pub(crate) recovery_phrase: Zeroizing<Vec<String>>,
+}
+
+/// The recovery kit of an identity whose kit the person has not confirmed saving yet.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecoveryKitText {
+    pub(crate) principal_id: String,
+    /// The whole kit text, to copy.
+    pub(crate) recovery_kit: Zeroizing<String>,
+    /// The kit's 12 words in order.
+    pub(crate) recovery_phrase: Zeroizing<Vec<String>>,
+}
+
+impl RecoveryKitText {
+    fn new(principal_id: &str, entropy: &[u8; recovery_kit::PHRASE_ENTROPY_LEN]) -> Result<Self> {
+        Ok(Self {
+            principal_id: principal_id.to_string(),
+            recovery_kit: recovery_kit::format_kit(principal_id, entropy)?,
+            recovery_phrase: recovery_kit::phrase_words(entropy)?,
+        })
+    }
 }
 
 /// What `enrollIdentityKey` takes.
@@ -298,6 +320,8 @@ struct Draft {
     device_name: String,
     inception: Statement,
     certificate: Statement,
+    /// The recovery kit's entropy until the person confirms they saved the kit.
+    recovery_entropy: Option<recovery_kit::PhraseEntropy>,
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -384,11 +408,9 @@ impl KeyIdentityState {
                 issued_at: &now,
             },
         );
-        let recovery_kit = recovery_kit::format_kit(&principal_id, &recovery_entropy)?;
-        let recovery_phrase = recovery_kit::phrase_words(&recovery_entropy)?;
+        let kit = RecoveryKitText::new(&principal_id, &recovery_entropy)?;
         let backup_key = recovery_kit::phrase_backup_key(&recovery_entropy)?;
         drop(recovery_seed);
-        drop(recovery_entropy);
 
         let draft_id = uuid::Uuid::new_v4().to_string();
         let inception_payload = inception.payload.clone();
@@ -406,14 +428,15 @@ impl KeyIdentityState {
                     device_name,
                     inception,
                     certificate,
+                    recovery_entropy: Some(recovery_entropy),
                 },
             );
         Ok(EnrollmentDraft {
             draft_id,
             principal_id,
             inception_payload,
-            recovery_kit,
-            recovery_phrase,
+            recovery_kit: kit.recovery_kit,
+            recovery_phrase: kit.recovery_phrase,
         })
     }
 
@@ -462,8 +485,8 @@ impl KeyIdentityState {
         username: &str,
     ) -> Result<()> {
         audience(endpoint)?;
-        let draft = self.draft(draft_id)?;
-        self.store_draft(&draft, endpoint, None, username.trim())
+        self.store_draft(draft_id, endpoint, None, username.trim())?;
+        Ok(())
     }
 
     /// Store a draft's keys, linked to the account on `endpoint`, and sign its log, its device
@@ -477,8 +500,7 @@ impl KeyIdentityState {
         challenge: &Challenge,
     ) -> Result<EnrollmentStatements> {
         let audience = audience(endpoint)?;
-        let draft = self.draft(draft_id)?;
-        self.store_draft(&draft, endpoint, user_id, username)?;
+        let draft = self.store_draft(draft_id, endpoint, user_id, username)?;
 
         let proof = statement::login(
             &draft.device_seed,
@@ -497,16 +519,19 @@ impl KeyIdentityState {
         })
     }
 
-    /// Write a draft's keys and link them to the account on `endpoint`. Keys the server has
-    /// already confirmed stay confirmed, and a link that knows the account's user id keeps it.
+    /// Write a draft's keys, with the kit's entropy while the kit is unconfirmed, and link them
+    /// to the account on `endpoint`. Keys the server has already confirmed stay confirmed, and a
+    /// link that knows the account's user id keeps it. The draft is read under the store lock,
+    /// so a kit confirmed just before is not written back. Returns the draft as written.
     fn store_draft(
         &self,
-        draft: &Draft,
+        draft_id: &str,
         endpoint: &str,
         user_id: Option<&str>,
         username: &str,
-    ) -> Result<()> {
+    ) -> Result<Draft> {
         let _guard = self.guard()?;
+        let draft = self.draft(draft_id)?;
         let keys = self.keys();
         let confirmed = keys
             .record(&draft.principal_id)?
@@ -521,6 +546,11 @@ impl KeyIdentityState {
             pending_identity_seed: None,
             pending_identity_seq: None,
             backup_key: Some(backup::encode_key(&draft.backup_key)),
+            recovery_entropy: draft
+                .recovery_entropy
+                .as_ref()
+                .map(|e| recovery_kit::encode_entropy(e)),
+            kit_confirmed: Some(draft.recovery_entropy.is_none()),
             confirmed,
             replaced: None,
         })?;
@@ -539,10 +569,11 @@ impl KeyIdentityState {
             user_id: user_id.map(str::to_string).or(known_user_id),
             username: Some(username.to_string()),
         });
-        keys.put_links(&links)
+        keys.put_links(&links)?;
+        Ok(draft)
     }
 
-    /// A copy of a held draft, so the draft lock is never held together with the store lock.
+    /// A copy of a held draft; the draft lock is released before it returns.
     fn draft(&self, draft_id: &str) -> Result<Draft> {
         self.drafts
             .lock()
@@ -572,6 +603,61 @@ impl KeyIdentityState {
     pub(crate) fn remove_draft_keys(&self, draft_id: &str) -> Result<()> {
         let draft = self.draft(draft_id)?;
         self.forget_unconfirmed(&draft.principal_id)
+    }
+
+    /// The recovery kit of `principal_id` while the person has not confirmed saving it: from a
+    /// live draft, else from the stored record. `None` once confirmed, and for keys that never
+    /// kept it.
+    pub(crate) fn recovery_kit(&self, principal_id: &str) -> Result<Option<RecoveryKitText>> {
+        let _guard = self.guard()?;
+        let entropy = self
+            .drafts
+            .lock()
+            .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
+            .values()
+            .filter(|d| d.principal_id == principal_id)
+            .find_map(|d| d.recovery_entropy.clone());
+        if let Some(entropy) = entropy {
+            return RecoveryKitText::new(principal_id, &entropy).map(Some);
+        }
+        match self.keys().record(principal_id)? {
+            Some(KeyRecord {
+                recovery_entropy: Some(text),
+                kit_confirmed,
+                ..
+            }) if kit_confirmed != Some(true) => {
+                let entropy = recovery_kit::decode_entropy(&text)?;
+                RecoveryKitText::new(principal_id, &entropy).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The person saved the recovery kit of `principal_id`: its entropy leaves every live draft
+    /// and the stored record, and the record says the kit is confirmed. A draft confirmed
+    /// before its keys are stored stores no entropy.
+    pub(crate) fn confirm_recovery_kit(&self, principal_id: &str) -> Result<()> {
+        let _guard = self.guard()?;
+        for draft in self
+            .drafts
+            .lock()
+            .map_err(|_| KeyIdentityError::Keyring("draft lock poisoned".into()))?
+            .values_mut()
+            .filter(|d| d.principal_id == principal_id)
+        {
+            draft.recovery_entropy = None;
+        }
+        let keys = self.keys();
+        match keys.record(principal_id)? {
+            Some(mut record)
+                if record.recovery_entropy.is_some() || record.kit_confirmed == Some(false) =>
+            {
+                record.recovery_entropy = None;
+                record.kit_confirmed = Some(true);
+                keys.put_record(&record)
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Remove keys of `principal_id` the server never confirmed, putting back the confirmed
@@ -1049,6 +1135,9 @@ impl KeyIdentityState {
             pending_identity_seed: None,
             pending_identity_seq: None,
             backup_key: Some(backup::encode_key(&secret.backup_key)),
+            // The person just used the kit, so they hold it.
+            recovery_entropy: None,
+            kit_confirmed: Some(true),
             confirmed: false,
             replaced,
         })?;

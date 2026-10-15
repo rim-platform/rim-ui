@@ -16,7 +16,7 @@ how to try it.
 
 | What | Where |
 |---|---|
-| Identity key, backup key | This computer's secret vault record for the account (`key-identity-v1:<account id>`, see `secret-vault.md`). The backup key is derived from the recovery phrase at enrollment, key-only signup, recovery or takeover; the phrase itself is never stored. |
+| Identity key, backup key | This computer's secret vault record for the account (`key-identity-v1:<account id>`, see `secret-vault.md`). The backup key is derived from the recovery phrase at enrollment, key-only signup, recovery or takeover; the phrase's 16 bytes stay in the record only until the person confirms they saved the recovery kit. |
 | Backup record | `accounts/<account tag>/devices/<device id>/identity-backup.rimx` in the archive, one per computer that holds the identity key, sealed under the backup key. |
 | Archive key wrap | `devices/<device id>/key-wraps.json` in the archive, one `identity-v1` entry per account, under a key derived from the identity key. |
 

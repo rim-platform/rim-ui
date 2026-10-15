@@ -1,5 +1,5 @@
-//! The recovery kit: the text shown once at enrollment that lets a person who lost every
-//! device take their account back (`key-identity-v1.md`, "Recovery kit").
+//! The recovery kit: the text made at enrollment that lets a person who lost every device take
+//! their account back (`key-identity-v1.md`, "Recovery kit").
 //!
 //! This device writes version 2, a 12-word recovery phrase:
 //!
@@ -30,6 +30,7 @@
 //! hold an Ed25519 seed by definition. A recovery key of another algorithm needs a new kit
 //! version.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use bip39::{Language, Mnemonic};
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
@@ -210,6 +211,27 @@ pub(crate) fn parse_recovery_phrase(text: &str) -> Result<PhraseEntropy, KeyIden
     }
     let mut entropy = Zeroizing::new([0u8; PHRASE_ENTROPY_LEN]);
     entropy.copy_from_slice(&bytes[..PHRASE_ENTROPY_LEN]);
+    Ok(entropy)
+}
+
+/// A phrase's entropy as a key record keeps it: base64url.
+pub(crate) fn encode_entropy(entropy: &[u8; PHRASE_ENTROPY_LEN]) -> Zeroizing<String> {
+    Zeroizing::new(URL_SAFE_NO_PAD.encode(entropy))
+}
+
+/// A phrase's entropy from its stored base64url text.
+pub(crate) fn decode_entropy(text: &str) -> Result<PhraseEntropy, KeyIdentityError> {
+    let bytes =
+        Zeroizing::new(URL_SAFE_NO_PAD.decode(text).map_err(|_| {
+            KeyIdentityError::Keyring("the stored recovery kit is not base64".into())
+        })?);
+    let mut entropy = Zeroizing::new([0u8; PHRASE_ENTROPY_LEN]);
+    if bytes.len() != PHRASE_ENTROPY_LEN {
+        return Err(KeyIdentityError::Keyring(
+            "the stored recovery kit has the wrong length".into(),
+        ));
+    }
+    entropy.copy_from_slice(&bytes);
     Ok(entropy)
 }
 

@@ -13,7 +13,7 @@ use super::plugin_manifest::{self, KeyHistory, PluginManifestInput, VerifiedPlug
 use super::statement::{DelegationInput, DeviceRequestInput, Statement};
 use super::{
     CardContent, Challenge, EnrollmentDraft, EnrollmentStatements, KeyIdentityError,
-    KeyIdentityState, LocalAccount, LogStatus, RecoveryStatements, ServerAccount,
+    KeyIdentityState, LocalAccount, LogStatus, RecoveryKitText, RecoveryStatements, ServerAccount,
 };
 
 async fn blocking<T, F>(state: &State<'_, KeyIdentityState>, f: F) -> Result<T, KeyIdentityError>
@@ -120,6 +120,24 @@ pub async fn key_identity_discard_enrollment(
     draft_id: String,
 ) -> Result<(), KeyIdentityError> {
     blocking(&state, move |s| s.discard_enrollment(&draft_id)).await
+}
+
+/// The recovery kit of `principal_id` while the person has not confirmed saving it.
+#[tauri::command]
+pub async fn key_identity_recovery_kit(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+) -> Result<Option<RecoveryKitText>, KeyIdentityError> {
+    blocking(&state, move |s| s.recovery_kit(&principal_id)).await
+}
+
+/// The person saved the recovery kit of `principal_id`: this device stops keeping its secret.
+#[tauri::command]
+pub async fn key_identity_confirm_recovery_kit(
+    state: State<'_, KeyIdentityState>,
+    principal_id: String,
+) -> Result<(), KeyIdentityError> {
+    blocking(&state, move |s| s.confirm_recovery_kit(&principal_id)).await
 }
 
 /// Reconcile this device's keys with the signed-in account's `principalId`.
