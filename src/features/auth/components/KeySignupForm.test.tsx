@@ -105,7 +105,7 @@ describe("KeySignupForm", () => {
     api.beginEnrollment.mockResolvedValue(draft);
     api.abandonKeySignup.mockResolvedValue(undefined);
     api.discardKeySignup.mockResolvedValue(null);
-    // The desktop's vault, which keeps no kit: the kit is saved before the signup.
+    // A backend that keeps no kit, unless a test says otherwise: the kit is saved first.
     api.deviceKeepsRecoveryKit.mockReturnValue(false);
     api.requestKeyStorage.mockResolvedValue("persisted");
     api.confirmRecoveryKitSaved.mockResolvedValue(undefined);

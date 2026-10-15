@@ -61,10 +61,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   pages offer only "Create account with a key". A browser that cannot create keys says so and
   points to the desktop app instead of showing a password form, and the sign-in page does the
   same in place of its "Create account" link.
-- In the web app, a key signup or enrollment creates the account first and shows the recovery
-  kit after it, with "I saved it" and "Later". Until the kit is confirmed, a bar across the app
-  says "Save your recovery kit" and reopens it. The desktop app still has the kit saved before
-  the account is created.
+- A key signup or enrollment creates the account first and shows the recovery kit after it,
+  with "I saved it" and "Later", in the web app and the desktop app. Until the kit is
+  confirmed, a bar across the app says "Save your recovery kit" and reopens it.
 - Before the web app creates keys, it asks the browser to keep this site's data. When the
   browser refuses, it says the recovery kit would then be the only way back and goes on only if
   the person accepts.
@@ -136,6 +135,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The desktop app keeps a new account's recovery kit in its encrypted secret vault, next to the
+  identity key, until you confirm you saved the kit, and then deletes it, as the web app already
+  does. A kit you confirm before the account is created is never written, and a recovery with
+  the kit keeps nothing of it.
 - "<name> is typing..." is shown in direct messages only. Channels, groups and threads show no
   typing, and the app no longer announces typing there.
 - A rate-limited request (`RATE_LIMITED`, or HTTP 429 `rate_limited` from the server's

@@ -19,12 +19,21 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: () => true,
 }));
 
+// A backend a test puts in place of the platform's, such as one that keeps no recovery kit.
+const backendOverride = vi.hoisted(() => ({ value: null as KeyBackend | null }));
+vi.mock("./keyBackend", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./keyBackend")>();
+  return { ...actual, keyBackend: () => backendOverride.value ?? actual.keyBackend() };
+});
+
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { tauriKeyBackend, type KeyBackend } from "./keyBackend";
 import {
   abandonEnrollment,
   abandonKeySignup,
   accountIdInKit,
   completeEnrollment,
+  confirmRecoveryKitSaved,
   discardKeySignup,
   forgetKeysTheServerNeverSaw,
   KeyChallengeFailed,
@@ -36,6 +45,7 @@ import {
   resumeWithDeviceKey,
   signInWithDeviceKey,
   signupWithKey,
+  unsavedRecoveryKit,
   type EnrollmentDraft,
   type MyKeyIdentity,
 } from "./keyIdentity";
@@ -98,6 +108,7 @@ beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
   useAuthStore.setState({ csrfToken: null });
+  backendOverride.value = null;
 });
 
 describe("signInWithDeviceKey", () => {
@@ -216,7 +227,12 @@ describe("enrollment", () => {
     });
     const enroll = requestMock.mock.calls.find((c) => operation(c) === "EnrollIdentityKey");
     expect(enroll?.[1]).toEqual({ input: statements });
+    // The kit was saved before the keys were stored, so its secret is never written.
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_confirm_recovery_kit", {
+      principalId: PRINCIPAL,
+    });
     expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
       "key_identity_sign_enrollment",
       "key_identity_settle",
       "key_identity_sign_profile_card",
@@ -230,6 +246,21 @@ describe("enrollment", () => {
         certificates: [],
       },
     });
+  });
+
+  it("with the kit saved later, stores the keys without confirming it", async () => {
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        EnrollIdentityKey: { enrollIdentityKey: { principalId: PRINCIPAL } },
+        MyKeyIdentity: identity,
+        PublishProfileCard: { publishProfileCard: { version: 1 } },
+      },
+      { key_identity_sign_enrollment: statements, key_identity_sign_profile_card: STATEMENT },
+    );
+    await completeEnrollment(draft, ACCOUNT, "later");
+    expect(commands()[0]).toBe("key_identity_sign_enrollment");
+    expect(commands()).not.toContain("key_identity_confirm_recovery_kit");
   });
 
   it("treats a lost answer as success when the server shows the draft's id", async () => {
@@ -249,6 +280,7 @@ describe("enrollment", () => {
 
   it("refuses to enroll with the kit unsaved where the device does not keep it", async () => {
     backend({}, {});
+    backendOverride.value = { ...tauriKeyBackend, keepsRecoveryKit: false };
     await expect(completeEnrollment(draft, ACCOUNT, "later")).rejects.toThrow(/recovery kit/i);
     expect(requestMock).not.toHaveBeenCalled();
     expect(commands()).toEqual([]);
@@ -264,7 +296,10 @@ describe("enrollment", () => {
       { key_identity_sign_enrollment: statements },
     );
     await expect(completeEnrollment(draft, ACCOUNT)).rejects.toBeInstanceOf(ClientError);
-    expect(commands()).toEqual(["key_identity_sign_enrollment"]);
+    expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
+      "key_identity_sign_enrollment",
+    ]);
   });
 
   it("removes nothing while an enrollment is still in flight", async () => {
@@ -287,7 +322,10 @@ describe("enrollment", () => {
     // The settings panel closes now: the server still says "not enrolled".
     await abandonEnrollment(draft, ACCOUNT);
     expect(await reconcileDeviceKeys(ACCOUNT)).toBeNull();
-    expect(commands()).toEqual(["key_identity_sign_enrollment"]);
+    expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
+      "key_identity_sign_enrollment",
+    ]);
 
     answer({ enrollIdentityKey: true });
     await enrolling;
@@ -378,6 +416,7 @@ describe("signupWithKey", () => {
       principalId: PRINCIPAL,
     });
     expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
       "key_identity_sign_signup",
       "key_identity_settle",
       "key_identity_sign_profile_card",
@@ -406,6 +445,15 @@ describe("signupWithKey", () => {
     const failure = await signupWithKey(draft, fields).catch((err: unknown) => err);
     expect(failure).toBeInstanceOf(KeyChallengeFailed);
     expect((failure as KeyChallengeFailed).reason).toBeInstanceOf(ClientError);
+    expect(commands()).toEqual(["key_identity_confirm_recovery_kit"]);
+  });
+
+  it("leaves a kit saved later unconfirmed", async () => {
+    backend({ KeyLoginChallenge: serverError("RATE_LIMITED") });
+    const failure = await signupWithKey(draft, fields, { recoveryKit: "later" }).catch(
+      (err: unknown) => err,
+    );
+    expect(failure).toBeInstanceOf(KeyChallengeFailed);
     expect(commands()).toEqual([]);
   });
 
@@ -419,7 +467,11 @@ describe("signupWithKey", () => {
       { key_identity_sign_signup: statements },
     );
     await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
-    expect(commands()).toEqual(["key_identity_sign_signup", "key_identity_remove_draft_keys"]);
+    expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
+      "key_identity_sign_signup",
+      "key_identity_remove_draft_keys",
+    ]);
     expect(invokeMock).toHaveBeenCalledWith("key_identity_remove_draft_keys", {
       draftId: draft.draftId,
     });
@@ -448,6 +500,7 @@ describe("signupWithKey", () => {
       serverId: null,
     });
     expect(commands()).toEqual([
+      "key_identity_confirm_recovery_kit",
       "key_identity_sign_signup",
       "key_identity_restore_draft_keys",
       "key_identity_sign_login",
@@ -488,7 +541,7 @@ describe("signupWithKey", () => {
       { key_identity_sign_signup: statements },
     );
     await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(TypeError);
-    expect(commands()).toEqual(["key_identity_sign_signup"]);
+    expect(commands()).toEqual(["key_identity_confirm_recovery_kit", "key_identity_sign_signup"]);
   });
 
   it("discarding after a failure the server committed after all gives the keys back and signs in", async () => {
@@ -583,7 +636,7 @@ describe("signupWithKey", () => {
     expect(
       await forgetKeysTheServerNeverSaw({ ...LOCAL_UNCONFIRMED, principalId: PRINCIPAL }),
     ).toBe(false);
-    expect(commands()).toEqual(["key_identity_sign_signup"]);
+    expect(commands()).toEqual(["key_identity_confirm_recovery_kit", "key_identity_sign_signup"]);
 
     answer(created);
     await signingUp;
@@ -679,7 +732,8 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       inceptionPayload: draft.inceptionPayload,
       bits: 20,
     });
-    expect(commands().slice(0, 4)).toEqual([
+    expect(commands().slice(0, 5)).toEqual([
+      "key_identity_confirm_recovery_kit",
       "relay_direct_discovery",
       "relay_verify_discovery",
       "relay_solve_pow",
@@ -687,7 +741,7 @@ describe("signupWithKey on a relay in pow registration mode", () => {
     ]);
     // The proof is found before the challenge is asked for, so it cannot expire meanwhile.
     expect(requestMock.mock.calls.map(operation)[0]).toBe("KeyLoginChallenge");
-    expect(invokeMock.mock.invocationCallOrder[2]).toBeLessThan(
+    expect(invokeMock.mock.invocationCallOrder[3]).toBeLessThan(
       requestMock.mock.invocationCallOrder[0],
     );
     expect(sentInput()).toMatchObject({ username: "ada", proofOfWork: NONCE });
@@ -894,6 +948,38 @@ describe("recoverAccount", () => {
       { key_identity_begin_recovery: new Error("this recovery key has a typo") },
     );
     await expect(recoverAccount("RK1-AAAA", PRINCIPAL, "New")).rejects.toThrow(/typo/);
+  });
+});
+
+describe("the recovery kit", () => {
+  const kit = {
+    principalId: PRINCIPAL,
+    recoveryKit: `RIM recovery kit (v2)\nAccount id: ${PRINCIPAL}\nRecovery phrase: abandon\n`,
+    recoveryPhrase: ["abandon"],
+  };
+
+  it("reads an unsaved kit from the vault, and nothing once it is saved", async () => {
+    backend({}, { key_identity_recovery_kit: kit });
+    await expect(unsavedRecoveryKit(PRINCIPAL)).resolves.toEqual(kit);
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_recovery_kit", {
+      principalId: PRINCIPAL,
+    });
+
+    backend({}, { key_identity_recovery_kit: null });
+    await expect(unsavedRecoveryKit(PRINCIPAL)).resolves.toBeNull();
+  });
+
+  it("confirms a saved kit, and fails visibly when the vault cannot be reached", async () => {
+    backend({});
+    await confirmRecoveryKitSaved(PRINCIPAL);
+    expect(invokeMock).toHaveBeenCalledWith("key_identity_confirm_recovery_kit", {
+      principalId: PRINCIPAL,
+    });
+
+    const locked = new Error("key storage: the vault is locked");
+    backend({}, { key_identity_confirm_recovery_kit: locked, key_identity_recovery_kit: locked });
+    await expect(confirmRecoveryKitSaved(PRINCIPAL)).rejects.toThrow(locked.message);
+    await expect(unsavedRecoveryKit(PRINCIPAL)).rejects.toThrow(locked.message);
   });
 });
 

@@ -115,6 +115,14 @@ pub(crate) struct KeyRecord {
     /// pending key is kept: a log older than the rotation says nothing about it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pending_identity_seq: Option<u32>,
+    /// base64url of the recovery kit's 16 entropy bytes, kept until the person confirms they
+    /// saved the kit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) recovery_entropy: Option<Zeroizing<String>>,
+    /// Whether the person confirmed saving the recovery kit. Absent on a linked device and on
+    /// keys stored before the kit was kept: such a record keeps nothing of the kit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) kit_confirmed: Option<bool>,
     /// The server has shown this principal on the account. Until then the keys may belong to
     /// an enrollment or recovery that never happened, and may be cleaned up.
     #[serde(default)]
@@ -295,6 +303,8 @@ mod tests {
             pending_identity_seed: None,
             pending_identity_seq: None,
             backup_key: None,
+            recovery_entropy: None,
+            kit_confirmed: None,
             confirmed: false,
             replaced: None,
         }
@@ -327,6 +337,7 @@ mod tests {
     fn the_record_omits_absent_keys_and_an_unreadable_index_is_empty() {
         let json = serde_json::to_value(record("rimp1_a")).unwrap();
         assert!(json.get("identitySeed").is_none());
+        assert!(json.get("recoveryEntropy").is_none() && json.get("kitConfirmed").is_none());
         assert_eq!(json["confirmed"], false);
 
         let store = MemorySecretStore::default();
@@ -340,6 +351,21 @@ mod tests {
                 .map(String::as_str),
             Some("not json")
         );
+    }
+
+    #[test]
+    fn a_record_written_before_the_kit_was_kept_still_loads_and_keeps_nothing_of_it() {
+        let store = MemorySecretStore::default();
+        store
+            .write(
+                &record_name("rimp1_a"),
+                r#"{"v":1,"principalId":"rimp1_a","deviceId":"d","deviceName":"Laptop","deviceSeed":"seed","identitySeed":"id","backupKey":"bk","confirmed":true}"#,
+            )
+            .unwrap();
+        let loaded = Keys(&store).record("rimp1_a").unwrap().unwrap();
+        assert!(loaded.recovery_entropy.is_none());
+        assert_eq!(loaded.kit_confirmed, None);
+        assert!(loaded.confirmed);
     }
 
     #[test]
