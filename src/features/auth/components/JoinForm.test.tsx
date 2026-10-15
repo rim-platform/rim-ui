@@ -464,13 +464,15 @@ describe("JoinForm — create account with a key", () => {
     expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
   });
 
-  it("is the default on the desktop, with the password form behind the toggle", () => {
+  it("is the default on the desktop, with the password form behind a secondary link", () => {
     renderVariant(InviteTokenType.INSTANCE, "instance-tok-123");
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("password")).toBeNull();
     expect(
       screen.getByRole("button", { name: /create account with a password/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/a password account can add a key later/i)).toBeInTheDocument();
+    expect(screen.queryByText("OR")).toBeNull();
   });
 
   it.each([

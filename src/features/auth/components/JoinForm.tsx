@@ -332,7 +332,20 @@ export function JoinForm({
           )}
         </div>
 
-        {capabilities.identityKeys && !keyOnly && (
+        {capabilities.identityKeys && !keyOnly && method === "key" && (
+          <div className="space-y-1 text-center text-xs text-rim-text-faint">
+            <button
+              type="button"
+              onClick={() => setMethod("password")}
+              disabled={keySignupBusy}
+              className="underline underline-offset-2 transition hover:text-rim-text-muted disabled:opacity-50"
+            >
+              Create account with a password
+            </button>
+            <p>A password account can add a key later in Settings &gt; Security.</p>
+          </div>
+        )}
+        {capabilities.identityKeys && !keyOnly && method === "password" && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />
@@ -341,11 +354,10 @@ export function JoinForm({
             </div>
             <button
               type="button"
-              onClick={() => setMethod(method === "key" ? "password" : "key")}
-              disabled={keySignupBusy}
-              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text disabled:opacity-50"
+              onClick={() => setMethod("key")}
+              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text"
             >
-              {method === "key" ? "Create account with a password" : "Create account with a key"}
+              Create account with a key
             </button>
           </div>
         )}

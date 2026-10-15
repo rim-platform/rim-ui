@@ -37,6 +37,9 @@ vi.mock("../../features/presence/api/useWorkspacePresence", () => ({
 }));
 vi.mock("../../features/presence/runtime/useHeartbeat", () => ({ useHeartbeat: () => {} }));
 vi.mock("../../features/plugins/runtime/pluginEventBus", () => ({ usePluginEvents: () => {} }));
+vi.mock("../../features/key-identity/components/KeySetupStep", () => ({
+  KeySetupStep: () => <div data-testid="key-setup-step" />,
+}));
 vi.mock("../../features/key-identity/runtime/useResumeDeviceLinks", () => ({
   useResumeDeviceLinks: () => {},
 }));
@@ -176,6 +179,16 @@ describe("AppShell — conversation side-panel error boundaries", () => {
   it("renders the panel normally when nothing throws", () => {
     renderShell();
     expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
+  });
+
+  it("mounts the key setup step over a signed-in workspace and over the workspace picker", () => {
+    const { unmount } = renderShell();
+    expect(screen.getByTestId("key-setup-step")).toBeInTheDocument();
+    unmount();
+
+    useWorkspaceStore.setState({ workspaceId: null });
+    renderShell();
+    expect(screen.getByTestId("key-setup-step")).toBeInTheDocument();
   });
 
   it("wraps PinnedMessagesPanel: a crash shows the in-pane fallback and the rest of the shell stays mounted", () => {

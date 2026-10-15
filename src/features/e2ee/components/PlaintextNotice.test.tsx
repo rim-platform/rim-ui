@@ -14,6 +14,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useKeySetupOfferStore } from "../../key-identity/state/keySetupOffer";
 import { useE2eeStore, type WebEncryption } from "../state/useE2eeStore";
 import { PlaintextNotice } from "./PlaintextNotice";
 
@@ -60,6 +61,7 @@ describe("PlaintextNotice", () => {
     useE2eeStore.setState({ webEncryption: "checking", groups: {}, notReady: {} });
     useAuthStore.setState({ session: null });
     useShellStore.getState().reset();
+    useKeySetupOfferStore.setState({ available: null, requested: false });
     conversation.current = null;
   });
 
@@ -116,14 +118,55 @@ describe("PlaintextNotice", () => {
   });
 
   it("offers the key setup only when this browser has no device key", () => {
+    useKeySetupOfferStore.setState({ available: "link" });
     openDm({ support: "noDeviceKey", notReady: null });
 
     expect(screen.getByRole("dialog", { name: TITLE })).toHaveTextContent(
       "This browser is not set up for encryption.",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Set up encryption" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useKeySetupOfferStore.getState().requested).toBe(true);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+  });
+
+  it("offers the key setup on a desktop without a key, whose readiness is never checked", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      useKeySetupOfferStore.setState({ available: "enroll" });
+      openDm({ notReady: null });
+
+      const dialog = screen.getByRole("dialog", { name: TITLE });
+      expect(dialog).toHaveTextContent("This computer is not set up for encryption.");
+      expect(dialog).toHaveTextContent("Set up encryption on this computer");
+      expect(dialog).not.toHaveTextContent("Link this browser with its code");
+      fireEvent.click(screen.getByRole("button", { name: "Set up encryption" }));
+      expect(useKeySetupOfferStore.getState().requested).toBe(true);
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
+  it("waits for the readiness on a desktop that holds its key", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      openDm({ notReady: null });
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Not encrypted" })).toBeNull();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
+  it("opens Settings > Security when the key setup step cannot help this device", () => {
+    openDm({ support: "noDeviceKey", notReady: null });
+
     fireEvent.click(screen.getByRole("button", { name: "Open security settings" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useKeySetupOfferStore.getState().requested).toBe(false);
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "security" });
   });
 
