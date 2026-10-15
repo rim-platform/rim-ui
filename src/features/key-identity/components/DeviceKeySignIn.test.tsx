@@ -26,7 +26,7 @@ vi.mock("../api/keyIdentity", async () => {
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () =>
     web.value
-      ? { platform: "web", capabilities: { deviceKeys: true, identityKeys: false } }
+      ? { platform: "web", capabilities: { deviceKeys: true, identityKeys: true } }
       : {
           platform: "desktop",
           capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value },
@@ -230,8 +230,13 @@ describe("RecoverAccount", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/word 5 .*not in the word list/i);
   });
 
-  it("is not offered in the web app, even with device keys", () => {
+  it("is offered in a browser that can hold keys, and not where no keys can be held", () => {
     web.value = true;
+    const { unmount } = wrap(<RecoverAccount onSuccess={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /recover an account/i })).toBeInTheDocument();
+    unmount();
+    web.value = false;
+    desktop.value = false;
     const { container } = wrap(<RecoverAccount onSuccess={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });

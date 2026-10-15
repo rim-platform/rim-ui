@@ -153,7 +153,8 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
  * with them. On a relay that asks for a proof-of-work instead of an invite, this device finds
  * it first, which the person can cancel. A server with terms of service has the person accept
  * them before the keys are made. After a refusal they can try again with the same keys,
- * so the saved kit stays valid, or discard the keys. Desktop only.
+ * so the saved kit stays valid, or discard the keys. Only where this app can hold an identity
+ * key.
  */
 export function KeySignupForm({
   tokens,

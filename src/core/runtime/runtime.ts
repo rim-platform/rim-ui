@@ -17,10 +17,15 @@ export type RuntimeCapabilities = {
    */
   deviceKeys: boolean;
   /**
-   * The identity key in the secret vault: enrollment, key-only signup, recovery and linking other
-   * devices. Desktop only.
+   * An identity key of this app's own: enrollment, key-only signup, recovery, rotation, the
+   * profile card and linking other devices. On the web, wherever the browser can hold a device
+   * key.
    */
   identityKeys: boolean;
+  /** The identity key's backup in the history archive, and taking it over. Desktop only. */
+  identityBackup: boolean;
+  /** Signing plugin manifests as their publisher with the identity key. Desktop only. */
+  pluginSigning: boolean;
   /**
    * Reading and sending in end-to-end encrypted conversations: the desktop, and the web once
    * the browser holds a device key for the account and the MLS module has loaded.
@@ -74,6 +79,8 @@ export function getRuntimeCapabilities(
       customTitleBar: true,
       deviceKeys: true,
       identityKeys: true,
+      identityBackup: true,
+      pluginSigning: true,
       encryptedConversations: true,
       updater: true,
     };
@@ -88,7 +95,9 @@ export function getRuntimeCapabilities(
       deviceLocalKeybinds: true,
       customTitleBar: false,
       deviceKeys: deviceKeyStore === "browser",
-      identityKeys: false,
+      identityKeys: deviceKeyStore === "browser",
+      identityBackup: false,
+      pluginSigning: false,
       encryptedConversations: deviceKeyStore === "browser" && webEncryptionReady,
       updater: false,
     };
@@ -103,6 +112,8 @@ export function getRuntimeCapabilities(
     customTitleBar: false,
     deviceKeys: false,
     identityKeys: false,
+    identityBackup: false,
+    pluginSigning: false,
     encryptedConversations: false,
     updater: false,
   };

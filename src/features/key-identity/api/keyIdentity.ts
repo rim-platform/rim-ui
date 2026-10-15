@@ -2,12 +2,11 @@
  * Key identity: enrolling the account's key, creating an account from a key alone, signing in
  * with this device's key, devices, identity rotation, the profile card and recovery.
  *
- * On the desktop the keys live on the Tauri side (`src-tauri/src/key_identity`) and never reach
- * the webview: this module talks to the server and asks the Tauri side for each signed
- * statement it needs, so the session cookie a key sign-in sets lands in the webview like a
- * password sign-in's. In the web app, signing in uses the browser's device key
- * (`keyBackend`); everything that needs the identity key stays desktop-only. Keys and
- * signatures are opaque strings here: their algorithm is the key backend's business.
+ * The keys live with the key backend (`keyBackend`): on the Tauri side on the desktop, where they
+ * never reach the webview, and as non-extractable WebCrypto keys in the web app. This module
+ * talks to the server and asks the backend for each signed statement it needs, so the session
+ * cookie a key sign-in sets lands in the page like a password sign-in's. Keys and signatures
+ * are opaque strings here: their algorithm is the key backend's business.
  */
 
 import { gql } from "graphql-request";
@@ -39,44 +38,23 @@ import {
   solveProofOfWork,
   type RelayRegistration,
 } from "../../relay/pow/proofOfWork";
-import { keyBackend, keyCommand, type LocalKeyAccount } from "./keyBackend";
+import {
+  keyBackend,
+  type EnrollmentDraft,
+  type LocalKeyAccount,
+  type LogStatus,
+  type RecoveryKitText,
+  type StoragePersistence,
+} from "./keyBackend";
 
-export { keyCommand, type LocalKeyAccount } from "./keyBackend";
-
-// ─── What the Tauri side returns ────────────────────────────────────────────
-
-/** A started enrollment: the new account id and the recovery kit, shown once. */
-export interface EnrollmentDraft {
-  draftId: string;
-  principalId: string;
-  /** The payload of the key log's inception, which a signup's proof-of-work is bound to. */
-  inceptionPayload: string;
-  /** The whole kit text (`RIM recovery kit (v2)` …), to copy. */
-  recoveryKit: string;
-  /** The kit's 12 recovery phrase words in order, to show as a numbered grid. */
-  recoveryPhrase: string[];
-}
-
-/** The server's key log, verified on this device. */
-export interface LogStatus {
-  principalId: string;
-  seq: number;
-  /** This device can add and revoke devices, rotate and publish the profile card. */
-  holdsIdentityKey: boolean;
-}
-
-interface EnrollmentStatements {
-  keyLog: SignedStatementInput[];
-  device: SignedStatementInput;
-  proof: SignedStatementInput;
-}
-
-interface RecoveryStatements {
-  principalId: string;
-  deviceId: string;
-  entry: SignedStatementInput;
-  device: SignedStatementInput;
-}
+export {
+  keyCommand,
+  type EnrollmentDraft,
+  type LocalKeyAccount,
+  type LogStatus,
+  type RecoveryKitText,
+  type StoragePersistence,
+} from "./keyBackend";
 
 /** The signed-in account, as key commands name it. */
 export interface KeyAccount {
@@ -361,9 +339,9 @@ export async function resumeWithDeviceKey(userId: string): Promise<string | null
  */
 let enrollmentsInFlight = 0;
 
-/** Create the keys of a new identity; the recovery kit in the result is shown once. */
+/** Create the keys of a new identity; the result carries its recovery kit. */
 export async function beginEnrollment(deviceName: string): Promise<EnrollmentDraft> {
-  return keyCommand<EnrollmentDraft>("key_identity_begin_enrollment", { deviceName });
+  return keyBackend().beginEnrollment(deviceName);
 }
 
 /** The signed-in account's `principalId` as the server has it now. */
@@ -392,24 +370,38 @@ export async function abandonEnrollment(
   if (principalId === draft.principalId) {
     await settleDeviceKeys(account, principalId);
   } else {
-    await keyCommand<null>("key_identity_discard_enrollment", { draftId: draft.draftId });
+    await keyBackend().discardEnrollment(draft.draftId);
   }
 }
 
 /**
+ * Whether the person has saved a draft's recovery kit when its keys are stored: `saved` (they
+ * confirmed it first) keeps no kit secret on this device, `later` keeps it until
+ * `confirmRecoveryKitSaved`.
+ */
+export type RecoveryKitTiming = "saved" | "later";
+
+/** Tell the key backend the kit is saved before a draft's keys are stored, unless it is later. */
+async function recordKitTiming(draft: EnrollmentDraft, timing: RecoveryKitTiming): Promise<void> {
+  if (timing === "saved") await keyBackend().confirmRecoveryKit(draft.principalId);
+}
+
+/**
  * Enroll the signed-in account with a draft's keys. The keys are stored before the server is
- * asked, so the account never ends up enrolled without them. A failure leaves the draft in
- * place, so the person can retry with the recovery kit they already saved.
+ * asked, so the account never ends up enrolled without them; a failed write stops before the
+ * enrollment is sent. A failure leaves the draft in place, so the person can retry with the
+ * recovery kit they already saved.
  */
 export async function completeEnrollment(
   draft: EnrollmentDraft,
   account: KeyAccount & { displayName: string },
+  recoveryKit: RecoveryKitTiming = "saved",
 ): Promise<void> {
+  await recordKitTiming(draft, recoveryKit);
   const { challengeId, nonce } = await challenge();
-  const statements = await keyCommand<EnrollmentStatements>("key_identity_sign_enrollment", {
-    draftId: draft.draftId,
-    account: serverAccount(account),
-    challenge: { challengeId, nonce },
+  const statements = await keyBackend().signEnrollment(draft.draftId, serverAccount(account), {
+    challengeId,
+    nonce,
   });
   const input: EnrollIdentityKeyInput = statements;
   enrollmentsInFlight += 1;
@@ -444,6 +436,8 @@ export interface KeySignupOptions {
   onProofOfWork?: (bits: number) => void;
   /** Aborting stops the proof-of-work: the signup then fails with `PowCancelled`. */
   signal?: AbortSignal;
+  /** Whether the person saved the recovery kit before the signup; `saved` when absent. */
+  recoveryKit?: RecoveryKitTiming;
 }
 
 /** The new account; `serverId` is set when a workspace invite also joined its workspace. */
@@ -557,11 +551,7 @@ async function publishFirstCard(fields: KeySignupFields): Promise<void> {
 async function finishTakenSignup(draft: EnrollmentDraft): Promise<KeySignupResult> {
   const fields = sentSignups.get(draft.draftId);
   if (fields) {
-    await keyCommand<null>("key_identity_restore_draft_keys", {
-      draftId: draft.draftId,
-      endpoint: getGraphqlEndpoint(),
-      username: fields.username,
-    });
+    await keyBackend().restoreDraftKeys(draft.draftId, getGraphqlEndpoint(), fields.username);
   }
   const userId = await signInWithDeviceKey(draft.principalId);
   if (fields) await publishFirstCard(fields);
@@ -586,6 +576,7 @@ export async function signupWithKey(
   options: KeySignupOptions = {},
 ): Promise<KeySignupResult> {
   const sent: KeySignupFields = { ...fields, username: fields.username.trim() };
+  await recordKitTiming(draft, options.recoveryKit ?? "saved");
   const proofOfWork = await proofOfWorkFor(draft, sent, options);
   let challengeId: string;
   let nonce: string;
@@ -594,12 +585,13 @@ export async function signupWithKey(
   } catch (err) {
     throw new KeyChallengeFailed(err);
   }
-  const statements = await keyCommand<EnrollmentStatements>("key_identity_sign_signup", {
-    draftId: draft.draftId,
-    endpoint: getGraphqlEndpoint(),
-    username: sent.username,
-    challenge: { challengeId, nonce },
-  });
+  // The keys are written before anything is sent; a failed write stops the signup here.
+  const statements = await keyBackend().signSignup(
+    draft.draftId,
+    getGraphqlEndpoint(),
+    sent.username,
+    { challengeId, nonce },
+  );
   sentSignups.set(draft.draftId, sent);
   const input: SignupWithKeyInput = { ...sent, ...statements, ...(proofOfWork && { proofOfWork }) };
   let result: KeySignupResult;
@@ -617,9 +609,9 @@ export async function signupWithKey(
     if (proofOfWorkRefused(err)) proofs.delete(draft.draftId);
     const taken = await principalTaken(draft.principalId);
     if (taken === false) {
-      await keyCommand<null>("key_identity_remove_draft_keys", { draftId: draft.draftId }).catch(
-        () => undefined,
-      );
+      await keyBackend()
+        .removeDraftKeys(draft.draftId)
+        .catch(() => undefined);
     }
     if (!taken) throw err;
     return await finishTakenSignup(draft);
@@ -649,7 +641,7 @@ async function discardUnlessTaken(draft: EnrollmentDraft): Promise<boolean | nul
   if (taken === false) {
     sentSignups.delete(draft.draftId);
     proofs.delete(draft.draftId);
-    await keyCommand<null>("key_identity_discard_enrollment", { draftId: draft.draftId });
+    await keyBackend().discardEnrollment(draft.draftId);
   }
   return taken;
 }
@@ -673,11 +665,7 @@ export async function abandonKeySignup(draft: EnrollmentDraft): Promise<void> {
   if ((await discardUnlessTaken(draft)) !== true) return;
   const fields = sentSignups.get(draft.draftId);
   if (!fields) return;
-  await keyCommand<null>("key_identity_restore_draft_keys", {
-    draftId: draft.draftId,
-    endpoint: getGraphqlEndpoint(),
-    username: fields.username,
-  });
+  await keyBackend().restoreDraftKeys(draft.draftId, getGraphqlEndpoint(), fields.username);
 }
 
 /**
@@ -693,15 +681,41 @@ export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Pro
   return true;
 }
 
+// ─── The recovery kit ───────────────────────────────────────────────────────
+
+/**
+ * The recovery kit of `principalId` while the person has not confirmed saving it, read from
+ * this device; `null` once confirmed, or where the device does not keep it.
+ */
+export async function unsavedRecoveryKit(principalId: string): Promise<RecoveryKitText | null> {
+  return keyBackend().recoveryKit(principalId);
+}
+
+/** The person saved the recovery kit: this device stops keeping its secret. */
+export async function confirmRecoveryKitSaved(principalId: string): Promise<void> {
+  await keyBackend().confirmRecoveryKit(principalId);
+}
+
+/**
+ * Ask the platform to keep the keys' storage. On the web a `refused` answer means the browser
+ * may evict them; the answer is also kept for the UI (`useKeyStorageStore`).
+ */
+export function requestKeyStorage(): Promise<StoragePersistence> {
+  return keyBackend().persistStorage();
+}
+
 // ─── Devices, rotation, profile card ────────────────────────────────────────
+
+/** The account id of an enrolled identity, for the key backend. */
+function enrolledId(identity: MyKeyIdentity): string {
+  if (!identity.principalId) throw new Error("This account has no key identity yet.");
+  return identity.principalId;
+}
 
 /** Verify the server's key log here and settle a pending rotation against it. */
 export async function syncKeyLog(identity: MyKeyIdentity): Promise<LogStatus | null> {
   if (!identity.principalId) return null;
-  return keyCommand<LogStatus>("key_identity_sync_log", {
-    principalId: identity.principalId,
-    keyLog: logStatements(identity.keyLog),
-  });
+  return keyBackend().syncLog(identity.principalId, logStatements(identity.keyLog));
 }
 
 /** Revoke a device; returns the signed revocation, which other servers are sent too. */
@@ -709,21 +723,21 @@ export async function revokeDevice(
   identity: MyKeyIdentity,
   deviceId: string,
 ): Promise<SignedStatementInput> {
-  const revocation = await keyCommand<SignedStatementInput>("key_identity_sign_revocation", {
-    principalId: identity.principalId,
-    keyLog: logStatements(identity.keyLog),
+  const revocation = await keyBackend().signRevocation(
+    enrolledId(identity),
+    logStatements(identity.keyLog),
     deviceId,
-  });
+  );
   await graphqlClient.request(REVOKE_MUTATION, { revocation });
   return revocation;
 }
 
 /** Replace the identity key. The recovery key and every device stay. */
 export async function rotateIdentityKey(identity: MyKeyIdentity): Promise<void> {
-  const entry = await keyCommand<SignedStatementInput>("key_identity_begin_rotation", {
-    principalId: identity.principalId,
-    keyLog: logStatements(identity.keyLog),
-  });
+  const entry = await keyBackend().beginRotation(
+    enrolledId(identity),
+    logStatements(identity.keyLog),
+  );
   const input: RotateIdentityKeyInput = { entry };
   try {
     await graphqlClient.request(ROTATE_MUTATION, { input });
@@ -792,18 +806,14 @@ export function signProfileCard(
   displayName: string,
   relays: string[],
 ): Promise<SignedStatementInput> {
-  return keyCommand<SignedStatementInput>("key_identity_sign_profile_card", {
-    principalId: identity.principalId,
-    keyLog: logStatements(identity.keyLog),
-    card: {
-      version: (identity.profileCard?.version ?? 0) + 1,
-      displayName: displayName.trim(),
-      relays,
-      // The Tauri side lists a device only if its certificate verifies against the key log.
-      certificates: identity.devices
-        .filter((d) => !d.revokedAt)
-        .map((d) => statementInput(d.certificate)),
-    },
+  return keyBackend().signProfileCard(enrolledId(identity), logStatements(identity.keyLog), {
+    version: (identity.profileCard?.version ?? 0) + 1,
+    displayName: displayName.trim(),
+    relays,
+    // The key backend lists a device only if its certificate verifies against the key log.
+    certificates: identity.devices
+      .filter((d) => !d.revokedAt)
+      .map((d) => statementInput(d.certificate)),
   });
 }
 
@@ -834,10 +844,10 @@ export function accountIdInKit(kit: string): string | null {
 
 /**
  * Take an account back with its recovery kit, signed out, after losing every device: read the
- * account's public key log, sign a recovery rotation and a new device on the Tauri side, send
- * them, and sign in with the new device key. The server signs out every other device.
- * `kit` is a whole kit of either version, a bare 12-word phrase or a bare `RK1-` key; the
- * Tauri side reads it. Returns the account's user id.
+ * account's public key log, sign a recovery rotation and a new device with the key backend,
+ * send them, and sign in with the new device key. The server signs out every other device.
+ * `kit` is a whole kit of either version, a bare 12-word phrase or a bare `RK1-` key; the key
+ * backend reads it. Returns the account's user id.
  */
 export async function recoverAccount(
   kit: string,
@@ -853,13 +863,13 @@ export async function recoverAccount(
   const { keyLog } = await graphqlClient.request<{ keyLog: StatementOnly[] }>(KEY_LOG_QUERY, {
     principalId,
   });
-  const statements = await keyCommand<RecoveryStatements>("key_identity_begin_recovery", {
-    endpoint: getGraphqlEndpoint(),
+  const statements = await keyBackend().beginRecovery(
+    getGraphqlEndpoint(),
     kit,
-    accountId: principalId,
-    keyLog: logStatements(keyLog),
+    principalId,
+    logStatements(keyLog),
     deviceName,
-  });
+  );
   const input: RotateIdentityKeyInput = { entry: statements.entry, device: statements.device };
   try {
     await graphqlClient.request(ROTATE_MUTATION, { input });
@@ -879,10 +889,9 @@ export async function recoverAccount(
     }
     if (!landed) {
       // Refused: drop the keys made for this attempt, putting back any it replaced.
-      await keyCommand<null>("key_identity_discard_recovery", {
-        principalId: statements.principalId,
-        deviceId: statements.deviceId,
-      }).catch(() => undefined);
+      await keyBackend()
+        .discardRecovery(statements.principalId, statements.deviceId)
+        .catch(() => undefined);
       throw err;
     }
   }

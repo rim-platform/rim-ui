@@ -135,7 +135,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 /**
  * "Recover an account" on the sign-in screen: a link that opens the recovery kit form, which
  * takes a whole kit (either version), a bare 12-word recovery phrase or a bare `RK1-` key, and
- * the account id, filled in from a pasted kit. Desktop only; renders nothing in the web app.
+ * the account id, filled in from a pasted kit. Renders nothing where this app cannot hold keys.
  */
 export function RecoverAccount({ onSuccess }: { onSuccess: (userId: string) => void }) {
   const { capabilities } = useRuntime();

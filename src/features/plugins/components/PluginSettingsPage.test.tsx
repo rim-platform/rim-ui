@@ -104,7 +104,8 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
         deviceLocalKeybinds: true,
         customTitleBar: false,
         deviceKeys: true,
-        identityKeys: false,
+        identityKeys: true,
+        pluginSigning: false,
       },
     } as ReturnType<typeof useRuntime>);
   });
@@ -160,6 +161,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
         customTitleBar: true,
         deviceKeys: true,
         identityKeys: true,
+        pluginSigning: true,
       },
     });
   });

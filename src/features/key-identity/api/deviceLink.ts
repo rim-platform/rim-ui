@@ -2,9 +2,9 @@
  * Device linking: a device that holds the identity key shows a code, and a new device with the
  * code gets its own certified device key and signs in with it.
  *
- * Secrets stay with the key backend (the Tauri side, or the browser for a web app linked as a
- * new device); this module talks to the server, which only carries sealed bytes, and asks the
- * key backend to seal, open, check and sign. Only the desktop is ever the old device.
+ * Secrets stay with the key backend (the Tauri side on the desktop, the browser in the web app),
+ * in either role; this module talks to the server, which only carries sealed bytes, and asks
+ * the key backend to seal, open, check and sign.
  */
 
 import { gql } from "graphql-request";
@@ -17,18 +17,21 @@ import {
   type DeviceLink,
   type SealedMessage,
   type SealedMessageInput,
-  type SignedStatementInput,
   type StartedDeviceLink,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
-import { safeInvoke } from "../../../core/tauri/safeInvoke";
-import { keyBackend, type SentOffer } from "./keyBackend";
+import {
+  keyBackend,
+  type LinkAnswer,
+  type OfferToConfirm,
+  type PendingLink,
+  type SentOffer,
+} from "./keyBackend";
 import {
   fetchKeyAccount,
   fetchKeyLog,
   fetchMyKeyIdentity,
   forgetDeviceKeys,
-  keyCommand,
   logStatements,
   publishProfileCard,
   revokeDevice,
@@ -36,7 +39,7 @@ import {
   type MyKeyIdentity,
 } from "./keyIdentity";
 
-// ─── What the Tauri side returns ────────────────────────────────────────────
+export type { OfferToConfirm } from "./keyBackend";
 
 /** A link this device started as the old device. `code` holds the secret: show it, never log it. */
 export interface StartedLink {
@@ -44,30 +47,6 @@ export interface StartedLink {
   code: string;
   expiresAt: string;
   principalId: string;
-}
-
-/** The new device's offer, opened and checked, for the person to confirm. */
-export interface OfferToConfirm {
-  deviceId: string;
-  name: string;
-  /** `desktop` or `web`; self-reported, a display hint only. */
-  platform: string;
-  /** `XXXX-XXXX`, also shown on the new device. */
-  fingerprint: string;
-}
-
-interface LinkAnswer {
-  deviceId: string;
-  deviceKey: string;
-  certificate: SignedStatementInput;
-  answer: SealedMessageInput;
-}
-
-interface PendingLink {
-  linkId: string;
-  principalId: string;
-  deviceId: string;
-  deviceKey: string;
 }
 
 // ─── Server documents ───────────────────────────────────────────────────────
@@ -432,11 +411,11 @@ export async function startLinkingDevice(identity: MyKeyIdentity): Promise<Start
     throw sessionFailure(err) ?? err;
   }
   try {
-    const { code } = await keyCommand<{ linkId: string; code: string }>("key_identity_link_begin", {
-      principalId: identity.principalId,
-      endpoint: getGraphqlEndpoint(),
-      linkId: started.linkId,
-    });
+    const { code } = await keyBackend().linkBegin(
+      identity.principalId,
+      getGraphqlEndpoint(),
+      started.linkId,
+    );
     return { ...started, code, principalId: identity.principalId };
   } catch (err) {
     await cancelOnServer(started.linkId);
@@ -487,12 +466,12 @@ export async function waitForOffer(
     }, options);
     const identity = await retrying(fetchMyKeyIdentity, options);
     try {
-      return await keyCommand<OfferToConfirm>("key_identity_link_review_offer", {
-        linkId: link.linkId,
-        keyLog: logStatements(identity.keyLog),
-        devices: knownDevices(identity),
-        offer: { nonce: offer.nonce, ciphertext: offer.ciphertext },
-      });
+      return await keyBackend().linkReviewOffer(
+        link.linkId,
+        logStatements(identity.keyLog),
+        knownDevices(identity),
+        { nonce: offer.nonce, ciphertext: offer.ciphertext },
+      );
     } catch (err) {
       throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
     }
@@ -646,11 +625,11 @@ export async function confirmLink(
   let answer: LinkAnswer;
   try {
     const identity = await fetchMyKeyIdentity();
-    answer = await keyCommand<LinkAnswer>("key_identity_link_confirm", {
-      linkId: link.linkId,
-      keyLog: logStatements(identity.keyLog),
+    answer = await keyBackend().linkConfirm(
+      link.linkId,
+      logStatements(identity.keyLog),
       deviceName,
-    });
+    );
   } catch (err) {
     await declineLink(link);
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
@@ -683,15 +662,16 @@ export async function cancelLink(link: StartedLink, certifiedDeviceId?: string):
 }
 
 /**
- * Carry on confirmed links left in the secret vault by a previous run: `OFFERED`
+ * Carry on confirmed links left by a previous run (in the secret vault, or in the browser's key
+ * store): `OFFERED`
  * sends the answer again, adding the device first if needed; `ANSWERED` waits for the new
  * device; anything else settles the link. Runs in the background after sign-in; never throws.
  */
 export async function resumePendingDeviceLinks(options: PollOptions = {}): Promise<void> {
-  const result = await safeInvoke<PendingLink[]>("key_identity_link_pending", {
-    endpoint: getGraphqlEndpoint(),
-  });
-  if (!result.ok || result.value.length === 0) return;
+  const pending = await keyBackend()
+    .linkPending(getGraphqlEndpoint())
+    .catch(() => [] as PendingLink[]);
+  if (pending.length === 0) return;
   let identity: MyKeyIdentity;
   try {
     identity = await fetchMyKeyIdentity();
@@ -700,7 +680,7 @@ export async function resumePendingDeviceLinks(options: PollOptions = {}): Promi
     return;
   }
   // Another account's links on this server wait for that account's sign-in.
-  const mine = result.value.filter((p) => p.principalId === identity.principalId);
+  const mine = pending.filter((p) => p.principalId === identity.principalId);
   for (const pending of mine) {
     if (options.signal?.aborted) return;
     try {
@@ -721,9 +701,7 @@ async function resumeLink(pending: PendingLink, options: PollOptions): Promise<v
     state = "NOT_FOUND";
   }
   if (state === DeviceLinkState.OFFERED) {
-    const answer = await keyCommand<LinkAnswer>("key_identity_link_resume", {
-      linkId: pending.linkId,
-    });
+    const answer = await keyBackend().linkResume(pending.linkId);
     const { displayName } = await fetchKeyAccount();
     await deliverAnswer(pending.linkId, pending.principalId, answer, displayName, options);
   } else if (state === DeviceLinkState.ANSWERED) {

@@ -57,6 +57,13 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- The web app can hold an account's identity in the browser, as non-extractable keys in its
+  own storage: key sign-in set up from Settings > Security, creating an account with a key on
+  the join pages, recovering an account with its recovery kit, replacing the identity key,
+  removing devices, publishing the profile card, and linking other devices with a code. The
+  browser asks to keep its storage so the keys are not evicted, and stops before anything is
+  sent when it cannot write them. Plugin manifest signing and the identity key backup in the
+  history archive stay in the desktop app.
 - A new direct message or group is end-to-end encrypted whenever your device is set up for
   encryption: members without such a device are invited, shown as "Invited" in the members
   panel, and see the conversation marked "Invited" with Join, Set up encryption or Decline.

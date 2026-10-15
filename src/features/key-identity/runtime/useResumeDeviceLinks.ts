@@ -6,8 +6,9 @@ import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { resumePendingDeviceLinks } from "../api/deviceLink";
 
 /**
- * Once per signed-in account and run, carry on device links left pending in the secret vault.
- * Desktop only, and only while the server can be reached.
+ * Once per signed-in account and run, carry on device links left pending by an earlier run (in
+ * the secret vault, or in the browser's key store). Only where this app can hold an identity
+ * key, and only while the server can be reached.
  */
 export function useResumeDeviceLinks() {
   const { capabilities } = useRuntime();
