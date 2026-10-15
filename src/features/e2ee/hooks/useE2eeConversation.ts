@@ -107,6 +107,49 @@ export function useEncryptedHere(
   );
 }
 
+/** Why a DM or group is not end-to-end encrypted, as far as this device knows. */
+export interface PlaintextStatus {
+  /** Display names of members without a device set up for encryption. */
+  notReady: string[];
+  /** Everyone is ready, and a member's desktop app turns encryption on; a browser does not. */
+  upgradeOnDesktop: boolean;
+  /** This browser has no device key of its own. */
+  noDeviceKey: boolean;
+}
+
+/**
+ * Whether a DM or group is not end-to-end encrypted, and why, from what this device has already
+ * loaded. `null` for a channel, an encrypted conversation, a desktop app with every member
+ * ready (it turns encryption on itself), and while the conversation, this device's support or
+ * the readiness of the members is still unknown. Only reads: `useE2eeConversation` checks the
+ * readiness.
+ */
+export function usePlaintextStatus(
+  workspaceId: string | null | undefined,
+  conversationId: string | null | undefined,
+): PlaintextStatus | null {
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const group = useE2eeStore((s) => (conversationId ? s.groups[conversationId] : undefined));
+  const notReady = useE2eeStore((s) => (conversationId ? s.notReady[conversationId] : undefined));
+  const support = useEncryptionSupport();
+  const conversationType = conversation?.conversationType;
+  const serverEncryptedAt = conversation?.encryptedAt;
+  return useMemo(() => {
+    if (!conversationType || !isEncryptable(conversationType)) return null;
+    if (effectiveEncryptedAt(serverEncryptedAt, group) || support === "checking") return null;
+    if (support === "desktop" || support === "ready") {
+      // Unknown until the readiness check answers; with everyone ready a desktop upgrades.
+      if (!notReady || (notReady.length === 0 && support === "desktop")) return null;
+      return { notReady, upgradeOnDesktop: notReady.length === 0, noDeviceKey: false };
+    }
+    return {
+      notReady: notReady ?? [],
+      upgradeOnDesktop: false,
+      noDeviceKey: support === "noDeviceKey",
+    };
+  }, [conversationType, serverEncryptedAt, group, notReady, support]);
+}
+
 /**
  * Why this device cannot send in an encrypted conversation, if it cannot: a browser that is not
  * set up for it (`noDeviceKey`, `otherTab`, `unsupported`, or still `checking`), a server that

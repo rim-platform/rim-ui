@@ -23,6 +23,7 @@ import {
 import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
+import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 
 export function ConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -131,6 +132,7 @@ export function ConversationHeader() {
                 Archived
               </span>
             )}
+            <PlaintextNotice workspaceId={workspaceId} conversationId={conversationId} />
           </div>
           {isChannel &&
             (isEditingTopic ? (

@@ -55,6 +55,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- A direct message or group that is not end-to-end encrypted says so: a dialog the first time
+  you open it on a device names who has not set up encryption, and a "Not encrypted" mark in the
+  conversation header shows it again.
 - Message search suggests operator values as you type: `from:` lists workspace members, `in:`
   your channels, `has:` its values, and `before:`/`after:` today's date; ↑/↓ move, Enter, Tab or
   a click inserts, Esc closes the list.
