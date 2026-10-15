@@ -7,6 +7,7 @@ import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceS
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
 import { MessageTimeline } from "../../features/messages/components/MessageTimeline";
+import { InvitationGate } from "../../features/conversations/components/ConversationInvitation";
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
 import { CommandPalette, KeybindProvider } from "../../features/commands";
 import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
@@ -290,7 +291,12 @@ function WorkspaceShell() {
                     >
                       {!zenContentHidden && <ConversationHeader />}
                     </div>
-                    <MessageTimeline />
+                    <InvitationGate
+                      workspaceId={workspaceId}
+                      conversationId={selectedConversationId}
+                    >
+                      <MessageTimeline />
+                    </InvitationGate>
                   </SurfaceErrorBoundary>
                   {zenMode && (
                     <button

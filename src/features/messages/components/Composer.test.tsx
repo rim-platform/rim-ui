@@ -272,6 +272,7 @@ describe("Composer — slow mode and timeouts (Track 1.2)", () => {
       },
     });
     renderComposer();
+    await screen.findByTestId("slow-mode-indicator");
     await send("too fast");
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Slow mode: wait 12 s"));

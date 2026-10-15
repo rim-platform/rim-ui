@@ -57,6 +57,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- A new direct message or group is end-to-end encrypted whenever your device is set up for
+  encryption: members without such a device are invited, shown as "Invited" in the members
+  panel, and see the conversation marked "Invited" with Join, Set up encryption or Decline.
 - A direct message or group that is not end-to-end encrypted says so: a dialog the first time
   you open it on a device names who has not set up encryption, and a "Not encrypted" mark in the
   conversation header shows it again.

@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
-import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
+import { toast } from "../../../shared/toast";
 import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -12,6 +16,8 @@ import {
   baseReadHandlers,
   callsTo,
   currentUser,
+  emptyInbox,
+  graphqlError,
   makeConversation,
   routeRequests,
   workspaceMembers,
@@ -31,6 +37,31 @@ vi.mock("../../../shared/toast", () => ({
 import { ConversationMembersPanel } from "./ConversationMembersPanel";
 
 const channel = makeConversation({ memberIds: ["me", "u-alice"], memberCount: 2 });
+const encryptedGroup = makeConversation({
+  title: "plans",
+  conversationType: ConversationTypeEnum.GROUP,
+  memberIds: ["me", "u-alice"],
+  memberCount: 2,
+  encryptedAt: "2026-10-15T00:00:00Z",
+});
+
+/** An encrypted group whose `addConversationMembers` answers with `add`. */
+function serveEncryptedGroup(add: () => unknown) {
+  routeRequests(requestMock, {
+    ...baseReadHandlers,
+    "query Server(": () => ({
+      server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
+    }),
+    "query Conversation(": () => ({ conversation: encryptedGroup }),
+    "mutation AddConversationMembers": add,
+  });
+}
+
+async function inviteBob() {
+  fireEvent.click(screen.getByRole("button", { name: /invite/i }));
+  fireEvent.click(await screen.findByRole("option", { name: /Bob/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Add (1)" }));
+}
 
 function serve(role: ServerMemberRoleGql, conversation: ConversationSummary = channel) {
   routeRequests(requestMock, {
@@ -64,6 +95,7 @@ async function renderPanel(role: ServerMemberRoleGql) {
 
 describe("ConversationMembersPanel", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     requestMock.mockReset();
     useShellStore.getState().reset();
     useAuthStore.setState({ session: { userId: "me" } });
@@ -99,6 +131,48 @@ describe("ConversationMembersPanel", () => {
         { serverId: "ws-1", conversationId: "conv-1", userIds: ["u-bob"] },
       ]),
     );
+  });
+
+  it("lists invited members after the members, marked as invited and not counted", async () => {
+    serve(ServerMemberRoleGql.MEMBER, { ...encryptedGroup, pendingMemberIds: ["u-bob"] });
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    const rows = screen.getAllByTestId(/^member-row-/);
+    expect(rows.map((r) => r.dataset.testid)).toEqual([
+      "member-row-me",
+      "member-row-u-alice",
+      "member-row-u-bob",
+    ]);
+    expect(within(rows[2]).getByText("Invited")).toBeInTheDocument();
+    expect(
+      within(rows[2]).getByText("Waiting for a device set up for encryption"),
+    ).toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Invited")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Members/ })).toHaveTextContent(
+      "plans · 2 · 1 invited",
+    );
+  });
+
+  it("says when someone added to an encrypted group joins once they have a device", async () => {
+    serveEncryptedGroup(() => ({
+      addConversationMembers: { ...encryptedGroup, pendingMemberIds: ["u-bob"] },
+    }));
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    await inviteBob();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Member added", {
+        description: "Bob joins once they set up a device for encryption.",
+      }),
+    );
+  });
+
+  it("shows the server's message when the invitation cap refuses an addition", async () => {
+    const refusal = "this instance allows 50 pending invitations per user";
+    serveEncryptedGroup(() => {
+      throw graphqlError("VALIDATION", refusal);
+    });
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    await inviteBob();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(refusal));
   });
 
   it("offers no Invite to a guest (Track 1.2)", async () => {
@@ -167,6 +241,7 @@ describe("ConversationMembersPanel", () => {
         server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MODERATOR },
       }),
       "query Conversation(": () => ({ conversation: channel }),
+      "query InboxConversations": () => emptyInbox,
     });
     await renderPanel(ServerMemberRoleGql.MODERATOR);
 

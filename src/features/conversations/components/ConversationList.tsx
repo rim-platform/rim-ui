@@ -15,6 +15,7 @@ import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { isInvited } from "../utils";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
 import { DirectConversationList } from "./DirectConversationList";
@@ -110,7 +111,12 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   );
 
   const allConversationIds = useMemo(() => allItems.map((c) => c.id), [allItems]);
-  usePrefetchMessages(workspaceId, allConversationIds);
+  // The server refuses the messages of a conversation the viewer is only invited to.
+  const readableIds = useMemo(
+    () => allItems.filter((c) => !isInvited(c, currentUserId)).map((c) => c.id),
+    [allItems, currentUserId],
+  );
+  usePrefetchMessages(workspaceId, readableIds);
 
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [isKeyboardNavigating, setIsKeyboardNavigating] = useState(false);

@@ -633,10 +633,10 @@ export async function forgetGroup(
 // ─── New conversations ──────────────────────────────────────────────────────
 
 /**
- * Whether a new DM or group with `userIds` (and this user) is created encrypted: on a desktop
- * set up for encryption, when every member is ready.
+ * Whether every member of a DM or group with `userIds` (and this user) has a device set up for
+ * encryption: what upgrading an existing plaintext one needs.
  */
-export async function shouldEncryptNewConversation(
+export async function allMembersReady(
   session: E2eeSession | null,
   workspaceId: string,
   userIds: string[],

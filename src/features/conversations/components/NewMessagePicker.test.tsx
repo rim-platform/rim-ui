@@ -9,6 +9,18 @@ import { renderWithLimits } from "../../../test/limits";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { callsTo, makeConversation, routeRequests } from "../__fixtures__/conversations";
+
+const requestMock = vi.hoisted(() => vi.fn());
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
+}));
+const session = vi.hoisted(() => ({ e2eeSession: vi.fn() }));
+const groups = vi.hoisted(() => ({ allMembersReady: vi.fn(), createGroup: vi.fn() }));
+vi.mock("../../e2ee/runtime/session", () => session);
+vi.mock("../../e2ee/runtime/groups", () => groups);
+vi.mock("../../e2ee/web/webAccount", () => ({ isWebAccount: () => false }));
 
 const start = vi.hoisted(() => ({ startDirectConversation: vi.fn() }));
 const relayApi = vi.hoisted(() => ({ fetchContacts: vi.fn() }));
@@ -154,5 +166,73 @@ describe("NewMessagePicker", () => {
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     renderWithLimits(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />, {}, endsAt);
     expect(screen.queryByTestId("new-message-probation")).not.toBeInTheDocument();
+  });
+});
+
+describe("NewMessagePicker in a workspace", () => {
+  const device = { account: {}, userId: "me", principalId: "rimp1_me", deviceId: "d1" };
+
+  /** Pick Bob, confirm, and answer `createConversation` with `created`. */
+  async function startDmWithBob(created: ReturnType<typeof makeConversation>) {
+    routeRequests(requestMock, {
+      "mutation CreateConversation": () => ({ createConversation: created }),
+    });
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={onCreated} />);
+    await user.click(screen.getByRole("button", { name: "pick Bob" }));
+    await user.click(screen.getByRole("button", { name: "confirm" }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created.id));
+    return callsTo(requestMock, "mutation CreateConversation").map((v) => v.input);
+  }
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    Object.values({ ...session, ...groups }).forEach((fn) => fn.mockReset());
+    groups.createGroup.mockResolvedValue(true);
+    // Bob is not ready for encryption.
+    groups.allMembersReady.mockResolvedValue(false);
+    useRelayStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  it("creates an encrypted DM when this device is ready, even with a member who is not", async () => {
+    session.e2eeSession.mockResolvedValue(device);
+    const created = makeConversation({
+      id: "c5",
+      title: null,
+      conversationType: ConversationTypeEnum.DIRECT,
+      memberIds: ["me"],
+      pendingMemberIds: ["u2"],
+      encryptedAt: "2026-10-15T00:00:00Z",
+    });
+    expect(await startDmWithBob(created)).toEqual([
+      { serverId: "ws-1", otherUserId: "u2", encrypted: true },
+    ]);
+    await waitFor(() => expect(groups.createGroup).toHaveBeenCalledWith(device, "ws-1", "c5"));
+  });
+
+  it("creates a plaintext DM when this device is not set up for encryption", async () => {
+    session.e2eeSession.mockResolvedValue(null);
+    const created = makeConversation({ id: "c6", conversationType: ConversationTypeEnum.DIRECT });
+    expect(await startDmWithBob(created)).toEqual([{ serverId: "ws-1", otherUserId: "u2" }]);
+    expect(groups.createGroup).not.toHaveBeenCalled();
+  });
+
+  it("leaves an existing plaintext DM unencrypted while a member is not ready", async () => {
+    session.e2eeSession.mockResolvedValue(device);
+    const existing = makeConversation({
+      id: "c7",
+      conversationType: ConversationTypeEnum.DIRECT,
+      memberIds: ["me", "u2"],
+      encryptedAt: null,
+    });
+    await startDmWithBob(existing);
+    await waitFor(() =>
+      expect(groups.allMembersReady).toHaveBeenCalledWith(device, "ws-1", ["u2"]),
+    );
+    // Let the answer reach the picker before checking that no group was created.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(groups.createGroup).not.toHaveBeenCalled();
   });
 });

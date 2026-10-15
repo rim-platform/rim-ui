@@ -8,6 +8,7 @@ import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
 import { useConversation } from "../../features/conversations/api/useConversation";
 import { ChannelIcon } from "../../features/conversations/components/ChannelIcon";
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
+import { directPeerId, isInvited, pendingMembersOf } from "../../features/conversations/utils";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useShellStore } from "../state/useShellStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
@@ -39,18 +40,16 @@ export function ConversationHeader() {
   // For DMs, show the other user's name instead of "Untitled"
   let displayTitle = conversation?.title ?? undefined;
   let dmOtherUserId: string | undefined;
-  if (
-    conversation &&
-    conversation.conversationType === ConversationTypeEnum.DIRECT &&
-    conversation.memberIds.length > 0
-  ) {
-    dmOtherUserId =
-      conversation.memberIds.find((id) => id !== currentUserId) ?? conversation.memberIds[0];
-    const dmOtherMember = memberLookup.resolve(dmOtherUserId);
-    if (!displayTitle) {
-      displayTitle = dmOtherMember.displayName;
+  if (conversation && conversation.conversationType === ConversationTypeEnum.DIRECT) {
+    dmOtherUserId = directPeerId(conversation, currentUserId);
+    if (dmOtherUserId && !displayTitle) {
+      displayTitle = memberLookup.resolve(dmOtherUserId).displayName;
     }
   }
+  // Invited members wait for a device set up for encryption and are not counted as members.
+  const invitedCount = conversation ? pendingMembersOf(conversation).length : 0;
+  // A viewer who is only invited sees the invitation, with nothing to search or act on yet.
+  const viewerInvited = Boolean(conversation && isInvited(conversation, currentUserId));
 
   const dmAvatarUrl = dmOtherUserId ? memberLookup.resolve(dmOtherUserId).avatarUrl : undefined;
 
@@ -159,6 +158,7 @@ export function ConversationHeader() {
             <p className="text-xs text-rim-text-faint">
               {workspace?.name ?? ""}
               {conversation && ` \u00b7 ${conversation.memberCount} members`}
+              {invitedCount > 0 && ` \u00b7 ${invitedCount} invited`}
             </p>
           )}
         </div>
@@ -170,12 +170,14 @@ export function ConversationHeader() {
             <LensPicker serverId={workspaceId} conversationId={conversationId} />
           )}
           {isChannel && <PinnedMessagesButton />}
-          <ChannelSearchButton
-            conversationId={conversationId}
-            displayTitle={displayTitle}
-            openSearch={openSearch}
-          />
-          {conversation && workspaceId && (
+          {!viewerInvited && (
+            <ChannelSearchButton
+              conversationId={conversationId}
+              displayTitle={displayTitle}
+              openSearch={openSearch}
+            />
+          )}
+          {conversation && workspaceId && !viewerInvited && (
             <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
           )}
         </div>

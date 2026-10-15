@@ -6,6 +6,7 @@ import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-typ
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
 import type { ConversationSummary, ConversationSummaryPage } from "../types";
+import { useInvitation } from "./useConversationInvite";
 
 const CONVERSATION_QUERY = gql`
   query Conversation($serverId: ID!, $conversationId: ID!) {
@@ -42,15 +43,17 @@ export function findCachedConversation(
 /**
  * One conversation by id, including the viewer's membership (`isMember`) and archive state.
  * Works for public channels the viewer has not joined; a private channel the viewer is not in
- * answers `NOT_FOUND`.
+ * answers `NOT_FOUND`. Asks only once the inbox says whether the viewer is just invited: an
+ * invitation is not fetched (the server answers `FORBIDDEN`) and shows as the inbox lists it.
  */
 export function useConversation(workspaceId?: string | null, conversationId?: string | null) {
   const qc = useQueryClient();
   const ws = workspaceId ?? undefined;
   const id = conversationId ?? undefined;
+  const { invitation, known } = useInvitation(ws, id);
   return useQuery({
     queryKey: queryKeys.conversation(ws, id),
-    enabled: Boolean(ws && id),
+    enabled: Boolean(ws && id) && known && !invitation,
     staleTime: 30_000,
     placeholderData: () => findCachedConversation(qc, ws, id),
     queryFn: () => requestConversation(ws!, id!),

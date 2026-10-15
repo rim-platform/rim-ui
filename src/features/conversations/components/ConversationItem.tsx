@@ -16,6 +16,7 @@ import { useDraftStore } from "../../messages/state/useDraftStore";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import type { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import type { ConversationSummary } from "../types";
+import { directPeerId, isInvited } from "../utils";
 import { ChannelIcon } from "./ChannelIcon";
 
 /** One row of the side rail's conversation list: a channel, or a DM shown as its other member. */
@@ -54,8 +55,10 @@ export const ConversationItem = memo(function ConversationItem({
   let otherMemberId: string | undefined;
   let otherMemberAvatarUrl: string | null | undefined;
   let otherMemberStatusText: string | null | undefined;
-  if (conv.conversationType === ConversationTypeEnum.DIRECT && conv.memberIds.length > 0) {
-    otherMemberId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
+  if (conv.conversationType === ConversationTypeEnum.DIRECT) {
+    otherMemberId = directPeerId(conv, currentUserId);
+  }
+  if (otherMemberId) {
     const otherMember = memberLookup.resolve(otherMemberId);
     otherMemberAvatarUrl = otherMember.avatarUrl;
     otherMemberStatusText = otherMember.statusText;
@@ -69,6 +72,8 @@ export const ConversationItem = memo(function ConversationItem({
   );
 
   const hasDraft = useDraftStore((s) => !!s.drafts[conv.id]);
+  // The viewer holds an invitation here and joins from the conversation.
+  const invited = isInvited(conv, currentUserId);
 
   const hoverKind =
     conv.conversationType === ConversationTypeEnum.DIRECT ? ("dm" as const) : ("channel" as const);
@@ -150,7 +155,11 @@ export const ConversationItem = memo(function ConversationItem({
           </span>
         )}
       </span>
-      {unreadCount > 0 && !active ? (
+      {invited ? (
+        <span className="ml-auto shrink-0 rounded border border-rim-accent/40 px-1 text-[10px] uppercase tracking-wider text-rim-accent">
+          Invited
+        </span>
+      ) : unreadCount > 0 && !active ? (
         <span
           className={cn(
             "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px]",

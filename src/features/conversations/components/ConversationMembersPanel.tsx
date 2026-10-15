@@ -12,6 +12,7 @@ import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
 import { MemberActionsMenu } from "../../workspaces/components/MemberActionsMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { joinNames } from "../../e2ee/utils/names";
 import { useConversation } from "../api/useConversation";
 import {
   useAddConversationMembersMutation,
@@ -24,6 +25,7 @@ import {
   canLeaveConversation,
   conversationLabel,
   leaveNeedsConfirmation,
+  pendingMembersOf,
 } from "../utils";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { MemberPicker } from "./MemberPicker";
@@ -45,6 +47,8 @@ export function ConversationMembersPanel({
   onClose,
 }: ConversationMembersPanelProps) {
   const { data: conversation, isPending, isError } = useConversation(workspaceId, conversationId);
+  // Invited members wait for a device set up for encryption and are not counted as members.
+  const invitedCount = conversation ? pendingMembersOf(conversation).length : 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -54,6 +58,7 @@ export function ConversationMembersPanel({
           {conversation && (
             <span className="ml-1 text-rim-text-faint">
               {conversationLabel(conversation)} &middot; {conversation.memberCount}
+              {invitedCount > 0 && ` \u00b7 ${invitedCount} invited`}
             </span>
           )}
         </h2>
@@ -102,27 +107,36 @@ function MembersList({
   const canLeave = canLeaveConversation(conversation);
   const canRemoveOthers = canModerate && !isDm;
 
-  const members = useMemo(
-    () =>
-      conversation.memberIds
-        .map((userId) => ({ userId, ...memberLookup.resolve(userId) }))
-        .sort((a, b) => {
-          if (a.userId === currentUserId) return -1;
-          if (b.userId === currentUserId) return 1;
-          return a.displayName.localeCompare(b.displayName);
-        }),
-    [conversation.memberIds, memberLookup, currentUserId],
-  );
+  // Members first, then whoever is invited and waits for a device set up for encryption; the
+  // viewer leads their group.
+  const pendingIds = useMemo(() => pendingMembersOf(conversation), [conversation]);
+  const members = useMemo(() => {
+    const byName = (a: { userId: string; displayName: string }, b: typeof a) => {
+      if (a.userId === currentUserId) return -1;
+      if (b.userId === currentUserId) return 1;
+      return a.displayName.localeCompare(b.displayName);
+    };
+    const rows = (ids: string[], pending: boolean) =>
+      ids.map((userId) => ({ userId, pending, ...memberLookup.resolve(userId) })).sort(byName);
+    return [...rows(conversation.memberIds, false), ...rows(pendingIds, true)];
+  }, [conversation.memberIds, pendingIds, memberLookup, currentUserId]);
 
   function handleInvite() {
     if (inviteIds.length === 0) return;
     addMembers.mutate(
       { serverId: workspaceId, conversationId: conversation.id, userIds: inviteIds },
       {
-        onSuccess: () => {
-          toast.success(
-            inviteIds.length === 1 ? "Member added" : `${inviteIds.length} members added`,
-          );
+        onSuccess: (updated) => {
+          const waiting = pendingMembersOf(updated).filter((id) => inviteIds.includes(id));
+          const added =
+            inviteIds.length === 1 ? "Member added" : `${inviteIds.length} members added`;
+          if (waiting.length === 0) toast.success(added);
+          else {
+            const names = joinNames(waiting.map((id) => memberLookup.resolve(id).displayName));
+            toast.success(added, {
+              description: `${names} ${waiting.length === 1 ? "joins" : "join"} once they set up a device for encryption.`,
+            });
+          }
           setInviteIds([]);
           setInviting(false);
         },
@@ -165,7 +179,7 @@ function MembersList({
             workspaceId={workspaceId}
             selectedUserIds={inviteIds}
             onChange={setInviteIds}
-            excludeUserIds={conversation.memberIds}
+            excludeUserIds={[...conversation.memberIds, ...pendingIds]}
             onConfirm={handleInvite}
             onEscape={() => setInviting(false)}
             autoFocus
@@ -217,10 +231,20 @@ function MembersList({
                   <span className="truncate text-sm text-rim-text">{member.displayName}</span>
                   {isSelf && <span className="text-xs text-rim-text-faint">(you)</span>}
                   <RoleBadge role={member.role} />
+                  {member.pending && (
+                    <span className="shrink-0 rounded border border-rim-accent/40 px-1 text-[10px] uppercase tracking-wider text-rim-accent">
+                      Invited
+                    </span>
+                  )}
                 </span>
                 <TimeoutMarker until={member.timeoutUntil} />
+                {member.pending && (
+                  <span className="block text-[11px] text-rim-text-faint">
+                    Waiting for a device set up for encryption
+                  </span>
+                )}
               </span>
-              {isSelf && canLeave && (
+              {isSelf && canLeave && !member.pending && (
                 <Button
                   type="button"
                   variant="ghost"

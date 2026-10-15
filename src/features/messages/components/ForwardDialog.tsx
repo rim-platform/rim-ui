@@ -17,6 +17,8 @@ import { detectPlatform } from "../../../core/runtime/runtime";
 import { sendEncrypted } from "../../e2ee/runtime/send";
 import { toUserMentions } from "../../e2ee/utils/content";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import type { ConversationSummary } from "../../conversations/types";
+import { directPeerId, isInvited } from "../../conversations/utils";
 
 interface ForwardDialogProps {
   open: boolean;
@@ -58,16 +60,20 @@ export function ForwardDialog({
   const { data: channelsData } = useChannels(workspaceId);
   const { data: inboxData } = useInboxConversations(workspaceId);
 
+  // Conversations the viewer is only invited to take no messages until they join.
   const allConversations = useMemo(
-    () => [...(channelsData?.items ?? []), ...(inboxData?.items ?? [])],
-    [channelsData?.items, inboxData?.items],
+    () =>
+      [...(channelsData?.items ?? []), ...(inboxData?.items ?? [])].filter(
+        (c) => !isInvited(c, currentUserId),
+      ),
+    [channelsData?.items, inboxData?.items, currentUserId],
   );
 
   const filtered = allConversations.filter((c) => {
     let title = c.title;
     if (c.conversationType === "DIRECT" && !title) {
-      const otherId = c.memberIds.find((id: string) => id !== currentUserId) ?? c.memberIds[0];
-      title = memberLookup.resolve(otherId).displayName;
+      const otherId = directPeerId(c, currentUserId);
+      title = otherId ? memberLookup.resolve(otherId).displayName : title;
     }
     return (title ?? "").toLowerCase().includes(search.toLowerCase());
   });
@@ -191,13 +197,14 @@ export function ForwardDialog({
     }
   }
 
-  function resolveTitle(conv: {
-    title?: string | null;
-    conversationType: string;
-    memberIds: string[];
-  }): string {
-    if (conv.conversationType === "DIRECT" && !conv.title) {
-      const otherId = conv.memberIds.find((id) => id !== currentUserId) ?? conv.memberIds[0];
+  function resolveTitle(
+    conv: Pick<
+      ConversationSummary,
+      "title" | "conversationType" | "memberIds" | "pendingMemberIds"
+    >,
+  ): string {
+    const otherId = directPeerId(conv, currentUserId);
+    if (conv.conversationType === "DIRECT" && !conv.title && otherId) {
       return memberLookup.resolve(otherId).displayName;
     }
     return conv.title || "Untitled";

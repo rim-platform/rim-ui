@@ -25,6 +25,7 @@ export function fakeLimits(caps: Partial<ServerLimits> = {}): ServerLimits {
     inviteMaxUses: null,
     messageBytes: null,
     probationHours: null,
+    pendingInvitesPerUser: null,
     ...caps,
   };
 }

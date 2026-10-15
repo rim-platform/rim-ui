@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -38,13 +38,22 @@ export function fetchInboxConversations(workspaceId: string): Promise<Conversati
   });
 }
 
-/** The sidebar's DMs. The desktop app keeps a copy for offline starts (offlineSnapshot.ts). */
-export function useInboxConversations(workspaceId?: string) {
-  return useQuery({
+/**
+ * The inbox query's options. The list is read again when the window regains focus: an
+ * invitation that expired leaves it without an event.
+ */
+export function inboxQueryOptions(workspaceId?: string) {
+  return queryOptions({
     queryKey: queryKeys.conversations(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     networkMode: "offlineFirst",
+    refetchOnWindowFocus: true,
     queryFn: () => fetchInboxConversations(workspaceId!),
   });
+}
+
+/** The sidebar's DMs. The desktop app keeps a copy for offline starts (offlineSnapshot.ts). */
+export function useInboxConversations(workspaceId?: string) {
+  return useQuery(inboxQueryOptions(workspaceId));
 }
