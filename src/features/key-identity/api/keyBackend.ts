@@ -299,7 +299,7 @@ async function done(command: string, args: Record<string, unknown>): Promise<voi
 
 /**
  * The desktop app's keys, in the secret vault behind the Tauri side's `key_identity` commands.
- * The vault keeps no recovery kit: the desktop shows it once, from the draft.
+ * The vault keeps the recovery kit's secret until the person confirms they saved the kit.
  */
 export const tauriKeyBackend: KeyBackend = {
   async accounts(endpoint) {
@@ -327,8 +327,8 @@ export const tauriKeyBackend: KeyBackend = {
     done("key_identity_restore_draft_keys", { draftId, endpoint, username }),
   discardEnrollment: (draftId) => done("key_identity_discard_enrollment", { draftId }),
 
-  recoveryKit: async () => null,
-  confirmRecoveryKit: async () => undefined,
+  recoveryKit: (principalId) => keyCommand("key_identity_recovery_kit", { principalId }),
+  confirmRecoveryKit: (principalId) => done("key_identity_confirm_recovery_kit", { principalId }),
 
   syncLog: (principalId, keyLog) => keyCommand("key_identity_sync_log", { principalId, keyLog }),
   signRevocation: (principalId, keyLog, deviceId) =>

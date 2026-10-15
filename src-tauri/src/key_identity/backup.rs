@@ -320,6 +320,8 @@ mod tests {
                 pending_identity_seed: None,
                 pending_identity_seq: None,
                 backup_key: None,
+                recovery_entropy: None,
+                kit_confirmed: None,
                 confirmed: true,
                 replaced: None,
             })
@@ -438,6 +440,8 @@ mod tests {
                 pending_identity_seed: None,
                 pending_identity_seq: None,
                 backup_key: None,
+                recovery_entropy: None,
+                kit_confirmed: None,
                 confirmed: true,
                 replaced: None,
             })

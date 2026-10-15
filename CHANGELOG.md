@@ -124,6 +124,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The desktop app keeps a new account's recovery kit in its encrypted secret vault, next to the
+  identity key, until you confirm you saved the kit, and then deletes it, as the web app already
+  does. A kit you confirm before the account is created is never written, and a recovery with
+  the kit keeps nothing of it.
 - "<name> is typing..." is shown in direct messages only. Channels, groups and threads show no
   typing, and the app no longer announces typing there.
 - A rate-limited request (`RATE_LIMITED`, or HTTP 429 `rate_limited` from the server's

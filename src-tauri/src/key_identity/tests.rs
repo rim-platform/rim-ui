@@ -77,7 +77,7 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
     );
 
     // The kit is version 2, its phrase is the grid's 12 words, and its recovery key is the one
-    // the inception names. It is not stored anywhere.
+    // the inception names. The recovery key itself is not stored.
     assert!(draft.recovery_kit.starts_with("RIM recovery kit (v2)\n"));
     assert_eq!(draft.recovery_phrase.len(), 12);
     assert!(draft.recovery_kit.contains(&format!(
@@ -452,6 +452,11 @@ fn recovery_signs_a_rotation_with_the_kit_and_enrolls_a_new_device() {
         .unwrap()
         .backup_key
         .is_some());
+    // The person just used the kit: it counts as saved and nothing of it is kept.
+    let record = fresh.record(&draft.principal_id).unwrap();
+    assert_eq!(record.kit_confirmed, Some(true));
+    assert!(record.recovery_entropy.is_none());
+    assert!(fresh.recovery_kit(&draft.principal_id).unwrap().is_none());
 }
 
 #[test]
@@ -818,6 +823,136 @@ fn a_signup_needs_a_username_and_a_server_url() {
     assert!(state.accounts(ENDPOINT).unwrap().is_empty());
 }
 
+// ─── The recovery kit ────────────────────────────────────────────────────────
+
+/// A key-only signup on `store` whose kit the person saves later.
+fn signed_up_kit_later(store: &Arc<MemorySecretStore>) -> (KeyIdentityState, EnrollmentDraft) {
+    let state = KeyIdentityState::new(store.clone());
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    (state, draft)
+}
+
+/// The draft's kit entropy as a record would keep it.
+fn stored_entropy(draft: &EnrollmentDraft) -> String {
+    let entropy = recovery_kit::parse_recovery_phrase(&draft.recovery_phrase.join(" ")).unwrap();
+    recovery_kit::encode_entropy(&entropy).to_string()
+}
+
+fn assert_kit_of(kit: Option<RecoveryKitText>, draft: &EnrollmentDraft) {
+    let kit = kit.expect("the kit is kept");
+    assert_eq!(kit.principal_id, draft.principal_id);
+    assert_eq!(*kit.recovery_kit, *draft.recovery_kit);
+    assert_eq!(*kit.recovery_phrase, *draft.recovery_phrase);
+}
+
+/// Whether the stored record of the draft's principal holds anything of the kit's secret.
+fn record_holds_kit(state: &KeyIdentityState, draft: &EnrollmentDraft) -> bool {
+    let record = state.record(&draft.principal_id).unwrap();
+    let stored = serde_json::to_string(&record).unwrap();
+    record.recovery_entropy.is_some() || stored.contains(&stored_entropy(draft))
+}
+
+#[test]
+fn a_kit_saved_later_is_kept_with_the_keys_and_read_back_after_a_restart() {
+    let store = Arc::new(MemorySecretStore::default());
+    let (state, draft) = signed_up_kit_later(&store);
+    assert_kit_of(state.recovery_kit(&draft.principal_id).unwrap(), &draft);
+
+    let record = state.record(&draft.principal_id).unwrap();
+    assert_eq!(record.kit_confirmed, Some(false));
+    assert_eq!(
+        record.recovery_entropy.as_deref().map(String::as_str),
+        Some(stored_entropy(&draft).as_str())
+    );
+
+    // A later run holds no draft and reads the kit from the record.
+    let restarted = KeyIdentityState::new(store.clone());
+    assert_kit_of(restarted.recovery_kit(&draft.principal_id).unwrap(), &draft);
+
+    // The server confirming the keys finishes the draft but keeps the unsaved kit.
+    let ada = ServerAccount {
+        endpoint: ENDPOINT.into(),
+        user_id: "u-ada".into(),
+        username: "ada".into(),
+    };
+    state
+        .settle(&ada, Some(draft.principal_id.as_str()))
+        .unwrap();
+    assert_kit_of(state.recovery_kit(&draft.principal_id).unwrap(), &draft);
+    assert!(state.recovery_kit("rimp1_other").unwrap().is_none());
+}
+
+#[test]
+fn confirming_the_kit_deletes_its_secret_from_the_draft_and_the_record() {
+    let store = Arc::new(MemorySecretStore::default());
+    let (state, draft) = signed_up_kit_later(&store);
+    state.confirm_recovery_kit(&draft.principal_id).unwrap();
+
+    assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
+    assert!(!record_holds_kit(&state, &draft));
+    assert_eq!(
+        state.record(&draft.principal_id).unwrap().kit_confirmed,
+        Some(true)
+    );
+    let restarted = KeyIdentityState::new(store);
+    assert!(restarted
+        .recovery_kit(&draft.principal_id)
+        .unwrap()
+        .is_none());
+
+    // The draft let go of it too: a retried signup stores the keys without it.
+    state.remove_draft_keys(&draft.draft_id).unwrap();
+    state
+        .sign_signup(&draft.draft_id, ENDPOINT, "ada", &challenge())
+        .unwrap();
+    assert!(!record_holds_kit(&state, &draft));
+    assert_eq!(
+        state.record(&draft.principal_id).unwrap().kit_confirmed,
+        Some(true)
+    );
+    // Confirming again changes nothing.
+    state.confirm_recovery_kit(&draft.principal_id).unwrap();
+    assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
+}
+
+#[test]
+fn a_kit_confirmed_before_the_keys_are_stored_is_never_written() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    assert_kit_of(state.recovery_kit(&draft.principal_id).unwrap(), &draft);
+
+    state.confirm_recovery_kit(&draft.principal_id).unwrap();
+    assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
+    state
+        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .unwrap();
+    assert!(!record_holds_kit(&state, &draft));
+    assert_eq!(
+        state.record(&draft.principal_id).unwrap().kit_confirmed,
+        Some(true)
+    );
+}
+
+#[test]
+fn a_discarded_enrollment_takes_its_kit_with_it() {
+    let state = self::state();
+    let draft = state.begin_enrollment("Laptop").unwrap();
+    state.discard_enrollment(&draft.draft_id).unwrap();
+    assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
+
+    let store = Arc::new(MemorySecretStore::default());
+    let (state, draft) = signed_up_kit_later(&store);
+    state.discard_enrollment(&draft.draft_id).unwrap();
+    assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
+    assert!(matches!(
+        state.record(&draft.principal_id),
+        Err(KeyIdentityError::NoKeys)
+    ));
+}
+
 // ─── Device linking ──────────────────────────────────────────────────────────
 
 use device_link::{KnownDevice, LinkCode, LiveLink, Offer, Sealed};
@@ -941,6 +1076,10 @@ fn a_device_links_end_to_end_and_signs_in_with_its_own_key() {
     let account = &accounts[0];
     assert!(!account.has_identity_key && !account.confirmed);
     assert_eq!(account.user_id, None);
+    // A linked device never saw the kit, so its record says nothing about it.
+    let record = new.record(&old.principal_id).unwrap();
+    assert!(record.recovery_entropy.is_none() && record.kit_confirmed.is_none());
+    assert!(new.recovery_kit(&old.principal_id).unwrap().is_none());
 
     let proof = new
         .sign_login(ENDPOINT, &old.principal_id, &challenge())
