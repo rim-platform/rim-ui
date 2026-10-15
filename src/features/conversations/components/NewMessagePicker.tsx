@@ -8,7 +8,7 @@ import { detectOs } from "../../../core/runtime/runtime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { logger } from "../../../core/logger";
-import { createGroup, shouldEncryptNewConversation } from "../../e2ee/runtime/groups";
+import { allMembersReady, createGroup } from "../../e2ee/runtime/groups";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import { isWebAccount } from "../../e2ee/web/webAccount";
 import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
@@ -102,26 +102,24 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
       await startDirect(principals);
       return;
     }
-    // New DMs and groups are encrypted when every member is ready; this device then creates
-    // the group. An existing plaintext DM the server hands back is upgraded only by a desktop.
+    // New DMs and groups are encrypted whenever this device is ready; members who are not
+    // join once they set up a device, and this device creates the group meanwhile. An existing
+    // plaintext DM the server hands back is upgraded only by a desktop, with everyone ready.
     const session = await e2eeSession();
-    const encrypted = await shouldEncryptNewConversation(
-      session,
-      workspaceId,
-      selectedUserIds,
-    ).catch(() => false);
     const base =
       selectedUserIds.length === 1
         ? { serverId: workspaceId, otherUserId: selectedUserIds[0] }
         : { serverId: workspaceId, memberIds: selectedUserIds };
-    createMutation.mutate(encrypted ? { ...base, encrypted: true } : base, {
+    createMutation.mutate(session ? { ...base, encrypted: true } : base, {
       onSuccess: (data) => {
         const conversationId = data.createConversation.id;
         const upgrade = !data.createConversation.encryptedAt;
-        if (session && encrypted && (!upgrade || !isWebAccount(session.account))) {
-          void createGroup(session, workspaceId, conversationId).catch((err: unknown) =>
-            logger.warn("[RIM:e2ee] creating the group failed:", err),
-          );
+        if (session) {
+          void (async () => {
+            if (upgrade && isWebAccount(session.account)) return;
+            if (upgrade && !(await allMembersReady(session, workspaceId, selectedUserIds))) return;
+            await createGroup(session, workspaceId, conversationId);
+          })().catch((err: unknown) => logger.warn("[RIM:e2ee] creating the group failed:", err));
         }
         onCreated(conversationId);
       },

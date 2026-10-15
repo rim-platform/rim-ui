@@ -403,6 +403,13 @@ type Conversation {
 	then on are encrypted.
 	"""
 	encryptedAt: DateTime
+	"""
+	Members invited to an encrypted conversation who have no device set up for encryption
+	yet. They cannot read or send; they join with `acceptConversationInvite` once a device is
+	ready, without the history before that, or `declineConversationInvite`. Not in
+	`memberIds` or `memberCount`.
+	"""
+	pendingMemberIds: [ID!]!
 	isMuted: Boolean!
 	"""
 	Whether the viewer is a member (for channels: has joined it).
@@ -419,7 +426,8 @@ type Conversation {
 	"""
 	effectiveNotificationLevel: NotificationLevel!
 	"""
-	The conversation's current MLS group; null for plaintext and before the first Commit.
+	The conversation's current MLS group; null for plaintext, before the first Commit, and
+	for a pending member.
 	"""
 	mlsGroup: MlsGroup
 	"""
@@ -1701,6 +1709,12 @@ type Mutation {
 	deleteKeybind(input: DeleteKeybindInput!): Boolean!
 	pinMessage(input: PinMessageInput!): Boolean!
 	unpinMessage(input: UnpinMessageInput!): Boolean!
+	"""
+	Announce that the caller is typing in a direct conversation. Typing is announced in direct
+	conversations only: the mutation answers `true` when it emitted a `TypingStarted` event and
+	`false` when it did not, which is in a channel or a group, or on a repeat inside the
+	throttle window.
+	"""
 	startTyping(serverId: ID!, conversationId: ID!): Boolean!
 	heartbeat(input: HeartbeatInput!): Boolean!
 	muteConversation(input: MuteConversationInput!): Boolean!
@@ -2118,6 +2132,17 @@ type Mutation {
 		"""
 		cidr: String!
 	): Boolean!
+	"""
+	Accept the caller's pending invitation (`Conversation.pendingMemberIds`): they become a
+	member and a member's device adds theirs to the group. Needs a device set up for
+	encryption (`VALIDATION` otherwise); already a member, it changes nothing; `NOT_FOUND`
+	when the caller was not invited.
+	"""
+	acceptConversationInvite(serverId: ID!, conversationId: ID!): Conversation!
+	"""
+	Decline the caller's pending invitation; `NOT_FOUND` when there is none.
+	"""
+	declineConversationInvite(serverId: ID!, conversationId: ID!): Boolean!
 }
 
 input MuteConversationInput {
@@ -3153,6 +3178,11 @@ type ServerLimits {
 	when the caller's ends.
 	"""
 	probationHours: Int
+	"""
+	Pending invitations to encrypted conversations one user holds; past it, adding them to
+	one more answers `VALIDATION`.
+	"""
+	pendingInvitesPerUser: Int
 }
 
 type ServerMember {

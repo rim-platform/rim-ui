@@ -19,6 +19,7 @@ export type ConversationSummary = Pick<
   | "notificationLevel"
   | "effectiveNotificationLevel"
   | "encryptedAt"
+  | "pendingMemberIds"
 >;
 
 /** A page of conversations, as returned by `channels` and `inboxConversations`. */

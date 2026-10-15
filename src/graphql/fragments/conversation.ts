@@ -18,5 +18,6 @@ export const CONVERSATION_FIELDS = gql`
     notificationLevel
     effectiveNotificationLevel
     encryptedAt
+    pendingMemberIds
   }
 `;

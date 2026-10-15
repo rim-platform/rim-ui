@@ -28,7 +28,8 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 vi.mock("../../commands/hooks/useKeybindLabel", () => ({ useKeybindLabel: () => null }));
-vi.mock("../../../core/events/usePrefetchMessages", () => ({ usePrefetchMessages: () => {} }));
+const prefetch = vi.hoisted(() => ({ usePrefetchMessages: vi.fn() }));
+vi.mock("../../../core/events/usePrefetchMessages", () => prefetch);
 
 import { ConversationList } from "./ConversationList";
 
@@ -54,7 +55,11 @@ function page(items: unknown[]) {
 }
 
 /** The sidebar asks for joined channels; the browse dialog for the default (all visible) list. */
-function serve(joined = [general, secret, oldNews], browse = [general, secret, random]) {
+function serve(
+  joined = [general, secret, oldNews],
+  browse = [general, secret, random],
+  inbox: unknown[] = [dm],
+) {
   routeRequests(requestMock, {
     ...baseReadHandlers,
     "query Channels": (vars) => {
@@ -62,7 +67,7 @@ function serve(joined = [general, secret, oldNews], browse = [general, secret, r
       return page(filter?.joinedOnly ? joined : browse);
     },
     "query InboxConversations": () => ({
-      inboxConversations: { items: [dm], pageInfo: { hasNext: false, hasPrev: false } },
+      inboxConversations: { items: inbox, pageInfo: { hasNext: false, hasPrev: false } },
     }),
     "mutation JoinChannel": () => ({ joinChannel: { ...random, isMember: true, memberCount: 8 } }),
   });
@@ -143,6 +148,38 @@ describe("ConversationList — channels sidebar", () => {
     screen.getByRole("listbox").focus();
     await user.keyboard("{Home}{Enter}");
     expect(useShellStore.getState().selectedConversationId).toBe("c-general");
+  });
+
+  it("marks an invitation, names a waiting DM after its invitee, and prefetches only readable ones", async () => {
+    const invitation = makeConversation({
+      id: "c-invite",
+      title: "plans",
+      conversationType: ConversationTypeEnum.GROUP,
+      memberIds: ["u-alice"],
+      pendingMemberIds: ["me"],
+      isMember: false,
+      encryptedAt: "2026-10-15T00:00:00Z",
+    });
+    const waitingDm = makeConversation({
+      id: "c-waiting",
+      title: null,
+      conversationType: ConversationTypeEnum.DIRECT,
+      memberIds: ["me"],
+      pendingMemberIds: ["u-alice"],
+      encryptedAt: "2026-10-15T00:00:00Z",
+    });
+    serve([general], [general], [invitation, waitingDm]);
+    renderList();
+
+    const invitedRow = (await screen.findByText("plans")).closest("li")!;
+    expect(within(invitedRow).getByText("Invited")).toBeInTheDocument();
+    const dmRow = (await screen.findByText("Alice")).closest("li")!;
+    expect(within(dmRow).queryByText("Invited")).not.toBeInTheDocument();
+    // The server refuses an invited viewer the messages; the inviter's DM is readable.
+    expect(prefetch.usePrefetchMessages).toHaveBeenLastCalledWith("ws-1", [
+      "c-general",
+      "c-waiting",
+    ]);
   });
 
   it("asks for joined channels including archived ones", async () => {

@@ -5,6 +5,7 @@ import {
   usePrincipalNames,
   type useE2eeConversation,
 } from "../hooks/useE2eeConversation";
+import { BROWSER_NOTICES } from "../utils/browserNotices";
 import { joinNames } from "../utils/names";
 
 type E2eeConversation = ReturnType<typeof useE2eeConversation>;
@@ -38,14 +39,6 @@ function Notice({
     </div>
   );
 }
-
-/** Why this browser cannot read an encrypted conversation, by send block. */
-const BROWSER_NOTICES: Record<string, string> = {
-  noDeviceKey: "Set up this browser as a linked device to read encrypted conversations",
-  unsupported: "This browser cannot run encrypted conversations",
-  otherTab:
-    "Encrypted conversations are open in another tab of this browser. Close it to read them here.",
-};
 
 /** What the conversation's encryption asks the person to know, above the composer. */
 export function EncryptionNotices({ workspaceId, e2ee }: EncryptionNoticesProps) {

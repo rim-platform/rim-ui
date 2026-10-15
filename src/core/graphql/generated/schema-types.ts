@@ -378,13 +378,23 @@ export type Conversation = {
   isPrivate: Scalars['Boolean']['output'];
   memberCount: Scalars['Int']['output'];
   memberIds: Array<Scalars['ID']['output']>;
-  /** The conversation's current MLS group; null for plaintext and before the first Commit. */
+  /**
+   * The conversation's current MLS group; null for plaintext, before the first Commit, and
+   * for a pending member.
+   */
   mlsGroup?: Maybe<MlsGroup>;
   /**
    * The viewer's own notification level for this conversation; null inherits
    * the workspace default.
    */
   notificationLevel?: Maybe<NotificationLevel>;
+  /**
+   * Members invited to an encrypted conversation who have no device set up for encryption
+   * yet. They cannot read or send; they join with `acceptConversationInvite` once a device is
+   * ready, without the history before that, or `declineConversationInvite`. Not in
+   * `memberIds` or `memberCount`.
+   */
+  pendingMemberIds: Array<Scalars['ID']['output']>;
   /** The conversation this one succeeds, on the host that held it; null for any other. */
   predecessor?: Maybe<ConversationPredecessor>;
   serverId: Scalars['ID']['output'];
@@ -1372,6 +1382,13 @@ export type MlsWelcome = {
 };
 
 export type Mutation = {
+  /**
+   * Accept the caller's pending invitation (`Conversation.pendingMemberIds`): they become a
+   * member and a member's device adds theirs to the group. Needs a device set up for
+   * encryption (`VALIDATION` otherwise); already a member, it changes nothing; `NOT_FOUND`
+   * when the caller was not invited.
+   */
+  acceptConversationInvite: Conversation;
   /** Release the request's held items, let later ones flow, and add the sender as a contact. */
   acceptDmRequest: DmRequest;
   /** Acknowledge Welcomes of the session's device; answers how many were acknowledged now. */
@@ -1426,6 +1443,8 @@ export type Mutation = {
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
+  /** Decline the caller's pending invitation; `NOT_FOUND` when there is none. */
+  declineConversationInvite: Scalars['Boolean']['output'];
   deleteAttachment: Scalars['Boolean']['output'];
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
@@ -1670,6 +1689,12 @@ export type Mutation = {
    * live link. The link lives 10 minutes.
    */
   startDeviceLink: StartedDeviceLink;
+  /**
+   * Announce that the caller is typing in a direct conversation. Typing is announced in direct
+   * conversations only: the mutation answers `true` when it emitted a `TypingStarted` event and
+   * `false` when it did not, which is in a channel or a group, or on a repeat inside the
+   * throttle window.
+   */
   startTyping: Scalars['Boolean']['output'];
   /**
    * A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
@@ -1754,6 +1779,12 @@ export type Mutation = {
    * the device's previous one.
    */
   uploadMlsKeyPackages: MlsKeyPackageStatus;
+};
+
+
+export type MutationAcceptConversationInviteArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -1881,6 +1912,12 @@ export type MutationCreateServerArgs = {
 
 export type MutationCreateUserCommandArgs = {
   input: CreateUserCommandInput;
+};
+
+
+export type MutationDeclineConversationInviteArgs = {
+  conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -3485,6 +3522,11 @@ export type ServerLimits = {
   membersPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Bytes of one message's text. */
   messageBytes?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Pending invitations to encrypted conversations one user holds; past it, adding them to
+   * one more answers `VALIDATION`.
+   */
+  pendingInvitesPerUser?: Maybe<Scalars['Int']['output']>;
   /** Pipelines of one workspace. */
   pipelinesPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Plugins of one workspace's registry. */

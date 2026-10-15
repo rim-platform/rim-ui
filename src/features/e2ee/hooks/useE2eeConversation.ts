@@ -61,6 +61,16 @@ export function useEncryptionSupport(): "desktop" | WebEncryption {
   return detectPlatform() === "desktop" ? "desktop" : web;
 }
 
+/**
+ * Whether this device can take part in encrypted conversations: the desktop app holding its key,
+ * or a browser set up as a linked device.
+ */
+export function useDeviceReadyForEncryption(): boolean {
+  const support = useEncryptionSupport();
+  const needsKeySetup = useOfferKeySetup().available;
+  return support === "ready" || (support === "desktop" && !needsKeySetup);
+}
+
 /** Device names of principals, for "<name>'s <device>". */
 export function useDeviceNames(principalIds: string[]) {
   const key = [...new Set(principalIds)].sort();

@@ -27,6 +27,7 @@ export function makeConversation(
     slowModeSeconds: 0,
     notificationLevel: null,
     effectiveNotificationLevel: NotificationLevel.ALL,
+    pendingMemberIds: [],
     ...overrides,
   };
 }
@@ -113,8 +114,17 @@ export function graphqlError(code: string, message: string): Error {
   });
 }
 
-/** Common read handlers: the current user and the workspace member list. */
+/** An empty inbox: no DMs, groups or invitations. */
+export const emptyInbox = {
+  inboxConversations: { items: [], pageInfo: { hasNext: false, hasPrev: false } },
+};
+
+/**
+ * Common read handlers: the current user, the workspace member list, and an empty inbox (a
+ * conversation is fetched once the inbox says it is no invitation).
+ */
 export const baseReadHandlers: Record<string, Handler> = {
   "query Me": () => ({ me: currentUser }),
   "query ServerMembers": () => ({ serverMembers: workspaceMembers }),
+  "query InboxConversations": () => emptyInbox,
 };

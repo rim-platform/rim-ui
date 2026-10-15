@@ -29,7 +29,10 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
 }));
 
 import { ConversationHeader } from "./ConversationHeader";
-import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
+import {
+  emptyInbox,
+  makeConversation,
+} from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../features/conversations/types";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
@@ -73,6 +76,7 @@ function serveConversation(conversation: ConversationSummary) {
     if (document.includes("query Conversation(")) {
       return Promise.resolve({ conversation });
     }
+    if (document.includes("query InboxConversations")) return Promise.resolve(emptyInbox);
     return new Promise(() => {});
   });
 }

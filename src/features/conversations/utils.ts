@@ -35,3 +35,28 @@ export function leaveNeedsConfirmation(
 ): boolean {
   return conversation.conversationType === ConversationTypeEnum.GROUP || conversation.isPrivate;
 }
+
+/**
+ * Who is invited to an encrypted conversation and waits for a device set up for encryption.
+ * Empty when the list came from a copy saved before the server reported invitations.
+ */
+export function pendingMembersOf(conversation: Pick<ConversationSummary, "pendingMemberIds">) {
+  return conversation.pendingMemberIds ?? [];
+}
+
+/** Whether `userId` holds an invitation to the conversation rather than its membership. */
+export function isInvited(
+  conversation: Pick<ConversationSummary, "pendingMemberIds">,
+  userId: string | null | undefined,
+): boolean {
+  return userId ? pendingMembersOf(conversation).includes(userId) : false;
+}
+
+/** The person a DM is with: its other member, or the one invited and not joined yet. */
+export function directPeerId(
+  conversation: Pick<ConversationSummary, "memberIds" | "pendingMemberIds">,
+  userId: string | null | undefined,
+): string | undefined {
+  const people = [...conversation.memberIds, ...pendingMembersOf(conversation)];
+  return people.find((id) => id !== userId) ?? people[0];
+}

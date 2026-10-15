@@ -11,6 +11,7 @@ import { useOfferKeySetup } from "../../key-identity";
 import { usePlaintextStatus, type PlaintextStatus } from "../hooks/useE2eeConversation";
 import { joinNames } from "../utils/names";
 import { plaintextNoticeSeen, rememberPlaintextNotice } from "../utils/plaintextNotice";
+import { LinkBrowserHint } from "./LinkBrowserHint";
 
 interface PlaintextNoticeProps {
   workspaceId: string | null | undefined;
@@ -104,11 +105,7 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
             (keySetup.available ? (
               <p>Set up encryption on this {here} to read and send encrypted messages here.</p>
             ) : (
-              <p>
-                To read and send encrypted messages in this browser, link it to your account: choose
-                Link a device in the desktop app&apos;s Settings &gt; Security, then sign in here
-                with &ldquo;Link this browser with its code&rdquo;.
-              </p>
+              <LinkBrowserHint />
             ))}
           <div className="flex justify-end gap-2 pt-1">
             <Button
