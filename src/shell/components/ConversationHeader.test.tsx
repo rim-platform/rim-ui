@@ -6,7 +6,10 @@ import userEvent from "@testing-library/user-event";
 import { createTestQueryClient } from "../../test/utils";
 import { expectReachableByKeyboard } from "../../test/keyboard";
 import { queryKeys } from "../../core/query/keys";
-import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  ServerMemberRoleGql,
+} from "../../core/graphql/generated/schema-types";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 
@@ -29,6 +32,8 @@ import { ConversationHeader } from "./ConversationHeader";
 import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../features/conversations/types";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useAuthStore } from "../../features/auth/state/useAuthStore";
+import { useE2eeStore } from "../../features/e2ee/state/useE2eeStore";
 
 function renderHeader() {
   const qc = createTestQueryClient();
@@ -63,16 +68,16 @@ describe("ConversationHeader — keyboard", () => {
   });
 });
 
-describe("ConversationHeader — channel privacy, members and menu", () => {
-  function serveConversation(conversation: ConversationSummary) {
-    requestMock.mockImplementation((document: string) => {
-      if (document.includes("query Conversation(")) {
-        return Promise.resolve({ conversation });
-      }
-      return new Promise(() => {});
-    });
-  }
+function serveConversation(conversation: ConversationSummary) {
+  requestMock.mockImplementation((document: string) => {
+    if (document.includes("query Conversation(")) {
+      return Promise.resolve({ conversation });
+    }
+    return new Promise(() => {});
+  });
+}
 
+describe("ConversationHeader — channel privacy, members and menu", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
@@ -101,6 +106,43 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     renderHeader();
     expect(await screen.findByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Private channel" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Not encrypted" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationHeader — unencrypted conversation", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    localStorage.clear();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    useE2eeStore.setState({ webEncryption: "ready", notReady: { "conv-1": ["Bob"] } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: null });
+    useE2eeStore.setState({ webEncryption: "checking", notReady: {} });
+  });
+
+  it("marks a DM that is not encrypted and reopens its dialog from the mark", async () => {
+    serveConversation(
+      makeConversation({
+        title: null,
+        conversationType: ConversationTypeEnum.DIRECT,
+        memberIds: ["me", "u-bob"],
+        memberCount: 2,
+      }),
+    );
+    renderHeader();
+
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not encrypted" }));
+    expect(
+      screen.getByRole("dialog", { name: "This conversation is not encrypted" }),
+    ).toHaveTextContent("Bob has not set up encryption on a desktop device yet.");
   });
 });
 

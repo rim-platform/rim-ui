@@ -5,6 +5,7 @@ import {
   usePrincipalNames,
   type useE2eeConversation,
 } from "../hooks/useE2eeConversation";
+import { joinNames } from "../utils/names";
 
 type E2eeConversation = ReturnType<typeof useE2eeConversation>;
 
@@ -45,11 +46,6 @@ const BROWSER_NOTICES: Record<string, string> = {
   otherTab:
     "Encrypted conversations are open in another tab of this browser. Close it to read them here.",
 };
-
-function joinNames(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
 
 /** What the conversation's encryption asks the person to know, above the composer. */
 export function EncryptionNotices({ workspaceId, e2ee }: EncryptionNoticesProps) {
