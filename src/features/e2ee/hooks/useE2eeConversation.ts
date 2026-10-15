@@ -13,6 +13,7 @@ import { logger } from "../../../core/logger";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useConversation } from "../../conversations/api/useConversation";
+import { useOfferKeySetup } from "../../key-identity";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { fetchPrincipalDevices } from "../api/e2eeApi";
 import type { GroupView } from "../api/e2eeCommands";
@@ -113,7 +114,7 @@ export interface PlaintextStatus {
   notReady: string[];
   /** Everyone is ready, and a member's desktop app turns encryption on; a browser does not. */
   upgradeOnDesktop: boolean;
-  /** This browser has no device key of its own. */
+  /** This device has no key of its own for the account. */
   noDeviceKey: boolean;
 }
 
@@ -132,11 +133,16 @@ export function usePlaintextStatus(
   const group = useE2eeStore((s) => (conversationId ? s.groups[conversationId] : undefined));
   const notReady = useE2eeStore((s) => (conversationId ? s.notReady[conversationId] : undefined));
   const support = useEncryptionSupport();
+  // A desktop without a key never checks the readiness: its key setup step is what it lacks.
+  const desktopKeySetup = useOfferKeySetup().available && support === "desktop";
   const conversationType = conversation?.conversationType;
   const serverEncryptedAt = conversation?.encryptedAt;
   return useMemo(() => {
     if (!conversationType || !isEncryptable(conversationType)) return null;
     if (effectiveEncryptedAt(serverEncryptedAt, group) || support === "checking") return null;
+    if (desktopKeySetup) {
+      return { notReady: notReady ?? [], upgradeOnDesktop: false, noDeviceKey: true };
+    }
     if (support === "desktop" || support === "ready") {
       // Unknown until the readiness check answers; with everyone ready a desktop upgrades.
       if (!notReady || (notReady.length === 0 && support === "desktop")) return null;
@@ -147,7 +153,7 @@ export function usePlaintextStatus(
       upgradeOnDesktop: false,
       noDeviceKey: support === "noDeviceKey",
     };
-  }, [conversationType, serverEncryptedAt, group, notReady, support]);
+  }, [conversationType, serverEncryptedAt, group, notReady, support, desktopKeySetup]);
 }
 
 /**

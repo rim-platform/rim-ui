@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { LockOpen } from "lucide-react";
 
+import { detectPlatform } from "../../../core/runtime/runtime";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
@@ -17,7 +18,7 @@ interface PlaintextNoticeProps {
 }
 
 /** Who keeps the conversation unencrypted, in one line, when this device knows. */
-function reasonOf(status: PlaintextStatus): string | null {
+function reasonOf(status: PlaintextStatus, here: string): string | null {
   const { notReady } = status;
   if (notReady.length > 0) {
     return `${joinNames(notReady)} ${notReady.length === 1 ? "has" : "have"} not set up encryption on a desktop device yet.`;
@@ -25,7 +26,7 @@ function reasonOf(status: PlaintextStatus): string | null {
   if (status.upgradeOnDesktop) {
     return "Everyone is ready: a member's desktop app turns encryption on when it opens this conversation. A browser does not.";
   }
-  if (status.noDeviceKey) return "This browser is not set up for encryption.";
+  if (status.noDeviceKey) return `This ${here} is not set up for encryption.`;
   return null;
 }
 
@@ -74,7 +75,8 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
     else setMainSurface({ kind: "settings", tab: "security" });
   }
 
-  const reason = reasonOf(status);
+  const here = detectPlatform() === "desktop" ? "computer" : "browser";
+  const reason = reasonOf(status, here);
   return (
     <>
       <HoverTooltip
@@ -100,10 +102,7 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
           )}
           {status.noDeviceKey &&
             (keySetup.available ? (
-              <p>
-                To read and send encrypted messages in this browser, link it to your account with a
-                code from the desktop app.
-              </p>
+              <p>Set up encryption on this {here} to read and send encrypted messages here.</p>
             ) : (
               <p>
                 To read and send encrypted messages in this browser, link it to your account: choose
