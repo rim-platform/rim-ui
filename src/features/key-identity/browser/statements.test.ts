@@ -9,10 +9,17 @@ import {
   CONTEXT,
   payloadHash,
   principalId,
+  now,
   recoveredAfter,
   replay,
   sign,
+  signDeviceCertificate,
+  signInception,
   signLogin,
+  signProfileCard,
+  signRevocation,
+  signRotation,
+  usableDeviceKey,
   verifiedCard,
   verifiedRevocation,
   verify,
@@ -165,6 +172,95 @@ describe("key-identity known-answer vectors", () => {
     expect(await rotation(v1Head, 1, "identity", seed2)).toEqual(
       statement(MIXED_ROTATION, MIXED_ROTATION_SIG),
     );
+  });
+});
+
+describe("statements this browser signs", () => {
+  it("appendix B: the inception and the device certificate, byte for byte", async () => {
+    const identity = (await keyFromSeed(1)).privateKey;
+    expect(await signInception(identity, IDENTITY, RECOVERY, AT)).toEqual(
+      statement(INCEPTION, INCEPTION_SIG),
+    );
+    expect(
+      await signDeviceCertificate(identity, {
+        principalId: PRINCIPAL,
+        deviceId: DEVICE_ID,
+        deviceKey: DEVICE,
+        name: "Laptop",
+        keySeq: 0,
+        issuedAt: AT,
+      }),
+    ).toEqual(statement(DEVICE_CERT, DEVICE_CERT_SIG));
+  });
+
+  it("appendix B: the identity rotation that extends a version 1 log, byte for byte", async () => {
+    const head = await replay([statement(V1_INCEPTION, V1_INCEPTION_SIG)]);
+    const next = (await keyFromSeed(2)).publicKey;
+    const entry = await signRotation(head, "identity", (await keyFromSeed(1)).privateKey, next, AT);
+    expect(entry).toEqual(statement(MIXED_ROTATION, MIXED_ROTATION_SIG));
+  });
+
+  it("a recovery rotation keeps the recovery key and replays as signed by it", async () => {
+    const head = await replay([statement(INCEPTION, INCEPTION_SIG)]);
+    const next = (await keyFromSeed(3)).publicKey;
+    const entry = await signRotation(
+      head,
+      "recovery",
+      (await keyFromSeed(101)).privateKey,
+      next,
+      AT,
+    );
+    expect(JSON.parse(entry.payload)).toMatchObject({
+      seq: 1,
+      recoveryKey: RECOVERY,
+      signer: "recovery",
+    });
+    const rotated = await replay([statement(INCEPTION, INCEPTION_SIG), entry]);
+    expect(rotated).toMatchObject({ identityKey: next, signers: [null, "recovery"] });
+  });
+
+  it("revocations and profile cards carry the Tauri side's fields in its order and verify", async () => {
+    const head = await replay([statement(INCEPTION, INCEPTION_SIG)]);
+    const identity = (await keyFromSeed(1)).privateKey;
+    const byIdentity = await signRevocation(identity, false, PRINCIPAL, DEVICE_ID, AT);
+    expect(byIdentity.payload).toBe(
+      `{"v":2,"type":"device-revoke","principalId":"${PRINCIPAL}","deviceId":"${DEVICE_ID}","signer":"identity","issuedAt":"${AT}"}`,
+    );
+    expect(await verifiedRevocation(byIdentity, head, DEVICE_ID, DEVICE)).toBe(true);
+    const byDevice = await signRevocation(
+      (await keyFromSeed(20)).privateKey,
+      true,
+      PRINCIPAL,
+      DEVICE_ID,
+      AT,
+    );
+    expect(JSON.parse(byDevice.payload).signer).toBe("device");
+    expect(await verifiedRevocation(byDevice, head, DEVICE_ID, DEVICE)).toBe(true);
+
+    const card = await signProfileCard(identity, {
+      principalId: PRINCIPAL,
+      version: 3,
+      keySeq: 0,
+      displayName: "Ada",
+      relays: ["https://rim.example"],
+      devices: [{ deviceId: DEVICE_ID, deviceKey: DEVICE }],
+      issuedAt: AT,
+    });
+    expect(card.payload).toBe(
+      `{"v":2,"type":"profile-card","principalId":"${PRINCIPAL}","version":3,"keySeq":0,"displayName":"Ada","relays":["https://rim.example"],"devices":[{"deviceId":"${DEVICE_ID}","deviceKey":"${DEVICE}"}],"issuedAt":"${AT}"}`,
+    );
+    expect(await verifiedCard(card, head)).toMatchObject({ version: 3, displayName: "Ada" });
+  });
+
+  it("writes timestamps in whole seconds", () => {
+    expect(now(new Date("2026-10-09T12:34:56.789Z"))).toBe("2026-10-09T12:34:56Z");
+  });
+
+  it("takes only canonical, usable Ed25519 keys for a new device", () => {
+    expect(usableDeviceKey(DEVICE)).toBe(DEVICE);
+    expect(() => usableDeviceKey(DEVICE.replace("ed25519:", ""))).toThrow(/malformed/);
+    expect(() => usableDeviceKey(`ed448:${DEVICE.slice(8)}`)).toThrow(/malformed/);
+    expect(() => usableDeviceKey(`ed25519:${b64(new Uint8Array(32))}`)).toThrow(/malformed/);
   });
 });
 

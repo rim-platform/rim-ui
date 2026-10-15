@@ -1,7 +1,8 @@
 /**
- * Signed statements of key identity in the browser: signing a login proof with a WebCrypto
- * device key, and verifying a key log and a device certificate the way the Tauri side's
- * `statement.rs` does.
+ * Signed statements of key identity in the browser: building and signing the statements this
+ * browser sends (key log entries, device certificates and revocations, profile cards, login
+ * proofs) with WebCrypto keys, and verifying a key log and a device certificate the way the
+ * Tauri side's `statement.rs` does.
  *
  * Reads statement versions 1 and 2 and writes version 2, where every key and signature names
  * its algorithm (`ed25519:<base64url>`). A payload is the exact JSON text that was signed:
@@ -21,6 +22,7 @@ export const CONTEXT = {
   keyLog: utf8("rim.keylog.v1\0"),
   device: utf8("rim.device.v1\0"),
   deviceRevoke: utf8("rim.device-revoke.v1\0"),
+  profileCard: utf8("rim.profile-card.v1\0"),
   login: utf8("rim.login.v1\0"),
   pluginManifest: utf8("rim.plugin-manifest.v1\0"),
   mlsKey: utf8("rim.mls-key.v1\0"),
@@ -169,7 +171,7 @@ export async function verify(
   }
 }
 
-/** Sign `payload` for `context` with a device key, as a version 2 (tagged) signature. */
+/** Sign `payload` for `context` with an Ed25519 key, as a version 2 (tagged) signature. */
 export async function sign(
   privateKey: CryptoKey,
   context: Uint8Array,
@@ -215,6 +217,147 @@ export function signLogin(deviceKey: CryptoKey, input: LoginInput): Promise<Stat
     deviceId: input.deviceId,
   });
   return sign(deviceKey, CONTEXT.login, payload);
+}
+
+// ─── Key log, certificates, revocations, cards ──────────────────────────────
+
+/** The current time as statements write it: RFC 3339, whole seconds, `Z`. Informational only. */
+export function now(at: Date = new Date()): string {
+  return at.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** The inception entry, signed by its own identity key (`identityKey` is its public key). */
+export function signInception(
+  identity: CryptoKey,
+  identityKey: string,
+  recoveryKey: string,
+  createdAt: string,
+): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "inception",
+    seq: 0,
+    identityKey,
+    recoveryKey,
+    createdAt,
+  });
+  return sign(identity, CONTEXT.keyLog, payload);
+}
+
+/**
+ * A rotation extending `head` to `newIdentityKey`, keeping the recovery key, signed by the
+ * current identity key or by the recovery key as `signer` says.
+ */
+export function signRotation(
+  head: KeyHead,
+  signer: RotationSigner,
+  signingKey: CryptoKey,
+  newIdentityKey: string,
+  createdAt: string,
+): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "rotate",
+    principalId: head.principalId,
+    seq: head.seq + 1,
+    prev: head.hash,
+    identityKey: newIdentityKey,
+    recoveryKey: head.recoveryKey,
+    signer,
+    createdAt,
+  });
+  return sign(signingKey, CONTEXT.keyLog, payload);
+}
+
+export interface DeviceCertInput {
+  principalId: string;
+  deviceId: string;
+  /** Tagged text. */
+  deviceKey: string;
+  name: string;
+  keySeq: number;
+  issuedAt: string;
+}
+
+/** A device certificate, signed by the identity key at `keySeq`. */
+export function signDeviceCertificate(
+  identity: CryptoKey,
+  input: DeviceCertInput,
+): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "device",
+    principalId: input.principalId,
+    deviceId: input.deviceId,
+    deviceKey: input.deviceKey,
+    name: input.name,
+    keySeq: input.keySeq,
+    issuedAt: input.issuedAt,
+  });
+  return sign(identity, CONTEXT.device, payload);
+}
+
+/** A device revocation; `byDevice` means the revoked device signs its own retirement. */
+export function signRevocation(
+  key: CryptoKey,
+  byDevice: boolean,
+  principalId: string,
+  deviceId: string,
+  issuedAt: string,
+): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "device-revoke",
+    principalId,
+    deviceId,
+    signer: byDevice ? "device" : "identity",
+    issuedAt,
+  });
+  return sign(key, CONTEXT.deviceRevoke, payload);
+}
+
+export interface ProfileCardInput {
+  principalId: string;
+  version: number;
+  keySeq: number;
+  displayName: string;
+  relays: string[];
+  devices: CertifiedDevice[];
+  issuedAt: string;
+}
+
+/** A profile card, signed by the identity key at `keySeq`. */
+export function signProfileCard(identity: CryptoKey, input: ProfileCardInput): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "profile-card",
+    principalId: input.principalId,
+    version: input.version,
+    keySeq: input.keySeq,
+    displayName: input.displayName,
+    relays: input.relays,
+    devices: input.devices.map((d) => ({ deviceId: d.deviceId, deviceKey: d.deviceKey })),
+    issuedAt: input.issuedAt,
+  });
+  return sign(identity, CONTEXT.profileCard, payload);
+}
+
+/**
+ * A device key offered for certification: canonical version 2 Ed25519 text of a key that is
+ * canonical and not of small order. Returns it unchanged.
+ */
+export function usableDeviceKey(text: string): string {
+  const refused = () =>
+    new StatementError("the new device's key is malformed or of a kind this app cannot check");
+  let split: { algorithm: string; bytes: Uint8Array };
+  try {
+    split = splitTagged(text, WRITE_VERSION);
+  } catch {
+    throw refused();
+  }
+  if (split.algorithm !== ED25519 || !usablePublicKey(split.bytes)) throw refused();
+  if (ED25519_TAG + b64(split.bytes) !== text) throw refused();
+  return text;
 }
 
 // ─── Reading payloads ───────────────────────────────────────────────────────
@@ -568,8 +711,6 @@ const CARD_FIELDS = [
   "issuedAt",
 ];
 
-const CARD_CONTEXT = utf8("rim.profile-card.v1\0");
-
 /** What a verified profile card says. */
 export interface VerifiedCard {
   version: number;
@@ -614,7 +755,8 @@ export async function verifiedCard(card: Statement, head: KeyHead): Promise<Veri
   if (text(fields, "principalId") !== head.principalId) throw refused("names another account");
   const signer = head.identityKeys[keySeq];
   if (signer === undefined || recoveredAfter(head, keySeq)) throw refused("signed by a lost key");
-  if (!(await verify(card, CARD_CONTEXT, signer, v))) throw refused("signature does not verify");
+  if (!(await verify(card, CONTEXT.profileCard, signer, v)))
+    throw refused("signature does not verify");
   const name = displayName.trim();
   if (name.length === 0 || Array.from(name).length > 80) throw refused("name is not allowed");
   const relays = Array.isArray(fields.relays) ? fields.relays.map(cardRelay) : null;

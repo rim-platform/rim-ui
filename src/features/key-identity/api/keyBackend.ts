@@ -1,8 +1,9 @@
 /**
- * Where this app's device keys live, behind one interface for the key work that signing in and
- * linking this device need: the Tauri side's secret vault on the desktop, WebCrypto and IndexedDB
- * in the web app. Enrollment, key-only signup, recovery and linking other devices hold the
- * identity key and stay on the Tauri side (`keyCommand`).
+ * Where this app's keys live, behind one interface for all key work: the Tauri side's secret
+ * vault on the desktop, WebCrypto and IndexedDB in the web app. Signing in, enrollment, key-only
+ * signup, the recovery kit, recovery, rotation, revocation, the profile card and both roles of
+ * device linking go through it. Plugin manifest signing and the identity key backup stay on the
+ * Tauri side.
  */
 
 import { isTauri } from "@tauri-apps/api/core";
@@ -28,7 +29,7 @@ export interface LocalKeyAccount {
   username: string | null;
   deviceId: string;
   deviceName: string;
-  /** This device holds the identity key (it enrolled the account). */
+  /** This device holds the identity key (it enrolled or recovered the account). */
   hasIdentityKey: boolean;
   /** The server has shown these keys on the account. */
   confirmed: boolean;
@@ -47,6 +48,58 @@ export interface KeyChallenge {
   nonce: string;
 }
 
+/** A started enrollment: the new account id and the recovery kit. */
+export interface EnrollmentDraft {
+  draftId: string;
+  principalId: string;
+  /** The payload of the key log's inception, which a signup's proof-of-work is bound to. */
+  inceptionPayload: string;
+  /** The whole kit text (`RIM recovery kit (v2)` …), to copy. */
+  recoveryKit: string;
+  /** The kit's 12 recovery phrase words in order, to show as a numbered grid. */
+  recoveryPhrase: string[];
+}
+
+/** What `enrollIdentityKey` and `signupWithKey` take. */
+export interface EnrollmentStatements {
+  keyLog: SignedStatementInput[];
+  device: SignedStatementInput;
+  proof: SignedStatementInput;
+}
+
+/** What a recovery `rotateIdentityKey` takes. */
+export interface RecoveryStatements {
+  principalId: string;
+  /** The new device, to undo the recovery with if the server refuses it. */
+  deviceId: string;
+  entry: SignedStatementInput;
+  device: SignedStatementInput;
+}
+
+/** The recovery kit of an identity whose kit the person has not confirmed saving yet. */
+export interface RecoveryKitText {
+  principalId: string;
+  recoveryKit: string;
+  recoveryPhrase: string[];
+}
+
+/** The server's key log, verified on this device. */
+export interface LogStatus {
+  principalId: string;
+  seq: number;
+  /** This device can add and revoke devices, rotate and publish the profile card. */
+  holdsIdentityKey: boolean;
+}
+
+/** The profile card fields the app chooses; the rest comes from the key log. */
+export interface CardContent {
+  version: number;
+  displayName: string;
+  relays: string[];
+  /** Certificates of the devices to list; only those that verify against the log are listed. */
+  certificates: SignedStatementInput[];
+}
+
 /** The new device's sealed offer and the fingerprint to show next to it. */
 export interface SentOffer {
   linkId: string;
@@ -61,7 +114,51 @@ export interface LinkedDevice {
   deviceName: string;
 }
 
-/** The device key work of signing in and of linking this device as a new device. */
+/** A link this device started as the old device. `code` holds the secret: show it, never log it. */
+export interface IssuedCode {
+  linkId: string;
+  code: string;
+}
+
+/** The new device's offer, opened and checked, for the person to confirm. */
+export interface OfferToConfirm {
+  deviceId: string;
+  name: string;
+  /** `desktop` or `web`; self-reported, a display hint only. */
+  platform: string;
+  /** `XXXX-XXXX`, also shown on the new device. */
+  fingerprint: string;
+}
+
+/** A device of the account as `myKeyIdentity` lists it, revoked ones included. */
+export interface KnownDevice {
+  deviceId: string;
+  publicKey: string;
+}
+
+/** What the old device sends once the person confirmed. */
+export interface LinkAnswer {
+  deviceId: string;
+  deviceKey: string;
+  certificate: SignedStatementInput;
+  answer: SealedMessageInput;
+}
+
+/** A link this device confirmed as the old device and has not finished. */
+export interface PendingLink {
+  linkId: string;
+  principalId: string;
+  deviceId: string;
+  deviceKey: string;
+}
+
+/**
+ * Whether the browser keeps this app's storage under pressure: `refused` means it may evict the
+ * keys, `unavailable` that it cannot say.
+ */
+export type StoragePersistence = "persisted" | "refused" | "unavailable";
+
+/** The key work of this platform. */
 export interface KeyBackend {
   /** Accounts on `endpoint` this device can sign in to; empty when the store cannot be read. */
   accounts(endpoint: string): Promise<LocalKeyAccount[]>;
@@ -82,13 +179,107 @@ export interface KeyBackend {
   forget(principalId: string): Promise<void>;
   /** Remove an account's keys unless the server confirmed them. */
   forgetUnconfirmed(principalId: string): Promise<void>;
+  /** Ask the platform to keep the keys' storage; the answer says whether it will. */
+  persistStorage(): Promise<StoragePersistence>;
+
+  // ─── Enrollment and key-only signup ───────────────────────────────────────
+
+  /** Create the identity, recovery and device keys of a new identity, held as a draft. */
+  beginEnrollment(deviceName: string): Promise<EnrollmentDraft>;
+  /** Store a draft's keys for `account`, then sign what `enrollIdentityKey` needs. */
+  signEnrollment(
+    draftId: string,
+    account: ServerAccount,
+    challenge: KeyChallenge,
+  ): Promise<EnrollmentStatements>;
+  /** Store a draft's keys for a new account `username`, then sign what `signupWithKey` needs. */
+  signSignup(
+    draftId: string,
+    endpoint: string,
+    username: string,
+    challenge: KeyChallenge,
+  ): Promise<EnrollmentStatements>;
+  /** Remove the keys a refused attempt stored, keeping the draft for a retry. */
+  removeDraftKeys(draftId: string): Promise<void>;
+  /** Store a draft's keys again for a signup the server took after they were removed. */
+  restoreDraftKeys(draftId: string, endpoint: string, username: string): Promise<void>;
+  /** Drop a draft, with any keys it stored that the server never confirmed. */
+  discardEnrollment(draftId: string): Promise<void>;
+
+  // ─── The recovery kit ─────────────────────────────────────────────────────
+
+  /**
+   * The recovery kit of `principalId`'s identity while the person has not confirmed saving it;
+   * `null` once confirmed, or where this device does not keep it.
+   */
+  recoveryKit(principalId: string): Promise<RecoveryKitText | null>;
+  /** The person saved the kit: this device stops keeping its secret. */
+  confirmRecoveryKit(principalId: string): Promise<void>;
+
+  // ─── The identity holder ──────────────────────────────────────────────────
+
+  /** Verify the server's key log and settle a pending rotation against it. */
+  syncLog(principalId: string, keyLog: SignedStatementInput[]): Promise<LogStatus>;
+  /** Revoke `deviceId`: this device's own with its device key, others with the identity key. */
+  signRevocation(
+    principalId: string,
+    keyLog: SignedStatementInput[],
+    deviceId: string,
+  ): Promise<SignedStatementInput>;
+  /** A new identity key, stored as pending, and the rotation entry the current one signs. */
+  beginRotation(principalId: string, keyLog: SignedStatementInput[]): Promise<SignedStatementInput>;
+  /** A profile card at the log's head. */
+  signProfileCard(
+    principalId: string,
+    keyLog: SignedStatementInput[],
+    card: CardContent,
+  ): Promise<SignedStatementInput>;
+  /**
+   * Take an account back with its recovery kit (a kit of either version, a bare phrase or a
+   * bare `RK1-` key): a new identity key and device key, stored, and the recovery rotation and
+   * certificate they need.
+   */
+  beginRecovery(
+    endpoint: string,
+    kit: string,
+    accountId: string | null,
+    keyLog: SignedStatementInput[],
+    deviceName: string,
+  ): Promise<RecoveryStatements>;
+  /** Undo a recovery the server refused, putting back any keys it replaced. */
+  discardRecovery(principalId: string, deviceId: string): Promise<void>;
+
+  // ─── Device linking, old device ───────────────────────────────────────────
+
+  /** Make the code for the link `startDeviceLink` opened; the secret stays here. */
+  linkBegin(principalId: string, endpoint: string, linkId: string): Promise<IssuedCode>;
+  /** Open the offer and check it against `myKeyIdentity`'s log and devices. */
+  linkReviewOffer(
+    linkId: string,
+    keyLog: SignedStatementInput[],
+    devices: KnownDevice[],
+    offer: SealedMessageInput,
+  ): Promise<OfferToConfirm>;
+  /** Sign the certificate, seal the answer and write the pending link, before `addDeviceKey`. */
+  linkConfirm(
+    linkId: string,
+    keyLog: SignedStatementInput[],
+    deviceName: string,
+  ): Promise<LinkAnswer>;
+  /** Pending links on `endpoint` not live in this run; empty when they cannot be read. */
+  linkPending(endpoint: string): Promise<PendingLink[]>;
+  /** Carry on a pending link: its certificate and sealed answer, as first sent. */
+  linkResume(linkId: string): Promise<LinkAnswer>;
+
+  // ─── Device linking, new device ───────────────────────────────────────────
+
   /** Read a pasted code for `endpoint`, make this device's key in memory, seal the offer. */
   linkOffer(endpoint: string, code: string, deviceName: string): Promise<SentOffer>;
   /** Open the answer; returns the account whose key log must verify its certificate. */
   linkOpenAnswer(linkId: string, answer: SealedMessageInput): Promise<{ principalId: string }>;
   /** Verify the certificate against the account's key log and store this device's key. */
   linkAccept(linkId: string, keyLog: SignedStatementInput[]): Promise<LinkedDevice>;
-  /** Forget a link and any key it holds in memory. */
+  /** Either side: forget a link, its secret, an unsaved key and its pending record. */
   linkEnd(linkId: string): Promise<void>;
 }
 
@@ -102,7 +293,14 @@ export async function keyCommand<T>(
   throw new Error(result.error.message);
 }
 
-/** The desktop app's keys, in the secret vault behind the Tauri side's `key_identity` commands. */
+async function done(command: string, args: Record<string, unknown>): Promise<void> {
+  await keyCommand<null>(command, args);
+}
+
+/**
+ * The desktop app's keys, in the secret vault behind the Tauri side's `key_identity` commands.
+ * The vault keeps no recovery kit: the desktop shows it once, from the draft.
+ */
 export const tauriKeyBackend: KeyBackend = {
   async accounts(endpoint) {
     const result = await safeInvoke<LocalKeyAccount[]>("key_identity_accounts", { endpoint });
@@ -115,20 +313,53 @@ export const tauriKeyBackend: KeyBackend = {
   signLogin: (endpoint, principalId, challenge) =>
     keyCommand("key_identity_sign_login", { endpoint, principalId, challenge }),
   settle: (account, principalId) => keyCommand("key_identity_settle", { account, principalId }),
-  forget: async (principalId) => {
-    await keyCommand<null>("key_identity_forget", { principalId });
+  forget: (principalId) => done("key_identity_forget", { principalId }),
+  forgetUnconfirmed: (principalId) => done("key_identity_forget_unconfirmed", { principalId }),
+  persistStorage: async () => "persisted",
+
+  beginEnrollment: (deviceName) => keyCommand("key_identity_begin_enrollment", { deviceName }),
+  signEnrollment: (draftId, account, challenge) =>
+    keyCommand("key_identity_sign_enrollment", { draftId, account, challenge }),
+  signSignup: (draftId, endpoint, username, challenge) =>
+    keyCommand("key_identity_sign_signup", { draftId, endpoint, username, challenge }),
+  removeDraftKeys: (draftId) => done("key_identity_remove_draft_keys", { draftId }),
+  restoreDraftKeys: (draftId, endpoint, username) =>
+    done("key_identity_restore_draft_keys", { draftId, endpoint, username }),
+  discardEnrollment: (draftId) => done("key_identity_discard_enrollment", { draftId }),
+
+  recoveryKit: async () => null,
+  confirmRecoveryKit: async () => undefined,
+
+  syncLog: (principalId, keyLog) => keyCommand("key_identity_sync_log", { principalId, keyLog }),
+  signRevocation: (principalId, keyLog, deviceId) =>
+    keyCommand("key_identity_sign_revocation", { principalId, keyLog, deviceId }),
+  beginRotation: (principalId, keyLog) =>
+    keyCommand("key_identity_begin_rotation", { principalId, keyLog }),
+  signProfileCard: (principalId, keyLog, card) =>
+    keyCommand("key_identity_sign_profile_card", { principalId, keyLog, card }),
+  beginRecovery: (endpoint, kit, accountId, keyLog, deviceName) =>
+    keyCommand("key_identity_begin_recovery", { endpoint, kit, accountId, keyLog, deviceName }),
+  discardRecovery: (principalId, deviceId) =>
+    done("key_identity_discard_recovery", { principalId, deviceId }),
+
+  linkBegin: (principalId, endpoint, linkId) =>
+    keyCommand("key_identity_link_begin", { principalId, endpoint, linkId }),
+  linkReviewOffer: (linkId, keyLog, devices, offer) =>
+    keyCommand("key_identity_link_review_offer", { linkId, keyLog, devices, offer }),
+  linkConfirm: (linkId, keyLog, deviceName) =>
+    keyCommand("key_identity_link_confirm", { linkId, keyLog, deviceName }),
+  async linkPending(endpoint) {
+    const result = await safeInvoke<PendingLink[]>("key_identity_link_pending", { endpoint });
+    return result.ok ? result.value : [];
   },
-  forgetUnconfirmed: async (principalId) => {
-    await keyCommand<null>("key_identity_forget_unconfirmed", { principalId });
-  },
+  linkResume: (linkId) => keyCommand("key_identity_link_resume", { linkId }),
+
   linkOffer: (endpoint, code, deviceName) =>
     keyCommand("key_identity_link_offer", { endpoint, code, deviceName }),
   linkOpenAnswer: (linkId, answer) =>
     keyCommand("key_identity_link_open_answer", { linkId, answer }),
   linkAccept: (linkId, keyLog) => keyCommand("key_identity_link_accept", { linkId, keyLog }),
-  linkEnd: async (linkId) => {
-    await keyCommand<null>("key_identity_link_end", { linkId });
-  },
+  linkEnd: (linkId) => done("key_identity_link_end", { linkId }),
 };
 
 /** The backend of this platform: the Tauri side when it is there, the browser otherwise. */
@@ -163,7 +394,7 @@ export interface PluginManifestInput {
 
 /**
  * Sign a plugin manifest statement with the identity key at the head of `keyLog`, on the
- * Tauri side. The web app holds no identity key, so it never signs.
+ * Tauri side. The web app never publishes plugins, so it never signs one.
  */
 export function signPluginManifest(
   principalId: string,

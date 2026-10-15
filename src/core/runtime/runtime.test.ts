@@ -11,6 +11,8 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.customTitleBar).toBe(true);
     expect(caps.deviceKeys).toBe(true);
     expect(caps.identityKeys).toBe(true);
+    expect(caps.identityBackup).toBe(true);
+    expect(caps.pluginSigning).toBe(true);
   });
 
   it("returns limited capabilities for web", () => {
@@ -24,11 +26,21 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.identityKeys).toBe(false);
   });
 
-  it("gives the web a device key only in a browser that can hold one", () => {
+  it("gives the web device and identity keys only in a browser that can hold them", () => {
     expect(getRuntimeCapabilities("web", "browser").deviceKeys).toBe(true);
-    expect(getRuntimeCapabilities("web", "browser").identityKeys).toBe(false);
-    expect(getRuntimeCapabilities("web", "checking").deviceKeys).toBe(false);
-    expect(getRuntimeCapabilities("web", "unsupported").deviceKeys).toBe(false);
+    expect(getRuntimeCapabilities("web", "browser").identityKeys).toBe(true);
+    for (const store of ["checking", "unsupported"] as const) {
+      expect(getRuntimeCapabilities("web", store).deviceKeys).toBe(false);
+      expect(getRuntimeCapabilities("web", store).identityKeys).toBe(false);
+    }
+  });
+
+  it("keeps the identity key backup and plugin manifest signing on the desktop", () => {
+    for (const platform of ["web", "mobile"] as const) {
+      const caps = getRuntimeCapabilities(platform, "browser", true);
+      expect(caps.identityBackup).toBe(false);
+      expect(caps.pluginSigning).toBe(false);
+    }
   });
 
   it("runs encrypted conversations on the desktop, and on the web once the browser is set up", () => {

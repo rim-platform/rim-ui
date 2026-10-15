@@ -1,7 +1,7 @@
 /**
- * The device link channel in the browser, the new device's half of the Tauri side's
- * `device_link.rs`: reading a pasted link code, the per-direction AES-256-GCM keys derived from
- * its secret with HKDF-SHA256, sealing the offer, opening the answer, and the fingerprint.
+ * The device link channel in the browser, as the Tauri side's `device_link.rs` has it: making
+ * and reading link codes, the per-direction AES-256-GCM keys derived from the code's secret with
+ * HKDF-SHA256, sealing and opening the offer and the answer, and the fingerprint.
  *
  * Channel keys are derived as non-extractable `CryptoKey`s; the secret lives only in the
  * `LinkCode` held in the page's memory.
@@ -63,6 +63,36 @@ function validEndpoint(endpoint: string): boolean {
     /^[\x21-\x7e]+$/.test(endpoint) &&
     !/[?#@]/.test(endpoint)
   );
+}
+
+/** A link id from its 22-character text. */
+export function parseLinkId(text: string): Uint8Array {
+  const linkId = decodeExact(text, LINK_ID_TEXT_LEN, 16);
+  if (!linkId) throw new LinkChannelError("the server's link id is malformed");
+  return linkId;
+}
+
+/**
+ * A new code for `linkIdText` (from `startDeviceLink`) with a fresh secret. `endpoint` is the
+ * app's absolute GraphQL endpoint; its trailing `/` is dropped.
+ */
+export function generateLinkCode(linkIdText: string, endpoint: string): LinkCode {
+  const linkId = parseLinkId(linkIdText);
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (!validEndpoint(trimmed)) {
+    throw new LinkChannelError(`this server's address cannot go into a link code: ${trimmed}`);
+  }
+  return {
+    linkId,
+    linkIdText,
+    secret: crypto.getRandomValues(new Uint8Array(32)),
+    endpoint: trimmed,
+  };
+}
+
+/** The code as shown and pasted on the new device. */
+export function formatLinkCode(code: LinkCode): string {
+  return `${SCHEME}${LINK_VERSION}:${code.linkIdText}:${b64(code.secret)}:${code.endpoint}`;
 }
 
 /** Read a code as typed or pasted: ASCII whitespace removed, scheme case ignored, strict decoding. */
@@ -215,6 +245,9 @@ export interface Offer {
   statementVersion: number;
 }
 
+/** An offer as another device sent it, before its fields are checked. */
+export type OpenedOffer = Omit<Offer, "platform"> & { platform: string };
+
 /** The offer as sealed: fields in the order that fixes its bytes. */
 export function offerPlaintext(offer: Offer): Uint8Array {
   return utf8(
@@ -226,6 +259,48 @@ export function offerPlaintext(offer: Offer): Uint8Array {
       name: offer.name,
       platform: offer.platform,
       statementVersion: offer.statementVersion,
+    }),
+  );
+}
+
+/**
+ * An opened offer. Unknown fields and a wrong version or type are refused; a malformed
+ * plaintext reads like one that did not open.
+ */
+export function parseOffer(plaintext: Uint8Array): OpenedOffer {
+  const failed = () => new LinkChannelError(NOT_OPENED);
+  let offer: unknown;
+  try {
+    offer = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(plaintext));
+  } catch {
+    throw failed();
+  }
+  const fields = ["v", "type", "deviceId", "deviceKey", "name", "platform", "statementVersion"];
+  if (!hasExactly(offer, fields)) throw failed();
+  if (offer.v !== LINK_VERSION || offer.type !== "link-offer") throw failed();
+  const { deviceId, deviceKey, name, platform, statementVersion } = offer;
+  if (
+    typeof deviceId !== "string" ||
+    typeof deviceKey !== "string" ||
+    typeof name !== "string" ||
+    typeof platform !== "string" ||
+    typeof statementVersion !== "number" ||
+    !Number.isInteger(statementVersion) ||
+    statementVersion < 0 ||
+    statementVersion > 0xffffffff
+  ) {
+    throw failed();
+  }
+  return { deviceId, deviceKey, name, platform, statementVersion };
+}
+
+/** The old device's answer as sealed: the certificate exactly as sent to `addDeviceKey`. */
+export function answerPlaintext(certificate: { payload: string; signature: string }): Uint8Array {
+  return utf8(
+    JSON.stringify({
+      v: LINK_VERSION,
+      type: "link-answer",
+      certificate: { payload: certificate.payload, signature: certificate.signature },
     }),
   );
 }

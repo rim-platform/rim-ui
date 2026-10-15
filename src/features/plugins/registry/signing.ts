@@ -76,20 +76,20 @@ export function profileCardName(identity: MyKeyIdentity): string | null {
 
 /**
  * The account's key identity and whether this device holds its identity key, which signs
- * plugin manifests. Only the desktop holds one.
+ * plugin manifests. Only the desktop signs them.
  */
 export function usePluginSigning() {
   const { capabilities } = useRuntime();
   const identity = useQuery({
     queryKey: queryKeys.myKeyIdentity,
     queryFn: fetchMyKeyIdentity,
-    enabled: capabilities.identityKeys,
+    enabled: capabilities.pluginSigning,
     retry: false,
   });
   const principalId = identity.data?.principalId ?? null;
   const holds = useQuery({
     queryKey: queryKeys.pluginSigning(principalId, identity.data?.keySeq ?? null),
-    enabled: capabilities.identityKeys && principalId !== null,
+    enabled: capabilities.pluginSigning && principalId !== null,
     retry: false,
     queryFn: async () =>
       (await syncKeyLog(identity.data as MyKeyIdentity))?.holdsIdentityKey ?? false,
