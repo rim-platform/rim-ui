@@ -135,6 +135,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- After turning on key sign-in, Settings > Security says every other session of the account was
+  signed out, which the server now does at enrollment, instead of offering to sign them out.
+  Account settings keeps "Sign out other sessions".
 - The desktop app keeps a new account's recovery kit in its encrypted secret vault, next to the
   identity key, until you confirm you saved the kit, and then deletes it, as the web app already
   does. A kit you confirm before the account is created is never written, and a recovery with

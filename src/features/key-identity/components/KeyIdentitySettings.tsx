@@ -5,7 +5,6 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
-import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { RevocationFanoutPanel } from "../../relay/components/RevocationFanoutPanel";
 import { followRevocation } from "../../relay/remote/useRevocationStore";
@@ -56,7 +55,7 @@ export function KeyIdentitySettings() {
     ? { userId: user.id, username: user.username, displayName: user.displayName || user.username }
     : null;
   // Set when this panel enrolled the account, so the overview that replaces the enrollment
-  // offers to sign out the sessions opened before the key.
+  // says the other sessions were signed out.
   const [justEnrolled, setJustEnrolled] = useState(false);
 
   return (
@@ -199,9 +198,13 @@ function KeyIdentityOverview({
           </p>
         )}
         {justEnrolled && (
-          <div className="mt-4 border-t border-rim-line pt-4">
-            <SignOutOtherSessions description="Password sessions opened before the key stay valid until they expire. Sign them out so only your keys get in." />
-          </div>
+          <p
+            role="status"
+            className="mt-4 border-t border-rim-line pt-4 text-xs text-rim-text-muted"
+          >
+            Every other session of your account was signed out, so from now on only your keys get
+            in.
+          </p>
         )}
       </div>
 
