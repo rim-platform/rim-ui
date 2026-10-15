@@ -64,7 +64,7 @@ export function KeyIdentitySettings() {
       <div>
         <h2 className="text-base font-semibold text-rim-text">Security</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Sign in with a key kept on this computer instead of a password. Your account gets a
+          Sign in with a key kept on this device instead of a password. Your account gets a
           permanent account id that stays the same when keys change, and a recovery kit gets it back
           if every device is lost.
         </p>
@@ -113,6 +113,7 @@ function KeyIdentityOverview({
   justEnrolled: boolean;
 }) {
   const qc = useQueryClient();
+  const here = useRuntime().platform === "web" ? "browser" : "computer";
   const local = useQuery({
     queryKey: queryKeys.deviceKeyStatus(principalId, identity.keySeq),
     enabled: canSign,
@@ -185,16 +186,16 @@ function KeyIdentityOverview({
           {!canSign
             ? "This app has no keys of its own. Manage keys from the desktop app that holds them."
             : local.isPending
-              ? "Checking this computer's keys..."
+              ? `Checking this ${here}'s keys...`
               : !local.data?.deviceId
-                ? "This computer holds no key for this account. It stays signed in until its session ends."
+                ? `This ${here} holds no key for this account. It stays signed in until its session ends.`
                 : holdsIdentityKey
-                  ? "This computer holds the account's identity key, so it can manage devices."
-                  : "This computer signs in with its own key. Devices are managed from the computer that holds the identity key."}
+                  ? `This ${here} holds the account's identity key, so it can manage devices.`
+                  : "This device signs in with its own key. Devices are managed from the device that holds the identity key."}
         </p>
         {local.error && (
           <p role="alert" className="mt-2 text-xs text-rim-danger">
-            {errorText(local.error, "Could not check this computer's keys.")}
+            {errorText(local.error, `Could not check this ${here}'s keys.`)}
           </p>
         )}
         {justEnrolled && (

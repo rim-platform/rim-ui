@@ -8,8 +8,10 @@
  *   text below the form card.
  * - `OPEN`: shows a `─── OR ───` divider and a "Create account" link to
  *   `/join` instead.
- * - `POW` (a public relay): the same link in the desktop app, which signs up with a key and a
- *   proof-of-work; in the web app, copy that points to the desktop app or an invite.
+ * - `POW` (a public relay): the same link where this app can hold keys, which signs up with a
+ *   key and a proof-of-work; elsewhere, copy that points to the desktop app or an invite.
+ * - A server that takes key signups only (`serverInfo.signupRequiresKeys`) in `OPEN` mode, in a
+ *   browser that cannot create keys: copy that points to the desktop app instead of the link.
  *
  * **Session redirect:** if a session is already restored via
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
@@ -19,8 +21,8 @@
  * blocked this address, and a note when the server ended the last session.
  *
  * **Key sign-in:** above the password form, "Sign in with this device" for each account this
- * computer, or this browser once linked, holds a key for; below it, "Link this device" with a
- * code from another device and, on the desktop, recovery with a recovery kit.
+ * computer, or this browser, holds a key for; below it, "Link this device" with a code from
+ * another device and, where this app can hold an identity key, recovery with a recovery kit.
  */
 
 import { useEffect } from "react";
@@ -30,6 +32,7 @@ import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
 import { ADDRESS_BLOCKED_MESSAGE } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useAuthStore } from "../state/useAuthStore";
 import { useSessionHydration } from "../api/useSessionHydration";
 import { useServerConfig } from "../api/useServerConfig";
@@ -53,7 +56,8 @@ export function LoginPage() {
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const { data: serverConfig } = useServerConfig();
-  const { capabilities } = useRuntime();
+  const { capabilities, deviceKeyStore } = useRuntime();
+  const keysRequired = useServerInfo().signupRequiresKeys === true;
   const blocked = useEdgeStore((s) => s.blocked);
   const sessionEnded = useAuthStore((s) => s.sessionEnded);
 
@@ -76,9 +80,13 @@ export function LoginPage() {
 
   const registrationMode = serverConfig?.registrationMode;
   const isPow = registrationMode === RegistrationMode.POW;
-  // A relay in pow mode takes key-only signups without an invite, which the desktop app makes.
+  // While the browser is probed, the join page says whether it can sign up.
+  const noKeysHere = !capabilities.identityKeys && deviceKeyStore !== "checking";
+  const keyOnlyHere = registrationMode === RegistrationMode.OPEN && keysRequired && noKeysHere;
+  // A relay in pow mode takes key-only signups without an invite, which needs keys here.
   const canCreate =
-    registrationMode === RegistrationMode.OPEN || (isPow && capabilities.identityKeys);
+    (registrationMode === RegistrationMode.OPEN && !keyOnlyHere) ||
+    (isPow && capabilities.identityKeys);
 
   function handleLoginSuccess(userId: string) {
     setSession({ userId });
@@ -144,6 +152,11 @@ export function LoginPage() {
               Create account
             </Link>
           </div>
+        ) : keyOnlyHere ? (
+          <p className="text-center text-xs text-rim-text-muted">
+            No account? This server signs up new accounts with a key, which this browser cannot
+            create. Create one in the RIM desktop app.
+          </p>
         ) : isPow ? (
           <p className="text-center text-xs text-rim-text-muted">
             No account? Create one in the RIM desktop app, or ask for an invite.

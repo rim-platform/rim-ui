@@ -14,6 +14,9 @@ const api = vi.hoisted(() => ({
   signupWithKey: vi.fn(),
   discardKeySignup: vi.fn(),
   abandonKeySignup: vi.fn(),
+  deviceKeepsRecoveryKit: vi.fn(),
+  requestKeyStorage: vi.fn(),
+  confirmRecoveryKitSaved: vi.fn(),
 }));
 
 vi.mock("../../key-identity/api/keyIdentity", async (importOriginal) => ({
@@ -22,6 +25,9 @@ vi.mock("../../key-identity/api/keyIdentity", async (importOriginal) => ({
 }));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
+}));
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ platform: "web" }),
 }));
 
 import { KeyChallengeFailed, type KeySignupOptions } from "../../key-identity/api/keyIdentity";
@@ -99,6 +105,10 @@ describe("KeySignupForm", () => {
     api.beginEnrollment.mockResolvedValue(draft);
     api.abandonKeySignup.mockResolvedValue(undefined);
     api.discardKeySignup.mockResolvedValue(null);
+    // The desktop's vault, which keeps no kit: the kit is saved before the signup.
+    api.deviceKeepsRecoveryKit.mockReturnValue(false);
+    api.requestKeyStorage.mockResolvedValue("persisted");
+    api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
   });
 
   it("asks for a username, an optional display name and this device's name, with no password or email", async () => {
@@ -144,7 +154,7 @@ describe("KeySignupForm", () => {
     expect(api.signupWithKey).toHaveBeenCalledWith(
       draft,
       { username: "ada", instanceInviteToken: "inst-tok" },
-      expect.anything(),
+      expect.objectContaining({ recoveryKit: "saved" }),
     );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
@@ -415,6 +425,124 @@ describe("KeySignupForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not copy/i);
   });
+
+  describe("where this device keeps the recovery kit", () => {
+    beforeEach(() => {
+      api.deviceKeepsRecoveryKit.mockReturnValue(true);
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+    });
+
+    /** Fill in the name and create the account, which makes the keys first. */
+    async function createAccount(user: ReturnType<typeof userEvent.setup>) {
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+      expect(screen.queryByRole("button", { name: /create keys/i })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+    }
+
+    it("creates the account first, then shows the kit, and opens the account once it is saved", async () => {
+      const user = userEvent.setup();
+      const { onSuccess, onBusyChange } = renderForm();
+
+      await createAccount(user);
+
+      expect(api.signupWithKey).toHaveBeenCalledWith(
+        draft,
+        { username: "ada", instanceInviteToken: "inst-tok" },
+        expect.objectContaining({ recoveryKit: "later" }),
+      );
+      expect(await screen.findByText("Your account is ready.")).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText("Recovery phrase")).getAllByRole("listitem"),
+      ).toHaveLength(12);
+      expect(screen.getByText(/second device also keeps you signed in/i)).toBeInTheDocument();
+      // The page keeps the form while the kit is on screen.
+      expect(onBusyChange).toHaveBeenLastCalledWith(true);
+      expect(onSuccess).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "I saved it" }));
+      expect(api.confirmRecoveryKitSaved).toHaveBeenCalledWith("rimp1_ada");
+      expect(await screen.findByText("Recovery kit saved")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Done" }));
+
+      expect(onSuccess).toHaveBeenCalledWith("u-ada", null);
+      expect(onBusyChange).toHaveBeenLastCalledWith(false);
+      expect(api.abandonKeySignup).not.toHaveBeenCalled();
+    });
+
+    it("opens the account on Later without confirming the kit", async () => {
+      const user = userEvent.setup();
+      const { onSuccess } = renderForm();
+
+      await createAccount(user);
+      await user.click(await screen.findByRole("button", { name: "Later" }));
+
+      expect(onSuccess).toHaveBeenCalledWith("u-ada", null);
+      expect(api.confirmRecoveryKitSaved).not.toHaveBeenCalled();
+    });
+
+    it("keeps the keys after a refusal and retries with them, showing no kit yet", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockRejectedValueOnce(serverError("CONFLICT", "username taken"));
+      renderForm();
+
+      await createAccount(user);
+
+      expect(await screen.findByText(/username is taken/i)).toBeInTheDocument();
+      expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
+      await user.type(screen.getByLabelText(/^username/i), "2");
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.beginEnrollment).toHaveBeenCalledTimes(1);
+      expect(api.signupWithKey).toHaveBeenLastCalledWith(
+        draft,
+        expect.objectContaining({ username: "ada2" }),
+        expect.objectContaining({ recoveryKit: "later" }),
+      );
+      expect(await screen.findByText("Your account is ready.")).toBeInTheDocument();
+    });
+  });
+
+  it("warns when the browser refuses to keep its data, and makes keys only once accepted", async () => {
+    const user = userEvent.setup();
+    api.requestKeyStorage.mockResolvedValue("refused");
+    renderForm();
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await user.type(screen.getByLabelText(/^username/i), "ada");
+
+    await user.click(screen.getByRole("button", { name: /create keys/i }));
+    const prompt = await screen.findByRole("alertdialog");
+    expect(prompt).toHaveTextContent(/may clear it/i);
+    expect(prompt).toHaveTextContent(/recovery kit is then the only way back/i);
+    expect(api.beginEnrollment).not.toHaveBeenCalled();
+
+    await user.click(within(prompt).getByRole("button", { name: "Go back" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(api.beginEnrollment).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /create keys/i }));
+    await user.click(await screen.findByRole("button", { name: "Continue anyway" }));
+    expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
+    expect(api.beginEnrollment).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["persisted", "unavailable"])(
+    "makes keys without asking when the browser answers %s",
+    async (answer) => {
+      const user = userEvent.setup();
+      api.requestKeyStorage.mockResolvedValue(answer);
+      renderForm();
+
+      await reachKit(user);
+
+      expect(api.requestKeyStorage).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    },
+  );
 
   describe("terms of service", () => {
     const TERMS = "https://acme.example/terms";

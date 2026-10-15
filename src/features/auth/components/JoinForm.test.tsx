@@ -35,10 +35,13 @@ vi.mock("../api/useSignupWithInviteMutation", () => ({
   }),
 }));
 
-const desktop = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: false, probing: false }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
+  useRuntime: () => ({
+    deviceKeyStore: desktop.value ? "keyring" : desktop.probing ? "checking" : "unsupported",
+    capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value },
+  }),
 }));
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
@@ -52,6 +55,7 @@ import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 // The web app, unless a test says otherwise.
 beforeEach(() => {
   desktop.value = false;
+  desktop.probing = false;
 });
 
 /** Renders `JoinForm` inside a router so any internal Links don't break. */
@@ -307,6 +311,69 @@ describe("JoinForm — INSTANCE token routing", () => {
 
     expect(screen.getByText(refusal)).toBeInTheDocument();
     expect(screen.queryByText(/"response"/)).toBeNull();
+  });
+
+  it("(h) shows the server's message when it refuses password signups", async () => {
+    const refusal = "password signup is turned off on this server; sign up with a key";
+    const err = Object.assign(new Error(refusal), {
+      response: { errors: [{ message: refusal, extensions: { code: "FORBIDDEN" } }] },
+    });
+    mockSignupMutate.mockImplementation(
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => opts.onError(err),
+    );
+
+    const user = userEvent.setup();
+    renderInstanceJoinForm();
+    await fillAndSubmit(user);
+
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+  });
+});
+
+describe("JoinForm — a server that takes key signups only", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function renderKeysRequired(details: FakeServerDetails = { signupRequiresKeys: true }) {
+    return renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm variant={InviteTokenType.INSTANCE} token="inst-tok" onSuccess={vi.fn()} />
+      </MemoryRouter>,
+      details,
+    );
+  }
+
+  it("offers only the key signup where this app can hold keys", () => {
+    desktop.value = true;
+    renderKeysRequired();
+
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({
+      instanceInviteToken: "inst-tok",
+    });
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(screen.queryByRole("button", { name: /with a password/i })).toBeNull();
+    expect(screen.queryByText(/a password account can add a key later/i)).toBeNull();
+  });
+
+  it("says this browser cannot create keys and points to the desktop app, with no form", () => {
+    renderKeysRequired();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/this server needs a key signup/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/this browser cannot create keys/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/RIM desktop app/);
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(screen.queryByTestId("key-signup")).toBeNull();
+    expect(screen.queryByRole("button", { name: /create account/i })).toBeNull();
+  });
+
+  it("shows no password form while the browser is still being checked for keys", () => {
+    desktop.probing = true;
+    renderKeysRequired();
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
+    expect(screen.queryByTestId("key-signup")).toBeNull();
   });
 });
 

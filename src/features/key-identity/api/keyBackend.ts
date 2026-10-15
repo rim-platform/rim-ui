@@ -209,6 +209,11 @@ export interface KeyBackend {
   // ─── The recovery kit ─────────────────────────────────────────────────────
 
   /**
+   * Whether this device keeps a new identity's recovery kit until the person confirms saving
+   * it, so a signup or enrollment may be sent before the kit is saved and the kit shown after.
+   */
+  readonly keepsRecoveryKit: boolean;
+  /**
    * The recovery kit of `principalId`'s identity while the person has not confirmed saving it;
    * `null` once confirmed, or where this device does not keep it.
    */
@@ -327,6 +332,9 @@ export const tauriKeyBackend: KeyBackend = {
     done("key_identity_restore_draft_keys", { draftId, endpoint, username }),
   discardEnrollment: (draftId) => done("key_identity_discard_enrollment", { draftId }),
 
+  // The vault does not keep the kit yet: the kit is saved before the signup or enrollment is
+  // sent. Vault support lands separately and turns this on.
+  keepsRecoveryKit: false,
   recoveryKit: async () => null,
   confirmRecoveryKit: async () => undefined,
 

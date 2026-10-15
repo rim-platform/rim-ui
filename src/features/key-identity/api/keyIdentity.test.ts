@@ -247,6 +247,13 @@ describe("enrollment", () => {
     expect(commands()).toContain("key_identity_settle");
   });
 
+  it("refuses to enroll with the kit unsaved where the device does not keep it", async () => {
+    backend({}, {});
+    await expect(completeEnrollment(draft, ACCOUNT, "later")).rejects.toThrow(/recovery kit/i);
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(commands()).toEqual([]);
+  });
+
   it("fails, keeping the draft, when the server refused it", async () => {
     backend(
       {

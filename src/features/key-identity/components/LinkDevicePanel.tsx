@@ -181,7 +181,7 @@ export function LinkDevicePanel({
         <div>
           <p className="text-sm font-medium text-rim-text">Link a device</p>
           <p className="mt-1 text-xs text-rim-text-muted">
-            Give another computer its own key for this account. On it, choose &quot;Link this
+            Give another device its own key for this account. On it, choose &quot;Link this
             device&quot; on the sign-in screen and paste the code shown here.
           </p>
         </div>

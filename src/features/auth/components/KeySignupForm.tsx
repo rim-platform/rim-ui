@@ -19,6 +19,7 @@ import {
   abandonKeySignup,
   beginEnrollment,
   defaultDeviceName,
+  deviceKeepsRecoveryKit,
   discardKeySignup,
   KeyChallengeFailed,
   proofOfWorkRefused,
@@ -27,7 +28,9 @@ import {
   type KeySignupFields,
   type KeySignupResult,
 } from "../../key-identity/api/keyIdentity";
+import { RecoveryKitScreen } from "../../key-identity/components/RecoveryKitScreen";
 import { SaveRecoveryKit } from "../../key-identity/components/SaveRecoveryKit";
+import { useKeyStorageConsent } from "../../key-identity/components/useKeyStorageConsent";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { useSignupTerms } from "../api/useSignupTerms";
 import { checkDisplayName } from "../displayName";
@@ -148,12 +151,15 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
 }
 
 /**
- * Creates an account from a key kept on this computer, with no password and no email: the
- * person picks a username, saves the recovery kit of the new keys, and the account is created
- * with them. On a relay that asks for a proof-of-work instead of an invite, this device finds
- * it first, which the person can cancel. A server with terms of service has the person accept
+ * Creates an account from a key kept on this device, with no password and no email: the person
+ * picks a username and the account is created with new keys. Where this device keeps the
+ * recovery kit until it is confirmed, the account is created first and the kit shown after;
+ * elsewhere the person saves the kit before the account is created. Before any key is made the
+ * browser is asked to keep this site's data, and a refusal needs the person's go-ahead. On a
+ * relay that asks for a proof-of-work instead of an invite, this device finds it first, which
+ * the person can cancel. A server with terms of service has the person accept
  * them before the keys are made. After a refusal they can try again with the same keys,
- * so the saved kit stays valid, or discard the keys. Only where this app can hold an identity
+ * so a saved kit stays valid, or discard the keys. Only where this app can hold an identity
  * key.
  */
 export function KeySignupForm({
@@ -163,6 +169,9 @@ export function KeySignupForm({
   onBusyChange,
 }: KeySignupFormProps) {
   const qc = useQueryClient();
+  // Read once: the form follows one flow from start to end.
+  const [kitAfter] = useState(deviceKeepsRecoveryKit);
+  const storage = useKeyStorageConsent();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -174,6 +183,9 @@ export function KeySignupForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [proving, setProving] = useState<Proving | null>(null);
+  // The account created with the kit still to save, shown until the person closes the kit.
+  const [created, setCreated] = useState<KeySignupResult | null>(null);
+  const createdRef = useRef(false);
   const terms = useSignupTerms();
   // The draft to give up on if the page closes before the account is created.
   const pending = useRef<EnrollmentDraft | null>(null);
@@ -194,7 +206,8 @@ export function KeySignupForm({
 
   function working(value: boolean) {
     setBusy(value);
-    onBusyChange?.(value);
+    // The page keeps this form while the new account's kit is on screen, too.
+    onBusyChange?.(value || createdRef.current);
   }
 
   /** Open the new account the way the page opens a password signup's. */
@@ -209,14 +222,29 @@ export function KeySignupForm({
     onSuccess(userId, serverId ?? (tokens.workspaceInviteToken ? (workspaceId ?? null) : null));
   }
 
-  async function createKeys() {
+  /** The new keys, or `null` when they were not made (the person went back, or it failed). */
+  async function createKeys(): Promise<EnrollmentDraft | null> {
+    if (!(await storage.ensure())) return null;
     try {
       const next = await beginEnrollment(deviceName);
       pending.current = next;
       setDraft(next);
+      return next;
     } catch (err) {
       setFormError(graphqlErrorMessage(err, "Could not create the keys."));
+      return null;
     }
+  }
+
+  /** The account exists: open it now, or once the person is done with the kit. */
+  function accountCreated(result: KeySignupResult) {
+    if (!kitAfter) {
+      finish(result);
+      return;
+    }
+    pending.current = null;
+    createdRef.current = true;
+    setCreated(result);
   }
 
   async function createAccount(current: EnrollmentDraft) {
@@ -224,7 +252,7 @@ export function KeySignupForm({
     const stop = new AbortController();
     stopProof.current = stop;
     try {
-      finish(
+      accountCreated(
         await signupWithKey(
           current,
           {
@@ -236,6 +264,7 @@ export function KeySignupForm({
           {
             onProofOfWork: (bits) => setProving({ bits, startedAt: Date.now() }),
             signal: stop.signal,
+            recoveryKit: kitAfter ? "later" : "saved",
           },
         ),
       );
@@ -265,8 +294,13 @@ export function KeySignupForm({
     }
     working(true);
     try {
-      if (draft) await createAccount(draft);
-      else await createKeys();
+      if (draft) {
+        await createAccount(draft);
+      } else {
+        const next = await createKeys();
+        // Where the kit is shown after, the account is created with the new keys right away.
+        if (next && kitAfter) await createAccount(next);
+      }
     } finally {
       working(false);
     }
@@ -279,9 +313,9 @@ export function KeySignupForm({
     working(true);
     try {
       // An attempt that failed here may have created the account after all: then it is opened.
-      const created = await discardKeySignup(current);
-      if (created) {
-        finish(created);
+      const found = await discardKeySignup(current);
+      if (found) {
+        accountCreated(found);
         return;
       }
     } catch (err) {
@@ -298,14 +332,30 @@ export function KeySignupForm({
   const canSubmit =
     terms.satisfied &&
     (draft
-      ? saved && username.trim().length > 0
+      ? (kitAfter || saved) && username.trim().length > 0
       : username.trim().length > 0 && deviceName.trim().length > 0);
+
+  if (created && draft) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-rim-text-muted">Your account is ready.</p>
+        <RecoveryKitScreen
+          kit={draft}
+          onClose={() => {
+            createdRef.current = false;
+            onBusyChange?.(false);
+            finish(created);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
       <p className="text-sm text-rim-text-muted">
-        No password and no email: this computer keeps a key that signs you in, and a recovery kit
-        gets the account back if you lose it.
+        No password and no email: this device keeps a key that signs you in, and a recovery kit gets
+        the account back if you lose it.
       </p>
       <JoinField
         label="Username"
@@ -339,7 +389,9 @@ export function KeySignupForm({
           required
         />
       )}
-      {draft && <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />}
+      {draft && !kitAfter && (
+        <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />
+      )}
       <TermsAcceptance terms={terms} disabled={busy} />
       {proving && (
         <ProofOfWorkStatus proving={proving} onCancel={() => stopProof.current?.abort()} />
@@ -357,6 +409,7 @@ export function KeySignupForm({
           )}
         </div>
       )}
+      {storage.prompt}
       {draft ? (
         <div className="flex gap-2">
           <Button type="submit" className="flex-1" isLoading={busy} disabled={!canSubmit}>
@@ -368,7 +421,7 @@ export function KeySignupForm({
         </div>
       ) : (
         <Button type="submit" className="w-full" isLoading={busy} disabled={!canSubmit}>
-          Create keys
+          {kitAfter ? "Create account" : "Create keys"}
         </Button>
       )}
     </form>

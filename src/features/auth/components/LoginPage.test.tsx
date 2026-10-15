@@ -153,6 +153,24 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
   });
 
+  it("points a browser without keys to the desktop app on an open server that takes key signups only", () => {
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "OPEN" },
+      isPending: false,
+      isError: false,
+    });
+    const { unmount } = renderPage({}, { signupRequiresKeys: true });
+    expect(screen.getByText(/signs up new accounts with a key/i)).toHaveTextContent(
+      /RIM desktop app/,
+    );
+    expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
+    unmount();
+
+    desktop.value = true;
+    renderPage({}, { signupRequiresKeys: true });
+    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
+  });
+
   it("hides the Create account link while registrationMode is loading — defaults to invite-only", () => {
     mockUseServerConfig.mockReturnValue({
       data: undefined,

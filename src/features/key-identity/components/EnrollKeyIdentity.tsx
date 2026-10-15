@@ -4,17 +4,21 @@ import { KeyRound } from "lucide-react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import {
   abandonEnrollment,
   beginEnrollment,
   completeEnrollment,
   defaultDeviceName,
+  deviceKeepsRecoveryKit,
   reconcileDeviceKeys,
   type EnrollmentDraft,
   type KeyAccount,
 } from "../api/keyIdentity";
+import { RecoveryKitScreen } from "./RecoveryKitScreen";
 import { SaveRecoveryKit } from "./SaveRecoveryKit";
+import { useKeyStorageConsent } from "./useKeyStorageConsent";
 
 const inputClass =
   "mt-2 w-full rounded-md border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
@@ -24,12 +28,15 @@ export interface Me extends KeyAccount {
   displayName: string;
 }
 
-type EnrollStep = "intro" | "kit" | "done";
+/** `kit` saves the kit before enrolling; `savedLater` shows it after, where the device keeps it. */
+type EnrollStep = "intro" | "kit" | "savedLater" | "done";
 
 /**
- * Enroll the signed-in account: what changes, the device name, the keys, the recovery kit shown
- * once, and the enrollment once the person saved it. `onLater` adds a "Later" button to the
- * first screen.
+ * Enroll the signed-in account: what changes, the device name, the keys and the recovery kit.
+ * Where this device keeps the kit until it is confirmed, the account is enrolled first and the
+ * kit shown after; elsewhere the kit is shown once and the enrollment sent when the person saved
+ * it. Before any key is made the browser is asked to keep this site's data, and a refusal needs
+ * the person's go-ahead. `onLater` adds a "Later" button to the first screen.
  */
 export function EnrollKeyIdentity({
   me,
@@ -47,6 +54,10 @@ export function EnrollKeyIdentity({
   onLater?: () => void;
 }) {
   const qc = useQueryClient();
+  const { platform } = useRuntime();
+  // Read once: the panel follows one flow from start to end.
+  const [kitAfter] = useState(deviceKeepsRecoveryKit);
+  const storage = useKeyStorageConsent();
   const [step, setStep] = useState<EnrollStep>("intro");
   const [deviceName, setDeviceName] = useState("");
   const [draft, setDraft] = useState<EnrollmentDraft | null>(null);
@@ -59,6 +70,9 @@ export function EnrollKeyIdentity({
   useEffect(() => {
     meRef.current = me;
   }, [me]);
+  // Set while the account is enrolled and its kit still on screen; runs `finished` if the panel
+  // closes first.
+  const enrolledUnfinished = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,19 +84,58 @@ export function EnrollKeyIdentity({
     return () => {
       cancelled = true;
       if (pending.current) void abandonEnrollment(pending.current, meRef.current);
+      enrolledUnfinished.current?.();
     };
   }, []);
+
+  /** The keys are enrolled and the kit dealt with: the phrase leaves memory here. */
+  function finished() {
+    enrolledUnfinished.current = null;
+    setDraft(null);
+    setStep("done");
+    onEnrolled();
+    void qc.invalidateQueries({ queryKey: queryKeys.me });
+    void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
+  }
+
+  /** Enroll with `current`; where the kit is shown after, show it, else finish. */
+  async function send(current: EnrollmentDraft) {
+    try {
+      await completeEnrollment(current, me, kitAfter ? "later" : "saved");
+      pending.current = null;
+      if (kitAfter) {
+        enrolledUnfinished.current = finished;
+        setStep("savedLater");
+      } else {
+        finished();
+      }
+    } catch (err) {
+      // The draft stays: trying again uses the same keys, so a saved kit stays valid.
+      setError(graphqlErrorMessage(err, "The server did not accept the keys."));
+    }
+  }
 
   async function createKeys() {
     setBusy(true);
     setError(null);
     try {
-      const next = await beginEnrollment(deviceName);
+      // A retry after a refusal uses the keys already made.
+      if (pending.current && kitAfter) {
+        await send(pending.current);
+        return;
+      }
+      if (!(await storage.ensure())) return;
+      let next: EnrollmentDraft;
+      try {
+        next = await beginEnrollment(deviceName);
+      } catch (err) {
+        setError(graphqlErrorMessage(err, "Could not create the keys."));
+        return;
+      }
       pending.current = next;
       setDraft(next);
-      setStep("kit");
-    } catch (err) {
-      setError(graphqlErrorMessage(err, "Could not create the keys."));
+      if (kitAfter) await send(next);
+      else setStep("kit");
     } finally {
       setBusy(false);
     }
@@ -93,17 +146,7 @@ export function EnrollKeyIdentity({
     setBusy(true);
     setError(null);
     try {
-      await completeEnrollment(draft, me);
-      pending.current = null;
-      // The kit is saved and the keys are enrolled: the phrase leaves memory here.
-      setDraft(null);
-      setStep("done");
-      onEnrolled();
-      void qc.invalidateQueries({ queryKey: queryKeys.me });
-      void qc.invalidateQueries({ queryKey: queryKeys.myKeyIdentity });
-    } catch (err) {
-      // The draft stays: trying again uses the same keys, so the saved kit stays valid.
-      setError(graphqlErrorMessage(err, "The server did not accept the keys."));
+      await send(draft);
     } finally {
       setBusy(false);
     }
@@ -122,6 +165,18 @@ export function EnrollKeyIdentity({
     return <p className="text-sm text-rim-text-muted">Key sign-in is on. Loading your keys...</p>;
   }
 
+  const here = platform === "web" ? "this browser" : "this computer";
+  const Here = platform === "web" ? "This browser" : "This computer";
+
+  if (step === "savedLater" && draft) {
+    return (
+      <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
+        <p className="text-sm text-rim-text-muted">Key sign-in is on.</p>
+        <RecoveryKitScreen kit={draft} onClose={finished} />
+      </div>
+    );
+  }
+
   if (step === "intro") {
     return (
       <div className="space-y-4 rounded-lg border border-rim-line bg-rim-panel p-4">
@@ -134,12 +189,13 @@ export function EnrollKeyIdentity({
             <ul className="list-disc space-y-1 pl-5">
               <li>Your password stops working, here and in the web app.</li>
               <li>
-                This computer signs in with its key. Other desktops get keys of their own when you
-                link them from here; until then, they stay signed in only until their session ends.
+                {Here} signs in with its key. Other devices get keys of their own when you link them
+                from here. Other sessions of this account are signed out.
               </li>
               <li>
-                You get a recovery kit, shown once. Without it, losing this computer means losing
-                the account.
+                {kitAfter
+                  ? `You get a recovery kit to save. Without it, losing ${here} means losing the account.`
+                  : `You get a recovery kit, shown once. Without it, losing ${here} means losing the account.`}
               </li>
             </ul>
           </div>
@@ -158,9 +214,10 @@ export function EnrollKeyIdentity({
             {error}
           </p>
         )}
+        {storage.prompt}
         <div className="flex gap-2">
           <Button onClick={() => void createKeys()} isLoading={busy} disabled={!deviceName.trim()}>
-            Create keys
+            {kitAfter ? finishLabel : "Create keys"}
           </Button>
           {onLater && (
             <Button variant="secondary" onClick={onLater} disabled={busy}>

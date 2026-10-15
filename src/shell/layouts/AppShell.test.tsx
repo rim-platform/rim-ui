@@ -122,6 +122,9 @@ vi.mock("../../features/system/components/ConnectionBanner", () => ({
 vi.mock("../../features/limits/components/ProbationBanner", () => ({
   ProbationBanner: () => null,
 }));
+vi.mock("../../features/key-identity/components/RecoveryKitBanner", () => ({
+  RecoveryKitBanner: () => null,
+}));
 vi.mock("../../features/account-deletion/components/AccountDeletionBanner", () => ({
   AccountDeletionBanner: () => null,
 }));

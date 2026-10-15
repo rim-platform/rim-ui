@@ -21,6 +21,9 @@ const api = vi.hoisted(() => ({
   beginEnrollment: vi.fn(),
   completeEnrollment: vi.fn(),
   abandonEnrollment: vi.fn(),
+  deviceKeepsRecoveryKit: vi.fn(),
+  requestKeyStorage: vi.fn(),
+  confirmRecoveryKitSaved: vi.fn(),
   syncKeyLog: vi.fn(),
   settleDeviceKeys: vi.fn(),
   revokeDevice: vi.fn(),
@@ -110,6 +113,9 @@ describe("KeyIdentitySettings", () => {
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.abandonEnrollment.mockResolvedValue(undefined);
+    api.deviceKeepsRecoveryKit.mockReturnValue(false);
+    api.requestKeyStorage.mockResolvedValue("persisted");
+    api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
     api.profileCardIsStale.mockReturnValue(false);
     api.publishProfileCard.mockResolvedValue(undefined);
   });
@@ -137,6 +143,7 @@ describe("KeyIdentitySettings", () => {
     expect(api.completeEnrollment).toHaveBeenCalledWith(
       enrollmentDraft,
       expect.objectContaining(KEY_ACCOUNT),
+      "saved",
     );
     // Once enrolled, the phrase is no longer on screen.
     await waitFor(() => expect(screen.queryByLabelText("Recovery phrase")).toBeNull());

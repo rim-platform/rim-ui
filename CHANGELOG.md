@@ -57,6 +57,18 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- On a server that takes key signups only (rim-server's default from this release), the join
+  pages offer only "Create account with a key". A browser that cannot create keys says so and
+  points to the desktop app instead of showing a password form, and the sign-in page does the
+  same in place of its "Create account" link.
+- In the web app, a key signup or enrollment creates the account first and shows the recovery
+  kit after it, with "I saved it" and "Later". Until the kit is confirmed, a bar across the app
+  says "Save your recovery kit" and reopens it. The desktop app still has the kit saved before
+  the account is created.
+- Before the web app creates keys, it asks the browser to keep this site's data. When the
+  browser refuses, it says the recovery kit would then be the only way back and goes on only if
+  the person accepts.
+- The recovery kit screens suggest linking a second device from Settings > Security.
 - The web app can hold an account's identity in the browser, as non-extractable keys in its
   own storage: key sign-in set up from Settings > Security, creating an account with a key on
   the join pages, recovering an account with its recovery kit, replacing the identity key,
