@@ -61,8 +61,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - After signing in with a password, the app offers "Set up encryption for this account": the
   desktop app creates the account's keys and shows the recovery kit, and a device of an account
   that already has keys elsewhere is offered to link to them. "Later" holds it back for seven
-  days. The join form keeps the key as its default and shows the password signup as a smaller
-  link.
+  days, and "Set up encryption" in the "Not encrypted" dialog brings it back. The join form
+  keeps the key as its default and shows the password signup as a smaller link.
 - Message search suggests operator values as you type: `from:` lists workspace members, `in:`
   your channels, `has:` its values, and `before:`/`after:` today's date; ↑/↓ move, Enter, Tab or
   a click inserts, Esc closes the list.

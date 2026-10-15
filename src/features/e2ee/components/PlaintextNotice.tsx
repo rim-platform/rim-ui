@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useOfferKeySetup } from "../../key-identity";
 import { usePlaintextStatus, type PlaintextStatus } from "../hooks/useE2eeConversation";
 import { joinNames } from "../utils/names";
 import { plaintextNoticeSeen, rememberPlaintextNotice } from "../utils/plaintextNotice";
@@ -45,6 +46,7 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
   const userId = useAuthStore((s) => s.session?.userId);
   const status = usePlaintextStatus(workspaceId, conversationId);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
+  const keySetup = useOfferKeySetup();
   // The conversation whose dialog was closed or reopened while this header showed it.
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const [reopenedFor, setReopenedFor] = useState<string | null>(null);
@@ -65,9 +67,11 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
     if (!reopened) focusComposer();
   }
 
+  // The key setup step where it can help this device, Settings > Security otherwise.
   function setUpEncryption() {
     close();
-    setMainSurface({ kind: "settings", tab: "security" });
+    if (keySetup.available) keySetup.offer();
+    else setMainSurface({ kind: "settings", tab: "security" });
   }
 
   const reason = reasonOf(status);
@@ -94,13 +98,19 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
           {status.notReady.length > 0 && (
             <p>Encryption turns on once every member has a device set up for it.</p>
           )}
-          {status.noDeviceKey && (
-            <p>
-              To read and send encrypted messages in this browser, link it to your account: choose
-              Link a device in the desktop app&apos;s Settings &gt; Security, then sign in here with
-              &ldquo;Link this browser with its code&rdquo;.
-            </p>
-          )}
+          {status.noDeviceKey &&
+            (keySetup.available ? (
+              <p>
+                To read and send encrypted messages in this browser, link it to your account with a
+                code from the desktop app.
+              </p>
+            ) : (
+              <p>
+                To read and send encrypted messages in this browser, link it to your account: choose
+                Link a device in the desktop app&apos;s Settings &gt; Security, then sign in here
+                with &ldquo;Link this browser with its code&rdquo;.
+              </p>
+            ))}
           <div className="flex justify-end gap-2 pt-1">
             <Button
               variant={status.noDeviceKey ? "secondary" : "primary"}
@@ -111,7 +121,7 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
             </Button>
             {status.noDeviceKey && (
               <Button size="sm" onClick={setUpEncryption}>
-                Open security settings
+                {keySetup.available ? "Set up encryption" : "Open security settings"}
               </Button>
             )}
           </div>
