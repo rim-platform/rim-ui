@@ -199,6 +199,7 @@ export const browserKeyBackend: KeyBackend = {
   restoreDraftKeys,
   discardEnrollment,
 
+  keepsRecoveryKit: true,
   recoveryKit,
   confirmRecoveryKit,
 

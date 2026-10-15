@@ -19,7 +19,15 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: () => true,
 }));
 
+// A backend a test puts in place of the platform's, such as one that keeps no recovery kit.
+const backendOverride = vi.hoisted(() => ({ value: null as KeyBackend | null }));
+vi.mock("./keyBackend", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./keyBackend")>();
+  return { ...actual, keyBackend: () => backendOverride.value ?? actual.keyBackend() };
+});
+
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { tauriKeyBackend, type KeyBackend } from "./keyBackend";
 import {
   abandonEnrollment,
   abandonKeySignup,
@@ -100,6 +108,7 @@ beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
   useAuthStore.setState({ csrfToken: null });
+  backendOverride.value = null;
 });
 
 describe("signInWithDeviceKey", () => {
@@ -267,6 +276,14 @@ describe("enrollment", () => {
     );
     await completeEnrollment(draft, ACCOUNT);
     expect(commands()).toContain("key_identity_settle");
+  });
+
+  it("refuses to enroll with the kit unsaved where the device does not keep it", async () => {
+    backend({}, {});
+    backendOverride.value = { ...tauriKeyBackend, keepsRecoveryKit: false };
+    await expect(completeEnrollment(draft, ACCOUNT, "later")).rejects.toThrow(/recovery kit/i);
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(commands()).toEqual([]);
   });
 
   it("fails, keeping the draft, when the server refused it", async () => {

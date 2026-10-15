@@ -17,6 +17,11 @@ export interface ServerInfoView {
   info: KnownServerInfo | undefined;
   /** The instance's caps; `undefined` while loading, or for a server that reports none. */
   limits: ServerLimits | undefined;
+  /**
+   * Whether new accounts sign up with a key only; `undefined` while loading, `false` for a
+   * server that cannot say (unreachable, or older than the signup policy).
+   */
+  signupRequiresKeys: boolean | undefined;
   /** The query failed: the server is down, or too old to answer it. */
   unreachable: boolean;
   /** The server speaks a newer API than this client. */
@@ -39,6 +44,8 @@ export function useServerInfo(): ServerInfoView {
   return {
     info,
     limits: info?.limits,
+    signupRequiresKeys:
+      info === undefined && !query.isError ? undefined : (info?.signupRequiresKeys ?? false),
     unreachable: query.isError,
     newerApi: info !== undefined && info.apiVersion > CLIENT_API_VERSION,
   };

@@ -21,8 +21,15 @@ const api = vi.hoisted(() => ({
   beginEnrollment: vi.fn(),
   completeEnrollment: vi.fn(),
   abandonEnrollment: vi.fn(),
+  deviceKeepsRecoveryKit: vi.fn(),
+  requestKeyStorage: vi.fn(),
+  confirmRecoveryKitSaved: vi.fn(),
 }));
-const runtime = vi.hoisted(() => ({ platform: "desktop" as "desktop" | "web" }));
+// `browserIdentity`: in the web app, a browser that can hold an identity key.
+const runtime = vi.hoisted(() => ({
+  platform: "desktop" as "desktop" | "web",
+  browserIdentity: false,
+}));
 const account = vi.hoisted(() => ({ principalId: null as string | null }));
 
 vi.mock("../api/keyIdentity", () => api);
@@ -34,7 +41,10 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
     platform: runtime.platform,
     deviceKeyStore: runtime.platform === "web" ? "browser" : "keyring",
-    capabilities: { deviceKeys: true, identityKeys: runtime.platform === "desktop" },
+    capabilities: {
+      deviceKeys: true,
+      identityKeys: runtime.platform === "desktop" || runtime.browserIdentity,
+    },
   }),
 }));
 vi.mock("../../workspaces/api/useCurrentUser", () => ({
@@ -69,7 +79,11 @@ describe("KeySetupStep", () => {
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.abandonEnrollment.mockResolvedValue(undefined);
+    api.deviceKeepsRecoveryKit.mockReturnValue(false);
+    api.requestKeyStorage.mockResolvedValue("persisted");
+    api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
     runtime.platform = "desktop";
+    runtime.browserIdentity = false;
     account.principalId = null;
     localStorage.clear();
     useKeySetupOfferStore.setState({ available: null, requested: false });
@@ -98,6 +112,7 @@ describe("KeySetupStep", () => {
     expect(api.completeEnrollment).toHaveBeenCalledWith(
       enrollmentDraft,
       expect.objectContaining(KEY_ACCOUNT),
+      "saved",
     );
     await waitFor(() => expect(stepTitle()).toBeNull());
   });
@@ -163,7 +178,38 @@ describe("KeySetupStep", () => {
     expect(localStorage.getItem(LATER_STORAGE_KEY)).not.toBeNull();
   });
 
-  it("is not offered in the web app to an account without keys, which only the desktop can create", () => {
+  it("creates the keys in a browser that can hold them, enrolls, then shows the kit to save", async () => {
+    runtime.platform = "web";
+    runtime.browserIdentity = true;
+    api.deviceKeepsRecoveryKit.mockReturnValue(true);
+    api.beginEnrollment.mockResolvedValue(enrollmentDraft);
+    api.completeEnrollment.mockResolvedValue(undefined);
+    renderStep();
+
+    expect(screen.getByText(/a key for this browser/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    // One step: the keys are made and enrolled before the kit is shown.
+    expect(screen.queryByRole("button", { name: /create keys/i })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Set up encryption" }));
+
+    expect(api.requestKeyStorage).toHaveBeenCalled();
+    expect(api.completeEnrollment).toHaveBeenCalledWith(
+      enrollmentDraft,
+      expect.objectContaining(KEY_ACCOUNT),
+      "later",
+    );
+    expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
+    expect(stepTitle()).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "I saved it" }));
+    expect(api.confirmRecoveryKitSaved).toHaveBeenCalledWith(KEY_PRINCIPAL);
+    await userEvent.click(await screen.findByRole("button", { name: "Done" }));
+    await waitFor(() => expect(stepTitle()).toBeNull());
+  });
+
+  it("is not offered in a browser that cannot hold an identity key to an account without keys", () => {
     runtime.platform = "web";
     renderStep();
 

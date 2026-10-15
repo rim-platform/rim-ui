@@ -9,9 +9,12 @@
  * The server's instance notice shows at the top. When the server has terms of service, both
  * signups ask for "I accept the terms of use" and send the terms URL back as `acceptedTermsUrl`.
  *
- * On the desktop the page also offers "Create account with a key" (`KeySignupForm`): an
- * account with no password and no email, signed in by a key kept on this computer. With
- * `keyOnly` (a relay in pow mode, no token) it offers only that.
+ * Where this app can hold an identity key it offers "Create account with a key"
+ * (`KeySignupForm`) first: an account with no password and no email, signed in by a key kept on
+ * this device. With `keyOnly` (a relay in pow mode, no token), or when the server takes key
+ * signups only (`serverInfo.signupRequiresKeys`), it offers only that; where this app cannot
+ * hold keys it then says so and points to the desktop app, with no password form. A password
+ * signup the server refuses anyway shows the server's message.
  *
  * **Fields:**
  * - `username` — required, unique handle.
@@ -40,6 +43,7 @@ import { useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { isTermsRefusal, useSignupTerms } from "../api/useSignupTerms";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
@@ -128,6 +132,40 @@ function mapSignupError(err: unknown): { field: "email" | "general"; message: st
 }
 
 /**
+ * What this page offers: `key` alone, `key-or-password` (the key first where this app holds
+ * keys), `password` alone, `no-keys` (the server needs a key signup and this app cannot make
+ * one), or `checking` while that is not known yet.
+ */
+type SignupOffer = "key" | "key-or-password" | "password" | "no-keys" | "checking";
+
+function signupOffer(
+  canHoldKeys: boolean,
+  probingKeys: boolean,
+  keysRequired: boolean | undefined,
+): SignupOffer {
+  if (canHoldKeys) {
+    if (keysRequired === undefined) return "key";
+    return keysRequired ? "key" : "key-or-password";
+  }
+  if (probingKeys || keysRequired === undefined) return "checking";
+  return keysRequired ? "no-keys" : "password";
+}
+
+/** The server takes key signups only and this app cannot make keys: where to sign up instead. */
+function NoKeysHere() {
+  return (
+    <div role="alert" className="space-y-2 text-sm">
+      <p className="font-medium text-rim-text">This server needs a key signup</p>
+      <p className="text-rim-text-muted">
+        New accounts here sign up with a key instead of a password, and this browser cannot create
+        keys. Create your account in the RIM desktop app, or open this page in a current browser
+        that can.
+      </p>
+    </div>
+  );
+}
+
+/**
  * Signup form for all registration paths (invite token + open registration).
  */
 export function JoinForm({
@@ -140,13 +178,17 @@ export function JoinForm({
   keyOnly = false,
   onSuccess,
 }: JoinFormProps) {
-  const { capabilities } = useRuntime();
+  const { capabilities, deviceKeyStore } = useRuntime();
+  const { signupRequiresKeys } = useServerInfo();
+  const offer = signupOffer(
+    capabilities.identityKeys,
+    deviceKeyStore === "checking",
+    keyOnly || signupRequiresKeys,
+  );
   // Where this device can keep a key, the key signup comes first; the password form is the
   // fallback behind the toggle.
-  const [chosen, setMethod] = useState<"password" | "key">(() =>
-    capabilities.identityKeys ? "key" : "password",
-  );
-  const method = keyOnly ? "key" : chosen;
+  const [chosen, setMethod] = useState<"password" | "key">("key");
+  const method = offer === "key-or-password" ? chosen : offer === "password" ? "password" : "key";
   // A key signup in progress keeps its form mounted until it settles.
   const [keySignupBusy, setKeySignupBusy] = useState(false);
   const [username, setUsername] = useState("");
@@ -266,7 +308,11 @@ export function JoinForm({
         </header>
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          {method === "key" ? (
+          {offer === "no-keys" ? (
+            <NoKeysHere />
+          ) : offer === "checking" ? (
+            <p className="text-sm text-rim-text-muted">Loading...</p>
+          ) : method === "key" ? (
             <KeySignupForm
               tokens={tokenFields(variant, token)}
               workspaceId={variant === InviteTokenType.WORKSPACE ? workspaceId : undefined}
@@ -332,7 +378,7 @@ export function JoinForm({
           )}
         </div>
 
-        {capabilities.identityKeys && !keyOnly && method === "key" && (
+        {offer === "key-or-password" && method === "key" && (
           <div className="space-y-1 text-center text-xs text-rim-text-faint">
             <button
               type="button"
@@ -345,7 +391,7 @@ export function JoinForm({
             <p>A password account can add a key later in Settings &gt; Security.</p>
           </div>
         )}
-        {capabilities.identityKeys && !keyOnly && method === "password" && (
+        {offer === "key-or-password" && method === "password" && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />

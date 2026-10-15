@@ -8,9 +8,30 @@ export const CLIENT_API_VERSION = 1;
 
 /**
  * What the client knows about the server: `limits` is undefined for a server older than
- * instance limits, which reports none.
+ * instance limits, which reports none, and `signupRequiresKeys` for one older than the signup
+ * policy, which takes password signups.
  */
-export type KnownServerInfo = Omit<ServerInfo, "limits"> & { limits?: ServerLimits };
+export type KnownServerInfo = Omit<ServerInfo, "limits" | "signupRequiresKeys"> & {
+  limits?: ServerLimits;
+  signupRequiresKeys?: boolean;
+};
+
+const LIMITS_FIELDS = `
+  limits {
+    workspacesPerUser
+    membersPerWorkspace
+    channelsPerWorkspace
+    devicesPerUser
+    dmRequestsPerDay
+    macrosPerWorkspace
+    pipelinesPerWorkspace
+    pluginsPerWorkspace
+    invitesPerUserPerDay
+    inviteMaxUses
+    messageBytes
+    probationHours
+  }
+`;
 
 const SERVER_INFO_QUERY = gql`
   query ServerInfo {
@@ -25,20 +46,27 @@ const SERVER_INFO_QUERY = gql`
       auditRetentionDays
       instanceNotice
       termsUrl
-      limits {
-        workspacesPerUser
-        membersPerWorkspace
-        channelsPerWorkspace
-        devicesPerUser
-        dmRequestsPerDay
-        macrosPerWorkspace
-        pipelinesPerWorkspace
-        pluginsPerWorkspace
-        invitesPerUserPerDay
-        inviteMaxUses
-        messageBytes
-        probationHours
+      ${LIMITS_FIELDS}
+      signupRequiresKeys
+    }
+  }
+`;
+
+/** The same without `signupRequiresKeys`, for a server older than the signup policy. */
+const SERVER_LIMITS_QUERY = gql`
+  query ServerInfoWithLimits {
+    serverInfo {
+      version
+      apiVersion
+      features {
+        key
+        state
+        reason
       }
+      auditRetentionDays
+      instanceNotice
+      termsUrl
+      ${LIMITS_FIELDS}
     }
   }
 `;
@@ -101,14 +129,20 @@ function refusedByServer(err: unknown): boolean {
 
 /**
  * The connected server's release version, API version, features, audit retention, instance
- * notice, terms URL and limits; needs no session. Each query a server refuses falls back to the
- * next older one. A server older than instance limits leaves `limits` undefined; one older than
+ * notice, terms URL, limits and signup policy; needs no session. Each query a server refuses
+ * falls back to the next older one. A server older than the signup policy leaves
+ * `signupRequiresKeys` undefined; one older than instance limits also leaves `limits` undefined; one older than
  * the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
  * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
  * `features` runs every feature, so it reads as listing none.
  */
 export async function fetchServerInfo(): Promise<KnownServerInfo> {
-  for (const query of [SERVER_INFO_QUERY, SERVER_POLICY_QUERY, SERVER_FEATURES_QUERY]) {
+  for (const query of [
+    SERVER_INFO_QUERY,
+    SERVER_LIMITS_QUERY,
+    SERVER_POLICY_QUERY,
+    SERVER_FEATURES_QUERY,
+  ]) {
     try {
       const res = await graphqlClient.request<ServerInfoResponse>(query);
       return { ...res.serverInfo, features: res.serverInfo.features ?? [] };

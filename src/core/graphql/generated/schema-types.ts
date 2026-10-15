@@ -1475,7 +1475,11 @@ export type Mutation = {
   /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
   editMessage: Message;
-  /** Bind a key identity to the signed-in account. Afterwards the password no longer signs in. */
+  /**
+   * Bind a key identity to the signed-in account. The calling session becomes the new
+   * device's and every other session of the account ends. Afterwards the password no longer
+   * signs in.
+   */
   enrollIdentityKey: KeyIdentity;
   executeCommand: CommandResult;
   executeMacro: CommandResult;
@@ -1673,15 +1677,19 @@ export type Mutation = {
    * In invite-only mode, exactly one of `instanceInviteToken` or `workspaceInviteToken`
    * must be supplied.
    * In open mode, all token fields must be absent.
+   * Refused with `FORBIDDEN` when `serverInfo.signupRequiresKeys` is true: new accounts then
+   * sign up with `signupWithKey`.
    *
    * On success, sets session and CSRF cookies via `AuthIntent`.
    */
   signupWithInvite: SignupWithInvitePayloadGql;
   /**
-   * Create an account from a key identity alone: no password, no email. The registration
-   * mode applies as for `signupWithInvite` (exactly one token in invite-only mode, none in
-   * open mode). Signs the new account in on the device that signed up, setting the same
-   * session and CSRF cookies as `signupWithInvite`.
+   * Create an account from a key identity alone, with no password. The registration mode
+   * applies as for `signupWithInvite` (exactly one token in invite-only mode, none in open
+   * mode). An instance invite bound to an email address gives the account that address
+   * (`EMAIL_TAKEN` when another account has it); otherwise the account has no email. Signs
+   * the new account in on the device that signed up, setting the same session and CSRF
+   * cookies as `signupWithInvite`.
    */
   signupWithKey: SignupWithInvitePayloadGql;
   /**
@@ -3489,6 +3497,12 @@ export type ServerInfo = {
   instanceNotice?: Maybe<Scalars['String']['output']>;
   /** The instance-wide caps, so a client can show "5 of 5" before it tries. */
   limits: ServerLimits;
+  /**
+   * Whether new accounts sign up with a key only: `signupWithInvite` is refused with
+   * `FORBIDDEN` and `signupWithKey` is the signup. Password sign-in of existing accounts
+   * works either way.
+   */
+  signupRequiresKeys: Scalars['Boolean']['output'];
   /**
    * The terms of service a signup accepts, an absolute http(s) URL; null when the instance
    * has none. A signup sends it back as `acceptedTermsUrl`.

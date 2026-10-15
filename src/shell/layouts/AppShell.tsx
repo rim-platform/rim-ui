@@ -52,6 +52,7 @@ import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { KeySetupStep } from "../../features/key-identity/components/KeySetupStep";
+import { RecoveryKitBanner } from "../../features/key-identity/components/RecoveryKitBanner";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
 import {
   useDirectSpaceRuntime,
@@ -126,6 +127,7 @@ export function AppShell() {
         {capabilities.customTitleBar && <TitleBar />}
         <AccountDeletionBanner />
         <ProbationBanner />
+        <RecoveryKitBanner />
         <div className="min-h-0 flex-1">
           <WorkspaceSelector />
         </div>
@@ -142,6 +144,7 @@ export function AppShell() {
       <RelayNotices />
       <AccountDeletionBanner />
       <ProbationBanner />
+      <RecoveryKitBanner />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>

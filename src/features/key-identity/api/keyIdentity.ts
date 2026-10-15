@@ -381,9 +381,16 @@ export async function abandonEnrollment(
  */
 export type RecoveryKitTiming = "saved" | "later";
 
-/** Tell the key backend the kit is saved before a draft's keys are stored, unless it is later. */
+/**
+ * Tell the key backend the kit is saved before a draft's keys are stored, unless it is later.
+ * `later` is refused on a device that does not keep the kit, before anything is stored or sent.
+ */
 async function recordKitTiming(draft: EnrollmentDraft, timing: RecoveryKitTiming): Promise<void> {
-  if (timing === "saved") await keyBackend().confirmRecoveryKit(draft.principalId);
+  if (timing === "saved") {
+    await keyBackend().confirmRecoveryKit(draft.principalId);
+  } else if (!keyBackend().keepsRecoveryKit) {
+    throw new Error("This device cannot keep the recovery kit. Save it before you continue.");
+  }
 }
 
 /**
@@ -682,6 +689,15 @@ export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Pro
 }
 
 // ─── The recovery kit ───────────────────────────────────────────────────────
+
+/**
+ * Whether this device keeps a new identity's recovery kit until the person confirms saving it:
+ * then a signup or enrollment is sent first, with the kit `later`, and the kit shown after.
+ * Otherwise the kit is saved before anything is sent.
+ */
+export function deviceKeepsRecoveryKit(): boolean {
+  return keyBackend().keepsRecoveryKit;
+}
 
 /**
  * The recovery kit of `principalId` while the person has not confirmed saving it, read from

@@ -21,6 +21,9 @@ const api = vi.hoisted(() => ({
   beginEnrollment: vi.fn(),
   completeEnrollment: vi.fn(),
   abandonEnrollment: vi.fn(),
+  deviceKeepsRecoveryKit: vi.fn(),
+  requestKeyStorage: vi.fn(),
+  confirmRecoveryKitSaved: vi.fn(),
   syncKeyLog: vi.fn(),
   settleDeviceKeys: vi.fn(),
   revokeDevice: vi.fn(),
@@ -30,10 +33,8 @@ const api = vi.hoisted(() => ({
   profileCardRelays: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ value: true }));
-const sessions = vi.hoisted(() => ({ logoutOtherSessions: vi.fn() }));
 
 vi.mock("../api/keyIdentity", () => api);
-vi.mock("../../auth/api/sessions", () => sessions);
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
@@ -106,10 +107,12 @@ describe("KeyIdentitySettings", () => {
     desktop.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
     api.profileCardRelays.mockReturnValue(["http://localhost:8080"]);
-    sessions.logoutOtherSessions.mockReset();
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.abandonEnrollment.mockResolvedValue(undefined);
+    api.deviceKeepsRecoveryKit.mockReturnValue(false);
+    api.requestKeyStorage.mockResolvedValue("persisted");
+    api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
     api.profileCardIsStale.mockReturnValue(false);
     api.publishProfileCard.mockResolvedValue(undefined);
   });
@@ -137,13 +140,14 @@ describe("KeyIdentitySettings", () => {
     expect(api.completeEnrollment).toHaveBeenCalledWith(
       enrollmentDraft,
       expect.objectContaining(KEY_ACCOUNT),
+      "saved",
     );
     // Once enrolled, the phrase is no longer on screen.
     await waitFor(() => expect(screen.queryByLabelText("Recovery phrase")).toBeNull());
     expect(screen.queryByText("liar")).toBeNull();
   });
 
-  it("offers to sign out the other sessions once key sign-in is on", async () => {
+  it("says the other sessions were signed out once key sign-in is on", async () => {
     api.fetchMyKeyIdentity.mockResolvedValueOnce(notEnrolled).mockResolvedValue(enrolled);
     api.beginEnrollment.mockResolvedValue(enrollmentDraft);
     api.completeEnrollment.mockResolvedValue(undefined);
@@ -153,7 +157,6 @@ describe("KeyIdentitySettings", () => {
       holdsIdentityKey: true,
     });
     api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
-    sessions.logoutOtherSessions.mockResolvedValue(2);
     renderSettings();
 
     await waitFor(() =>
@@ -164,11 +167,11 @@ describe("KeyIdentitySettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /turn on key sign-in/i }));
 
     expect(await screen.findByText("rimp1_alice")).toBeInTheDocument();
-    expect(screen.getByText(/password sessions opened before the key/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /sign out other sessions/i }));
-
-    expect(sessions.logoutOtherSessions).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("status")).toHaveTextContent("Signed out 2 other sessions.");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Every other session of your account was signed out",
+    );
+    // The server ended them at enrollment: there is nothing left to sign out here.
+    expect(screen.queryByRole("button", { name: /sign out other sessions/i })).toBeNull();
   });
 
   it("shows the phrase as 12 numbered words with the account id, and copies the whole kit", async () => {
@@ -370,8 +373,8 @@ describe("KeyIdentitySettings", () => {
     expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /replace identity key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /link a device/i })).toBeNull();
-    // The offer to sign out other sessions follows an enrollment made here, not every visit.
-    expect(screen.queryByRole("button", { name: /sign out other sessions/i })).toBeNull();
+    // The note on the other sessions follows an enrollment made here, not every visit.
+    expect(screen.queryByText(/every other session of your account/i)).toBeNull();
   });
 
   it("only explains key sign-in in the web app", async () => {
