@@ -20,15 +20,17 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
   const previousFocusRef = useRef<Element | null>(null);
   const titleId = useId();
 
-  // Save previous focus, focus first element when opening, prevent body scroll
+  // Save previous focus, move focus into the panel when opening, prevent body scroll
   useEffect(() => {
+    let frame: number | undefined;
     if (open) {
       previousFocusRef.current = document.activeElement;
       document.body.style.overflow = "hidden";
-      // Defer to next frame so the panel is rendered
-      requestAnimationFrame(() => {
-        const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-        first?.focus();
+      // Next frame, focus the first focusable unless focus is already inside (e.g. `autoFocus`)
+      frame = requestAnimationFrame(() => {
+        const panel = panelRef.current;
+        if (!panel || panel.contains(document.activeElement)) return;
+        panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
       });
     } else {
       document.body.style.overflow = "";
@@ -41,6 +43,7 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
       }
     }
     return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
       document.body.style.overflow = "";
     };
   }, [open]);

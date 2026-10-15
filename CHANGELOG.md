@@ -23,6 +23,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The new workspace, add workspace and new channel dialogs keep the cursor in their name field
+  instead of moving it to the Close button a moment after they open.
 - "<name> is typing..." goes away as soon as that person's message arrives instead of lingering
   for a few seconds, and the first keystroke after sending announces typing again at once.
 - Creating a macro that the server refuses shows the server's reason, such as the instance's
