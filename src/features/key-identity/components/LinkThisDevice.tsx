@@ -52,14 +52,17 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
   );
 }
 
-function LinkThisDeviceForm({
+/** The form for a link code from another device; `cancelLabel` names its second button. */
+export function LinkThisDeviceForm({
   inBrowser,
   onSuccess,
   onCancel,
+  cancelLabel = "Cancel",
 }: {
   inBrowser: boolean;
   onSuccess: (userId: string) => void;
   onCancel: () => void;
+  cancelLabel?: string;
 }) {
   const here = inBrowser ? "This browser" : "This computer";
   const qc = useQueryClient();
@@ -189,7 +192,7 @@ function LinkThisDeviceForm({
           Link this device
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
+          {cancelLabel}
         </Button>
       </div>
     </form>

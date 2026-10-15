@@ -50,6 +50,7 @@ import { ConnectionBanner } from "../../features/system/components/ConnectionBan
 import { OfflineBanner } from "../../features/offline/components/OfflineBanner";
 import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineReconnect";
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
+import { KeySetupStep } from "../../features/key-identity/components/KeySetupStep";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
 import {
   useDirectSpaceRuntime,
@@ -127,6 +128,7 @@ export function AppShell() {
         <div className="min-h-0 flex-1">
           <WorkspaceSelector />
         </div>
+        <KeySetupStep />
       </div>
     );
   }
@@ -142,6 +144,7 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>
+      <KeySetupStep />
     </div>
   );
 }
