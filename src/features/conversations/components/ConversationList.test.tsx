@@ -182,6 +182,25 @@ describe("ConversationList — channels sidebar", () => {
     ]);
   });
 
+  it("shows an open draft DM first among messages, selected, until a conversation is opened", async () => {
+    useShellStore.getState().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u-bob" });
+    serve();
+    const user = userEvent.setup();
+    renderList();
+
+    const draftRow = (await screen.findByText("New message to Bob")).closest("li")!;
+    expect(draftRow).toHaveAttribute("aria-selected", "true");
+    const messages = within(screen.getByText("Messages").parentElement!).getAllByRole("option");
+    expect(messages[0]).toBe(draftRow);
+    // The list loaded with nothing selected, and the draft kept it from opening the first one.
+    await screen.findByText("Alice");
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+
+    await user.click(screen.getByText("Alice"));
+    expect(useShellStore.getState().selectedConversationId).toBe("c-dm");
+    expect(screen.queryByText("New message to Bob")).not.toBeInTheDocument();
+  });
+
   it("asks for joined channels including archived ones", async () => {
     serve();
     renderList();

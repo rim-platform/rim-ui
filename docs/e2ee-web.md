@@ -215,8 +215,8 @@ browser with WebCrypto Ed25519 and WebAssembly (current Chrome, Firefox or Safar
 
 1. Link the browser and sign in: the browser uploads key packages, and `principalDevices` shows it
    `mlsActive`.
-2. From the desktop, open a new DM with the web account (or, with the browser linked to the same
-   account, any encrypted DM): the browser joins from the Welcome; send from both sides, edit,
+2. From the desktop, open a new DM with the web account and send its first message (or, with the
+   browser linked to the same account, open any encrypted DM): the browser joins from the Welcome; send from both sides, edit,
    delete, reply in a thread, attach a file.
 3. Open the same account in a second tab: it says another tab runs encryption.
 4. Clear the site's data and link again: the desktop re-adds the new device, which shows earlier

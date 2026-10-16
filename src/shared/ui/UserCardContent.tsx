@@ -16,6 +16,8 @@ export interface UserCardContentProps {
   bio?: string | null;
   presenceStatus?: PresenceStatus | null;
   isCurrentUser?: boolean;
+  /** Opens the direct message with this person; without it the card offers no Send DM. */
+  onSendDm?: () => void;
 }
 
 export function UserCardContent({
@@ -29,6 +31,7 @@ export function UserCardContent({
   bio,
   presenceStatus,
   isCurrentUser,
+  onSendDm,
 }: UserCardContentProps) {
   const resolvedDisplayName = displayName ?? username;
 
@@ -91,13 +94,16 @@ export function UserCardContent({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted transition hover:text-rim-text"
-              >
-                <MessageCircle className="h-3 w-3" />
-                Send DM
-              </button>
+              {onSendDm && (
+                <button
+                  type="button"
+                  onClick={onSendDm}
+                  className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted transition hover:text-rim-text"
+                >
+                  <MessageCircle className="h-3 w-3" />
+                  Send DM
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleCopyUsername}

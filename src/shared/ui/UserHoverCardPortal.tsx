@@ -16,6 +16,8 @@ interface UserHoverCardPortalProps {
   bio?: string | null;
   presenceStatus?: PresenceStatus | null;
   isCurrentUser?: boolean;
+  /** Opens the direct message with this person. */
+  onSendDm?: () => void;
   anchorRect: DOMRect;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -32,6 +34,7 @@ export function UserHoverCardPortal({
   bio,
   presenceStatus,
   isCurrentUser,
+  onSendDm,
   anchorRect,
   onMouseEnter,
   onMouseLeave,
@@ -91,6 +94,7 @@ export function UserHoverCardPortal({
         bio={bio}
         presenceStatus={presenceStatus}
         isCurrentUser={isCurrentUser}
+        onSendDm={onSendDm}
       />
     </div>,
     document.body,

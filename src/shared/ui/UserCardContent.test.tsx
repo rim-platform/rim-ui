@@ -54,9 +54,16 @@ describe("UserCardContent", () => {
   });
 
   it("shows Send DM and Copy buttons for other users", () => {
-    render(<UserCardContent {...defaultProps} isCurrentUser={false} />);
-    expect(screen.getByText("Send DM")).toBeInTheDocument();
+    const onSendDm = vi.fn();
+    render(<UserCardContent {...defaultProps} isCurrentUser={false} onSendDm={onSendDm} />);
     expect(screen.getByText(/Copy @testuser/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Send DM"));
+    expect(onSendDm).toHaveBeenCalledOnce();
+  });
+
+  it("offers no Send DM without a way to open one", () => {
+    render(<UserCardContent {...defaultProps} isCurrentUser={false} />);
+    expect(screen.queryByText("Send DM")).not.toBeInTheDocument();
   });
 
   it("copies username to clipboard on copy button click", () => {

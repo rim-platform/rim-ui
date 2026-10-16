@@ -13,21 +13,32 @@ import { queryKeys } from "../../../core/query/keys";
 import { leaveConversation } from "../../conversations/api/useChannelMembership";
 import { fetchInboxConversations } from "../../conversations/api/useInboxConversations";
 import type { ConversationSummary } from "../../conversations/types";
+import type { SpaceRecord } from "../state/relayDb";
 import { useRelayStore } from "../state/useRelayStore";
 import { fetchConversationPredecessor, type PredecessorView } from "./relayApi";
 
 /** The direct spaces this account uses: this relay's first, then those on other relays. */
+export function directSpaceIdsOf(
+  directSpaceId: string | null,
+  spaces: Record<string, SpaceRecord>,
+  forked: readonly string[],
+): string[] {
+  const remote = Object.values(spaces)
+    .filter((s) => s.kind === "direct" && !forked.includes(s.hostServerId))
+    .map((s) => s.spaceId)
+    .sort();
+  return directSpaceId ? [directSpaceId, ...remote] : remote;
+}
+
+/** {@link directSpaceIdsOf}, kept current as the relay store changes. */
 export function useDirectSpaceIds(): string[] {
   const directSpaceId = useRelayStore((s) => s.info?.directSpaceId ?? null);
   const spaces = useRelayStore((s) => s.spaces);
   const forked = useRelayStore((s) => s.forked);
-  return useMemo(() => {
-    const remote = Object.values(spaces)
-      .filter((s) => s.kind === "direct" && !forked.includes(s.hostServerId))
-      .map((s) => s.spaceId)
-      .sort();
-    return directSpaceId ? [directSpaceId, ...remote] : remote;
-  }, [directSpaceId, spaces, forked]);
+  return useMemo(
+    () => directSpaceIdsOf(directSpaceId, spaces, forked),
+    [directSpaceId, spaces, forked],
+  );
 }
 
 /** A conversation's predecessor as `host|conversation id`, the key successors are matched by. */

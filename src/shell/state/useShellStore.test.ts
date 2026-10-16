@@ -11,6 +11,7 @@ describe("useShellStore", () => {
     expect(state.activePanel).toBe("inbox");
     expect(state.mainSurface).toEqual({ kind: "conversation" });
     expect(state.selectedConversationId).toBeNull();
+    expect(state.draftDirect).toBeNull();
     expect(state.isThreadOpen).toBe(false);
     expect(state.sidebarCollapsed).toBe(false);
     expect(state.editingMessageId).toBeNull();
@@ -60,6 +61,23 @@ describe("useShellStore", () => {
     expect(state.isThreadOpen).toBe(false);
     expect(state.selectedRootMessageId).toBeNull();
     expect(state.editingMessageId).toBeNull();
+  });
+
+  it("opens a draft DM in place of the selected conversation, closing its thread", () => {
+    useShellStore.getState().setSelectedConversationId("conv-1");
+    useShellStore.getState().openThreadForMessage("msg-1");
+    useShellStore.getState().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u2" });
+    const state = useShellStore.getState();
+    expect(state.draftDirect).toEqual({ workspaceId: "ws-1", otherUserId: "u2" });
+    expect(state.selectedConversationId).toBeNull();
+    expect(state.isThreadOpen).toBe(false);
+  });
+
+  it("drops the draft DM when a conversation is selected", () => {
+    useShellStore.getState().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u2" });
+    useShellStore.getState().setSelectedConversationId("conv-1");
+    expect(useShellStore.getState().draftDirect).toBeNull();
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-1");
   });
 
   it("opens a thread for a message", () => {
@@ -133,9 +151,11 @@ describe("useShellStore", () => {
     useShellStore.getState().setSelectedConversationId("conv-1");
     useShellStore.getState().openThreadForMessage("msg-1");
     useShellStore.getState().toggleSidebar();
+    useShellStore.getState().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u2" });
     useShellStore.getState().reset();
     const state = useShellStore.getState();
     expect(state.selectedConversationId).toBeNull();
+    expect(state.draftDirect).toBeNull();
     expect(state.isThreadOpen).toBe(false);
     expect(state.sidebarCollapsed).toBe(false);
   });

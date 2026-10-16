@@ -16,6 +16,8 @@ interface UserHoverCardProps {
   bio?: string | null;
   presenceStatus?: PresenceStatus | null;
   isCurrentUser?: boolean;
+  /** Opens the direct message with this person. */
+  onSendDm?: () => void;
   children: ReactElement;
 }
 
@@ -30,6 +32,7 @@ export function UserHoverCard({
   bio,
   presenceStatus,
   isCurrentUser,
+  onSendDm,
   children,
 }: UserHoverCardProps) {
   const [visible, setVisible] = useState(false);
@@ -169,6 +172,7 @@ export function UserHoverCard({
               bio={bio}
               presenceStatus={presenceStatus}
               isCurrentUser={isCurrentUser}
+              onSendDm={onSendDm}
             />
           </div>,
           document.body,

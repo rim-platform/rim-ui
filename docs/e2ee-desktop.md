@@ -260,8 +260,8 @@ that signed in with device keys (key-only signup or enrollment, `docs/device-lin
    for the first, and the built app (`npm run tauri build`) with
    `XDG_DATA_HOME=/tmp/rim-second src-tauri/target/release/rim-ui` for the second.
 3. Sign in as each account. Each uploads key packages on start.
-4. Open a new DM from one to the other: it is created encrypted, and the other side joins from
-   the Welcome. Send, edit, delete, react, reply in a thread, attach a file.
+4. Open a new DM from one to the other and send its first message: it is created encrypted,
+   and the other side joins from the Welcome. Send, edit, delete, react, reply in a thread, attach a file.
 5. For a migration, open an existing plaintext DM: the marker appears where it became
    encrypted.
 6. Link a second device to one account: the other members' devices add it after their rank's
