@@ -12,8 +12,9 @@ import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 // Mocked as no-ops so this test exercises only the render tree and the
 // SurfaceErrorBoundary wiring around the three panels under test, not the
 // (separately-tested) subscription/query plumbing.
+const hydration = vi.hoisted(() => ({ isHydrating: false }));
 vi.mock("../../features/auth/api/useSessionHydration", () => ({
-  useSessionHydration: () => ({ isHydrating: false }),
+  useSessionHydration: () => hydration,
 }));
 const useWorkspaceEventsMock = vi.hoisted(() => vi.fn());
 vi.mock("../../core/events/useWorkspaceEvents", () => ({
@@ -226,5 +227,21 @@ describe("AppShell — workspace event subscriptions", () => {
     useWorkspaceStore.setState({ workspaceId: "direct-1" });
     renderShell();
     expect(useWorkspaceEventsMock).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe("AppShell — session restore", () => {
+  afterEach(() => {
+    hydration.isHydrating = false;
+  });
+
+  it("shows the splash with the restoring caption as a status while the session hydrates", () => {
+    hydration.isHydrating = true;
+    renderShell();
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Restoring session...");
+    expect(status.querySelectorAll(".rim-splash-ball")).toHaveLength(3);
+    expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
   });
 });

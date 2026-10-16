@@ -135,6 +135,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,
+  the browser tab shows the RIM icon and the title "RIM", and restoring a session shows the
+  bouncing RIM splash, still when the system asks for reduced motion. The desktop window and
+  its installers are named "RIM".
 - After turning on key sign-in, Settings > Security says every other session of the account was
   signed out, which the server now does at enrollment, instead of offering to sign them out.
   Account settings keeps "Sign out other sessions".

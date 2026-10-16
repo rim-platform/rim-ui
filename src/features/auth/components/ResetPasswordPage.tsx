@@ -5,6 +5,7 @@ import { useResetPasswordMutation } from "../api/usePasswordResetMutations";
 import { cn } from "../../../shared/ui/cn";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { useHealthCheck } from "../../system/api/useHealthCheck";
+import { BrandHeading } from "./BrandHeading";
 
 /**
  * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
@@ -62,7 +63,7 @@ export function ResetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
         <header className="text-center">
-          <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
+          <BrandHeading />
           <p className="mt-1 text-sm text-rim-text-muted">Set a new password</p>
         </header>
 

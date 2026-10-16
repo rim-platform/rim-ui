@@ -7,6 +7,7 @@ import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { useHealthCheck } from "../../system/api/useHealthCheck";
 import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
+import { BrandHeading } from "./BrandHeading";
 
 export function ForgotPasswordPage() {
   const [username, setUsername] = useState("");
@@ -29,7 +30,7 @@ export function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-lg space-y-6">
         <header className="text-center">
-          <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
+          <BrandHeading />
           <p className="mt-1 text-sm text-rim-text-muted">Reset your password</p>
         </header>
 

@@ -25,6 +25,7 @@ import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsInstanceOperator } from "../../instance-moderation/api/instanceModeration";
+import { RimMark } from "../../../shared/brand/RimLogo";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -106,8 +107,8 @@ function AboutRim() {
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rim-accent/10 text-rim-accent font-bold text-lg">
-            R
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rim-void text-rim-text">
+            <RimMark className="h-7 w-7" />
           </div>
           <div>
             <p className="text-sm font-semibold text-rim-text">RIM</p>

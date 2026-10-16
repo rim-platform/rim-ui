@@ -29,6 +29,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { ownerName as shownOwnerName, sameWorkspaceName } from "../../workspaces/workspaceLabel";
 import { InviteTokenType } from "../types";
 import { InviteByline } from "./InviteByline";
+import { BrandHeading } from "./BrandHeading";
 
 interface JoinAuthenticatedProps {
   /** Raw invite token from the `:token` URL param. */
@@ -114,7 +115,7 @@ export function JoinAuthenticated({
         <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
           <div className="w-full max-w-lg space-y-6">
             <header className="text-center">
-              <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
+              <BrandHeading />
               <p className="mt-1 text-sm text-rim-text-muted">
                 {workspaceName
                   ? `You have been invited to join ${workspaceName}`

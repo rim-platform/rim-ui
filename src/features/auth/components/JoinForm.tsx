@@ -53,6 +53,7 @@ import { InviteByline } from "./InviteByline";
 import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 import { TermsAcceptance } from "./TermsAcceptance";
+import { BrandHeading } from "./BrandHeading";
 
 /**
  * Email validation regex mirroring the backend's pragmatic email regex.
@@ -297,7 +298,7 @@ export function JoinForm({
         <InstanceNotice />
 
         <header className="text-center">
-          <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
+          <BrandHeading />
           <p className="mt-1 text-sm text-rim-text-muted">{headerCopy(variant, workspaceName)}</p>
           {variant === InviteTokenType.WORKSPACE && workspaceName && (
             <>

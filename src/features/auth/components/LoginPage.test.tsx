@@ -105,7 +105,7 @@ describe("LoginPage", () => {
 
   it("renders the login form with no signup affordances in default state", () => {
     renderPage();
-    expect(screen.getByText("RIM")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "RIM" })).toBeInTheDocument();
     expect(screen.getByText("Sign in to your workspace")).toBeInTheDocument();
     expect(screen.getByText("Log in")).toBeInTheDocument();
   });

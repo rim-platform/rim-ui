@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "rim-ui",
+  "productName": "RIM",
   "version": "0.1.0",
   "identifier": "com.rim.rim-ui",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "rim-ui",
+        "title": "RIM",
         "width": 800,
         "height": 600,
         "decorations": false
