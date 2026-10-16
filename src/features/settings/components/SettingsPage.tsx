@@ -15,6 +15,7 @@ import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../../shared/ui/focusNavigation";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { AboutNotices } from "../../updater/components/AboutNotices";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
 import {
   AboutServerApiBanner,
@@ -142,12 +143,14 @@ function AboutRim() {
           </div>
           <div className="rounded-md bg-rim-void px-3 py-2">
             <span className="text-rim-text-faint">License</span>
-            <p className="font-medium text-rim-text">Proprietary</p>
+            <p className="font-medium text-rim-text">Apache-2.0</p>
           </div>
         </div>
       </div>
 
       <AboutUpdates />
+
+      <AboutNotices />
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-3">
         <p className="text-sm font-medium text-rim-text">Core Capabilities</p>

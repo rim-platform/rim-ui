@@ -32,6 +32,8 @@ coverage/
 .claude/
 .env
 src-tauri/target/
+# Written by `npm run licenses`, bundled with the desktop app and attached to each release.
+src-tauri/resources/THIRD-PARTY-LICENSES.txt
 *.tsbuildinfo
 
 # Python bytecode (plugins/hello-world runs under the conformance tests)

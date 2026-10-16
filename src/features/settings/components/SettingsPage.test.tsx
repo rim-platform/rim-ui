@@ -106,6 +106,9 @@ vi.mock("../../updater/components/AboutUpdates", () => ({
   AboutVersion: () => <p>Version 9.9.9</p>,
   AboutUpdates: () => <div data-testid="about-updates">Updates</div>,
 }));
+vi.mock("../../updater/components/AboutNotices", () => ({
+  AboutNotices: () => <div data-testid="about-notices">Third-party licences</div>,
+}));
 vi.mock("../../updater/components/AboutServer", () => ({
   AboutServerVersion: () => <p>Server 8.8.8</p>,
   AboutServerApiBanner: () => <p role="status">Newer server API</p>,
@@ -265,6 +268,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Server 8.8.8")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Newer server API");
     expect(screen.getByTestId("about-updates")).toBeInTheDocument();
+    expect(screen.getByTestId("about-notices")).toBeInTheDocument();
     expect(screen.getByText("A programmable communication workspace.")).toBeInTheDocument();
   });
 
