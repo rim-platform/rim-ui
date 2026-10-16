@@ -1131,7 +1131,8 @@ pub struct WebPluginFile {
     pub base64: String,
 }
 
-/// Read an installed `WebSandboxed` plugin's files after checking its
+/// Read an installed `WebSandboxed` plugin's bundle files (the manifest, the
+/// entrypoint and `panels/`, nothing else of its folder) after checking its
 /// fingerprint against the one recorded at install, as enabling a process does,
 /// and the bundle rules.
 #[tauri::command]

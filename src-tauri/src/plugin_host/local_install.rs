@@ -259,7 +259,8 @@ fn copy_dir_recursive(
 /// 5. Check for reserved-prefix rejection.
 /// 6. Check for existing-plugin collision.
 /// 7. Compute the bundle fingerprint (TOFU).
-/// 8. Copy (not move) the plugin into `~/.rim/plugins/<plugin_id>/`.
+/// 8. Copy (not move) the plugin into `~/.rim/plugins/<plugin_id>/`; for a
+///    `WebSandboxed` plugin, unpack just its bundle files there instead.
 /// 9. Return `(manifest, final_dir, result, bundle_fingerprint)`.
 ///
 /// The caller (`plugin_install_from_local` in `commands.rs`) is responsible for
@@ -329,10 +330,13 @@ pub async fn install_from_local(
         return Err(LocalInstallError::InvalidManifest(e));
     }
 
-    // A web plugin's folder must be what a bundle of it would hold.
-    if manifest.runtime_kind == RuntimeKind::WebSandboxed {
-        bundle::check_dir(&canonical_source)?;
-    }
+    // A web plugin's folder must hold a bundle by the bundle rules; that bundle is
+    // what gets installed.
+    let web_bundle = if manifest.runtime_kind == RuntimeKind::WebSandboxed {
+        Some(bundle::check_dir(&canonical_source)?)
+    } else {
+        None
+    };
 
     // Step 5: reserved-prefix check.
     if manifest.has_reserved_prefix() {
@@ -353,14 +357,18 @@ pub async fn install_from_local(
         return Err(LocalInstallError::AlreadyExists(manifest.plugin_id.clone()));
     }
 
-    // Step 7: bundle fingerprint (TOFU) — computed before copy so it reflects
-    // the user-supplied source, not our copy.
-    let bundle_fingerprint =
-        compute_bundle_fingerprint(&canonical_source).map_err(LocalInstallError::Io)?;
-
-    // Step 8: copy into installed-plugins directory.
-    std::fs::create_dir_all(&plugins_root)?;
-    copy_dir_recursive(&canonical_source, &final_dir, &canonical_source)?;
+    // Steps 7 and 8: a web plugin's bundle is unpacked and fingerprinted as
+    // installed; any other plugin is fingerprinted (TOFU) before the copy, so the
+    // fingerprint reflects the user-supplied source, then copied whole.
+    let bundle_fingerprint = if let Some(web_bundle) = web_bundle {
+        bundle::unpack(&web_bundle, &plugins_root, false)?;
+        compute_bundle_fingerprint(&final_dir)?
+    } else {
+        let fingerprint = compute_bundle_fingerprint(&canonical_source)?;
+        std::fs::create_dir_all(&plugins_root)?;
+        copy_dir_recursive(&canonical_source, &final_dir, &canonical_source)?;
+        fingerprint
+    };
 
     let result = PluginInstallResult {
         plugin_id: manifest.plugin_id.clone(),

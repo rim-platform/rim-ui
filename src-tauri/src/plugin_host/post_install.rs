@@ -79,12 +79,33 @@ pub fn steps_for_top_level_files<S: AsRef<str>>(
     steps
 }
 
+/// Whether the `package.json` text `bytes` gives npm anything to install: a non-empty
+/// `dependencies`, `optionalDependencies` or `peerDependencies`. Text that is not a JSON
+/// object counts as needing the install.
+pub fn package_json_needs_install(bytes: &[u8]) -> bool {
+    let Ok(serde_json::Value::Object(package)) = serde_json::from_slice(bytes) else {
+        return true;
+    };
+    ["dependencies", "optionalDependencies", "peerDependencies"]
+        .iter()
+        .any(|key| match package.get(*key) {
+            None | Some(serde_json::Value::Null) => false,
+            Some(serde_json::Value::Object(deps)) => !deps.is_empty(),
+            Some(_) => true,
+        })
+}
+
 /// Steps implied by the files present in `scan_dir`, to be run in `run_dir`
-/// (they differ during install: scanned in staging, run in the final dir).
+/// (they differ during install: scanned in staging, run in the final dir). A
+/// `package.json` with nothing for npm to install implies no step.
 pub fn detect_steps(scan_dir: &Path, run_dir: &Path) -> Vec<PostInstallStep> {
     let present: Vec<&str> = ["package.json", "requirements.txt"]
         .into_iter()
         .filter(|f| scan_dir.join(f).is_file())
+        .filter(|f| {
+            *f != "package.json"
+                || std::fs::read(scan_dir.join(f)).map_or(true, |b| package_json_needs_install(&b))
+        })
         .collect();
     steps_for_top_level_files(&present, run_dir)
 }
@@ -187,16 +208,45 @@ mod tests {
         assert_eq!(steps[0].args, ["install", "--production"]);
     }
 
+    /// A plugin's `package.json` with only build tools in `devDependencies`.
+    const DEV_ONLY_PACKAGE: &str = r#"{"name":"plugin-x","devDependencies":{"esbuild":"^0.24.0","vitest":"^2.0.0"},"dependencies":{}}"#;
+
     #[test]
     fn detect_scans_one_dir_and_reports_the_run_dir() {
         let scan = tempfile::TempDir::new().unwrap();
-        std::fs::write(scan.path().join("package.json"), "{}").unwrap();
+        std::fs::write(
+            scan.path().join("package.json"),
+            r#"{"dependencies":{"ws":"8"}}"#,
+        )
+        .unwrap();
         // A directory named like a trigger file does not count.
         std::fs::create_dir(scan.path().join("requirements.txt")).unwrap();
         let steps = detect_steps(scan.path(), Path::new("/final"));
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].trigger_file, "package.json");
         assert_eq!(steps[0].working_dir, "/final");
+    }
+
+    #[test]
+    fn npm_runs_only_for_a_package_json_with_something_to_install() {
+        let scan = tempfile::TempDir::new().unwrap();
+        let npm_steps = |text: &str| {
+            std::fs::write(scan.path().join("package.json"), text).unwrap();
+            detect_steps(scan.path(), scan.path()).len()
+        };
+        assert_eq!(npm_steps(DEV_ONLY_PACKAGE), 0);
+        assert_eq!(npm_steps("{}"), 0);
+        assert_eq!(npm_steps(r#"{"dependencies":{"ws":"8"}}"#), 1);
+        assert_eq!(npm_steps(r#"{"optionalDependencies":{"fsevents":"2"}}"#), 1);
+        assert_eq!(npm_steps(r#"{"peerDependencies":{"react":"19"}}"#), 1);
+        assert_eq!(npm_steps("{ not json"), 1);
+        assert_eq!(npm_steps("[]"), 1);
+        std::fs::write(scan.path().join("requirements.txt"), "requests\n").unwrap();
+        assert_eq!(
+            npm_steps(DEV_ONLY_PACKAGE),
+            1,
+            "requirements.txt still runs pip"
+        );
     }
 
     #[test]
