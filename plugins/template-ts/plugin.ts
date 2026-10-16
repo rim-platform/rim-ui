@@ -1,8 +1,7 @@
 // The template plugin's commands. `main.ts` runs it; `plugin.test.ts` tests it
 // against an in-memory host, with no RIM app needed.
-//
-// Outside this repository, import from "@rim/plugin-sdk" instead of the path below.
-import { definePlugin, ErrorCode, PluginError } from "../../sdk/plugin-sdk/src/index.ts";
+
+import { definePlugin, ErrorCode, PluginError } from "@rim-platform/plugin-sdk";
 
 export const PLUGIN_ID = "dev.example.template-ts";
 

@@ -12,7 +12,7 @@ import {
   isBundlePath,
   parseManifestText,
   type PluginManifest,
-} from "./manifestRules";
+} from "../../../../sdk/plugin-sdk/src/manifestRules";
 
 export const BUNDLE_FORMAT = "rim-plugin-bundle";
 export const BUNDLE_MEDIA_TYPE = "application/vnd.rim.plugin-bundle+json";

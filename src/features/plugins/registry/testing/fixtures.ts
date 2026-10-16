@@ -8,7 +8,7 @@ import {
 } from "../../../../core/graphql/generated/schema-types";
 import type { PluginManifestStatement } from "../../../key-identity/browser/pluginManifest";
 import type { PluginInfo } from "../../types";
-import { parseManifestText } from "../../web/manifestRules";
+import { parseManifestText } from "../../../../../sdk/plugin-sdk/src/manifestRules";
 import { HELLO_WEB_MANIFEST } from "../../web/testing/helloWeb";
 import type { RegistryEntry } from "../api";
 import type { VerifiedEntry } from "../verify";

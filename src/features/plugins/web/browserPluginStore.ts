@@ -16,7 +16,11 @@ import type {
 } from "../types";
 import { readBundle, sha256Hex, type BundleFile } from "./bundle";
 import { fetchBundle, serverBundleUrl } from "./bundleLink";
-import { checkInstall, parseManifestText, type PluginManifest } from "./manifestRules";
+import {
+  checkInstall,
+  parseManifestText,
+  type PluginManifest,
+} from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins, type BundleInstall, type PluginServices } from "./pluginServices";
 import { ErrorCode, RpcError, type PrincipalMapping } from "./rpc";
 

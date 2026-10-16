@@ -1,5 +1,5 @@
 {
-  "name": "@rim/plugin-sdk",
+  "name": "@rim-platform/plugin-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for RIM plugin protocol v1",
   "license": "Apache-2.0",
@@ -12,17 +12,35 @@
     "url": "git+https://github.com/rim-platform/rim-ui.git",
     "directory": "sdk/plugin-sdk"
   },
-  "private": true,
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
-      "browser": "./src/index.browser.ts",
-      "default": "./src/index.ts"
+      "browser": {
+        "types": "./dist/index.browser.d.ts",
+        "default": "./dist/index.browser.js"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
-    "./testing": "./src/testing.ts"
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./package.json": "./package.json"
   },
+  "types": "./dist/index.d.ts",
   "bin": {
-    "rim-plugin-bundle": "./scripts/bundle-plugin.mjs"
+    "rim-plugin-bundle": "./dist/scripts/bundle-plugin.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs"
   },
   "engines": {
     "node": ">=22.18"
@@ -34,5 +52,9 @@
     "esbuild": {
       "optional": true
     }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

@@ -7,6 +7,17 @@ import { encodeFrame, FrameDecoder } from "./framing.ts";
 import type { Initiator, Plugin } from "./plugin.ts";
 import { portTransport, type PortLike } from "./transport.ts";
 
+/** The host's install rules for `rim-plugin.json`, for checking a plugin's manifest in its tests. */
+export {
+  checkInstall,
+  ManifestError,
+  parseManifest,
+  parseManifestText,
+  validateManifest,
+  type InstallContext,
+  type PluginManifest,
+} from "./manifestRules.ts";
+
 /** What the test host sends in its handshake, and how it answers the plugin. */
 export interface TestHostOptions {
   /** The manifest to check the plugin against. Defaults to none (`false`). */

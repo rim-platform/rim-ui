@@ -2,15 +2,15 @@
 // public repositories in the host's store and shows their open pull requests
 // in its panel. It talks only to api.github.com, without a token, so it
 // refreshes at most every 2 minutes and says when GitHub refuses.
-//
-// Outside this repository, import from "@rim/plugin-sdk" instead of the path below.
+
 import {
   definePlugin,
   ErrorCode,
   HostRequestError,
   PluginError,
   type Host,
-} from "../../sdk/plugin-sdk/src/index.ts";
+} from "@rim-platform/plugin-sdk";
+
 import { fetchPulls, GitHubError, normalizeRepo, type Pull } from "./github.ts";
 
 export const PLUGIN_ID = "chat.rim.github-prs";

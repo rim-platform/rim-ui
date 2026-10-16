@@ -2,6 +2,8 @@
 // path, UTF-8 files as `text` and others as `base64`, compact, so the same files
 // always give the same bytes and the same SHA-256.
 
+export { isBundlePath } from "./manifestRules.ts";
+
 /** The `format` field of every bundle. */
 export const BUNDLE_FORMAT = "rim-plugin-bundle";
 /** Largest bundle file, in bytes. */
@@ -16,15 +18,6 @@ export interface BundleFile {
 }
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-
-/** Whether `path` is a bundle path: 1 to 255 bytes of `/`-separated `A-Z a-z 0-9 . _ -` segments, none empty or starting with `.`. */
-export function isBundlePath(path: string): boolean {
-  return (
-    path.length > 0 &&
-    new TextEncoder().encode(path).length <= 255 &&
-    path.split("/").every((s) => s.length > 0 && !s.startsWith(".") && /^[A-Za-z0-9._-]+$/.test(s))
-  );
-}
 
 function base64(bytes: Uint8Array): string {
   let binary = "";

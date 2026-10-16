@@ -1,5 +1,5 @@
 {
-  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and src/features/plugins/web/manifestRules.ts run every entry and must agree with `valid`. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
+  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and sdk/plugin-sdk/src/manifestRules.ts run every entry and must agree with `valid`. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
   "forbiddenOrigins": ["https://api.rim.example/api", "https://rim.example"],
   "vectors": [
     {

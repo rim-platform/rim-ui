@@ -17,6 +17,7 @@ template-ts/
   main.ts           # entrypoint the host runs (executable, #!/usr/bin/env node)
   plugin.ts         # the commands
   plugin.test.ts    # tests against the SDK's in-memory host
+  package.json      # the SDK, esbuild, TypeScript and Vitest as dev dependencies
   tsconfig.json
 ```
 
@@ -24,17 +25,17 @@ template-ts/
 
 1. Copy the folder and change `plugin_id` in `rim-plugin.json` and `PLUGIN_ID` in
    `plugin.ts` to your own reverse-domain id.
-2. Outside rim-ui, depend on the SDK and import from `@rim/plugin-sdk` instead of the
-   relative path in `plugin.ts` and `plugin.test.ts`. Node will not run TypeScript
-   from `node_modules`, so run it bundled (`npx rim-plugin-bundle .`) rather than
-   from `main.ts`.
+2. Outside rim-ui, `npm install` installs `@rim-platform/plugin-sdk` from npm; the
+   imports stay as they are. In rim-ui the npm workspace links the package to
+   `sdk/plugin-sdk` instead. The SDK's README says how a plugin repository commits its
+   build.
 3. Add each command to the manifest and to `commands` in `plugin.ts`. Mark anything
    that changes or deletes something `dangerous` in both places.
 
 ## Run it
 
-- Tests: `npm test` in rim-ui runs `plugin.test.ts`, and the SDK's stdio test starts
-  this plugin as a real process.
+- Tests: `npm test` here or in rim-ui runs `plugin.test.ts`, and in rim-ui the SDK's
+  stdio test starts this plugin as a real process.
 - In the app: `npm run plugin:bundle -- plugins/template-ts`, then
   `cp -r plugins/template-ts/dist/dev.example.template-ts ~/.rim/plugins/`, start
   RIM, and enable "TypeScript Template" in **Settings → Plugins**. Run

@@ -1,4 +1,4 @@
-# @rim/plugin-sdk
+# @rim-platform/plugin-sdk
 
 Write a RIM plugin in TypeScript. A plugin is either a local process the RIM desktop
 app starts and talks to over stdio (`DesktopLocalProcess`), or a bundle that runs in a
@@ -8,15 +8,24 @@ sandboxed frame of the app, on the desktop and on the web, and talks over a
 transport: the handshake and version negotiation, heartbeats, the dangerous-command
 gate, errors and shutdown.
 
-The SDK lives in rim-ui until the protocol settles, and is not published to npm yet.
-Start from [`plugins/template-ts`](../../plugins/template-ts), which uses it.
+The SDK is developed in rim-ui and published to npm from rim-ui's releases; it keeps a
+version of its own. Start from [`plugins/template-ts`](../../plugins/template-ts), which
+uses it.
+
+## Install
+
+```sh
+npm install --save-dev @rim-platform/plugin-sdk esbuild
+```
+
+The package ships JavaScript and type declarations, the in-memory test host
+(`@rim-platform/plugin-sdk/testing`) and the bundler (`npx rim-plugin-bundle`). esbuild is
+an optional peer dependency that only the bundler needs.
 
 ## Requirements
 
 - Node 22.18 or newer. It runs `.ts` files as they are, so a plugin needs no build step
-  while you work on it inside rim-ui. Node does not do this for files under
-  `node_modules`, so a plugin that depends on `@rim/plugin-sdk` from outside rim-ui runs
-  only once bundled (see below); its tests still run with Vitest.
+  while you work on it: `node main.ts` runs it with the SDK from `node_modules`.
 - esbuild, only to bundle a plugin for installing (see below).
 
 ## Two transports, one API
@@ -33,7 +42,7 @@ Start from [`plugins/template-ts`](../../plugins/template-ts), which uses it.
 `{ messages: AsyncIterable<string>; send(text): void; close(): void }`;
 `stdioTransport()` and `portTransport(port)` are the two the SDK ships.
 
-The package has a `browser` export condition, `src/index.browser.ts`, with the same API
+The package has a `browser` export condition, `dist/index.browser.js`, with the same API
 and no `node:` imports; `rim-plugin-bundle` uses it for WebSandboxed plugins. A web
 plugin gets no Node APIs and no filesystem: it reaches the network only at the origins
 its manifest lists in `network_origins`, once the user approves `network.fetch`.
@@ -42,7 +51,7 @@ its manifest lists in `network_origins`, once the user approves `network.fetch`.
 
 ```ts
 #!/usr/bin/env node
-import { definePlugin, PluginError } from "@rim/plugin-sdk";
+import { definePlugin, PluginError } from "@rim-platform/plugin-sdk";
 
 await definePlugin({
   id: "dev.example.pods", // plugin_id in rim-plugin.json
@@ -165,13 +174,13 @@ but not frozen in v1, so the shapes may still change.
 
 ## Testing without the app
 
-`@rim/plugin-sdk/testing` runs a plugin against an in-memory host. Like the app, it
+`@rim-platform/plugin-sdk/testing` runs a plugin against an in-memory host. Like the app, it
 refuses `host.panels` calls with `CAPABILITY_DENIED` unless `grantedCapabilities`
 includes `"ui.panel"` (and `host.chat` calls without `"chat.read"` or `"chat.write"`),
 and `onRequest` answers the rest:
 
 ```ts
-import { startTestHost } from "@rim/plugin-sdk/testing";
+import { startTestHost } from "@rim-platform/plugin-sdk/testing";
 
 const host = startTestHost(createPlugin(), { manifestPath: "rim-plugin.json" });
 await host.handshake();
@@ -187,13 +196,26 @@ can answer `rim.storage.get` and `rim.storage.set` to test a plugin's store, and
 `rim.chat.*` calls, which the test host refuses with `CAPABILITY_DENIED` unless
 `grantedCapabilities` has `"chat.read"` (or `"chat.write"` for posting).
 
+`validateManifest` checks a manifest by the rules the hosts install it by, and throws a
+`ManifestError` with the host's reason; `parseManifest` and `checkInstall` are its two
+halves. The web app installs by these same rules:
+
+```ts
+import { readFileSync } from "node:fs";
+import { validateManifest } from "@rim-platform/plugin-sdk/testing";
+
+const manifest = JSON.parse(readFileSync("rim-plugin.json", "utf8"));
+expect(() => validateManifest({ ...manifest, entrypoint: "main.mjs" })).not.toThrow();
+```
+
 ## Installing a plugin
 
 A plugin in `~/.rim/plugins` runs from its own folder, without the SDK source or
 your `node_modules`, so bundle it into one file first:
 
 ```sh
-npm run plugin:bundle -- plugins/template-ts          # in rim-ui
+npx rim-plugin-bundle .                               # in the plugin's folder
+npm run plugin:bundle -- plugins/template-ts          # or, in rim-ui
 cp -r plugins/template-ts/dist/dev.example.template-ts ~/.rim/plugins/
 ```
 
@@ -218,12 +240,55 @@ something or names a `node:` module: the frame shell loads the entry from a `blo
 URL, where nothing can be imported. Every file besides the manifest and `main.mjs`
 comes from `panels/`. Then enable the plugin in **Settings → Plugins**.
 
+## Publishing a plugin
+
+A plugin lives in a repository of its own, `plugin-<id>`, that holds the built plugin at
+its root beside the sources, so **Install from git URL** finds a complete plugin:
+
+```text
+plugin-<id>/
+  rim-plugin.json   # entrypoint "main.mjs"
+  main.mjs          # built and committed
+  panels/           # the panels, as the bundle ships them
+  src/main.ts       # the source the build starts from
+  package.json      # devDependencies: @rim-platform/plugin-sdk, esbuild
+```
+
+`--in-place` builds the source `--entry` names into `main.mjs` beside the manifest, which
+must already point at `main.mjs`. `--check` builds it again into a temporary folder and
+exits 1, naming each file, when the committed `main.mjs` or `panels/` differ from that
+build, so a repository's CI catches a `main.mjs` nobody rebuilt:
+
+```sh
+npx rim-plugin-bundle --in-place --entry src/main.ts .   # after changing the source
+npx rim-plugin-bundle --check --entry src/main.ts .      # in CI
+```
+
+The build names no absolute path and no time, so the same sources and the same SDK
+version give the same bytes on every machine; commit the lockfile so CI builds with the
+SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle`
+(`npx rim-plugin-bundle .`) can go on the release for **Install from link**.
+
+The desktop takes a WebSandboxed plugin's checkout as its bundle, and refuses any file in
+it besides `rim-plugin.json`, the entrypoint and `panels/` (names starting with `.` are
+skipped). A web plugin repository with `src/` or `package.json` at its root therefore
+installs from its `.rimbundle` link, not from its git URL, until the desktop skips the
+sources.
+
 ## Working on the SDK
 
 - `src/generated/protocol.ts` is generated from the schema: run `npm run sdk:generate`
   after the schema changes. A test fails while it is stale.
-- `npm run sdk:typecheck` checks the SDK and the template with the strict settings
-  plugins use (`erasableSyntaxOnly`, so Node can run the source).
+- `npm run sdk:build` builds the package into `dist/`: the JavaScript, the type
+  declarations and the bundler. The plugins in rim-ui import `@rim-platform/plugin-sdk`
+  as any plugin does; the npm workspace links it to this folder, so they get `dist/`,
+  exactly what the package ships. `npm test` builds it first; after changing the SDK,
+  rebuild before running a plugin by hand.
+- `npm run sdk:typecheck` builds it and checks the SDK and the plugins with the strict
+  settings plugins use (`erasableSyntaxOnly`, so Node can run the source).
+- `npm run sdk:smoke` packs the SDK as npm would publish it, installs the tarball into a
+  copy of the template outside the repository, and type-checks, tests, runs and bundles
+  the copy there. `docs/release-sdk.md` says how a release publishes the package.
 - `npm test` runs the SDK tests, including the template over real stdio, both from
   source and bundled, and over a `MessageChannel`. The app's web host runs the
   template's browser build over a port in its own conformance test

@@ -583,7 +583,9 @@ fn template_ts_manifest() -> PluginManifest {
     PluginManifest::load(&template_ts_dir().join("rim-plugin.json")).expect("template-ts manifest")
 }
 
-/// The template's entrypoint is TypeScript that Node 22.18+ runs as is.
+/// The TypeScript plugins run from source: Node 22.18+ runs their TypeScript as
+/// is, and they import the SDK by its package name, which resolves to the SDK's
+/// build (`npm ci` and `npm run sdk:build` at the repository root).
 fn node_runs_typescript() -> bool {
     let runs = std::process::Command::new("node")
         .args(["-e", "process.exit(process.features.typescript ? 0 : 1)"])
@@ -591,8 +593,21 @@ fn node_runs_typescript() -> bool {
         .is_ok_and(|out| out.status.success());
     if !runs {
         eprintln!("skipping: needs Node 22.18 or newer on PATH");
+        return false;
     }
-    runs
+    let sdk_built = std::process::Command::new("node")
+        .args([
+            "--input-type=module",
+            "-e",
+            "await import('@rim-platform/plugin-sdk')",
+        ])
+        .current_dir(template_ts_dir())
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !sdk_built {
+        eprintln!("skipping: the plugin SDK is not built; run npm ci and npm run sdk:build");
+    }
+    sdk_built
 }
 
 fn execute_frame(id: i64, command_id: &str, initiator: &str, confirmed: bool) -> Value {

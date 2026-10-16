@@ -227,6 +227,7 @@ npm run format:check         # Prettier
 npm run build                # TypeScript check and Vite build
 npm test                     # Vitest
 npm run sdk:typecheck        # the plugin SDK and the TypeScript example plugins
+npm run sdk:smoke            # the SDK's npm tarball, installed into a copy of the template
 
 # The Tauri side, from src-tauri/
 cargo fmt --check

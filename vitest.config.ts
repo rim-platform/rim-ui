@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify("0.0.0-test") },
   test: {
+    // The plugins import the SDK by package name, which resolves to its build.
+    globalSetup: ["./sdk/plugin-sdk/test/globalSetup.ts"],
     projects: [
       {
         extends: true,
