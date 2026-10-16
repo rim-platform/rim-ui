@@ -21,7 +21,11 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
-import { renderWithServerInfo, type FakeServerDetails } from "../../../test/serverInfo";
+import {
+  fakeServerInfo,
+  renderWithServerInfo,
+  type FakeServerDetails,
+} from "../../../test/serverInfo";
 
 const mockSignupMutate = vi.fn();
 /** The mutation's last error, as the hook reports it. */
@@ -44,6 +48,15 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   }),
 }));
 
+// What the server answers when the page reads its info again (after a refusal over the terms):
+// the rendered server's info, never whatever server runs on this machine.
+const server = vi.hoisted(() => ({ details: {} as FakeServerDetails }));
+const fetchServerInfo = vi.hoisted(() => vi.fn());
+vi.mock("../../updater/api/serverInfoApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../updater/api/serverInfoApi")>()),
+  fetchServerInfo,
+}));
+
 // The key form has its own tests; the stand-in is in `__mocks__`.
 vi.mock("./KeySignupForm");
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
@@ -56,6 +69,8 @@ import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 beforeEach(() => {
   desktop.value = false;
   desktop.probing = false;
+  server.details = {};
+  fetchServerInfo.mockImplementation(async () => fakeServerInfo({}, server.details));
 });
 
 /** Renders `JoinForm` inside a router so any internal Links don't break. */
@@ -610,6 +625,7 @@ describe("JoinForm — instance notice and terms of service", () => {
   });
 
   function renderWithServer(details: FakeServerDetails) {
+    server.details = details;
     return renderWithServerInfo(
       <MemoryRouter>
         <JoinForm
@@ -705,6 +721,8 @@ describe("JoinForm — instance notice and terms of service", () => {
     expect(termsBox()).not.toBeChecked();
     expect(termsBox()).toHaveAccessibleDescription(TERMS_REFUSED_MESSAGE);
     expect(submitButton()).toBeDisabled();
+    // The page reads the server's terms again.
+    await waitFor(() => expect(fetchServerInfo).toHaveBeenCalledOnce());
 
     await user.click(termsBox());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
