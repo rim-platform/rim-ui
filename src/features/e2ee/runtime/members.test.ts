@@ -9,7 +9,7 @@ vi.mock("../../relay/contacts/identity", () => identity);
 
 import { rememberRelays } from "../../relay/contacts/knownRelays";
 import { useRelayStore } from "../../relay/state/useRelayStore";
-import { directoryFor, isReady, notReadyMembers } from "./members";
+import { directoryFor, isReady, notReadyMembers, notReadyMessage } from "./members";
 
 const LOG = [{ payload: "inception", signature: "s" }];
 const CERT = { payload: "cert", signature: "s" };
@@ -79,6 +79,10 @@ describe("readiness of remote members", () => {
       { userId: "u2", username: "bob", principalId: "rimp1_remote" } as never,
     ]);
     expect(names).toEqual(["bob"]);
+    expect(notReadyMessage(names)).toBe("bob has no device set up for encryption yet");
+    expect(notReadyMessage(["Ann", "bob", "Cy"])).toBe(
+      "Ann, bob and Cy have no device set up for encryption yet",
+    );
     expect(
       isReady({
         principalId: "p",
