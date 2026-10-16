@@ -49,6 +49,25 @@ Normative, versioned formats in `specs/`:
 - `specs/backup-endpoint-v1.md`: the protocol of a backup endpoint a user runs.
 - `specs/backup-endpoint-reference.py`: a complete backup endpoint in one Python file.
 
+## Releasing
+
+A release is the tag `v<version>`, cut by the maintainer as rim-server's
+`docs/operations/release-checklist.md` lists, with rim-server at the same version. In this
+repository:
+
+1. The release pull request runs `npm run version:set -- <version>`, which writes the version to
+   `package.json`, `package-lock.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` and
+   turns `Unreleased` in `CHANGELOG.md` into the version's section. `npm run version:check`, also
+   run in CI, fails when those files disagree.
+2. Pushing the tag starts `.github/workflows/release.yaml`. After the maintainer approves it in
+   the `release` environment, it publishes the web image and builds the Linux and Windows
+   installers, then publishes the GitHub release with the changelog section, the installers,
+   the updater's `latest.json`, `THIRD-PARTY-LICENSES.txt`, a cosign-signed `SHA256SUMS` and
+   build provenance attestations.
+
+`updater.md` says what the release needs configured (the updater key, its variables and
+secrets) and how to roll an update back.
+
 ## Records
 
 - `decisions/`: sealed decision records (`decisions/README.md` indexes them).
