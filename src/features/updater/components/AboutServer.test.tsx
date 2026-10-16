@@ -25,11 +25,13 @@ function About() {
 }
 
 describe("About server rows", () => {
-  it("shows the server's version and no banner when the API matches", async () => {
+  it("shows the server's host, version and API version, and no banner when the API matches", async () => {
     serveInfo("0.3.0", CLIENT_API_VERSION);
     renderWithProviders(<About />);
 
-    expect(await screen.findByText("Server 0.3.0")).toBeInTheDocument();
+    expect(
+      await screen.findByText(`Server localhost:8080, version 0.3.0, API ${CLIENT_API_VERSION}`),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -43,7 +45,7 @@ describe("About server rows", () => {
     server.use(http.post("*/api", () => HttpResponse.error()));
     renderWithProviders(<About />);
 
-    expect(await screen.findByText("Server unreachable")).toBeInTheDocument();
+    expect(await screen.findByText("Server localhost:8080 unreachable")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -51,7 +53,11 @@ describe("About server rows", () => {
     serveInfo("2.0.0", CLIENT_API_VERSION + 1);
     renderWithProviders(<About />);
 
-    expect(await screen.findByText("Server 2.0.0")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        `Server localhost:8080, version 2.0.0, API ${CLIENT_API_VERSION + 1}`,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(NEWER_SERVER_API_MESSAGE);
   });
 
@@ -59,7 +65,11 @@ describe("About server rows", () => {
     serveInfo("0.0.1", CLIENT_API_VERSION - 1);
     renderWithProviders(<About />);
 
-    expect(await screen.findByText("Server 0.0.1")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        `Server localhost:8080, version 0.0.1, API ${CLIENT_API_VERSION - 1}`,
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
@@ -113,7 +123,9 @@ describe("AboutServerFeatures", () => {
         <AboutServerFeatures />
       </>,
     );
-    expect(await screen.findByText("Server 0.3.0")).toBeInTheDocument();
+    expect(
+      await screen.findByText(`Server localhost:8080, version 0.3.0, API ${CLIENT_API_VERSION}`),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Server features" })).not.toBeInTheDocument();
   });
 });
