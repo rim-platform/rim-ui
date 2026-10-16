@@ -43,6 +43,7 @@ import { HealthIndicator } from "./HealthIndicator";
 import { RestoringSession } from "./RestoringSession";
 import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/DeviceKeySignIn";
 import { LinkThisDevice } from "../../key-identity/components/LinkThisDevice";
+import { BrandHeading } from "./BrandHeading";
 
 /**
  * Top-level component for the `/login` route.
@@ -100,7 +101,7 @@ export function LoginPage() {
         <InstanceNotice />
 
         <header className="text-center">
-          <h1 className="text-2xl font-semibold text-rim-text">RIM</h1>
+          <BrandHeading />
           <p className="mt-1 text-sm text-rim-text-muted">Sign in to your workspace</p>
         </header>
 

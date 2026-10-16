@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
+import { RestoringSessionSplash } from "../../features/auth/components/RestoringSession";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
@@ -110,8 +111,8 @@ export function AppShell() {
     return (
       <div className="flex h-screen flex-col bg-rim-void text-rim-text">
         {capabilities.customTitleBar && <TitleBar />}
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-rim-text-muted">
-          Restoring session...
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <RestoringSessionSplash />
         </div>
       </div>
     );

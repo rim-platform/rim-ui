@@ -76,7 +76,8 @@ release branch commits it). Development builds keep it empty.
    ```
 
    Next to each bundle the build writes a `.sig` file: the AppImage on Linux, the `.app.tar.gz`
-   on macOS, the NSIS `-setup.exe` and the `.msi` on Windows.
+   on macOS, the NSIS `-setup.exe` and the `.msi` on Windows. Bundle file names start with the
+   product name, `RIM`.
 
 2. Upload the bundles and write `latest.json` next to them:
 
@@ -86,9 +87,9 @@ release branch commits it). Development builds keep it empty.
      "notes": "What changed, shown in Settings → About.",
      "pub_date": "2026-11-01T12:00:00Z",
      "platforms": {
-       "linux-x86_64": { "signature": "<contents of the .AppImage.sig>", "url": "https://FILL-update-host/rim/0.2.0/rim-ui_0.2.0_amd64.AppImage" },
-       "darwin-aarch64": { "signature": "<contents of the .app.tar.gz.sig>", "url": "https://FILL-update-host/rim/0.2.0/rim-ui_aarch64.app.tar.gz" },
-       "windows-x86_64": { "signature": "<contents of the -setup.exe.sig>", "url": "https://FILL-update-host/rim/0.2.0/rim-ui_0.2.0_x64-setup.exe" }
+       "linux-x86_64": { "signature": "<contents of the .AppImage.sig>", "url": "https://FILL-update-host/rim/0.2.0/RIM_0.2.0_amd64.AppImage" },
+       "darwin-aarch64": { "signature": "<contents of the .app.tar.gz.sig>", "url": "https://FILL-update-host/rim/0.2.0/RIM_aarch64.app.tar.gz" },
+       "windows-x86_64": { "signature": "<contents of the -setup.exe.sig>", "url": "https://FILL-update-host/rim/0.2.0/RIM_0.2.0_x64-setup.exe" }
      }
    }
    ```

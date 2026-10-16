@@ -135,6 +135,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,
+  the browser tab shows the RIM icon and the title "RIM", and restoring a session shows the
+  bouncing RIM splash, still when the system asks for reduced motion. The desktop window and
+  its installers are named "RIM".
 - A direct message is created when its first message is sent, not when the person is picked:
   picking one person (in New message, or with Send DM on their card) opens the DM you already
   have with them, or a draft shown as "New message to <name>" that leaves nothing behind if you

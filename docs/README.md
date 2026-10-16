@@ -15,6 +15,7 @@ them.
 - `version-skew.md`: which operations an older server refuses, and `npm run skew:check`.
 - `updater.md`: in-app updates, the signing key and `latest.json`.
 - `eslint-prettier.md`: the lint and format gates.
+- `branding.md`: where the logo, favicon, splash and app icons come from.
 
 ## Identity and encryption
 
