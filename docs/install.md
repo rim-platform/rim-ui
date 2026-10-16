@@ -16,7 +16,7 @@ Each release lists one file per package format. `<version>` is the release, such
 | `RIM_<version>_amd64.AppImage` | Any x86-64 Linux | One self-contained file: make it executable and run it. |
 | `RIM_<version>_x64-setup.exe` | Windows 10 and 11 | The installer for one user, with no administrator rights needed. |
 | `RIM_<version>_x64_en-US.msi` | Windows 10 and 11 | A Windows Installer package for managed installs (Group Policy, Intune, `msiexec`). |
-| `SHA256SUMS` and its signature | All | The checksums of every file above ([Verify a download](#verify-a-download)). |
+| `SHA256SUMS`, `SHA256SUMS.sigstore.json` | All | The checksums of every file above and their cosign signature ([Verify a download](#verify-a-download)). |
 | `THIRD-PARTY-LICENSES.txt` | All | The licence notices of the open-source software RIM includes. |
 
 ### Linux
@@ -37,6 +37,7 @@ chmod +x RIM_<version>_amd64.AppImage
 
 What the app needs at run time:
 
+- **glibc 2.34 or newer**, as on Debian 12, Ubuntu 22.04 and newer releases.
 - **WebKitGTK 4.1**, the web engine that draws the app (`libwebkit2gtk-4.1-0` on Debian and
   Ubuntu, `webkit2gtk4.1` on Fedora). The packages install it; the AppImage carries it.
 - **A Secret Service**, the desktop keyring: GNOME Keyring, KWallet or KeePassXC, running and
@@ -76,20 +77,11 @@ There is no macOS download until signed and notarized builds exist. Build the ap
 
 ## Verify a download
 
-Download `SHA256SUMS` and its signature next to the files you downloaded, then check the
-checksums:
+Download `SHA256SUMS` and `SHA256SUMS.sigstore.json` next to the files you downloaded.
+`SHA256SUMS` lists the checksum of every installer and of `THIRD-PARTY-LICENSES.txt`.
 
-```sh
-sha256sum --ignore-missing -c SHA256SUMS       # Linux
-shasum -a 256 --ignore-missing -c SHA256SUMS   # macOS
-```
-
-On Windows, compare the output of `Get-FileHash RIM_<version>_x64-setup.exe` (PowerShell) with
-the line for that file in `SHA256SUMS`.
-
-`SHA256SUMS` is signed with [cosign](https://docs.sigstore.dev/) by this repository's release
-workflow, without a long-lived key. Check that the signature comes from that workflow for the
-tag you downloaded:
+First check that `SHA256SUMS` was signed by this repository's release workflow for the tag you
+downloaded. It is signed with [cosign](https://docs.sigstore.dev/), without a long-lived key:
 
 ```sh
 cosign verify-blob SHA256SUMS \
@@ -98,12 +90,25 @@ cosign verify-blob SHA256SUMS \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Each file also carries a GitHub build provenance attestation, which the GitHub CLI checks
-against this repository:
+Then check your files against it:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS       # Linux
+shasum -a 256 --check --ignore-missing SHA256SUMS   # macOS
+```
+
+On Windows, compare the output of `Get-FileHash RIM_<version>_x64-setup.exe` (PowerShell) with
+the line for that file in `SHA256SUMS`.
+
+Each file `SHA256SUMS` lists also carries a GitHub build provenance attestation, which the
+GitHub CLI checks against this repository:
 
 ```sh
 gh attestation verify RIM_<version>_amd64.AppImage --repo rim-platform/rim-ui
 ```
+
+The `.sig` file next to each installer is the in-app updater's signature; the app checks it
+itself, and you do not need it.
 
 ## Where the app keeps its data
 
@@ -165,8 +170,9 @@ notes, downloads it on request and installs it after **Restart to update**. Noth
 without that confirmation. Settings > About also has **Check for updates**.
 
 Each update is signed, and the app installs only an update whose signature matches the key built
-into it. The AppImage and both Windows installers update themselves this way. If the app cannot
-update a `.deb` or `.rpm` install, install the newer package from the releases page over it.
+into it. Every Linux and Windows install updates in place this way. A `.deb` or `.rpm` install
+asks for an administrator password to install the new package. On Windows, the unsigned
+installer of each new version meets SmartScreen again ([Windows](#windows)).
 
 ## Build from source
 
