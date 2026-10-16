@@ -5,7 +5,7 @@
  * while the app (or the browser tab) is open (key packages, Welcomes).
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import type { WorkspaceEvent } from "../../../core/events/types";
 import { logger } from "../../../core/logger";
@@ -34,7 +34,7 @@ import {
 } from "./groups";
 import { workspaceMembers } from "./members";
 import { cancelMembershipSyncs, syncMembership } from "./membership";
-import { e2eeSession, resetE2eeSession, type E2eeSession } from "./session";
+import { e2eeSession, onDeviceKeysChanged, resetE2eeSession, type E2eeSession } from "./session";
 import { returnAfterAbsence } from "./webReturn";
 
 /** Key packages are checked on start and this often while the app runs. */
@@ -204,11 +204,14 @@ export function handleE2eeEvent(event: WorkspaceEvent, workspaceId: string) {
 // ─── Start and timers ───────────────────────────────────────────────────────
 
 /**
- * Key packages, Welcomes and the note handler, for the signed-in account on this device. A
- * browser that comes back after a long absence leaves or re-joins its groups first.
+ * Key packages, Welcomes and the note handler, for the signed-in account on this device, on
+ * start and again whenever this device's keys change. A browser that comes back after a long
+ * absence leaves or re-joins its groups first.
  */
 export function useE2eeRuntime(workspaceId: string | null) {
   const userId = useAuthStore((s) => s.session?.userId);
+  // Counts `deviceKeysChanged` signals, so the workspace's groups are looked at again.
+  const [keysVersion, setKeysVersion] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
@@ -225,6 +228,10 @@ export function useE2eeRuntime(workspaceId: string | null) {
       await processWelcomes(session).catch(warn("joining"));
     };
     void tick();
+    const offKeysChanged = onDeviceKeysChanged(() => {
+      setKeysVersion((v) => v + 1);
+      void tick();
+    });
     const timer = setInterval(() => void tick(), KEY_PACKAGE_INTERVAL_MS);
     // Another tab of this browser may close and leave encryption to this one.
     const retry = setInterval(() => {
@@ -234,6 +241,7 @@ export function useE2eeRuntime(workspaceId: string | null) {
     }, OTHER_TAB_RETRY_MS);
     return () => {
       stopped = true;
+      offKeysChanged();
       clearInterval(timer);
       clearInterval(retry);
       setE2eeNoteHandler(null);
@@ -243,7 +251,7 @@ export function useE2eeRuntime(workspaceId: string | null) {
 
   // The workspace's encrypted conversations this device follows: pending changes, a group
   // nobody created, the weekly self-update. A browser's store opens after the app's first sync,
-  // so it syncs then.
+  // so it syncs then; a device whose keys changed looks again.
   const webEncryption = useE2eeStore((s) => s.webEncryption);
   useEffect(() => {
     if (!userId || !workspaceId) return;
@@ -257,5 +265,5 @@ export function useE2eeRuntime(workspaceId: string | null) {
         );
       }
     });
-  }, [userId, workspaceId, webEncryption]);
+  }, [userId, workspaceId, webEncryption, keysVersion]);
 }

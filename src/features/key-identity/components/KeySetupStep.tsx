@@ -6,7 +6,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { e2eeSession, resetE2eeSession } from "../../e2ee/runtime/session";
+import { deviceKeysChanged } from "../../e2ee/runtime/session";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { listDeviceKeyAccounts } from "../api/keyIdentity";
 import {
@@ -83,9 +83,8 @@ export function KeySetupStep() {
     setDoneFor(userId);
     dismiss();
     void qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(getGraphqlEndpoint()) });
-    // Look for this device's key now rather than when the cached session expires.
-    resetE2eeSession();
-    void e2eeSession();
+    // Set this device up for encryption now rather than when the cached session expires.
+    deviceKeysChanged();
   }
 
   function linked(linkedUserId: string) {

@@ -8,6 +8,7 @@ import { useLayoutPresetStore } from "../state/useLayoutPresetStore";
 import { BUILT_IN_PRESETS } from "../types/layoutPreset";
 import { useKeybindProfileStore } from "../../features/commands/state/useKeybindProfileStore";
 import { useVimStore } from "../../features/commands/state/useVimStore";
+import { useConnectionStore } from "../../features/system/state/useConnectionStore";
 import { StatusBar } from "./StatusBar";
 
 describe("StatusBar", () => {
@@ -15,6 +16,21 @@ describe("StatusBar", () => {
     useShellStore.getState().reset();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
     useLayoutPresetStore.setState({ activePresetId: null });
+  });
+
+  it("shows the WebSocket's state, and none while no subscription uses it", () => {
+    useConnectionStore.setState({ status: "connecting" });
+    renderWithProviders(<StatusBar />);
+    expect(screen.getByText("Connecting")).toBeInTheDocument();
+
+    act(() => useConnectionStore.setState({ status: "connected" }));
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    act(() => useConnectionStore.setState({ status: "disconnected" }));
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    act(() => useConnectionStore.setState({ status: "idle" }));
+    for (const label of ["Connecting", "Connected", "Offline"]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
   });
 
   it("shows the active layout preset", () => {

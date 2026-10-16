@@ -6,9 +6,41 @@ import { isSessionEndedClose } from "./subscriptionErrors";
 
 type ConnectionListener = () => void;
 
+/**
+ * The WebSocket's state: `idle` while no subscription needs it (it opens on the first one and
+ * closes after the last), `connecting` on its first attempt, `connected`, and `disconnected`
+ * from a lost connection until it is back.
+ */
+export type WsStatus = "idle" | "connecting" | "connected" | "disconnected";
+
 const connectionListeners = new Set<ConnectionListener>();
 const disconnectionListeners = new Set<ConnectionListener>();
 const sessionEndedListeners = new Set<ConnectionListener>();
+const statusListeners = new Set<(status: WsStatus) => void>();
+
+let status: WsStatus = "idle";
+
+/** The WebSocket's state now. */
+export function wsStatus(): WsStatus {
+  return status;
+}
+
+/** Register a callback invoked with every change of {@link wsStatus}. */
+export function onWsStatus(listener: (status: WsStatus) => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+function setStatus(next: WsStatus) {
+  if (status === next) return;
+  status = next;
+  statusListeners.forEach((fn) => fn(next));
+}
+
+/** The close graphql-ws makes once the last subscription has ended. */
+const NORMAL_CLOSURE = 1000;
 
 /** Register a callback invoked every time the WebSocket (re)connects. */
 export function onWsConnected(listener: ConnectionListener): () => void {
@@ -154,6 +186,8 @@ export const wsClient = createClient({
   on: {
     connecting: () => {
       attemptOpened = false;
+      // Attempts after a lost connection stay `disconnected` until one connects.
+      if (status === "idle") setStatus("connecting");
     },
     opened: () => {
       attemptOpened = true;
@@ -162,11 +196,15 @@ export const wsClient = createClient({
       activeSocket = socket as WebSocket;
       useEdgeStore.getState().setTooManyConnections(false);
       useEdgeStore.getState().setBlocked(false);
+      setStatus("connected");
       connectionListeners.forEach((fn) => fn());
     },
     closed: (event) => {
       activeSocket = null;
       clearTimeout(pongTimeoutId);
+      // A normal closure while subscriptions remain is reconnected at once (`connecting`).
+      const code = (event as { code?: number } | null)?.code;
+      setStatus(code === NORMAL_CLOSURE ? "idle" : "disconnected");
       disconnectionListeners.forEach((fn) => fn());
       if (isSessionEndedClose(event)) sessionEndedListeners.forEach((fn) => fn());
     },

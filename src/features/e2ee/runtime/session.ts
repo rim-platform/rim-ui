@@ -70,3 +70,22 @@ export function e2eeSession(): Promise<E2eeSession | null> {
 export function resetE2eeSession() {
   cached = null;
 }
+
+const keysChangedListeners = new Set<() => void>();
+
+/**
+ * This device's keys changed in a running session (an enrollment, a link): forget the resolved
+ * session and tell whoever listens, so the device sets itself up for encryption now.
+ */
+export function deviceKeysChanged() {
+  resetE2eeSession();
+  for (const listener of keysChangedListeners) listener();
+}
+
+/** Calls `listener` on every `deviceKeysChanged`; returns the unsubscribe. */
+export function onDeviceKeysChanged(listener: () => void): () => void {
+  keysChangedListeners.add(listener);
+  return () => {
+    keysChangedListeners.delete(listener);
+  };
+}

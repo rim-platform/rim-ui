@@ -35,7 +35,7 @@ function connectionLabel(status: string): string {
     case "connected":
       return "Connected";
     case "connecting":
-      return "Reconnecting";
+      return "Connecting";
     case "disconnected":
       return "Offline";
     default:
@@ -78,16 +78,18 @@ export function StatusBar() {
 
   return (
     <div className="flex h-6 shrink-0 items-center border-t border-rim-line bg-rim-void px-3 text-[10px] text-rim-text-faint select-none">
-      {/* Left: connection status */}
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            "inline-block h-1.5 w-1.5 rounded-full",
-            connectionDotColor(connectionStatus),
-          )}
-        />
-        <span>{connectionLabel(connectionStatus)}</span>
-      </div>
+      {/* Left: connection status, while a subscription uses the WebSocket */}
+      {connectionStatus !== "idle" && (
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 rounded-full",
+              connectionDotColor(connectionStatus),
+            )}
+          />
+          <span>{connectionLabel(connectionStatus)}</span>
+        </div>
+      )}
 
       {/* Center spacer */}
       <div className="flex-1" />
