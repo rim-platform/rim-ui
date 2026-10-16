@@ -23,6 +23,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The first encrypted message to someone who set up encryption moments earlier goes out instead
+  of failing with "Failed to send the encrypted message" until a minute later. When someone in
+  the conversation really has no device set up yet, the composer says "<name> has no device set
+  up for encryption yet".
 - **Install from git URL** installs a web plugin from a repository that keeps its sources
   beside the built plugin: the desktop takes `rim-plugin.json`, the entrypoint and `panels/`
   from the checkout and ignores the rest. A local-process plugin whose `package.json` lists

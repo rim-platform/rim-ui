@@ -14,7 +14,7 @@ const commands = vi.hoisted(() => ({
 const groups = vi.hoisted(() => ({
   catchUp: vi.fn(),
   commitPendingLocked: vi.fn(),
-  createGroupLocked: vi.fn(),
+  createGroupLocked: vi.fn(async () => ({ created: true, notReady: [] as string[] })),
   invalidateTimeline: vi.fn(),
 }));
 const uploads = vi.hoisted(() => ({
@@ -48,7 +48,7 @@ vi.mock("./session", () => ({
 }));
 vi.mock("../../messages/api/useAttachments", () => uploads);
 
-import { editEncrypted, EncryptedSendError, sendEncrypted } from "./send";
+import { editEncrypted, EncryptedSendError, MEMBERS_NOT_READY, sendEncrypted } from "./send";
 
 const author = { id: "u-me", username: "me", displayName: null, avatarUrl: null };
 
@@ -142,6 +142,18 @@ describe("sendEncrypted", () => {
     api.sendEncryptedMessage.mockResolvedValue({ id: outgoing(1).messageId });
     await sendEncrypted("ws", "conv", { body: "first", author });
     expect(groups.createGroupLocked).toHaveBeenCalledWith(expect.anything(), "ws", "conv");
+  });
+
+  it("stops before encrypting and names who has no device when the group cannot hold them", async () => {
+    api.fetchConversationGroup.mockResolvedValue({ mlsGroup: null });
+    groups.createGroupLocked.mockResolvedValueOnce({ created: false, notReady: ["Bob"] });
+
+    const error = await sendEncrypted("ws", "conv", { body: "first", author }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(EncryptedSendError);
+    expect(error.message).toBe("Bob has no device set up for encryption yet");
+    expect(error.code).toBe(MEMBERS_NOT_READY);
+    expect(commands.encryptMessage).not.toHaveBeenCalled();
   });
 
   it("undoes the stored plaintext and gives the body back when refused", async () => {

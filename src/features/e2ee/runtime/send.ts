@@ -43,7 +43,11 @@ import {
   STALE_EPOCH,
   withConversation,
 } from "./groups";
+import { notReadyMessage } from "./members";
 import { e2eeSession, type E2eeSession } from "./session";
+
+/** A send refused because members of the conversation have no device set up for encryption. */
+export const MEMBERS_NOT_READY = "E2EE_MEMBERS_NOT_READY";
 
 /** Attempts of a send that keeps meeting newer epochs or pending Commits. */
 const SEND_ATTEMPTS = 3;
@@ -95,12 +99,18 @@ async function linkPreviews(body: string): Promise<DraftInput["linkPreviews"]> {
   return previews.flatMap((p) => (p ? [p] : []));
 }
 
-/** Make sure the group exists and nothing blocks a message: the loop, then pending removes. */
+/**
+ * Make sure the group exists and nothing blocks a message: the loop, then pending removes. A
+ * group that cannot be created because members have no device set up stops the send, naming them.
+ */
 async function prepare(session: E2eeSession, workspaceId: string, conversationId: string) {
   await catchUp(session, workspaceId, conversationId);
   const info = await fetchConversationGroup(workspaceId, conversationId);
   if (!info.mlsGroup) {
-    await createGroupLocked(session, workspaceId, conversationId);
+    const { notReady } = await createGroupLocked(session, workspaceId, conversationId);
+    if (notReady.length > 0) {
+      throw new EncryptedSendError(notReadyMessage(notReady), MEMBERS_NOT_READY, null);
+    }
     return;
   }
   if (info.mlsGroup.pendingRemoves.length > 0) {
