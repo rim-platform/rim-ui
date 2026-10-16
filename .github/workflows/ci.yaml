@@ -37,6 +37,15 @@ jobs:
         run: npm run format:check
       - name: Plugin SDK Type Check
         run: npm run sdk:typecheck
+      # The SDK as npm would publish it: the files its tarball holds, and a copy of the template
+      # plugin outside the repository that installs the tarball, type-checks, tests, runs and
+      # bundles against it.
+      - name: Plugin SDK Build
+        run: npm run sdk:build
+      - name: Plugin SDK Pack
+        run: npm pack --dry-run --workspace sdk/plugin-sdk
+      - name: Plugin SDK Smoke Test
+        run: npm run sdk:smoke
       # Every Rust and npm production dependency under an accepted licence (src-tauri/about.toml);
       # cargo-about reads the crate tree with the runner's own cargo.
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
@@ -79,6 +88,17 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+      # The protocol conformance tests run the TypeScript plugins from source, which import the
+      # plugin SDK by its package name: the workspace link npm ci makes, and the SDK's build.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - name: Build the Plugin SDK
+        working-directory: .
+        run: |
+          npm ci
+          npm run sdk:build
       - name: Tests
         run: cargo test
 

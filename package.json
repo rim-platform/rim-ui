@@ -13,6 +13,9 @@
     "url": "git+https://github.com/rim-platform/rim-ui.git"
   },
   "type": "module",
+  "workspaces": [
+    "sdk/plugin-sdk"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -28,7 +31,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "sdk:generate": "node sdk/plugin-sdk/scripts/generate-protocol.ts",
-    "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods && tsc -p plugins/github-prs",
+    "sdk:build": "node sdk/plugin-sdk/scripts/build.mjs",
+    "sdk:typecheck": "npm run sdk:build && tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods && tsc -p plugins/github-prs",
+    "sdk:smoke": "node scripts/sdk-smoke.mjs",
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
     "skew:check": "node scripts/skew-check.mjs",
     "version:check": "node scripts/version-check.mjs",

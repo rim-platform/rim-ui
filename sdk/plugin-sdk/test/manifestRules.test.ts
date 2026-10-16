@@ -1,7 +1,16 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import vectors from "../../../../protocol/manifest-vectors.json";
-import { ManifestError, parseNetworkOrigin, siteOf, validateManifest } from "./manifestRules";
+import {
+  ManifestError,
+  parseNetworkOrigin,
+  siteOf,
+  validateManifest,
+} from "../src/manifestRules.ts";
+
+const vectors = JSON.parse(
+  readFileSync(new URL("../../../protocol/manifest-vectors.json", import.meta.url), "utf8"),
+);
 
 describe("manifest rules", () => {
   it("judge the shared vectors as the desktop host does", () => {

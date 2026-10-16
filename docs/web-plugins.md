@@ -12,7 +12,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 |---|---|
 | Frame shell: the static page every plugin frame and panel frame loads, its baseline policy, the per-plugin policy, the entry import, panel rendering | `public/plugin-frame/v1/index.html`, `shell.js` |
 | Serving the shell | the web app's own origin at `/plugin-frame/v1/`; the desktop at `rim-plugin://shell/v1/` (`src-tauri/src/plugin_host/plugin_protocol.rs`, `src-tauri/src/lib.rs`); nginx in the `Dockerfile` sends the shell's baseline policy for `/plugin-frame/` instead of the app's |
-| Manifest rules | `src-tauri/src/plugin_host/manifest.rs`, `validation.rs`; the TypeScript port `src/features/plugins/web/manifestRules.ts`; shared vectors `protocol/manifest-vectors.json` |
+| Manifest rules | `src-tauri/src/plugin_host/manifest.rs`, `validation.rs`; the TypeScript port in the SDK, `sdk/plugin-sdk/src/manifestRules.ts`, which the web app imports; shared vectors `protocol/manifest-vectors.json` |
 | `.rimbundle` reading, writing, unpacking | `src-tauri/src/plugin_host/bundle.rs`; `src/features/plugins/web/bundle.ts`; the SDK's writer `sdk/plugin-sdk/src/bundle.ts` |
 | The host: frames, the JSON-RPC session, gates, limits, heartbeats, safe start | `src/features/plugins/web/webPluginHost.ts`, `pluginSession.ts`, `rpc.ts`, `webPluginEnvironment.ts` (the DOM side) |
 | Panel state | `src/features/plugins/web/webPanelRelay.ts`; panels render in `WebPluginPanel.tsx` and use the panel bridge in `runtime/pluginBridge.ts` |
@@ -22,7 +22,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | Grant history and encrypted reads | desktop: the `audit` of the Rust `PluginStateStore`; web: the install record's `audit`; shown by `components/PluginAuditPanel.tsx` |
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |
 | Install from link, Settings, consent text, panel chrome | `components/InstallFromLink.tsx`, `PluginSettingsPage.tsx`, `PluginCapabilityPrompt.tsx`, `PluginSlotContainer.tsx`, `pluginTrust.ts` |
-| SDK transports and browser build | `sdk/plugin-sdk/src/transport.ts`, `index.browser.ts`, `scripts/bundle-plugin.mjs`, `scripts/browser-build.mjs` |
+| SDK transports and browser build | `sdk/plugin-sdk/src/transport.ts`, `index.browser.ts`, `scripts/bundle-plugin.mjs`, `scripts/browser-build.mjs`; the npm package `@rim-platform/plugin-sdk` ships them built |
 | Showcase | `plugins/github-prs/` |
 
 The runtime capability `webPlugins` is on for the desktop and the web; `pluginHost` keeps

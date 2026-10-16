@@ -13,7 +13,7 @@ import globals from "globals";
 export default tseslint.config(
   {
     ignores: [
-      "dist/**",
+      "**/dist/**",
       "coverage/**",
       "node_modules/**",
       "src-tauri/**",

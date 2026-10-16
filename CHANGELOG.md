@@ -57,6 +57,16 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- The plugin SDK is published to npm as `@rim-platform/plugin-sdk`, starting at 0.1.0, with a
+  version of its own. It ships JavaScript and type declarations, so a plugin runs with
+  `node main.ts` against the installed SDK without bundling first.
+- `@rim-platform/plugin-sdk/testing` exports `validateManifest`, `parseManifest`,
+  `parseManifestText`, `checkInstall` and `ManifestError`: the rules the hosts install a
+  `rim-plugin.json` by, for checking a plugin's manifest in its tests.
+- `rim-plugin-bundle --in-place --entry <source>` builds a plugin into the `main.mjs` beside its
+  manifest, as a plugin repository commits it, and `rim-plugin-bundle --check` exits 1 naming
+  each file when the committed `main.mjs` or `panels/` differ from a fresh build. Bundles no
+  longer depend on the folder the bundler runs from.
 - On a server that takes key signups only (rim-server's default from this release), the join
   pages offer only "Create account with a key". A browser that cannot create keys says so and
   points to the desktop app instead of showing a password form, and the sign-in page does the

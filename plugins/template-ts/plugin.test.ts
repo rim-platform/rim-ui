@@ -1,8 +1,7 @@
 // Tests the template against the SDK's in-memory host: no RIM app needed.
-// Outside this repository, import from "@rim/plugin-sdk/testing".
 import { describe, expect, it } from "vitest";
+import { startTestHost } from "@rim-platform/plugin-sdk/testing";
 
-import { startTestHost } from "../../sdk/plugin-sdk/src/testing.ts";
 import { createPlugin } from "./plugin.ts";
 
 describe("template plugin", () => {

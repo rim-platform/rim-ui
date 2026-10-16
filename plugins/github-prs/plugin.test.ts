@@ -2,9 +2,8 @@
 // a pretend GitHub and the host's store: no RIM app and no network needed.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { startTestHost, validateManifest } from "@rim-platform/plugin-sdk/testing";
 
-import { startTestHost } from "../../sdk/plugin-sdk/src/testing.ts";
-import { validateManifest } from "../../src/features/plugins/web/manifestRules.ts";
 import { createPlugin, MAX_REPOS, PANEL_ID, REFRESH_FLOOR_MS, type PanelState } from "./plugin.ts";
 
 const MANIFEST = `${import.meta.dirname}/rim-plugin.json`;

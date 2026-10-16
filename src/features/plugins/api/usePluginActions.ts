@@ -9,7 +9,7 @@ import type { PluginInstallResult } from "../types";
 import { browserPluginStore } from "../web/browserPluginStore";
 import { readBundle, type Bundle } from "../web/bundle";
 import { fetchBundle, parseBundleLink, type BundleLink } from "../web/bundleLink";
-import { checkInstall } from "../web/manifestRules";
+import { checkInstall } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins } from "../web/pluginServices";
 import { pluginServices } from "../web/webPluginEnvironment";
 

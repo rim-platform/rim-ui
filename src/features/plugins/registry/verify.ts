@@ -17,7 +17,11 @@ import type {
 } from "../../key-identity/browser/pluginManifest";
 import { readBundle, sha256Hex } from "../web/bundle";
 import { fetchBundle } from "../web/bundleLink";
-import { checkInstall, parseManifestText, type PluginManifest } from "../web/manifestRules";
+import {
+  checkInstall,
+  parseManifestText,
+  type PluginManifest,
+} from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins } from "../web/pluginServices";
 import type { RegistryEntry } from "./api";
 

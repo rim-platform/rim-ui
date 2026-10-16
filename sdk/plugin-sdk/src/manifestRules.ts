@@ -1,6 +1,8 @@
-// The manifest rules of the desktop host (`manifest.rs` and `validation.rs` in
-// src-tauri), for the web app, which has no Rust host. Both run the shared
-// vectors in `protocol/manifest-vectors.json` and must reach the same verdicts.
+// The rules a host installs a plugin's `rim-plugin.json` by: parsing as the
+// desktop host's Rust manifest type does, then its install checks. The web app,
+// which has no Rust host, installs by these, and a plugin's tests can check its
+// manifest against them. They reach the desktop host's verdict on every entry of
+// the shared manifest vectors.
 
 /** How a plugin runs: a program on the desktop, or sandboxed in the app's frames. */
 export type RuntimeKind = "DesktopLocalProcess" | "WebSandboxed";

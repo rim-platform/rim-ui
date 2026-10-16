@@ -1,5 +1,5 @@
 import type { PluginRuntimeKind } from "../types";
-import { parseNetworkOrigin, siteOf } from "../web/manifestRules";
+import { parseNetworkOrigin, siteOf } from "../../../../sdk/plugin-sdk/src/manifestRules";
 
 /** What kind of plugin this is, in the app's words, above the permissions it asks for. */
 export const KIND_CONSENT_TEXT: Record<PluginRuntimeKind, string> = {

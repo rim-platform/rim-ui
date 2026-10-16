@@ -5,7 +5,11 @@
 // safe start, so a plugin the page died starting is not started again.
 
 import { checkFiles, type Bundle, type BundleFile } from "./bundle";
-import { NETWORK_FETCH, parseNetworkOrigin, siteOf } from "./manifestRules";
+import {
+  NETWORK_FETCH,
+  parseNetworkOrigin,
+  siteOf,
+} from "../../../../sdk/plugin-sdk/src/manifestRules";
 import {
   COMMAND_TIMEOUT_MS,
   HANDSHAKE_TIMEOUT_MS,
