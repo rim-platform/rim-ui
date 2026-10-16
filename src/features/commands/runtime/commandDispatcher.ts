@@ -8,6 +8,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
+import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
 import type { PluginCommandResult } from "../../plugins/types";
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
@@ -310,10 +311,19 @@ export async function dispatchCommand(
   // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
   const pluginCmd = parsePluginCommandId(command.id);
   if (pluginCmd) {
+    // A command that requires a context gets its ids as arguments, and never runs without it.
+    const requiredContext = [
+      ...command.requiredContext,
+      ...(findPluginCommand(command.id)?.required_context ?? []),
+    ];
+    const prepared = withContextArguments(requiredContext, context?.args, context?.commandContext);
+    if (!prepared.ok) {
+      return { status: "ERROR", message: prepared.message, payload: null, followUpCommands: [] };
+    }
     return dispatchPluginCommand(
       pluginCmd.pluginId,
       pluginCmd.command,
-      context?.args,
+      prepared.args,
       context?.confirmedDangerous,
       context?.callerPluginId,
     );

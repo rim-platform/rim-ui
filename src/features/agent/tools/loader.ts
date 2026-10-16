@@ -14,6 +14,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
+import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { runtimeKind, type PluginCommandInfo, type PluginInfo } from "../../plugins/types";
 import { pluginServices } from "../../plugins/web/webPluginEnvironment";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
@@ -353,8 +354,14 @@ function makePluginToolHandler(
   web = false,
 ): AiToolHandler {
   return async (input) => {
+    // The agent runs in the user's current context, which supplies any context ids the command
+    // requires; without them the plugin is not called.
+    const prepared = withContextArguments(command.required_context ?? [], input);
+    if (!prepared.ok) {
+      throw new Error(`Plugin command ${pluginId}/${command.id} cannot run: ${prepared.message}`);
+    }
     try {
-      const result = await runAiCommand(pluginId, command, input, web);
+      const result = await runAiCommand(pluginId, command, prepared.args, web);
       return payloadToString(result);
     } catch (err) {
       // The host refuses every dangerous command the agent starts: the agent

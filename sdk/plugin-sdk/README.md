@@ -131,6 +131,36 @@ yourself.
 | `storage`             | A WebSandboxed plugin's small store, below.                  |
 | `chat`                | The person's messages, below.                                |
 
+### Context
+
+A command that acts on where the user is says so with `required_context` in
+`rim-plugin.json`, and the host adds the ids to `context.args` as strings:
+
+| `required_context` | The command runs                    | The host adds                                                       |
+| ------------------ | ----------------------------------- | ------------------------------------------------------------------- |
+| `"conversation"`   | while a conversation is open        | `conversation_id`, and `thread_id` while a thread is open beside it |
+| `"message"`        | on a message, from its context menu | `message_id`, `conversation_id`, and `thread_id` for a thread reply |
+| `"workspace"`      | in a workspace                      | `workspace_id`                                                      |
+
+```json
+{ "id": "ask", "title": "Polls: Ask", "description": "Posts a poll.", "required_context": ["conversation"] }
+```
+
+```ts
+run: async ({ args, host }) => {
+  const conversationId = args.conversation_id as string;
+  const threadId = args.thread_id as string | undefined;
+  await host.chat.postMessage(conversationId, "Lunch?", threadId ? { threadId } : {});
+},
+```
+
+Without the context the host never calls the plugin: the palette leaves the command out,
+and a keybind, a panel or the AI agent is told "Open a conversation first" (or "Select a
+message first"). The added ids replace any argument of the same name, and a manifest whose
+command requires a context and also declares an argument named like one of its ids fails to
+install. A command without `required_context` gets no ids, as before; `template-ts` and
+`hello-world` declare none.
+
 ### Panels (experimental)
 
 `host.panels.set(panelId, state)` replaces a panel's state and

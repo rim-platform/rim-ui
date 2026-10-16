@@ -78,6 +78,27 @@ describe("usePluginCommands", () => {
     expect(commands[0]).toMatchObject({ visibleInPalette: false, keybindCapable: false });
   });
 
+  it("carries each command's required context, to its context actions too", () => {
+    const commands = commandsOf([
+      plugin({
+        commands: [command("restart_pod", { required_context: ["message"] }), command("refresh")],
+        context_actions: [
+          {
+            id: "restart",
+            title: "Restart this pod",
+            command_id: "plugin.chat.rim.k8s-pods.restart_pod",
+            context_types: ["message"],
+          },
+        ],
+      }),
+    ]);
+    expect(commands.map((c) => [c.title, c.requiredContext])).toEqual([
+      ["restart_pod", ["message"]],
+      ["refresh", []],
+      ["Restart this pod", ["message"]],
+    ]);
+  });
+
   it("leaves out a disabled plugin's commands", () => {
     expect(commandsOf([plugin({ enabled: false })])).toEqual([]);
   });

@@ -266,6 +266,218 @@
       }
     },
     {
+      "name": "command requiring the conversation, with its own arguments",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["conversation"],
+            "arguments": [
+              {
+                "name": "question",
+                "type": "string",
+                "required": false
+              },
+              {
+                "name": "message_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command without required context taking a conversation_id argument",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "arguments": [
+              {
+                "name": "conversation_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command requiring the conversation and declaring conversation_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["conversation"],
+            "arguments": [
+              {
+                "name": "conversation_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command requiring the conversation and declaring thread_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["conversation"],
+            "arguments": [
+              {
+                "name": "question",
+                "type": "string",
+                "required": false
+              },
+              {
+                "name": "thread_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command requiring a message and declaring message_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["message"],
+            "arguments": [
+              {
+                "name": "message_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command requiring a message and declaring conversation_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["message"],
+            "arguments": [
+              {
+                "name": "conversation_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "command requiring the workspace and declaring workspace_id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.polls",
+        "display_name": "Polls",
+        "version": "0.1.0",
+        "description": "Posts polls into a conversation.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "capabilities": ["chat.write"],
+        "commands": [
+          {
+            "id": "ask",
+            "title": "Polls: Ask",
+            "description": "Posts a poll.",
+            "required_context": ["workspace"],
+            "arguments": [
+              {
+                "name": "workspace_id",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "network_origins with http:",
       "valid": false,
       "manifest": {

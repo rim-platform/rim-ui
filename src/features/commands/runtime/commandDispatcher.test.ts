@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Shared mock state referenced from inside `vi.mock` factories below. `vi.mock` calls are
 // hoisted above all other top-level code, so any outer variable a factory closes over must
@@ -13,7 +13,11 @@ const {
   safeInvokeMock,
 } = vi.hoisted(() => ({
   setMainSurfaceMock: vi.fn(),
-  shellStateMock: { selectedConversationId: null as string | null },
+  shellStateMock: {
+    selectedConversationId: null as string | null,
+    isThreadOpen: false,
+    selectedRootMessageId: null as string | null,
+  },
   invalidateQueriesMock: vi.fn(),
   getQueryDataMock: vi.fn(() => null as unknown),
   toastErrorMock: vi.fn(),
@@ -61,7 +65,12 @@ vi.mock("../../../shell/state/useShellStore", () => ({
       get selectedConversationId() {
         return shellStateMock.selectedConversationId;
       },
-      isThreadOpen: false,
+      get isThreadOpen() {
+        return shellStateMock.isThreadOpen;
+      },
+      get selectedRootMessageId() {
+        return shellStateMock.selectedRootMessageId;
+      },
       toggleSidebar: vi.fn(),
       closeThread: vi.fn(),
       mainSurface: { kind: "conversation" },
@@ -129,6 +138,7 @@ vi.mock("../../../core/query/keys", () => ({
     conversations: () => ["conversations"],
     server: (serverId: string) => ["server", serverId],
     plugins: () => ["plugins"],
+    threadByRoot: (...ids: unknown[]) => ["threadByRoot", ...ids],
   },
 }));
 
@@ -137,6 +147,7 @@ import type { CommandDefinition } from "../types";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
+import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import { graphqlError } from "../../conversations/__fixtures__/conversations";
@@ -492,5 +503,175 @@ describe("plugin commands", () => {
     expect(result?.status).toBe("ERROR");
     expect(result?.message).toBe("Cannot reach the cluster");
     expect(usePluginConfirmStore.getState().request).toBeNull();
+  });
+});
+
+describe("plugin commands that require a context", () => {
+  const mockExecuteBackend = vi.fn();
+  const pollId = "plugin.dev.example.polls.ask";
+  const ok = { ok: true, value: { status: "ok", payload: null, message: "Posted" } };
+
+  /** The cached plugin list, with the poll command requiring `requiredContext`. */
+  function pluginList(requiredContext: string[]) {
+    return [
+      {
+        display_name: "Polls",
+        commands: [
+          { id: "ask", qualified_id: pollId, title: "Ask", required_context: requiredContext },
+        ],
+      },
+    ];
+  }
+
+  function serveCache(requiredContext: string[], thread: { id: string } | null = null) {
+    getQueryDataMock.mockImplementation(((key: unknown[]) => {
+      if (key[0] === "plugins") return pluginList(requiredContext);
+      if (key[0] === "threadByRoot") return thread;
+      return null;
+    }) as () => unknown);
+  }
+
+  /** What the plugin host was sent as `args`. */
+  function sentArgs(): unknown {
+    return safeInvokeMock.mock.calls[0][1].args;
+  }
+
+  // The keybind and panel stubs carry no required context: the plugin list supplies it.
+  const stub = makeCommand({ id: pollId, sourceKind: "PLUGIN" });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getQueryDataMock.mockReset();
+    getQueryDataMock.mockReturnValue(null);
+    Object.assign(shellStateMock, {
+      selectedConversationId: null,
+      isThreadOpen: false,
+      selectedRootMessageId: null,
+    });
+    vi.mocked(parsePluginCommandId).mockReturnValue({
+      pluginId: "dev",
+      command: "example.polls.ask",
+    });
+    safeInvokeMock.mockResolvedValue(ok);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds the open conversation, and no thread when none is open", async () => {
+    serveCache(["conversation"]);
+    shellStateMock.selectedConversationId = "conv-1";
+
+    const result = await dispatchCommand(stub, mockExecuteBackend, {
+      args: { question: "Lunch?" },
+    });
+
+    expect(result?.status).toBe("SUCCESS");
+    expect(sentArgs()).toEqual({ question: "Lunch?", conversation_id: "conv-1" });
+  });
+
+  it("adds the id of the thread open beside the conversation", async () => {
+    serveCache(["conversation"], { id: "thread-9" });
+    Object.assign(shellStateMock, {
+      selectedConversationId: "conv-1",
+      isThreadOpen: true,
+      selectedRootMessageId: "root-1",
+    });
+
+    await dispatchCommand(stub, mockExecuteBackend);
+
+    expect(sentArgs()).toEqual({ conversation_id: "conv-1", thread_id: "thread-9" });
+    expect(getQueryDataMock).toHaveBeenCalledWith(["threadByRoot", "ws-1", "conv-1", "root-1"]);
+  });
+
+  it("adds the message a context menu names, with its own thread rather than the open one", async () => {
+    serveCache(["message"], { id: "thread-open" });
+    Object.assign(shellStateMock, {
+      selectedConversationId: "conv-1",
+      isThreadOpen: true,
+      selectedRootMessageId: "root-1",
+    });
+
+    await dispatchCommand(
+      makeCommand({ id: pollId, requiredContext: ["message"] }),
+      mockExecuteBackend,
+      {
+        commandContext: {
+          workspaceId: "ws-1",
+          conversationId: "conv-2",
+          selectedMessageId: "msg-1",
+          threadId: "thread-2",
+        },
+      },
+    );
+
+    expect(sentArgs()).toEqual({
+      message_id: "msg-1",
+      conversation_id: "conv-2",
+      thread_id: "thread-2",
+    });
+  });
+
+  it("adds the workspace", async () => {
+    serveCache(["workspace"]);
+
+    await dispatchCommand(stub, mockExecuteBackend, { commandContext: { workspaceId: "ws-1" } });
+
+    expect(sentArgs()).toEqual({ workspace_id: "ws-1" });
+  });
+
+  it("replaces a caller's argument of the same name with the context's", async () => {
+    serveCache(["conversation"]);
+    shellStateMock.selectedConversationId = "conv-1";
+
+    await dispatchCommand(stub, mockExecuteBackend, { args: { conversation_id: "conv-other" } });
+
+    expect(sentArgs()).toEqual({ conversation_id: "conv-1" });
+  });
+
+  it("does not call the plugin without an open conversation", async () => {
+    serveCache(["conversation"]);
+
+    const result = await dispatchCommand(stub, mockExecuteBackend);
+
+    expect(result).toMatchObject({ status: "ERROR", message: "Open a conversation first" });
+    expect(safeInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it("does not call the plugin without a selected message", async () => {
+    serveCache(["message"]);
+    shellStateMock.selectedConversationId = "conv-1";
+
+    const result = await dispatchCommand(stub, mockExecuteBackend);
+
+    expect(result).toMatchObject({ status: "ERROR", message: "Select a message first" });
+    expect(safeInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it("adds nothing for a command that requires no context", async () => {
+    serveCache([]);
+    shellStateMock.selectedConversationId = "conv-1";
+
+    await dispatchCommand(stub, mockExecuteBackend, { args: { name: "world" } });
+
+    expect(sentArgs()).toEqual({ name: "world" });
+  });
+
+  it("sends a web plugin the same arguments", async () => {
+    serveCache(["conversation"]);
+    shellStateMock.selectedConversationId = "conv-1";
+    vi.spyOn(webPluginHost, "knows").mockReturnValue(true);
+    const execute = vi
+      .spyOn(webPluginHost, "execute")
+      .mockResolvedValue({ payload: null, message: "Posted" });
+
+    const result = await dispatchCommand(stub, mockExecuteBackend);
+
+    expect(result?.message).toBe("Posted");
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ args: { conversation_id: "conv-1" }, initiator: "user" }),
+    );
+    expect(safeInvokeMock).not.toHaveBeenCalled();
   });
 });

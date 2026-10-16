@@ -18,6 +18,13 @@ pub const MAX_NETWORK_ORIGINS: usize = 16;
 const LOCAL_ONLY_CAPABILITIES: &[&str] = &["local.process", "fs.read", "fs.write"];
 /// Longest bundle path, in bytes.
 pub const MAX_BUNDLE_PATH_LEN: usize = 255;
+/// The context kinds a command's `required_context` can name, and the arguments
+/// the host adds to the command's `args` for each.
+const CONTEXT_ARGUMENTS: &[(&str, &[&str])] = &[
+    ("workspace", &["workspace_id"]),
+    ("conversation", &["conversation_id", "thread_id"]),
+    ("message", &["message_id", "conversation_id", "thread_id"]),
+];
 
 /// N1 / F2 validation failure surfaced as a typed enum so the JS UI can branch
 /// without string-parsing the message (WARN: replace flat `to_string()` surface
@@ -57,6 +64,13 @@ pub enum ValidationError {
     /// A `WebSandboxed` panel whose id cannot name its folder under `panels/`.
     #[serde(rename = "INVALID_PANEL")]
     InvalidPanel { panel_id: String, reason: String },
+    /// A command declares an argument the host sets from a context it requires.
+    #[serde(rename = "RESERVED_ARGUMENT")]
+    ReservedArgument {
+        command_id: String,
+        argument: String,
+        context: String,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -87,6 +101,15 @@ impl std::fmt::Display for ValidationError {
             Self::InvalidPanel { panel_id, reason } => {
                 write!(f, "invalid panel `{panel_id}`: {reason}")
             }
+            Self::ReservedArgument {
+                command_id,
+                argument,
+                context,
+            } => write!(
+                f,
+                "command `{command_id}` declares argument `{argument}`, which the host sets \
+                 from its required {context} context"
+            ),
         }
     }
 }
@@ -220,6 +243,30 @@ fn validate_encrypted_chat(manifest: &PluginManifest) -> Result<(), ValidationEr
                 key: (*encrypted).to_string(),
                 reason: format!("{encrypted} requires {plain} as well"),
             });
+        }
+    }
+    Ok(())
+}
+
+/// A command may not declare an argument the host sets from a context it requires.
+fn validate_context_arguments(commands: &[ManifestCommand]) -> Result<(), ValidationError> {
+    for command in commands {
+        for kind in &command.required_context {
+            let Some((_, reserved)) = CONTEXT_ARGUMENTS.iter().find(|(k, _)| k == kind) else {
+                continue;
+            };
+            for argument in &command.arguments {
+                let Some(name) = argument.get("name").and_then(|n| n.as_str()) else {
+                    continue;
+                };
+                if reserved.contains(&name) {
+                    return Err(ValidationError::ReservedArgument {
+                        command_id: command.id.clone(),
+                        argument: name.to_string(),
+                        context: kind.clone(),
+                    });
+                }
+            }
         }
     }
     Ok(())
@@ -589,6 +636,7 @@ pub fn validate_plugin_manifest_for_host(
     if manifest.runtime_kind == RuntimeKind::WebSandboxed {
         validate_web_layout(manifest)?;
     }
+    validate_context_arguments(&manifest.commands)?;
     walk_output_schema_for_install_id_leak(&manifest.commands)?;
     Ok(())
 }

@@ -158,6 +158,7 @@ function commandInfos(manifest: PluginManifest): PluginCommandInfo[] {
     dangerous: c.dangerous,
     ai_callable: c.ai_callable,
     arguments: c.arguments as PluginCommandInfo["arguments"],
+    required_context: c.required_context,
     required_capabilities: c.required_capabilities,
   }));
 }
