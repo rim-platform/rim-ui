@@ -32,7 +32,7 @@
     "format:check": "prettier --check .",
     "sdk:generate": "node sdk/plugin-sdk/scripts/generate-protocol.ts",
     "sdk:build": "node sdk/plugin-sdk/scripts/build.mjs",
-    "sdk:typecheck": "npm run sdk:build && tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods && tsc -p plugins/github-prs",
+    "sdk:typecheck": "npm run sdk:build && tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p src-tauri/src/plugin_host/test_plugins/panel-ts",
     "sdk:smoke": "node scripts/sdk-smoke.mjs",
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
     "skew:check": "node scripts/skew-check.mjs",

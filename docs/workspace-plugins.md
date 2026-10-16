@@ -103,8 +103,10 @@ each entry's status, replaces its statement from files, and removes it.
 1. Run the server from `rim-server` `master` and the app (`npm run tauri dev`). Account A
    owns a workspace and has a key identity on this desktop (Settings > Security); account
    B is a member, in the web app (`npm run dev`) or a second desktop profile.
-2. As A, build a web plugin: `npm run plugin:bundle -- plugins/github-prs`, and install it
-   (Settings > Plugins > Install from link, or from the folder).
+2. As A, build a web plugin: in a clone of
+   [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), `npm ci` and
+   `npm run bundle`, and install it (Settings > Plugins > Install from link, or from the
+   folder).
 3. As A, "Sign and publish…" it, status Required, Publish.
 4. As B, open the workspace: the required plugins dialog lists it with "Signed by A ·
    rimp1_…". Review and install, approve its permissions, run a command from the palette.

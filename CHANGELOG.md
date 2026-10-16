@@ -196,5 +196,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   banner and is tried again after 30 seconds, doubling up to five minutes, rather than every few
   seconds. A subscription refused with `TOO_MANY_SUBSCRIPTIONS` raises one notice that some live
   updates are off and is not retried.
+- The Kubernetes Pods and GitHub Pull Requests plugins live in repositories of their own,
+  [`plugin-k8s-pods`](https://github.com/rim-platform/plugin-k8s-pods) and
+  [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), and are no longer
+  in `plugins/`. Each holds the built plugin at its root for Install from git URL and attaches
+  a `.rimbundle` to its releases; GitHub Pull Requests now starts with rim-ui and rim-server
+  in its list.
 
 [Unreleased]: https://github.com/rim-platform/rim-ui/commits/master
