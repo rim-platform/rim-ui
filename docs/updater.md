@@ -52,7 +52,8 @@ The release workflow reads the key from these settings of the GitHub repository:
 | `RELEASE_GRAPHQL_ENDPOINT` | repository variable | the public relay's API, such as `https://relay.rim-platform.org/api` |
 
 A desktop build fails at its first step when any of them is empty: a release without updates is
-not published. The bundler also refuses a private key that does not match `UPDATER_PUBKEY`.
+not published. It fails there too while the repository is private, because build provenance
+attestations and `releases/latest/download`, the updater's endpoint, need it public. The bundler also refuses a private key that does not match `UPDATER_PUBKEY`.
 
 ## `updater.json`
 
@@ -91,7 +92,15 @@ pre-release. For a tag `v<version>`, `.github/workflows/release.yaml`:
    The flag stays out of `tauri.conf.json` because it makes every build require the private key.
    Next to each bundle the build writes a `.sig` file: the AppImage, the `.deb` and the `.rpm`
    on Linux, the NSIS `-setup.exe` and the `.msi` on Windows. Bundle file names start with the
-   product name, `RIM`.
+   product name, `RIM`: `RIM_<version>_amd64.AppImage`, `RIM_<version>_amd64.deb`,
+   `RIM-<version>-1.x86_64.rpm`, `RIM_<version>_x64-setup.exe` and
+   `RIM_<version>_x64_en-US.msi`. Before the build, `npm run licenses` writes the third-party
+   licence notices the app bundles, `src-tauri/resources/THIRD-PARTY-LICENSES.txt`.
+
+   `src-tauri/tauri.release.conf.json` replaces the development content security policy. Its
+   `connect-src` allows any `https:` and `wss:` origin, and `http:` and `ws:` on `localhost` and
+   `127.0.0.1`, because the installed app talks to whichever server the person signs in to,
+   including one running on their own machine.
 2. Creates the GitHub release as a draft and writes `latest.json` with
    `scripts/release-assets.mjs`:
 
@@ -116,10 +125,22 @@ pre-release. For a tag `v<version>`, `.github/workflows/release.yaml`:
    `.deb` updates with the next `.deb`, and falls back to `<os>-<arch>`. `signature` is the text
    of the `.sig` file, not a URL to it. `version` must be a semver greater than the installed
    one, or the app reports no update.
-3. Writes `SHA256SUMS` over the installers, signs it with cosign keyless and attests build
-   provenance for each installer, uploads everything to the draft and publishes it. Until then
-   the draft is invisible to `releases/latest`, so no app sees a release whose files are not all
-   there.
+3. Writes `SHA256SUMS` over the installers and `THIRD-PARTY-LICENSES.txt`, signs it with
+   cosign keyless into `SHA256SUMS.sigstore.json`, attests build provenance for every file it
+   lists, uploads everything to the draft and publishes it. Until then the draft is invisible to
+   `releases/latest`, so no app sees a release whose files are not all there. The web app's
+   About page links to `releases/latest/download/THIRD-PARTY-LICENSES.txt`.
+
+A release's files are checked, next to the downloaded files, with:
+
+```sh
+v=<version>
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity https://github.com/rim-platform/rim-ui/.github/workflows/release.yaml@refs/tags/v$v \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify <bundle> --repo rim-platform/rim-ui
+```
 
 ### By hand
 
@@ -133,7 +154,8 @@ echo "{\"bundle\":{\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"
 npm run tauri build -- --config src-tauri/tauri.release.conf.json --config /tmp/overlay.json
 ```
 
-with `updater.json` filled in as above. Put every bundle and `.sig` in one directory, run
+with `updater.json` filled in as above and `npm run licenses` run first. Put every bundle, `.sig`
+and `THIRD-PARTY-LICENSES.txt` in one directory, run
 `node scripts/release-assets.mjs <dir> <version> rim-platform/rim-ui` for `latest.json` and
 `SHA256SUMS`, attach them all to a draft release, and publish it last.
 

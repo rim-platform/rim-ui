@@ -1,15 +1,17 @@
 // Release assets for the desktop bundles in one directory: the updater's `latest.json`, a
-// `SHA256SUMS` over every bundle, and the download table for the release notes.
+// `SHA256SUMS` over every bundle and the licence notices, and the download table for the release
+// notes.
 //
 //   node scripts/release-assets.mjs <dir> <version> <owner/repo>
 //
-// <dir> holds the bundles the release workflow built and their `.sig` files, and nothing else.
-// The script writes `latest.json` and `SHA256SUMS` into it and prints the download table (GitHub
-// Markdown) on stdout. It fails when a file is not a known bundle, a bundle the updater can
-// install has no signature, or a platform in REQUIRED_PLATFORMS has no default bundle.
+// <dir> holds the bundles the release workflow built, their `.sig` files and NOTICES, and
+// nothing else. The script writes `latest.json` and `SHA256SUMS` into it and prints the download
+// table (GitHub Markdown) on stdout. It fails when a file is not a known bundle, a bundle the
+// updater can install has no signature, a platform in REQUIRED_PLATFORMS has no default bundle,
+// or NOTICES is missing.
 
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,7 +41,14 @@ export const BUNDLES = [
 export const REQUIRED_PLATFORMS = ["linux-x86_64", "windows-x86_64"];
 
 /** The files this script and the release workflow add to the directory; read as no bundle. */
-const OUTPUTS = ["latest.json", "SHA256SUMS", "SHA256SUMS.sigstore"];
+const OUTPUTS = ["latest.json", "SHA256SUMS", "SHA256SUMS.sigstore.json"];
+
+/** The third-party licence notices bundled with the app, attached to the release as well. */
+export const NOTICES = "THIRD-PARTY-LICENSES.txt";
+
+function sha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
 
 const OS_NAMES = { linux: "Linux", windows: "Windows", darwin: "macOS" };
 
@@ -61,12 +70,12 @@ export function classify(name) {
 
 /**
  * The bundles in `dir`, each `{ name, size, sha256, signature, bundle }` with `signature` the
- * text of its `.sig` file or `null`, in BUNDLES order. Throws on any other file, except the
- * release's own OUTPUTS, and on a `.sig` without its bundle.
+ * text of its `.sig` file or `null`, in BUNDLES order. Throws on any other file, except NOTICES
+ * and the release's own OUTPUTS, and on a `.sig` without its bundle.
  */
 export function readBundles(dir) {
   const names = readdirSync(dir)
-    .filter((name) => !OUTPUTS.includes(name))
+    .filter((name) => name !== NOTICES && !OUTPUTS.includes(name))
     .sort();
   const bundles = [];
   for (const name of names) {
@@ -77,18 +86,24 @@ export function readBundles(dir) {
     const bundle = classify(name);
     if (!bundle) throw new Error(`${name}: not a desktop bundle`);
     const path = join(dir, name);
-    const data = readFileSync(path);
     const sigName = `${name}.sig`;
     bundles.push({
       name,
       size: statSync(path).size,
-      sha256: createHash("sha256").update(data).digest("hex"),
+      sha256: sha256(path),
       signature: names.includes(sigName) ? readFileSync(join(dir, sigName), "utf8").trim() : null,
       bundle,
     });
   }
   const order = (b) => BUNDLES.indexOf(BUNDLES.find((x) => x.suffix === b.bundle.suffix));
   return bundles.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+}
+
+/** NOTICES in `dir` as `{ name, sha256 }`; throws when it is missing. */
+export function readNotices(dir) {
+  const path = join(dir, NOTICES);
+  if (!existsSync(path)) throw new Error(`${NOTICES}: missing`);
+  return { name: NOTICES, sha256: sha256(path) };
 }
 
 /** Where a release's asset is downloaded from. */
@@ -124,9 +139,9 @@ export function latestJson(bundles, { version, repo, pubDate }) {
   };
 }
 
-/** `sha256sum` output over every bundle, which `sha256sum -c` checks. */
-export function sha256sums(bundles) {
-  return [...bundles]
+/** `sha256sum` output over `files` (each `{ name, sha256 }`), which `sha256sum -c` checks. */
+export function sha256sums(files) {
+  return [...files]
     .sort((a, b) => (a.name < b.name ? -1 : 1))
     .map((b) => `${b.sha256}  ${b.name}\n`)
     .join("");
@@ -154,10 +169,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   try {
     const bundles = readBundles(dir);
+    const notices = readNotices(dir);
     const pubDate = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const latest = latestJson(bundles, { version, repo, pubDate });
     writeFileSync(join(dir, "latest.json"), `${JSON.stringify(latest, null, 2)}\n`);
-    writeFileSync(join(dir, "SHA256SUMS"), sha256sums(bundles));
+    writeFileSync(join(dir, "SHA256SUMS"), sha256sums([...bundles, notices]));
     process.stdout.write(downloadTable(bundles, { version, repo }));
   } catch (e) {
     console.error(`release-assets: ${e.message}`);

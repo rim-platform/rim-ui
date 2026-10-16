@@ -174,19 +174,23 @@ jobs:
             args: ""
             arch: x86_64
             bundles: .AppImage .deb .rpm
+            notices: true
           - name: windows-x86_64
             runner: windows-latest
             container: ""
             args: ""
             arch: x86_64
             bundles: -setup.exe .msi
+            notices: false
     defaults:
       run:
         shell: bash
     steps:
-      # Before the long build: a release without the updater or the relay endpoint is not wanted.
+      # Before the long build: a release without the updater or the relay endpoint is not wanted,
+      # and a private repository cannot serve the attestations or the updater's latest.json.
       - name: Check the build inputs
         env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           RELEASE_GRAPHQL_ENDPOINT: ${{ vars.RELEASE_GRAPHQL_ENDPOINT }}
           UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
           UPDATER_ENDPOINT: ${{ vars.UPDATER_ENDPOINT }}
@@ -194,6 +198,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           missing=0
+          if [[ $REPOSITORY_PRIVATE == true ]]; then
+            echo "::error::the repository is private: build-provenance attestations and releases/latest/download (the updater endpoint) need it public; make it public before tagging"
+            missing=1
+          fi
           for name in RELEASE_GRAPHQL_ENDPOINT UPDATER_PUBKEY UPDATER_ENDPOINT \
             TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
             if [[ -z ${!name} ]]; then
@@ -231,10 +239,11 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # The licence notices bundled with the app are generated with cargo-about.
+      # The licence notices bundled with the app are generated with cargo-about; a release
+      # build refuses to compile without them.
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          tool: cargo-about
+          tool: cargo-about@0.9.2
 
       - name: Install the dependencies
         run: npm ci
@@ -288,11 +297,13 @@ jobs:
           npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "$overlay" \
             $TAURI_ARGS
 
-      # Only the installers and their updater signatures; each expected type must be there.
+      # Only the installers and their updater signatures, each expected type present, and from
+      # the leg marked `notices` the licence notices the release attaches.
       - name: Collect the bundles
         env:
           ARCH: ${{ matrix.arch }}
           BUNDLES: ${{ matrix.bundles }}
+          NOTICES: ${{ matrix.notices }}
         run: |
           shopt -s nullglob
           version=$(node -p 'require("./package.json").version')
@@ -319,6 +330,9 @@ jobs:
               fi
             done
           done
+          if [[ $NOTICES == true ]]; then
+            cp src-tauri/resources/THIRD-PARTY-LICENSES.txt release-bundles/
+          fi
           ls -l release-bundles
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -395,6 +409,7 @@ jobs:
               --title "RIM $VERSION" --notes-file release-notes.md "${flags[@]}"
           fi
 
+      # SHA256SUMS covers the installers and THIRD-PARTY-LICENSES.txt.
       - name: Write latest.json and SHA256SUMS
         run: node scripts/release-assets.mjs bundles "$VERSION" "$GITHUB_REPOSITORY" > downloads.md
 
@@ -404,9 +419,9 @@ jobs:
 
       # Keyless, like the image: the certificate names this workflow and the tag.
       - name: Sign SHA256SUMS
-        run: cosign sign-blob --yes --bundle bundles/SHA256SUMS.sigstore bundles/SHA256SUMS
+        run: cosign sign-blob --yes --bundle bundles/SHA256SUMS.sigstore.json bundles/SHA256SUMS
 
-      # SLSA build provenance for every bundle SHA256SUMS lists.
+      # SLSA build provenance for every file SHA256SUMS lists.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: bundles/SHA256SUMS
@@ -429,16 +444,20 @@ jobs:
           Windows: SmartScreen shows an unknown publisher until the installer is signed; choose
           More info, then Run anyway.
 
+          The third-party licence notices the app bundles are attached as
+          \`THIRD-PARTY-LICENSES.txt\`.
+
           ### Verify the downloads
 
-          \`SHA256SUMS\` lists every installer and is signed with cosign by this repository's release
-          workflow, and each installer has a build provenance attestation:
+          \`SHA256SUMS\` lists every installer and \`THIRD-PARTY-LICENSES.txt\`. It is signed with
+          cosign by this repository's release workflow, and each file it lists has a build
+          provenance attestation. Next to the downloaded files:
 
           \`\`\`sh
-          sha256sum -c --ignore-missing SHA256SUMS
-          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore \\
-            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release.yaml@refs/tags/v$VERSION" \\
+          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\
+            --certificate-identity $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release.yaml@refs/tags/v$VERSION \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          sha256sum --check --ignore-missing SHA256SUMS
           gh attestation verify <file> --repo $GITHUB_REPOSITORY
           \`\`\`
           EOF

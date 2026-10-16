@@ -5,7 +5,14 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { classify, downloadTable, latestJson, readBundles, sha256sums } from "./release-assets.mjs";
+import {
+  classify,
+  downloadTable,
+  latestJson,
+  readBundles,
+  readNotices,
+  sha256sums,
+} from "./release-assets.mjs";
 
 const REPO = "rim-platform/rim-ui";
 const OPTIONS = { version: "0.0.1", repo: REPO, pubDate: "2026-10-16T12:00:00Z" };
@@ -24,6 +31,7 @@ const RELEASE_FILES = {
   "RIM_0.0.1_x64-setup.exe.sig": "sig-nsis\n",
   "RIM_0.0.1_x64_en-US.msi": "msi",
   "RIM_0.0.1_x64_en-US.msi.sig": "sig-msi\n",
+  "THIRD-PARTY-LICENSES.txt": "notices",
 };
 
 let dir;
@@ -98,6 +106,8 @@ describe("readBundles", () => {
     rmSync(join(dir, "RIM_0.0.1_amd64.deb"));
     writeFiles({ "RIM_0.0.1_amd64.deb.sig": "x" });
     expect(() => readBundles(dir)).toThrow("RIM_0.0.1_amd64.deb.sig: no bundle for it");
+    rmSync(join(dir, "THIRD-PARTY-LICENSES.txt"));
+    expect(() => readNotices(dir)).toThrow("THIRD-PARTY-LICENSES.txt: missing");
   });
 });
 
@@ -152,11 +162,11 @@ describe("latestJson", () => {
 });
 
 describe("sha256sums and downloadTable", () => {
-  it("lists every bundle in sha256sum format and as a table", () => {
+  it("lists every bundle and the notices in sha256sum format, and the bundles as a table", () => {
     writeFiles(RELEASE_FILES);
     const bundles = readBundles(dir);
-    const sums = sha256sums(bundles);
-    expect(sums.trim().split("\n")).toHaveLength(5);
+    const sums = sha256sums([...bundles, readNotices(dir)]);
+    expect(sums.trim().split("\n")).toHaveLength(6);
     expect(
       execFileSync("sha256sum", ["-c", "-"], {
         cwd: dir,
@@ -164,7 +174,7 @@ describe("sha256sums and downloadTable", () => {
         encoding: "utf8",
         env: { ...process.env, LC_ALL: "C" },
       }),
-    ).toContain("RIM_0.0.1_x64_en-US.msi: OK");
+    ).toContain("RIM_0.0.1_x64_en-US.msi: OK\nTHIRD-PARTY-LICENSES.txt: OK");
     expect(downloadTable(bundles, OPTIONS)).toBe(`| File | Platform | Size |
 | --- | --- | --- |
 | [RIM_0.0.1_amd64.AppImage](https://github.com/rim-platform/rim-ui/releases/download/v0.0.1/RIM_0.0.1_amd64.AppImage) | Linux x86_64 (AppImage, any distribution) | 0.0 MB |
@@ -184,7 +194,9 @@ describe("the command", () => {
     const latest = JSON.parse(readFileSync(join(dir, "latest.json"), "utf8"));
     expect(latest.pub_date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     expect(Object.keys(latest.platforms)).toHaveLength(7);
-    expect(readFileSync(join(dir, "SHA256SUMS"), "utf8")).toBe(sha256sums(readBundles(dir)));
+    expect(readFileSync(join(dir, "SHA256SUMS"), "utf8")).toBe(
+      sha256sums([...readBundles(dir), readNotices(dir)]),
+    );
   });
 
   it("fails with the reason and without writing", () => {

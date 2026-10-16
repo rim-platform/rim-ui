@@ -62,7 +62,8 @@ repository:
 2. Pushing the tag starts `.github/workflows/release.yaml`. After the maintainer approves it in
    the `release` environment, it publishes the web image and builds the Linux and Windows
    installers, then publishes the GitHub release with the changelog section, the installers,
-   the updater's `latest.json`, a cosign-signed `SHA256SUMS` and build provenance attestations.
+   the updater's `latest.json`, `THIRD-PARTY-LICENSES.txt`, a cosign-signed `SHA256SUMS` and
+   build provenance attestations.
 
 `updater.md` says what the release needs configured (the updater key, its variables and
 secrets) and how to roll an update back.
