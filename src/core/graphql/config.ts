@@ -31,9 +31,23 @@ export function setRelayEndpoint(endpoint: string | null): void {
   }
 }
 
+/** Whether the desktop app runs against a relay it moved to rather than the configured one. */
+export function usesMovedRelay(): boolean {
+  return movedEndpoint() !== null;
+}
+
 /** The GraphQL HTTP endpoint: the relay the desktop moved to, else env or the localhost default. */
 export function getGraphqlEndpoint(): string {
   return movedEndpoint() ?? (import.meta.env.VITE_GRAPHQL_ENDPOINT || DEFAULT_GRAPHQL_ENDPOINT);
+}
+
+/** The host of a GraphQL endpoint, or the endpoint itself when it does not parse. */
+export function endpointHost(endpoint: string): string {
+  try {
+    return new URL(endpoint, window.location.origin).host;
+  } catch {
+    return endpoint;
+  }
 }
 
 /**
