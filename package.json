@@ -1,7 +1,7 @@
 {
   "name": "rim-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "RIM desktop and web client: a programmable communication workspace",
   "license": "Apache-2.0",
   "homepage": "https://github.com/rim-platform/rim-ui",
@@ -31,6 +31,8 @@
     "sdk:typecheck": "tsc -p sdk/plugin-sdk && tsc -p plugins/template-ts && tsc -p plugins/k8s-pods && tsc -p plugins/github-prs",
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
     "skew:check": "node scripts/skew-check.mjs",
+    "version:check": "node scripts/version-check.mjs",
+    "version:set": "node scripts/version-set.mjs",
     "licenses": "node scripts/licenses.mjs",
     "licenses:check": "node scripts/licenses.mjs --check"
   },

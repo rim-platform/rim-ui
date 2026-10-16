@@ -25,6 +25,9 @@ jobs:
           cache: "npm"
       - name: Install Dependencies
         run: npm ci
+      # package.json, package-lock.json, src-tauri/Cargo.toml and Cargo.lock carry one version.
+      - name: Version Check
+        run: npm run version:check
       # Production dependencies only: the dev toolchain (codegen, test runner) never ships.
       - name: Dependency Audit
         run: npm audit --omit=dev --audit-level=high

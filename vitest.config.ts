@@ -25,6 +25,14 @@ export default defineConfig({
           include: ["sdk/**/*.test.ts", "plugins/**/*.test.ts"],
         },
       },
+      {
+        // The release and version scripts: Node programs as well.
+        test: {
+          name: "scripts",
+          environment: "node",
+          include: ["scripts/**/*.test.mjs"],
+        },
+      },
     ],
   },
 });

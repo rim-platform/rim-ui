@@ -1,10 +1,12 @@
 [package]
 name = "rim-ui"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.0.1"
+description = "RIM desktop app: a programmable communication workspace"
+authors = ["Jakub Dvořák"]
 edition = "2021"
 license = "Apache-2.0"
+homepage = "https://github.com/rim-platform/rim-ui"
+repository = "https://github.com/rim-platform/rim-ui"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

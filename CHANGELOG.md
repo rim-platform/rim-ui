@@ -132,6 +132,15 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   page says it is for operators only when opened directly.
 - Each workspace in the workspace rail other than the open one shows an unread badge, like
   Direct messages; the counts are refreshed every minute and when the window regains focus.
+- Desktop installers on every release: an AppImage, a `.deb` and an `.rpm` for Linux x86_64
+  and an installer (`-setup.exe`) and an `.msi` for Windows x86_64, attached to the GitHub
+  release with a cosign-signed `SHA256SUMS` and a build provenance attestation for each; the
+  release notes say how to verify them. The Linux builds need glibc 2.34 and WebKitGTK 4.1, as
+  on Debian 12, Ubuntu 22.04 and newer. macOS follows later.
+- The desktop app updates itself from the GitHub releases: it checks at launch and every day,
+  and Settings, About downloads a signed update and installs it after "Restart to update". An
+  app installed from the `.deb` or `.rpm` updates with the next package and asks for an
+  administrator password.
 - The desktop app's sign-in and join pages name the server they use and offer "Use another
   server": enter a self-hosted server's address, see its version, and the app moves to it.
   "Back to the default server" returns to the one the release was built with. Only `https://`
@@ -147,6 +156,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The version starts at 0.0.1, the first public release, which rim-server shares: Settings,
+  About and plugins (`hostVersion`) report 0.0.1 instead of 0.1.0.
 - The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,
   the browser tab shows the RIM icon and the title "RIM", and restoring a session shows the
   bouncing RIM splash, still when the system asks for reduced motion. The desktop window and
