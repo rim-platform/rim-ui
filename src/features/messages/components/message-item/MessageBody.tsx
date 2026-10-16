@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { MarkdownRenderer } from "../../../../shared/ui/MarkdownRenderer";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
+import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { MessageEditForm } from "./MessageEditForm";
 import type { MemberResolver } from "./types";
@@ -95,6 +96,7 @@ export const MessageText = memo(function MessageText({
         joinedAt={member?.joinedAt}
         bio={member?.bio}
         isCurrentUser={member?.isCurrentUser}
+        onSendDm={() => void openDirectWithMember(mentionCard.userId)}
         anchorRect={mentionCard.rect}
         onMouseEnter={handleMentionCardEnter}
         onMouseLeave={scheduleMentionClose}

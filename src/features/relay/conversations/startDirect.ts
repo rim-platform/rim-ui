@@ -61,6 +61,21 @@ export function notReadyNames(resolved: readonly Resolved[], deviceReady: boolea
   return deviceReady ? names : [...names, "this device"];
 }
 
+/** Whether `member` has a device that can receive encrypted messages. */
+export async function directMemberReady(member: DirectMember): Promise<boolean> {
+  return (await resolveMember(member)).ready;
+}
+
+/** A conversation started in this relay's direct space. */
+export interface StartedDirect {
+  spaceId: string;
+  conversationId: string;
+  /** Whether it is end-to-end encrypted, or becomes so once `group` settles. */
+  encrypted: boolean;
+  /** This device creating the conversation's group, when it does; failures are logged. */
+  group: Promise<boolean> | null;
+}
+
 /**
  * Start a DM (one member) or a group (several) in this relay's direct space. `predecessor`
  * makes it the successor of a conversation whose home is gone. Returns where it lives.
@@ -68,7 +83,7 @@ export function notReadyNames(resolved: readonly Resolved[], deviceReady: boolea
 export async function startDirectConversation(
   members: readonly DirectMember[],
   predecessor?: { hostServerId: string; conversationId: string },
-): Promise<{ spaceId: string; conversationId: string }> {
+): Promise<StartedDirect> {
   const info = useRelayStore.getState().info;
   if (!info) throw new Error("This server does not relay messages.");
   const resolved = await Promise.all(members.map(resolveMember));
@@ -87,11 +102,16 @@ export async function startDirectConversation(
     ...(predecessor ? { predecessor } : {}),
   };
   const created = await createConversation(input);
+  let group: Promise<boolean> | null = null;
   if (session && encrypted && (created.encryptedAt || !isWebAccount(session.account))) {
-    void createGroup(session, info.directSpaceId, created.id).catch((err: unknown) =>
-      logger.warn("[RIM:relay] creating the group failed:", err),
-    );
+    group = createGroup(session, info.directSpaceId, created.id);
+    group.catch((err: unknown) => logger.warn("[RIM:relay] creating the group failed:", err));
   }
   await queryClient.invalidateQueries({ queryKey: queryKeys.conversations(info.directSpaceId) });
-  return { spaceId: info.directSpaceId, conversationId: created.id };
+  return {
+    spaceId: info.directSpaceId,
+    conversationId: created.id,
+    encrypted: Boolean(created.encryptedAt) || group !== null,
+    group,
+  };
 }

@@ -5,6 +5,7 @@ import { Avatar } from "../../../../shared/ui/Avatar";
 import { UserHoverCard } from "../../../../shared/ui/UserHoverCard";
 import { cn } from "../../../../shared/ui/cn";
 import { formatTime } from "../../../../shared/utils/formatTime";
+import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { LockMark } from "../../../e2ee/components/LockMark";
 import { sameAuthor } from "./areMessageItemPropsEqual";
 import { useAuthorPresence } from "./useAuthorPresence";
@@ -39,6 +40,7 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
       bio={author.bio}
       presenceStatus={presence}
       isCurrentUser={author.isCurrentUser}
+      onSendDm={() => void openDirectWithMember(authorId)}
     >
       {children}
     </UserHoverCard>

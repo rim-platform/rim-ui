@@ -18,8 +18,9 @@ const START_TYPING = gql`
  * in a direct conversation: other conversations show no typing. `handleKeystroke` takes the
  * composer text after the keystroke and stays quiet while it is blank; `markSent` lifts the
  * throttle once a message went out, so the next keystroke announces typing again at once.
+ * Without a conversation (a draft direct message) nothing is announced.
  */
-export function useTypingIndicator(workspaceId: string, conversationId: string) {
+export function useTypingIndicator(workspaceId: string, conversationId: string | undefined) {
   const lastSentRef = useRef(0);
   // Use refs to always read the latest values without re-creating the callback
   const workspaceIdRef = useRef(workspaceId);
@@ -36,15 +37,13 @@ export function useTypingIndicator(workspaceId: string, conversationId: string) 
 
   const handleKeystroke = useCallback(
     (text: string) => {
-      if (!direct || !text.trim()) return;
+      const conversationId = conversationIdRef.current;
+      if (!direct || !conversationId || !text.trim()) return;
       const now = Date.now();
       if (now - lastSentRef.current < THROTTLE_MS) return;
       lastSentRef.current = now;
 
-      startTyping({
-        serverId: workspaceIdRef.current,
-        conversationId: conversationIdRef.current,
-      });
+      startTyping({ serverId: workspaceIdRef.current, conversationId });
     },
     [direct, startTyping],
   );

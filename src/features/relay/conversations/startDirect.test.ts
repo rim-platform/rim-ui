@@ -11,7 +11,7 @@ vi.mock("../../e2ee/runtime/session", () => session);
 vi.mock("../../e2ee/web/webAccount", () => ({ isWebAccount: () => false }));
 
 import { useRelayStore } from "../state/useRelayStore";
-import { NotReadyError, startDirectConversation } from "./startDirect";
+import { directMemberReady, NotReadyError, startDirectConversation } from "./startDirect";
 
 const HERE = "http://localhost:8080";
 
@@ -26,7 +26,7 @@ function person(relays: string[], ready: boolean) {
 
 beforeEach(() => {
   Object.values({ ...identity, ...create, ...groups, ...session }).forEach((fn) => fn.mockReset());
-  groups.createGroup.mockResolvedValue(undefined);
+  groups.createGroup.mockResolvedValue(true);
   useRelayStore.getState().reset();
   useRelayStore
     .getState()
@@ -45,7 +45,8 @@ describe("startDirectConversation", () => {
     const result = await startDirectConversation([
       { principalId: "rimp1_bob", relayUrls: ["https://relay-b.example"], name: "Bob" },
     ]);
-    expect(result).toEqual({ spaceId: "direct-1", conversationId: "c1" });
+    expect(result).toMatchObject({ spaceId: "direct-1", conversationId: "c1", encrypted: true });
+    await expect(result.group).resolves.toBe(true);
     expect(create.createConversation).toHaveBeenCalledWith({
       serverId: "direct-1",
       encrypted: true,
@@ -67,7 +68,7 @@ describe("startDirectConversation", () => {
     identity.resolveIdentity.mockResolvedValue(person([HERE], false));
     session.e2eeSession.mockResolvedValue(null);
     create.createConversation.mockResolvedValue({ id: "c2", encryptedAt: null });
-    await startDirectConversation([
+    const result = await startDirectConversation([
       { principalId: "rimp1_a", relayUrls: [], name: "A" },
       { principalId: "rimp1_b", relayUrls: [], name: "B" },
     ]);
@@ -79,6 +80,15 @@ describe("startDirectConversation", () => {
       ],
     });
     expect(groups.createGroup).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ encrypted: false, group: null });
+  });
+
+  it("says whether a member has a device that can receive encrypted messages", async () => {
+    identity.resolveIdentity.mockResolvedValueOnce(person([HERE], true));
+    identity.resolveIdentity.mockResolvedValueOnce(person([HERE], false));
+    const bob = { principalId: "rimp1_bob", relayUrls: [], name: "Bob" };
+    expect(await directMemberReady(bob)).toBe(true);
+    expect(await directMemberReady(bob)).toBe(false);
   });
 
   it("names the conversation a successor continues", async () => {

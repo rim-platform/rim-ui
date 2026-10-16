@@ -8,6 +8,7 @@ import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
 import { MessageTimeline } from "../../features/messages/components/MessageTimeline";
 import { InvitationGate } from "../../features/conversations/components/ConversationInvitation";
+import { DraftDirectView } from "../../features/conversations/components/DraftDirectView";
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
 import { CommandPalette, KeybindProvider } from "../../features/commands";
 import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
@@ -181,6 +182,7 @@ function WorkspaceShell() {
   const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
+  const draftDirect = useShellStore((s) => s.draftDirect);
   const zenMode = useShellStore((s) => s.zenMode);
   const sidebarCollapsed = useShellStore((s) => s.sidebarCollapsed);
   const toggleZenMode = useShellStore((s) => s.toggleZenMode);
@@ -294,12 +296,16 @@ function WorkspaceShell() {
                     >
                       {!zenContentHidden && <ConversationHeader />}
                     </div>
-                    <InvitationGate
-                      workspaceId={workspaceId}
-                      conversationId={selectedConversationId}
-                    >
-                      <MessageTimeline />
-                    </InvitationGate>
+                    {draftDirect ? (
+                      <DraftDirectView draft={draftDirect} />
+                    ) : (
+                      <InvitationGate
+                        workspaceId={workspaceId}
+                        conversationId={selectedConversationId}
+                      >
+                        <MessageTimeline />
+                      </InvitationGate>
+                    )}
                   </SurfaceErrorBoundary>
                   {zenMode && (
                     <button

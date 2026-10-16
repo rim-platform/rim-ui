@@ -10,7 +10,8 @@ import { ChannelIcon } from "../../features/conversations/components/ChannelIcon
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
 import { directPeerId, isInvited, pendingMembersOf } from "../../features/conversations/utils";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
-import { useShellStore } from "../state/useShellStore";
+import { useShellStore, type DirectDraft } from "../state/useShellStore";
+import { draftSpaceId, useDraftPeer } from "../../features/conversations/hooks/useDraftPeer";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useMemberLookup } from "../../features/workspaces/hooks/useMemberLookup";
 import { useUpdateTopicMutation } from "../../features/conversations/api/useUpdateTopic";
@@ -26,7 +27,36 @@ import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 
+/** The main area's header: the selected conversation, or the draft direct message. */
 export function ConversationHeader() {
+  const draft = useShellStore((s) => s.draftDirect);
+  return draft ? <DraftDirectHeader draft={draft} /> : <SelectedConversationHeader />;
+}
+
+/** A draft direct message's header: the person, and the workspace it is in. */
+function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
+  const peer = useDraftPeer(draft);
+  const { data: workspace } = useWorkspace(draftSpaceId(draft));
+  return (
+    <div className="flex h-10 items-center border-b border-rim-line px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar
+          url={peer.avatarUrl}
+          name={peer.name || "?"}
+          userId={peer.avatarKey}
+          size="sm"
+          presenceStatus={peer.presence}
+        />
+        <div className="min-w-0">
+          <h2 className="text-sm font-medium text-rim-text">{peer.name}</h2>
+          <p className="text-xs text-rim-text-faint">{workspace?.name ?? ""}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectedConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
   const openSearch = useSearchOverlayStore((s) => s.openWithScope);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
@@ -11,6 +11,9 @@ const inbox = vi.hoisted(() => ({ fetchInboxConversations: vi.fn() }));
 const relayApi = vi.hoisted(() => ({ fetchConversationPredecessor: vi.fn() }));
 vi.mock("../api/useInboxConversations", () => inbox);
 vi.mock("../../relay/api/relayApi", () => relayApi);
+vi.mock("../../workspaces/api/useServerMembers", () => ({
+  useServerMembers: () => ({ data: [] }),
+}));
 vi.mock("../../workspaces/hooks/useMemberLookup", () => ({
   useMemberLookup: (serverId: string) => ({
     resolve: () => ({ displayName: serverId === "remote-space" ? "Alice" : "Carol" }),
@@ -70,5 +73,22 @@ describe("DirectConversationList", () => {
     await user.click(await screen.findByText("Alice"));
     await waitFor(() => expect(useWorkspaceStore.getState().workspaceId).toBe("remote-space"));
     expect(useShellStore.getState().selectedConversationId).toBe("remote-dm");
+  });
+
+  it("shows an open draft first and opens no conversation while it is open", async () => {
+    const dan = { principalId: "rimp1_dan", relayUrls: [], name: "Dan" };
+    useShellStore.getState().openDraftDirect({ spaceId: "direct-1", member: dan });
+    renderWithProviders(<DirectConversationList />);
+
+    const draftRow = (await screen.findByText("New message to Dan")).closest("li")!;
+    expect(draftRow).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("option")[0]).toBe(draftRow);
+    await screen.findByText("Carol");
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+
+    // Without the draft, the first conversation of the space opens.
+    act(() => useShellStore.getState().setSelectedConversationId(null));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("local-dm"));
+    expect(screen.queryByText("New message to Dan")).not.toBeInTheDocument();
   });
 });

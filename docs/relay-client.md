@@ -140,10 +140,12 @@ for without a workspace. Settings hides Pipelines, State and Emoji there.
 
 New DMs and groups start in this relay's direct space whenever every member has a principal id:
 from the contact picker there, or from a workspace's member picker when everyone picked has one.
+A group is created when it is picked; a DM opens as a draft and is created when its first
+message is sent, unless the side rail already lists one with that person.
 `createConversation` names them in `remoteMembers` with the relays of their verified card. With
 anyone on another relay the conversation is created end-to-end encrypted, which needs every
 member and this device to be set up for encryption; otherwise nothing is created and the picker
-says who is not ready. With members of this relay alone, today's rule holds. MLS runs unchanged:
+(for a DM, the composer) says who is not ready. With members of this relay alone, today's rule holds. MLS runs unchanged:
 the home claims key packages, and the device directory fetches any principal its relay cannot
 answer for (`principalDevices`, `keyLog`) with `remoteIdentity`, from their contact entry or the
 relays their invite named, with the card checked against the log and the same head pin and
