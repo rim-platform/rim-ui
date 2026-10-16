@@ -15,6 +15,7 @@ import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../../shared/ui/focusNavigation";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { AboutLogFolder } from "../../updater/components/AboutLogFolder";
 import { AboutNotices } from "../../updater/components/AboutNotices";
 import { AboutUpdates, AboutVersion } from "../../updater/components/AboutUpdates";
 import {
@@ -115,6 +116,7 @@ function AboutRim() {
             <p className="text-sm font-semibold text-rim-text">RIM</p>
             <AboutVersion />
             <AboutServerVersion />
+            <AboutLogFolder />
           </div>
         </div>
 

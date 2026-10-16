@@ -119,9 +119,26 @@ The app's identifier is `com.rim.rim-ui`; its folders are named after it.
 The vault and its key belong together: the vault does not open without the key, and the key is
 of no use without the vault. `secret-vault.md` describes both.
 
-**Logs.** The desktop app does not write a log file. When something fails, the error it shows on
-screen is what a bug report needs; copy its text or take a screenshot. In the web app, the
-browser's developer console (F12) shows the client's errors.
+## Logs
+
+The desktop app writes `rim.log` in its log folder. Settings > About has **Open log folder**.
+
+| Linux | macOS | Windows |
+|---|---|---|
+| `~/.local/share/com.rim.rim-ui/logs/` | `~/Library/Logs/com.rim.rim-ui/` | `%LOCALAPPDATA%\com.rim.rim-ui\logs\` |
+
+- The file grows to 2 MB, then moves aside as `rim_<date-time>.log`; the four newest of those
+  are kept and older ones deleted.
+- It holds the app's info, warning and error messages, such as local plugins starting and
+  stopping and what failed, and the warnings and errors of its web view. It holds no message text, keys, passwords or tokens: errors are kept by kind
+  and short message, web addresses lose their query, long token-like strings are replaced with
+  `[redacted]`, and a plugin's own output is withheld.
+- The default level is info. For a bug report that needs more, set the environment variable
+  `RIM_LOG=debug` and start the app from that shell, for example
+  `RIM_LOG=debug ./RIM_<version>_amd64.AppImage`. It raises the app's own messages only, not
+  those of the libraries it uses.
+
+In the web app, the browser's developer console (F12) shows the client's errors.
 
 ## Remove the app
 
@@ -132,9 +149,10 @@ browser's developer console (F12) shows the client's errors.
    - Windows: Settings > Apps > Installed apps, RIM, Uninstall. An `.msi` install is removed
      the same way or with `msiexec /x RIM_<version>_x64_en-US.msi`.
 2. Uninstalling leaves your data in place, so a reinstall picks up where you left off. To remove
-   it too, delete the folders in the table above and the `vault-key-v1` entry from the
-   credential store (Seahorse or KWalletManager on Linux, Keychain Access on macOS, Credential
-   Manager on Windows).
+   it too, delete the folders under [Where the app keeps its data](#where-the-app-keeps-its-data)
+   and the log folder ([Logs](#logs)), and the `vault-key-v1` entry from the credential store
+   (Seahorse or KWalletManager on Linux, Keychain Access on macOS, Credential Manager on
+   Windows).
 
 Deleting the data removes this computer's device key and its keys for encrypted conversations.
 Keep your recovery kit, or another device linked to your account, before you do.

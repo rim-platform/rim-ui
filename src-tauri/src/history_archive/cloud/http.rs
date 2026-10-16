@@ -158,9 +158,11 @@ impl Http {
                 }
                 Err(e) if last || is_tls_failure(&e) => return Err(self.unreachable(&e)),
                 Err(e) => {
+                    // Without the URL: a backup endpoint's address may carry a secret.
                     log::info!(
-                        "[history_archive] {} request failed: {e}; retrying",
-                        self.service
+                        "[history_archive] {} request failed: {}; retrying",
+                        self.service,
+                        e.without_url()
                     );
                     None
                 }

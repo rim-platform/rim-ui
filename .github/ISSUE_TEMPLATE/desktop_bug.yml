@@ -80,7 +80,7 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Error text or screenshot
+      label: Log excerpt
       description: |
-        The desktop app writes no log file; docs/install.md ("Where the app keeps its data") says what to collect instead. Remove tokens, keys, passwords, recovery phrases, message contents and personal data before you paste anything.
+        The last lines of `rim.log`, from around the time it happened. Settings > About > Open log folder opens its folder; docs/install.md ("Logs") lists the path on each OS. The log holds no message content, keys or tokens, but read it before you paste and remove anything you would rather not share.
       render: text

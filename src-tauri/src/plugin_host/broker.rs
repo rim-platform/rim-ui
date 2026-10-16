@@ -634,7 +634,9 @@ pub async fn run_broker_loop<R, W>(
                         }
                     }
                     Incoming::Invalid(reason) => {
-                        log::warn!("plugin {} sent an invalid frame: {}", broker.plugin_id(), reason);
+                        // The reason may quote the frame, which can carry message text.
+                        log::warn!("plugin {} sent an invalid frame", broker.plugin_id());
+                        log::debug!("plugin {} invalid frame: {}", broker.plugin_id(), reason);
                     }
                 }
             }

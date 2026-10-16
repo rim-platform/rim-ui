@@ -106,6 +106,9 @@ vi.mock("../../updater/components/AboutUpdates", () => ({
   AboutVersion: () => <p>Version 9.9.9</p>,
   AboutUpdates: () => <div data-testid="about-updates">Updates</div>,
 }));
+vi.mock("../../updater/components/AboutLogFolder", () => ({
+  AboutLogFolder: () => <button type="button">Open log folder</button>,
+}));
 vi.mock("../../updater/components/AboutNotices", () => ({
   AboutNotices: () => <div data-testid="about-notices">Third-party licences</div>,
 }));
@@ -269,6 +272,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Newer server API");
     expect(screen.getByTestId("about-updates")).toBeInTheDocument();
     expect(screen.getByTestId("about-notices")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open log folder" })).toBeInTheDocument();
     expect(screen.getByText("A programmable communication workspace.")).toBeInTheDocument();
   });
 
