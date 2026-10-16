@@ -55,9 +55,12 @@ Run `RIM_<version>_x64-setup.exe`. It installs RIM for your user and adds it to 
 Windows 10 and 11 already have the WebView2 runtime the app draws with; the installer fetches it
 when it is missing.
 
-The installers are not code-signed yet, so Microsoft Defender SmartScreen shows "Windows
-protected your PC" the first time. Check the download first ([Verify a
-download](#verify-a-download)), then choose **More info** and **Run anyway**.
+The installers are not code-signed, and no signing is planned for 0.0.x releases. Microsoft
+Defender SmartScreen therefore shows "Windows protected your PC" when you run the installer:
+choose **More info**, then **Run anyway**. SmartScreen judges unsigned software file by file, so
+every new version prompts again. You can still check that a download is the one this repository
+built, with `SHA256SUMS`, cosign and the GitHub attestation ([Verify a
+download](#verify-a-download)); each release's notes carry the commands too.
 
 The `.msi` installs RIM for every user of the computer and is meant for administrators who
 deploy software centrally, for example:
