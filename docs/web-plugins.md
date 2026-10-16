@@ -23,7 +23,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |
 | Install from link, Settings, consent text, panel chrome | `components/InstallFromLink.tsx`, `PluginSettingsPage.tsx`, `PluginCapabilityPrompt.tsx`, `PluginSlotContainer.tsx`, `pluginTrust.ts` |
 | SDK transports and browser build | `sdk/plugin-sdk/src/transport.ts`, `index.browser.ts`, `scripts/bundle-plugin.mjs`, `scripts/browser-build.mjs`; the npm package `@rim-platform/plugin-sdk` ships them built |
-| Showcase | `plugins/github-prs/` |
+| Showcase | [`rim-platform/plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), a repository of its own |
 
 The runtime capability `webPlugins` is on for the desktop and the web; `pluginHost` keeps
 meaning local processes, so the web shows local-process entries as "Needs the desktop
@@ -58,32 +58,37 @@ it) is not started; Settings says so, and turning it off and on clears it.
 
 ## Build and try the showcase
 
+The showcase lives in [`rim-platform/plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs),
+which holds the built plugin at its root:
+
 ```sh
-npm run plugin:bundle -- plugins/github-prs
-# bundled chat.rim.github-prs into plugins/github-prs/dist/chat.rim.github-prs and …/chat.rim.github-prs-0.1.0.rimbundle
+git clone https://github.com/rim-platform/plugin-github-prs.git && cd plugin-github-prs
+npm ci
+npm run bundle
+# bundled chat.rim.github-prs into dist/chat.rim.github-prs and dist/chat.rim.github-prs-<version>.rimbundle
 # sha256 <hex>  size <bytes>
 ```
 
 **Desktop.** `npm run tauri dev`, then Settings → Plugins → Install from local folder and
-pick `plugins/github-prs/dist/chat.rim.github-prs`. Approve both permissions, enable it,
-and open **Pull requests** from the side rail.
+pick `dist/chat.rim.github-prs` of that clone. Approve both permissions, enable it, and
+open **Pull requests** from the side rail.
 
-**Web.** Serve the bundle with CORS, for example from the `dist` folder:
+**Web.** Serve the bundle with CORS, for example from the clone's `dist` folder:
 
 ```sh
-npx http-server plugins/github-prs/dist --cors -S -C cert.pem -K key.pem   # any https server with Access-Control-Allow-Origin: *
-npm run dev
+npx http-server dist --cors -S -C cert.pem -K key.pem   # any https server with Access-Control-Allow-Origin: *
+npm run dev                                             # in rim-ui
 ```
 
 Sign in, open Settings → Plugins → Install from link and paste
-`https://<host>/chat.rim.github-prs-0.1.0.rimbundle#sha256=<the printed hash>`. The
+`https://<host>/chat.rim.github-prs-<version>.rimbundle#sha256=<the printed hash>`. The
 bundle is fetched without credentials, must hash to the link's value, and must pass the
 manifest rules before the permission prompt opens. Installs from a workspace's plugin
 registry come with that registry; the install record already keeps their shape
 (`{ kind: "registry", … }`).
 
-The plugin talks to GitHub without a token (60 requests an hour per IP address), so add a
-repository or two, not ten, while trying it.
+The plugin talks to GitHub without a token (60 requests an hour per IP address). It starts
+with two repositories; add one or two more, not ten, while trying it.
 
 ## Manual checks
 

@@ -264,10 +264,16 @@ npx rim-plugin-bundle --in-place --entry src/main.ts .   # after changing the so
 npx rim-plugin-bundle --check --entry src/main.ts .      # in CI
 ```
 
+[`plugin-k8s-pods`](https://github.com/rim-platform/plugin-k8s-pods) (a local process) and
+[`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs) (a web plugin) are
+two such repositories, with CI that runs `--check` and a release workflow that attaches the
+`.rimbundle`.
+
 The build names no absolute path and no time, so the same sources and the same SDK
 version give the same bytes on every machine; commit the lockfile so CI builds with the
 SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle`
-(`npx rim-plugin-bundle .`) can go on the release for **Install from link**.
+(`npx rim-plugin-bundle --entry src/main.ts .`, whose `main.mjs` is the committed one
+byte for byte) can go on the release for **Install from link**.
 
 For a WebSandboxed plugin the desktop takes `rim-plugin.json`, the entrypoint and
 `panels/` from the checkout and ignores the rest: the sources, `package.json` and the

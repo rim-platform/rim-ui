@@ -11,8 +11,8 @@
 //! - so does the TypeScript template plugin built on `sdk/plugin-sdk`, which
 //!   also refuses an unconfirmed dangerous command on its own, and runs through
 //!   the host's real start-up and command path;
-//! - so does the Kubernetes pods plugin, against a stand-in kubectl, including
-//!   its panel state reaching the host's panel store and its live updates.
+//! - a test plugin's panel state reaches the host's panel store and its live
+//!   updates, whole and patched, and is cleared when the plugin stops.
 
 use super::{method, Initiator, Principal};
 use crate::plugin_host::broker::{run_broker_loop, BrokerConfig, PluginBroker, PluginClient};
@@ -36,7 +36,7 @@ const USER_ID: &str = "0192b3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b";
 const DISPLAY_NAME: &str = "Jakub";
 const HELLO_WORLD: &str = "dev.example.hello-world";
 const TEMPLATE_TS: &str = "dev.example.template-ts";
-const K8S_PODS: &str = "chat.rim.k8s-pods";
+const PANEL_TS: &str = "dev.example.panel-ts";
 const WAIT: Duration = Duration::from_secs(15);
 
 static SCHEMA: LazyLock<Value> =
@@ -782,160 +782,37 @@ async fn template_ts_runs_through_the_host() {
     runtime::stop_plugin(TEMPLATE_TS, &state).await.unwrap();
 }
 
-// ── The Kubernetes pods plugin ──
+// ── A plugin with a panel ──
 
-fn k8s_pods_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugins/k8s-pods")
+fn panel_ts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plugin_host/test_plugins/panel-ts")
 }
 
-fn k8s_pods_manifest() -> PluginManifest {
-    PluginManifest::load(&k8s_pods_dir().join("rim-plugin.json")).expect("k8s-pods manifest")
-}
-
-/// Held by each k8s-pods test while its plugin runs: the plugin process
-/// inherits the variables [`use_fake_kubectl`] sets, which are process-wide.
-static FAKE_KUBECTL: LazyLock<tokio::sync::Mutex<()>> =
-    LazyLock::new(|| tokio::sync::Mutex::new(()));
-
-/// Point the plugin at the stand-in kubectl, which answers from
-/// `plugins/k8s-pods/test/cluster.json`. Only the k8s-pods plugin reads these.
-async fn use_fake_kubectl(log: Option<&Path>) -> tokio::sync::MutexGuard<'static, ()> {
-    let guard = FAKE_KUBECTL.lock().await;
-    std::env::set_var("RIM_KUBECTL", k8s_pods_dir().join("test/bin/kubectl"));
-    match log {
-        Some(log) => std::env::set_var("FAKE_KUBECTL_LOG", log),
-        None => std::env::remove_var("FAKE_KUBECTL_LOG"),
-    }
-    guard
-}
-
-/// Like [`ask`], but answers the plugin's own requests on the way the way a host
-/// without `ui.panel` does, with `CAPABILITY_DENIED`.
-async fn ask_refusing_panels(
-    stdin: &mut (impl tokio::io::AsyncWrite + Unpin),
-    stdout: &mut (impl tokio::io::AsyncRead + Unpin),
-    request: &Value,
+/// The next state the panel relay pushes, which must be the test plugin's `main` panel.
+async fn next_panel_state(
+    changes: &mut tokio::sync::broadcast::Receiver<
+        crate::plugin_host::panel_relay::PanelStateChange,
+    >,
 ) -> Value {
-    wire::write_frame(stdin, request).await.unwrap();
-    loop {
-        let frame = tokio::time::timeout(Duration::from_secs(15), wire::read_raw_frame(stdout))
-            .await
-            .expect("plugin answered in time")
-            .expect("plugin frame is valid");
-        match (frame.get("method"), frame.get("id")) {
-            (Some(method), Some(id)) => {
-                assert_eq!(method, "rim.ui.update_panel");
-                let refusal = json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": {"code": wire::CAPABILITY_DENIED, "message": "capability denied: ui.panel"},
-                });
-                wire::write_frame(stdin, &refusal).await.unwrap();
-            }
-            (Some(_), None) => assert_valid("LogRequest", &frame),
-            (None, _) => {
-                assert_eq!(frame["id"], request["id"], "the plugin echoes the id");
-                return frame;
-            }
-        }
-    }
-}
-
-#[test]
-fn k8s_pods_manifest_installs() {
-    let manifest = k8s_pods_manifest();
-    validate_plugin_manifest(&manifest).expect("the plugin passes install validation");
-    assert!(!manifest.has_reserved_prefix());
-    assert_eq!(manifest.capabilities, ["ui.panel", "ui.notify"]);
-    let flags: Vec<_> = manifest
-        .commands
-        .iter()
-        .map(|c| (c.id.as_str(), c.dangerous, c.keybind_capable))
-        .collect();
-    assert_eq!(
-        flags,
-        [
-            ("refresh", false, true),
-            ("filter", false, true),
-            ("restart_pod", true, false)
-        ]
-    );
-    assert!(manifest
-        .description
-        .contains("credentials never leave this device"));
-}
-
-#[tokio::test]
-async fn k8s_pods_speaks_v1() {
-    if !node_runs_typescript() {
-        return;
-    }
-    let _env = use_fake_kubectl(None).await;
-    let manifest = k8s_pods_manifest();
-    let (mut process, pipes) =
-        PluginProcess::spawn(K8S_PODS, &k8s_pods_dir(), &manifest.entrypoint).unwrap();
-    let (mut stdin, mut stdout) = (pipes.stdin, pipes.stdout);
-
-    let mut handshake = example("HandshakeRequest");
-    handshake["params"]["pluginId"] = json!(K8S_PODS);
-    handshake["params"]["grantedCapabilities"] = json!([]);
-    let response = ask_refusing_panels(&mut stdin, &mut stdout, &handshake).await;
-    assert_valid("HandshakeResponse", &response);
-    assert_eq!(response["result"]["accepted"], true);
-
-    let mut refresh = execute_frame(2, "refresh", "user", false);
-    refresh["params"]["futureField"] = json!(true);
-    let response = ask_refusing_panels(&mut stdin, &mut stdout, &refresh).await;
-    assert_valid("CommandExecuteResponse", &response);
-    assert_eq!(response["result"]["message"], "3 pods in shop (kind-dev)");
-    assert_eq!(
-        response["result"]["payload"]["pods"][2]["status"],
-        "CrashLoopBackOff"
-    );
-
-    let mut filter = execute_frame(3, "filter", "agent", false);
-    filter["params"]["args"] = json!({"namespace": "../etc"});
-    let response = ask_refusing_panels(&mut stdin, &mut stdout, &filter).await;
-    assert_valid("ErrorResponse", &response);
-    assert_eq!(response["error"]["code"], wire::INVALID_PARAMS);
-
-    // The plugin refuses a restart the user did not confirm, or the agent asked for.
-    for (id, initiator, confirmed) in [(4, "user", false), (5, "agent", true)] {
-        let mut frame = execute_frame(id, "restart_pod", initiator, confirmed);
-        frame["params"]["args"] = json!({"pod": "web-7f9c-abcde"});
-        let response = ask_refusing_panels(&mut stdin, &mut stdout, &frame).await;
-        assert_valid("ErrorResponse", &response);
-        assert_eq!(response["error"]["code"], wire::PLUGIN_ERROR);
-        assert_eq!(
-            response["error"]["data"],
-            json!({"reason": "confirmation_required"})
-        );
-    }
-    let mut restart = execute_frame(6, "restart_pod", "user", true);
-    restart["params"]["args"] = json!({"pod": "web-7f9c-abcde"});
-    let response = ask_refusing_panels(&mut stdin, &mut stdout, &restart).await;
-    assert_valid("CommandExecuteResponse", &response);
-    assert_eq!(
-        response["result"]["payload"]["controller"],
-        "ReplicaSet/web-7f9c"
-    );
-
-    wire::write_frame(&mut stdin, &example("ShutdownNotification"))
+    let change = tokio::time::timeout(WAIT, changes.recv())
         .await
-        .unwrap();
-    let status = wait_for_exit(&mut process).await;
-    assert!(status.success(), "clean exit: {status:?}");
-    drop(stdin);
+        .expect("the panel state arrived in time")
+        .expect("panel state changes arrive");
+    assert_eq!(
+        (change.plugin_id.as_str(), change.panel_id.as_str()),
+        (PANEL_TS, "main")
+    );
+    change.state
 }
 
 #[tokio::test]
-async fn k8s_pods_runs_through_the_host_and_fills_its_panel() {
+async fn a_plugin_fills_its_panel_through_the_host() {
     if !node_runs_typescript() {
         return;
     }
-    let log = tempfile::NamedTempFile::new().unwrap();
-    let _env = use_fake_kubectl(Some(log.path())).await;
-    let manifest = k8s_pods_manifest();
+    let manifest =
+        PluginManifest::load(&panel_ts_dir().join("rim-plugin.json")).expect("panel-ts manifest");
+    validate_plugin_manifest(&manifest).expect("the test plugin passes install validation");
     let state = PluginHostState::with_installed(vec![manifest.clone()]);
     {
         let mut store = state.store.lock().unwrap();
@@ -951,77 +828,42 @@ async fn k8s_pods_runs_through_the_host_and_fills_its_panel() {
         .plugin_dirs
         .lock()
         .unwrap()
-        .insert(K8S_PODS.into(), k8s_pods_dir());
+        .insert(PANEL_TS.into(), panel_ts_dir());
     let mut changes = state.panel_relay.subscribe();
     let mut events = state.events.subscribe();
-    runtime::start_plugin(K8S_PODS, &manifest, &state).unwrap();
+    runtime::start_plugin(PANEL_TS, &manifest, &state).unwrap();
 
-    // The plugin's first listing is pushed live, and stored for a panel that opens later.
-    let listed = tokio::time::timeout(Duration::from_secs(15), async {
-        loop {
-            let change = changes.recv().await.expect("panel state changes arrive");
-            assert_eq!(
-                (change.plugin_id.as_str(), change.panel_id.as_str()),
-                (K8S_PODS, "pods")
-            );
-            if change.state["fetchedAt"].is_string() {
-                return change.state;
-            }
-        }
-    })
+    // The plugin's first state is pushed live, and stored for a panel that opens later.
+    let first = next_panel_state(&mut changes).await;
+    assert_eq!(first, json!({"greeting": "Hello, Jakub!", "count": 0}));
+    assert_eq!(
+        state.panel_relay.get_state(PANEL_TS, "main").unwrap(),
+        Some(first)
+    );
+
+    // A patch merges into the stored state, and the whole merged state is pushed.
+    let counted = command_exec::execute(
+        &state,
+        PANEL_TS,
+        "count",
+        json!({}),
+        false,
+        None,
+        Initiator::User,
+    )
     .await
-    .expect("the plugin listed the pods");
-    assert_eq!(listed["context"], "kind-dev");
-    assert_eq!(listed["pods"].as_array().unwrap().len(), 3);
+    .expect("count runs");
+    assert_eq!(counted.payload, json!({"count": 1}));
+    let merged = json!({"greeting": "Hello, Jakub!", "count": 1});
+    assert_eq!(next_panel_state(&mut changes).await, merged);
     assert_eq!(
-        state.panel_relay.get_state(K8S_PODS, "pods").unwrap(),
-        Some(listed)
+        state.panel_relay.get_state(PANEL_TS, "main").unwrap(),
+        Some(merged)
     );
 
-    let run = |command: &'static str, args: Value, confirmed: bool, initiator: Initiator| {
-        command_exec::execute(&state, K8S_PODS, command, args, confirmed, None, initiator)
-    };
-    let refreshed = run("refresh", json!({}), false, Initiator::Agent)
-        .await
-        .expect("the agent may refresh");
-    assert_eq!(refreshed.payload["totalPods"], 3);
-
-    let pod = json!({"pod": "web-7f9c-abcde"});
-    assert!(matches!(
-        run("restart_pod", pod.clone(), false, Initiator::User).await,
-        Err(command_exec::PluginCommandError::ConfirmationRequired(_))
-    ));
-    assert!(
-        // Refused by the host itself, before the plugin hears of it.
-        matches!(
-            run("restart_pod", pod.clone(), true, Initiator::Agent).await,
-            Err(command_exec::PluginCommandError::ConfirmationRequired(_))
-        ),
-        "the agent can never confirm a restart"
-    );
-    assert!(!std::fs::read_to_string(log.path())
-        .unwrap()
-        .contains("delete pod"));
-
-    let restarted = run("restart_pod", pod, true, Initiator::User)
-        .await
-        .expect("a confirmed restart runs");
-    assert_eq!(
-        restarted.message.as_deref(),
-        Some("Restarted web-7f9c-abcde in shop: ReplicaSet/web-7f9c starts a new pod.")
-    );
-    assert!(std::fs::read_to_string(log.path())
-        .unwrap()
-        .contains("delete pod web-7f9c-abcde --wait=false --context=kind-dev --namespace=shop"));
-    let after = state
-        .panel_relay
-        .get_state(K8S_PODS, "pods")
-        .unwrap()
-        .unwrap();
-    assert_eq!(after["lastAction"]["ok"], true);
-
-    runtime::stop_plugin(K8S_PODS, &state).await.unwrap();
-    assert_eq!(state.panel_relay.get_state(K8S_PODS, "pods").unwrap(), None);
+    // Stopping the plugin clears what its panel showed.
+    runtime::stop_plugin(PANEL_TS, &state).await.unwrap();
+    assert_eq!(state.panel_relay.get_state(PANEL_TS, "main").unwrap(), None);
 
     // The UI heard the plugin come up and go away, so its plugin list follows.
     let mut kinds = Vec::new();
@@ -1030,7 +872,7 @@ async fn k8s_pods_runs_through_the_host_and_fills_its_panel() {
             .await
             .expect("the plugin's start and stop are announced")
             .unwrap();
-        assert_eq!(event.plugin_id, K8S_PODS);
+        assert_eq!(event.plugin_id, PANEL_TS);
         kinds.push(event.kind);
     }
     assert_eq!(
