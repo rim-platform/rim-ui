@@ -132,6 +132,14 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   page says it is for operators only when opened directly.
 - Each workspace in the workspace rail other than the open one shows an unread badge, like
   Direct messages; the counts are refreshed every minute and when the window regains focus.
+- The desktop app's sign-in and join pages name the server they use and offer "Use another
+  server": enter a self-hosted server's address, see its version, and the app moves to it.
+  "Back to the default server" returns to the one the release was built with. Only `https://`
+  addresses are accepted, and `http://` for localhost.
+- Settings > About has "Third-party licences": the desktop app opens the notices bundled with it,
+  and the web app links to the same file attached to each release.
+- Settings > About names the connected server by its host, with its version and API version,
+  so a bug report carries both.
 
 ### Changed
 
