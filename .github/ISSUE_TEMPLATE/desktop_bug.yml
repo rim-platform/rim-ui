@@ -1,0 +1,86 @@
+name: Desktop app bug
+description: Something in the installed desktop app (Linux, Windows, or a macOS build) does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security vulnerability goes through [SECURITY.md](https://github.com/rim-platform/rim-ui/blob/master/SECURITY.md), never a public issue.
+        Settings > About shows the app's version and the server's; copy both from there.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS (built from source)
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system version
+      description: The distribution and its version with the desktop environment, or the Windows or macOS version.
+      placeholder: Ubuntu 24.04, GNOME 46
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Installed from
+      options:
+        - .deb
+        - .rpm
+        - .AppImage
+        - -setup.exe
+        - .msi
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Settings > About, the "Version" line.
+      placeholder: "0.0.1"
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Server
+      description: Settings > About, the "Server" line with its host, version and API version. On the sign-in page, the server it names.
+      placeholder: Server relay.rim-platform.org, version 0.0.1, API 1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What happened instead, with the exact text of any error the app showed.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt
+      description: |
+        The last lines of `rim.log`, from around the time it happened. Settings > About > Open log folder opens its folder; docs/install.md ("Logs") lists the path on each OS. The log holds no message content, keys or tokens, but read it before you paste and remove anything you would rather not share.
+      render: text

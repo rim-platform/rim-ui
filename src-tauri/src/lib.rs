@@ -4,6 +4,7 @@ mod history_archive;
 mod identity_backup;
 mod key_identity;
 mod keybind_profile;
+mod logging;
 mod message_cache;
 mod offline_session;
 mod plugin_host;
@@ -25,6 +26,8 @@ pub fn run() {
         updater_config.as_ref(),
     );
     builder
+        // First, so the other plugins' and the app's start-up messages reach the log file.
+        .plugin(logging::plugin())
         .manage(updater::UpdaterStatus::of(updater_config.as_ref()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())

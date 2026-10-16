@@ -32,7 +32,9 @@
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
     "skew:check": "node scripts/skew-check.mjs",
     "version:check": "node scripts/version-check.mjs",
-    "version:set": "node scripts/version-set.mjs"
+    "version:set": "node scripts/version-set.mjs",
+    "licenses": "node scripts/licenses.mjs",
+    "licenses:check": "node scripts/licenses.mjs --check"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -41,6 +43,7 @@
     "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-virtual": "^3.14.14",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-log": "2.10.0",
     "@tauri-apps/plugin-notification": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "~2.4.0",
@@ -82,6 +85,7 @@
     "fake-indexeddb": "6.2.5",
     "globals": "^17.13.0",
     "jsdom": "^29.0.1",
+    "license-checker-rseidelsohn": "5.0.1",
     "msw": "^2.12.14",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.2.1",

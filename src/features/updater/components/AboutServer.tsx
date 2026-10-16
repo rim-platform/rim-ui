@@ -1,14 +1,25 @@
+import { endpointHost, getGraphqlEndpoint } from "../../../core/graphql/config";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { isKnownServerFeature, serverFeatureLabel } from "../../../core/serverFeatures";
 import { cn } from "../../../shared/ui/cn";
 import { NEWER_SERVER_API_MESSAGE, useServerInfo } from "../hooks/useServerInfo";
 
-/** The connected server's version under the client's; nothing while it loads. */
+/**
+ * The connected server, by its host, with its release and API versions under the client's;
+ * nothing while it loads.
+ */
 export function AboutServerVersion() {
   const { info, unreachable } = useServerInfo();
-  if (unreachable) return <p className="text-xs text-rim-text-faint">Server unreachable</p>;
+  const host = endpointHost(getGraphqlEndpoint());
+  if (unreachable) {
+    return <p className="text-xs text-rim-text-faint">Server {host} unreachable</p>;
+  }
   if (!info) return null;
-  return <p className="text-xs text-rim-text-faint">Server {info.version}</p>;
+  return (
+    <p className="text-xs text-rim-text-faint">
+      Server {host}, version {info.version}, API {info.apiVersion}
+    </p>
+  );
 }
 
 const STATE_WORD: Record<ServerFeatureState, string> = {

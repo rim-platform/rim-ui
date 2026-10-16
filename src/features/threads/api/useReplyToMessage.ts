@@ -60,8 +60,8 @@ export function useReplyToMessageMutation() {
         },
       });
     },
-    onError: (error, vars) => {
-      logger.error("[RIM:Thread] Reply mutation failed:", error, "vars:", vars);
+    onError: (error) => {
+      logger.error("[RIM:Thread] Reply mutation failed:", error);
     },
     onSuccess: async (data, vars) => {
       logger.debug(

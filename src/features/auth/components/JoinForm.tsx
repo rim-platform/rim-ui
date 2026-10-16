@@ -54,6 +54,7 @@ import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 import { TermsAcceptance } from "./TermsAcceptance";
 import { BrandHeading } from "./BrandHeading";
+import { ServerChoice } from "./ServerChoice";
 
 /**
  * Email validation regex mirroring the backend's pragmatic email regex.
@@ -408,6 +409,8 @@ export function JoinForm({
             </button>
           </div>
         )}
+
+        <ServerChoice />
       </div>
     </div>
   );

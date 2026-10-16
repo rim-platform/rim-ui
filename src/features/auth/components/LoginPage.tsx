@@ -23,6 +23,8 @@
  * **Key sign-in:** above the password form, "Sign in with this device" for each account this
  * computer, or this browser, holds a key for; below it, "Link this device" with a code from
  * another device and, where this app can hold an identity key, recovery with a recovery kit.
+ *
+ * **Server:** on the desktop, the server it signs in to and a way to move to another one.
  */
 
 import { useEffect } from "react";
@@ -44,6 +46,7 @@ import { RestoringSession } from "./RestoringSession";
 import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/DeviceKeySignIn";
 import { LinkThisDevice } from "../../key-identity/components/LinkThisDevice";
 import { BrandHeading } from "./BrandHeading";
+import { ServerChoice } from "./ServerChoice";
 
 /**
  * Top-level component for the `/login` route.
@@ -167,6 +170,8 @@ export function LoginPage() {
             No account? Ask your workspace admin for an invite.
           </p>
         )}
+
+        <ServerChoice />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { gql } from "graphql-request";
+import { GraphQLClient, gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import type { ServerInfo, ServerLimits } from "../../../core/graphql/generated/schema-types";
@@ -136,7 +136,19 @@ function refusedByServer(err: unknown): boolean {
  * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
  * `features` runs every feature, so it reads as listing none.
  */
-export async function fetchServerInfo(): Promise<KnownServerInfo> {
+export function fetchServerInfo(): Promise<KnownServerInfo> {
+  return readServerInfo(graphqlClient);
+}
+
+/**
+ * The same read against the server whose GraphQL endpoint is `endpoint`, without a session or
+ * cookies; for checking a server before the app moves to it.
+ */
+export function fetchServerInfoAt(endpoint: string): Promise<KnownServerInfo> {
+  return readServerInfo(new GraphQLClient(endpoint));
+}
+
+async function readServerInfo(client: GraphQLClient): Promise<KnownServerInfo> {
   for (const query of [
     SERVER_INFO_QUERY,
     SERVER_LIMITS_QUERY,
@@ -144,12 +156,12 @@ export async function fetchServerInfo(): Promise<KnownServerInfo> {
     SERVER_FEATURES_QUERY,
   ]) {
     try {
-      const res = await graphqlClient.request<ServerInfoResponse>(query);
+      const res = await client.request<ServerInfoResponse>(query);
       return { ...res.serverInfo, features: res.serverInfo.features ?? [] };
     } catch (err) {
       if (!refusedByServer(err)) throw err;
     }
   }
-  const res = await graphqlClient.request<ServerInfoResponse>(SERVER_VERSION_QUERY);
+  const res = await client.request<ServerInfoResponse>(SERVER_VERSION_QUERY);
   return { ...res.serverInfo, features: [] };
 }

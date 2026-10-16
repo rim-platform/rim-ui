@@ -141,6 +141,18 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   and Settings, About downloads a signed update and installs it after "Restart to update". An
   app installed from the `.deb` or `.rpm` updates with the next package and asks for an
   administrator password.
+- The desktop app's sign-in and join pages name the server they use and offer "Use another
+  server": enter a self-hosted server's address, see its version, and the app moves to it.
+  "Back to the default server" returns to the one the release was built with. Only `https://`
+  addresses are accepted, and `http://` for localhost.
+- Settings > About has "Third-party licences": the desktop app opens the notices bundled with it,
+  and the web app links to the same file attached to each release.
+- Settings > About names the connected server by its host, with its version and API version,
+  so a bug report carries both.
+- The desktop app keeps a log file, `rim.log` in the system's log folder, rotated at 2 MB with
+  four old files kept; Settings > About has "Open log folder". It holds the app's and the web
+  view's warnings and errors with no message text, keys or tokens. `RIM_LOG=debug` adds more
+  detail for a bug report.
 
 ### Changed
 

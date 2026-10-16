@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { getGraphqlEndpoint, getApiOrigin, getWsEndpoint } from "./config";
+import { endpointHost, getGraphqlEndpoint, getApiOrigin, getWsEndpoint } from "./config";
 
 describe("getGraphqlEndpoint", () => {
   it("returns the default endpoint when env var is not set", () => {
@@ -71,5 +71,19 @@ describe("getWsEndpoint", () => {
   it("still produces a well-formed /api/ws URL when the endpoint has no /api suffix", () => {
     vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://api.example.com/graphql");
     expect(getWsEndpoint()).toBe("wss://api.example.com/api/ws");
+  });
+});
+
+describe("endpointHost", () => {
+  it("names the host of an endpoint", () => {
+    expect(endpointHost("https://relay.rim-platform.org/api")).toBe("relay.rim-platform.org");
+  });
+
+  it("resolves a relative endpoint against the page", () => {
+    expect(endpointHost("/api")).toBe(window.location.host);
+  });
+
+  it("gives back an endpoint that does not parse", () => {
+    expect(endpointHost("http://[::1")).toBe("http://[::1");
   });
 });
