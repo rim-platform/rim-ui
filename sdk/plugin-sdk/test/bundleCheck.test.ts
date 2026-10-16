@@ -41,6 +41,25 @@ function bundler(args: string[], cwd: string) {
 
 describe("rim-plugin-bundle --check", () => {
   it.each<RuntimeKind>(["WebSandboxed", "DesktopLocalProcess"])(
+    "passes through a built %s folder by default and matches a build from source",
+    (runtimeKind) => {
+      const dir = pluginRepo(runtimeKind);
+      expect(bundler(["--in-place", "--entry", "src/main.ts", dir], dir).status).toBe(0);
+
+      const fromBuiltFolder = bundler([dir], tmpdir());
+      expect(fromBuiltFolder).toMatchObject({ status: 0, stderr: "" });
+      expect(fromBuiltFolder.stdout).toContain("using existing main.mjs without rebuilding");
+      const bundlePath = join(dir, "dist/dev.example.check-1.0.0.rimbundle");
+      const builtBundle = readFileSync(bundlePath);
+
+      const fromSource = bundler(["--entry", "src/main.ts", dir], tmpdir());
+      expect(fromSource).toMatchObject({ status: 0, stderr: "" });
+      expect(readFileSync(bundlePath)).toEqual(builtBundle);
+    },
+    30_000,
+  );
+
+  it.each<RuntimeKind>(["WebSandboxed", "DesktopLocalProcess"])(
     "passes on a %s folder built in place, from any working directory",
     (runtimeKind) => {
       const dir = pluginRepo(runtimeKind);
