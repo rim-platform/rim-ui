@@ -1,9 +1,14 @@
 name: Release
 
-# Builds, signs and publishes ghcr.io/rim-platform/rim-web, the web client image, for a tag
-# v<version>, then creates the GitHub release with the version's CHANGELOG.md section. Only the
-# maintainer may push v* tags, and the publish job waits for the maintainer's approval in the
-# `release` environment.
+# For a tag v<version>: builds, signs and publishes ghcr.io/rim-platform/rim-web, the web client
+# image, builds the desktop installers, and creates the GitHub release with the version's
+# CHANGELOG.md section, the installers, the updater's latest.json and signed checksums. Only the
+# maintainer may push v* tags. The image and desktop jobs wait together in the `release`
+# environment, so one approval starts them all.
+#
+# A failed desktop leg is re-run from the run's page ("Re-run failed jobs"). The release is
+# created as a draft and published only once every asset is attached, so a failure leaves at
+# most a draft, which the re-run completes.
 #
 # Every action is pinned to a full commit SHA, with its version in a comment.
 
@@ -147,26 +152,219 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Desktop bundles (Linux, macOS, Windows) go here later, as a job of their own.
+  # The desktop installers and their updater signatures, one leg per platform. A macOS leg is
+  # one more entry: runner macos-latest, args "--target universal-apple-darwin", arch universal,
+  # bundles ".dmg .app.tar.gz", plus the Apple signing and notarization secrets in its env.
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    # Linux builds in Debian Bookworm, so the binary needs no newer glibc and WebKitGTK than
+    # Bookworm's (2.36, 4.1). An empty container runs the leg on the runner itself.
+    container: ${{ matrix.container }}
+    environment: release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            container: debian:bookworm
+            args: ""
+            arch: x86_64
+            bundles: .AppImage .deb .rpm
+          - name: windows-x86_64
+            runner: windows-latest
+            container: ""
+            args: ""
+            arch: x86_64
+            bundles: -setup.exe .msi
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Before the long build: a release without the updater or the relay endpoint is not wanted.
+      - name: Check the build inputs
+        env:
+          RELEASE_GRAPHQL_ENDPOINT: ${{ vars.RELEASE_GRAPHQL_ENDPOINT }}
+          UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
+          UPDATER_ENDPOINT: ${{ vars.UPDATER_ENDPOINT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in RELEASE_GRAPHQL_ENDPOINT UPDATER_PUBKEY UPDATER_ENDPOINT \
+            TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [[ -z ${!name} ]]; then
+              echo "::error::$name is empty: set it in the repository's variables or the release environment's secrets (docs/updater.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # Tauri's Linux build dependencies (webkit2gtk 4.1 pulls in gtk3 and libsoup3); libssl-dev
+      # also serves the bundled SQLCipher and libdbus-1-dev the keyring's Secret Service backend.
+      # git and curl come first: checkout, the Rust toolchain and the AppImage tools need them.
+      - name: Install the Linux build dependencies
+        if: runner.os == 'Linux'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl file git pkg-config wget xdg-utils patchelf \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev libdbus-1-dev
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      # The licence notices bundled with the app are generated with cargo-about.
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-about
+
+      - name: Install the dependencies
+        run: npm ci
+
+      - name: Check the version
+        run: |
+          npm run version:check
+          version=$(node -p 'require("./package.json").version')
+          if [[ ${GITHUB_REF_NAME#v} != "$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in package.json"
+            exit 1
+          fi
+
+      - name: Write the third-party licence notices
+        run: npm run licenses
+
+      # The committed updater.json is empty, so development builds never contact an update host.
+      - name: Configure the updater
+        env:
+          UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
+          UPDATER_ENDPOINT: ${{ vars.UPDATER_ENDPOINT }}
+        run: |
+          node -e '
+            const { writeFileSync } = require("node:fs");
+            const file = { endpoints: [process.env.UPDATER_ENDPOINT], pubkey: process.env.UPDATER_PUBKEY };
+            writeFileSync("src-tauri/updater.json", JSON.stringify(file, null, 2) + "\n");
+          '
+
+      # The overlay turns on the updater signatures; the bundler also wants the public key, and
+      # refuses a private key that does not match it. It is a file, not inline JSON, so Windows'
+      # npm script shell cannot mangle its quotes. Stale bundles from a cached target directory
+      # are removed first.
+      - name: Build the installers
+        env:
+          VITE_GRAPHQL_ENDPOINT: ${{ vars.RELEASE_GRAPHQL_ENDPOINT }}
+          UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_ARGS: ${{ matrix.args }}
+        run: |
+          rm -rf src-tauri/target/release/bundle src-tauri/target/*/release/bundle
+          overlay="$RUNNER_TEMP/updater-artifacts.json"
+          node -e '
+            const overlay = {
+              bundle: { createUpdaterArtifacts: true },
+              plugins: { updater: { pubkey: process.env.UPDATER_PUBKEY } },
+            };
+            require("node:fs").writeFileSync(process.argv[1], JSON.stringify(overlay));
+          ' "$overlay"
+          # shellcheck disable=SC2086 # TAURI_ARGS holds separate arguments.
+          npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "$overlay" \
+            $TAURI_ARGS
+
+      # Only the installers and their updater signatures; each expected type must be there.
+      - name: Collect the bundles
+        env:
+          ARCH: ${{ matrix.arch }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          shopt -s nullglob
+          version=$(node -p 'require("./package.json").version')
+          mkdir release-bundles
+          dirs=(src-tauri/target/release/bundle src-tauri/target/*/release/bundle)
+          for suffix in $BUNDLES; do
+            files=()
+            for dir in "${dirs[@]}"; do
+              files+=("$dir"/*/*"$suffix")
+            done
+            if (( ${#files[@]} == 0 )); then
+              echo "::error::the build wrote no $suffix bundle"
+              exit 1
+            fi
+            for file in "${files[@]}"; do
+              name=$(basename "$file")
+              # The macOS update archive carries no version or architecture in its name.
+              if [[ $suffix == .app.tar.gz ]]; then
+                name="${name%.app.tar.gz}_${version}_${ARCH}.app.tar.gz"
+              fi
+              cp "$file" "release-bundles/$name"
+              if [[ -f $file.sig ]]; then
+                cp "$file.sig" "release-bundles/$name.sig"
+              fi
+            done
+          done
+          ls -l release-bundles
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-${{ matrix.name }}
+          path: release-bundles/
+          if-no-files-found: error
+          retention-days: 7
 
   # A job of its own: creating a release needs contents: write, which the job holding the
   # package and signing grants does not get.
   github-release:
     name: Create the GitHub release
-    needs: build-and-publish
+    needs: [build-and-publish, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build-and-publish.outputs.version }}
+      PRERELEASE: ${{ needs.build-and-publish.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-files
 
-      - name: Create the release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: bundles
+          merge-multiple: true
+
+      # A draft is not public and `releases/latest` skips it, so the updater sees nothing until
+      # the last step publishes it. A re-run finds the draft and fills it.
+      - name: Create the draft release
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.build-and-publish.outputs.version }}
-          PRERELEASE: ${{ needs.build-and-publish.outputs.prerelease }}
           DIGEST: ${{ needs.build-and-publish.outputs.digest }}
         run: |
           cat >> release-notes.md <<EOF
@@ -182,10 +380,72 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
           \`\`\`
           EOF
-          flags=()
-          if [[ $PRERELEASE == true ]]; then
-            flags+=(--prerelease)
+          draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [[ $draft == false ]]; then
+            echo "::error::release $GITHUB_REF_NAME is already published"
+            exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "rim-ui $VERSION" --notes-file release-notes.md "${flags[@]}" \
-            "rim-web-$VERSION.spdx.json"
+          if [[ $draft == none ]]; then
+            flags=()
+            if [[ $PRERELEASE == true ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "RIM $VERSION" --notes-file release-notes.md "${flags[@]}"
+          fi
+
+      - name: Write latest.json and SHA256SUMS
+        run: node scripts/release-assets.mjs bundles "$VERSION" "$GITHUB_REPOSITORY" > downloads.md
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Keyless, like the image: the certificate names this workflow and the tag.
+      - name: Sign SHA256SUMS
+        run: cosign sign-blob --yes --bundle bundles/SHA256SUMS.sigstore bundles/SHA256SUMS
+
+      # SLSA build provenance for every bundle SHA256SUMS lists.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: bundles/SHA256SUMS
+
+      - name: Upload the assets
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
+            bundles/* "rim-web-$VERSION.spdx.json"
+
+      - name: Publish the release
+        run: |
+          {
+            printf '\n### Desktop app\n\n'
+            cat downloads.md
+            cat <<EOF
+
+          Whichever you install, the app offers later releases in Settings, About; with the
+          \`.deb\` or the \`.rpm\` an update asks for an administrator password.
+
+          Windows: SmartScreen shows an unknown publisher until the installer is signed; choose
+          More info, then Run anyway.
+
+          ### Verify the downloads
+
+          \`SHA256SUMS\` lists every installer and is signed with cosign by this repository's release
+          workflow, and each installer has a build provenance attestation:
+
+          \`\`\`sh
+          sha256sum -c --ignore-missing SHA256SUMS
+          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore \\
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release.yaml@refs/tags/v$VERSION" \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          gh attestation verify <file> --repo $GITHUB_REPOSITORY
+          \`\`\`
+          EOF
+          } >> release-notes.md
+          flags=(--draft=false)
+          if [[ $PRERELEASE != true ]]; then
+            flags+=(--latest)
+          fi
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --notes-file release-notes.md "${flags[@]}"
