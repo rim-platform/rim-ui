@@ -58,7 +58,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 ### Added
 
 - The plugin SDK is published to npm as `@rim-platform/plugin-sdk`, starting at 0.1.0, with a
-  version of its own. It ships JavaScript and type declarations, so a plugin runs with
+  version of its own; a release stages it and the maintainer approves it on npmjs.com. It ships JavaScript and type declarations, so a plugin runs with
   `node main.ts` against the installed SDK without bundling first.
 - `@rim-platform/plugin-sdk/testing` exports `validateManifest`, `parseManifest`,
   `parseManifestText`, `checkInstall` and `ManifestError`: the rules the hosts install a

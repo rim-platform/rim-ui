@@ -3,7 +3,7 @@ name: Release
 # For a tag v<version>: builds, signs and publishes ghcr.io/rim-platform/rim-web, the web client
 # image, builds the desktop installers, creates the GitHub release with the version's
 # CHANGELOG.md section, the installers, the updater's latest.json and signed checksums, and
-# publishes the plugin SDK to npm when its version is not there yet. Only the
+# stages the plugin SDK on npm when its version is not there yet. Only the
 # maintainer may push v* tags. The image and desktop jobs wait together in the `release`
 # environment, so one approval starts them all.
 #
@@ -471,7 +471,7 @@ jobs:
             --notes-file release-notes.md "${flags[@]}"
 
   # The plugin SDK on npm. It keeps its own version, so a tag whose SDK version npm already has
-  # publishes nothing. It runs after the GitHub release, so a failed publish never holds the
+  # stages nothing. It runs after the GitHub release, so a failed publish never holds the
   # release back and "Re-run failed jobs" retries it alone; being in the release environment, it
   # waits for an approval of its own. npm trusts this workflow and environment as the package's
   # publisher (docs/release-sdk.md): no token is stored, and the provenance npm records names
@@ -529,8 +529,10 @@ jobs:
           npm run sdk:build
           npm run sdk:smoke
 
-      # A pre-release goes out under the dist-tag `next`, so `npm install` keeps the last release.
-      - name: Publish to npm
+      # Staged: the version is uploaded but reaches `latest` only when the maintainer approves it on
+      # npmjs.com with a second factor, so a compromised run cannot publish on its own. A
+      # pre-release is staged under the dist-tag `next`, so `npm install` keeps the last release.
+      - name: Stage on npm
         if: steps.sdk.outputs.publish == 'true'
         working-directory: sdk/plugin-sdk
         env:
@@ -540,4 +542,5 @@ jobs:
           if [[ $VERSION == *-* ]]; then
             flags+=(--tag next)
           fi
-          npm publish "${flags[@]}"
+          npm stage publish "${flags[@]}"
+          echo "::notice::$VERSION is staged; approve it on npmjs.com to publish"
