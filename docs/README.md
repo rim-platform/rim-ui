@@ -7,6 +7,8 @@ them.
 
 ## The app
 
+- `install.md`: downloads, run-time needs, verifying a download, where the app keeps its data,
+  updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
   pane.
 - `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.

@@ -8,6 +8,21 @@ A person is a key pair rather than an account on one server, and DMs and private
 end-to-end encrypted. The product vision and the server live in the separate `rim-server`
 repository.
 
+## Download
+
+Get the desktop app from the [latest release](https://github.com/rim-platform/rim-ui/releases/latest):
+
+- **Linux**: `.deb` for Debian and Ubuntu, `.rpm` for Fedora and openSUSE, or the `.AppImage`
+  for any distribution.
+- **Windows**: the `-setup.exe` installer, or the `.msi` for managed installs.
+- **macOS**: build it from source until signed builds exist.
+
+It signs in to the public relay, or to your own server with "Use another server" at sign-in.
+`docs/install.md` covers what each file is, what Linux needs at run time, the Windows SmartScreen
+warning, how to verify a download, where the app keeps its data, and building from source.
+
+## About this repository
+
 This repository is the client, in two builds from one React 19 and TypeScript code base:
 
 - **The desktop app**, a Tauri 2 shell around the React app, for Linux, macOS and Windows. It
