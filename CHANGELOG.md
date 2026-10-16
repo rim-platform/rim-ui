@@ -61,6 +61,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- A plugin command can act on the conversation you are in: one that declares
+  `required_context: ["conversation"]` in `rim-plugin.json` gets `conversation_id` and, with a
+  thread open, `thread_id` in its `args`, and `["message"]` gets the message it was run on. Such
+  a command only shows in the palette while a conversation is open, and a keybind or the AI
+  agent says "Open a conversation first" instead of running it. A manifest that also declares
+  an argument of one of those names no longer installs.
 - The plugin SDK is published to npm as `@rim-platform/plugin-sdk`, starting at 0.1.0, with a
   version of its own. It ships JavaScript and type declarations, so a plugin runs with
   `node main.ts` against the installed SDK without bundling first.

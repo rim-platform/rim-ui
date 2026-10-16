@@ -35,6 +35,17 @@ const LOCAL_ONLY_CAPABILITIES = ["local.process", "fs.read", "fs.write"];
 const MIN_KEY_BYTES = 4;
 const MAX_KEY_BYTES = 128;
 
+/**
+ * The context kinds a command's `required_context` can name, and the arguments
+ * the host adds to the command's `args` for each. A command requiring a kind may
+ * not declare an argument of those names.
+ */
+export const CONTEXT_ARGUMENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  workspace: ["workspace_id"],
+  conversation: ["conversation_id", "thread_id"],
+  message: ["message_id", "conversation_id", "thread_id"],
+});
+
 export interface ManifestCommand {
   id: string;
   title: string;
@@ -99,7 +110,7 @@ function isObject(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function has(object: Json, key: string): boolean {
+function has(object: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
 
@@ -538,6 +549,22 @@ function walkSchema(commandId: string, path: string, node: unknown): void {
   }
 }
 
+/** A command may not declare an argument the host sets from a context it requires. */
+function checkContextArguments(command: ManifestCommand): void {
+  for (const kind of command.required_context) {
+    if (!has(CONTEXT_ARGUMENTS, kind)) continue;
+    const reserved = CONTEXT_ARGUMENTS[kind];
+    for (const argument of command.arguments) {
+      const name = isObject(argument) ? argument.name : undefined;
+      if (typeof name === "string" && reserved.includes(name)) {
+        throw new ManifestError(
+          `command \`${command.id}\` declares argument \`${name}\`, which the host sets from its required ${kind} context`,
+        );
+      }
+    }
+  }
+}
+
 function checkAiCommand(command: ManifestCommand): void {
   const review = (reason: string): never => {
     throw new ManifestError(`command \`${command.id}\` requires manual install review: ${reason}`);
@@ -564,7 +591,8 @@ export interface InstallContext {
 
 /**
  * The install rules: no reserved id, capabilities this kind may hold (an
- * encrypted chat capability with its plain one), `network_origins`, a web plugin's entrypoint and panel ids, and the AI
+ * encrypted chat capability with its plain one), `network_origins`, a web plugin's entrypoint and panel ids, no
+ * argument named like one the host adds from a required context, and the AI
  * surface's install-id leak check.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
@@ -583,6 +611,7 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
   }
   validateNetworkOrigins(manifest, context.forbiddenOrigins ?? []);
   if (manifest.runtime_kind === "WebSandboxed") validateWebLayout(manifest);
+  for (const command of manifest.commands) checkContextArguments(command);
   for (const command of manifest.commands) {
     if (command.ai_callable) checkAiCommand(command);
   }

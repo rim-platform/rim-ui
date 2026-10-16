@@ -43,6 +43,13 @@ they may still change before they are frozen into protocol v1.
 Every call works in the workspace open in the app. Ids of messages, conversations and
 threads are the server's, and opaque to plugins.
 
+A command learns the conversation the user is in by declaring `required_context:
+["conversation"]` in `rim-plugin.json`: it then runs only while a conversation is open, and
+its `args` carry `conversation_id` (a string) and, while a thread is open beside it,
+`thread_id` (a string, left out otherwise), ready for `conversationId` and `threadId` below.
+`["message"]` adds `message_id` and `conversation_id` (and `thread_id` for a thread reply)
+for a command run on a message. The plugin SDK's README has the table.
+
 ### `rim.chat.list_messages`
 
 Params `{ conversationId, before?, limit? }`: the newest `limit` (1 to 100, default 50)

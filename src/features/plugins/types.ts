@@ -105,6 +105,8 @@ export interface PluginCommandInfo {
   dangerous: boolean;
   ai_callable: boolean;
   arguments: PluginCommandArgument[];
+  /** Context kinds the command runs in (`conversation`, `message`, `workspace`). */
+  required_context?: string[];
   /** Capabilities the user must have approved before the command runs. */
   required_capabilities?: string[];
 }

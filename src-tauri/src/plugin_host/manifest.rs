@@ -89,6 +89,8 @@ pub struct CommandInfo {
     pub dangerous: bool,
     pub ai_callable: bool,
     pub arguments: Vec<serde_json::Value>,
+    /// Context kinds the command runs in (`conversation`, `message`, `workspace`).
+    pub required_context: Vec<String>,
     /// Capabilities the user must have approved before the command runs.
     pub required_capabilities: Vec<String>,
 }
@@ -242,6 +244,7 @@ impl PluginManifest {
                 dangerous: c.dangerous,
                 ai_callable: c.ai_callable,
                 arguments: c.arguments.clone(),
+                required_context: c.required_context.clone(),
                 required_capabilities: c.required_capabilities.clone(),
             })
             .collect()
@@ -427,6 +430,8 @@ mod tests {
         assert!(infos[0].keybind_capable && !infos[0].dangerous);
         assert_eq!(infos[1].id, "other_action");
         assert!(infos[1].dangerous && !infos[1].keybind_capable);
+        assert!(infos[0].required_context.is_empty());
+        assert_eq!(infos[1].required_context, vec!["message".to_string()]);
     }
 
     #[test]

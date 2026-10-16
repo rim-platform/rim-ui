@@ -154,7 +154,12 @@ export function MessageContextMenu({
         onSelect: () => {
           onClose();
           dispatchCommand(cmd, (input) => executeCommandMutation.mutateAsync(input), {
-            commandContext: { workspaceId, conversationId, selectedMessageId: messageId },
+            commandContext: {
+              workspaceId,
+              conversationId,
+              selectedMessageId: messageId,
+              threadId: message?.threadId ?? undefined,
+            },
           });
         },
       });
@@ -177,6 +182,7 @@ export function MessageContextMenu({
     canModerate,
     handleDelete,
     handleModeratorDelete,
+    message,
   ]);
 
   return (
