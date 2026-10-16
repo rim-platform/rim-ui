@@ -1,20 +1,40 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { useConnectionStore } from "./useConnectionStore";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createClient, type ClientOptions } from "graphql-ws";
+
+vi.mock("graphql-ws", () => ({
+  createClient: vi.fn(() => ({ subscribe: vi.fn(), dispose: vi.fn() })),
+}));
+
+import "../../../core/graphql/wsClient";
+
+/** The options wsClient created its graphql-ws client with. */
+const options = vi.mocked(createClient).mock.calls[0][0] as ClientOptions;
+
+// The socket connected before anything read the store, as when the relay subscribes first.
+options.on?.connecting?.(false);
+options.on?.connected?.({}, undefined, false);
+const { useConnectionStore } = await import("./useConnectionStore");
 
 describe("useConnectionStore", () => {
+  it("starts from the socket's state, with null lastDisconnectedAt", () => {
+    expect(useConnectionStore.getState().status).toBe("connected");
+    expect(useConnectionStore.getState().lastDisconnectedAt).toBeNull();
+  });
+
+  it("follows the socket", () => {
+    options.on?.closed?.(new CloseEvent("close", { code: 1006 }));
+    expect(useConnectionStore.getState().status).toBe("disconnected");
+    options.on?.connected?.({}, undefined, true);
+    expect(useConnectionStore.getState().status).toBe("connected");
+  });
+});
+
+describe("useConnectionStore.setStatus", () => {
   beforeEach(() => {
     useConnectionStore.setState({
       status: "connecting",
       lastDisconnectedAt: null,
     });
-  });
-
-  it("starts with connecting status", () => {
-    expect(useConnectionStore.getState().status).toBe("connecting");
-  });
-
-  it("starts with null lastDisconnectedAt", () => {
-    expect(useConnectionStore.getState().lastDisconnectedAt).toBeNull();
   });
 
   it("transitions to connected", () => {

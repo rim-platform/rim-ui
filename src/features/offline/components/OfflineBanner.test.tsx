@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
@@ -64,6 +64,24 @@ describe("ConnectionBanner", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("This address is blocked on this server");
     expect(screen.queryByText(/Connection lost/)).not.toBeInTheDocument();
+  });
+
+  it("says Reconnected for a while once a lost connection is back, and nothing on the first connect", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ConnectionBanner />);
+      act(() => useConnectionStore.setState({ status: "connected" }));
+      expect(screen.queryByText("Reconnected")).not.toBeInTheDocument();
+
+      act(() => useConnectionStore.setState({ status: "disconnected" }));
+      expect(screen.getByText("Connection lost. Reconnecting...")).toBeInTheDocument();
+      act(() => useConnectionStore.setState({ status: "connected" }));
+      expect(screen.getByText("Reconnected")).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(3000));
+      expect(screen.queryByText("Reconnected")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says there are too many connections while the upgrade is refused for them", () => {

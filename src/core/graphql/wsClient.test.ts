@@ -10,10 +10,21 @@ vi.mock("graphql-ws", () => ({
 }));
 
 import { useEdgeStore } from "./edgeRefusals";
-import { onWsConnected, onWsDisconnected, onWsSessionEnded, reconnectDelayMs } from "./wsClient";
+import {
+  onWsConnected,
+  onWsDisconnected,
+  onWsSessionEnded,
+  onWsStatus,
+  reconnectDelayMs,
+  wsStatus,
+  type WsStatus,
+} from "./wsClient";
 
 /** The options wsClient created its graphql-ws client with. */
 const options = vi.mocked(createClient).mock.calls[0][0] as ClientOptions;
+
+/** The socket closed with `code`, as graphql-ws reports it. */
+const closedWith = (code: number) => new CloseEvent("close", { code });
 
 describe("wsClient", () => {
   describe("onWsConnected", () => {
@@ -40,6 +51,47 @@ describe("wsClient", () => {
       expect(typeof unsub).toBe("function");
       unsub();
     });
+  });
+});
+
+describe("wsStatus", () => {
+  let seen: WsStatus[];
+  let off: () => void;
+
+  beforeEach(() => {
+    // graphql-ws closes normally once the last subscription has ended.
+    options.on?.closed?.(closedWith(1000));
+    seen = [];
+    off = onWsStatus((status) => seen.push(status));
+  });
+
+  afterEach(() => off());
+
+  it("is idle until a subscription opens the socket, and again after the last one ends", () => {
+    expect(wsStatus()).toBe("idle");
+    options.on?.connecting?.(false);
+    expect(wsStatus()).toBe("connecting");
+    options.on?.connected?.({}, undefined, false);
+    expect(wsStatus()).toBe("connected");
+    options.on?.closed?.(closedWith(1000));
+
+    expect(wsStatus()).toBe("idle");
+    expect(seen).toEqual(["connecting", "connected", "idle"]);
+  });
+
+  it("stays disconnected through the attempts after a lost connection until one connects", () => {
+    options.on?.connecting?.(false);
+    options.on?.connected?.({}, undefined, false);
+    seen = [];
+
+    options.on?.closed?.(closedWith(1006));
+    options.on?.connecting?.(true);
+    options.on?.closed?.(closedWith(1006));
+    options.on?.connecting?.(true);
+    expect(wsStatus()).toBe("disconnected");
+    options.on?.connected?.({}, undefined, true);
+
+    expect(seen).toEqual(["disconnected", "connected"]);
   });
 });
 
@@ -82,9 +134,6 @@ describe("wsClient reconnection", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
-
-  /** The socket closed with `code`, as graphql-ws reports it. */
-  const closedWith = (code: number) => new CloseEvent("close", { code });
 
   it("retries a failed upgrade rather than ending the subscriptions", () => {
     expect(options.shouldRetry?.(new Event("error"))).toBe(true);

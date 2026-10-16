@@ -1,15 +1,16 @@
 import { create } from "zustand";
 
-type ConnectionStatus = "connected" | "connecting" | "disconnected";
+import { onWsStatus, wsStatus, type WsStatus } from "../../../core/graphql/wsClient";
 
 interface ConnectionState {
-  status: ConnectionStatus;
-  setStatus: (status: ConnectionStatus) => void;
+  /** The WebSocket's state, followed from the moment this store exists. */
+  status: WsStatus;
+  setStatus: (status: WsStatus) => void;
   lastDisconnectedAt: string | null;
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({
-  status: "connecting",
+  status: wsStatus(),
   setStatus: (status) =>
     set((state) => ({
       status,
@@ -18,3 +19,5 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
     })),
   lastDisconnectedAt: null,
 }));
+
+onWsStatus((status) => useConnectionStore.getState().setStatus(status));

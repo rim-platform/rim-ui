@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useConnectionStore } from "../state/useConnectionStore";
 import { ADDRESS_BLOCKED_MESSAGE } from "../../../core/graphql/errors";
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
-import { onWsConnected, onWsDisconnected } from "../../../core/graphql/wsClient";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 
 /** What the reconnect banner says while the server refuses the WebSocket for too many connections. */
@@ -20,42 +19,22 @@ export function ConnectionBanner() {
   const tooManyConnections = useEdgeStore((s) => s.tooManyConnections);
   // While the app runs offline, `OfflineBanner` says so instead.
   const offline = useOfflineStore((s) => s.offline);
-  const setStatus = useConnectionStore((s) => s.setStatus);
-  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hadDisconnectRef = useRef(false);
   const [showReconnected, setShowReconnected] = useState(false);
 
   useEffect(() => {
-    const unsubConnected = onWsConnected(() => {
-      if (hadDisconnectRef.current) {
-        setStatus("connected");
-        setShowReconnected(true);
-        dismissTimerRef.current = setTimeout(() => {
-          setShowReconnected(false);
-        }, 3000);
-      } else {
-        setStatus("connected");
-      }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = useConnectionStore.subscribe((state, prev) => {
+      if (state.status === prev.status) return;
+      clearTimeout(timer);
+      const back = prev.status === "disconnected" && state.status === "connected";
+      setShowReconnected(back);
+      if (back) timer = setTimeout(() => setShowReconnected(false), 3000);
     });
-
-    const unsubDisconnected = onWsDisconnected(() => {
-      hadDisconnectRef.current = true;
-      setStatus("disconnected");
-      setShowReconnected(false);
-      if (dismissTimerRef.current) {
-        clearTimeout(dismissTimerRef.current);
-        dismissTimerRef.current = null;
-      }
-    });
-
     return () => {
-      unsubConnected();
-      unsubDisconnected();
-      if (dismissTimerRef.current) {
-        clearTimeout(dismissTimerRef.current);
-      }
+      unsubscribe();
+      clearTimeout(timer);
     };
-  }, [setStatus]);
+  }, []);
 
   if (offline) return null;
 
