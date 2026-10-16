@@ -204,6 +204,19 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// A web plugin is installed built: its checkout holds the bundle files (the
+/// manifest, the entrypoint and `panels/`) by the bundle rules, and nothing of it
+/// ever runs on this computer. Other files of the checkout are left alone.
+fn check_web_checkout(dir: &Path) -> Result<(), GitInstallError> {
+    crate::plugin_host::bundle::check_dir(dir)
+        .map(|_| ())
+        .map_err(|e| {
+            GitInstallError::Manifest(ManifestError::Validation(format!(
+                "web plugins are installed built: {e}"
+            )))
+        })
+}
+
 /// Full git install flow:
 /// validate URL → clone → detect manifest → validate → consent gate → move → post-install.
 ///
@@ -254,15 +267,11 @@ pub async fn install_from_git(
         return Err(GitInstallError::InvalidManifest(e));
     }
 
-    // A web plugin is installed built: its checkout must hold what a bundle of
-    // it would, and nothing of it ever runs on this computer.
     let web = manifest.runtime_kind == RuntimeKind::WebSandboxed;
     if web {
-        if let Err(e) = crate::plugin_host::bundle::check_dir(&clone_dir) {
+        if let Err(e) = check_web_checkout(&clone_dir) {
             let _ = std::fs::remove_dir_all(&clone_dir);
-            return Err(GitInstallError::Manifest(ManifestError::Validation(
-                format!("web plugins are installed built: {e}"),
-            )));
+            return Err(e);
         }
     }
 
@@ -344,31 +353,67 @@ pub async fn update_plugin(
     allow_post_install: bool,
 ) -> Result<(PluginManifest, PluginUpdateResult), GitInstallError> {
     run_git_in(plugin_dir, git_source::fetch_args()).await?;
+    apply_fetched_update(plugin_dir, old_manifest, allow_post_install).await
+}
 
+/// The top-level files of the fetched upstream tree that imply post-install
+/// steps: `package.json` only when it gives npm something to install.
+async fn upstream_trigger_files(plugin_dir: &Path) -> Result<Vec<String>, GitInstallError> {
     let listing = run_git_in(plugin_dir, git_source::ls_upstream_tree_args()).await?;
-    let upstream_files: Vec<String> = String::from_utf8_lossy(&listing.stdout)
+    let mut names: Vec<String> = String::from_utf8_lossy(&listing.stdout)
         .lines()
         .map(str::to_string)
         .collect();
+    if names.iter().any(|n| n == "package.json") {
+        let needs = run_git_in(
+            plugin_dir,
+            git_source::show_upstream_file_args("package.json"),
+        )
+        .await
+        .map_or(true, |out| {
+            post_install::package_json_needs_install(&out.stdout)
+        });
+        if !needs {
+            names.retain(|n| n != "package.json");
+        }
+    }
+    Ok(names)
+}
+
+/// The update after the fetch: the consent gate on the fetched tree, the
+/// fast-forward, and the checks of the new copy. A new copy the checks refuse
+/// is rolled back to the commit the plugin was at.
+async fn apply_fetched_update(
+    plugin_dir: &Path,
+    old_manifest: &PluginManifest,
+    allow_post_install: bool,
+) -> Result<(PluginManifest, PluginUpdateResult), GitInstallError> {
     // A web plugin is installed built and has no steps to consent to.
     if old_manifest.runtime_kind != RuntimeKind::WebSandboxed {
+        let upstream_files = upstream_trigger_files(plugin_dir).await?;
         let upstream_steps = post_install::steps_for_top_level_files(&upstream_files, plugin_dir);
         post_install::gate(&old_manifest.plugin_id, upstream_steps, allow_post_install)?;
     }
 
+    let head = run_git_in(plugin_dir, git_source::rev_parse_head_args()).await?;
+    let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+    let rollback = git_source::reset_hard_args(&head)
+        .ok_or_else(|| GitInstallError::PullFailed(format!("HEAD is not a commit: {head}")))?;
+
     run_git_in(plugin_dir, git_source::merge_upstream_args()).await?;
 
-    let new_manifest = detect_manifest(plugin_dir)?;
-
-    // N1 + F2 validation on the updated manifest — same gate as fresh install.
-    if let Err(e) = validate_plugin_manifest(&new_manifest) {
-        log::warn!(
-            "[AUDIT] event=plugin_update_rejected plugin_id={} reason={}",
-            new_manifest.plugin_id,
-            e
-        );
-        return Err(GitInstallError::InvalidManifest(e));
-    }
+    let new_manifest = match check_updated_copy(plugin_dir) {
+        Ok(m) => m,
+        Err(e) => {
+            if let Err(reset) = run_git_in(plugin_dir, rollback).await {
+                log::warn!(
+                    "[plugin_host] could not roll {} back to {head}: {reset}",
+                    old_manifest.plugin_id
+                );
+            }
+            return Err(e);
+        }
+    };
 
     // Detect capability changes
     let old_caps: std::collections::HashSet<&str> = old_manifest
@@ -420,9 +465,129 @@ pub async fn update_plugin(
     Ok((new_manifest, result))
 }
 
+/// The manifest of an updated working tree, after the checks a fresh install
+/// makes: N1 + F2 validation and, for a web plugin, the bundle rules.
+fn check_updated_copy(plugin_dir: &Path) -> Result<PluginManifest, GitInstallError> {
+    let new_manifest = detect_manifest(plugin_dir)?;
+    if let Err(e) = validate_plugin_manifest(&new_manifest) {
+        log::warn!(
+            "[AUDIT] event=plugin_update_rejected plugin_id={} reason={}",
+            new_manifest.plugin_id,
+            e
+        );
+        return Err(GitInstallError::InvalidManifest(e));
+    }
+    if new_manifest.runtime_kind == RuntimeKind::WebSandboxed {
+        check_web_checkout(plugin_dir)?;
+    }
+    Ok(new_manifest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin_host::bundle::tests::{write_git_layout, HELLO_WEB_MANIFEST};
+    use crate::plugin_host::registry::tests::git;
+
+    /// A repository holding `write` files, committed, and a clone of it that
+    /// tracks it, as an install from git leaves one.
+    fn origin_and_clone(write: impl Fn(&Path)) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let origin = tmp.path().join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "--quiet"]);
+        write(&origin);
+        git(&origin, &["add", "."]);
+        git(&origin, &["commit", "--quiet", "-m", "init"]);
+        let clone = tmp.path().join("clone");
+        git(
+            tmp.path(),
+            &["clone", "--quiet", "--", "origin", clone.to_str().unwrap()],
+        );
+        (tmp, origin, clone)
+    }
+
+    /// Commit `change` in `origin` and fetch it into `clone`.
+    fn push_upstream(origin: &Path, clone: &Path, change: impl Fn(&Path)) {
+        change(origin);
+        git(origin, &["add", "--all"]);
+        git(origin, &["commit", "--quiet", "-m", "change"]);
+        git(clone, &["fetch", "--quiet"]);
+    }
+
+    fn hello_web_manifest() -> PluginManifest {
+        serde_json::from_str(HELLO_WEB_MANIFEST).unwrap()
+    }
+
+    #[test]
+    fn a_web_checkout_with_sources_passes_and_one_without_its_entrypoint_does_not() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_git_layout(tmp.path());
+        assert!(check_web_checkout(tmp.path()).is_ok());
+        std::fs::remove_file(tmp.path().join("main.mjs")).unwrap();
+        let err = check_web_checkout(tmp.path()).unwrap_err().to_string();
+        assert!(err.contains("web plugins are installed built"), "{err}");
+        assert!(err.contains("entrypoint `main.mjs` is missing"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_web_update_with_sources_advances_and_a_broken_one_rolls_back() {
+        let (_tmp, origin, clone) = origin_and_clone(write_git_layout);
+        push_upstream(&origin, &clone, |dir| {
+            let manifest = HELLO_WEB_MANIFEST.replace("0.1.0", "0.2.0");
+            std::fs::write(dir.join(MANIFEST_FILE), manifest).unwrap();
+            std::fs::write(dir.join("src/main.ts"), "export const v = 2;\n").unwrap();
+        });
+        let (manifest, result) = apply_fetched_update(&clone, &hello_web_manifest(), false)
+            .await
+            .expect("sources beside the bundle do not stop an update");
+        assert_eq!(manifest.version, "0.2.0");
+        assert_eq!(result.new_version, "0.2.0");
+
+        let good = git(&clone, &["rev-parse", "HEAD"]);
+        push_upstream(&origin, &clone, |dir| {
+            std::fs::remove_file(dir.join("main.mjs")).unwrap();
+        });
+        let err = apply_fetched_update(&clone, &manifest, false)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("entrypoint `main.mjs` is missing"), "{err}");
+        assert_eq!(git(&clone, &["rev-parse", "HEAD"]), good);
+        assert!(clone.join("main.mjs").is_file());
+    }
+
+    #[tokio::test]
+    async fn an_update_asks_consent_only_for_a_package_json_with_dependencies() {
+        let local_manifest = |dir: &Path| {
+            let manifest = HELLO_WEB_MANIFEST.replace("WebSandboxed", "DesktopLocalProcess");
+            std::fs::write(dir.join(MANIFEST_FILE), manifest).unwrap();
+            std::fs::write(dir.join("main.mjs"), "#!/usr/bin/env node\n").unwrap();
+        };
+        let (_tmp, origin, clone) = origin_and_clone(local_manifest);
+        let old = detect_manifest(&clone).unwrap();
+        push_upstream(&origin, &clone, |dir| {
+            std::fs::write(
+                dir.join("package.json"),
+                r#"{"devDependencies":{"esbuild":"^0.24.0"}}"#,
+            )
+            .unwrap();
+        });
+        apply_fetched_update(&clone, &old, false)
+            .await
+            .expect("devDependencies alone need no consent");
+
+        let before = git(&clone, &["rev-parse", "HEAD"]);
+        push_upstream(&origin, &clone, |dir| {
+            std::fs::write(dir.join("package.json"), r#"{"dependencies":{"ws":"8"}}"#).unwrap();
+        });
+        let err = apply_fetched_update(&clone, &old, false).await.unwrap_err();
+        assert!(
+            matches!(err, GitInstallError::PostInstallConsentRequired { .. }),
+            "{err:?}"
+        );
+        assert_eq!(git(&clone, &["rev-parse", "HEAD"]), before);
+    }
 
     #[test]
     fn detect_json_manifest() {

@@ -23,6 +23,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- **Install from git URL** installs a web plugin from a repository that keeps its sources
+  beside the built plugin: the desktop takes `rim-plugin.json`, the entrypoint and `panels/`
+  from the checkout and ignores the rest. A local-process plugin whose `package.json` lists
+  only `devDependencies` no longer asks to run `npm install`.
 - The new workspace, add workspace and new channel dialogs keep the cursor in their name field
   instead of moving it to the Close button a moment after they open.
 - "<name> is typing..." goes away as soon as that person's message arrives instead of lingering

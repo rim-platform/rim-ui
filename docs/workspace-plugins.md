@@ -54,8 +54,10 @@ On a desktop that holds the account's identity key (Settings > Security shows it
 
 - A local-process plugin installed from git is signed as a git source: the checkout's
   `origin` URL (`https://` or `ssh://`), `HEAD` and its tree hash. Anything else is bundled
-  from its installed folder with the SDK bundler's rules; a folder past 256 files or 8 MiB
-  is refused, and "Sign another .rimbundle…" signs a bundle built with
+  from its installed folder with the SDK bundler's rules. For a web plugin that bundle is
+  `rim-plugin.json`, the entrypoint and `panels/`, and the rest of a checkout it came from
+  (sources, `package.json`, a README) is ignored, so it hashes as the plugin's `.rimbundle`
+  does. A bundle past 256 files or 8 MiB is refused, and "Sign another .rimbundle…" signs a bundle built with
   `npm run plugin:bundle -- <dir>` instead. The dialog shows the plugin id, version, kind,
   SHA-256 and size, to compare with what `rim-plugin-bundle` printed.
 - The publisher name defaults to the profile card's display name. It is self-asserted: other

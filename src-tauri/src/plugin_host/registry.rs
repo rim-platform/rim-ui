@@ -253,19 +253,19 @@ fn bundle_source(
     })
 }
 
-/// A bundle of the plugin folder `dir`, as the SDK bundler writes it.
+/// A bundle of the plugin folder `dir`, as the SDK bundler writes it: for a web plugin, its
+/// manifest, entrypoint and `panels/`.
 pub fn bundle_of_dir(dir: &Path) -> Result<SigningSource, RegistryError> {
     let hint = |e: BundleError| {
         invalid(format!(
             "{e}. Build it with rim-plugin-bundle (at most {MAX_BUNDLE_FILES} files and 8 MiB) and pick the .rimbundle instead"
         ))
     };
-    let read = bundle::check_files(bundle::collect_dir(dir)?).map_err(hint)?;
-    let bytes = bundle::write_bundle(&read.files);
-    if bytes.len() > MAX_BUNDLE_BYTES {
-        return Err(hint(BundleError::TooLarge(bytes.len())));
-    }
-    bundle_source(bytes, read, None)
+    let read = bundle::check_dir(dir).map_err(|e| match e {
+        BundleError::Io(_) => e.into(),
+        other => hint(other),
+    })?;
+    bundle_source(bundle::write_bundle(&read.files), read, None)
 }
 
 /// The git source of the checkout at `dir`: its `origin` URL, `HEAD` and tree hash.
@@ -691,11 +691,12 @@ pub async fn plugin_install_registry_git(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::process::Command;
 
-    fn git(dir: &Path, args: &[&str]) -> String {
+    /// Run git in `dir` with a test identity and return its trimmed output.
+    pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
             .args(args)
@@ -853,9 +854,25 @@ mod tests {
         let bytes = STANDARD.decode(source.bundle.unwrap()).unwrap();
         assert_eq!(bundle::bundle_sha256(&bytes), APPENDIX_A_SHA256);
         assert_eq!(source.manifest, HELLO_WEB_MANIFEST);
-        std::fs::write(dir.path().join("notes.txt"), "x").unwrap();
+        std::fs::create_dir_all(dir.path().join("panels")).unwrap();
+        std::fs::write(dir.path().join("panels/my notes.txt"), "x").unwrap();
         let err = bundle_of_dir(dir.path()).unwrap_err().to_string();
         assert!(err.contains("rim-plugin-bundle"), "{err}");
+    }
+
+    #[test]
+    fn a_web_repository_signs_as_its_bundle_files() {
+        use crate::plugin_host::bundle::tests::{hello_web_with_panel, write_git_layout};
+        let repo = tempfile::TempDir::new().unwrap();
+        write_git_layout(repo.path());
+        let bytes = bundle::write_bundle(&hello_web_with_panel());
+        assert_eq!(
+            bundle_of_dir(repo.path()).unwrap().source,
+            PluginSource::Bundle {
+                sha256: bundle::bundle_sha256(&bytes),
+                size: bytes.len() as u64
+            }
+        );
     }
 
     #[test]
