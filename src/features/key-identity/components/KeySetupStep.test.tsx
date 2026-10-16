@@ -31,12 +31,10 @@ const runtime = vi.hoisted(() => ({
   browserIdentity: false,
 }));
 const account = vi.hoisted(() => ({ principalId: null as string | null }));
+const deviceKeysChanged = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/keyIdentity", () => api);
-vi.mock("../../e2ee/runtime/session", () => ({
-  e2eeSession: vi.fn(() => Promise.resolve(null)),
-  resetE2eeSession: vi.fn(),
-}));
+vi.mock("../../e2ee/runtime/session", () => ({ deviceKeysChanged }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
     platform: runtime.platform,
@@ -75,6 +73,7 @@ const stepTitle = () => screen.queryByText("Set up encryption for this account")
 describe("KeySetupStep", () => {
   beforeEach(() => {
     Object.values(api).forEach((fn) => fn.mockReset());
+    deviceKeysChanged.mockReset();
     api.listDeviceKeyAccounts.mockResolvedValue([]);
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.reconcileDeviceKeys.mockResolvedValue(null);
@@ -115,6 +114,7 @@ describe("KeySetupStep", () => {
       "saved",
     );
     await waitFor(() => expect(stepTitle()).toBeNull());
+    expect(deviceKeysChanged).toHaveBeenCalledTimes(1);
   });
 
   it("is not offered to an account whose key this device holds", async () => {

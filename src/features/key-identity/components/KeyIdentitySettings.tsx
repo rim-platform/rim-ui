@@ -5,6 +5,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { deviceKeysChanged } from "../../e2ee/runtime/session";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { RevocationFanoutPanel } from "../../relay/components/RevocationFanoutPanel";
 import { followRevocation } from "../../relay/remote/useRevocationStore";
@@ -85,7 +86,13 @@ export function KeyIdentitySettings() {
           justEnrolled={justEnrolled}
         />
       ) : capabilities.identityKeys ? (
-        <EnrollKeyIdentity me={me} onEnrolled={() => setJustEnrolled(true)} />
+        <EnrollKeyIdentity
+          me={me}
+          onEnrolled={() => {
+            setJustEnrolled(true);
+            deviceKeysChanged();
+          }}
+        />
       ) : (
         <p className="text-sm text-rim-text-muted">Key sign-in is set up from the desktop app.</p>
       )}

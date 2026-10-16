@@ -33,8 +33,10 @@ const api = vi.hoisted(() => ({
   profileCardRelays: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ value: true }));
+const deviceKeysChanged = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/keyIdentity", () => api);
+vi.mock("../../e2ee/runtime/session", () => ({ deviceKeysChanged }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
@@ -106,6 +108,7 @@ describe("KeyIdentitySettings", () => {
   beforeEach(() => {
     desktop.value = true;
     Object.values(api).forEach((fn) => fn.mockReset());
+    deviceKeysChanged.mockReset();
     api.profileCardRelays.mockReturnValue(["http://localhost:8080"]);
     api.reconcileDeviceKeys.mockResolvedValue(null);
     api.defaultDeviceName.mockResolvedValue("Laptop");
@@ -142,6 +145,7 @@ describe("KeyIdentitySettings", () => {
       expect.objectContaining(KEY_ACCOUNT),
       "saved",
     );
+    expect(deviceKeysChanged).toHaveBeenCalledTimes(1);
     // Once enrolled, the phrase is no longer on screen.
     await waitFor(() => expect(screen.queryByLabelText("Recovery phrase")).toBeNull());
     expect(screen.queryByText("liar")).toBeNull();

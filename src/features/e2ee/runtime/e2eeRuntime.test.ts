@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 
 const groups = vi.hoisted(() => ({
   askToBeReadded: vi.fn(),
@@ -12,6 +13,7 @@ const fetchConversationGroup = vi.hoisted(() => vi.fn());
 const fetchCommits = vi.hoisted(() => vi.fn());
 const requestCacheSync = vi.hoisted(() => vi.fn());
 const syncMembership = vi.hoisted(() => vi.fn());
+const returnAfterAbsence = vi.hoisted(() => vi.fn());
 vi.mock("./groups", () => groups);
 vi.mock("../api/e2eeApi", () => ({ fetchConversationGroup, fetchCommits }));
 vi.mock("../../messages/runtime/messageCacheSync", () => ({
@@ -19,13 +21,17 @@ vi.mock("../../messages/runtime/messageCacheSync", () => ({
   setE2eeNoteHandler: vi.fn(),
 }));
 vi.mock("./membership", () => ({ syncMembership, cancelMembershipSyncs: vi.fn() }));
-vi.mock("./session", () => ({
+vi.mock("./webReturn", () => ({ returnAfterAbsence }));
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session")>()),
   e2eeSession: async () => session,
   resetE2eeSession: vi.fn(),
 }));
 
 import type { MlsSyncNote } from "../../messages/api/messageCache";
-import { handleE2eeEvent, handleSyncNotes } from "./e2eeRuntime";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { handleE2eeEvent, handleSyncNotes, useE2eeRuntime } from "./e2eeRuntime";
+import { deviceKeysChanged } from "./session";
 
 const session = {
   account: { endpoint: "http://x/api", userId: "u-me" },
@@ -181,5 +187,63 @@ describe("handleE2eeEvent", () => {
     await flush();
     expect(groups.verifyLeaves).toHaveBeenCalledWith(session, "ws", "c", true);
     expect(syncMembership).toHaveBeenCalledWith(session, "ws", "c");
+  });
+});
+
+describe("useE2eeRuntime", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    groups.refreshGroups.mockResolvedValue([{ conversationId: "c" }]);
+    groups.refreshKeyPackages.mockResolvedValue(undefined);
+    groups.processWelcomes.mockResolvedValue([]);
+    returnAfterAbsence.mockResolvedValue(false);
+    syncMembership.mockResolvedValue(undefined);
+    useAuthStore.setState({ session: { userId: "u-me" } });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+  });
+
+  it("uploads key packages, joins and syncs the groups on start", async () => {
+    renderHook(() => useE2eeRuntime("ws"));
+    await flush();
+
+    expect(returnAfterAbsence).toHaveBeenCalledWith(session);
+    expect(groups.refreshKeyPackages).toHaveBeenCalledWith(session);
+    expect(groups.processWelcomes).toHaveBeenCalledWith(session);
+    expect(groups.refreshGroups).toHaveBeenCalledWith(session, "ws", []);
+    expect(syncMembership).toHaveBeenCalledWith(session, "ws", "c");
+  });
+
+  it("does the start-up work again when this device's keys change", async () => {
+    const { unmount } = renderHook(() => useE2eeRuntime("ws"));
+    await flush();
+    vi.clearAllMocks();
+
+    act(() => deviceKeysChanged());
+    await flush();
+    expect(returnAfterAbsence).toHaveBeenCalledWith(session);
+    expect(groups.refreshKeyPackages).toHaveBeenCalledTimes(1);
+    expect(groups.processWelcomes).toHaveBeenCalledTimes(1);
+    expect(groups.refreshGroups).toHaveBeenCalledWith(session, "ws", []);
+    expect(syncMembership).toHaveBeenCalledWith(session, "ws", "c");
+
+    // Unmounted, the signal reaches nobody.
+    unmount();
+    vi.clearAllMocks();
+    act(() => deviceKeysChanged());
+    await flush();
+    expect(groups.refreshKeyPackages).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on a keys change without a signed-in user", async () => {
+    useAuthStore.setState({ session: null });
+    renderHook(() => useE2eeRuntime("ws"));
+
+    act(() => deviceKeysChanged());
+    await flush();
+    expect(groups.refreshKeyPackages).not.toHaveBeenCalled();
+    expect(groups.refreshGroups).not.toHaveBeenCalled();
   });
 });
