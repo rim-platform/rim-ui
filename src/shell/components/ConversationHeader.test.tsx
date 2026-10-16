@@ -181,3 +181,37 @@ describe("ConversationHeader — guest gate (Track 1.2)", () => {
     }
   });
 });
+
+describe("ConversationHeader — draft DM", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Server(")) {
+        return Promise.resolve({
+          server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
+        });
+      }
+      if (document.includes("query ServerMembers")) {
+        return Promise.resolve({
+          serverMembers: [{ userId: "u-bob", username: "bob", displayName: "Bob" }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.getState().openDraftDirect({ workspaceId: "srv-1", otherUserId: "u-bob" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("names the person and the workspace, with no conversation actions", async () => {
+    renderHeader();
+    expect(await screen.findByRole("heading", { name: "Bob" })).toBeInTheDocument();
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Invite member" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Search in/ })).not.toBeInTheDocument();
+  });
+});

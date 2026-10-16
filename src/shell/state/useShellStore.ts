@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { DirectMember } from "../../features/relay/conversations/startDirect";
+
 export type ActivePanel = "inbox" | "plugins";
 
 export type DisplayDensity = "comfortable" | "compact" | "ultra-compact";
@@ -17,6 +19,13 @@ export type MainSurface =
   | { kind: "marketplace" }
   | { kind: "audit-log" };
 
+/**
+ * A direct message not created yet: with a workspace member, or with someone in a relay's
+ * direct space. Its first message creates the conversation.
+ */
+export type DirectDraft =
+  { workspaceId: string; otherUserId: string } | { spaceId: string; member: DirectMember };
+
 export type ActivePluginPanel = {
   pluginId: string;
   panelId: string;
@@ -27,6 +36,8 @@ type ShellState = {
   mainSurface: MainSurface;
   activePluginPanel: ActivePluginPanel;
   selectedConversationId: string | null;
+  /** The direct message being drafted; no conversation is selected meanwhile. */
+  draftDirect: DirectDraft | null;
   selectedRootMessageId: string | null;
   isThreadOpen: boolean;
   focusedSurface: string | null;
@@ -47,7 +58,10 @@ type ShellState = {
   setActivePluginPanel: (panel: ActivePluginPanel) => void;
   openPluginPanel: (pluginId: string, panelId: string) => void;
   closePluginPanel: () => void;
+  /** Selects a conversation (or none) and drops any draft direct message. */
   setSelectedConversationId: (id: string | null) => void;
+  /** Opens a draft direct message in place of the selected conversation. */
+  openDraftDirect: (draft: DirectDraft) => void;
   openThreadForMessage: (rootMessageId: string) => void;
   closeThread: () => void;
   toggleSidebar: () => void;
@@ -69,6 +83,7 @@ export const useShellStore = create<ShellState>((set) => ({
   mainSurface: { kind: "conversation" },
   activePluginPanel: null,
   selectedConversationId: null,
+  draftDirect: null,
   selectedRootMessageId: null,
   isThreadOpen: false,
   focusedSurface: null,
@@ -97,6 +112,16 @@ export const useShellStore = create<ShellState>((set) => ({
   setSelectedConversationId: (id) =>
     set({
       selectedConversationId: id,
+      draftDirect: null,
+      selectedRootMessageId: null,
+      isThreadOpen: false,
+      editingMessageId: null,
+    }),
+
+  openDraftDirect: (draft) =>
+    set({
+      selectedConversationId: null,
+      draftDirect: draft,
       selectedRootMessageId: null,
       isThreadOpen: false,
       editingMessageId: null,
@@ -143,6 +168,7 @@ export const useShellStore = create<ShellState>((set) => ({
       mainSurface: { kind: "conversation" },
       activePluginPanel: null,
       selectedConversationId: null,
+      draftDirect: null,
       selectedRootMessageId: null,
       isThreadOpen: false,
       focusedSurface: null,

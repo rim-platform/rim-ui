@@ -19,6 +19,7 @@ import { isInvited } from "../utils";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
 import { DirectConversationList } from "./DirectConversationList";
+import { DraftDirectItem } from "./DraftDirectItem";
 
 interface ConversationListProps {
   onNewChannel: () => void;
@@ -38,6 +39,11 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const selectedId = useShellStore((s) => s.selectedConversationId);
   const select = useShellStore((s) => s.setSelectedConversationId);
+  const draftDirect = useShellStore((s) => s.draftDirect);
+  const draft =
+    draftDirect && "workspaceId" in draftDirect && draftDirect.workspaceId === workspaceId
+      ? draftDirect
+      : null;
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const unreadCounts = useUnreadStore((s) => s.counts);
@@ -134,14 +140,16 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
     setFocusedIndex(-1);
   }, [allConversationIds.length]);
 
+  // Open the first conversation when nothing is open; a draft DM counts as open.
+  const draftOpen = draftDirect !== null;
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId && !draftOpen) {
       const first = channels[0] ?? messages[0];
       if (first) {
         select(first.id);
       }
     }
-  }, [selectedId, channels, messages, select]);
+  }, [selectedId, draftOpen, channels, messages, select]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -324,12 +332,13 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
         </div>
       )}
 
-      {messages.length > 0 && (
+      {(messages.length > 0 || draft) && (
         <div>
           <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
             Messages
           </h3>
           <ul className="space-y-0.5">
+            {draft && <DraftDirectItem draft={draft} />}
             {messages.map((conv, i) => (
               <ConversationItem
                 key={conv.id}

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCreateConversationMutation } from "../api/useCreateConversation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { useShellStore } from "../../../shell/state/useShellStore";
+import { useShellStore, type DirectDraft } from "../../../shell/state/useShellStore";
 import { detectOs } from "../../../core/runtime/runtime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
@@ -14,10 +14,8 @@ import { isWebAccount } from "../../e2ee/web/webAccount";
 import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
 import { startDirectConversation, type DirectMember } from "../../relay/conversations/startDirect";
 import { useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
-import { queryClient } from "../../../core/query/queryClient";
-import { queryKeys } from "../../../core/query/keys";
-import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import { selectDirectConversation } from "../state/directSelection";
+import { openDirectWith, principalsOf } from "../state/openDirect";
 import { useProbationEnd } from "../../limits/api/useProbation";
 import { probationText } from "../../limits/limits";
 import { MemberPicker } from "./MemberPicker";
@@ -25,23 +23,8 @@ import { MemberPicker } from "./MemberPicker";
 interface NewMessagePickerProps {
   open: boolean;
   onClose: () => void;
+  /** A new group was created; one person opens their DM or a draft instead. */
   onCreated: (conversationId: string) => void;
-}
-
-/**
- * The members of a workspace selection as principals, when every one of them has a principal
- * id: then the conversation starts in this relay's direct space instead of the workspace.
- */
-function asPrincipals(workspaceId: string, userIds: string[]): DirectMember[] | null {
-  const members =
-    queryClient.getQueryData<ServerMember[]>(queryKeys.serverMembers(workspaceId)) ?? [];
-  const picked = userIds.map((id) => members.find((m) => m.userId === id));
-  if (picked.some((m) => !m?.principalId)) return null;
-  return (picked as ServerMember[]).map((m) => ({
-    principalId: m.principalId!,
-    relayUrls: [],
-    name: m.displayName || m.username,
-  }));
 }
 
 export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerProps) {
@@ -76,8 +59,28 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     }
   }, [open]);
 
+  /** One person: their direct message opens, or a draft whose first message creates it. */
+  const openDirect = useCallback(
+    async (target: DirectDraft) => {
+      setStartError(null);
+      try {
+        await openDirectWith(target);
+        onClose();
+      } catch (err) {
+        setStartError(graphqlErrorMessage(err, "Failed to open the conversation"));
+      }
+    },
+    [onClose],
+  );
+
   const startDirect = useCallback(
     async (members: DirectMember[]) => {
+      const spaceId = useRelayStore.getState().info?.directSpaceId;
+      if (members.length === 1 && spaceId) {
+        const [{ principalId, relayUrls, name }] = members;
+        await openDirect({ spaceId, member: { principalId, relayUrls, name } });
+        return;
+      }
       setStartError(null);
       try {
         const { spaceId, conversationId } = await startDirectConversation(members);
@@ -87,7 +90,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         setStartError(graphqlErrorMessage(err, "Failed to create conversation"));
       }
     },
-    [onClose],
+    [onClose, openDirect],
   );
 
   const handleConfirm = useCallback(async () => {
@@ -97,19 +100,20 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     }
     if (!workspaceId || selectedUserIds.length === 0) return;
     // When everyone has a principal id, new DMs and groups live in this relay's direct space.
-    const principals = relayOn ? asPrincipals(workspaceId, selectedUserIds) : null;
+    const principals = relayOn ? principalsOf(workspaceId, selectedUserIds) : null;
     if (principals) {
       await startDirect(principals);
       return;
     }
-    // New DMs and groups are encrypted whenever this device is ready; members who are not
-    // join once they set up a device, and this device creates the group meanwhile. An existing
-    // plaintext DM the server hands back is upgraded only by a desktop, with everyone ready.
+    if (selectedUserIds.length === 1) {
+      await openDirect({ workspaceId, otherUserId: selectedUserIds[0] });
+      return;
+    }
+    // New groups are encrypted whenever this device is ready; members who are not join once
+    // they set up a device, and this device creates the group meanwhile. A conversation the
+    // server hands back unencrypted is upgraded only by a desktop, with everyone ready.
     const session = await e2eeSession();
-    const base =
-      selectedUserIds.length === 1
-        ? { serverId: workspaceId, otherUserId: selectedUserIds[0] }
-        : { serverId: workspaceId, memberIds: selectedUserIds };
+    const base = { serverId: workspaceId, memberIds: selectedUserIds };
     createMutation.mutate(session ? { ...base, encrypted: true } : base, {
       onSuccess: (data) => {
         const conversationId = data.createConversation.id;
@@ -133,6 +137,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     contacts,
     relayOn,
     startDirect,
+    openDirect,
   ]);
 
   if (!open) return null;

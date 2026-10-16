@@ -10,6 +10,7 @@ import { useMutedStore } from "../state/useMutedStore";
 import { useUnreadStore } from "../state/useUnreadStore";
 import type { ConversationSummary } from "../types";
 import { ConversationItem } from "./ConversationItem";
+import { DraftDirectItem } from "./DraftDirectItem";
 
 /**
  * The DMs and groups of every direct space this account uses, in one list: this relay's and
@@ -18,6 +19,8 @@ import { ConversationItem } from "./ConversationItem";
 export function DirectConversationList() {
   const { items, isPending, isError } = useDirectInbox();
   const selectedId = useShellStore((s) => s.selectedConversationId);
+  const draftDirect = useShellStore((s) => s.draftDirect);
+  const draft = draftDirect && "spaceId" in draftDirect ? draftDirect : null;
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -30,12 +33,14 @@ export function DirectConversationList() {
     [items],
   );
 
-  // Open the first conversation of the space shown when nothing is open.
+  // Open the first conversation of the space shown when nothing is open; a draft DM counts as
+  // open.
+  const draftOpen = draftDirect !== null;
   useEffect(() => {
-    if (selectedId) return;
+    if (selectedId || draftOpen) return;
     const first = items.find((c) => c.serverId === workspaceId);
     if (first) useShellStore.getState().setSelectedConversationId(first.id);
-  }, [selectedId, items, workspaceId]);
+  }, [selectedId, draftOpen, items, workspaceId]);
 
   if (isPending) {
     return <p className="px-2 py-4 text-sm text-rim-text-muted">Loading conversations...</p>;
@@ -68,12 +73,13 @@ export function DirectConversationList() {
       <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
         Direct messages
       </h3>
-      {items.length === 0 ? (
+      {items.length === 0 && !draft ? (
         <p className="px-2 py-2 text-sm text-rim-text-muted">
           No conversations yet. Start one with a contact.
         </p>
       ) : (
         <ul className="space-y-0.5">
+          {draft && <DraftDirectItem draft={draft} />}
           {items.map((conversation, i) => (
             <DirectConversationRow
               key={`${conversation.serverId}:${conversation.id}`}
