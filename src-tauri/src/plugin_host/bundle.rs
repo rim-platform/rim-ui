@@ -286,10 +286,65 @@ fn collect_into(root: &Path, dir: &Path, files: &mut Vec<BundleFile>) -> Result<
     Ok(())
 }
 
-/// Check a plugin folder against the bundle rules, as if it were bundled:
-/// what [`check_files`] checks, and the size of the bundle it would make.
+/// The files a bundle of the plugin folder `dir` holds, chosen by its manifest. For a
+/// `WebSandboxed` plugin that is `rim-plugin.json`, the entrypoint and every file under
+/// `panels/`, read as [`collect_dir`] reads them, and every other file of the folder (sources,
+/// `package.json`, a README) is left out. For any other plugin it is every file
+/// [`collect_dir`] reads.
+pub fn collect_plugin_dir(dir: &Path) -> Result<Vec<BundleFile>, BundleError> {
+    let root = dir.canonicalize()?;
+    let Some(manifest_bytes) = read_inside(&root, MANIFEST_FILE)? else {
+        return collect_dir(&root);
+    };
+    let Ok(manifest) = serde_json::from_slice::<PluginManifest>(&manifest_bytes) else {
+        return collect_dir(&root);
+    };
+    if manifest.runtime_kind != RuntimeKind::WebSandboxed {
+        return collect_dir(&root);
+    }
+    let mut files = vec![BundleFile {
+        path: MANIFEST_FILE.to_string(),
+        bytes: manifest_bytes,
+    }];
+    let entry = &manifest.entrypoint;
+    if is_bundle_path(entry) && entry != MANIFEST_FILE && !entry.starts_with(PANELS_DIR) {
+        if let Some(bytes) = read_inside(&root, entry)? {
+            files.push(BundleFile {
+                path: entry.clone(),
+                bytes,
+            });
+        }
+    }
+    let panels = root.join(PANELS_DIR.trim_end_matches('/'));
+    if let Ok(canonical) = panels.canonicalize() {
+        if canonical.starts_with(&root) && canonical.is_dir() {
+            collect_into(&root, &canonical, &mut files)?;
+        }
+    }
+    files.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    Ok(files)
+}
+
+/// The bytes of the regular file at the bundle path `path` under `root`, or `None` when
+/// there is none or it resolves outside `root`.
+fn read_inside(root: &Path, path: &str) -> Result<Option<Vec<u8>>, BundleError> {
+    let target = path
+        .split('/')
+        .fold(root.to_path_buf(), |dir, s| dir.join(s));
+    let Ok(canonical) = target.canonicalize() else {
+        return Ok(None);
+    };
+    if !canonical.starts_with(root) || !canonical.is_file() {
+        return Ok(None);
+    }
+    Ok(Some(std::fs::read(&canonical)?))
+}
+
+/// Check a plugin folder against the bundle rules, as if it were bundled: what
+/// [`check_files`] checks over [`collect_plugin_dir`], and the size of the bundle it would
+/// make.
 pub fn check_dir(dir: &Path) -> Result<Bundle, BundleError> {
-    let bundle = check_files(collect_dir(dir)?)?;
+    let bundle = check_files(collect_plugin_dir(dir)?)?;
     let size = write_bundle(&bundle.files).len();
     if size > MAX_BUNDLE_BYTES {
         return Err(BundleError::TooLarge(size));
@@ -514,9 +569,7 @@ port.onmessage = (event) => {
         let mut files = hello_web();
         files.push(file("notes.txt", "x"));
         assert!(refusal(&write_bundle(&files)).contains("outside panels/"));
-        let mut files = hello_web();
-        files.push(file("panels/main/index.html", "<p>hi</p>"));
-        assert!(read_bundle(&write_bundle(&files)).is_ok());
+        assert!(read_bundle(&write_bundle(&hello_web_with_panel())).is_ok());
     }
 
     #[test]
@@ -557,9 +610,7 @@ port.onmessage = (event) => {
     #[test]
     fn unpacks_through_staging_with_modes() {
         let root = TempDir::new().unwrap();
-        let mut files = hello_web();
-        files.push(file("panels/main/index.html", "<p>hi</p>"));
-        let bundle = read_bundle(&write_bundle(&files)).unwrap();
+        let bundle = read_bundle(&write_bundle(&hello_web_with_panel())).unwrap();
         let dir = unpack(&bundle, root.path(), false).unwrap();
         assert_eq!(dir, root.path().join("dev.example.hello-web"));
         assert_eq!(
@@ -606,6 +657,40 @@ port.onmessage = (event) => {
         assert_eq!(mode("lib/util.mjs"), 0o644);
     }
 
+    /// Write `files` into `dir`, creating folders as needed.
+    pub(crate) fn write_into(dir: &Path, files: &[BundleFile]) {
+        for f in files {
+            let target = dir.join(&f.path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::write(target, &f.bytes).unwrap();
+        }
+    }
+
+    /// The hello-web bundle files with one panel.
+    pub(crate) fn hello_web_with_panel() -> Vec<BundleFile> {
+        let mut files = hello_web();
+        files.push(file("panels/main/index.html", "<p>hi</p>"));
+        files
+    }
+
+    /// Write a plugin repository's layout into `dir`: the files of
+    /// [`hello_web_with_panel`] and, beside them, what a repository also holds.
+    pub(crate) fn write_git_layout(dir: &Path) {
+        write_into(dir, &hello_web_with_panel());
+        write_into(
+            dir,
+            &[
+                file("src/main.ts", "export {};\n"),
+                file(
+                    "package.json",
+                    r#"{"name":"plugin-hello-web","devDependencies":{"esbuild":"^0.24.0"}}"#,
+                ),
+                file("README.md", "# Hello Web\n"),
+                file(".github/workflows/ci.yml", "on: push\n"),
+            ],
+        );
+    }
+
     #[test]
     fn a_folder_is_checked_like_a_bundle() {
         let dir = TempDir::new().unwrap();
@@ -618,7 +703,57 @@ port.onmessage = (event) => {
             bundle_sha256(&write_bundle(&bundle.files)),
             APPENDIX_A_SHA256
         );
-        std::fs::write(dir.path().join("README.md"), "x").unwrap();
-        assert!(check_dir(dir.path()).is_err());
+        std::fs::remove_file(dir.path().join("main.mjs")).unwrap();
+        let err = check_dir(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("entrypoint `main.mjs` is missing"), "{err}");
+    }
+
+    #[test]
+    fn a_web_repository_reads_as_its_bundle_files_only() {
+        let dir = TempDir::new().unwrap();
+        write_git_layout(dir.path());
+        let bundle = check_dir(dir.path()).expect("sources beside the bundle are left out");
+        let paths: Vec<&str> = bundle.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["main.mjs", "panels/main/index.html", "rim-plugin.json"]
+        );
+        assert_eq!(
+            write_bundle(&bundle.files),
+            write_bundle(&hello_web_with_panel())
+        );
+
+        std::fs::write(dir.path().join("panels/main/my notes.txt"), "x").unwrap();
+        let err = check_dir(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("not a valid bundle path"), "{err}");
+        std::fs::remove_file(dir.path().join("panels/main/my notes.txt")).unwrap();
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("../src", dir.path().join("panels/src")).unwrap();
+            let err = check_dir(dir.path()).unwrap_err().to_string();
+            assert!(err.contains("outside panels/"), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_desktop_folder_reads_every_file() {
+        let dir = TempDir::new().unwrap();
+        let manifest = HELLO_WEB_MANIFEST.replace("WebSandboxed", "DesktopLocalProcess");
+        write_into(
+            dir.path(),
+            &[
+                file("rim-plugin.json", &manifest),
+                file("main.mjs", "#!/usr/bin/env node\n"),
+                file("README.md", "x"),
+            ],
+        );
+        let paths: Vec<String> = check_dir(dir.path())
+            .unwrap()
+            .files
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(paths, ["README.md", "main.mjs", "rim-plugin.json"]);
     }
 }

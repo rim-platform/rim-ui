@@ -212,6 +212,39 @@ pub fn ls_upstream_tree_args() -> Vec<OsString> {
     ]
 }
 
+/// argv printing the top-level file `name` of the fetched upstream tree. `name` is
+/// one of the host's own constant file names, never caller input.
+pub fn show_upstream_file_args(name: &'static str) -> Vec<OsString> {
+    vec![
+        "show".into(),
+        format!("{UPSTREAM_REV}:{name}").into(),
+        "--".into(),
+    ]
+}
+
+/// argv printing the commit the working tree is at.
+pub fn rev_parse_head_args() -> Vec<OsString> {
+    vec!["rev-parse".into(), "--verify".into(), "HEAD".into()]
+}
+
+/// argv putting the working tree back at `commit`, a hash [`rev_parse_head_args`]
+/// printed; `None` when `commit` is not a lowercase hex hash.
+pub fn reset_hard_args(commit: &str) -> Option<Vec<OsString>> {
+    let hex = matches!(commit.len(), 40 | 64)
+        && commit
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    hex.then(|| {
+        vec![
+            "reset".into(),
+            "--hard".into(),
+            "--quiet".into(),
+            commit.into(),
+            "--".into(),
+        ]
+    })
+}
+
 /// argv fast-forwarding the working tree to the fetched upstream.
 pub fn merge_upstream_args() -> Vec<OsString> {
     vec![
@@ -399,6 +432,21 @@ mod tests {
         let merge = merge_upstream_args();
         assert!(merge.contains(&OsString::from("--ff-only")));
         assert_eq!(merge[merge.len() - 2], OsString::from("--"));
+        assert_eq!(
+            show_upstream_file_args("package.json"),
+            [
+                OsString::from("show"),
+                "@{upstream}:package.json".into(),
+                "--".into()
+            ]
+        );
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let reset = reset_hard_args(commit).unwrap();
+        assert_eq!(reset[reset.len() - 2], OsString::from(commit));
+        assert_eq!(reset[reset.len() - 1], OsString::from("--"));
+        for bad in ["--hard", "HEAD~1", &commit.to_uppercase(), &commit[..39]] {
+            assert!(reset_hard_args(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

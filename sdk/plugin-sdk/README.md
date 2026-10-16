@@ -269,11 +269,14 @@ version give the same bytes on every machine; commit the lockfile so CI builds w
 SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle`
 (`npx rim-plugin-bundle .`) can go on the release for **Install from link**.
 
-The desktop takes a WebSandboxed plugin's checkout as its bundle, and refuses any file in
-it besides `rim-plugin.json`, the entrypoint and `panels/` (names starting with `.` are
-skipped). A web plugin repository with `src/` or `package.json` at its root therefore
-installs from its `.rimbundle` link, not from its git URL, until the desktop skips the
-sources.
+For a WebSandboxed plugin the desktop takes `rim-plugin.json`, the entrypoint and
+`panels/` from the checkout and ignores the rest: the sources, `package.json` and the
+README stay in the checkout and never reach the plugin's frame. Those three parts follow
+the bundle rules (names starting with `.` are skipped, and any other name under `panels/`
+must be a bundle path), and signing an installed web plugin gives the same bundle hash as
+its `.rimbundle`. A local-process plugin's `package.json` asks for `npm install` only when
+it lists `dependencies`, `optionalDependencies` or `peerDependencies`; a committed,
+self-contained `main.mjs` with only `devDependencies` installs without that step.
 
 ## Working on the SDK
 
