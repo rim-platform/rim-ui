@@ -44,7 +44,7 @@ const EMPTY_PAGE: MessagesPage = {
 };
 
 /**
- * A conversation's timeline. On the desktop app the local message cache (PR 9) serves it
+ * A conversation's timeline. On the desktop app the local message cache serves it
  * first: its newest page shows while the server answers, and a page the server cannot be
  * reached for comes from the cache. The server stays the source of what is shown once it
  * answers; the cache only fills the gaps.
@@ -131,10 +131,10 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
       const variables: Record<string, unknown> = {
         serverId: workspaceId!,
         conversationId: conversationId!,
-        // `messages` is a DESC endpoint (newest-first sort key). Per docs/pagination.md,
-        // `AFTER` means "older than the cursor" there, and a cursorless request returns the
-        // newest page. Infinite scroll-up is therefore AFTER + `next` (the page's oldest row).
-        // `BEFORE` walks toward newer messages and dead-ends after the first page (A-H1).
+        // `messages` is a DESC endpoint (newest-first sort key): `AFTER` means "older than
+        // the cursor" there, and a cursorless request returns the newest page. Infinite
+        // scroll-up is therefore AFTER + `next` (the page's oldest row). `BEFORE` walks toward
+        // newer messages and dead-ends after the first page.
         dir: "AFTER",
         limit: PAGE_SIZE,
         includeDeleted: false,

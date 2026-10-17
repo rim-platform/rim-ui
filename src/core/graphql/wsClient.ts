@@ -210,7 +210,7 @@ export const wsClient = createClient({
     },
     ping: (received) => {
       if (!received) {
-        // We just *sent* a ping — start a pong countdown.
+        // A ping was just *sent*: start a pong countdown.
         // If the server doesn't respond in time, force-close the socket
         // so the retry loop kicks in with a fresh connection attempt.
         pongTimeoutId = setTimeout(() => {

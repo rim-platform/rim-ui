@@ -84,7 +84,7 @@ export interface SearchMessageItem {
   rootMessageId: string | null;
   /**
    * `ts_rank` relevance score. Display-only — results are paginated by
-   * recency (`sentAt`, `id`), not by rank. See `docs/search-ui.md`.
+   * recency (`sentAt`, `id`), not by rank.
    */
   rank: number;
   /**
@@ -130,15 +130,13 @@ function useDebouncedQuery(query: string): string {
  * Debounced (300ms), cursor-paginated full-text message search.
  *
  * Wraps the `searchMessages(input: SearchMessagesInput!): SearchResultPage!`
- * query (Track B1) as a TanStack `useInfiniteQuery`. Pages are ordered by
- * recency (`sentAt DESC, id DESC`), **not** by relevance — `rank` on each
- * item is display-only. See `docs/search-ui.md` and
- * `../rim-server/docs/search.md` for the ranking/pagination rationale and
- * the `from:`/`in:`/`has:`/`before:`/`after:` operator syntax (parsed
- * server-side; this hook passes `query` through unchanged).
+ * query as a TanStack `useInfiniteQuery`. Pages are ordered by recency
+ * (`sentAt DESC, id DESC`), **not** by relevance — `rank` on each item is
+ * display-only. The `from:`/`in:`/`has:`/`before:`/`after:` operators are
+ * parsed server-side; this hook passes `query` through unchanged.
  *
  * On the desktop app, a page the server cannot be reached for comes from the local search
- * index instead (PR 10), with the same cursor, marked `source: "local"`; `directory` resolves
+ * index instead, with the same cursor, marked `source: "local"`; `directory` resolves
  * `in:#name` and conversation titles for it.
  */
 export function useSearchMessages(

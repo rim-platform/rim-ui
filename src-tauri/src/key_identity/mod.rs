@@ -1,5 +1,4 @@
-//! Key identity on the desktop (master plan Stage 3, `rim-server/docs/specs/key-identity-v1.md`):
-//! this device's keys, and the statements it signs with them.
+//! Key identity on the desktop: this device's keys, and the statements it signs with them.
 //!
 //! Keys never leave this module. The webview talks to the server; when it needs a signed
 //! statement it asks here and sends what it gets back, so a compromised page can at most ask

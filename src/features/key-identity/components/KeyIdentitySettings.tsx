@@ -39,10 +39,9 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 /**
- * Settings > Security: sign in with this device's key instead of a password (key identity,
- * master plan Stage 3). Setting it up, the account's devices, identity key rotation and the
- * profile card live here; the keys themselves stay with the key backend (the desktop's Tauri
- * side, or the browser's key store).
+ * Settings > Security: sign in with this device's key instead of a password. Setting it up,
+ * the account's devices, identity key rotation and the profile card live here; the keys
+ * themselves stay with the key backend (the desktop's Tauri side, or the browser's key store).
  */
 export function KeyIdentitySettings() {
   const { capabilities } = useRuntime();

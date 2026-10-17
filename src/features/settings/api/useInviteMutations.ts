@@ -42,10 +42,10 @@ export const DEFAULT_INVITE_USES = 10;
  * Creates a workspace invite. `recipientEmail` is optional and best-effort —
  * when provided, the backend also emails the invite link, but the raw
  * `inviteToken`/link is always returned and shown regardless of whether the
- * email send succeeds (Track B3, `track-b3-email.md` §5). Omit it (or pass
- * an empty string) for the link-only path, unchanged from before B3.
+ * email send succeeds. Omit it (or pass an empty string) for the link-only
+ * path.
  *
- * `role` is what the invite grants on join (Track 1.2): `MEMBER` (the default) or `GUEST`.
+ * `role` is what the invite grants on join: `MEMBER` (the default) or `GUEST`.
  * `maxUses` defaults to `DEFAULT_INVITE_USES`.
  */
 export function useCreateInviteMutation() {

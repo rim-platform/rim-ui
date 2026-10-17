@@ -93,7 +93,7 @@ function SelectedConversationHeader() {
 
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
-  // Guests cannot invite (Track 1.2); the server refuses anyway.
+  // Guests cannot invite; the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
 
   const topic = conversation?.topic ?? null;

@@ -1,5 +1,5 @@
-//! The cache's side of the history archive (`docs/specs/history-archive-v1.md`): what changed
-//! since this device's last export, and writing a restore back in.
+//! The cache's side of the history archive: what changed since this device's last export, and
+//! writing a restore back in.
 //!
 //! Every change of a message or of a conversation's sync state gets a `change_seq` (schema v3
 //! in `store.rs`); `archive_export` remembers, per archive and device, how far the archive has

@@ -14,7 +14,7 @@ import {
   type ChannelLens,
 } from "../../../core/graphql/generated/schema-types";
 
-// --- Re-exports for backward compatibility ---
+// --- Schema types the lens components import from here ---
 
 export { FilterField, FilterOp, FilterLogic };
 export type { ChannelLens };

@@ -29,8 +29,8 @@ interface UnmuteConversationVars {
 }
 
 /**
- * A mute changes the conversation's effective notification level (Track 1.3), so the caches
- * that carry `effectiveNotificationLevel` refetch, along with the muted list.
+ * A mute changes the conversation's effective notification level, so the caches that carry
+ * `effectiveNotificationLevel` refetch, along with the muted list.
  */
 function refreshAfterMute(qc: QueryClient, serverId: string, conversationId: string): void {
   qc.invalidateQueries({ queryKey: queryKeys.mutedConversations(serverId) });

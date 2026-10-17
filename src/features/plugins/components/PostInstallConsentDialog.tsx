@@ -14,7 +14,7 @@ interface PostInstallConsentDialogProps {
 
 /**
  * Dangerous-action confirmation shown when a git plugin needs dependency
- * install steps (S-H3). Names every command verbatim, with its working
+ * install steps. Names every command verbatim, with its working
  * directory, and states that it runs the plugin author's code with the user's
  * privileges. Cancel is the safe default; Esc/backdrop/close all cancel.
  *

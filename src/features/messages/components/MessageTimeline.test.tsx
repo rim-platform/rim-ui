@@ -443,8 +443,9 @@ describe("MessageTimeline virtualization", () => {
     rerender(<MessageTimeline />);
     await settle();
 
-    // The previously-first message is exactly where it was on screen, because
-    // the scroll offset grew by the (still estimated) height of the new rows.
+    // The message that was first before the prepend is exactly where it was on
+    // screen, because the scroll offset grew by the (still estimated) height of
+    // the new rows.
     expect(rowViewportOffset("m-010")).toBe(before);
     expect(messageList().scrollTop).toBeGreaterThanOrEqual(10 * ROW);
 

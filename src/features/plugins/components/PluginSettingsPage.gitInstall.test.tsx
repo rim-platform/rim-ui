@@ -1,6 +1,7 @@
 /**
- * Git install flow (S-H2 / S-H3) through the real `usePluginInstallFromGit`
- * hook and `safeInvoke`, with only the Tauri IPC mocked.
+ * Git install flow (the consent to dependency install steps, and the typed
+ * git URL refusal) through the real `usePluginInstallFromGit` hook and
+ * `safeInvoke`, with only the Tauri IPC mocked.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";

@@ -97,8 +97,8 @@ export function useExecuteCommandMutation() {
           ...(input.confirmation && { confirmation: input.confirmation }),
         },
       }),
-    // A `TIMED_OUT` answer (Mutating commands while timed out, Track 1.2) switches the
-    // composer to its timed-out banner, whichever surface ran the command.
+    // A `TIMED_OUT` answer (a mutating command while timed out) switches the composer to its
+    // timed-out banner, whichever surface ran the command.
     onError: (err, input) => {
       noteTimedOutError(
         input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,

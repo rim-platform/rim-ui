@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn a_cache_at_the_archive_schema_gains_the_snapshot_table() {
         let dir = tempfile::tempdir().unwrap();
-        // Take a fresh cache back to v3, as the history archive build left it.
+        // Take a fresh cache back to schema v3.
         {
             let store = open(dir.path(), "alice");
             store

@@ -1,8 +1,8 @@
 export const queryKeys = {
   healthCheck: ["healthCheck"] as const,
   me: ["me"] as const,
-  // Stage 3 key identity: the signed-in account's key log, devices and profile card, and the
-  // accounts on a server this desktop holds device keys for.
+  // Key identity: the signed-in account's key log, devices and profile card, and the accounts
+  // on a server this desktop holds device keys for.
   myKeyIdentity: ["myKeyIdentity"] as const,
   deviceKeyStatus: (principalId: string, keySeq: number | null) =>
     ["deviceKeyStatus", principalId, keySeq] as const,
@@ -14,7 +14,7 @@ export const queryKeys = {
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
   server: (serverId?: string) => ["server", serverId] as const,
-  // Track 1.2 moderation: active bans, and message reports filtered by status (null = all).
+  // Moderation: active bans, and message reports filtered by status (null = all).
   serverBans: (serverId?: string) => ["serverBans", serverId] as const,
   messageReports: (serverId?: string, status?: string | null) =>
     ["messageReports", serverId, status ?? null] as const,
@@ -25,8 +25,8 @@ export const queryKeys = {
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,
-  // The newest timeline page from the desktop app's local message cache (PR 9). Its own root,
-  // so invalidating `messages` (a server refetch) does not re-read the cache.
+  // The newest timeline page from the desktop app's local message cache. Its own root, so
+  // invalidating `messages` (a server refetch) does not re-read the cache.
   cachedTimeline: (workspaceId?: string, conversationId?: string) =>
     ["cachedTimeline", workspaceId, conversationId] as const,
   threadByRoot: (workspaceId?: string, conversationId?: string, rootMessageId?: string) =>
@@ -46,8 +46,8 @@ export const queryKeys = {
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
-  // Hits from the desktop app's local search index (PR 10). Keyed by the signed-in user, as the
-  // cache is per account.
+  // Hits from the desktop app's local search index. Keyed by the signed-in user, as the cache
+  // is per account.
   localSearchMessages: (
     workspaceId?: string,
     userId?: string,
@@ -96,8 +96,8 @@ export const queryKeys = {
   accountDeletion: (userId?: string) => ["accountDeletion", userId] as const,
   previewInviteToken: (token: string) => ["previewInviteToken", token] as const,
   workspacePresence: (workspaceId?: string) => ["workspacePresence", workspaceId] as const,
-  // Track 1.3 notification rules: the viewer's settings, inbox (keyed by the unread-only filter;
-  // the `["notifications", serverId]` prefix covers both lists) and the bell's unread count.
+  // Notification rules: the viewer's settings, inbox (keyed by the unread-only filter; the
+  // `["notifications", serverId]` prefix covers both lists) and the bell's unread count.
   notificationSettings: (serverId?: string) => ["notificationSettings", serverId] as const,
   notifications: (serverId?: string, unreadOnly?: boolean) =>
     ["notifications", serverId, unreadOnly ?? false] as const,
@@ -124,7 +124,7 @@ export const queryKeys = {
 
 /**
  * Query-key roots holding volatile server state scoped to one workspace (server).
- * On WS reconnect we invalidate only these for the active workspace instead of the
+ * A WS reconnect invalidates only these for the active workspace instead of the
  * whole cache. Each root keys the workspace/server id at position [1], so the prefix
  * [root, workspaceId] matches every query for that workspace.
  */

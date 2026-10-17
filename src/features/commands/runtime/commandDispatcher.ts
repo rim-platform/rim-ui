@@ -206,7 +206,6 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   },
   "workspace.cycle_recent_activity": () => {
     // Cycle to the next conversation in the list (wrapping), same as next_channel.
-    // A dedicated recent-activity stack can be added later when the backend tracks it.
     const ids = getCachedConversationIds();
     if (ids.length === 0) return;
     const current = useShellStore.getState().selectedConversationId;
@@ -215,12 +214,12 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
     useShellStore.getState().setSelectedConversationId(next);
   },
   "chat.create_channel": () => {
-    // Ensure we're on the conversation surface, then open the channel dialog
+    // Switch to the conversation surface, then open the channel dialog
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewChannelDialog(true);
   },
   "chat.create_group": () => {
-    // Ensure we're on the conversation surface, then open the new message picker
+    // Switch to the conversation surface, then open the new message picker
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewMessagePicker(true);
   },
@@ -234,7 +233,7 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
     logger.debug("[RIM] copy_message_text: handled at context menu level");
   },
   "chat.open_thread": (args) => {
-    // The context menu opens threads itself; the agent (Track 4.1) passes the root message id.
+    // The context menu opens threads itself; the agent passes the root message id.
     if (typeof args?.rootMessageId === "string") {
       useShellStore.getState().openThreadForMessage(args.rootMessageId);
     } else {
@@ -280,9 +279,9 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
 };
 
 /**
- * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent (Track 4.1). The
- * server refuses to execute desktop-local commands, so agent tool calls for them land here
- * instead of `executeCommand`. Returns `false` when no local handler exists. Only meant for
+ * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent. The server refuses
+ * to execute desktop-local commands, so agent tool calls for them land here instead of
+ * `executeCommand`. Returns `false` when no local handler exists. Only meant for
  * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
  * dialog for a human, which is not what an agent call should do.
  */

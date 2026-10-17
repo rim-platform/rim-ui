@@ -1,6 +1,6 @@
-// The plugin of "A web plugin without the SDK" in the web plugins spec: its
-// manifest and entry module exactly as appendix A bundles them. Tests run it on
-// a real MessageChannel as a plugin written without the SDK.
+// Hello Web, a plugin written without the SDK: its manifest and entry module
+// exactly as the web plugins spec's appendix A bundles them (known-answer
+// vectors). Tests run it on a real MessageChannel.
 
 export const HELLO_WEB_MANIFEST =
   '{"manifest_version":1,"plugin_id":"dev.example.hello-web","display_name":"Hello Web","version":"0.1.0","description":"Says hello from a sandboxed frame.","runtime_kind":"WebSandboxed","entrypoint":"main.mjs","commands":[{"id":"greet","title":"Hello Web: Greet","description":"Greets the signed-in user."}]}';

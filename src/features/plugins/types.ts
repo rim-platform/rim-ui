@@ -40,8 +40,7 @@ export function isPluginCapability(v: unknown): v is PluginCapability {
 /**
  * Defensively parses an unknown value into `PluginCapability[]`.
  * Unknown strings are dropped and logged. In production console.warn is the
- * only signal — TODO(P6-W3-followup): route through toast/audit when a shared
- * drift-signal subsystem exists.
+ * only signal.
  */
 export function parsePluginCapabilities(value: unknown): PluginCapability[] {
   if (!Array.isArray(value)) {
@@ -192,7 +191,7 @@ export interface PluginInfo {
   starting?: boolean;
   /** Why a web plugin stopped on its own, or was not started. */
   last_error?: string | null;
-  /** Left out by hosts before the audit. */
+  /** The plugin's grant history and encrypted reads; left out by hosts that keep no audit. */
   audit?: PluginAudit;
 }
 

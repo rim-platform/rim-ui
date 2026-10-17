@@ -2,14 +2,12 @@
  * `EmptyWorkspaceState` — shown in the `WorkspaceSelector` when the
  * authenticated user has no workspace memberships.
  *
- * Promotes `CreateWorkspaceDialog` from a passive informational message to an
- * actionable surface. The "Create your first workspace" button opens the dialog;
- * on success the `CreateWorkspaceDialog` calls `setWorkspaceId` and `AppShell`
- * re-renders into the full workspace shell.
+ * The "Create your first workspace" button opens `CreateWorkspaceDialog`; on
+ * success the dialog calls `setWorkspaceId` and `AppShell` re-renders into the
+ * full workspace shell.
  *
  * This component is a state branch inside `WorkspaceSelector.tsx`, not a
- * separate route. See registration-redesign-frontend spec §6.3 for the
- * rationale.
+ * separate route.
  */
 
 import { useState } from "react";

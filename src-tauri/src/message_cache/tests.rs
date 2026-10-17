@@ -1,6 +1,6 @@
-//! The sync loop against a mocked change feed that follows the server contract
-//! (rim-server `docs/message-change-feed.md`): per-conversation versions, a change budget per
-//! request, `hasMore`, `RESET` when a cursor is ahead of the counters, and `NO_ACCESS`.
+//! The sync loop against a mocked change feed that follows the server contract:
+//! per-conversation versions, a change budget per request, `hasMore`, `RESET` when a cursor is
+//! ahead of the counters, and `NO_ACCESS`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -383,7 +383,7 @@ fn edits_apply_and_deletes_become_tombstones() {
 
     let page = store.timeline(WS, "c1", None, 10).unwrap().unwrap();
     assert_eq!(texts(&page), vec!["hello 0", "edited"]);
-    // Upserts keep each row's `seq`, the rowid PR 10's FTS5 index points at.
+    // Upserts keep each row's `seq`, the rowid the FTS5 index points at.
     assert_eq!(seqs(&store, "c1"), seqs_before);
 
     let (text, payload, deleted): (Option<String>, String, bool) = store
@@ -450,7 +450,7 @@ fn reset_drops_the_cached_conversation_and_refetches_it() {
     assert_eq!(cached_ids(&store, "c1").len(), 6);
 
     // The server comes back from an older backup: m005 is gone and its counters restarted
-    // below the cursor we stored, so the feed answers RESET.
+    // below the stored cursor, so the feed answers RESET.
     feed.restore_backup_without("c1", "c1-m005");
     sync(&mut store, &mut feed, None);
 
@@ -735,7 +735,7 @@ fn malformed_changes_are_skipped_without_failing_the_page() {
     assert!(cached_ids(&store, "c2").is_empty());
 }
 
-// ─── Local search (PR 10) ───────────────────────────────────────────────────
+// ─── Local search ───────────────────────────────────────────────────────────
 
 fn text_query(text: &str) -> LocalSearchQuery {
     LocalSearchQuery {
@@ -1111,7 +1111,7 @@ fn an_existing_cache_is_backfilled_once_on_upgrade() {
     let alice = account("alice");
     let path = dir.path().join(alice.file_name());
 
-    // A schema v1 cache as PR 9 left it: two live messages and a tombstone.
+    // A schema v1 cache: two live messages and a tombstone.
     {
         let conn = super::store::open_keyed(&path, &key).unwrap();
         conn.execute_batch(super::store::SCHEMA_V1).unwrap();

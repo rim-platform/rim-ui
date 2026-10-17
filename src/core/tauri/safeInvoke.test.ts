@@ -54,7 +54,7 @@ describe("safeInvoke", () => {
       expect((error as Extract<SafeInvokeError, { kind: "ipc_unavailable" }>).message).toContain(
         "plugin_list",
       );
-      // invoke() must NOT be called — we bail before the IPC call
+      // invoke() must NOT be called — safeInvoke returns before the IPC call
       expect(mockInvoke).not.toHaveBeenCalled();
     });
   });
@@ -457,7 +457,7 @@ describe("safeInvoke", () => {
 
     it("'invalid signature' does NOT trigger invalid_args (falls through to UNKNOWN)", async () => {
       // 'invalid signature' is not a serde prefix and not a ServiceError string —
-      // it must not match the old loose includes("invalid") heuristic.
+      // it must not match on a loose includes("invalid") check.
       mockInvoke.mockRejectedValue("invalid signature");
       const result = await safeInvoke("cmd", {});
       const error = assertError(result, "backend_error") as Extract<

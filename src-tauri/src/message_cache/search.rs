@@ -1,4 +1,4 @@
-//! Local full-text search over the cached messages (master plan Stage 2, PR 10).
+//! Local full-text search over the cached messages.
 //!
 //! The FTS5 index (`message_fts`, schema v2 in `store.rs`) covers the text of every cached
 //! message that is not a tombstone, in the conversations the cache follows. Results come in the

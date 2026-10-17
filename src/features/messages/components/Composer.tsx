@@ -148,8 +148,8 @@ function MessageComposer(props: ComposerProps) {
   const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  // Track 1.2: a timed-out viewer reads but cannot write; slow mode spaces out members'
-  // messages (Owner/Moderator are exempt). The server enforces both.
+  // A timed-out viewer reads but cannot write; slow mode spaces out members' messages
+  // (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);
   const offline = useOfflineStore((s) => s.offline);
   const isModerator = useCanModerate(workspaceId);

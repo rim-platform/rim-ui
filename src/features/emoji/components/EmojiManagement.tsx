@@ -53,8 +53,7 @@ interface EmojiManagementProps {
  * (`DefaultCustomEmojiService`), not a single admin flag:
  * - **Upload**: any server member — the backend only checks membership, not role.
  * - **Delete**: the server owner, OR the emoji's own uploader (`emoji.uploadedBy`) —
- *   there is no moderator carve-out. This replaced a hardcoded `isAdmin` prop that
- *   previously gated both actions identically and defaulted to `true`.
+ *   there is no moderator carve-out.
  */
 export function EmojiManagement({ serverId }: EmojiManagementProps) {
   const { emojis, isLoading } = useCustomEmojis(serverId);

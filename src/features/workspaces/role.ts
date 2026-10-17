@@ -1,7 +1,7 @@
 import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
 
 /**
- * The workspace role ladder (Track 1.2): Owner > Moderator > Member > Guest.
+ * The workspace role ladder: Owner > Moderator > Member > Guest.
  *
  * These helpers only decide what the client renders. The server re-checks every rule and
  * answers `FORBIDDEN` (or `VALIDATION` for self-targeting) when the UI is out of date.

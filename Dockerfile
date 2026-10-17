@@ -8,7 +8,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-# .npmrc carries legacy-peer-deps (see its comment); without it npm ci fails on ERESOLVE.
+# .npmrc sets legacy-peer-deps; without it npm ci fails on ERESOLVE.
 COPY package.json package-lock.json* .npmrc ./
 RUN npm ci --ignore-scripts
 
@@ -57,16 +57,15 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     # X-XSS-Protection "1; mode=block" is deprecated — set to "0" and rely on
-    # CSP for XSS defense-in-depth instead (L2).
+    # CSP for XSS defense-in-depth instead.
     add_header X-XSS-Protection "0" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    # Content-Security-Policy (M2): XSS defense-in-depth for the web build.
+    # Content-Security-Policy: XSS defense-in-depth for the web build.
     # connect-src is pinned to the API origin derived from VITE_GRAPHQL_ENDPOINT
     # at docker build time — no wildcard localhost allowed in production.
     # style-src includes 'unsafe-inline' because Tailwind CSS v4 injects inline
-    # styles at build time; tightening to a nonce requires build-pipeline changes
-    # beyond this scope (flagged per spec M2 review note). 'wasm-unsafe-eval' lets the
-    # page compile the encrypted conversations' MLS module (WebAssembly), nothing else.
+    # styles at build time. 'wasm-unsafe-eval' lets the page compile the encrypted
+    # conversations' MLS module (WebAssembly), nothing else.
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
 
     # Gzip compression

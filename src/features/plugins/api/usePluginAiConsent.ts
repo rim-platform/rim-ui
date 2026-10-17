@@ -4,7 +4,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { logger } from "../../../core/logger";
 import { safeInvoke, type PluginIpcError } from "./ipc";
 
-// Re-exported for consumers that imported this type before the shared ipc shim existed.
+// The plugin IPC error under the name of this module's commands.
 export type { PluginIpcError as PluginCommandError };
 
 export function useApproveAiCommands() {

@@ -20,9 +20,9 @@ import {
 import { queryKeys } from "../../../core/query/keys";
 
 /**
- * Track 1.2 moderation calls: member role changes, kick, ban, timeout, reports. Every
- * mutation is re-checked server-side (role ladder, targeting rules); the UI gates are only
- * there to avoid offering what would fail.
+ * Moderation calls: member role changes, kick, ban, timeout, reports. Every mutation is
+ * re-checked server-side (role ladder, targeting rules); the UI gates are only there to avoid
+ * offering what would fail.
  */
 
 const SET_MEMBER_ROLE = gql`

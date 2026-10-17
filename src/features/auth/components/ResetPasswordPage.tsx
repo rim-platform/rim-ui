@@ -10,7 +10,7 @@ import { BrandHeading } from "./BrandHeading";
 /**
  * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
  * on mount and removes it on unmount. Used on routes that carry sensitive tokens
- * in their URL path to prevent token leakage via the Referer header (L3).
+ * in their URL path to prevent token leakage via the Referer header.
  */
 function useNoReferrerMeta(): void {
   useEffect(() => {
