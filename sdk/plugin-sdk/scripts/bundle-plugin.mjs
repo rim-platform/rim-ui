@@ -97,7 +97,12 @@ for (const path of panelFiles) {
 if (mode === "bundle") {
   const outDir = resolve(outArg ?? join(pluginDir, "dist", manifest.plugin_id));
   refuseOutDir(outDir);
-  await buildInto(outDir);
+  const useExistingBuild =
+    entryArg === undefined &&
+    manifest.entrypoint === BUILT_ENTRY &&
+    existsSync(join(pluginDir, BUILT_ENTRY));
+  await buildInto(outDir, { useExistingBuild });
+  if (useExistingBuild) console.log(`using existing ${BUILT_ENTRY} without rebuilding`);
   writeBundleFile(outDir);
 } else {
   const scratch = mkdtempSync(join(tmpdir(), "rim-plugin-bundle-"));
@@ -127,13 +132,16 @@ function refuseOutDir(outDir) {
   }
 }
 
-/** Build the plugin into `outDir`: its manifest, main.mjs and panel files. */
-async function buildInto(outDir) {
+/** Build or copy the plugin into `outDir`: its manifest, main.mjs and panels. */
+async function buildInto(outDir, { useExistingBuild = false } = {}) {
   const outFile = join(outDir, BUILT_ENTRY);
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
 
-  if (web) {
+  if (useExistingBuild) {
+    copyFileSync(join(pluginDir, BUILT_ENTRY), outFile);
+    if (!web) chmodSync(outFile, 0o755);
+  } else if (web) {
     // A browser build: no Node APIs, the SDK's browser entry, and one module the
     // frame shell can import from a blob: URL, so nothing left to import.
     await build(browserBuildOptions(entry, outFile, pluginDir));
