@@ -359,7 +359,12 @@ export type Conversation = {
   archivedAt?: Maybe<Scalars['DateTime']['output']>;
   conversationType: ConversationTypeEnum;
   createdBy?: Maybe<Scalars['ID']['output']>;
-  /** For a direct conversation, true for the caller while the other member's request for it is pending; null for other conversations. */
+  /**
+   * For a DM: whether the other member's DM request for it is still pending, so the caller
+   * sees their messages wait for acceptance; false once it is accepted or ignored, when
+   * there is none, and for another member whose relay is another server. Null for groups
+   * and channels.
+   */
   dmRequestPending?: Maybe<Scalars['Boolean']['output']>;
   /**
    * The level that applies to the viewer now: `NONE` while muted, else `notificationLevel`,
