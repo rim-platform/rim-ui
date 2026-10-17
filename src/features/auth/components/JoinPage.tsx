@@ -15,8 +15,8 @@
  *
  * Post-signup navigation:
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
- * - Instance token (`serverId` absent): navigate to `/`. `AppShell` shows the
- *   empty-workspace state (user has no workspaces yet).
+ * - Instance token (`serverId` absent): navigate to `/`. `WorkspaceSelector` opens the
+ *   server's default workspace, or shows the empty-workspace state when the server names none.
  *
  * Security note (L3): A `<meta name="referrer" content="no-referrer">` tag is
  * injected on mount and removed on unmount. The invite token is in the URL path;
