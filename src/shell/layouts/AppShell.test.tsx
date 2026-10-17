@@ -305,6 +305,12 @@ describe("AppShell — plugin panels and conversation navigation", () => {
     useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "notes", "tool_panel");
     renderShell();
     expect(screen.getByTestId("plugin-slot-notes")).toBeInTheDocument();
+    // The slot's one column cannot grow past its width, so a long panel header cannot push
+    // the panel over the conversation (jsdom has no layout, so the classes stand in for it).
+    const slot = screen.getByTestId("plugin-slot-notes").parentElement as HTMLElement;
+    expect(slot.className.split(" ")).toEqual(
+      expect.arrayContaining(["w-72", "grid-cols-1", "overflow-hidden"]),
+    );
 
     act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
 
