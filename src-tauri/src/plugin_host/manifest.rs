@@ -26,12 +26,13 @@ pub struct ManifestCommand {
     pub required_capabilities: Vec<String>,
     #[serde(default)]
     pub arguments: Vec<serde_json::Value>,
-    /// Opt-in for AI agent exposure. F2 validation rejects ai_callable commands
-    /// whose output_schema would leak a plugin_install_id before registration.
+    /// Opt-in for AI agent exposure. Install validation rejects `ai_callable`
+    /// commands whose `output_schema` would leak a plugin install ID.
     #[serde(default)]
     pub ai_callable: bool,
-    /// JSON-Schema-shaped output envelope declaration. None → F2 requires manual review
-    /// for ai_callable commands (cannot statically prove absence of install-ID leak).
+    /// JSON-Schema-shaped declaration of the output envelope. Without it an
+    /// `ai_callable` command needs manual review, since the absence of an
+    /// install-ID leak cannot be proven statically.
     #[serde(default)]
     pub output_schema: Option<serde_json::Value>,
 }
@@ -60,7 +61,8 @@ pub struct PanelDef {
     #[serde(default)]
     pub description: String,
     /// Where the shell shows the panel. Left out, it opens next to the tool panel.
-    /// Skipped when absent so manifests without it keep their content hash.
+    /// Skipped when absent, so it does not change the content hash of a manifest
+    /// that leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<PanelSlot>,
 }
@@ -119,7 +121,8 @@ pub struct PluginManifest {
     #[serde(default)]
     pub capabilities: Vec<String>,
     /// Origins a `WebSandboxed` plugin may connect to once `network.fetch` is
-    /// approved. Skipped when empty so manifests without it keep their content hash.
+    /// approved. Skipped when absent, so it does not change the content hash of a
+    /// manifest that leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_origins: Option<Vec<String>>,
     #[serde(default)]
@@ -181,7 +184,7 @@ impl PluginManifest {
         }
         validate_plugin_id(&self.plugin_id)?;
 
-        // Validate keybind_suggestions reference declared commands
+        // keybind_suggestions must reference declared commands.
         let command_ids: Vec<&str> = self.commands.iter().map(|c| c.id.as_str()).collect();
         for suggestion in &self.keybind_suggestions {
             if !command_ids.contains(&suggestion.command_id.as_str()) {
@@ -192,7 +195,7 @@ impl PluginManifest {
             }
         }
 
-        // Validate context_actions reference declared commands
+        // context_actions must reference declared commands.
         for action in &self.context_actions {
             if !command_ids.contains(&action.command_id.as_str()) {
                 return Err(ManifestError::Validation(format!(
@@ -205,7 +208,8 @@ impl PluginManifest {
         Ok(())
     }
 
-    /// Get keybind suggestions with fully qualified command IDs (plugin.{plugin_id}.{cmd_id}).
+    /// Returns the keybind suggestions with fully qualified command ids
+    /// (`plugin.<plugin_id>.<command_id>`).
     pub fn qualified_keybind_suggestions(&self) -> Vec<KeybindSuggestion> {
         self.keybind_suggestions
             .iter()
@@ -218,7 +222,7 @@ impl PluginManifest {
             .collect()
     }
 
-    /// Get context actions with fully qualified command IDs.
+    /// Returns the context actions with fully qualified action and command ids.
     pub fn qualified_context_actions(&self) -> Vec<ContextAction> {
         self.context_actions
             .iter()
@@ -256,9 +260,8 @@ impl PluginManifest {
             .any(|prefix| self.plugin_id.starts_with(prefix))
     }
 
-    /// SHA-256 hex of the canonical JSON serialization. Used to detect manifest
-    /// drift between installs so the consent gate can demand re-approval when
-    /// the ai_callable command set changes.
+    /// Returns the SHA-256 hex of the manifest's JSON serialization, which the
+    /// AI consent gate compares with the recorded hash to detect manifest drift.
     pub fn content_hash(&self) -> String {
         use sha2::{Digest, Sha256};
         let json = serde_json::to_string(self).unwrap_or_default();

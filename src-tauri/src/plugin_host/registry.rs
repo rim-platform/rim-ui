@@ -331,7 +331,7 @@ pub async fn plugin_signing_source(
         .map_err(locked)?
 }
 
-/// Ask for a `.rimbundle` to sign; `None` when the person cancels.
+/// Asks the person for a `.rimbundle` to sign; `None` when they cancel.
 #[tauri::command]
 pub async fn plugin_pick_signing_bundle(
     app: AppHandle,
@@ -357,7 +357,7 @@ pub async fn plugin_pick_signing_bundle(
     .map_err(locked)?
 }
 
-/// Write `<stem>.rimsig.json`, and `<stem>.rimbundle` when `bundle` is given, into a folder
+/// Writes `<stem>.rimsig.json`, and `<stem>.rimbundle` when `bundle` is given, into a folder
 /// the person picks (by default the one holding `beside`). Returns the signature file's path,
 /// or `None` when the person cancels.
 #[tauri::command]
@@ -407,7 +407,7 @@ pub async fn plugin_export_signature(
     .map_err(locked)?
 }
 
-/// Make a registry install a local one, with no registry source and no updates: the person
+/// Makes a registry install a local one, with no registry source and no updates: the person
 /// kept it after its workspace removed the entry.
 #[tauri::command]
 pub fn plugin_detach_registry(
@@ -431,7 +431,7 @@ pub fn plugin_detach_registry(
 
 // ─── Installing a git source at its commit ──────────────────────────────────
 
-/// Fetch `commit` of `url` into a new directory, checked out detached, with `origin` set.
+/// Fetches `commit` of `url` into a new directory, checked out detached, with `origin` set.
 async fn checkout_commit(url: &str, commit: &str) -> Result<PathBuf, RegistryError> {
     git_source::validate_git_url(url).map_err(invalid)?;
     let dir = dirs::home_dir()
@@ -508,8 +508,8 @@ fn carried(old: &PluginRecord, manifest: &PluginManifest) -> (Vec<String>, Vec<S
     (capabilities, ai, old.status == PluginStatus::Enabled)
 }
 
-/// Record a fresh install of `manifest` from `source`, keeping `previous`'s approvals when
-/// given, and start it again if it was running.
+/// Records a fresh install of `manifest` from `source`, keeping `previous`'s approvals when
+/// given, and starts it again if it was running.
 pub(crate) fn record_install(
     state: &PluginHostState,
     manifest: &PluginManifest,
@@ -566,9 +566,9 @@ pub(crate) fn record_install(
     Ok(())
 }
 
-/// Install a registry entry's git source: fetch `commit`, check its tree hash and manifest
-/// against the statement, validate the manifest for this host, then the post-install consent
-/// gate as for any git install. With `replace`, the installed copy is swapped out only once
+/// Installs a registry entry's git source: fetches `commit`, checks its tree hash and manifest
+/// against the statement, validates the manifest for this host, then applies the post-install
+/// consent gate as for any git install. With `replace`, the installed copy is swapped out only once
 /// the new one is ready, and put back if its post-install steps fail; `keep_approvals` carries
 /// its approvals and running state over.
 #[allow(clippy::too_many_arguments)]
@@ -687,7 +687,7 @@ pub(crate) mod tests {
     use super::*;
     use std::process::Command;
 
-    /// Run git in `dir` with a test identity and return its trimmed output.
+    /// Runs git in `dir` with a test identity and returns its trimmed output.
     pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])

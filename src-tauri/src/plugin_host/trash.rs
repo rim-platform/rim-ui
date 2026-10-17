@@ -13,17 +13,20 @@ use tauri::async_runtime::JoinHandle;
 /// no plugin id names it and discovery skips it.
 pub const TRASH_DIR: &str = ".trash";
 
-/// Move `<plugins_root>/<plugin_id>` into the trash under `plugins_root` and
-/// return where it went. An id that is not a safe path segment or starts with
-/// `.` is refused. The trash is created when missing; one that is a link or not
-/// a folder is refused.
+/// Moves `<plugins_root>/<plugin_id>` into the trash under `plugins_root` and
+/// returns where it went. The trash is created when missing.
+///
+/// # Errors
+///
+/// Returns an error for an id that is not a safe path segment or starts with
+/// `.`, for a trash that is a link or not a folder, and when the move fails.
 pub fn move_to_trash(plugins_root: &Path, plugin_id: &str) -> std::io::Result<PathBuf> {
     check_plugin_id(plugin_id)?;
     trash_entry(plugins_root, plugin_id, plugin_id)
 }
 
-/// Move the entry `name` under `plugins_root` into the trash as a copy of
-/// `plugin_id` and return where it went, with the checks of [`move_to_trash`]
+/// Moves the entry `name` under `plugins_root` into the trash as a copy of
+/// `plugin_id` and returns where it went, with the checks of [`move_to_trash`]
 /// on the trash.
 fn trash_entry(plugins_root: &Path, name: &str, plugin_id: &str) -> std::io::Result<PathBuf> {
     let trash = plugins_root.join(TRASH_DIR);
@@ -44,7 +47,7 @@ fn trash_entry(plugins_root: &Path, name: &str, plugin_id: &str) -> std::io::Res
     Ok(trashed)
 }
 
-/// Refuse an id that is not a safe path segment or starts with `.`, the names
+/// Refuses an id that is not a safe path segment or starts with `.`, the names
 /// of the trash and of install staging.
 fn check_plugin_id(plugin_id: &str) -> std::io::Result<()> {
     if is_safe_segment(plugin_id) && !plugin_id.starts_with('.') {
@@ -56,7 +59,7 @@ fn check_plugin_id(plugin_id: &str) -> std::io::Result<()> {
     }
 }
 
-/// Delete the trash entry `trashed` of `plugin_id` on a blocking thread. Nobody
+/// Deletes the trash entry `trashed` of `plugin_id` on a blocking thread. Nobody
 /// need wait for the handle: the outcome is logged, and the next sweep retries
 /// a failure.
 pub fn delete_in_background(plugin_id: &str, trashed: PathBuf) -> JoinHandle<()> {
@@ -73,10 +76,15 @@ pub fn delete_in_background(plugin_id: &str, trashed: PathBuf) -> JoinHandle<()>
     })
 }
 
-/// Delete `<plugins_root>/<plugin_id>` without waiting for it: it moves into
+/// Deletes `<plugins_root>/<plugin_id>` without waiting for it: it moves into
 /// the trash and goes there in the background. When the trash cannot take it (a
 /// link or a file in its place, another filesystem), it is deleted here instead,
 /// without following a link. A missing folder is not an error.
+///
+/// # Errors
+///
+/// Returns an error for an unsafe id, or when the folder can be neither
+/// trashed nor deleted here.
 pub fn delete_later(plugins_root: &Path, plugin_id: &str) -> std::io::Result<()> {
     check_plugin_id(plugin_id)?;
     let dir = plugins_root.join(plugin_id);
@@ -149,10 +157,14 @@ pub struct Swap {
     replaced: Option<String>,
 }
 
-/// Move `staged` into `<plugins_root>/<plugin_id>`. A folder already there
+/// Moves `staged` into `<plugins_root>/<plugin_id>`. A folder already there
 /// moves to a `.replaced-` name beside it first, and comes back when `staged`
 /// cannot move in. `staged` must be on the same filesystem as the plugins
 /// folder.
+///
+/// # Errors
+///
+/// Returns an error for an unsafe id, or when a rename fails.
 pub fn swap_in(plugins_root: &Path, plugin_id: &str, staged: &Path) -> std::io::Result<Swap> {
     check_plugin_id(plugin_id)?;
     let dir = plugins_root.join(plugin_id);
@@ -179,7 +191,7 @@ pub fn swap_in(plugins_root: &Path, plugin_id: &str, staged: &Path) -> std::io::
 }
 
 impl Swap {
-    /// Keep the new copy and delete the replaced one: it moves into the trash
+    /// Keeps the new copy and deletes the replaced one: it moves into the trash
     /// and goes there in the background, returning the handle. When the trash
     /// cannot take it, it is deleted here instead, without following a link.
     pub fn keep(self) -> Option<JoinHandle<()>> {
@@ -210,8 +222,13 @@ impl Swap {
         }
     }
 
-    /// Drop the new copy without waiting for its deletion and put the replaced
+    /// Drops the new copy without waiting for its deletion and puts the replaced
     /// one back.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the replaced copy cannot go back; a failure to
+    /// delete the new copy is logged.
     pub fn undo(self) -> std::io::Result<()> {
         if let Err(e) = delete_later(&self.plugins_root, &self.plugin_id) {
             log::warn!(
@@ -222,7 +239,7 @@ impl Swap {
         self.put_back()
     }
 
-    /// Move the replaced copy back to `<plugins_root>/<plugin_id>`. One that
+    /// Moves the replaced copy back to `<plugins_root>/<plugin_id>`. One that
     /// cannot go back keeps its `.replaced-` name for [`recover_replaced`].
     fn put_back(self) -> std::io::Result<()> {
         let Some(name) = self.replaced else {
@@ -241,7 +258,7 @@ impl Swap {
     }
 }
 
-/// Put back the copies updates left under `.replaced-` names when they did not
+/// Puts back the copies updates left under `.replaced-` names when they did not
 /// finish, before discovery reads the plugins folder. The newest
 /// `.replaced-<plugin_id>-<uuid v7>` folder of each id takes
 /// `<plugins_root>/<plugin_id>` again; the unfinished copy that was there and
@@ -301,8 +318,8 @@ pub fn recover_replaced(plugins_root: &Path) {
     }
 }
 
-/// Move the copy at `<plugins_root>/<plugin_id>`, if any, into the trash and the
-/// `.replaced-` copy `name` back in its place. Whether it went back.
+/// Moves the copy at `<plugins_root>/<plugin_id>`, if any, into the trash and the
+/// `.replaced-` copy `name` back in its place, and returns whether it went back.
 fn put_replaced_back(plugins_root: &Path, plugin_id: &str, name: &str) -> bool {
     let dir = plugins_root.join(plugin_id);
     let replaced = plugins_root.join(name);
@@ -349,8 +366,12 @@ fn put_replaced_back(plugins_root: &Path, plugin_id: &str, name: &str) -> bool {
     }
 }
 
-/// Delete the trash entry at `path`: a link loses only itself, a folder goes
+/// Deletes the trash entry at `path`: a link loses only itself, a folder goes
 /// with everything in it, and a file is removed.
+///
+/// # Errors
+///
+/// Returns the IO error of the removal.
 pub fn delete_trashed(path: &Path) -> std::io::Result<()> {
     let metadata = std::fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() {
@@ -363,7 +384,7 @@ pub fn delete_trashed(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Delete everything in the trash under `plugins_root`. A trash that is a link
+/// Deletes everything in the trash under `plugins_root`. A trash that is a link
 /// loses only the link. Failures are logged; the next sweep retries them.
 pub fn sweep(plugins_root: &Path) {
     let trash = plugins_root.join(TRASH_DIR);
@@ -424,8 +445,12 @@ pub fn sweep(plugins_root: &Path) {
     }
 }
 
-/// Remove the link at `path`. A directory link on Windows goes with
+/// Removes the link at `path`. A directory link on Windows goes with
 /// `remove_dir`, which removes only the link.
+///
+/// # Errors
+///
+/// Returns the IO error of the removal.
 pub fn remove_link(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path).or_else(|_| std::fs::remove_dir(path))
 }

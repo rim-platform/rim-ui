@@ -1,10 +1,9 @@
 //! Plugin protocol v1: the frozen wire contract between the host and a plugin process.
 //!
-//! The language-neutral source of truth is `protocol/plugin-protocol-v1.schema.json`
-//! at the repository root: every frame below is a `$defs` entry there, with a
-//! description per field and an example frame. These Rust types are the host's
-//! side of the same shapes, and the conformance tests in this module fail when the
-//! two drift apart or when a frame leaks a raw user id.
+//! These Rust types are the host's side of the frames in
+//! `protocol/plugin-protocol-v1.schema.json` at the repository root, and the
+//! conformance tests in this module fail when the two drift apart or when a frame
+//! leaks a raw user id.
 //!
 //! - **Framing**: a 4-byte little-endian unsigned length, then that many bytes of
 //!   UTF-8 JSON, at most [`crate::plugin_host::wire::MAX_FRAME_SIZE`] bytes.
@@ -14,7 +13,7 @@
 //! - **Evolution**: a v1 shape never changes. New methods may be added to v1, so
 //!   both sides ignore notifications they do not know and answer unknown requests
 //!   with `METHOD_NOT_FOUND`. Anything else is a new protocol version, negotiated
-//!   in the handshake. The schema's `x-versioning` lists both sides of that line.
+//!   in the handshake.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -46,14 +45,14 @@ pub mod method {
     pub const LOG: &str = "rim.log";
 }
 
-/// Prefix of a provisional principal id, derived from today's account id.
+/// Prefix of a provisional principal id, derived from the account id.
 ///
 /// Once an account enrolls a key identity, its principal id becomes the server's
 /// `rimp1_` id (a hash of the first key log entry) and the host announces the switch
 /// with [`method::PRINCIPAL_CHANGED`] and [`method::PRINCIPALS_REMAPPED`].
 pub const PROVISIONAL_PRINCIPAL_PREFIX: &str = "rimp0_";
 
-/// Prefix of a key-based principal id (`rim-server/docs/specs/key-identity-v1.md`).
+/// Prefix of a key-based principal id.
 pub const KEY_PRINCIPAL_PREFIX: &str = "rimp1_";
 
 /// Domain separator hashed in front of the account id.
@@ -74,7 +73,8 @@ pub struct Principal {
 }
 
 impl Principal {
-    /// The provisional principal of an account, until key identity lands.
+    /// Returns the provisional principal of an account, used until the account
+    /// enrolls a key identity.
     ///
     /// The id is `rimp0_` plus the unpadded base64url SHA-256 of a domain
     /// separator and the lowercased account id, so it is the same on every

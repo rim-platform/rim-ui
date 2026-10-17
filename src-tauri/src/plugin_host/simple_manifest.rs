@@ -4,7 +4,7 @@ use std::path::Path;
 /// Simple mode entrypoint filenames, in priority order.
 const SIMPLE_ENTRYPOINTS: &[&str] = &["main.ts", "main.js", "main.py"];
 
-/// Parse a simple-mode plugin manifest from comment headers in the entrypoint file.
+/// Parses a simple-mode plugin manifest from comment headers in the entrypoint file.
 ///
 /// Format (lines must appear at the top of the file, before any non-comment/non-empty line):
 /// ```text
@@ -16,6 +16,13 @@ const SIMPLE_ENTRYPOINTS: &[&str] = &["main.ts", "main.js", "main.py"];
 /// # rim-capabilities: chat.read, network
 /// # rim-command: do_thing | Do Thing | Does a thing
 /// ```
+///
+/// `file_name` names the entrypoint and picks its command.
+///
+/// # Errors
+///
+/// Returns a [`ManifestError`] for an unknown or malformed `rim-` header, a
+/// missing `rim-plugin` or `rim-name`, or a manifest that fails validation.
 pub fn parse_simple_manifest(
     source: &str,
     file_name: &str,
@@ -31,12 +38,12 @@ pub fn parse_simple_manifest(
     for (line_num, line) in source.lines().enumerate() {
         let trimmed = line.trim();
 
-        // Stop parsing at the first non-comment, non-empty line
+        // Stop parsing at the first non-comment, non-empty line.
         if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("//") {
             break;
         }
 
-        // Strip comment prefix
+        // Strip the comment prefix.
         let content = trimmed
             .strip_prefix('#')
             .or_else(|| trimmed.strip_prefix("//"))
@@ -50,7 +57,7 @@ pub fn parse_simple_manifest(
             continue;
         }
 
-        // Parse key: value
+        // Parse `key: value`.
         let Some((key, value)) = content.split_once(':') else {
             continue;
         };
@@ -110,14 +117,14 @@ pub fn parse_simple_manifest(
                 });
             }
             _ => {
-                // Unknown rim- prefixed key is an error for strict parsing
+                // An unknown `rim-` key is an error.
                 if key.starts_with("rim-") {
                     return Err(ManifestError::Validation(format!(
                         "line {}: unknown manifest key '{key}'",
                         line_num + 1
                     )));
                 }
-                // Non rim- comments are fine, just skip
+                // Other comments are skipped.
             }
         }
     }
@@ -152,7 +159,7 @@ pub fn parse_simple_manifest(
     Ok(manifest)
 }
 
-/// Detect the entrypoint command based on file extension.
+/// Returns the entrypoint command for a file, chosen by its extension.
 fn detect_entrypoint(file_name: &str) -> String {
     if file_name.ends_with(".ts") {
         format!("npx tsx {file_name}")
@@ -165,7 +172,7 @@ fn detect_entrypoint(file_name: &str) -> String {
     }
 }
 
-/// Try to find a simple-mode entrypoint in the given plugin directory.
+/// Returns the name of the first simple-mode entrypoint present in `plugin_dir`.
 pub fn find_simple_entrypoint(plugin_dir: &Path) -> Option<String> {
     for name in SIMPLE_ENTRYPOINTS {
         if plugin_dir.join(name).exists() {
@@ -175,7 +182,13 @@ pub fn find_simple_entrypoint(plugin_dir: &Path) -> Option<String> {
     None
 }
 
-/// Load a simple-mode manifest from a plugin directory.
+/// Loads a simple-mode manifest from a plugin directory; `None` when it has no
+/// simple-mode entrypoint.
+///
+/// # Errors
+///
+/// Returns a [`ManifestError`] when the entrypoint cannot be read or its
+/// headers do not make a valid manifest.
 pub fn load_simple_manifest(plugin_dir: &Path) -> Result<Option<PluginManifest>, ManifestError> {
     let Some(entrypoint_name) = find_simple_entrypoint(plugin_dir) else {
         return Ok(None);

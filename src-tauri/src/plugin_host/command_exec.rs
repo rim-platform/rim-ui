@@ -62,7 +62,8 @@ pub enum PluginCommandError {
     },
     #[error("plugin host state lock poisoned")]
     LockPoisoned,
-    /// AI consent gates keep their existing `LIFECYCLE_ERROR` shape.
+    /// An AI consent gate refused the command; serialized in the
+    /// `LIFECYCLE_ERROR` shape.
     #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
 }
@@ -128,7 +129,7 @@ pub struct ResolvedCommand {
     pub command: ManifestCommand,
 }
 
-/// Find the manifest command for `(plugin_id, command_id)`.
+/// Finds the manifest command for `(plugin_id, command_id)`.
 ///
 /// The UI builds ids as `plugin.<plugin_id>.<command_id>` and splits them on the
 /// first dot after `plugin.`, but plugin ids are reverse-domain and contain dots
@@ -136,6 +137,12 @@ pub struct ResolvedCommand {
 /// is matched against the installed plugin ids instead, so
 /// `("dev", "example.hello.greet")` resolves to plugin `dev.example.hello`,
 /// command `greet`.
+///
+/// # Errors
+///
+/// Returns [`PluginCommandError::UnknownCommand`] when `plugin_id` is installed
+/// but neither reading names a declared command, and
+/// [`PluginCommandError::PluginNotFound`] otherwise.
 pub fn resolve_command(
     manifests: &HashMap<String, PluginManifest>,
     plugin_id: &str,
@@ -180,11 +187,17 @@ pub fn resolve_command(
     }
 }
 
-/// Host-side gates every plugin command passes before it reaches the process.
+/// Checks the host-side gates every plugin command passes before it reaches the
+/// process.
 ///
 /// - A `dangerous` command runs only with `confirmed_dangerous`, which the caller
 ///   sets after the user confirmed. The agent path never sets it.
 /// - Every capability in the command's `required_capabilities` must be approved.
+///
+/// # Errors
+///
+/// Returns [`PluginCommandError::ConfirmationRequired`] or
+/// [`PluginCommandError::CapabilityDenied`] for the gate that refuses.
 pub fn check_gates(
     command: &ManifestCommand,
     approved_capabilities: &[String],
@@ -206,12 +219,20 @@ pub fn check_gates(
     Ok(())
 }
 
-/// Resolve and gate a command, then return the client of its running plugin.
+/// Resolves and gates a command, then returns it with the client of its running
+/// plugin.
 ///
 /// `caller_plugin_id` is set when a plugin's own panel asked to run the command;
 /// the command must then belong to that same plugin. The UI's prefix check alone
 /// cannot guarantee this, because plugin ids nest (`dev.example` is a prefix of
 /// `dev.example.hello`).
+///
+/// # Errors
+///
+/// Returns the [`PluginCommandError`] of resolution, of the scope check
+/// ([`PluginCommandError::OutOfScope`]) or of a gate, and
+/// [`PluginCommandError::PluginNotRunning`] when the plugin has no running
+/// connection.
 pub fn prepare(
     state: &PluginHostState,
     plugin_id: &str,
@@ -263,7 +284,16 @@ pub fn prepare(
     Ok((resolved, client))
 }
 
-/// Send `rim.command.execute` to the plugin and wait for its result.
+/// Sends `rim.command.execute` to the plugin and waits up to `wait` for its
+/// result.
+///
+/// # Errors
+///
+/// Returns [`PluginCommandError::PluginNotRunning`] when the connection is
+/// gone, [`PluginCommandError::TimedOut`] after `wait`,
+/// [`PluginCommandError::PluginError`] when the plugin answers with a JSON-RPC
+/// error, and [`PluginCommandError::InvalidResult`] for a result that is not a
+/// [`CommandResult`].
 pub async fn dispatch(
     client: &PluginClient,
     resolved: &ResolvedCommand,
@@ -315,7 +345,11 @@ fn normalize_args(args: serde_json::Value) -> Result<serde_json::Value, PluginCo
     }
 }
 
-/// Run a plugin command end to end: resolve, gate, dispatch, audit.
+/// Runs a plugin command end to end: resolve, gate, dispatch, audit.
+///
+/// # Errors
+///
+/// Returns the [`PluginCommandError`] of the step that fails.
 pub async fn execute(
     state: &PluginHostState,
     plugin_id: &str,
@@ -458,7 +492,7 @@ mod tests {
         }
     }
 
-    /// Register a running connection for PLUGIN whose fake process answers one request.
+    /// Registers a running connection for PLUGIN whose fake process answers one request.
     fn connect_fake_plugin(
         state: &PluginHostState,
         answer: impl FnOnce(serde_json::Value) -> JsonRpcResponse + Send + 'static,

@@ -3,7 +3,7 @@
 //! This module is the **Tauri-aware boundary** between the plugin lifecycle and
 //! the Tauri-free modules that do the actual work (`process.rs`, `broker.rs`).
 //! Nothing below this layer touches `tauri::State`; everything above this
-//! layer (commands, `mod.rs` init) goes through these two public functions.
+//! layer (commands, `mod.rs` init) goes through the public functions here.
 //!
 //! ## Lifecycle
 //!
@@ -291,13 +291,12 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
     }
 
     if let Some(tx) = maybe_tx {
-        // Signal shutdown — the broker loop will observe the watch channel.
+        // Signal shutdown; the broker loop observes the watch channel.
         let _ = tx.send(true);
 
-        // Give the broker task a moment to notice and exit cleanly.
-        // `tx` being dropped here closes the channel; the receiver will see
-        // `changed()` resolve.  We wait a short period then fall through —
-        // kill_on_drop on the child process ensures OS-level cleanup.
+        // Give the broker task up to STOP_TIMEOUT to exit and drop its receiver,
+        // then fall through; kill_on_drop on the child process ensures OS-level
+        // cleanup.
         timeout(STOP_TIMEOUT, tx.closed()).await.ok();
 
         if let Err(e) = state.panel_relay.cleanup_plugin(plugin_id) {
@@ -315,7 +314,7 @@ pub async fn stop_plugin(plugin_id: &str, state: &PluginHostState) -> Result<(),
     Ok(())
 }
 
-/// Stop every running plugin, for app exit.
+/// Stops every running plugin, for app exit.
 ///
 /// Each plugin gets `rim.shutdown` and a closed stdin at once, then
 /// [`PluginProcess::shutdown`] terminates the stragglers. Whatever is still
@@ -361,7 +360,7 @@ async fn stop_all_within(state: &PluginHostState, wait: Duration) {
     }
 }
 
-/// Record who is signed in and tell every running plugin when that changes.
+/// Records who is signed in and tells every running plugin when that changes.
 pub async fn set_principal(state: &PluginHostState, principal: Option<Principal>) {
     let changed = match state.principal.lock() {
         Ok(mut current) => {
@@ -384,7 +383,7 @@ pub async fn set_principal(state: &PluginHostState, principal: Option<Principal>
     }
 }
 
-/// Send `rim.principal.changed` to one plugin.
+/// Sends `rim.principal.changed` to one plugin.
 async fn notify_principal(
     client: &PluginClient,
     principal: Option<Principal>,
@@ -414,7 +413,7 @@ pub fn mappings_of(store: &PluginStateStore) -> Vec<PrincipalMapping> {
 /// Most id switches one `rim.principals.remapped` notice carries.
 const MAX_PRINCIPAL_MAPPINGS: usize = 1000;
 
-/// Record that the provisional id `from` became `to`, in memory and in the state file.
+/// Records that the provisional id `from` became `to`, in memory and in the state file.
 /// Returns whether that is news (a new or changed mapping).
 pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) -> bool {
     let mappings = {
@@ -424,7 +423,7 @@ pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) ->
         if store.principal_ids.get(from).map(String::as_str) == Some(to) {
             return false;
         }
-        // The notice carries at most this many mappings (protocol schema, `maxItems`).
+        // The notice carries at most this many mappings.
         if store.principal_ids.len() >= MAX_PRINCIPAL_MAPPINGS
             && !store.principal_ids.contains_key(from)
         {
@@ -444,7 +443,7 @@ pub fn record_principal_switch(state: &PluginHostState, from: &str, to: &str) ->
     true
 }
 
-/// Send the whole id switch list to every running plugin.
+/// Sends the whole id switch list to every running plugin.
 pub async fn announce_remapped(state: &PluginHostState) {
     let mappings = match state.principal_ids.lock() {
         Ok(mappings) => mappings.clone(),
@@ -462,7 +461,7 @@ pub async fn announce_remapped(state: &PluginHostState) {
     }
 }
 
-/// Send `rim.principals.remapped` to one plugin.
+/// Sends `rim.principals.remapped` to one plugin.
 async fn notify_remapped(
     client: &PluginClient,
     mappings: Vec<PrincipalMapping>,
@@ -477,7 +476,7 @@ async fn notify_remapped(
     .unwrap_or(Err(RequestError::TimedOut(NOTIFY_TIMEOUT)))
 }
 
-/// Send `rim.handshake` through the broker loop and validate the plugin's answer.
+/// Sends `rim.handshake` through the broker loop and validates the plugin's answer.
 async fn handshake_through(
     client: &PluginClient,
     plugin_id: &str,
@@ -700,7 +699,8 @@ mod tests {
         );
     }
 
-    /// Poll `done` until it holds, giving up after a deadline generous enough for a loaded machine.
+    /// Polls `done` until it holds, giving up after a deadline generous enough for a
+    /// loaded machine.
     async fn wait_until(mut done: impl FnMut() -> bool) -> bool {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !done() {

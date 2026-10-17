@@ -82,7 +82,13 @@ impl PluginStorage {
         }
     }
 
-    /// The stored value of `key`, or `null`.
+    /// Returns the value `plugin_id` stored under `key` for `account`, or `null`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::NotSignedIn`] without an account,
+    /// [`StorageError::InvalidKey`] for a malformed key, and
+    /// [`StorageError::Io`] when the store cannot be read.
     pub fn get(
         &self,
         plugin_id: &str,
@@ -97,7 +103,14 @@ impl PluginStorage {
         Ok(store.get(key).cloned().unwrap_or(Value::Null))
     }
 
-    /// Store `value` under `key`; `null` deletes the key.
+    /// Stores `value` under `key`; `null` deletes the key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::NotSignedIn`] without an account,
+    /// [`StorageError::InvalidKey`] for a malformed key, [`StorageError::Quota`]
+    /// when the store would grow past its limit, and [`StorageError::Io`] when
+    /// it cannot be read or written.
     pub fn set(
         &self,
         plugin_id: &str,
@@ -128,7 +141,11 @@ impl PluginStorage {
         Ok(())
     }
 
-    /// Delete every store of `plugin_id`, on uninstall.
+    /// Deletes every store of `plugin_id`, on uninstall.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Io`] when an existing directory cannot be removed.
     pub fn remove_plugin(&self, plugin_id: &str) -> Result<(), StorageError> {
         match std::fs::remove_dir_all(self.root.join(plugin_id)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),

@@ -1,6 +1,6 @@
-//! Install-time plugin manifest validation. This is the only copy: the
-//! server-side mirror (`rim_services::plugin_host::validation`) was removed on
-//! 2026-10-04 as dead code, so there is nothing to keep in sync any more.
+//! Install-time plugin manifest validation: capability key shape, the
+//! install-ID leak check on AI-callable commands, and the rules of each runtime
+//! kind.
 
 use crate::plugin_host::capability::{
     BUILTIN_CAPABILITIES, ENCRYPTED_CHAT_CAPABILITIES, NETWORK_FETCH,
@@ -26,18 +26,17 @@ const CONTEXT_ARGUMENTS: &[(&str, &[&str])] = &[
     ("message", &["message_id", "conversation_id", "thread_id"]),
 ];
 
-/// N1 / F2 validation failure surfaced as a typed enum so the JS UI can branch
-/// without string-parsing the message (WARN: replace flat `to_string()` surface
-/// with `#[serde(tag = "kind")]` so frontend can pattern-match on `kind`).
+/// Why a manifest failed install validation, serialized with a `kind` tag so
+/// the UI can branch on the variant without parsing the message.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind")]
 pub enum ValidationError {
-    /// N1 closure: a capability key declared by the plugin is malformed or
-    /// uses a reserved namespace. The plugin is rejected at install time so
-    /// the capability gate can never be bypassed by creative key crafting.
+    /// A capability key declared by the plugin is malformed or uses a
+    /// reserved namespace. The plugin is rejected at install time so the
+    /// capability gate can never be bypassed by creative key crafting.
     #[serde(rename = "INVALID_CAPABILITY_KEY")]
     InvalidCapabilityKey { key: String, reason: String },
-    /// F2 closure: an `ai_callable` command's `output_schema` declares a field
+    /// An `ai_callable` command's `output_schema` declares a field
     /// whose name normalises to `installid` or `installationid`. Exfiltrating
     /// the per-installation ID via an AI-visible surface breaks pseudonymity
     /// across workspace accounts; the plugin is rejected at install time.
@@ -116,7 +115,12 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// N1 closure for a `DesktopLocalProcess` plugin; see [`validate_capability`].
+/// Validates one capability key of a `DesktopLocalProcess` plugin; see
+/// [`validate_capability`].
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidCapabilityKey`] when the key is refused.
 #[cfg(test)]
 pub fn validate_plugin_capability(
     plugin_id: &str,
@@ -125,7 +129,7 @@ pub fn validate_plugin_capability(
     validate_capability(RuntimeKind::DesktopLocalProcess, plugin_id, capability_key)
 }
 
-/// N1 closure: validates a single capability key declared by plugin_id.
+/// Validates the shape of one capability key that `plugin_id` declares.
 ///
 /// A manifest may declare the built-in names in [`BUILTIN_CAPABILITIES`] and
 /// its own keys of the form `plugin.<plugin_id>.<verb>`, with the verb in
@@ -133,6 +137,13 @@ pub fn validate_plugin_capability(
 /// them there. A `WebSandboxed` plugin may also declare [`NETWORK_FETCH`], and
 /// is told why it can never hold the names of local programs, files and
 /// host-brokered requests.
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidCapabilityKey`] when the key is too short
+/// or too long, uses a reserved namespace or segment, is neither a built-in
+/// name nor a key in the plugin's own namespace, has a malformed verb, or is a
+/// name `kind` can never hold.
 pub fn validate_capability(
     kind: RuntimeKind,
     plugin_id: &str,
@@ -233,8 +244,8 @@ pub fn validate_capability(
     Ok(())
 }
 
-/// An encrypted chat capability widens its plain one to encrypted conversations, so a
-/// manifest that asks for it must ask for the plain one too.
+/// Refuses an encrypted chat capability declared without its plain one, which it
+/// widens to encrypted conversations.
 fn validate_encrypted_chat(manifest: &PluginManifest) -> Result<(), ValidationError> {
     for (encrypted, plain) in ENCRYPTED_CHAT_CAPABILITIES {
         let has = |name: &str| manifest.capabilities.iter().any(|c| c == name);
@@ -248,7 +259,8 @@ fn validate_encrypted_chat(manifest: &PluginManifest) -> Result<(), ValidationEr
     Ok(())
 }
 
-/// A command may not declare an argument the host sets from a context it requires.
+/// Refuses a command that declares an argument the host sets from a context it
+/// requires.
 fn validate_context_arguments(commands: &[ManifestCommand]) -> Result<(), ValidationError> {
     for command in commands {
         for kind in &command.required_context {
@@ -272,7 +284,14 @@ fn validate_context_arguments(commands: &[ManifestCommand]) -> Result<(), Valida
     Ok(())
 }
 
-/// F2 closure: walks every ai_callable command and inspects output_schema for install-ID leak.
+/// Checks the `output_schema` of every `ai_callable` command for a field that
+/// would leak the install ID.
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InstallIdLeakInAiSurface`] when a schema declares
+/// an install-ID field, and [`ValidationError::RequiresManualReview`] when a
+/// schema is missing or too opaque to analyse.
 pub fn walk_output_schema_for_install_id_leak(
     commands: &[ManifestCommand],
 ) -> Result<(), ValidationError> {
@@ -465,9 +484,13 @@ impl NetworkOrigin {
     }
 }
 
-/// Parse one `network_origins` entry: `https://host[:port]` or
+/// Parses one `network_origins` entry: `https://host[:port]` or
 /// `wss://host[:port]`, lowercase, with no path, query, fragment, userinfo or
 /// wildcard.
+///
+/// # Errors
+///
+/// Returns a message naming the entry when it breaks any of those rules.
 pub fn parse_network_origin(origin: &str) -> Result<NetworkOrigin, String> {
     let (scheme, rest) = if let Some(rest) = origin.strip_prefix("https://") {
         ("https", rest)
@@ -517,10 +540,14 @@ pub fn parse_network_origin(origin: &str) -> Result<NetworkOrigin, String> {
     })
 }
 
-/// The `network_origins` rules: only for `WebSandboxed`, present exactly when
-/// `network.fetch` is declared, 1 to 16 well-formed origins, no duplicates, and
-/// none on the host and port of a `forbidden_origins` entry (the app's and the
-/// RIM API's origins).
+/// Checks the `network_origins` rules: only for `WebSandboxed`, present exactly
+/// when `network.fetch` is declared, 1 to 16 well-formed origins, no
+/// duplicates, and none on the host and port of a `forbidden_origins` entry
+/// (the app's and the RIM API's origins).
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidNetworkOrigins`] naming the broken rule.
 pub fn validate_network_origins(
     manifest: &PluginManifest,
     forbidden_origins: &[String],
@@ -581,8 +608,8 @@ fn forbidden_site(origin: &str) -> Option<String> {
     })
 }
 
-/// The `WebSandboxed` file rules a manifest can state: the entrypoint is a
-/// bundle path to one ES module, and each panel id names a folder.
+/// Checks the `WebSandboxed` file rules a manifest can state: the entrypoint is
+/// a bundle path to one ES module, and each panel id names a folder.
 fn validate_web_layout(manifest: &PluginManifest) -> Result<(), ValidationError> {
     let entry = &manifest.entrypoint;
     if !is_bundle_path(entry) {
@@ -616,14 +643,22 @@ fn validate_web_layout(manifest: &PluginManifest) -> Result<(), ValidationError>
     Ok(())
 }
 
-/// Single entry point: compose N1 (capability key shape) + F2 (install-ID leak)
-/// and the kind's rules, with no host origins to refuse.
+/// Validates a manifest for install: capability key shape, the install-ID leak
+/// check and the kind's rules, with no host origins to refuse.
+///
+/// # Errors
+///
+/// Returns the first [`ValidationError`] the manifest fails.
 pub fn validate_plugin_manifest(manifest: &PluginManifest) -> Result<(), ValidationError> {
     validate_plugin_manifest_for_host(manifest, &[])
 }
 
 /// [`validate_plugin_manifest`], also refusing `network_origins` on the host
 /// and port of one of `forbidden_origins`.
+///
+/// # Errors
+///
+/// Returns the first [`ValidationError`] the manifest fails.
 pub fn validate_plugin_manifest_for_host(
     manifest: &PluginManifest,
     forbidden_origins: &[String],
@@ -689,7 +724,7 @@ mod tests {
         }
     }
 
-    // ── N1: validate_plugin_capability ──
+    // ── capability key shape: validate_plugin_capability ──
 
     #[test]
     fn n1_rejects_dispatch_plan_garbage_set() {
@@ -838,7 +873,7 @@ mod tests {
         }
     }
 
-    // ── F2: walk_output_schema_for_install_id_leak ──
+    // ── install-ID leak: walk_output_schema_for_install_id_leak ──
 
     #[test]
     fn f2_no_ai_callable_commands_passes() {

@@ -15,7 +15,7 @@
 //! - Symlinks inside the source folder that resolve outside it are skipped (not
 //!   followed) during the recursive copy.
 //!
-//! ## Bundle fingerprint (TOFU)
+//! ## Bundle fingerprint (trust on first use)
 //!
 //! At install time `compute_bundle_fingerprint` walks every regular file under
 //! `plugin_dir`, sorts their relative paths deterministically, and feeds
@@ -45,7 +45,7 @@ pub enum LocalInstallError {
     /// The manifest was structurally invalid.
     #[error("manifest error: {0}")]
     Manifest(#[from] ManifestError),
-    /// N1 / F2 validation failed.
+    /// The manifest failed install validation.
     #[error("invalid manifest: {0}")]
     InvalidManifest(#[from] ValidationError),
     /// Plugin with this ID is already in the installed-plugins directory.
@@ -82,7 +82,7 @@ impl serde::Serialize for LocalInstallError {
 
 // ─── Path-traversal hardening ─────────────────────────────────────────────────
 
-/// Validate every component of `path` using the same rules as
+/// Validates every component of `path` using the same rules as
 /// [`crate::plugin_host::plugin_protocol::is_safe_segment`].
 ///
 /// Returns the path unchanged on success, or [`LocalInstallError::PathTraversal`]
@@ -128,8 +128,8 @@ pub fn check_path_safe(path: &Path) -> Result<(), LocalInstallError> {
 
 // ─── Bundle fingerprint ───────────────────────────────────────────────────────
 
-/// Compute a deterministic SHA-256 fingerprint over all regular files under
-/// `plugin_dir`.
+/// Computes a deterministic SHA-256 fingerprint over all regular files under
+/// `plugin_dir` and returns it as lowercase hex.
 ///
 /// Files are sorted by their relative path before hashing, so the result is
 /// independent of filesystem enumeration order.  Each file contributes:
@@ -249,16 +249,17 @@ fn copy_dir_recursive(
 
 // ─── Install flow ─────────────────────────────────────────────────────────────
 
-/// Install a plugin from a local folder.
+/// Installs a plugin from a local folder.
 ///
 /// Steps:
 /// 1. Validate every component of `source_path` for path-traversal.
 /// 2. Canonicalize and assert `source_path` still exists on disk.
 /// 3. Load and structurally validate the manifest (`rim-plugin.json` or simple-mode).
-/// 4. Run N1 + F2 validation via [`validate_plugin_manifest`].
+/// 4. Run install validation via [`validate_plugin_manifest_for_host`],
+///    refusing `network_origins` on one of `forbidden_origins`.
 /// 5. Check for reserved-prefix rejection.
 /// 6. Check for existing-plugin collision.
-/// 7. Compute the bundle fingerprint (TOFU).
+/// 7. Compute the bundle fingerprint.
 /// 8. Copy (not move) the plugin into `~/.rim/plugins/<plugin_id>/`; for a
 ///    `WebSandboxed` plugin, unpack just its bundle files there instead.
 /// 9. Return `(manifest, final_dir, result, bundle_fingerprint)`.
@@ -272,15 +273,18 @@ fn copy_dir_recursive(
 /// - [`LocalInstallError::PathTraversal`] — `source_path` fails segment validation.
 /// - [`LocalInstallError::NoManifest`] — no manifest found in the folder.
 /// - [`LocalInstallError::Manifest`] — manifest parse failure.
-/// - [`LocalInstallError::InvalidManifest`] — N1 / F2 validation failed.
+/// - [`LocalInstallError::InvalidManifest`] — install validation failed.
 /// - [`LocalInstallError::AlreadyExists`] — the plugin ID is already installed.
-/// - [`LocalInstallError::Io`] — filesystem error during copy.
+/// - [`LocalInstallError::Bundle`] — a `WebSandboxed` folder breaks the bundle
+///   rules.
+/// - [`LocalInstallError::Io`] — the source is not a directory, the plugin ID has
+///   a reserved prefix, or the copy fails.
 ///
 /// # Examples
 ///
 /// ```rust,ignore
 /// let (manifest, dir, result, fingerprint) =
-///     install_from_local(Path::new("/home/user/my-plugin"), &[]).await?;
+///     install_from_local(Path::new("/home/user/my-plugin"), &[], &[]).await?;
 /// println!("installed {} at {}", manifest.plugin_id, dir.display());
 /// ```
 pub async fn install_from_local(
@@ -320,7 +324,7 @@ pub async fn install_from_local(
         other => LocalInstallError::Io(std::io::Error::other(other.to_string())),
     })?;
 
-    // Step 4: N1 + F2 validation, and the kind's rules.
+    // Step 4: capability key shape, the install-ID leak check, and the kind's rules.
     if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=local_install_rejected plugin_id={} reason={}",
@@ -358,7 +362,7 @@ pub async fn install_from_local(
     }
 
     // Steps 7 and 8: a web plugin's bundle is unpacked and fingerprinted as
-    // installed; any other plugin is fingerprinted (TOFU) before the copy, so the
+    // installed; any other plugin is fingerprinted before the copy, so the
     // fingerprint reflects the user-supplied source, then copied whole.
     let bundle_fingerprint = if let Some(web_bundle) = web_bundle {
         bundle::unpack(&web_bundle, &plugins_root, false)?;
@@ -519,8 +523,8 @@ mod tests {
         let existing_ids: Vec<String> = vec![];
         let result = install_from_local(tmp_src.path(), &existing_ids, &[]).await;
 
-        // This test touches the real ~/.rim/plugins/ directory.  We clean up after
-        // asserting regardless of outcome.
+        // This test touches the real ~/.rim/plugins/ directory, and the installed
+        // copy is removed after the assertions whatever the outcome.
         let plugins_root = crate::plugin_host::discovery::plugins_dir();
         let install_dest = plugins_root.join(&plugin_id);
 
@@ -609,10 +613,8 @@ mod tests {
             write_manifest(tmp_clean.path(), "dev.example.symtest");
             compute_bundle_fingerprint(tmp_clean.path()).unwrap()
         };
-        // Fingerprints differ because the first bundle has an extra symlink entry that
-        // resolves inside tmp_other — since tmp_other is outside tmp_src root, it is
-        // skipped during collection. So the fingerprint should match only the manifest file.
-        // The tmp_other root is NOT tmp_src, so the symlink IS outside — skipped.
+        // The symlink resolves into tmp_other, outside the tmp_src root, so it is
+        // skipped and the fingerprint covers only the manifest file.
         assert_eq!(
             fp, fp_clean,
             "escaped symlink must be silently skipped — fingerprints should match"

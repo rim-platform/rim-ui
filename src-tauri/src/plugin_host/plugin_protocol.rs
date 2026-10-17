@@ -126,7 +126,7 @@ pub enum ResolveResult {
     NotFound,
 }
 
-/// Validate a single URI path segment.
+/// Returns whether `segment` is a safe URI path segment.
 ///
 /// Rejects the segment when it:
 /// - is empty,
@@ -168,7 +168,7 @@ pub fn is_safe_segment(segment: &str) -> bool {
     true
 }
 
-/// Resolve a `rim-plugin://` URI to a filesystem path.
+/// Resolves a `rim-plugin://` URI to a filesystem path.
 ///
 /// `uri_path` is the path component of the URI after stripping the scheme and
 /// authority, e.g. `"myplugin/main/index.html"` for
@@ -177,12 +177,10 @@ pub fn is_safe_segment(segment: &str) -> bool {
 /// `plugins_root` is the directory that contains all plugin bundle
 /// subdirectories — typically `~/.rim/plugins/`.
 ///
-/// # Errors
-///
-/// Returns [`ResolveResult::Forbidden`] when path-traversal is detected or
-/// the canonical path escapes the plugin bundle root.
-///
-/// Returns [`ResolveResult::NotFound`] when the file does not exist on disk.
+/// Returns [`ResolveResult::Ok`] with the canonical path,
+/// [`ResolveResult::Forbidden`] when path-traversal is detected or the
+/// canonical path escapes the plugin bundle root, and
+/// [`ResolveResult::NotFound`] when the file does not exist on disk.
 ///
 /// # Examples
 ///
@@ -233,8 +231,8 @@ pub fn resolve_plugin_uri(uri_path: &str, plugins_root: &Path) -> ResolveResult 
         Err(_) => return ResolveResult::NotFound,
     };
 
-    // Assert the canonical path is still under the plugin's bundle root.
-    // We canonicalize the plugin root as well so comparison is apples-to-apples.
+    // The canonical path must still be under the plugin's bundle root, which is
+    // canonicalized as well so the two compare like for like.
     let canonical_root = match plugin_root.canonicalize() {
         Ok(p) => p,
         Err(_) => return ResolveResult::NotFound,
@@ -278,6 +276,13 @@ pub enum PanelFilesError {
 /// symlink out of the panel's folder, or a panel folder that is itself a link
 /// fails the whole read. Symlinks to directories and dangling symlinks are
 /// skipped.
+///
+/// # Errors
+///
+/// Returns [`PanelFilesError::Forbidden`] for a rejected name or link,
+/// [`PanelFilesError::NotFound`] when the panel has no folder,
+/// [`PanelFilesError::TooLarge`] past the bundle limits, and
+/// [`PanelFilesError::Io`] when reading fails.
 pub fn read_panel_files(
     plugins_root: &Path,
     plugin_id: &str,

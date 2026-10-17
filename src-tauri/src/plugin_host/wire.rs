@@ -111,7 +111,12 @@ pub enum WireError {
     ConnectionClosed,
 }
 
-/// Write a length-prefixed JSON frame: 4-byte little-endian length + JSON payload.
+/// Writes a length-prefixed JSON frame: 4-byte little-endian length + JSON payload.
+///
+/// # Errors
+///
+/// Returns [`WireError::FrameTooLarge`] when the payload exceeds
+/// [`MAX_FRAME_SIZE`], and the serialization or IO error otherwise.
 pub async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     value: &impl Serialize,
@@ -127,7 +132,13 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-/// Read a length-prefixed JSON frame: 4-byte little-endian length + JSON payload.
+/// Reads a length-prefixed JSON frame: 4-byte little-endian length + JSON payload.
+///
+/// # Errors
+///
+/// Returns [`WireError::ConnectionClosed`] when the stream ends before a
+/// frame, [`WireError::FrameTooLarge`] when the length exceeds
+/// [`MAX_FRAME_SIZE`], and the IO or JSON error otherwise.
 pub async fn read_frame<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
     reader: &mut R,
 ) -> Result<T, WireError> {
@@ -149,7 +160,12 @@ pub async fn read_frame<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
     Ok(value)
 }
 
-/// Read a raw JSON value frame (for messages that could be request, response, or notification).
+/// Reads a raw JSON value frame, for a message that may be a request, a response
+/// or a notification.
+///
+/// # Errors
+///
+/// Returns the errors of [`read_frame`].
 pub async fn read_raw_frame<R: AsyncRead + Unpin>(
     reader: &mut R,
 ) -> Result<serde_json::Value, WireError> {

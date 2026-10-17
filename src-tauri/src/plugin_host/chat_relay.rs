@@ -77,7 +77,7 @@ impl ChatRelay {
         self.tx.subscribe()
     }
 
-    /// Hand one call to the UI and wait for its answer: the result, or the JSON-RPC
+    /// Hands one call to the UI and waits for its answer: the result, or the JSON-RPC
     /// error the plugin gets.
     pub async fn call(
         &self,
@@ -112,8 +112,8 @@ impl ChatRelay {
         }
     }
 
-    /// The UI's answer to `request_id`. False when no call waits for it (it timed out,
-    /// or the id is unknown).
+    /// Delivers the UI's answer to `request_id`. False when no call waits for it (it
+    /// timed out, or the id is unknown).
     pub fn respond(&self, request_id: u64, reply: Reply) -> bool {
         let waiting = self
             .pending

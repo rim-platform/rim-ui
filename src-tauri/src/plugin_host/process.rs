@@ -36,7 +36,15 @@ pub struct PluginPipes {
 }
 
 impl PluginProcess {
-    /// Spawn a plugin child process from the given entrypoint within the plugin directory.
+    /// Spawns a plugin child process from `entrypoint` within `plugin_dir`, and
+    /// returns it with its stdin and stdout pipes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProcessError::EntrypointNotFound`] when the entrypoint does not
+    /// exist, [`ProcessError::Io`] when it cannot be spawned, and
+    /// [`ProcessError::NoStdin`] or [`ProcessError::NoStdout`] when a pipe is
+    /// missing.
     pub fn spawn(
         plugin_id: &str,
         plugin_dir: &Path,
@@ -86,7 +94,7 @@ impl PluginProcess {
         self.child.id()
     }
 
-    /// Stop the process once the broker loop is done with it.
+    /// Stops the process once the broker loop is done with it.
     ///
     /// By then the host has sent `rim.shutdown` and closed the plugin's stdin,
     /// which a v1 plugin answers by exiting. One that has not exited after
@@ -99,13 +107,13 @@ impl PluginProcess {
         self.terminate().await
     }
 
-    /// SIGTERM, wait up to [`TERM_GRACE`], then SIGKILL.
+    /// Sends SIGTERM, waits up to [`TERM_GRACE`], then sends SIGKILL.
     async fn terminate(&mut self) -> Result<(), ProcessError> {
-        // Try to get the process id for signal sending
+        // The process id, for sending signals.
         let pid = self.child.id();
 
         if let Some(pid) = pid {
-            // Send SIGTERM
+            // Send SIGTERM.
             #[cfg(unix)]
             {
                 unsafe {
@@ -114,12 +122,12 @@ impl PluginProcess {
             }
             #[cfg(not(unix))]
             {
-                // On non-unix, just kill directly
+                // On non-unix, kill directly.
                 let _ = self.child.kill().await;
                 return Ok(());
             }
 
-            // Wait for graceful exit with timeout
+            // Wait for a graceful exit, with a timeout.
             match timeout(TERM_GRACE, self.child.wait()).await {
                 Ok(Ok(_status)) => {
                     log::info!("plugin {} exited gracefully", self.plugin_id);
@@ -128,7 +136,7 @@ impl PluginProcess {
                     log::warn!("plugin {} wait error: {}", self.plugin_id, e);
                 }
                 Err(_) => {
-                    // Timeout — force kill
+                    // Timed out: force kill.
                     log::warn!(
                         "plugin {} did not exit within {:?}, sending SIGKILL",
                         self.plugin_id,
@@ -138,21 +146,21 @@ impl PluginProcess {
                 }
             }
         } else {
-            // Process already exited
+            // The process already exited.
             log::info!("plugin {} already exited", self.plugin_id);
         }
 
         Ok(())
     }
 
-    /// Check if the process is still running.
+    /// Returns the exit status if the process has exited, `None` while it runs.
     #[cfg(test)]
     pub fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>, ProcessError> {
         Ok(self.child.try_wait()?)
     }
 }
 
-/// Spawn `command`, retrying with backoff while its executable is busy.
+/// Spawns `command`, retrying with backoff while its executable is busy.
 ///
 /// An entrypoint this process just wrote, as a bundle install does right before a restart,
 /// stays open for writing in any child another thread forked meanwhile, until that child
@@ -171,7 +179,7 @@ fn spawn_while_busy(command: &mut Command) -> std::io::Result<Child> {
     command.spawn()
 }
 
-/// Kill a process by pid, for app exit, where no destructor runs.
+/// Kills a process by pid, for app exit, where no destructor runs.
 pub fn force_kill(pid: u32) {
     #[cfg(unix)]
     {
