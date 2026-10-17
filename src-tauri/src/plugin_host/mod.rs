@@ -22,6 +22,7 @@ pub mod runtime;
 pub mod simple_manifest;
 pub mod state;
 pub mod storage;
+pub mod trash;
 pub mod validation;
 pub mod wire;
 
@@ -76,6 +77,9 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     let mut manifests = HashMap::new();
     let mut plugin_dirs = HashMap::new();
     let plugins_dir = discovery::plugins_dir();
+    // Folders an earlier uninstall left in the trash go in the background.
+    let swept = plugins_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || trash::sweep(&swept));
     for result in discovery::discover_plugins(&plugins_dir) {
         match result {
             Ok(discovered) => {

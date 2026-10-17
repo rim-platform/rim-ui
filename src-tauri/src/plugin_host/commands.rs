@@ -16,6 +16,7 @@ use crate::plugin_host::state::{
     InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
 };
 use crate::plugin_host::storage::StorageError;
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::validate_plugin_manifest_for_host;
 use crate::plugin_host::wire::JsonRpcError;
 use crate::plugin_host::PluginHostState;
@@ -352,7 +353,7 @@ pub async fn plugin_uninstall(
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
         .get(&plugin_id)
         .cloned();
-    {
+    let folder = {
         let mut store = state
             .store
             .lock()
@@ -363,9 +364,13 @@ pub async fn plugin_uninstall(
             recorded_dir.as_deref(),
             &crate::plugin_host::discovery::plugins_dir(),
         );
-        // Saved either way: a plugin whose folder could not be deleted stays, disabled.
+        // Saved either way: a plugin whose folder could not be moved stays, disabled.
         store.save(&state.state_path)?;
-        uninstalled?;
+        uninstalled?
+    };
+    if let PluginFolder::Trashed(trashed) = folder {
+        let plugin_id = plugin_id.clone();
+        tauri::async_runtime::spawn_blocking(move || delete_trashed_folder(&plugin_id, &trashed));
     }
 
     state
@@ -388,17 +393,21 @@ pub async fn plugin_uninstall(
 /// What uninstalling a plugin did with its folder.
 #[derive(Debug, PartialEq, Eq)]
 enum PluginFolder {
-    /// The folder the app installed the plugin into was deleted.
-    Deleted,
+    /// The folder the app installed the plugin into was moved to the trash, to
+    /// this path, for [`delete_trashed_folder`] to delete.
+    Trashed(std::path::PathBuf),
+    /// A link stood in the folder's place; the link was removed, its target kept.
+    Unlinked,
     /// There was no folder to delete.
     Missing,
     /// The folder stays: the app did not install it there.
     Kept,
 }
 
-/// Uninstall the stopped plugin `plugin_id`: disable it when enabled, delete the
-/// folder the app installed it into, then drop its record and audit. A folder
-/// that cannot be deleted keeps the record, disabled, so the user can retry.
+/// Uninstall the stopped plugin `plugin_id`: disable it when enabled, move the
+/// folder the app installed it into to the trash, then drop its record and
+/// audit. A folder that cannot be moved keeps the record, disabled, so the user
+/// can retry.
 fn uninstall_stopped(
     store: &mut PluginStateStore,
     plugin_id: &str,
@@ -412,7 +421,7 @@ fn uninstall_stopped(
     if record.status == PluginStatus::Enabled {
         lifecycle::disable(store, plugin_id)?;
     }
-    let folder = delete_installed_folder(
+    let folder = trash_installed_folder(
         plugin_id,
         record.source.is_some(),
         recorded_dir,
@@ -422,11 +431,11 @@ fn uninstall_stopped(
     Ok(folder)
 }
 
-/// Delete `<plugins_root>/<plugin_id>` when the app installed the plugin
-/// (`installed_by_app`), the id is a safe path segment and the folder is the
-/// one discovery recorded for it. A symlink there loses the link, never its
-/// target; `remove_dir_all` does not follow links inside the folder.
-fn delete_installed_folder(
+/// Move `<plugins_root>/<plugin_id>` to the trash when the app installed the
+/// plugin (`installed_by_app`), the id is a safe path segment and the folder is
+/// the one discovery recorded for it. A symlink there loses the link, never its
+/// target, and is not moved.
+fn trash_installed_folder(
     plugin_id: &str,
     installed_by_app: bool,
     recorded_dir: Option<&std::path::Path>,
@@ -457,13 +466,15 @@ fn delete_installed_folder(
         );
         return Ok(PluginFolder::Kept);
     }
-    let symlink = metadata.file_type().is_symlink();
-    if symlink {
-        // A directory link on Windows goes with `remove_dir`, which removes only the link.
-        std::fs::remove_file(&dir).or_else(|_| std::fs::remove_dir(&dir))?;
-    } else if metadata.is_dir() {
-        std::fs::remove_dir_all(&dir)?;
-    } else {
+    if metadata.file_type().is_symlink() {
+        trash::remove_link(&dir)?;
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink=true",
+            dir.display()
+        );
+        return Ok(PluginFolder::Unlinked);
+    }
+    if !metadata.is_dir() {
         log::warn!(
             "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} path={} \
              reason=not_a_folder",
@@ -471,11 +482,28 @@ fn delete_installed_folder(
         );
         return Ok(PluginFolder::Kept);
     }
+    let trashed = trash::move_to_trash(plugins_root, plugin_id)?;
     log::warn!(
-        "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink={symlink}",
-        dir.display()
+        "[AUDIT] event=plugin_uninstall_folder_trashed plugin_id={plugin_id} path={} trash={}",
+        dir.display(),
+        trashed.display()
     );
-    Ok(PluginFolder::Deleted)
+    Ok(PluginFolder::Trashed(trashed))
+}
+
+/// Delete the folder of `plugin_id` that uninstall moved to the trash at
+/// `trashed`. A failure is only logged; the next start sweeps the trash.
+fn delete_trashed_folder(plugin_id: &str, trashed: &std::path::Path) {
+    match trash::delete_trashed(trashed) {
+        Ok(()) => log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink=false",
+            trashed.display()
+        ),
+        Err(e) => log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_delete_failed plugin_id={plugin_id} path={} error={e}",
+            trashed.display()
+        ),
+    }
 }
 
 #[tauri::command]
@@ -1595,15 +1623,31 @@ mod tests {
         (store, tmp)
     }
 
+    /// The trash entry `folder` names; panics on any other outcome.
+    fn trashed(folder: PluginFolder) -> std::path::PathBuf {
+        match folder {
+            PluginFolder::Trashed(path) => path,
+            other => panic!("expected the folder in the trash, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn uninstall_deletes_the_folder_the_app_installed_and_the_record() {
+    fn uninstall_moves_the_folder_the_app_installed_to_the_trash_and_deletes_it_there() {
         let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
         let dir = tmp.path().join(HELLO);
         let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
-        assert_eq!(folder, PluginFolder::Deleted);
-        assert!(!dir.exists());
+        let trashed = trashed(folder);
+        assert!(fs::symlink_metadata(&dir).is_err());
+        assert_eq!(
+            trashed.parent(),
+            Some(tmp.path().join(trash::TRASH_DIR).as_path())
+        );
+        assert!(trashed.join("panels/main/index.html").exists());
         assert!(store.get(HELLO).is_none());
         assert!(!store.audit.contains_key(HELLO));
+
+        delete_trashed_folder(HELLO, &trashed);
+        assert!(fs::symlink_metadata(&trashed).is_err());
     }
 
     #[test]
@@ -1611,7 +1655,7 @@ mod tests {
         let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
         let dir = tmp.path().join(HELLO);
         let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
-        assert_eq!(folder, PluginFolder::Deleted);
+        trashed(folder);
         assert!(store.get(HELLO).is_none());
     }
 
@@ -1630,7 +1674,7 @@ mod tests {
         let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
         let elsewhere = tmp.path().join("hello-copy");
         for recorded in [None, Some(elsewhere.as_path())] {
-            let folder = delete_installed_folder(HELLO, true, recorded, tmp.path()).unwrap();
+            let folder = trash_installed_folder(HELLO, true, recorded, tmp.path()).unwrap();
             assert_eq!(folder, PluginFolder::Kept, "{recorded:?}");
         }
         assert!(tmp.path().join(HELLO).exists());
@@ -1650,13 +1694,13 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_that_cannot_be_deleted_keeps_the_record_disabled() {
+    fn a_folder_that_cannot_be_moved_keeps_the_record_disabled() {
         let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
-        // A file where the plugins folder should be: looking up the plugin's folder fails.
-        let root = tmp.path().join("not-a-folder");
-        fs::write(&root, b"").unwrap();
-        let dir = root.join(HELLO);
-        uninstall_stopped(&mut store, HELLO, Some(&dir), &root).unwrap_err();
+        // A file where the trash should be: the folder has nowhere to go.
+        fs::write(tmp.path().join(trash::TRASH_DIR), b"").unwrap();
+        let dir = tmp.path().join(HELLO);
+        uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap_err();
+        assert!(dir.join("panels/main/index.html").exists());
         assert_eq!(store.get(HELLO).unwrap().status, PluginStatus::Disabled);
         assert!(store.audit.contains_key(HELLO));
     }
@@ -1669,9 +1713,11 @@ mod tests {
         let outside = tmp.path().join("outside");
         fs::create_dir_all(&outside).unwrap();
         let recorded = root.join("../outside");
-        let folder = delete_installed_folder("../outside", true, Some(&recorded), &root).unwrap();
+        let folder = trash_installed_folder("../outside", true, Some(&recorded), &root).unwrap();
         assert_eq!(folder, PluginFolder::Kept);
+        trash::move_to_trash(&root, "../outside").unwrap_err();
         assert!(outside.exists());
+        assert!(!root.join(trash::TRASH_DIR).exists());
     }
 
     #[cfg(unix)]
@@ -1684,9 +1730,10 @@ mod tests {
         std::os::unix::fs::symlink(&target, &dir).unwrap();
 
         let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
-        assert_eq!(folder, PluginFolder::Deleted);
+        assert_eq!(folder, PluginFolder::Unlinked);
         assert!(fs::symlink_metadata(&dir).is_err());
         assert!(target.join("panels/main/index.html").exists());
+        assert!(!tmp.path().join(trash::TRASH_DIR).exists());
     }
 
     #[cfg(unix)]
@@ -1698,8 +1745,27 @@ mod tests {
         let dir = tmp.path().join(HELLO);
         std::os::unix::fs::symlink(outside.path(), dir.join("escape")).unwrap();
 
-        uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
-        assert!(!dir.exists());
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        let trashed = trashed(folder);
+        delete_trashed_folder(HELLO, &trashed);
+        assert!(fs::symlink_metadata(&trashed).is_err());
+        assert!(outside.path().join("keep.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_sweep_clears_the_trash_but_not_what_its_links_point_to() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let left = trashed(uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap());
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("keep.txt"), b"keep").unwrap();
+        let trash = tmp.path().join(trash::TRASH_DIR);
+        std::os::unix::fs::symlink(outside.path(), trash.join("escape")).unwrap();
+
+        trash::sweep(tmp.path());
+        assert!(fs::symlink_metadata(&left).is_err());
+        assert!(fs::read_dir(&trash).unwrap().next().is_none());
         assert!(outside.path().join("keep.txt").exists());
     }
 
