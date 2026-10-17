@@ -36,7 +36,7 @@ import { useTimelineHandlers } from "./timeline/useTimelineHandlers";
 import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
-import { replyQuoteFor } from "./message-item/replyQuote";
+import { replyQuoteFor } from "./message-item/replyQuoteView";
 import {
   NavigationHints,
   NewMessagesDivider,
