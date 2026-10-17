@@ -127,6 +127,47 @@ describe("usePluginCommands", () => {
   });
 });
 
+describe("usePluginCommands — open panel commands", () => {
+  const panels = [
+    { id: "pods", title: "Pods", slot: "main_area" as const },
+    { id: "notes", title: "Notes" },
+  ];
+
+  it("adds an Open command per panel of a running plugin, for the palette and keybinds", () => {
+    const commands = commandsOf([plugin({ health: "running", commands: [], panels })]);
+    expect(commands.map((c) => [c.id, c.title, c.category])).toEqual([
+      ["workspace.open_plugin_panel.chat.rim.k8s-pods/pods", "Open Pods", "Kubernetes Pods"],
+      ["workspace.open_plugin_panel.chat.rim.k8s-pods/notes", "Open Notes", "Kubernetes Pods"],
+    ]);
+    expect(commands[0]).toMatchObject({
+      sourceKind: "PLUGIN",
+      executionTarget: "DESKTOP_LOCAL",
+      visibleInPalette: true,
+      visibleInContextMenus: false,
+      keybindCapable: true,
+      dangerous: false,
+    });
+  });
+
+  it("lists them after the plugin's manifest commands", () => {
+    const commands = commandsOf([plugin({ health: "running", panels })]);
+    expect(commands.map((c) => c.title)).toEqual([
+      "Refresh pods",
+      "Restart pod",
+      "Open Pods",
+      "Open Notes",
+    ]);
+  });
+
+  it("adds none for a plugin that is not running or not enabled", () => {
+    expect(commandsOf([plugin({ health: "stopped", commands: [], panels })])).toEqual([]);
+    expect(commandsOf([plugin({ health: "crashed", commands: [], panels })])).toEqual([]);
+    expect(
+      commandsOf([plugin({ enabled: false, health: "running", commands: [], panels })]),
+    ).toEqual([]);
+  });
+});
+
 describe("parsePluginCommandId", () => {
   it("parses a valid plugin command ID", () => {
     const result = parsePluginCommandId("plugin.my-plugin.do_something");

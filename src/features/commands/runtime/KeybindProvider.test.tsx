@@ -134,6 +134,61 @@ describe("KeybindProvider with a plugin command bound on this device", () => {
   });
 });
 
+describe("KeybindProvider with a plugin panel bound on this device", () => {
+  const POD_PANEL = "workspace.open_plugin_panel.chat.rim.k8s-pods/pods";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useDeviceKeybindStore.setState({ keybinds: [] });
+    useDeviceKeybindStore
+      .getState()
+      .add({ keystroke: "Ctrl+Alt+P", commandId: POD_PANEL, context: "GLOBAL" });
+  });
+
+  it("opens the panel quietly", async () => {
+    vi.mocked(dispatchCommand).mockResolvedValue({
+      status: "SUCCESS",
+      message: "",
+      payload: null,
+      followUpCommands: [],
+    });
+    render(
+      <KeybindProvider>
+        <div />
+      </KeybindProvider>,
+    );
+    pressCtrlAltP();
+
+    expect(dispatchCommand).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dispatchCommand).mock.calls[0][0]).toMatchObject({
+      id: POD_PANEL,
+      executionTarget: "DESKTOP_LOCAL",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("says why a panel could not open", async () => {
+    vi.mocked(dispatchCommand).mockResolvedValue({
+      status: "ERROR",
+      message: "The plugin with this panel is not running",
+      payload: null,
+      followUpCommands: [],
+    });
+    render(
+      <KeybindProvider>
+        <div />
+      </KeybindProvider>,
+    );
+    pressCtrlAltP();
+
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("The plugin with this panel is not running"),
+    );
+  });
+});
+
 describe("KeybindProvider with the default profile", () => {
   beforeEach(() => {
     vi.clearAllMocks();

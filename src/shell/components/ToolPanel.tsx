@@ -9,7 +9,6 @@ import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 import { WorkspaceMemberDirectory } from "../../features/workspaces/components/WorkspaceMemberDirectory";
 import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
 import { NewMessagePicker } from "../../features/conversations/components/NewMessagePicker";
-import { PluginToolPanel } from "../../features/plugins/components/PluginToolPanel";
 import { NotificationsPanel } from "../../features/notifications/components/NotificationsPanel";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useShellStore } from "../state/useShellStore";
@@ -66,9 +65,7 @@ export function ToolPanel() {
       ) : (
         <>
           <div className="flex items-center justify-between border-b border-rim-line px-4 py-3">
-            <h2 className="text-sm font-medium text-rim-text">
-              {activePanel === "inbox" ? "Conversations" : "Plugins"}
-            </h2>
+            <h2 className="text-sm font-medium text-rim-text">Conversations</h2>
             {activePanel === "inbox" && (
               <div className="flex items-center gap-0.5">
                 {!isGuest && workspaceId && (
@@ -101,7 +98,6 @@ export function ToolPanel() {
             {activePanel === "inbox" && (
               <ConversationList onNewChannel={() => setShowNewChannel(true)} />
             )}
-            {activePanel === "plugins" && <PluginToolPanel />}
           </div>
         </>
       )}

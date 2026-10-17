@@ -11,6 +11,8 @@ import {
   findPluginCommand,
   toastPluginCommandResult,
 } from "../../plugins/runtime/pluginCommandInfo";
+import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
+import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
@@ -151,6 +153,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         // A plugin command runs on this device, out of sight: say how it went.
         if (isPluginCommand) {
           toastPluginCommandResult(command.title, result);
+        } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
+          // An open panel shows for itself; one that cannot open says why.
+          toast.error(result.message);
         }
       })
       .catch((err: unknown) => {

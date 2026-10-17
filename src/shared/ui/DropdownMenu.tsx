@@ -6,8 +6,12 @@ import { Z } from "./zIndex";
 interface DropdownMenuItem {
   id: string;
   label: string;
+  /** Muted text after the label; the item's accessible name joins both. */
+  detail?: string;
   icon?: React.ReactNode;
   danger?: boolean;
+  /** Marks the item that stands for what is open now. */
+  current?: boolean;
   onSelect: () => void;
 }
 
@@ -15,11 +19,24 @@ interface DropdownMenuProps {
   items: DropdownMenuItem[];
   position: { x: number; y: number };
   onClose: () => void;
+  /** Accessible name of the menu. */
+  label?: string;
+  /** Text above the items, such as a note that there is nothing to pick. */
+  header?: React.ReactNode;
+  /** The control that toggles the menu: a press on it is left to its own handler. */
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 export type { DropdownMenuItem, DropdownMenuProps };
 
-export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
+export function DropdownMenu({
+  items,
+  position,
+  onClose,
+  label,
+  header,
+  anchorRef,
+}: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -62,13 +79,15 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
   // Close on click outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (anchorRef?.current?.contains(target)) return;
+      if (menuRef.current && !menuRef.current.contains(target)) {
         onClose();
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [onClose]);
+  }, [onClose, anchorRef]);
 
   // Close on scroll
   useEffect(() => {
@@ -114,13 +133,17 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
     <div
       ref={menuRef}
       role="menu"
+      aria-label={label}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
       className="fixed min-w-[180px] rounded-lg border border-rim-line bg-rim-panel py-1 shadow-xl outline-none"
       style={{ top: position.y, left: position.x, zIndex: Z.DROPDOWN }}
     >
+      {header}
       {items.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-rim-text-muted">No actions available</div>
+        header ? null : (
+          <div className="px-3 py-2 text-xs text-rim-text-muted">No actions available</div>
+        )
       ) : (
         items.map((item, index) => (
           <button
@@ -128,6 +151,8 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
             role="menuitem"
             type="button"
             tabIndex={-1}
+            aria-label={item.detail ? `${item.label}: ${item.detail}` : undefined}
+            aria-current={item.current ? "true" : undefined}
             className={cn(
               "flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors",
               item.danger
@@ -135,14 +160,19 @@ export function DropdownMenu({ items, position, onClose }: DropdownMenuProps) {
                   ? "bg-rim-danger/10 text-rim-danger"
                   : "text-rim-danger hover:bg-rim-danger/10"
                 : focusedIndex === index
-                  ? "bg-rim-accent/10 text-rim-text"
-                  : "text-rim-text hover:bg-white/5",
+                  ? cn("bg-rim-accent/10", item.current ? "text-rim-accent" : "text-rim-text")
+                  : cn("hover:bg-white/5", item.current ? "text-rim-accent" : "text-rim-text"),
             )}
             onMouseEnter={() => setFocusedIndex(index)}
             onClick={() => item.onSelect()}
           >
             {item.icon}
-            <span className="flex-1 truncate">{item.label}</span>
+            <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
+              <span className="min-w-0 truncate">{item.label}</span>
+              {item.detail && (
+                <span className="min-w-0 truncate text-xs text-rim-text-muted">{item.detail}</span>
+              )}
+            </span>
           </button>
         ))
       )}

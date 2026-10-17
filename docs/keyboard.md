@@ -11,8 +11,8 @@ A keydown passes through, in order:
    and `Ctrl+[`. Keys in a text field, a select or a plugin frame pass through untouched.
 2. **The keybinds** (`KeybindProvider`). One binding per keystroke and context, highest layer
    first:
-   - bindings kept on this device: plugin commands and the app's own commands, which the
-     server does not know;
+   - bindings kept on this device: plugin commands, the commands that open a plugin's panel
+     and the app's own commands, which the server does not know;
    - the user's and the workspace's bindings from the server;
    - the active keybind profile;
    - the server's default bindings.

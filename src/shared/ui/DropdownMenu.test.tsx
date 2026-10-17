@@ -103,4 +103,53 @@ describe("DropdownMenu", () => {
     fireEvent.mouseDown(document.body);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("names the menu and shows a header in place of the empty note", () => {
+    render(
+      <DropdownMenu
+        label="Plugin panels"
+        header={<p>Nothing to open</p>}
+        items={[]}
+        position={{ x: 0, y: 0 }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("menu", { name: "Plugin panels" })).toBeInTheDocument();
+    expect(screen.getByText("Nothing to open")).toBeInTheDocument();
+    expect(screen.queryByText("No actions available")).not.toBeInTheDocument();
+  });
+
+  it("joins an item's detail to its name and marks the current item", () => {
+    const items: DropdownMenuItem[] = [
+      { id: "a", label: "Pods", detail: "Overview", current: true, onSelect: vi.fn() },
+      { id: "b", label: "Pods", detail: "Logs", onSelect: vi.fn() },
+    ];
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    expect(screen.getByRole("menuitem", { name: "Pods: Overview" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: "Pods: Logs" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("leaves a press on its anchor to the anchor", () => {
+    const onClose = vi.fn();
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+    render(
+      <DropdownMenu
+        items={makeItems()}
+        position={{ x: 0, y: 0 }}
+        onClose={onClose}
+        anchorRef={{ current: anchor }}
+      />,
+    );
+    fireEvent.mouseDown(anchor);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    anchor.remove();
+  });
 });
