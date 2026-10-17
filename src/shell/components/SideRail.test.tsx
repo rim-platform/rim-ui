@@ -7,6 +7,7 @@ import { expectReachableByKeyboard } from "../../test/keyboard";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useShellStore } from "../state/useShellStore";
+import type { PluginInfo } from "../../features/plugins/types";
 
 const requestMock = vi.fn();
 
@@ -20,8 +21,9 @@ vi.mock("../../core/graphql/client", () => ({
 vi.mock("../../features/workspaces/api/useCurrentUser", () => ({
   useCurrentUser: () => ({ data: undefined }),
 }));
+const pluginList = vi.hoisted(() => ({ data: [] as PluginInfo[] }));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
-  usePluginList: () => ({ data: [] }),
+  usePluginList: () => pluginList,
 }));
 vi.mock("../../features/auth/api/useAuthMutations", () => ({
   useLogoutMutation: () => ({ isPending: false, mutate: vi.fn() }),
@@ -121,5 +123,79 @@ describe("SideRail — unread", () => {
       useUnreadStore.getState().markRead("c2");
     });
     expect(screen.getByRole("button", { name: "Inbox" })).toHaveTextContent("");
+  });
+});
+
+describe("SideRail — plugin panels", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useShellStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    pluginList.data = [
+      {
+        plugin_id: "chat.rim.k8s-pods",
+        manifest_id: "chat.rim.k8s-pods",
+        display_name: "Kubernetes Pods",
+        version: "1.0.0",
+        description: "",
+        enabled: true,
+        health: "running",
+        capabilities: [],
+        approved_capabilities: [],
+        approved_ai_commands: [],
+        ai_callable_commands: [],
+        ai_consent_required: false,
+        fingerprint_changed: false,
+        panels: [
+          { id: "pods", title: "Pods", slot: "main_area" },
+          { id: "notes", title: "Notes" },
+        ],
+      },
+    ];
+  });
+
+  afterEach(() => {
+    pluginList.data = [];
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  const inbox = () => screen.getByRole("button", { name: "Inbox" });
+  const pods = () => screen.getByRole("button", { name: "Kubernetes Pods: Pods" });
+  const notes = () => screen.getByRole("button", { name: "Kubernetes Pods: Notes" });
+
+  it("marks a main-area panel instead of Inbox while it covers the conversation", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SideRail />);
+    expect(inbox()).toHaveAttribute("aria-current", "page");
+
+    await user.click(pods());
+    expect(pods()).toHaveAttribute("aria-current", "page");
+    expect(inbox()).not.toHaveAttribute("aria-current");
+
+    act(() => useShellStore.getState().setSelectedConversationId("c1"));
+    expect(inbox()).toHaveAttribute("aria-current", "page");
+    expect(pods()).not.toHaveAttribute("aria-current");
+  });
+
+  it("closes a main-area panel when Inbox is chosen", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SideRail />);
+    await user.click(pods());
+    await user.click(inbox());
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
+    expect(inbox()).toHaveAttribute("aria-current", "page");
+  });
+
+  it("marks a tool-panel panel beside Inbox, and neither while settings cover them", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SideRail />);
+    await user.click(notes());
+    expect(notes()).toHaveAttribute("aria-current", "page");
+    expect(inbox()).toHaveAttribute("aria-current", "page");
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(notes()).not.toHaveAttribute("aria-current");
+    expect(inbox()).not.toHaveAttribute("aria-current");
   });
 });

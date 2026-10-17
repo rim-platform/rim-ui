@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -7,6 +7,7 @@ import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
+import type { PluginInfo } from "../../features/plugins/types";
 
 // ── Side-effect / data hooks used directly by AppShell / WorkspaceShell ──
 // Mocked as no-ops so this test exercises only the render tree and the
@@ -55,8 +56,9 @@ vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
 vi.mock("../../features/plugins/web/useWebPluginRuntime", () => ({
   useWebPluginRuntime: () => {},
 }));
+const pluginList = vi.hoisted(() => ({ data: [] as PluginInfo[] }));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
-  usePluginList: () => ({ data: [] }),
+  usePluginList: () => pluginList,
 }));
 vi.mock("../../features/settings/hooks/useStatusExpiration", () => ({
   useStatusExpiration: () => {},
@@ -87,6 +89,9 @@ vi.mock("../../features/messages/components/MessageTimeline", () => ({
   MessageTimeline: () => null,
 }));
 vi.mock("../../features/threads/components/ThreadPanel", () => ({ ThreadPanel: () => null }));
+vi.mock("../../features/conversations/components/ConversationInvitation", () => ({
+  InvitationGate: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 vi.mock("../../features/commands", () => ({
   CommandPalette: () => null,
   KeybindProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -107,14 +112,18 @@ vi.mock("../../features/plugins/registry/components/RegistryHost", () => ({
   RegistryHost: () => null,
 }));
 vi.mock("../../features/plugins/components/PluginSlotContainer", () => ({
-  PluginSlotContainer: () => null,
+  PluginSlotContainer: ({ panel }: { panel: { id: string } }) => (
+    <div data-testid={`plugin-slot-${panel.id}`} />
+  ),
 }));
 vi.mock("../components/WorkspaceRail", () => ({
   WorkspaceRail: () => <div data-testid="workspace-rail" />,
 }));
 vi.mock("../components/SideRail", () => ({ SideRail: () => null }));
 vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => null }));
-vi.mock("../components/ConversationHeader", () => ({ ConversationHeader: () => null }));
+vi.mock("../components/ConversationHeader", () => ({
+  ConversationHeader: () => <div data-testid="conversation-header" />,
+}));
 vi.mock("../../features/settings/components/SettingsPage", () => ({ SettingsPage: () => null }));
 vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
@@ -243,5 +252,63 @@ describe("AppShell — session restore", () => {
     expect(status).toHaveTextContent("Restoring session...");
     expect(status.querySelectorAll(".rim-splash-ball")).toHaveLength(3);
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell — plugin panels and conversation navigation", () => {
+  beforeEach(() => {
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    pluginList.data = [
+      {
+        plugin_id: "chat.rim.k8s-pods",
+        manifest_id: "chat.rim.k8s-pods",
+        display_name: "Kubernetes Pods",
+        version: "1.0.0",
+        description: "",
+        enabled: true,
+        capabilities: [],
+        approved_capabilities: [],
+        approved_ai_commands: [],
+        ai_callable_commands: [],
+        ai_consent_required: false,
+        fingerprint_changed: false,
+        panels: [
+          { id: "pods", title: "Pods", slot: "main_area" },
+          { id: "notes", title: "Notes" },
+        ],
+      },
+    ];
+  });
+
+  afterEach(() => {
+    pluginList.data = [];
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("unmounts a main-area panel and shows the conversation the user opens", () => {
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+    renderShell();
+    expect(screen.getByTestId("plugin-slot-pods")).toBeInTheDocument();
+    expect(screen.queryByTestId("conversation-header")).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
+
+    expect(screen.queryByTestId("plugin-slot-pods")).not.toBeInTheDocument();
+    expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
+  });
+
+  it("keeps a tool-panel panel beside the conversation the user opens", () => {
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "notes", "tool_panel");
+    renderShell();
+    expect(screen.getByTestId("plugin-slot-notes")).toBeInTheDocument();
+
+    act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
+
+    expect(screen.getByTestId("plugin-slot-notes")).toBeInTheDocument();
+    expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
   });
 });

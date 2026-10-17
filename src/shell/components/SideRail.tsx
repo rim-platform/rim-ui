@@ -7,6 +7,7 @@ import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { signOutLocally } from "../../features/auth/runtime/signOut";
+import { panelSlot } from "../../features/plugins/types";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
@@ -33,6 +34,7 @@ export function SideRail() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const activePluginPanel = useShellStore((s) => s.activePluginPanel);
   const openPluginPanel = useShellStore((s) => s.openPluginPanel);
+  const closePluginPanel = useShellStore((s) => s.closePluginPanel);
   const { data: user } = useCurrentUser();
   const { data: plugins } = usePluginList();
   // The open space's unread messages; in a direct space, those of every direct space.
@@ -61,10 +63,15 @@ export function SideRail() {
   const openSearch = useSearchOverlayStore((s) => s.openWithScope);
 
   const notificationsOpen = useNotificationsPanelStore((s) => s.open);
+  // Plugin panels show only on the conversation surface; a main-area one covers the conversation.
+  const panelShown = mainSurface.kind === "conversation" ? activePluginPanel : null;
+  const conversationCovered = panelShown?.slot === "main_area";
 
   function handleRailItemClick(key: "inbox" | "plugins") {
     setMainSurface({ kind: "conversation" });
     setActivePanel(key);
+    // Inbox goes back to the conversation.
+    if (key === "inbox" && conversationCovered) closePluginPanel();
     useNotificationsPanelStore.getState().setOpen(false);
   }
 
@@ -80,7 +87,10 @@ export function SideRail() {
         {railItems.map((item) => {
           const Icon = item.icon;
           const active =
-            mainSurface.kind === "conversation" && activePanel === item.key && !notificationsOpen;
+            mainSurface.kind === "conversation" &&
+            activePanel === item.key &&
+            !notificationsOpen &&
+            !(item.key === "inbox" && conversationCovered);
           const badge = item.key === "inbox" && totalUnread > 0 ? totalUnread : 0;
           return (
             <button
@@ -89,6 +99,7 @@ export function SideRail() {
               onClick={() => handleRailItemClick(item.key)}
               title={item.label}
               aria-label={badge ? `${item.label} (${badge} unread)` : item.label}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "relative rounded-xl p-2.5 transition",
                 active
@@ -116,14 +127,15 @@ export function SideRail() {
             <div className="my-1 h-px w-6 bg-rim-line" />
             {pluginPanels.map(({ pluginId, pluginName, panel }) => {
               const isActive =
-                activePluginPanel?.pluginId === pluginId && activePluginPanel?.panelId === panel.id;
+                panelShown?.pluginId === pluginId && panelShown?.panelId === panel.id;
               return (
                 <button
                   key={`${pluginId}-${panel.id}`}
                   type="button"
-                  onClick={() => openPluginPanel(pluginId, panel.id)}
+                  onClick={() => openPluginPanel(pluginId, panel.id, panelSlot(panel))}
                   title={`${pluginName}: ${panel.title}`}
                   aria-label={`${pluginName}: ${panel.title}`}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "rounded-xl p-2.5 transition",
                     isActive

@@ -122,6 +122,21 @@ describe("Composer in a draft DM", () => {
     expect(useDraftStore.getState().drafts).toEqual({});
   });
 
+  it("leaves open a main-area plugin panel the user opened while the first message was sending", async () => {
+    session.e2eeSession.mockResolvedValue(null);
+    serve({
+      "mutation CreateConversation": () => ({ createConversation: created(null) }),
+      "mutation SendMessage": () => {
+        useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+        return { sendMessage: { id: "m-1" } };
+      },
+    });
+    await sendFirst("hello Bob");
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-new"));
+    expect(useShellStore.getState().activePluginPanel).toMatchObject({ panelId: "pods" });
+  });
+
   it("creates the group before the first encrypted message goes out", async () => {
     session.e2eeSession.mockResolvedValue(device);
     sendEncrypted.mockResolvedValue("m-1");

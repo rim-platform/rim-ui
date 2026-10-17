@@ -207,6 +207,21 @@ describe("ConversationList — channels sidebar", () => {
     expect(screen.queryByText("New message to Bob")).not.toBeInTheDocument();
   });
 
+  it("opens its first conversation under a main-area plugin panel, and closes the panel when one is clicked", async () => {
+    useShellStore.setState({ selectedConversationId: null });
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+    serve();
+    const user = userEvent.setup();
+    renderList();
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+    expect(useShellStore.getState().activePluginPanel).not.toBeNull();
+
+    await user.click(await screen.findByText("secret"));
+    expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
+  });
+
   it("asks for joined channels including archived ones", async () => {
     serve();
     renderList();
