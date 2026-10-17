@@ -24,7 +24,8 @@ pub enum LifecycleError {
     UnknownAiCommand(String),
     #[error("manifest changed — re-consent required for AI commands")]
     AiConsentRequired,
-    /// Bundle fingerprint changed since TOFU install — user must trust new version.
+    /// The bundle fingerprint differs from the one trusted at install; the user
+    /// must trust the new version.
     #[error("plugin bundle fingerprint changed since install: {0}")]
     FingerprintChanged(String),
     /// A `WebSandboxed` plugin's installed files break the bundle rules.
@@ -37,7 +38,7 @@ impl serde::Serialize for LifecycleError {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(None)?;
         match self {
-            // Preserve inner typed ValidationError so JS can pattern-match on
+            // Keep the inner typed ValidationError so the UI can pattern-match on
             // `{kind: "INVALID_MANIFEST", data: {kind: "INSTALL_ID_LEAK", ...}}`.
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
@@ -91,7 +92,15 @@ pub fn install(
     Ok(())
 }
 
-/// Returns Err(AiConsentRequired) if the manifest's ai_callable set changed since last install.
+/// Checks whether the AI commands of `manifest` need the user's consent again.
+///
+/// A plugin with no record needs none.
+///
+/// # Errors
+///
+/// Returns [`LifecycleError::AiConsentRequired`] when the manifest's content
+/// hash differs from the recorded one and either the manifest declares
+/// `ai_callable` commands or the record holds approved ones.
 pub fn check_ai_consent_required(
     store: &PluginStateStore,
     manifest: &PluginManifest,
@@ -193,7 +202,7 @@ pub fn approve_capabilities(
         .ok_or_else(|| LifecycleError::NotFound(manifest.plugin_id.clone()))?
         .clone();
 
-    // Verify all requested capabilities are declared in the manifest
+    // Every requested capability must be declared in the manifest.
     for cap in capabilities {
         if !manifest.capabilities.contains(cap) {
             return Err(LifecycleError::UnknownCapability(cap.clone()));
@@ -237,7 +246,7 @@ pub fn revoke_capability(
     }
     approved.retain(|c| c != capability);
 
-    // If we revoked a capability while plugin is enabled, disable it
+    // Revoking a capability of an enabled plugin disables it.
     let new_status = if record.status == PluginStatus::Enabled {
         PluginStatus::Disabled
     } else {
@@ -269,7 +278,7 @@ pub fn enable(store: &mut PluginStateStore, plugin_id: &str) -> Result<(), Lifec
         PluginStatus::Error => {}
     }
 
-    // Enabling is the user retrying, so a start the app died in no longer blocks it.
+    // Enabling is the user retrying, so it clears the mark of a start the app died in.
     store.upsert(PluginRecord {
         status: PluginStatus::Enabled,
         last_error: None,
@@ -474,12 +483,12 @@ mod tests {
         assert!(matches!(err, LifecycleError::UnknownCapability(_)));
     }
 
-    // ── Phase 1 regression: install path is actually gated ──
+    // ── install runs install validation ──
 
     #[test]
     fn install_rejects_invalid_capability_key_and_leaves_no_record() {
         let mut store = PluginStateStore::default();
-        // N1: capability key that does not match plugin.<id>. prefix
+        // A capability key in a reserved namespace, outside `plugin.<id>.`.
         let manifest = PluginManifest {
             manifest_version: 1,
             plugin_id: "dev.example.test".into(),
@@ -518,7 +527,7 @@ mod tests {
             "type": "object",
             "properties": { "plugin_install_id": { "type": "string" } }
         });
-        // F2: ai_callable command whose output_schema leaks install-ID
+        // An ai_callable command whose output_schema leaks the install ID.
         let manifest = PluginManifest {
             manifest_version: 1,
             plugin_id: "dev.example.test".into(),

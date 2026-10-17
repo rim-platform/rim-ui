@@ -27,29 +27,29 @@ use tauri::{Emitter, State};
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginInfo {
     pub plugin_id: String,
-    /// Mirror of the manifest's `plugin_id` field — identical to `plugin_id` for
-    /// well-formed plugins, exposed separately so the TS shape can reference it
-    /// without re-deriving it from the runtime record.
+    /// The manifest's `plugin_id`, identical to `plugin_id` for well-formed
+    /// plugins, exposed separately so the TS shape can reference it without
+    /// re-deriving it from the runtime record.
     pub manifest_id: String,
     pub display_name: String,
     pub version: String,
     pub description: String,
     pub author: Option<String>,
     pub status: PluginStatus,
-    /// Derived server-side — do NOT recompute in TypeScript.
+    /// Whether `status` is `Enabled`, derived here so the UI does not recompute it.
     pub enabled: bool,
     pub capabilities: Vec<String>,
     pub approved_capabilities: Vec<String>,
     pub approved_ai_commands: Vec<String>,
-    /// The subset of manifest commands that are flagged `ai_callable: true`.
-    /// Populated from the manifest at list-time so JS never needs to fish into
-    /// a nested manifest shape.
+    /// The ids of the manifest commands flagged `ai_callable: true`, taken from
+    /// the manifest at list time so the UI never reads a nested manifest shape.
     pub ai_callable_commands: Vec<String>,
-    /// True when the manifest changed since last consent — UI must prompt re-approval.
+    /// True when the manifest changed since the last consent; the UI must ask
+    /// for approval again.
     pub ai_consent_required: bool,
-    /// True when the bundle fingerprint on disk differs from the TOFU fingerprint
-    /// recorded at install time.  The UI must surface a warning and require the
-    /// user to explicitly trust the new version before spawning.
+    /// True when the bundle fingerprint on disk differs from the one recorded and
+    /// trusted at install. The UI must surface a warning and require the user to
+    /// explicitly trust the new version before spawning.
     pub fingerprint_changed: bool,
     /// The bundle fingerprint computed from disk for this listing, when the
     /// plugin has a pinned fingerprint and its files could be read.
@@ -92,8 +92,8 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
             .map(|m| lifecycle::check_ai_consent_required(&store, m).is_err())
             .unwrap_or(false);
 
-        // Recompute bundle fingerprint from disk if we have a pinned fingerprint stored.
-        // A mismatch means the bundle changed since install — surface FingerprintChanged.
+        // Recompute the bundle fingerprint from disk when one is pinned; a mismatch
+        // means the bundle changed since install.
         let mut current_fingerprint = None;
         let fingerprint_changed = if !record.bundle_fingerprint.is_empty() {
             if let Some(plugin_dir) = dirs.get(id) {
@@ -103,13 +103,13 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                         current_fingerprint = Some(current_fp);
                         changed
                     }
-                    Err(_) => false, // IO error — don't surface spurious warnings
+                    Err(_) => false, // IO error: no spurious warning
                 }
             } else {
                 record.fingerprint_changed
             }
         } else {
-            // No pinned fingerprint (e.g. installed before TOFU was added) — use stored flag.
+            // No pinned fingerprint: use the stored flag.
             record.fingerprint_changed
         };
 
@@ -226,8 +226,8 @@ pub fn plugin_enable(
     plugin_id: String,
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
-    // Retrieve the manifest before taking the store lock so we can pass it to
-    // runtime::start_plugin without holding both locks simultaneously.
+    // Take the manifest before the store lock so it can be passed to
+    // runtime::start_plugin without holding both locks at once.
     let manifest = {
         let manifests = state
             .manifests
@@ -239,9 +239,9 @@ pub fn plugin_enable(
             .clone()
     };
 
-    // Fingerprint check — recompute and compare against the TOFU fingerprint.
-    // If a mismatch is found, update the fingerprint_changed flag in the store and
-    // return a FingerprintChanged error so the frontend can surface the warning.
+    // Recompute the fingerprint and compare it with the one trusted at install.
+    // On a mismatch, set fingerprint_changed in the store and return
+    // FingerprintChanged so the UI can surface the warning.
     {
         let plugin_dir_opt = {
             let dirs = state
@@ -266,7 +266,7 @@ pub fn plugin_enable(
             if !stored_fingerprint.is_empty() {
                 match local_install::compute_bundle_fingerprint(&plugin_dir) {
                     Ok(current_fp) if current_fp != stored_fingerprint => {
-                        // Fingerprint mismatch — mark in store and return error so UI warns.
+                        // Mismatch: mark it in the store and fail so the UI warns.
                         let mut store = state.store.lock().map_err(|e| {
                             LifecycleError::Io(std::io::Error::other(e.to_string()))
                         })?;
@@ -283,9 +283,9 @@ pub fn plugin_enable(
                         );
                         return Err(LifecycleError::FingerprintChanged(plugin_id));
                     }
-                    Ok(_) => {} // fingerprint matches — proceed
+                    Ok(_) => {} // fingerprint matches
                     Err(e) => {
-                        // IO error during fingerprint check — log but do not block enable.
+                        // An IO error during the check is logged and does not block enabling.
                         log::warn!(
                             "[plugin_host] fingerprint check failed for {}: {}",
                             plugin_id,
@@ -306,13 +306,13 @@ pub fn plugin_enable(
         store.save(&state.state_path)?;
     }
 
-    // Spawn the plugin process and connect the broker loop.
-    // A non-fatal error here (e.g. entrypoint missing) is logged but does not
-    // roll back the Enabled status — the user can retry or uninstall.
+    // Spawn the plugin process and connect the broker loop. An error here (for
+    // example a missing entrypoint) is logged and does not roll back the Enabled
+    // status; the user can retry or uninstall.
     match runtime::start_plugin(&plugin_id, &manifest, &state) {
         Ok(()) => {}
         Err(runtime::RuntimeError::AlreadyRunning(_)) => {
-            // Idempotent — broker loop is already up (e.g. double-enable call).
+            // The broker loop is already up, for example after a double enable.
         }
         Err(e) => {
             log::warn!(
@@ -332,7 +332,7 @@ pub async fn plugin_disable(
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
     // Stop the broker loop before updating the lifecycle status so the process
-    // is gone by the time we persist the Disabled state.
+    // is gone by the time the Disabled state is persisted.
     runtime::stop_plugin(&plugin_id, &state)
         .await
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
@@ -412,10 +412,10 @@ enum PluginFolder {
     Kept,
 }
 
-/// Uninstall the stopped plugin `plugin_id`: disable it when enabled, move the
-/// folder the app installed it into to the trash, then drop its record and
+/// Uninstalls the stopped plugin `plugin_id`: disables it when enabled, moves the
+/// folder the app installed it into to the trash, then drops its record and
 /// audit. A folder that cannot be moved keeps the record, disabled, so the user
-/// can retry.
+/// can retry. Returns what happened to the folder.
 fn uninstall_stopped(
     store: &mut PluginStateStore,
     plugin_id: &str,
@@ -439,7 +439,7 @@ fn uninstall_stopped(
     Ok(folder)
 }
 
-/// Move `<plugins_root>/<plugin_id>` to the trash when the app installed the
+/// Moves `<plugins_root>/<plugin_id>` to the trash when the app installed the
 /// plugin (`installed_by_app`), the id is a safe path segment and the folder is
 /// the one discovery recorded for it. A symlink there loses the link, never its
 /// target, and is not moved.
@@ -539,7 +539,7 @@ pub async fn plugin_revoke_capability(
     Ok(())
 }
 
-/// Revoke a capability, stopping the plugin first if it is running.
+/// Revokes a capability, stopping the plugin first if it is running.
 ///
 /// Revoking disables the plugin (`lifecycle::revoke_capability`). The process
 /// has to stop as well: its broker checks the plugin's own calls against the
@@ -560,7 +560,7 @@ pub(crate) async fn revoke_capability_and_stop(
     lifecycle::revoke_capability(&mut store, plugin_id, capability)
 }
 
-/// Install a plugin from a git repository.
+/// Installs a plugin from a git repository.
 ///
 /// `url`/`branch` are validated before git runs (`INVALID_GIT_URL` /
 /// `INVALID_GIT_BRANCH`). If the plugin needs dependency-install steps and
@@ -592,7 +592,7 @@ pub async fn plugin_install_from_git(
     )
     .await?;
 
-    // Register in manifests and plugin_dirs caches
+    // Register in the manifests and plugin_dirs caches.
     {
         let mut manifests = state
             .manifests
@@ -608,15 +608,15 @@ pub async fn plugin_install_from_git(
         dirs.insert(manifest.plugin_id.clone(), final_dir);
     }
 
-    // Auto-install in lifecycle (sets status to Installed)
+    // Record the install in the lifecycle (status Installed).
     {
         let mut store = state
             .store
             .lock()
             .map_err(|e| GitInstallError::Io(std::io::Error::other(e.to_string())))?;
         lifecycle::install(&mut store, &manifest).map_err(|e| match e {
-            // Surface InvalidManifest typed so JS can distinguish N1/F2 rejection
-            // from a generic lifecycle or IO failure.
+            // Keep InvalidManifest typed so the UI can tell a manifest that failed
+            // install validation from a generic lifecycle or IO failure.
             lifecycle::LifecycleError::InvalidManifest(v) => GitInstallError::InvalidManifest(v),
             other => GitInstallError::LifecycleFailure(other.to_string()),
         })?;
@@ -632,7 +632,7 @@ pub async fn plugin_install_from_git(
     Ok(result)
 }
 
-/// Update a git-installed plugin. Same consent contract as
+/// Updates a git-installed plugin, with the same consent contract as
 /// [`plugin_install_from_git`]: without `allow_post_install: true`, an update
 /// that needs npm/pip steps fails with `POST_INSTALL_CONSENT_REQUIRED` before
 /// the working tree is advanced.
@@ -681,7 +681,7 @@ pub async fn plugin_update(
     )
     .await?;
 
-    // Update manifests cache
+    // Update the manifests cache.
     {
         let mut manifests = state
             .manifests
@@ -721,7 +721,7 @@ pub fn plugin_relay_ui_event(
     data: serde_json::Value,
     state: State<'_, PluginHostState>,
 ) -> Result<(), String> {
-    // Verify plugin owns this panel
+    // The plugin must declare this panel.
     let manifests = state.manifests.lock().map_err(|e| e.to_string())?;
     if let Some(manifest) = manifests.get(&plugin_id) {
         let panel_ids: Vec<&str> = manifest.panels.iter().map(|p| p.id.as_str()).collect();
@@ -736,7 +736,7 @@ pub fn plugin_relay_ui_event(
     }
     drop(manifests);
 
-    // Queue the UI event for delivery to the plugin process
+    // Queue the UI event for delivery to the plugin process.
     let mut pending = state.pending_ui_events.lock().map_err(|e| e.to_string())?;
     pending.push(PendingUiEvent {
         plugin_id,
@@ -819,7 +819,7 @@ pub fn plugin_revoke_ai_consent(
     Ok(())
 }
 
-/// Run a plugin command from the palette, a keybind, a context menu or a panel.
+/// Runs a plugin command from the palette, a keybind, a context menu or a panel.
 ///
 /// The UI splits `plugin.<plugin_id>.<command>` ids naively; the host resolves
 /// the pair against installed manifests (see [`command_exec::resolve_command`]).
@@ -854,9 +854,9 @@ pub async fn plugin_execute_command(
     Ok(result.into())
 }
 
-/// Invoke a plugin AI command on behalf of the LLM agent.
+/// Invokes a plugin AI command on behalf of the LLM agent.
 ///
-/// This is the **server-side security boundary** — the JS-side consent filter in
+/// This is the **host-side security boundary** — the JS-side consent filter in
 /// `loader.ts` is a UX optimisation only. This command re-checks:
 /// 1. The command is in `approved_ai_commands` for this plugin.
 /// 2. The manifest has not drifted since consent was granted (`check_ai_consent_required`).
@@ -927,7 +927,7 @@ impl SignedInUser {
     }
 }
 
-/// Tell the plugin host who is signed in (`None` after sign-out).
+/// Tells the plugin host who is signed in (`None` after sign-out).
 ///
 /// The account id never leaves the host: plugins get the derived
 /// [`Principal`] in the handshake, in every `rim.command.execute`, and in a
@@ -960,7 +960,8 @@ pub async fn plugin_set_principal(
     Ok(())
 }
 
-/// AI consent gates for [`plugin_run_ai_command`].
+/// Checks the AI consent gates of [`plugin_run_ai_command`]: the manifest has
+/// not drifted since consent, and `command_id` is approved.
 fn check_ai_consent(
     state: &PluginHostState,
     plugin_id: &str,
@@ -999,7 +1000,7 @@ fn check_ai_consent(
     Ok(())
 }
 
-/// Install a plugin from a local folder on disk.
+/// Installs a plugin from a local folder on disk.
 ///
 /// Mirrors the shape of [`plugin_install_from_git`] but copies rather than
 /// cloning.  The source folder must contain a `rim-plugin.json` (or a
@@ -1008,10 +1009,11 @@ fn check_ai_consent(
 /// Steps executed (see [`local_install::install_from_local`] for full detail):
 /// 1. Path-traversal guard (per-segment + canonicalize prefix assertion).
 /// 2. Manifest detection and structural validation.
-/// 3. N1 + F2 security validation.
+/// 3. Install validation: capability key shape, the install-ID leak check and
+///    the kind's rules.
 /// 4. Reserved-prefix check.
 /// 5. Collision check against already-installed plugin IDs.
-/// 6. TOFU bundle fingerprint computation.
+/// 6. Bundle fingerprint computation, trusted on first use.
 /// 7. Recursive copy into `~/.rim/plugins/<plugin_id>/`.
 /// 8. Lifecycle registration as `Installed` (user enables explicitly).
 ///
@@ -1061,7 +1063,7 @@ pub async fn plugin_install_from_local(
         dirs.insert(manifest.plugin_id.clone(), final_dir);
     }
 
-    // Auto-install in lifecycle (sets status to Installed) and persist TOFU fingerprint.
+    // Record the install in the lifecycle (status Installed) with its fingerprint.
     {
         let mut store = state
             .store
@@ -1072,7 +1074,7 @@ pub async fn plugin_install_from_local(
             other => LocalInstallError::LifecycleFailure(other.to_string()),
         })?;
 
-        // Update the record to include the TOFU bundle fingerprint.
+        // Store the bundle fingerprint trusted on first use.
         if let Some(record) = store.get(&manifest.plugin_id).cloned() {
             store.upsert(crate::plugin_host::state::PluginRecord {
                 bundle_fingerprint,
@@ -1089,11 +1091,11 @@ pub async fn plugin_install_from_local(
     Ok(result)
 }
 
-/// Accept the new bundle fingerprint for a plugin whose fingerprint has changed.
+/// Accepts the new bundle fingerprint of a plugin whose fingerprint has changed.
 ///
 /// This is the "Trust new version" action in the UI.  It:
 /// 1. Recomputes the current on-disk fingerprint.
-/// 2. Persists it as the new TOFU baseline.
+/// 2. Persists it as the new trusted fingerprint.
 /// 3. Clears the `fingerprint_changed` flag.
 ///
 /// The plugin is NOT automatically enabled — the user must enable it separately.
@@ -1147,9 +1149,10 @@ pub fn plugin_trust_fingerprint(
     Ok(())
 }
 
-/// Install a `.rimbundle` the UI fetched (from a pasted link, or a registry
-/// entry it verified): check its hash, read it, validate its manifest for this
-/// host, then unpack it into the plugins directory and record its fingerprint.
+/// Installs a `.rimbundle` the UI fetched (from a pasted link, or a registry
+/// entry it verified): checks its hash, reads it, validates its manifest for
+/// this host, then unpacks it into the plugins directory and records its
+/// fingerprint.
 ///
 /// `bundle` is the file's bytes in standard base64 and `sha256` the hash the
 /// link or entry names; `manifest`, when given, is the signed manifest the
@@ -1265,7 +1268,7 @@ pub struct WebPluginFile {
     pub base64: String,
 }
 
-/// Read an installed `WebSandboxed` plugin's bundle files (the manifest, the
+/// Reads an installed `WebSandboxed` plugin's bundle files (the manifest, the
 /// entrypoint and `panels/`, nothing else of its folder) after checking its
 /// fingerprint against the one recorded at install, as enabling a process does,
 /// and the bundle rules.
@@ -1333,7 +1336,7 @@ pub fn plugin_web_files(
     })
 }
 
-/// Read the files of an enabled `DesktopLocalProcess` plugin's panel, with
+/// Reads the files of an enabled `DesktopLocalProcess` plugin's panel, with
 /// paths relative to `panels/<panel_id>/`, for the frame shell to render.
 #[tauri::command]
 pub fn plugin_panel_files(
@@ -1400,7 +1403,7 @@ fn local_panel_files(
         .collect())
 }
 
-/// Set or clear the marker the UI keeps while it starts a `WebSandboxed` plugin.
+/// Sets or clears the marker the UI keeps while it starts a `WebSandboxed` plugin.
 #[tauri::command]
 pub fn plugin_set_starting(
     plugin_id: String,
@@ -1512,7 +1515,7 @@ pub fn plugin_chat_respond(
     state.chat_relay.respond(request_id, reply)
 }
 
-/// Count `count` encrypted messages the message service gave `plugin_id` today.
+/// Counts `count` encrypted messages the message service gave `plugin_id` today.
 #[tauri::command]
 pub fn plugin_record_encrypted_reads(
     plugin_id: String,

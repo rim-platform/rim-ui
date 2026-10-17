@@ -23,7 +23,7 @@ pub struct PluginRecord {
     #[serde(default)]
     pub manifest_hash: String,
     /// SHA-256 hex of the entire bundle contents (all files, sorted deterministically)
-    /// recorded at install time (TOFU fingerprint). At enable time this is recomputed
+    /// recorded and trusted at install. At enable time this is recomputed
     /// and compared; a mismatch surfaces a `FingerprintChanged` warning before spawning.
     #[serde(default)]
     pub bundle_fingerprint: String,
@@ -32,7 +32,7 @@ pub struct PluginRecord {
     #[serde(default)]
     pub fingerprint_changed: bool,
     pub last_error: Option<String>,
-    /// Where the plugin was installed from; `None` for records older than this field.
+    /// Where the plugin was installed from; `None` when that is not known.
     #[serde(default)]
     pub source: Option<InstallSource>,
     /// Set while the app starts a `WebSandboxed` plugin and cleared after its
@@ -155,7 +155,7 @@ impl PluginStateStore {
         self.plugins.remove(plugin_id)
     }
 
-    /// Note that `capability` was given to or taken back from `plugin_id` at `at`.
+    /// Records that `capability` was given to or taken back from `plugin_id` at `at`.
     pub fn record_grant(
         &mut self,
         plugin_id: &str,
@@ -173,7 +173,7 @@ impl PluginStateStore {
         audit.grants.drain(..excess);
     }
 
-    /// Add `count` encrypted messages read by `plugin_id` on the UTC day of `at`.
+    /// Adds `count` encrypted messages read by `plugin_id` on the UTC day of `at`.
     pub fn record_encrypted_reads(
         &mut self,
         plugin_id: &str,

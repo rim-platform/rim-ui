@@ -122,7 +122,7 @@ fn assert_no_raw_ids(frame: &Value) {
     walk(frame, frame);
 }
 
-/// Start a broker loop for HELLO_WORLD on an in-memory pipe; the other end plays the plugin.
+/// Starts a broker loop for HELLO_WORLD on an in-memory pipe; the other end plays the plugin.
 fn connect(state: Option<&PluginHostState>) -> (PluginClient, DuplexStream, Shutdown) {
     let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
     let (reader, writer) = tokio::io::split(host_end);
@@ -167,7 +167,7 @@ fn hello_world_manifest() -> PluginManifest {
     PluginManifest::load(&hello_world_dir().join("rim-plugin.json")).expect("hello-world manifest")
 }
 
-/// Make `actual`'s integer request id comparable with the example's.
+/// Makes `actual`'s integer request id comparable with the example's.
 fn with_id_of(mut actual: Value, example: &Value) -> Value {
     assert!(
         actual["id"].as_i64().is_some_and(|id| id >= 1),
@@ -443,7 +443,7 @@ async fn host_errors_are_error_responses() {
 
 // ── The reference plugin ──
 
-/// Read plugin frames until a response arrives, checking every `rim.log` on the way.
+/// Reads plugin frames until a response arrives, checking every `rim.log` on the way.
 async fn next_response(stdout: &mut (impl tokio::io::AsyncRead + Unpin)) -> Value {
     loop {
         let frame = tokio::time::timeout(WAIT, wire::read_raw_frame(stdout))
@@ -469,7 +469,7 @@ async fn ask(
     response
 }
 
-/// Wait for a plugin that was told to exit, failing after fifteen seconds.
+/// Waits for a plugin that was told to exit, failing after fifteen seconds.
 async fn wait_for_exit(process: &mut PluginProcess) -> std::process::ExitStatus {
     for _ in 0..750 {
         if let Some(status) = process.try_wait().unwrap() {

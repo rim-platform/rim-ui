@@ -97,7 +97,7 @@ pub struct ChatCall {
 }
 
 impl ChatCall {
-    /// Wait for the UI's answer, as the response to the plugin.
+    /// Waits for the UI's answer and returns it as the response to the plugin.
     pub async fn run(self) -> JsonRpcResponse {
         match self
             .relay
@@ -141,7 +141,7 @@ impl PluginBroker {
         self
     }
 
-    /// Handle an incoming JSON-RPC request from the plugin, waiting for a relayed
+    /// Handles an incoming JSON-RPC request from the plugin, waiting for a relayed
     /// chat call's answer.
     #[cfg(test)]
     pub async fn handle_request(&mut self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -151,7 +151,7 @@ impl PluginBroker {
         }
     }
 
-    /// Admit a request (capability, rate limit) and answer it, or hand back the
+    /// Admits a request (capability, rate limit) and answers it, or hands back the
     /// chat call that answers it.
     pub async fn route(&mut self, request: &JsonRpcRequest) -> Routed {
         match self.refusal(request) {
@@ -178,7 +178,7 @@ impl PluginBroker {
 
     /// The error answer of a request the capability gate or its rate limit refuses.
     fn refusal(&mut self, request: &JsonRpcRequest) -> Option<JsonRpcResponse> {
-        // Check capability
+        // Check the capability.
         if let Err(required_cap) = self.gate.check(&request.method) {
             log::warn!(
                 "plugin {} denied: method={} requires capability={}",
@@ -193,7 +193,7 @@ impl PluginBroker {
             ));
         }
 
-        // Check rate limit
+        // Check the rate limit.
         if let Some(cap) = capability::capability_for_method(&request.method) {
             let cap_string = cap.to_string();
             let limit = self
@@ -286,7 +286,7 @@ impl PluginBroker {
             }
         };
 
-        // Verify this plugin owns the panel
+        // The plugin must own the panel.
         if !self.manifest_panel_ids.contains(&panel_id) {
             return JsonRpcResponse::error(
                 request.id.clone(),
@@ -373,16 +373,22 @@ pub struct PluginClient {
 }
 
 impl PluginClient {
-    /// Create a client and the receiver to pass to [`run_broker_loop`].
+    /// Creates a client and the receiver to pass to [`run_broker_loop`].
     pub fn channel() -> (Self, mpsc::Receiver<OutboundRequest>) {
         let (tx, rx) = mpsc::channel(OUTBOUND_QUEUE);
         (Self { tx }, rx)
     }
 
-    /// Send `method` to the plugin and wait up to `wait` for its result.
+    /// Sends `method` to the plugin and waits up to `wait` for its result.
     ///
     /// Dropping the returned future (or timing out) abandons the request; the
     /// broker loop discards the plugin's late response.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RequestError::Closed`] when the broker loop is gone,
+    /// [`RequestError::TimedOut`] after `wait`, and [`RequestError::Plugin`] when
+    /// the plugin answers with a JSON-RPC error.
     pub async fn request(
         &self,
         method: &str,
@@ -411,9 +417,11 @@ impl PluginClient {
         }
     }
 
-    /// Send `method` to the plugin as a notification, without waiting for anything.
+    /// Sends `method` to the plugin as a notification, without waiting for anything.
     ///
-    /// Fails with [`RequestError::Closed`] when the broker loop is gone.
+    /// # Errors
+    ///
+    /// Returns [`RequestError::Closed`] when the broker loop is gone.
     pub async fn notify(
         &self,
         method: &str,
@@ -479,7 +487,7 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// Run the broker loop for one plugin connection until shutdown or disconnect.
+/// Runs the broker loop for one plugin connection until shutdown or disconnect.
 ///
 /// The loop owns the plugin's stdin and is the only writer. A separate task reads
 /// stdout frame by frame (a partially read frame is never cancelled), and the loop
@@ -835,21 +843,21 @@ mod tests {
         );
 
         // No handler serves the method, so the call fails at dispatch, but rate limiting
-        // happens before dispatch. First two calls should pass capability + rate check.
+        // happens before dispatch. The first two calls pass the capability and rate checks.
         let req = JsonRpcRequest::new(
             "rim.chat.post_message",
             Some(serde_json::json!({"conversationId": "b", "body": "c"})),
             1,
         );
 
-        // Call 1 and 2 — should pass rate limit (fail at dispatch with METHOD_NOT_FOUND)
+        // Calls 1 and 2 pass the rate limit and fail at dispatch with METHOD_NOT_FOUND.
         let resp1 = broker.handle_request(&req).await;
         assert_eq!(resp1.error.as_ref().unwrap().code, METHOD_NOT_FOUND);
 
         let resp2 = broker.handle_request(&req).await;
         assert_eq!(resp2.error.as_ref().unwrap().code, METHOD_NOT_FOUND);
 
-        // Call 3 — should be rate limited
+        // Call 3 is rate limited.
         let resp3 = broker.handle_request(&req).await;
         assert_eq!(resp3.error.as_ref().unwrap().code, RATE_LIMITED);
     }
@@ -858,7 +866,7 @@ mod tests {
 
     type PluginSide = tokio::io::DuplexStream;
 
-    /// Start a broker loop on one end of an in-memory pipe; the other end plays the plugin.
+    /// Starts a broker loop on one end of an in-memory pipe; the other end plays the plugin.
     fn spawn_loop() -> (PluginClient, PluginSide, tokio::sync::watch::Sender<bool>) {
         let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
         let (reader, writer) = tokio::io::split(host_end);

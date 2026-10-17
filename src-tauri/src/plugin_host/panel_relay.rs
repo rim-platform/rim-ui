@@ -32,9 +32,9 @@ impl serde::Serialize for PanelRelayError {
     }
 }
 
-/// Caches panel state per plugin per panel.
-/// Plugin process sends state updates via wire protocol, host caches
-/// and forwards to the iframe panel via postMessage (frontend side).
+/// Caches panel state per plugin per panel. The plugin process sends state
+/// updates over the wire protocol; the host caches them and the UI forwards
+/// them to the panel's iframe with postMessage.
 pub struct PanelRelay {
     /// plugin_id -> (panel_id -> state JSON)
     states: RwLock<HashMap<String, HashMap<String, serde_json::Value>>>,
@@ -63,7 +63,13 @@ impl PanelRelay {
         });
     }
 
-    /// Full replace of panel state for a plugin's panel.
+    /// Replaces the state of a plugin's panel.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PanelRelayError::StateTooLarge`] when the plugin's states would
+    /// exceed the size limit, and [`PanelRelayError::LockPoisoned`] when the
+    /// cache lock is poisoned.
     pub fn set_state(
         &self,
         plugin_id: &str,
@@ -85,7 +91,15 @@ impl PanelRelay {
         Ok(())
     }
 
-    /// Patch (shallow merge) panel state — merges top-level keys.
+    /// Patches the state of a plugin's panel with a shallow merge of top-level
+    /// keys, and returns the merged state. A patch over a state that is not an
+    /// object replaces it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PanelRelayError::StateTooLarge`] when the merged states exceed
+    /// the size limit, in which case the panel's state is removed, and
+    /// [`PanelRelayError::LockPoisoned`] when the cache lock is poisoned.
     pub fn patch_state(
         &self,
         plugin_id: &str,
@@ -101,22 +115,22 @@ impl PanelRelay {
             .entry(panel_id.to_string())
             .or_insert_with(|| serde_json::json!({}));
 
-        // Shallow merge: only merge if both are objects
+        // Shallow merge, only when both are objects.
         if let (Some(current_obj), Some(patch_obj)) = (current.as_object_mut(), patch.as_object()) {
             for (key, value) in patch_obj {
                 current_obj.insert(key.clone(), value.clone());
             }
         } else {
-            // If current isn't an object, replace entirely
+            // A current state that is not an object is replaced entirely.
             *current = patch;
         }
 
         let merged = current.clone();
 
-        // Check size after merge
+        // Check the size after the merge.
         let total = self.total_size_for_plugin_inner(&states, plugin_id);
         if total > MAX_STATE_SIZE_BYTES {
-            // Rollback by removing the panel state
+            // Roll back by removing the panel state.
             if let Some(ps) = states.get_mut(plugin_id) {
                 ps.remove(panel_id);
             }
@@ -128,7 +142,11 @@ impl PanelRelay {
         Ok(merged)
     }
 
-    /// Get cached state for a plugin's panel.
+    /// Returns the cached state of a plugin's panel, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PanelRelayError::LockPoisoned`] when the cache lock is poisoned.
     pub fn get_state(
         &self,
         plugin_id: &str,
@@ -144,7 +162,11 @@ impl PanelRelay {
             .cloned())
     }
 
-    /// Clean up all state for a plugin (on disable/uninstall/crash).
+    /// Drops all state of a plugin (on disable, uninstall or crash).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PanelRelayError::LockPoisoned`] when the cache lock is poisoned.
     pub fn cleanup_plugin(&self, plugin_id: &str) -> Result<(), PanelRelayError> {
         let mut states = self
             .states
@@ -174,7 +196,8 @@ impl PanelRelay {
             .map_err(|_| PanelRelayError::LockPoisoned)?;
         let existing_size = self.total_size_for_plugin_inner(&states, plugin_id);
 
-        // Approximate: new state replaces one panel, but we check total conservatively
+        // Conservative: the new state replaces one panel's, but is checked
+        // against the plugin's whole total.
         if existing_size + new_size > MAX_STATE_SIZE_BYTES {
             return Err(PanelRelayError::StateTooLarge(existing_size + new_size));
         }

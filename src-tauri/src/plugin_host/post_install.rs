@@ -1,4 +1,5 @@
-//! Post-install (dependency install) steps for git-installed plugins (S-H3).
+//! Post-install (dependency install) steps for git-installed plugins, and the
+//! consent gate in front of them.
 //!
 //! `npm install` and `pip install` execute code chosen by the plugin author
 //! (`preinstall`/`postinstall` scripts, `setup.py`, build backends) with the
@@ -49,11 +50,12 @@ impl PostInstallStep {
     }
 }
 
-/// Steps implied by a set of top-level file names, to be run in `run_dir`.
+/// Returns the steps implied by a set of top-level file names, to be run in
+/// `run_dir`.
 ///
-/// The keys are the same files the host has always keyed on: `package.json`
-/// triggers `npm install --production`, `requirements.txt` triggers
-/// `pip install -r requirements.txt --user`. Order is stable (npm, then pip).
+/// `package.json` triggers `npm install --production`, `requirements.txt`
+/// triggers `pip install -r requirements.txt --user`. Order is stable (npm,
+/// then pip).
 pub fn steps_for_top_level_files<S: AsRef<str>>(
     names: &[S],
     run_dir: &Path,
@@ -95,7 +97,7 @@ pub fn package_json_needs_install(bytes: &[u8]) -> bool {
         })
 }
 
-/// Steps implied by the files present in `scan_dir`, to be run in `run_dir`
+/// Returns the steps implied by the files present in `scan_dir`, to be run in `run_dir`
 /// (they differ during install: scanned in staging, run in the final dir). A
 /// `package.json` with nothing for npm to install implies no step.
 pub fn detect_steps(scan_dir: &Path, run_dir: &Path) -> Vec<PostInstallStep> {
@@ -110,8 +112,12 @@ pub fn detect_steps(scan_dir: &Path, run_dir: &Path) -> Vec<PostInstallStep> {
     steps_for_top_level_files(&present, run_dir)
 }
 
-/// The consent gate. Returns the steps that may run (possibly none), or
-/// `PostInstallConsentRequired` when steps exist and consent was not given.
+/// Applies the consent gate and returns the steps that may run, possibly none.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::PostInstallConsentRequired`] carrying `steps`
+/// when there are steps and `allow_post_install` is false.
 pub fn gate(
     plugin_id: &str,
     steps: Vec<PostInstallStep>,
@@ -127,8 +133,14 @@ pub fn gate(
     }
 }
 
-/// Gate, then hand the permitted steps to `runner`. The runner is never invoked
-/// without consent, and not at all when there is nothing to run.
+/// Applies the consent gate, then hands the permitted steps to `runner`. The
+/// runner is never invoked without consent, and not at all when there is
+/// nothing to run.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::PostInstallConsentRequired`] from the gate, or
+/// the error `runner` returns.
 pub async fn gate_and_run<F, Fut>(
     plugin_id: &str,
     steps: Vec<PostInstallStep>,
@@ -151,7 +163,12 @@ where
     runner(steps).await
 }
 
-/// Execute steps exactly as described. Only reachable through [`gate_and_run`].
+/// Executes steps exactly as described. Only reachable through [`gate_and_run`].
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::PostInstallFailed`] when a step cannot be
+/// spawned or exits with failure.
 pub async fn run_steps(steps: Vec<PostInstallStep>) -> Result<(), GitInstallError> {
     for step in steps {
         let output = tokio::process::Command::new(&step.program)
