@@ -26,6 +26,7 @@ vi.mock("../../conversations/api/useChannelMembership", () => membership);
 vi.mock("../../e2ee/runtime/session", () => ({ e2eeSession: async () => null }));
 vi.mock("../../e2ee/runtime/groups", () => ({ processWelcomes: vi.fn() }));
 
+import { makeDmRequest } from "../__fixtures__/dmRequests";
 import { DmRequestInbox } from "./DmRequestInbox";
 
 const REQUEST = {
@@ -115,11 +116,33 @@ describe("DmRequestInbox", () => {
 
   it("opens the conversation to read it before deciding", async () => {
     const user = userEvent.setup();
+    useShellStore.getState().setMainSurface({ kind: "dm-requests", workspaceId: null });
     renderWithProviders(<DmRequestInbox />);
     await user.click(await screen.findByRole("button", { name: "Read first" }));
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("conv-1"));
     expect(useWorkspaceStore.getState().workspaceId).toBe("home-direct");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
     expect(api.acceptDmRequest).not.toHaveBeenCalled();
+  });
+
+  it("shows only the requests of the scope it is given", async () => {
+    useRelayStore.getState().addSpace({
+      account: "a",
+      spaceId: "ws-remote",
+      hostServerId: "rims1_other",
+      kind: "workspace",
+    });
+    api.fetchDmRequests.mockResolvedValue([
+      REQUEST,
+      makeDmRequest("r2", "rims1_other", "ws-remote"),
+    ]);
+    const { unmount } = renderWithProviders(<DmRequestInbox workspaceId="ws-remote" />);
+    expect(await screen.findByText("Message requests (1)")).toBeInTheDocument();
+    unmount();
+    renderWithProviders(<DmRequestInbox workspaceId={null} />);
+    expect(await screen.findByText("Message requests (1)")).toBeInTheDocument();
+    renderWithProviders(<DmRequestInbox />);
+    expect(await screen.findByText("Message requests (2)")).toBeInTheDocument();
   });
 
   it("shows nothing without pending requests", async () => {

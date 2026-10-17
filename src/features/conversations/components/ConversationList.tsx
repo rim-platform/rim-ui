@@ -14,6 +14,8 @@ import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
+import { usePendingDmRequestsIn } from "../../relay/api/useDmRequests";
+import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { isInvited } from "../utils";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
@@ -50,6 +52,9 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const mutedIds = useMutedStore((s) => s.mutedIds);
   // Guests cannot browse, join or create channels; the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
+  // Requests for DMs of this workspace, kept out of its conversations until accepted.
+  const scopedRequests = usePendingDmRequestsIn(workspaceId ?? undefined);
+  const requestCount = workspaceId ? scopedRequests.length : 0;
   const qc = useQueryClient();
 
   // Track the previous conversation so we can snapshot it before switching
@@ -332,11 +337,12 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
         </div>
       )}
 
-      {(messages.length > 0 || draft) && (
+      {(messages.length > 0 || draft || requestCount > 0) && (
         <div>
           <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
-            Messages
+            Conversations
           </h3>
+          {workspaceId && <DmRequestsRow workspaceId={workspaceId} count={requestCount} />}
           <ul className="space-y-0.5">
             {draft && <DraftDirectItem draft={draft} />}
             {messages.map((conv, i) => (

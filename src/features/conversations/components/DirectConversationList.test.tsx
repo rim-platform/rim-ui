@@ -8,7 +8,10 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 const inbox = vi.hoisted(() => ({ fetchInboxConversations: vi.fn() }));
-const relayApi = vi.hoisted(() => ({ fetchConversationPredecessor: vi.fn() }));
+const relayApi = vi.hoisted(() => ({
+  fetchConversationPredecessor: vi.fn(),
+  fetchDmRequests: vi.fn(),
+}));
 vi.mock("../api/useInboxConversations", () => inbox);
 vi.mock("../../relay/api/relayApi", () => relayApi);
 vi.mock("../../workspaces/api/useServerMembers", () => ({
@@ -21,6 +24,7 @@ vi.mock("../../workspaces/hooks/useMemberLookup", () => ({
   }),
 }));
 
+import { makeDmRequest } from "../../relay/__fixtures__/dmRequests";
 import { DirectConversationList } from "./DirectConversationList";
 
 function dm(id: string, serverId: string) {
@@ -43,7 +47,10 @@ beforeEach(() => {
     .setStarted(
       { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
       { endpoint: "e", userId: "u1", principalId: "rimp1_me", deviceId: "d1" },
-      [{ account: "a", spaceId: "remote-space", hostServerId: "rims1_other", kind: "direct" }],
+      [
+        { account: "a", spaceId: "remote-space", hostServerId: "rims1_other", kind: "direct" },
+        { account: "a", spaceId: "remote-ws", hostServerId: "rims1_other", kind: "workspace" },
+      ],
     );
   useWorkspaceStore.setState({ workspaceId: "direct-1" });
   useShellStore.getState().setSelectedConversationId("local-dm");
@@ -52,6 +59,7 @@ beforeEach(() => {
       spaceId === "direct-1" ? [dm("local-dm", "direct-1")] : [dm("remote-dm", "remote-space")],
     pageInfo: { hasNext: false, hasPrev: false },
   }));
+  relayApi.fetchDmRequests.mockResolvedValue([]);
   relayApi.fetchConversationPredecessor.mockImplementation(async (_s: string, id: string) => ({
     id,
     memberIds: [],
@@ -90,5 +98,27 @@ describe("DirectConversationList", () => {
     act(() => useShellStore.getState().setSelectedConversationId(null));
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("local-dm"));
     expect(screen.queryByText("New message to Dan")).not.toBeInTheDocument();
+  });
+
+  it("heads the list with requests from outside every workspace, leaving a workspace's out", async () => {
+    relayApi.fetchDmRequests.mockResolvedValue([
+      makeDmRequest("r1", "rims1_relay", "direct-1"),
+      makeDmRequest("r2", "rims1_other", "remote-space"),
+      makeDmRequest("r3", "rims1_other", "remote-ws"),
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<DirectConversationList />);
+    await user.click(await screen.findByRole("button", { name: "Requests (2)" }));
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "dm-requests",
+      workspaceId: null,
+    });
+  });
+
+  it("shows no requests row without pending requests", async () => {
+    renderWithProviders(<DirectConversationList />);
+    await screen.findByText("Carol");
+    await waitFor(() => expect(relayApi.fetchDmRequests).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /^Requests/ })).not.toBeInTheDocument();
   });
 });
