@@ -11,8 +11,8 @@
  * variant. Signup submits without any token field; the backend rate-limits
  * this endpoint.
  *
- * Post-signup: navigate to `/`. `AppShell` shows the empty-workspace state
- * because the new account has no workspace memberships.
+ * Post-signup: navigate to `/`. `WorkspaceSelector` opens the server's default workspace,
+ * which every new account joins, or shows the empty-workspace state when the server names none.
  *
  * A signed-in account has no use for the form: once `useSessionHydration` has checked the
  * session cookie, it is sent on to `/`.
