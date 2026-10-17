@@ -6,8 +6,9 @@ use crate::plugin_host::git_install::{
 use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
 use crate::plugin_host::manifest::{
-    CommandInfo, ContextAction, KeybindSuggestion, PanelDef, RuntimeKind,
+    CommandInfo, ContextAction, KeybindSuggestion, PanelDef, PluginManifest, RuntimeKind,
 };
+use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
@@ -1199,6 +1200,73 @@ pub fn plugin_web_files(
     })
 }
 
+/// Read the files of an enabled `DesktopLocalProcess` plugin's panel, with
+/// paths relative to `panels/<panel_id>/`, for the frame shell to render.
+#[tauri::command]
+pub fn plugin_panel_files(
+    plugin_id: String,
+    panel_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<Vec<WebPluginFile>, String> {
+    let manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| format!("{plugin_id} is not installed"))?;
+    let status = state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&plugin_id)
+        .map(|record| record.status);
+    local_panel_files(
+        &manifest,
+        status,
+        &panel_id,
+        &crate::plugin_host::discovery::plugins_dir(),
+    )
+}
+
+/// The files of `manifest`'s panel `panel_id` under `plugins_root`, if the
+/// plugin is a local process, `status` says it is enabled, and it declares
+/// that panel.
+fn local_panel_files(
+    manifest: &PluginManifest,
+    status: Option<PluginStatus>,
+    panel_id: &str,
+    plugins_root: &std::path::Path,
+) -> Result<Vec<WebPluginFile>, String> {
+    let plugin_id = &manifest.plugin_id;
+    if manifest.runtime_kind != RuntimeKind::DesktopLocalProcess {
+        return Err(format!("{plugin_id} is not a local-process plugin"));
+    }
+    if status != Some(PluginStatus::Enabled) {
+        return Err(format!("{plugin_id} is not enabled"));
+    }
+    if !manifest.panels.iter().any(|p| p.id == panel_id) {
+        return Err(format!("{plugin_id} declares no panel {panel_id}"));
+    }
+    let files =
+        plugin_protocol::read_panel_files(plugins_root, plugin_id, panel_id).map_err(|e| {
+            if let plugin_protocol::PanelFilesError::Forbidden(path) = &e {
+                log::warn!(
+                    "[AUDIT] event=plugin_panel_files_forbidden plugin_id={plugin_id} \
+                     panel_id={panel_id} path={path}"
+                );
+            }
+            format!("cannot read panel {panel_id} of {plugin_id}: {e}")
+        })?;
+    Ok(files
+        .into_iter()
+        .map(|f| WebPluginFile {
+            path: f.path,
+            base64: STANDARD.encode(&f.bytes),
+        })
+        .collect())
+}
+
 /// Set or clear the marker the UI keeps while it starts a `WebSandboxed` plugin.
 #[tauri::command]
 pub fn plugin_set_starting(
@@ -1328,4 +1396,69 @@ pub fn plugin_record_encrypted_reads(
     store.record_encrypted_reads(&plugin_id, count, chrono::Utc::now());
     store.save(&state.state_path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// A plugin `dev.example.hello` of `kind` declaring the panel `main`, whose
+    /// folder holds `index.html`.
+    fn installed(kind: RuntimeKind) -> (PluginManifest, TempDir) {
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.hello",
+            "display_name": "Hello",
+            "version": "1.0.0",
+            "description": "test",
+            "author": null,
+            "runtime_kind": kind,
+            "entrypoint": "main",
+            "panels": [{ "id": "main", "title": "Main" }],
+        }))
+        .unwrap();
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("dev.example.hello/panels/main");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("index.html"), b"<p>hi</p>").unwrap();
+        (manifest, tmp)
+    }
+
+    const ENABLED: Option<PluginStatus> = Some(PluginStatus::Enabled);
+
+    #[test]
+    fn a_local_panel_reads_its_files_in_base64() {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        let files = local_panel_files(&manifest, ENABLED, "main", tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "index.html");
+        assert_eq!(files[0].base64, STANDARD.encode(b"<p>hi</p>"));
+    }
+
+    #[test]
+    fn only_declared_panels_of_enabled_local_plugins_are_read() {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        fs::create_dir_all(tmp.path().join("dev.example.hello/panels/other")).unwrap();
+        let undeclared = local_panel_files(&manifest, ENABLED, "other", tmp.path()).unwrap_err();
+        assert!(
+            undeclared.contains("declares no panel other"),
+            "{undeclared}"
+        );
+
+        for status in [
+            None,
+            Some(PluginStatus::Installed),
+            Some(PluginStatus::Disabled),
+            Some(PluginStatus::Error),
+        ] {
+            let error = local_panel_files(&manifest, status, "main", tmp.path()).unwrap_err();
+            assert!(error.contains("is not enabled"), "{status:?}: {error}");
+        }
+
+        let (web, tmp) = installed(RuntimeKind::WebSandboxed);
+        let error = local_panel_files(&web, ENABLED, "main", tmp.path()).unwrap_err();
+        assert!(error.contains("not a local-process plugin"), "{error}");
+    }
 }
