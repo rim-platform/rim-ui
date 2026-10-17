@@ -145,13 +145,14 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
     setFocusedIndex(-1);
   }, [allConversationIds.length]);
 
-  // Open the first conversation when nothing is open; a draft DM counts as open.
+  // Open the first conversation when nothing is open; a draft DM counts as open. A plugin
+  // panel the user has open stays over it.
   const draftOpen = draftDirect !== null;
   useEffect(() => {
     if (!selectedId && !draftOpen) {
       const first = channels[0] ?? messages[0];
       if (first) {
-        select(first.id);
+        select(first.id, { keepPluginPanel: true });
       }
     }
   }, [selectedId, draftOpen, channels, messages, select]);

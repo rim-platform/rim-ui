@@ -187,7 +187,13 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   },
   "workspace.close_panel": () => {
     const shell = useShellStore.getState();
-    if (shell.isThreadOpen) {
+    // A main-area plugin panel covers the conversation, and the thread beside it.
+    if (
+      shell.mainSurface.kind === "conversation" &&
+      shell.activePluginPanel?.slot === "main_area"
+    ) {
+      shell.closePluginPanel();
+    } else if (shell.isThreadOpen) {
       shell.closeThread();
     } else if (shell.mainSurface.kind !== "conversation") {
       shell.setMainSurface({ kind: "conversation" });

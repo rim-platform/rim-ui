@@ -54,6 +54,22 @@ describe("this app's own commands", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("c");
   });
 
+  it("closes a main-area plugin panel before the thread it covers, and leaves a tool-panel one", () => {
+    const shell = () => useShellStore.getState();
+    shell().openThreadForMessage("root-1");
+    shell().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+
+    runDesktopLocalCommand("workspace.close_panel");
+    expect(shell().activePluginPanel).toBeNull();
+    expect(shell().isThreadOpen).toBe(true);
+
+    shell().openPluginPanel("chat.rim.k8s-pods", "notes", "tool_panel");
+    runDesktopLocalCommand("workspace.close_panel");
+    expect(shell().isThreadOpen).toBe(false);
+    runDesktopLocalCommand("workspace.close_panel");
+    expect(shell().activePluginPanel).toMatchObject({ panelId: "notes" });
+  });
+
   it("opens and closes the shortcuts panel", () => {
     useCommandStore.setState({ isShortcutsPanelOpen: false });
     runDesktopLocalCommand("workspace.show_shortcuts");

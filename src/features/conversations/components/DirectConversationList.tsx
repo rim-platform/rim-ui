@@ -38,12 +38,14 @@ export function DirectConversationList() {
   );
 
   // Open the first conversation of the space shown when nothing is open; a draft DM counts as
-  // open.
+  // open. A plugin panel the user has open stays over it.
   const draftOpen = draftDirect !== null;
   useEffect(() => {
     if (selectedId || draftOpen) return;
     const first = items.find((c) => c.serverId === workspaceId);
-    if (first) useShellStore.getState().setSelectedConversationId(first.id);
+    if (first) {
+      useShellStore.getState().setSelectedConversationId(first.id, { keepPluginPanel: true });
+    }
   }, [selectedId, draftOpen, items, workspaceId]);
 
   if (isPending) {

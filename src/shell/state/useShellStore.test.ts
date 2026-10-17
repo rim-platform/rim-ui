@@ -105,16 +105,56 @@ describe("useShellStore", () => {
   });
 
   it("opens a plugin panel", () => {
-    useShellStore.getState().openPluginPanel("plugin-1", "panel-a");
+    useShellStore.getState().openPluginPanel("plugin-1", "panel-a", "main_area");
     const state = useShellStore.getState();
-    expect(state.activePluginPanel).toEqual({ pluginId: "plugin-1", panelId: "panel-a" });
+    expect(state.activePluginPanel).toEqual({
+      pluginId: "plugin-1",
+      panelId: "panel-a",
+      slot: "main_area",
+    });
     expect(state.mainSurface).toEqual({ kind: "conversation" });
   });
 
   it("closes a plugin panel", () => {
-    useShellStore.getState().openPluginPanel("plugin-1", "panel-a");
+    useShellStore.getState().openPluginPanel("plugin-1", "panel-a", "tool_panel");
     useShellStore.getState().closePluginPanel();
     expect(useShellStore.getState().activePluginPanel).toBeNull();
+  });
+
+  it("closes a main-area plugin panel when a conversation or draft DM is opened", () => {
+    const shell = () => useShellStore.getState();
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setSelectedConversationId("conv-1");
+    expect(shell().activePluginPanel).toBeNull();
+
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u2" });
+    expect(shell().activePluginPanel).toBeNull();
+  });
+
+  it("keeps a main-area plugin panel over selections the user did not make", () => {
+    const shell = () => useShellStore.getState();
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setSelectedConversationId(null);
+    shell().setSelectedConversationId("conv-1", { keepPluginPanel: true });
+    expect(shell().selectedConversationId).toBe("conv-1");
+    expect(shell().activePluginPanel).toEqual({
+      pluginId: "plugin-1",
+      panelId: "pods",
+      slot: "main_area",
+    });
+  });
+
+  it("keeps a tool-panel plugin panel beside the conversation it opens", () => {
+    const shell = () => useShellStore.getState();
+    shell().openPluginPanel("plugin-1", "notes", "tool_panel");
+    shell().setSelectedConversationId("conv-1");
+    shell().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u2" });
+    expect(shell().activePluginPanel).toEqual({
+      pluginId: "plugin-1",
+      panelId: "notes",
+      slot: "tool_panel",
+    });
   });
 
   it("sets focused surface", () => {
