@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Inbox, LogOut, Puzzle, Search, Settings, Sparkles } from "lucide-react";
+import { ClipboardList, Inbox, LogOut, Search, Settings, Sparkles } from "lucide-react";
 
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { signOutLocally } from "../../features/auth/runtime/signOut";
-import { panelSlot } from "../../features/plugins/types";
+import { runningPluginPanels } from "../../features/plugins/pluginPanels";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
@@ -21,6 +21,7 @@ import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
 import { StatusDropdown } from "../../features/settings/components/StatusDropdown";
+import { PluginPanelMenu } from "./PluginPanelMenu";
 
 const railItems = [
   { key: "inbox" as const, label: "Inbox", icon: Inbox },
@@ -33,7 +34,6 @@ export function SideRail() {
   const mainSurface = useShellStore((s) => s.mainSurface);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const activePluginPanel = useShellStore((s) => s.activePluginPanel);
-  const openPluginPanel = useShellStore((s) => s.openPluginPanel);
   const closePluginPanel = useShellStore((s) => s.closePluginPanel);
   const { data: user } = useCurrentUser();
   const { data: plugins } = usePluginList();
@@ -49,16 +49,11 @@ export function SideRail() {
 
   const avatarInitial = (user?.displayName ?? user?.username ?? "?").charAt(0).toUpperCase();
 
-  // Collect all panels from enabled, running plugins
-  const pluginPanels = (plugins ?? [])
-    .filter((p) => p.enabled && p.health === "running")
-    .flatMap((p) =>
-      (p.panels ?? []).map((panel) => ({
-        pluginId: p.plugin_id,
-        pluginName: p.display_name,
-        panel,
-      })),
-    );
+  const pluginPanels = runningPluginPanels(plugins);
+  // Where the plugin panel menu opens, beside the Plugins item; null while it is closed.
+  const [pluginMenuAt, setPluginMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const pluginsItemRef = useRef<HTMLButtonElement>(null);
+  const closePluginMenu = useCallback(() => setPluginMenuAt(null), []);
 
   const openSearch = useSearchOverlayStore((s) => s.openWithScope);
 
@@ -67,12 +62,17 @@ export function SideRail() {
   const panelShown = mainSurface.kind === "conversation" ? activePluginPanel : null;
   const conversationCovered = panelShown?.slot === "main_area";
 
-  function handleRailItemClick(key: "inbox" | "plugins") {
+  function handleRailItemClick(key: "inbox" | "plugins", button: HTMLElement) {
     setMainSurface({ kind: "conversation" });
     setActivePanel(key);
     // Inbox goes back to the conversation.
     if (key === "inbox" && conversationCovered) closePluginPanel();
     useNotificationsPanelStore.getState().setOpen(false);
+    // Plugins also toggles the menu of plugin panels.
+    if (key === "plugins") {
+      const rect = button.getBoundingClientRect();
+      setPluginMenuAt((open) => (open ? null : { x: rect.right + 8, y: rect.top }));
+    }
   }
 
   return (
@@ -86,20 +86,26 @@ export function SideRail() {
       <nav className="flex flex-1 flex-col items-center gap-1">
         {railItems.map((item) => {
           const Icon = item.icon;
+          const isPlugins = item.key === "plugins";
           const active =
-            mainSurface.kind === "conversation" &&
-            activePanel === item.key &&
-            !notificationsOpen &&
-            !(item.key === "inbox" && conversationCovered);
+            (mainSurface.kind === "conversation" &&
+              activePanel === item.key &&
+              !notificationsOpen &&
+              !(item.key === "inbox" && conversationCovered)) ||
+            // Plugins stays marked while a plugin panel shows.
+            (isPlugins && panelShown !== null);
           const badge = item.key === "inbox" && totalUnread > 0 ? totalUnread : 0;
           return (
             <button
               key={item.key}
+              ref={isPlugins ? pluginsItemRef : undefined}
               type="button"
-              onClick={() => handleRailItemClick(item.key)}
+              onClick={(event) => handleRailItemClick(item.key, event.currentTarget)}
               title={item.label}
               aria-label={badge ? `${item.label} (${badge} unread)` : item.label}
               aria-current={active ? "page" : undefined}
+              aria-haspopup={isPlugins ? "menu" : undefined}
+              aria-expanded={isPlugins ? pluginMenuAt !== null : undefined}
               className={cn(
                 "relative rounded-xl p-2.5 transition",
                 active
@@ -120,36 +126,17 @@ export function SideRail() {
         <NotificationBellButton />
 
         <SearchButton openSearch={openSearch} />
-
-        {/* Plugin panel icons */}
-        {pluginPanels.length > 0 && (
-          <>
-            <div className="my-1 h-px w-6 bg-rim-line" />
-            {pluginPanels.map(({ pluginId, pluginName, panel }) => {
-              const isActive =
-                panelShown?.pluginId === pluginId && panelShown?.panelId === panel.id;
-              return (
-                <button
-                  key={`${pluginId}-${panel.id}`}
-                  type="button"
-                  onClick={() => openPluginPanel(pluginId, panel.id, panelSlot(panel))}
-                  title={`${pluginName}: ${panel.title}`}
-                  aria-label={`${pluginName}: ${panel.title}`}
-                  aria-current={isActive ? "page" : undefined}
-                  className={cn(
-                    "rounded-xl p-2.5 transition",
-                    isActive
-                      ? "bg-rim-accent/15 text-rim-accent"
-                      : "text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text",
-                  )}
-                >
-                  <Puzzle className="h-5 w-5" />
-                </button>
-              );
-            })}
-          </>
-        )}
       </nav>
+
+      {pluginMenuAt && (
+        <PluginPanelMenu
+          panels={pluginPanels}
+          shown={panelShown}
+          position={pluginMenuAt}
+          anchorRef={pluginsItemRef}
+          onClose={closePluginMenu}
+        />
+      )}
 
       <div className="flex flex-col items-center gap-1 pb-2">
         <AuditLogButton mainSurface={mainSurface} setMainSurface={setMainSurface} />

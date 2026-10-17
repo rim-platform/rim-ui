@@ -83,7 +83,7 @@ Expected entries:
 - workspace switcher
 - home or inbox
 - commands or quick actions entry
-- plugin panels entry area
+- a Plugins entry whose menu lists the plugin panels
 - activity or notifications
 - settings
 - current user/profile area
@@ -92,7 +92,17 @@ Behavior:
 
 - The side rail should be icon-first and compact.
 - It should support unread and activity indicators.
-- Plugin panels should appear alongside built-in destinations, but still be visually distinguishable.
+- Plugin panels open from the Plugins entry, not from an icon each, so the rail does not grow
+  with every installed plugin. The entry shows the plugins in the tool panel and opens a menu
+  beside it with one row per panel of every enabled, running plugin: the plugin's name, the
+  panel's title, and a puzzle marker that sets the rows apart from built-in destinations.
+  Choosing a row opens the panel in its slot. The menu works from the keyboard (Enter or Space
+  opens it, the arrow keys move, Enter chooses, Escape closes it and returns focus to the entry)
+  and closes on a click outside. With no running plugin that has a panel, it links to the plugin
+  settings instead.
+- The Plugins entry stays marked while a plugin panel is open.
+- Each panel of a running plugin also has an "Open <panel>" command, so the palette or a keybind
+  opens it without the rail.
 - Switching side-rail destinations should update the active tool panel or global workspace mode.
 
 ## Tool Panel

@@ -12,8 +12,10 @@ import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
-import { runDesktopLocalCommand } from "./commandDispatcher";
+import { dispatchCommand, runDesktopLocalCommand } from "./commandDispatcher";
 import { LOCAL_COMMANDS } from "./localCommands";
+import type { CommandDefinition } from "../types";
+import type { PluginInfo } from "../../plugins/types";
 
 function serveConversations(ids: string[]) {
   queryClient.setQueryData(queryKeys.channels("ws-1"), {
@@ -97,5 +99,78 @@ describe("this app's own commands", () => {
     useLayoutPresetStore.setState({ activePresetId: null });
     runDesktopLocalCommand("workspace.cycle_layout_preset");
     expect(useLayoutPresetStore.getState().activePresetId).not.toBeNull();
+  });
+});
+
+describe("plugin panel commands", () => {
+  const POD_PANEL = "workspace.open_plugin_panel.chat.rim.k8s-pods/pods";
+
+  function servePlugins(health: PluginInfo["health"]) {
+    queryClient.setQueryData<PluginInfo[]>(queryKeys.plugins(), [
+      {
+        plugin_id: "chat.rim.k8s-pods",
+        manifest_id: "chat.rim.k8s-pods",
+        display_name: "Kubernetes Pods",
+        version: "1.0.0",
+        description: "",
+        enabled: true,
+        health,
+        capabilities: [],
+        approved_capabilities: [],
+        approved_ai_commands: [],
+        ai_callable_commands: [],
+        ai_consent_required: false,
+        fingerprint_changed: false,
+        panels: [{ id: "pods", title: "Pods", slot: "main_area" }],
+      },
+    ]);
+  }
+
+  const command: CommandDefinition = {
+    id: POD_PANEL,
+    title: "Open Pods",
+    description: "",
+    category: "Kubernetes Pods",
+    sourceKind: "PLUGIN",
+    executionTarget: "DESKTOP_LOCAL",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+  };
+  const executeBackend = vi.fn();
+
+  beforeEach(() => {
+    useShellStore.getState().reset();
+    executeBackend.mockReset();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it("opens the panel in its slot without asking the server or the plugin", async () => {
+    servePlugins("running");
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result?.status).toBe("SUCCESS");
+    expect(useShellStore.getState().activePluginPanel).toEqual({
+      pluginId: "chat.rim.k8s-pods",
+      panelId: "pods",
+      slot: "main_area",
+    });
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the plugin is not running", async () => {
+    servePlugins("stopped");
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result).toMatchObject({
+      status: "ERROR",
+      message: "The plugin with this panel is not running",
+    });
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
+    expect(executeBackend).not.toHaveBeenCalled();
   });
 });

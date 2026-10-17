@@ -80,7 +80,8 @@ npm run bundle
 
 **Desktop.** `npm run tauri dev`, then Settings → Plugins → Install from local folder and
 pick `dist/chat.rim.github-prs` of that clone. Approve both permissions, enable it, and
-open **Pull requests** from the side rail.
+open **Pull requests** from the side rail's Plugins menu, or with **Open Pull requests** in the
+command palette.
 
 **Web.** Serve the bundle with CORS, for example from the clone's `dist` folder:
 

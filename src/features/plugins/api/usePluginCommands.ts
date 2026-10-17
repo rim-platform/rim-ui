@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { usePluginList } from "./usePluginList";
 import type { CommandDefinition } from "../../commands/types";
+import { openPluginPanelCommandId, runningPluginPanels } from "../pluginPanels";
 import type { PluginContextType } from "../types";
 
 // Extended command definition that carries context_types metadata
@@ -11,9 +12,10 @@ export interface PluginCommandDefinition extends CommandDefinition {
 
 /**
  * Every command of the enabled plugins: their manifest commands (for the
- * palette, the keybind picker and keybinds) and their context actions (for
- * context menus). A stopped plugin's commands stay listed; running one says
- * the plugin is not running.
+ * palette, the keybind picker and keybinds), their context actions (for
+ * context menus), and an "Open <panel>" command per panel of a running plugin,
+ * which the shell runs itself. A stopped plugin's manifest commands stay
+ * listed; running one says the plugin is not running.
  */
 export function usePluginCommands() {
   const { data: plugins } = usePluginList();
@@ -65,6 +67,23 @@ export function usePluginCommands() {
           contextTypes: action.context_types as PluginContextType[],
         });
       }
+    }
+    for (const { pluginId, pluginName, panel } of runningPluginPanels(plugins)) {
+      commands.push({
+        id: openPluginPanelCommandId(pluginId, panel.id),
+        title: `Open ${panel.title}`,
+        description: `Show the ${panel.title} panel of ${pluginName}`,
+        category: pluginName,
+        sourceKind: "PLUGIN",
+        executionTarget: "DESKTOP_LOCAL",
+        requiredContext: [],
+        requiredCapabilities: [],
+        visibleInPalette: true,
+        visibleInContextMenus: false,
+        keybindCapable: true,
+        dangerous: false,
+        contextTypes: [],
+      });
     }
     return commands;
   }, [plugins]);

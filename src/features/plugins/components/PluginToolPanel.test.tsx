@@ -18,14 +18,26 @@ vi.mock("../api/usePluginActions", () => ({
 }));
 
 vi.mock("./PluginErrorBoundary", () => ({
-  PluginErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PluginErrorBoundary: ({ health, children }: { health: string; children: React.ReactNode }) => (
+    <div data-testid="error-boundary" data-health={health}>
+      {children}
+    </div>
+  ),
 }));
 
 const mockSetMainSurface = vi.fn();
+const mockOpenPluginPanel = vi.fn();
+const shellState = vi.hoisted(() => ({
+  activePluginPanel: null as { pluginId: string; panelId: string; slot: string } | null,
+}));
 
 vi.mock("../../../shell/state/useShellStore", () => ({
   useShellStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ setMainSurface: mockSetMainSurface }),
+    selector({
+      setMainSurface: mockSetMainSurface,
+      openPluginPanel: mockOpenPluginPanel,
+      activePluginPanel: shellState.activePluginPanel,
+    }),
 }));
 
 import React from "react";
@@ -76,6 +88,7 @@ function makePlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
 describe("PluginToolPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shellState.activePluginPanel = null;
   });
 
   describe("when pluginHost capability is false (web build)", () => {
@@ -157,6 +170,68 @@ describe("PluginToolPanel", () => {
 
       expect(screen.getByText("My Plugin")).toBeInTheDocument();
       expect(screen.queryByText("Manage plugins")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("panel rows", () => {
+    function renderWith(plugins: PluginInfo[]) {
+      vi.mocked(useRuntime).mockReturnValue(makeRuntime(true) as ReturnType<typeof useRuntime>);
+      vi.mocked(usePluginList).mockReturnValue({ data: plugins, isLoading: false } as ReturnType<
+        typeof usePluginList
+      >);
+      render(<PluginToolPanel />);
+    }
+
+    const panels = [
+      { id: "pods", title: "Pods", slot: "main_area" as const },
+      { id: "notes", title: "Notes" },
+    ];
+
+    it("opens a running plugin's panel in its slot when its row is clicked", async () => {
+      const user = userEvent.setup();
+      renderWith([makePlugin({ display_name: "Pods Plugin", health: "running", panels })]);
+
+      await user.click(screen.getByRole("button", { name: "Pods Plugin: Pods" }));
+      expect(mockOpenPluginPanel).toHaveBeenLastCalledWith("dev.example.test", "pods", "main_area");
+
+      await user.click(screen.getByRole("button", { name: "Pods Plugin: Notes" }));
+      expect(mockOpenPluginPanel).toHaveBeenLastCalledWith(
+        "dev.example.test",
+        "notes",
+        "tool_panel",
+      );
+      expect(screen.queryByTestId("error-boundary")).not.toBeInTheDocument();
+    });
+
+    it("marks the row of the open panel", () => {
+      shellState.activePluginPanel = {
+        pluginId: "dev.example.test",
+        panelId: "notes",
+        slot: "tool_panel",
+      };
+      renderWith([makePlugin({ display_name: "Pods Plugin", health: "running", panels })]);
+
+      expect(screen.getByRole("button", { name: "Pods Plugin: Notes" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Pods Plugin: Pods" })).not.toHaveAttribute(
+        "aria-current",
+      );
+    });
+
+    it("lists no panel rows for a plugin that is not running", () => {
+      renderWith([makePlugin({ display_name: "Pods Plugin", health: "stopped", panels })]);
+
+      expect(screen.getByText("Pods Plugin")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Pods Plugin:/ })).not.toBeInTheDocument();
+    });
+
+    it("shows a crashed plugin through the error boundary", () => {
+      renderWith([makePlugin({ display_name: "Pods Plugin", health: "crashed", panels })]);
+
+      expect(screen.getByTestId("error-boundary")).toHaveAttribute("data-health", "crashed");
+      expect(screen.queryByRole("button", { name: /Pods Plugin:/ })).not.toBeInTheDocument();
     });
   });
 });

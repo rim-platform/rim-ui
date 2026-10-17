@@ -10,7 +10,8 @@ import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
 import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
-import type { PluginCommandResult } from "../../plugins/types";
+import { findOpenPluginPanelTarget, isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
+import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plugins/types";
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
@@ -314,6 +315,10 @@ export async function dispatchCommand(
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 
+  if (isOpenPluginPanelCommand(command.id)) {
+    return openPluginPanelCommand(command);
+  }
+
   // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
   const pluginCmd = parsePluginCommandId(command.id);
   if (pluginCmd) {
@@ -366,6 +371,24 @@ export async function dispatchCommand(
     },
   );
   return commandResultOf(outcome);
+}
+
+/** Opens the plugin panel an open-panel command names, when its plugin is running. */
+function openPluginPanelCommand(command: CommandDefinition): CommandResult {
+  const plugins = queryClient.getQueryData<PluginInfo[]>(queryKeys.plugins());
+  const target = findOpenPluginPanelTarget(plugins, command.id);
+  if (!target) {
+    return {
+      status: "ERROR",
+      message: "The plugin with this panel is not running",
+      payload: null,
+      followUpCommands: [],
+    };
+  }
+  useShellStore
+    .getState()
+    .openPluginPanel(target.pluginId, target.panel.id, panelSlot(target.panel));
+  return { status: "SUCCESS", message: "", payload: null, followUpCommands: [] };
 }
 
 /**
