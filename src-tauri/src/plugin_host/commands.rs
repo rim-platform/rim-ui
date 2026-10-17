@@ -12,7 +12,9 @@ use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
-use crate::plugin_host::state::{InstallSource, PluginAudit, PluginRecord, PluginStatus};
+use crate::plugin_host::state::{
+    InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
+};
 use crate::plugin_host::storage::StorageError;
 use crate::plugin_host::validation::validate_plugin_manifest_for_host;
 use crate::plugin_host::wire::JsonRpcError;
@@ -344,26 +346,136 @@ pub async fn plugin_uninstall(
         .await
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
 
+    let recorded_dir = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .get(&plugin_id)
+        .cloned();
     {
         let mut store = state
             .store
             .lock()
             .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-        lifecycle::uninstall(&mut store, &plugin_id)?;
+        let uninstalled = uninstall_stopped(
+            &mut store,
+            &plugin_id,
+            recorded_dir.as_deref(),
+            &crate::plugin_host::discovery::plugins_dir(),
+        );
+        // Saved either way: a plugin whose folder could not be deleted stays, disabled.
         store.save(&state.state_path)?;
+        uninstalled?;
     }
 
-    // Also remove from manifests cache
-    let mut manifests = state
+    state
         .manifests
         .lock()
-        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-    manifests.remove(&plugin_id);
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .remove(&plugin_id);
+    state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .remove(&plugin_id);
 
     if let Err(e) = state.storage.remove_plugin(&plugin_id) {
         log::warn!("[plugin_host] could not delete the storage of {plugin_id}: {e}");
     }
     Ok(())
+}
+
+/// What uninstalling a plugin did with its folder.
+#[derive(Debug, PartialEq, Eq)]
+enum PluginFolder {
+    /// The folder the app installed the plugin into was deleted.
+    Deleted,
+    /// There was no folder to delete.
+    Missing,
+    /// The folder stays: the app did not install it there.
+    Kept,
+}
+
+/// Uninstall the stopped plugin `plugin_id`: disable it when enabled, delete the
+/// folder the app installed it into, then drop its record and audit. A folder
+/// that cannot be deleted keeps the record, disabled, so the user can retry.
+fn uninstall_stopped(
+    store: &mut PluginStateStore,
+    plugin_id: &str,
+    recorded_dir: Option<&std::path::Path>,
+    plugins_root: &std::path::Path,
+) -> Result<PluginFolder, LifecycleError> {
+    let record = store
+        .get(plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.into()))?;
+    if record.status == PluginStatus::Enabled {
+        lifecycle::disable(store, plugin_id)?;
+    }
+    let folder = delete_installed_folder(
+        plugin_id,
+        record.source.is_some(),
+        recorded_dir,
+        plugins_root,
+    )?;
+    lifecycle::uninstall(store, plugin_id)?;
+    Ok(folder)
+}
+
+/// Delete `<plugins_root>/<plugin_id>` when the app installed the plugin
+/// (`installed_by_app`), the id is a safe path segment and the folder is the
+/// one discovery recorded for it. A symlink there loses the link, never its
+/// target; `remove_dir_all` does not follow links inside the folder.
+fn delete_installed_folder(
+    plugin_id: &str,
+    installed_by_app: bool,
+    recorded_dir: Option<&std::path::Path>,
+    plugins_root: &std::path::Path,
+) -> std::io::Result<PluginFolder> {
+    if !installed_by_app {
+        log::info!(
+            "[plugin_host] uninstall keeps the folder of {plugin_id}: the app did not install it"
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    if !plugin_protocol::is_safe_segment(plugin_id) {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} reason=unsafe_id"
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    let dir = plugins_root.join(plugin_id);
+    let metadata = match std::fs::symlink_metadata(&dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(PluginFolder::Missing),
+        other => other?,
+    };
+    if recorded_dir != Some(dir.as_path()) {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} path={} \
+             reason=not_the_recorded_folder",
+            dir.display()
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    let symlink = metadata.file_type().is_symlink();
+    if symlink {
+        // A directory link on Windows goes with `remove_dir`, which removes only the link.
+        std::fs::remove_file(&dir).or_else(|_| std::fs::remove_dir(&dir))?;
+    } else if metadata.is_dir() {
+        std::fs::remove_dir_all(&dir)?;
+    } else {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} path={} \
+             reason=not_a_folder",
+            dir.display()
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    log::warn!(
+        "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink={symlink}",
+        dir.display()
+    );
+    Ok(PluginFolder::Deleted)
 }
 
 #[tauri::command]
@@ -1460,5 +1572,159 @@ mod tests {
         let (web, tmp) = installed(RuntimeKind::WebSandboxed);
         let error = local_panel_files(&web, ENABLED, "main", tmp.path()).unwrap_err();
         assert!(error.contains("not a local-process plugin"), "{error}");
+    }
+
+    const HELLO: &str = "dev.example.hello";
+
+    /// The plugin of [`installed`] recorded in a store with `status` and
+    /// `source`, beside the plugins folder holding its files.
+    fn uninstallable(
+        status: PluginStatus,
+        source: Option<InstallSource>,
+    ) -> (PluginStateStore, TempDir) {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        let mut store = PluginStateStore::default();
+        lifecycle::install(&mut store, &manifest).unwrap();
+        let record = store.get(HELLO).unwrap().clone();
+        store.upsert(PluginRecord {
+            status,
+            source,
+            ..record
+        });
+        store.audit.insert(HELLO.into(), PluginAudit::default());
+        (store, tmp)
+    }
+
+    #[test]
+    fn uninstall_deletes_the_folder_the_app_installed_and_the_record() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Deleted);
+        assert!(!dir.exists());
+        assert!(store.get(HELLO).is_none());
+        assert!(!store.audit.contains_key(HELLO));
+    }
+
+    #[test]
+    fn uninstall_disables_an_enabled_plugin_first() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Deleted);
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_keeps_a_folder_the_app_did_not_install() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, None);
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Kept);
+        assert!(dir.join("panels/main/index.html").exists());
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_keeps_a_folder_discovery_did_not_record_for_the_plugin() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let elsewhere = tmp.path().join("hello-copy");
+        for recorded in [None, Some(elsewhere.as_path())] {
+            let folder = delete_installed_folder(HELLO, true, recorded, tmp.path()).unwrap();
+            assert_eq!(folder, PluginFolder::Kept, "{recorded:?}");
+        }
+        assert!(tmp.path().join(HELLO).exists());
+        // The record still goes.
+        uninstall_stopped(&mut store, HELLO, None, tmp.path()).unwrap();
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_without_a_folder_still_drops_the_record() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        fs::remove_dir_all(&dir).unwrap();
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Missing);
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_deleted_keeps_the_record_disabled() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
+        // A file where the plugins folder should be: looking up the plugin's folder fails.
+        let root = tmp.path().join("not-a-folder");
+        fs::write(&root, b"").unwrap();
+        let dir = root.join(HELLO);
+        uninstall_stopped(&mut store, HELLO, Some(&dir), &root).unwrap_err();
+        assert_eq!(store.get(HELLO).unwrap().status, PluginStatus::Disabled);
+        assert!(store.audit.contains_key(HELLO));
+    }
+
+    #[test]
+    fn an_unsafe_plugin_id_deletes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("plugins");
+        fs::create_dir_all(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let recorded = root.join("../outside");
+        let folder = delete_installed_folder("../outside", true, Some(&recorded), &root).unwrap();
+        assert_eq!(folder, PluginFolder::Kept);
+        assert!(outside.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_plugin_folder_loses_the_link_not_its_target() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let target = tmp.path().join("real-hello");
+        fs::rename(tmp.path().join(HELLO), &target).unwrap();
+        let dir = tmp.path().join(HELLO);
+        std::os::unix::fs::symlink(&target, &dir).unwrap();
+
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Deleted);
+        assert!(fs::symlink_metadata(&dir).is_err());
+        assert!(target.join("panels/main/index.html").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_plugin_folder_keeps_what_it_points_to() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("keep.txt"), b"keep").unwrap();
+        let dir = tmp.path().join(HELLO);
+        std::os::unix::fs::symlink(outside.path(), dir.join("escape")).unwrap();
+
+        uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert!(!dir.exists());
+        assert!(outside.path().join("keep.txt").exists());
+    }
+
+    #[test]
+    fn a_plugin_installs_again_after_its_uninstall() {
+        use crate::plugin_host::bundle::tests::hello_web_with_panel;
+        let read = bundle::read_bundle(&bundle::write_bundle(&hello_web_with_panel())).unwrap();
+        let plugin_id = read.manifest.plugin_id.clone();
+        let root = TempDir::new().unwrap();
+        let dir = bundle::unpack(&read, root.path(), false).unwrap();
+        let mut store = PluginStateStore::default();
+        lifecycle::install(&mut store, &read.manifest).unwrap();
+        let record = store.get(&plugin_id).unwrap().clone();
+        store.upsert(PluginRecord {
+            source: Some(InstallSource::Link {
+                url: "https://plugins.example.com/hello.rimbundle".into(),
+                sha256: "ab".into(),
+            }),
+            ..record
+        });
+        // Installing over it without replacing is refused while its folder is there.
+        assert!(bundle::unpack(&read, root.path(), false).is_err());
+
+        uninstall_stopped(&mut store, &plugin_id, Some(&dir), root.path()).unwrap();
+        assert_eq!(bundle::unpack(&read, root.path(), false).unwrap(), dir);
+        lifecycle::install(&mut store, &read.manifest).unwrap();
     }
 }

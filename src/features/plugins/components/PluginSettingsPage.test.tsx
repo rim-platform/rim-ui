@@ -283,7 +283,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(toggle).toBeDisabled();
   });
   it("uninstalls a plugin only once the user confirms", async () => {
-    listPlugins([makePlugin({ display_name: "Kubernetes Pods" })]);
+    listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
     const mutate = mockUninstall(false, (_id, options) => options.onSuccess());
     render(<PluginSettingsPage />);
     const trash = screen.getByRole("button", { name: "Uninstall plugin" });
@@ -291,7 +291,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     fireEvent.click(trash);
     const dialog = screen.getByRole("dialog", { name: "Uninstall Kubernetes Pods?" });
     expect(dialog).toHaveTextContent(
-      "removed from this device, with the permissions you granted it and the data it stored. Its files stay in the plugins folder.",
+      "removed from this device, with the permissions you granted it and the data it stored. Its files are deleted from the plugins folder.",
     );
     await waitFor(() =>
       expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus(),
@@ -311,15 +311,28 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("says the folder of a plugin the app did not install stays", () => {
+    listPlugins([makePlugin({ source: null })]);
+    mockUninstall();
+    render(<PluginSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "The app did not install it, so its folder stays in the plugins folder.",
+    );
+  });
+
   it("keeps the uninstall dialog open with the reason when the uninstall fails", () => {
     listPlugins([makePlugin()]);
-    mockUninstall(false, (_id, options) => options.onError({ message: "must disable first" }));
+    mockUninstall(false, (_id, options) =>
+      options.onError({ message: "io error: Permission denied" }),
+    );
     render(<PluginSettingsPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
     fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
     expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent(
-      "must disable first",
+      "io error: Permission denied",
     );
   });
 

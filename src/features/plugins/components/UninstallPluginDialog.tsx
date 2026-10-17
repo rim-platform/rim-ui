@@ -38,7 +38,10 @@ export function UninstallPluginDialog({
         ) : (
           <p>
             {name} is removed from this device, with the permissions you granted it and the data it
-            stored. Its files stay in the plugins folder.
+            stored.{" "}
+            {plugin.source
+              ? "Its files are deleted from the plugins folder."
+              : "The app did not install it, so its folder stays in the plugins folder."}
           </p>
         )}
         <p>To use it again, install it again.</p>
