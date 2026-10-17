@@ -1940,7 +1940,8 @@ type Mutation {
 	resolveReport(serverId: ID!, reportId: ID!, outcome: ReportOutcome!): MessageReport!
 	"""
 	Replace the viewer's notification settings in the workspace (default level, keywords,
-	daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
+	daily do-not-disturb window, digest, reactions). Keywords: at most 20, each 2 to 40
+	characters.
 	"""
 	updateNotificationSettings(serverId: ID!, input: UpdateNotificationSettingsInput!): NotificationSettings!
 	"""
@@ -2335,6 +2336,14 @@ type Notification {
 	conversation or the message is gone.
 	"""
 	message: Message
+	"""
+	The latest reaction's emoji; null unless `reason` is `REACTION`.
+	"""
+	reactionEmoji: String
+	"""
+	Who added the latest reaction; null unless `reason` is `REACTION`.
+	"""
+	reactedBy: User
 }
 
 input NotificationCursorInput {
@@ -2356,8 +2365,8 @@ enum NotificationLevel {
 	"""
 	ALL
 	"""
-	Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits and replies in
-	the viewer's threads.
+	Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits, replies in
+	the viewer's threads and reactions to the viewer's messages.
 	"""
 	MENTIONS
 	"""
@@ -2386,6 +2395,11 @@ enum NotificationReason {
 	KEYWORD
 	THREAD_REPLY
 	ALL
+	"""
+	Someone reacted to the viewer's message; one entry per message, re-surfaced by each new
+	reaction.
+	"""
+	REACTION
 }
 
 """
@@ -2411,6 +2425,10 @@ type NotificationSettings {
 	"""
 	dndPausedUntil: DateTime
 	digest: DigestFrequency!
+	"""
+	Whether reactions to the viewer's messages notify them (level `MENTIONS` or `ALL`).
+	"""
+	reactions: Boolean!
 }
 
 enum PageDir {
@@ -3314,6 +3332,11 @@ type ServerInfo {
 	The server ids the `PARTNERS` settings name (`RIM_DM_PARTNERS`).
 	"""
 	dmPartners: [String!]!
+	"""
+	The workspace every new account joins as a Member, so a client can open it after a
+	signup; null when the server names none (`RIM_DEFAULT_WORKSPACE`).
+	"""
+	defaultWorkspace: ID
 }
 
 """
@@ -3690,6 +3713,10 @@ input UpdateNotificationSettingsInput {
 	"""
 	dnd: DndWindowInput
 	digest: DigestFrequency!
+	"""
+	Whether reactions to the viewer's messages notify them; null keeps the current value.
+	"""
+	reactions: Boolean
 }
 
 input UpdatePipelineInput {

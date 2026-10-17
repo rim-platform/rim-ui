@@ -1859,7 +1859,8 @@ export type Mutation = {
   updateMyProfile: User;
   /**
    * Replace the viewer's notification settings in the workspace (default level, keywords,
-   * daily do-not-disturb window, digest). Keywords: at most 20, each 2 to 40 characters.
+   * daily do-not-disturb window, digest, reactions). Keywords: at most 20, each 2 to 40
+   * characters.
    */
   updateNotificationSettings: NotificationSettings;
   /**
@@ -2540,6 +2541,10 @@ export type Notification = {
    */
   message?: Maybe<Message>;
   messageId: Scalars['ID']['output'];
+  /** Who added the latest reaction; null unless `reason` is `REACTION`. */
+  reactedBy?: Maybe<User>;
+  /** The latest reaction's emoji; null unless `reason` is `REACTION`. */
+  reactionEmoji?: Maybe<Scalars['String']['output']>;
   readAt?: Maybe<Scalars['DateTime']['output']>;
   reason: NotificationReason;
   serverId: Scalars['ID']['output'];
@@ -2560,8 +2565,8 @@ export enum NotificationLevel {
   /** Every message. */
   ALL = 'ALL',
   /**
-   * Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits and replies in
-   * the viewer's threads.
+   * Direct messages, mentions (`<@user>`, `@channel`, `@here`), keyword hits, replies in
+   * the viewer's threads and reactions to the viewer's messages.
    */
   MENTIONS = 'MENTIONS',
   /** Nothing, mentions included. */
@@ -2585,6 +2590,11 @@ export enum NotificationReason {
   DIRECT = 'DIRECT',
   KEYWORD = 'KEYWORD',
   MENTION = 'MENTION',
+  /**
+   * Someone reacted to the viewer's message; one entry per message, re-surfaced by each new
+   * reaction.
+   */
+  REACTION = 'REACTION',
   THREAD_REPLY = 'THREAD_REPLY'
 }
 
@@ -2600,6 +2610,8 @@ export type NotificationSettings = {
   dndPausedUntil?: Maybe<Scalars['DateTime']['output']>;
   /** Lower-cased; a whole-word, case-insensitive hit notifies (level `MENTIONS` or `ALL`). */
   keywords: Array<Scalars['String']['output']>;
+  /** Whether reactions to the viewer's messages notify them (level `MENTIONS` or `ALL`). */
+  reactions: Scalars['Boolean']['output'];
   serverId: Scalars['ID']['output'];
 };
 
@@ -3626,6 +3638,11 @@ export type ServerInfo = {
    */
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
   /**
+   * The workspace every new account joins as a Member, so a client can open it after a
+   * signup; null when the server names none (`RIM_DEFAULT_WORKSPACE`).
+   */
+  defaultWorkspace?: Maybe<Scalars['ID']['output']>;
+  /**
    * DMs from people on other servers, and from people here outside the recipient's
    * workspaces (`RIM_DM_INBOUND`): a floor for every account here.
    */
@@ -3990,6 +4007,8 @@ export type UpdateNotificationSettingsInput = {
   dnd?: InputMaybe<DndWindowInput>;
   /** At most 20, each 2 to 40 characters; stored lower-cased and deduplicated. */
   keywords: Array<Scalars['String']['input']>;
+  /** Whether reactions to the viewer's messages notify them; null keeps the current value. */
+  reactions?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type UpdatePipelineInput = {
