@@ -174,6 +174,8 @@ export interface PluginInfo {
    * to trust the new version via `plugin_trust_fingerprint` before enabling.
    */
   fingerprint_changed: boolean;
+  /** The bundle fingerprint on disk; left out by the web app and by older hosts. */
+  current_fingerprint?: string | null;
   context_actions?: PluginContextAction[];
   /** Panel definitions from the manifest — used by the shell for slot layout. */
   panels?: PluginPanelDef[];

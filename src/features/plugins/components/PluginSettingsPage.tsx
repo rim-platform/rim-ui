@@ -31,6 +31,7 @@ import { kindLabel, trustBadge } from "./pluginTrust";
 import { RegistryNotes } from "../registry/components/RegistryNotes";
 import { SignAndPublishDialog } from "../registry/components/SignAndPublishDialog";
 import { usePluginSigning } from "../registry/signing";
+import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import {
   parsePostInstallConsent,
   runtimeKind,
@@ -326,6 +327,7 @@ export function PluginSettingsPage() {
                 onUninstall={handleUninstall}
                 onPermissions={setPermissionsTarget}
                 onTrustFingerprint={handleTrustFingerprint}
+                onDisable={(pluginId) => disable.mutate(pluginId)}
                 onSign={desktop && signing.canSign ? setSignTarget : undefined}
                 trustPending={
                   trustFingerprint.isPending && trustFingerprint.variables === plugin.plugin_id
@@ -388,6 +390,7 @@ interface PluginRowProps {
   onUninstall: (plugin: PluginInfo) => void;
   onPermissions: (plugin: PluginInfo) => void;
   onTrustFingerprint: (pluginId: string) => void;
+  onDisable: (pluginId: string) => void;
   /** Present when this device can sign plugins with the account's identity key. */
   onSign?: (plugin: PluginInfo) => void;
   trustPending: boolean;
@@ -400,8 +403,10 @@ interface PluginRowProps {
  * permissions button, uninstall button.
  *
  * When `plugin.fingerprint_changed` is true, a `FingerprintChanged` warning
- * banner is shown with "Trust new version" and "Disable until reviewed" actions.
- * The enable toggle is disabled until the user resolves the fingerprint warning.
+ * banner is shown with "Trust new version" and "Dismiss" actions. Dismiss stops
+ * a running plugin and hides the banner on this device until the fingerprint
+ * changes again; the "Bundle changed" badge then shows it again. The enable
+ * toggle is disabled until the user trusts the new version.
  */
 function PluginRow({
   plugin,
@@ -410,12 +415,25 @@ function PluginRow({
   onUninstall,
   onPermissions,
   onTrustFingerprint,
+  onDisable,
   onSign,
   trustPending,
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
   const blocked = plugin.fingerprint_changed || needsDesktop;
   const [activityOpen, setActivityOpen] = useState(false);
+  const fingerprint = plugin.current_fingerprint ?? "";
+  const warningDismissed = usePluginFingerprintDismissStore(
+    (s) => s.dismissed[plugin.plugin_id] === fingerprint,
+  );
+  const dismissWarning = usePluginFingerprintDismissStore((s) => s.dismiss);
+  const restoreWarning = usePluginFingerprintDismissStore((s) => s.restore);
+
+  function handleDismissWarning() {
+    // A changed bundle must not keep running once the warning is out of sight.
+    if (plugin.enabled) onDisable(plugin.plugin_id);
+    dismissWarning(plugin.plugin_id, fingerprint);
+  }
 
   return (
     <div className="rounded-lg border border-rim-line bg-rim-void">
@@ -427,12 +445,23 @@ function PluginRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
-            {plugin.fingerprint_changed && (
-              <span className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
-                <AlertTriangle className="h-3 w-3" />
-                Bundle changed
-              </span>
-            )}
+            {plugin.fingerprint_changed &&
+              (warningDismissed ? (
+                <button
+                  type="button"
+                  onClick={() => restoreWarning(plugin.plugin_id)}
+                  title="Show the changed-bundle warning"
+                  className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm hover:bg-rim-warm/25"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  Bundle changed
+                </button>
+              ) : (
+                <span className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
+                  <AlertTriangle className="h-3 w-3" />
+                  Bundle changed
+                </span>
+              ))}
           </div>
           <p className="text-xs text-rim-text-muted">{plugin.description}</p>
           <p className="text-[11px] text-rim-text-faint">
@@ -515,7 +544,7 @@ function PluginRow({
       {activityOpen && <PluginAuditPanel plugin={plugin} />}
 
       {/* Fingerprint-changed warning banner */}
-      {plugin.fingerprint_changed && (
+      {plugin.fingerprint_changed && !warningDismissed && (
         <div className="border-t border-rim-warm/20 bg-rim-warm/5 px-4 py-3">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
@@ -539,12 +568,7 @@ function PluginRow({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  // "Disable until reviewed" — if enabled, disable; if already disabled, no-op.
-                  if (plugin.enabled) {
-                    // Disable is allowed even when fingerprint changed — it's the safe direction.
-                  }
-                }}
+                onClick={handleDismissWarning}
                 title="Dismiss without trusting — plugin stays disabled"
               >
                 Dismiss

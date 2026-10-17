@@ -35,8 +35,13 @@ vi.mock("../api/usePluginCapabilities", () => ({
 }));
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
-import { usePluginInstallFromLocal, usePluginUninstall } from "../api/usePluginActions";
+import {
+  usePluginDisable,
+  usePluginInstallFromLocal,
+  usePluginUninstall,
+} from "../api/usePluginActions";
 import { usePluginList } from "../api/usePluginList";
+import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import { PluginSettingsPage, PluginDesktopOnlyCard } from "./PluginSettingsPage";
 import type { PluginInfo } from "../types";
 
@@ -282,6 +287,73 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     });
     expect(toggle).toBeDisabled();
   });
+
+  describe("dismissing the changed-bundle warning", () => {
+    beforeEach(() => {
+      usePluginFingerprintDismissStore.setState({ dismissed: {} });
+    });
+
+    function mockDisable() {
+      const mutate = vi.fn();
+      vi.mocked(usePluginDisable).mockReturnValue({ mutate } as unknown as ReturnType<
+        typeof usePluginDisable
+      >);
+      return mutate;
+    }
+
+    it("hides the banner until the fingerprint changes again", () => {
+      mockDisable();
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      const { rerender } = render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+      expect(screen.queryByText("Plugin bundle has changed")).not.toBeInTheDocument();
+      expect(screen.getByText("Bundle changed")).toBeInTheDocument();
+      expect(usePluginFingerprintDismissStore.getState().dismissed).toEqual({
+        "dev.example.test": "aaa",
+      });
+
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      rerender(<PluginSettingsPage />);
+      expect(screen.queryByText("Plugin bundle has changed")).not.toBeInTheDocument();
+
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "bbb" })]);
+      rerender(<PluginSettingsPage />);
+      expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+    });
+
+    it("shows a dismissed banner again from the Bundle changed badge", () => {
+      mockDisable();
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      fireEvent.click(screen.getByRole("button", { name: /bundle changed/i }));
+
+      expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /trust new version/i })).toBeInTheDocument();
+    });
+
+    it("stops a running plugin, and leaves a stopped one alone", () => {
+      const disable = mockDisable();
+      listPlugins([
+        makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa", enabled: true }),
+      ]);
+      const { unmount } = render(<PluginSettingsPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(disable).toHaveBeenCalledWith("dev.example.test");
+      unmount();
+
+      disable.mockClear();
+      usePluginFingerprintDismissStore.setState({ dismissed: {} });
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      render(<PluginSettingsPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(disable).not.toHaveBeenCalled();
+    });
+  });
+
   it("uninstalls a plugin only once the user confirms", async () => {
     listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
     const mutate = mockUninstall(false, (_id, options) => options.onSuccess());

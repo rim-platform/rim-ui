@@ -51,6 +51,9 @@ pub struct PluginInfo {
     /// recorded at install time.  The UI must surface a warning and require the
     /// user to explicitly trust the new version before spawning.
     pub fingerprint_changed: bool,
+    /// The bundle fingerprint computed from disk for this listing, when the
+    /// plugin has a pinned fingerprint and its files could be read.
+    pub current_fingerprint: Option<String>,
     pub context_actions: Vec<ContextAction>,
     /// Panel definitions from the manifest — used by the shell for slot layout.
     pub panels: Vec<PanelDef>,
@@ -91,10 +94,15 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
 
         // Recompute bundle fingerprint from disk if we have a pinned fingerprint stored.
         // A mismatch means the bundle changed since install — surface FingerprintChanged.
+        let mut current_fingerprint = None;
         let fingerprint_changed = if !record.bundle_fingerprint.is_empty() {
             if let Some(plugin_dir) = dirs.get(id) {
                 match local_install::compute_bundle_fingerprint(plugin_dir) {
-                    Ok(current_fp) => current_fp != record.bundle_fingerprint,
+                    Ok(current_fp) => {
+                        let changed = current_fp != record.bundle_fingerprint;
+                        current_fingerprint = Some(current_fp);
+                        changed
+                    }
                     Err(_) => false, // IO error — don't surface spurious warnings
                 }
             } else {
@@ -126,6 +134,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .unwrap_or_default(),
             ai_consent_required,
             fingerprint_changed,
+            current_fingerprint,
             context_actions: manifest
                 .map(|m| m.qualified_context_actions())
                 .unwrap_or_default(),
