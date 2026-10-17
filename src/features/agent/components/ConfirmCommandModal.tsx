@@ -34,7 +34,7 @@ interface SeverityVisuals {
   srLabel: string;
   /** Block accidental dismiss (backdrop click) at MUTATING and above. */
   disableBackdropClose: boolean;
-  /** Always require type-to-confirm at the wire. */
+  /** Always require type-to-confirm at this sensitivity. */
   requireTypeToConfirm: boolean;
 }
 
@@ -124,8 +124,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const sensitivity = request.sensitivity ?? (byUser ? CommandSensitivity.MUTATING : undefined);
   const visuals = useMemo(() => severityVisuals(sensitivity), [sensitivity]);
   const sameTurn = !!request.sameTurnAfterToolResult;
-  // Tier-4 trigger per §4.8: RESTRICTED, OR same-turn-after-tool-result +
-  // sensitivity ≥ MUTATING.
+  // Type-to-confirm applies to RESTRICTED, and to MUTATING when the challenge
+  // came in the same turn as a tool result; a `null` verb turns it off.
   const requireType =
     request.verb !== null &&
     (visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING));
@@ -174,8 +174,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
     };
   }, []);
 
-  // Initial focus → Cancel button (spec §6.1, §5.2). Defer one frame so
-  // the panel is in the DOM.
+  // Initial focus → the header's close button, which cancels. Defer one
+  // frame so the panel is in the DOM.
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       cancelButtonRef.current?.focus();
@@ -183,8 +183,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // STALE handler: auto-close + reject when expiresAt passes while the
-  // modal is open. Per §5.6 a stale modal must not silently extend.
+  // Expiry handler: auto-close + reject when expiresAt passes while the
+  // modal is open, so a stale modal never silently extends the window.
   useEffect(() => {
     const expiry = Date.parse(request.expiresAt);
     if (!Number.isFinite(expiry)) return;
@@ -311,7 +311,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               )}
             </div>
 
-            {/* Hidden SR description, read in order per §6.2 */}
+            {/* Hidden screen-reader description: severity, initiator, destination,
+                tool-result origin, then the word to type */}
             <span id={descId} className="sr-only">
               {visuals.srLabel}. {byUser ? "Initiated by you." : "Initiated by AI agent."}
               {crossChannel
@@ -348,13 +349,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               )}
             </div>
 
-            {/* Cross-channel warning chip (§4.5).
-             * Phase 4 renders the raw conversation id (first 8 chars). The
-             * spec's full hover card (channel name, topic, member count) +
-             * hyperlink is a Phase 5+ follow-up that needs the channel
-             * metadata layer. Deliberate: H2 mitigation here is "did the
-             * destination differ, yes/no" — name resolution is nice-to-have,
-             * not load-bearing for the security property. */}
+            {/* Cross-channel warning chip. Shows the first 8 chars of the raw
+             * conversation id: it guards against a command reaching another
+             * conversation than the one in view, so whether the destination
+             * differs is what matters, not the channel's name. */}
             {crossChannel && (
               <div
                 className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
@@ -370,7 +368,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               </div>
             )}
 
-            {/* Tool-result-origin warning banner (§4.6) */}
+            {/* Tool-result-origin warning banner */}
             {sameTurn && (
               <div
                 className="flex items-start gap-2 rounded border border-rim-danger/40 bg-rim-danger/10 px-3 py-2 text-xs text-rim-danger"
@@ -384,10 +382,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               </div>
             )}
 
-            {/* Arguments block (§4.7) */}
+            {/* Arguments block */}
             <ArgsBlock args={maskedArgs} />
 
-            {/* Tier-4 input (§4.8) */}
+            {/* Type-to-confirm input */}
             {requireType && (
               <div data-testid="type-to-confirm-block">
                 <div className="my-2 flex items-center gap-2 text-[10px] uppercase tracking-wide text-rim-text-faint">
@@ -405,7 +403,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                       ? "border-rim-success focus:border-rim-success"
                       : "border-rim-line focus:border-rim-accent",
                   )}
-                  // Bare Enter inside this input is a no-op (per §6.3).
+                  // Bare Enter inside this input is a no-op; ⌘/Ctrl+Enter confirms.
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !(e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
@@ -459,13 +457,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
 }
 
 /**
- * Per-install hashed `[RIM]` system badge (Skill Macros §3.5.1).
- *
- * Phase 4 placeholder: we render a static label with a tooltip explaining
- * provenance. The real per-install hash glyph wiring lands in Phase 5+
- * alongside the install-id infrastructure. The component lives in this
- * file as a private subcomponent so any future move to a shared
- * `<RimSystemBadge />` is a single grep.
+ * Static `[RIM]` system badge marking the dialog as RIM's own, with a
+ * tooltip explaining its provenance.
  */
 function RimSystemBadge() {
   return (

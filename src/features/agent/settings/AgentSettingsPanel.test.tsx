@@ -74,7 +74,7 @@ vi.mock("../providers/registry", () => ({
 }));
 
 // useAgentStore is called both as a hook (selector pattern) and imperatively
-// via `useAgentStore.getState()`. We use vi.hoisted so the mock object is
+// via `useAgentStore.getState()`. vi.hoisted makes the mock object
 // available both inside the vi.mock factory (hoisted) and in test body resets.
 const { agentStoreState } = vi.hoisted(() => {
   const agentStoreState = {

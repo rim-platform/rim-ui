@@ -1,20 +1,13 @@
 /**
  * Cross-channel destination detector for the confirmation modal.
  *
- * Phase 4 uses a closed frontend list of "destination-bearing arg names".
- * If a command's args carry one of these AND its value differs from the
- * currently focused conversation, the modal shows the cross-channel
- * warning chip (§4.5).
+ * A closed list of destination-bearing argument names. If a command's args
+ * carry one of these and its value differs from the currently focused
+ * conversation, the modal shows the cross-channel warning chip.
  *
- * Phase 5 may move this to a backend-set flag
- * (`CommandArgument.is_destination_target: bool`) if the list grows or
- * plugins need to declare custom destination args.
- *
- * Phase 5+ TODO (spec §4.5 hovercard half): resolve `targetId` to a
- * channel name + topic + member count via the metadata layer, rendered as
- * a hover card in the warning chip. Deliberately deferred: the H2
- * mitigation is "destination differs, yes/no" — name resolution is
- * ergonomic polish, not load-bearing for the security property.
+ * The chip guards against a command reaching a conversation other than the
+ * one in view, so it only says whether the destination differs; it does not
+ * resolve the target to a channel name.
  */
 const DESTINATION_ARG_NAMES: ReadonlyArray<string> = [
   "conversation_id",

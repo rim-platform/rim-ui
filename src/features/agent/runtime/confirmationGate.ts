@@ -16,7 +16,7 @@ export interface ConfirmationChallengeData {
   nlDescription?: string;
   /**
    * Raw backend `Command.description` — the human-facing consequence line
-   * for the confirmation modal (C2 §4). Mirrors `nlDescription` through the
+   * for the confirmation modal. Mirrors `nlDescription` through the
    * pipeline; the modal prefers this over `nlDescription` for its subtitle.
    */
   description?: string;
@@ -60,9 +60,9 @@ interface RunOptions {
  * cancellation string the agent transcript surfaces verbatim.
  *
  * Stale-token handling: if the second call again returns
- * `CONFIRMATION_REQUIRED` (token expired between issue and approval), we
- * surface a fresh modal once and then give up. This mirrors the backend's
- * "issue a new token, single retry" contract from §3.5.
+ * `CONFIRMATION_REQUIRED` (token expired between issue and approval), a
+ * fresh modal is shown once and then the gate gives up. This matches the
+ * backend, which issues a new token and allows a single retry.
  */
 export async function runWithConfirmation(
   invoke: () => Promise<string>,
@@ -118,7 +118,7 @@ export async function runWithConfirmation(
       attempt += 1;
       if (attempt > MAX_STALE_RETRIES) {
         // Server keeps re-issuing — bail out with the latest challenge's
-        // server message so the agent transcript shows why we stopped.
+        // server message so the agent transcript shows why the gate stopped.
         throw err;
       }
       pending = err.challenge;

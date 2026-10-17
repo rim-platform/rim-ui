@@ -1,9 +1,8 @@
 import type { AiMessage, AiToolDefinition } from "./types";
 
 /**
- * Tool names both providers accept. Anthropic allows `^[a-zA-Z0-9_-]{1,128}$`
- * (platform.claude.com, "Define tools"); OpenAI allows the same characters with
- * a maximum length of 64 (openai-openapi, `FunctionObject.name`). The stricter
+ * Tool names both providers accept. Anthropic allows `^[a-zA-Z0-9_-]{1,128}$`;
+ * OpenAI allows the same characters with a maximum length of 64. The stricter
  * of the two applies, so one name works for either provider.
  */
 export const TOOL_NAME_MAX_LENGTH = 64;

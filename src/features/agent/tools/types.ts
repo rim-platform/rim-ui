@@ -16,10 +16,10 @@ export interface RegisteredTool {
   requiresConfirmation?: boolean;
   sensitivity?: CommandSensitivity;
   /**
-   * Raw backend `nl_description` retained alongside the tool. The tool's
-   * `definition.description` is the LLM-facing string (nlDescription plus
-   * sanitised intent_samples footer); the ConfirmCommandModal wants the
-   * plain nlDescription as its subtitle, so we keep both.
+   * The backend `nl_description` as sent. `definition.description` is the
+   * model-facing string (nlDescription plus the sanitised intent_samples
+   * footer); the confirmation modal shows the plain nlDescription as its
+   * subtitle.
    */
   nlDescription?: string;
   /**

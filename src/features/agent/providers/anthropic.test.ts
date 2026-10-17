@@ -65,9 +65,9 @@ describe("createAnthropicProvider", () => {
 
   it("chat invokes agent_chat_completion with provider, model, and snake_case body — no api_key field", async () => {
     // Contract: ChatCompletionRequest on the Rust side uses
-    // #[serde(deny_unknown_fields)] and has NO api_key field (Pete's #8,
-    // agent_proxy.rs:96–98). The key is read from the OS keyring by the
-    // proxy inline. Any payload that includes api_key is rejected.
+    // #[serde(deny_unknown_fields)] and has no api_key field. The key is
+    // read from the OS keyring by the proxy inline. Any payload that
+    // includes api_key is rejected.
     mockChatCompletion([{ kind: "done" }]);
 
     const provider = createAnthropicProvider();
@@ -87,7 +87,7 @@ describe("createAnthropicProvider", () => {
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("anthropic");
     expect(req.model).toBe("claude-sonnet-5-5");
-    // api_key MUST NOT be present — deny_unknown_fields on the Rust side
+    // api_key must not be present — deny_unknown_fields on the Rust side
     // would reject any payload containing this field.
     expect(req).not.toHaveProperty("api_key");
     expect(req.system_prompt).toBe("Be helpful");

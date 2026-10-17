@@ -185,7 +185,7 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
         }
       }
 
-      // If no tool calls, we're done
+      // No tool calls: the run is done
       if (!hasToolCalls) {
         store.setStatus("done");
         return;
@@ -238,7 +238,7 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
         }
 
         // Per-run mutating cap: reserve before invoking. On cap-breach,
-        // surface the synthetic skip-result and do NOT call the handler.
+        // surface the synthetic skip-result and skip the handler.
         const skip = turnBudget.reserve(tool);
         if (skip) {
           toolResultContent.push({
@@ -254,9 +254,8 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
           store.setToolActivity(`Running ${tc.name}...`);
           // Confirmation flow is server-driven: backend returns
           // CONFIRMATION_REQUIRED, the gate surfaces the modal, the user
-          // approves/rejects, and the gate re-calls with proof. The legacy
-          // `requiresConfirmation` + `window.confirm` path is removed —
-          // backend `dangerous: true` is now the single source of truth.
+          // approves/rejects, and the gate re-calls with proof. Which commands
+          // need confirmation is decided by the backend alone.
           const result = await runWithConfirmation(() => tool.handler(tc.input), {
             sensitivity: tool.sensitivity,
           });

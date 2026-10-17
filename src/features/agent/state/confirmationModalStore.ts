@@ -13,17 +13,16 @@ export interface ConfirmationRequest {
   nlDescription?: string;
   /**
    * Raw backend `Command.description` — the human-facing consequence line
-   * for the confirmation modal (C2 §4), sourced from GraphQL
+   * for the confirmation modal, sourced from GraphQL
    * `Command.description`. Preferred over `nlDescription` for the subtitle;
    * `nlDescription` remains the fallback for commands without one.
    */
   description?: string;
   serverMessage?: string;
   /**
-   * H2 #1 mitigation — backend flags this challenge as having been issued
-   * in the same agent turn that consumed an untrusted tool_result block.
-   * Modal renders the prominent §4.6 warning banner when true. Backend
-   * does not yet emit this; defaults to undefined (banner hidden).
+   * Whether this challenge was issued in the same agent turn that consumed an
+   * untrusted tool_result block. When true the modal shows the prominent
+   * tool-result warning banner; undefined hides it.
    */
   sameTurnAfterToolResult?: boolean;
   /** Who started the command: the AI agent (the default) or the user. */
@@ -62,13 +61,13 @@ function settle(decision: ConfirmationDecision): void {
 export const useConfirmationModalStore = create<ConfirmationModalState>((set) => ({
   request: null,
   open: (req) => {
-    // Single global modal — if a previous request is in-flight we resolve
-    // it as rejected so we never have two parallel pending promises racing
-    // against the same store slot.
+    // Single global modal — a previous request still in flight is resolved
+    // as rejected, so two parallel pending promises never race against the
+    // same store slot.
     if (internal.pending) {
       settle({ approved: false });
     }
-    // Assign the resolver BEFORE the set() so synchronous subscribers
+    // Assign the resolver before the set() so synchronous subscribers
     // (Zustand fires `subscribe` callbacks inside the set) can call
     // approve()/reject() and find a pending resolver to settle.
     const promise = new Promise<ConfirmationDecision>((resolve) => {
