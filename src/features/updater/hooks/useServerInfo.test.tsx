@@ -139,6 +139,54 @@ describe("useServerInfo", () => {
     expect(result.current.signupRequiresKeys).toBe(required);
   });
 
+  it("reads the operator's DM settings, and none from a server older than DM policies", async () => {
+    server.use(
+      mockGraphQLQuery("ServerInfo", {
+        serverInfo: {
+          version: "0.9.0",
+          apiVersion: CLIENT_API_VERSION,
+          features: [],
+          dmInbound: "PARTNERS",
+          dmOutbound: "ALLOWED",
+          dmPartners: ["rims1_partner"],
+        },
+      }),
+    );
+    const current = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+    await waitFor(() => expect(current.result.current.info).toBeDefined());
+    expect(current.result.current.info).toMatchObject({
+      dmInbound: "PARTNERS",
+      dmOutbound: "ALLOWED",
+      dmPartners: ["rims1_partner"],
+    });
+    current.unmount();
+
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        if (body.operationName === "ServerInfo") {
+          return HttpResponse.json({
+            errors: [{ message: 'Unknown field "dmInbound" on type "ServerInfo"' }],
+          });
+        }
+        return HttpResponse.json({
+          data: {
+            serverInfo: {
+              version: "0.8.0",
+              apiVersion: 1,
+              features: [],
+              signupRequiresKeys: true,
+            },
+          },
+        });
+      }),
+    );
+    const older = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+    await waitFor(() => expect(older.result.current.info).toBeDefined());
+    expect(older.result.current.signupRequiresKeys).toBe(true);
+    expect(older.result.current.info?.dmInbound).toBeUndefined();
+  });
+
   it("reads a server older than the signup policy as taking password signups, with its limits", async () => {
     const limits = fakeLimits({ workspacesPerUser: 5 });
     server.use(
