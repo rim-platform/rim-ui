@@ -83,6 +83,20 @@ describe("DirectConversationList", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("remote-dm");
   });
 
+  it("opens its first DM under a main-area plugin panel, and closes the panel when one is clicked", async () => {
+    useShellStore.getState().setSelectedConversationId(null);
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+    const user = userEvent.setup();
+    renderWithProviders(<DirectConversationList />);
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("local-dm"));
+    expect(useShellStore.getState().activePluginPanel).not.toBeNull();
+
+    await user.click(await screen.findByText("Alice"));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("remote-dm"));
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
+  });
+
   it("shows an open draft first and opens no conversation while it is open", async () => {
     const dan = { principalId: "rimp1_dan", relayUrls: [], name: "Dan" };
     useShellStore.getState().openDraftDirect({ spaceId: "direct-1", member: dan });
