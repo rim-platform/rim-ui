@@ -261,7 +261,8 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-72 shrink-0 border-r border-rim-line bg-rim-panel transition-opacity duration-300",
+                    // One column that never grows past the slot, whatever the panel's header holds.
+                    "grid w-72 shrink-0 grid-cols-1 overflow-hidden border-r border-rim-line bg-rim-panel transition-opacity duration-300",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >
