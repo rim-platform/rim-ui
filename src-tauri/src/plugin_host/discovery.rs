@@ -28,6 +28,10 @@ pub fn discover_plugins(
     };
 
     for entry in entries.flatten() {
+        // No plugin id starts with '.': these are the trash and install staging.
+        if entry.file_name().as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -127,6 +131,21 @@ mod tests {
 
         let results = discover_plugins(tmp.path());
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn skips_dot_entries_and_what_is_inside_them() {
+        let tmp = TempDir::new().unwrap();
+        let trash = tmp.path().join(".trash");
+        let trashed = trash.join("dev.example.hello-0190");
+        std::fs::create_dir_all(&trashed).unwrap();
+        write_manifest(&trash, "dev.example.trash");
+        write_manifest(&trashed, "dev.example.hello");
+        let hidden = tmp.path().join(".dev.example.hidden");
+        std::fs::create_dir_all(&hidden).unwrap();
+        write_manifest(&hidden, "dev.example.hidden");
+
+        assert!(discover_plugins(tmp.path()).is_empty());
     }
 
     #[test]
