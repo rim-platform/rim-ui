@@ -10,8 +10,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
+    platform: "desktop",
     capabilities: { pluginHost: true },
   }),
+}));
+
+vi.mock("../../../core/tauri/safeInvoke", () => ({
+  safeInvoke: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
 }));
 
 vi.mock("../runtime/pluginBridge", () => ({
@@ -37,7 +42,9 @@ vi.mock("../runtime/pluginFocusManager", () => ({
   })),
 }));
 
+import { LOCAL_PANEL_SHELL_URL } from "./PluginPanel";
 import { PluginSlotContainer } from "./PluginSlotContainer";
+import { mountedFrame } from "./testing/frame";
 import type { PluginInfo, PluginPanelDef } from "../types";
 
 describe("PluginSlotContainer", () => {
@@ -83,14 +90,14 @@ describe("PluginSlotContainer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the PluginPanel iframe for the plugin", () => {
+  it("renders a local plugin's panel in the frame shell", async () => {
     const { container } = render(
       <PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />,
     );
 
-    const iframe = container.querySelector("iframe");
-    expect(iframe).toBeInTheDocument();
-    expect(iframe?.getAttribute("src")).toContain("test-plugin");
+    const iframe = await mountedFrame(container);
+    expect(iframe?.getAttribute("src")).toBe(LOCAL_PANEL_SHELL_URL);
+    expect(iframe?.getAttribute("title")).toBe("Plugin: Test Plugin");
   });
 
   it("reaches the close button by keyboard and closes with Enter", async () => {
