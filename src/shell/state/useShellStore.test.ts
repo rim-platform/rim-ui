@@ -23,8 +23,8 @@ describe("useShellStore", () => {
   });
 
   it("sets active panel", () => {
-    useShellStore.getState().setActivePanel("plugins");
-    expect(useShellStore.getState().activePanel).toBe("plugins");
+    useShellStore.getState().setActivePanel("inbox");
+    expect(useShellStore.getState().activePanel).toBe("inbox");
   });
 
   it("sets main surface", () => {

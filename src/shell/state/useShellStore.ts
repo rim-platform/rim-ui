@@ -3,7 +3,7 @@ import { create } from "zustand";
 import type { PluginPanelSlot } from "../../features/plugins/types";
 import type { DirectMember } from "../../features/relay/conversations/startDirect";
 
-export type ActivePanel = "inbox" | "plugins";
+export type ActivePanel = "inbox";
 
 export type DisplayDensity = "comfortable" | "compact" | "ultra-compact";
 

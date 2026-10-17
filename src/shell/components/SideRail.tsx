@@ -63,16 +63,17 @@ export function SideRail() {
   const conversationCovered = panelShown?.slot === "main_area";
 
   function handleRailItemClick(key: "inbox" | "plugins", button: HTMLElement) {
-    setMainSurface({ kind: "conversation" });
-    setActivePanel(key);
-    // Inbox goes back to the conversation.
-    if (key === "inbox" && conversationCovered) closePluginPanel();
-    useNotificationsPanelStore.getState().setOpen(false);
-    // Plugins also toggles the menu of plugin panels.
+    // Plugins only toggles the menu of plugin panels; choosing one shows it.
     if (key === "plugins") {
       const rect = button.getBoundingClientRect();
       setPluginMenuAt((open) => (open ? null : { x: rect.right + 8, y: rect.top }));
+      return;
     }
+    setMainSurface({ kind: "conversation" });
+    setActivePanel(key);
+    // Inbox goes back to the conversation.
+    if (conversationCovered) closePluginPanel();
+    useNotificationsPanelStore.getState().setOpen(false);
   }
 
   return (
@@ -87,13 +88,13 @@ export function SideRail() {
         {railItems.map((item) => {
           const Icon = item.icon;
           const isPlugins = item.key === "plugins";
-          const active =
-            (mainSurface.kind === "conversation" &&
+          // Plugins is marked while a plugin panel shows; Inbox while its list is the tool panel.
+          const active = isPlugins
+            ? panelShown !== null
+            : mainSurface.kind === "conversation" &&
               activePanel === item.key &&
               !notificationsOpen &&
-              !(item.key === "inbox" && conversationCovered)) ||
-            // Plugins stays marked while a plugin panel shows.
-            (isPlugins && panelShown !== null);
+              !conversationCovered;
           const badge = item.key === "inbox" && totalUnread > 0 ? totalUnread : 0;
           return (
             <button

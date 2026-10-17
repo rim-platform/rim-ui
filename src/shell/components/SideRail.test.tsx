@@ -191,6 +191,15 @@ describe("SideRail — plugin panels", () => {
     expect(screen.queryByRole("button", { name: /Kubernetes Pods/ })).not.toBeInTheDocument();
   });
 
+  it("leaves the tool panel and the main surface alone when Plugins is clicked", async () => {
+    const user = userEvent.setup();
+    act(() => useShellStore.getState().setMainSurface({ kind: "settings" }));
+    renderWithProviders(<SideRail />);
+    await user.click(plugins());
+    expect(useShellStore.getState().activePanel).toBe("inbox");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+  });
+
   it("lists the panels of running plugins when Plugins is clicked", async () => {
     const user = userEvent.setup();
     renderWithProviders(<SideRail />);

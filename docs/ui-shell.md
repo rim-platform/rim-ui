@@ -93,9 +93,9 @@ Behavior:
 - The side rail should be icon-first and compact.
 - It should support unread and activity indicators.
 - Plugin panels open from the Plugins entry, not from an icon each, so the rail does not grow
-  with every installed plugin. The entry shows the plugins in the tool panel and opens a menu
-  beside it with one row per panel of every enabled, running plugin: the plugin's name, the
-  panel's title, and a puzzle marker that sets the rows apart from built-in destinations.
+  with every installed plugin. The entry opens a menu beside it with one row per panel of
+  every enabled, running plugin: the plugin's name, the panel's title, and a puzzle marker
+  that sets the rows apart from built-in destinations. The tool panel stays as it was.
   Choosing a row opens the panel in its slot. The menu works from the keyboard (Enter or Space
   opens it, the arrow keys move, Enter chooses, Escape closes it and returns focus to the entry)
   and closes on a click outside. With no running plugin that has a panel, it links to the plugin
