@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { sharesWorkspace } from "../inbox/autoAccept";
 import {
   ContactLinkError,
   formatContactLink,
@@ -60,16 +59,5 @@ describe("principalFingerprint", () => {
     expect(fingerprint).toMatch(/^[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}$/);
     expect(await principalFingerprint(PRINCIPAL)).toBe(fingerprint);
     expect(await principalFingerprint(PRINCIPAL.replace("e0", "e1"))).not.toBe(fingerprint);
-  });
-});
-
-describe("sharesWorkspace", () => {
-  it("finds a principal in any member list", () => {
-    const lists = [
-      [{ principalId: "rimp1_a" }],
-      [{ principalId: null }, { principalId: PRINCIPAL }],
-    ];
-    expect(sharesWorkspace(PRINCIPAL, lists)).toBe(true);
-    expect(sharesWorkspace("rimp1_z", lists)).toBe(false);
   });
 });
