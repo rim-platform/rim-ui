@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import { useHostDialogOpen } from "../../../shared/ui/hostDialogs";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import {
   createPluginBridge,
   type HostToPluginMessage,
@@ -61,7 +62,8 @@ function errorMessage(error: unknown): string {
  * One open plugin panel: a sandboxed frame that loads the frame shell, gets the
  * panel's files in `rim.frame.init` once the shell says hello, and then speaks
  * the panel bridge. The host sends it the theme and its plugin's panel state
- * once the shell says the panel rendered. Retry starts over with a new frame.
+ * once the shell says the panel rendered, and, to a plugin that may read chat,
+ * the open conversation then and on every change. Retry starts over with a new frame.
  */
 export function PluginFrame(props: PluginFrameProps) {
   const [attempt, setAttempt] = useState(0);
@@ -130,6 +132,14 @@ function FrameAttempt({
       maxMessagesPerMinute: PANEL_MESSAGES_PER_MINUTE,
     });
     const panelState = followState(bridge.sendToPlugin);
+    // Which conversation is open is chat context: only a plugin that may read chat learns it.
+    const followsConversation = approvedCapabilities.includes("chat.read");
+    let rendered = false;
+    function sendConversation(conversationId: string | null) {
+      if (rendered && followsConversation) {
+        bridge.sendToPlugin({ type: "conversation.changed", conversationId });
+      }
+    }
 
     function handleLoad() {
       loads.current += 1;
@@ -173,6 +183,8 @@ function FrameAttempt({
         setLoadState("loaded");
         bridge.sendToPlugin(createThemeChangeMessage());
         void panelState.load();
+        rendered = true;
+        sendConversation(useShellStore.getState().selectedConversationId);
       }
       if (data.type === "rim.frame.error") {
         setFailure(errorMessage(typeof data.message === "string" ? data.message : ""));
@@ -182,7 +194,13 @@ function FrameAttempt({
     iframe.addEventListener("load", handleLoad);
     window.addEventListener("message", handleMessage);
     const unsubscribeTheme = onThemeChange((message) => bridge.sendToPlugin(message));
+    const unsubscribeConversation = useShellStore.subscribe((state, previous) => {
+      if (state.selectedConversationId !== previous.selectedConversationId) {
+        sendConversation(state.selectedConversationId);
+      }
+    });
     return () => {
+      unsubscribeConversation();
       iframe.removeEventListener("load", handleLoad);
       window.removeEventListener("message", handleMessage);
       unsubscribeTheme();
