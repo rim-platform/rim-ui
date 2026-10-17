@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
 import { MessageItem } from "../MessageItem";
 import { ReplyQuote } from "./ReplyQuote";
-import { plainFirstLine, replyQuoteFor } from "./replyQuote";
+import { plainFirstLine, replyQuoteFor } from "./replyQuoteView";
 import type { MessageItemMessage, MessageItemProps, ReplyQuoteView } from "./types";
 
 const parent: MessageItemMessage = {

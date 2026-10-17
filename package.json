@@ -36,6 +36,7 @@
     "sdk:smoke": "node scripts/sdk-smoke.mjs",
     "plugin:bundle": "node sdk/plugin-sdk/scripts/bundle-plugin.mjs",
     "skew:check": "node scripts/skew-check.mjs",
+    "case:check": "node scripts/case-check.mjs",
     "version:check": "node scripts/version-check.mjs",
     "version:set": "node scripts/version-set.mjs",
     "licenses": "node scripts/licenses.mjs",
