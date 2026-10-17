@@ -39,7 +39,7 @@ interface AgentState {
   // Settings (persisted via zustand persist)
   settings: AgentSettings;
 
-  // API key status (key itself is NOT stored in zustand)
+  // API key status (the key itself is not stored in zustand)
   hasApiKey: boolean;
   loadApiKeyStatus: "idle" | "loading" | "loaded";
 
@@ -64,7 +64,8 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-// Migrate old settings from separate localStorage key
+// Moves settings stored under the separate `rim-agent-settings` localStorage key into the
+// store's defaults, and removes that key.
 function migrateOldSettings(): Partial<AgentSettings> {
   try {
     const old = localStorage.getItem("rim-agent-settings");
@@ -189,7 +190,7 @@ export const useAgentStore = create<AgentState>()(
           usage: null,
         }),
 
-      // Legacy appendText — appends to last assistant message in active conversation
+      // Appends to the last assistant message in the active conversation, or starts one
       appendText: (text) => {
         const state = get();
         const convId = state.activeConversationId;

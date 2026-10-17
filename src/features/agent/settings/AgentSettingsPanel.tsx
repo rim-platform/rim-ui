@@ -92,7 +92,7 @@ async function tauriClearProviderKey(provider: string): Promise<void> {
 /**
  * Validate `apiKey` against the live provider API without storing it.
  * The Rust command `agent_validate_provided_key` accepts the key directly
- * and does NOT write it to the keyring — safe to call before persisting.
+ * and does not write it to the keyring — safe to call before persisting.
  */
 async function tauriValidateProvidedKey(
   provider: string,
@@ -168,10 +168,8 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Consolidated "AI Agent" settings panel.
- *
- * Merges the old `AgentSettingsPanel` (on-blur save, optional test) and `AiProviderKeySettings` (keyring-backed, validate-first
- * save) into a single panel per the agent-settings-consolidation decision.
+ * The "AI Agent" settings panel: provider, keyring-backed API key saved only
+ * after it validates, model and system prompt.
  *
  * Layout (top → bottom):
  *   1. Heading + subhead (keyring storage statement)
@@ -188,8 +186,7 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
  *   - `settings.providerId`, `settings.modelId`, `settings.systemPrompt`
  *     live in `useAgentStore` (zustand, persisted to localStorage).
  *   - `hasApiKey` in the store is updated on mount, on successful save, and
- *     on delete so `AgentOverlay` can gate its presence check without its own
- *     keyring round-trip.
+ *     on delete.
  */
 export function AgentSettingsPanel() {
   const { capabilities } = useRuntime();
@@ -295,7 +292,7 @@ export function AgentSettingsPanel() {
         // Invalid key — keyring untouched; existing key preserved.
         setVerifyState({ kind: "invalid" });
       } else {
-        // Network error — cannot confirm key; do NOT store.
+        // Network error — cannot confirm key; it is not stored.
         setVerifyState({ kind: "network_error", message: outcome.message });
         toast.warning("Cannot reach provider — key not saved", {
           description: `${currentMeta.name} was unreachable. The key was not stored. Check your network and try again.`,

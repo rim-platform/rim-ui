@@ -92,9 +92,8 @@ function toAnthropicTools(tools: AiToolDefinition[], toolNames: ToolNameMap) {
 
 /**
  * Wire shape exposed by `agent_proxy::ChatStreamEvent` (snake_case, tag = "kind").
- * `data` is the parsed JSON payload of the SSE `data:` line — we forward it
- * straight to the existing event-type switch below, preserving the prior
- * fetch+ReadableStream behaviour without rewriting any reassembly logic.
+ * `data` is the parsed JSON payload of the SSE `data:` line, handled by the
+ * event-type switch in `chat`.
  */
 type ChatStreamEvent =
   | { kind: "sse_event"; event_type: string | null; data: Record<string, unknown> }
@@ -105,23 +104,17 @@ type ChatStreamEvent =
  * Construct an Anthropic provider that dispatches `chat()` calls to the
  * Tauri `agent_chat_completion` command. The API key is read directly from
  * the secret vault by the Rust proxy on every request — the JS side never
- * holds or transmits the key bytes (Phase 5 / Option B, §2 of the
- * agent-settings-consolidation decision).
- *
- * `validateCredentials` and `fetchModels` retain their existing
- * explicit-key parameter because they are invoked from the settings panel
- * with the user's in-form value (not yet saved to the keyring); those paths
- * are already per-call and do not need loader indirection.
+ * holds or transmits the key bytes.
  */
 export function createAnthropicProvider(): AiProvider {
   return {
     config,
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
-      // The Rust proxy reads the API key from the secret vault on every request
-      // (agent_proxy.rs:295). Do NOT send api_key here — ChatCompletionRequest
-      // uses #[serde(deny_unknown_fields)] and will reject any unknown field,
-      // including the legacy api_key (Pete's #8, agent_proxy.rs:96–98).
+      // The Rust proxy reads the API key from the secret vault on every request.
+      // No api_key is sent: ChatCompletionRequest uses
+      // #[serde(deny_unknown_fields)] and has no api_key field, so it would
+      // reject the request.
       // Command ids contain dots, which the API refuses in tool names; tool
       // calls come back under the API name and are translated back below.
       const toolNames = buildRequestToolNameMap(request.tools, request.messages);
@@ -137,9 +130,9 @@ export function createAnthropicProvider(): AiProvider {
       };
 
       // Bounded queue of stream events drained by the async iterator below.
-      // The Tauri Channel callback fires synchronously off the IPC bridge;
-      // we cannot make it `await` the consumer, so we buffer here and let
-      // the iterator pull at its own pace.
+      // The Tauri Channel callback fires synchronously off the IPC bridge and
+      // cannot `await` the consumer, so events are buffered here and the
+      // iterator pulls at its own pace.
       const queue: ChatStreamEvent[] = [];
       let waiter: ((ev: ChatStreamEvent) => void) | null = null;
 
@@ -160,7 +153,7 @@ export function createAnthropicProvider(): AiProvider {
       }).catch((err: unknown) => {
         // The proxy emits ChatStreamEvent::Error on the channel before
         // rejecting, so the queue path normally surfaces the message.
-        // We only land here if the channel never fired (e.g. IPC layer
+        // This path runs only if the channel never fired (e.g. IPC layer
         // refused the call) — synthesize a terminal error so the iterator
         // has something to drain on.
         const message =
@@ -204,9 +197,7 @@ export function createAnthropicProvider(): AiProvider {
         }
 
         // event.kind === "sse_event" — the IPC proxy forwards the parsed
-        // JSON payload of the provider's `data:` line; the per-event type
-        // switch below is the same logic that used to run after JSON.parse
-        // on a manual TextDecoder buffer.
+        // JSON payload of the provider's `data:` line.
         const payload = event.data;
         const eventType = payload.type as string;
 

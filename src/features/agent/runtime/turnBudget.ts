@@ -4,18 +4,19 @@ import type { RegisteredTool } from "../tools/types";
 /**
  * Per-turn spending caps.
  *
- * - `MAX_PARALLEL_TOOL_CALLS` bounds how many tool_use blocks we honor in a
- *   single model round. The LLM can request more; the excess is rejected
+ * - `MAX_PARALLEL_TOOL_CALLS` bounds how many tool_use blocks are honored in
+ *   a single model round. The LLM can request more; the excess is rejected
  *   with a sanitized tool_result so the model can replan.
  * - `MAX_MUTATING_PER_TURN` bounds the number of mutating tool calls across
  *   the entire `runAgent` invocation (all rounds combined). A "mutating"
  *   call is one whose registered tool has sensitivity MUTATING or
- *   RESTRICTED, OR whose registration carried `sideEffect: true`. SAFE and
+ *   RESTRICTED, or whose registration carried `sideEffect: true`. SAFE and
  *   SENSITIVE tools do not count.
  *
  * Both caps exist to bound blast radius on a runaway tool loop. When a cap
- * is hit, we surface a synthetic tool_result (NOT throw) so the LLM keeps
- * the conversation coherent and can either stop or pick a smaller subset.
+ * is hit, the engine returns a synthetic tool_result instead of throwing, so
+ * the LLM keeps the conversation coherent and can either stop or pick a
+ * smaller subset.
  */
 export const MAX_PARALLEL_TOOL_CALLS = 3;
 export const MAX_MUTATING_PER_TURN = 3;
@@ -57,8 +58,14 @@ export function createTurnBudget(): TurnBudget {
   };
 }
 
+const URL_RE = /\b[a-z]+:\/\/\S+/gi;
+const ABS_PATH_RE = /(?:\/[^/\s]+){2,}|\b[a-zA-Z]:\\[^\s]+/g;
+// eslint-disable-next-line no-control-regex -- intentionally matches control chars to strip them
+const CONTROL_RE = /[\x00-\x1F\x7F]+/g;
+const MAX_ERR_LEN = 200;
+
 /**
- * L2 tool error sanitization.
+ * Tool error sanitization.
  *
  * Tool handler errors flow back to the LLM as a `tool_result` with
  * `is_error: true`. Without sanitization, raw `Error.message` strings can
@@ -71,15 +78,9 @@ export function createTurnBudget(): TurnBudget {
  * - Strip URL-shaped tokens (`http://...`, `file://...`).
  * - Strip absolute paths (`/home/...`, `C:\...`).
  * - Cap to 200 chars; trailing ellipsis if truncated.
- * - For non-Error inputs (string, unknown, undefined), produce a generic
+ * - For inputs that are neither an Error nor a string, produce a generic
  *   message — never JSON.stringify arbitrary objects (might contain PII).
  */
-const URL_RE = /\b[a-z]+:\/\/\S+/gi;
-const ABS_PATH_RE = /(?:\/[^/\s]+){2,}|\b[a-zA-Z]:\\[^\s]+/g;
-// eslint-disable-next-line no-control-regex -- intentionally matches control chars to strip them
-const CONTROL_RE = /[\x00-\x1F\x7F]+/g;
-const MAX_ERR_LEN = 200;
-
 export function sanitizeToolError(err: unknown): string {
   let raw: string;
   if (err instanceof Error) {

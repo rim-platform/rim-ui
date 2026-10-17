@@ -24,7 +24,7 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: vi.fn() },
 }));
 
-// Post-#55: the only remaining hardcoded tool is `get_current_context`.
+// The only hardcoded tool is `get_current_context`.
 // Each test controls the hardcoded set by re-implementing this mock so it
 // installs whatever the scenario needs via `registerTool`.
 vi.mock("./getCurrentContext", () => ({
@@ -445,9 +445,9 @@ describe("loadAgentTools (side-effecting integration)", () => {
     await loadAgentTools();
 
     // After two boots, the registry must contain the backend winner — not
-    // the builtin handler that registerBuiltinTools tried to install on the
-    // second boot. Regression test for the race window where the dropped
-    // builtin briefly shadowed the backend handler under the same name.
+    // the builtin handler the hardcoded-tool registration installs on the
+    // second boot — so the dropped builtin never shadows the backend handler
+    // under the same name, even briefly.
     expect(getAllTools().length).toBe(2);
     const winner = getTool("send_message");
     expect(winner).toBeDefined();
@@ -705,8 +705,8 @@ describe("end-to-end: agent → backend → result loop", () => {
     expect(tool).toBeDefined();
     expect(tool!.handler).not.toBe(builtinHandler);
 
-    // Tool definition reflects the real backend schema (Phase 3 generator
-    // wiring): nl_description used, server_id required, type=string.
+    // Tool definition reflects the real backend schema through the
+    // generator: nl_description used, server_id required, type=string.
     expect(tool!.definition.description).toContain("List all channels");
     expect(tool!.definition.input_schema).toEqual({
       type: "object",
@@ -743,21 +743,20 @@ describe("end-to-end: agent → backend → result loop", () => {
 /* ----------------------------------------------- no-parallel-registry guard */
 
 describe("no parallel registry (Phase 4 close)", () => {
-  // Glob of the deleted `tools/builtins/` directory. Vite's `import.meta.glob`
-  // returns an empty object when the pattern matches zero files. This is the
-  // structural assertion that the parallel registry is gone: if someone
-  // reintroduces any file under `./builtins/*`, this test fails. The entire
-  // motivation for the AI agent reframe was dissolving that parallel
-  // registry — a regression here means the reframe was undone.
+  // Glob of the `tools/builtins/` directory, which must not exist. Vite's
+  // `import.meta.glob` returns an empty object when the pattern matches zero
+  // files. If any file appears under `./builtins/*`, this test fails: the
+  // agent's tools come from the backend command registry, not a parallel
+  // client-side one.
   it("tools/builtins/ has zero files (the parallel registry is deleted)", () => {
     const glob = import.meta.glob("./builtins/*");
     expect(Object.keys(glob)).toEqual([]);
   });
 
   it("get_current_context carve-out still exists at the top-level location", () => {
-    // Importing the carve-out out of band (outside loader's mocked path) proves
-    // the module is still reachable post-refactor. If `getCurrentContext.ts`
-    // ever disappears, the agent loses its ONE piece of FE-runtime visibility.
+    // Globbing the module outside loader's mocked path proves it is still
+    // reachable. If `getCurrentContext.ts` ever disappears, the agent loses
+    // its one view of client runtime state.
     const mod = import.meta.glob("./getCurrentContext.ts");
     expect(Object.keys(mod)).toEqual(["./getCurrentContext.ts"]);
   });

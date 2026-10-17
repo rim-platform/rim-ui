@@ -23,12 +23,9 @@ function jsonTypeForArg(t: CommandArgumentType): string {
       return "boolean";
     // ID-shaped + free-text + enum all serialize as JSON strings.
     // Backend re-validates the semantic shape; LLMs handle them as opaque.
-    //
-    // Deferred (Phase 5): channel-name → conversation_id resolution. Today
-    // the LLM must already hold the opaque ID (e.g. from a prior
-    // `chat.list_channels` call). A name-to-ID resolver layer belongs in
-    // the agent pre-dispatch pass, not in this schema shaper. Tracked in
-    // #61's successor ticket; do not inline here.
+    // No channel-name → conversation_id resolution happens here: the LLM
+    // must already hold the opaque ID (e.g. from a prior
+    // `chat.list_channels` call).
     case CommandArgumentType.STRING:
     case CommandArgumentType.ENUM:
     case CommandArgumentType.SELECTION_TEXT:

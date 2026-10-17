@@ -1,7 +1,9 @@
+/** The verb used when a command id yields none. */
+const FALLBACK_VERB = "confirm";
+
 /**
- * Derive a confirmation verb from a command id. The backend does NOT yet
- * carry a `confirmation_verb` field; we own the derivation rule until a
- * future Phase ships it.
+ * Derive a confirmation verb from a command id. The backend carries no
+ * confirmation verb, so the client derives it.
  *
  * Rule: split `command_id` on `.` and use the second segment's first word
  * (the verb part of `domain.verb_object`). Falls back to a generic verb if
@@ -14,15 +16,9 @@
  *   workspace.uninstall_pl  → "uninstall"
  *   single_segment          → "confirm"  (fallback)
  *
- * Verbs are normalized to lowercase for case-insensitive comparison in the
- * type-to-confirm input. Comparison is also trimmed.
- *
- * TODO(phase-6 i18n): displayed verb localizes; typed verb stays canonical
- * English; show "(create)" canonical hint in parens. Audit-log row records
- * the typed verb verbatim so it remains comparable across locales.
+ * @returns The verb in lowercase, for the case-insensitive, trimmed
+ *   comparison in the type-to-confirm input.
  */
-const FALLBACK_VERB = "confirm";
-
 export function deriveConfirmationVerb(commandId: string): string {
   if (!commandId || typeof commandId !== "string") return FALLBACK_VERB;
 

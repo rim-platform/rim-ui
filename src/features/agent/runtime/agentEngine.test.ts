@@ -20,8 +20,8 @@ import { makeCommand } from "../tools/test-helpers";
 // so the 10/min cap doesn't bleed across the matrix.
 import { agentRateLimiter } from "./rateLimiter";
 
-// graphqlClient.request is the chokepoint for every backend handler call. We
-// mock it module-wide so each test can stage `executeCommand` responses.
+// graphqlClient.request is the chokepoint for every backend handler call. It
+// is mocked module-wide so each test can stage `executeCommand` responses.
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: vi.fn() },
 }));
@@ -29,7 +29,7 @@ vi.mock("../../../core/graphql/client", () => ({
 import { graphqlClient } from "../../../core/graphql/client";
 
 // getProvider is the only path agentEngine uses to obtain a chat stream.
-// We mock the registry and inject a stub that yields scripted chunks.
+// The registry is mocked to return a stub that yields scripted chunks.
 vi.mock("../providers/registry", () => ({
   getProvider: vi.fn(),
 }));
@@ -108,8 +108,8 @@ function makeScriptedProvider(opts: ScriptedProviderOptions): AiProvider {
 
 /**
  * Drive `runAgent` to completion. The engine signals done via store status,
- * not a returned promise resolution value, so we await the run promise
- * (which resolves when the engine's while-loop exits) then read store state.
+ * not a returned promise resolution value, so this awaits the run promise
+ * (which resolves when the engine's while-loop exits), then reads store state.
  */
 async function runOneTurn(prompt: string, providerId = "test-provider"): Promise<void> {
   await runAgent({
@@ -122,15 +122,14 @@ async function runOneTurn(prompt: string, providerId = "test-provider"): Promise
 /* ------------------------------------------------------------------ fixtures */
 
 /**
- * Backend command IDs + arg shapes that ship today (post-#36 + #48).
+ * Backend command IDs + arg shapes.
  *
- * **Arg names are load-bearing** — they must match
- * `rim_infra_services/src/command/registry.rs` exactly. The agent engine
- * passes them through verbatim to `executeCommand.args`; a drift here
+ * **Arg names are load-bearing** — they must match the backend command
+ * registry (`rim_infra_services::command::registry`) exactly. The agent
+ * engine passes them through verbatim to `executeCommand.args`; a drift here
  * shadows a real backend regression that this harness is designed to catch.
- * Post-#49 the matrix also covers the five new AI-callable builtins
- * (list_members, search_messages, get_recent_messages, pin_message,
- * toggle_reaction) — arg names verified in Strange's ship report.
+ * The matrix also covers the AI-callable builtins list_members,
+ * search_messages, get_recent_messages, pin_message and toggle_reaction.
  */
 const BACKEND_TOOL_FIXTURES: Array<{
   commandId: string;
@@ -191,8 +190,6 @@ const BACKEND_TOOL_FIXTURES: Array<{
     },
     backendPayload: { channelId: "c-new" },
   },
-  // #49 additions — arg names verified against
-  // `rim_infra_services/src/command/registry.rs:1222..1465`.
   {
     commandId: "chat.list_members",
     sensitivity: CommandSensitivity.SAFE,
@@ -387,9 +384,8 @@ describe("runAgent — context window", () => {
 
 describe("runAgent — agent loop dispatches each backend-shipped tool", () => {
   for (const fixture of BACKEND_TOOL_FIXTURES) {
-    // Skip dangerous tools for now — the confirmation modal flow would need
-    // its own scaffolding (modal store stubbed to auto-approve). Cover those
-    // in a separate `dangerous tools` describe block once #55 unblocks.
+    // Dangerous tools are skipped — the confirmation modal flow needs its own
+    // scaffolding (modal store stubbed to auto-approve).
     if (fixture.dangerous) continue;
 
     it(`${fixture.commandId}: tool_use → executeCommand({commandId, args, AGENT}) → tool_result fed back`, async () => {
@@ -405,7 +401,7 @@ describe("runAgent — agent loop dispatches each backend-shipped tool", () => {
       ]);
       registerTool(backendTool!.definition, backendTool!.handler, backendTool!.options);
 
-      // 2) Stage the executeCommand response BEFORE running the engine.
+      // 2) Stage the executeCommand response before running the engine.
       vi.mocked(graphqlClient.request).mockResolvedValueOnce({
         executeCommand: {
           status: "SUCCESS",
@@ -435,7 +431,7 @@ describe("runAgent — agent loop dispatches each backend-shipped tool", () => {
             ],
           ],
           onRequest: (req) => {
-            // Capture the messages array on the second round so we can assert
+            // Capture the messages array on the second round so the test can assert
             // the engine fed the tool_result back into the prompt.
             if (
               !secondRoundMessages &&
@@ -563,8 +559,8 @@ describe("runAgent — backend errors surface as is_error tool_result", () => {
       }>
     ).find((b) => b.type === "tool_result")!;
     expect(block.is_error).toBe(true);
-    // sanitizeToolError strips PII — content should be a non-empty string but
-    // we don't assert exact wording (sanitization rules live in turnBudget.ts).
+    // sanitizeToolError strips PII — content should be a non-empty string; the
+    // exact wording is not asserted (sanitization rules live in turnBudget.ts).
     expect(typeof block.content).toBe("string");
     expect(block.content!.length).toBeGreaterThan(0);
 

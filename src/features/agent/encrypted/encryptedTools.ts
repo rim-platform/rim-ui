@@ -3,8 +3,8 @@
 // messages, never returns encrypted rows from `chat.search_messages`, and
 // refuses `chat.post_message`. So in an encrypted conversation the agent reads
 // the local cache and posts through the encrypted send path, and only in one
-// the person turned the agent on for; elsewhere the tools go to the server as
-// before. A group the agent creates is plaintext on the server and is upgraded
+// the person turned the agent on for; elsewhere the tools go to the server. A
+// group the agent creates is plaintext on the server and is upgraded
 // from this desktop like any other.
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
