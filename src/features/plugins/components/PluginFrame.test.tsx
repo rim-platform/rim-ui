@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { DESKTOP_SHELL_URL, FRAME_ALLOW, FRAME_SANDBOX } from "../web/webPluginHost";
 import { PluginFrame, type PluginFrameProps } from "./PluginFrame";
 import {
@@ -59,6 +60,7 @@ const HELLO = { type: "rim.frame.hello", v: 1 };
 
 afterEach(() => {
   vi.useRealTimers();
+  useShellStore.setState({ selectedConversationId: null });
 });
 
 describe("PluginFrame", () => {
@@ -188,5 +190,40 @@ describe("PluginFrame", () => {
     const { follower, unmount } = await loadedPanel();
     unmount();
     expect(follower.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells a panel that may read chat which conversation is open, and every change after", async () => {
+    useShellStore.setState({ selectedConversationId: "c1" });
+    const { iframe, posted } = await loadedPanel({ approvedCapabilities: ["chat.read"] });
+    // Nothing before the panel rendered.
+    act(() => useShellStore.setState({ selectedConversationId: "c2" }));
+    expect(sentMessages(posted)).toEqual([]);
+
+    fromFrame(iframe, { type: "rim.frame.ready", v: 1 });
+    act(() => useShellStore.setState({ selectedConversationId: "c3" }));
+    act(() => useShellStore.setState({ isThreadOpen: true }));
+    act(() => useShellStore.setState({ selectedConversationId: null }));
+    const sent = sentMessages(posted) as { type: string }[];
+    expect(sent.filter((m) => m.type === "conversation.changed")).toEqual([
+      { type: "conversation.changed", conversationId: "c2" },
+      { type: "conversation.changed", conversationId: "c3" },
+      { type: "conversation.changed", conversationId: null },
+    ]);
+  });
+
+  it("keeps the open conversation from a panel whose plugin may not read chat", async () => {
+    useShellStore.setState({ selectedConversationId: "c1" });
+    const { iframe, posted, unmount } = await loadedPanel({ approvedCapabilities: ["ui.panel"] });
+    fromFrame(iframe, { type: "rim.frame.ready", v: 1 });
+    act(() => useShellStore.setState({ selectedConversationId: "c2" }));
+    expect((sentMessages(posted) as { type: string }[]).map((m) => m.type)).toEqual([
+      "theme.changed",
+    ]);
+
+    unmount();
+    act(() => useShellStore.setState({ selectedConversationId: "c3" }));
+    expect((sentMessages(posted) as { type: string }[]).map((m) => m.type)).toEqual([
+      "theme.changed",
+    ]);
   });
 });
