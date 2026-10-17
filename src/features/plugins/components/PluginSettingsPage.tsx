@@ -26,6 +26,7 @@ import { InstallFromLink } from "./InstallFromLink";
 import { PluginAuditPanel } from "./PluginAuditPanel";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
+import { UninstallPluginDialog } from "./UninstallPluginDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
 import { RegistryNotes } from "../registry/components/RegistryNotes";
 import { SignAndPublishDialog } from "../registry/components/SignAndPublishDialog";
@@ -65,7 +66,7 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
  * folder picker — current approach is functional but less polished.
  */
 export function PluginSettingsPage() {
-  const { capabilities } = useRuntime();
+  const { platform, capabilities } = useRuntime();
   const { data: plugins, isLoading } = usePluginList();
   const enable = usePluginEnable();
   const disable = usePluginDisable();
@@ -75,6 +76,9 @@ export function PluginSettingsPage() {
   const trustFingerprint = usePluginTrustFingerprint();
   const signing = usePluginSigning();
   const [signTarget, setSignTarget] = useState<PluginInfo | null>(null);
+  // The plugin whose uninstall waits for the user's confirmation.
+  const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
 
   const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
   // A plugin just installed: its permission prompt opens once it is in the list,
@@ -196,8 +200,19 @@ export function PluginSettingsPage() {
     }
   }
 
-  function handleUninstall(pluginId: string) {
-    uninstall.mutate(pluginId);
+  function handleUninstall(plugin: PluginInfo) {
+    setUninstallError(null);
+    setUninstallTarget(plugin);
+  }
+
+  function confirmUninstall(pluginId: string) {
+    setUninstallError(null);
+    uninstall.mutate(pluginId, {
+      onSuccess: () => setUninstallTarget(null),
+      onError: (err) => {
+        setUninstallError("message" in err ? err.message : "Uninstall failed");
+      },
+    });
   }
 
   function handleTrustFingerprint(pluginId: string) {
@@ -330,6 +345,17 @@ export function PluginSettingsPage() {
         />
       )}
 
+      {uninstallTarget && (
+        <UninstallPluginDialog
+          plugin={uninstallTarget}
+          web={platform === "web"}
+          isPending={uninstall.isPending}
+          error={uninstallError}
+          onConfirm={() => confirmUninstall(uninstallTarget.plugin_id)}
+          onCancel={() => setUninstallTarget(null)}
+        />
+      )}
+
       {signTarget && signing.identity && (
         <SignAndPublishDialog
           plugin={signTarget}
@@ -359,7 +385,7 @@ interface PluginRowProps {
   /** A local-process plugin seen on the web, which cannot run it. */
   needsDesktop?: boolean;
   onToggle: (plugin: PluginInfo) => void;
-  onUninstall: (pluginId: string) => void;
+  onUninstall: (plugin: PluginInfo) => void;
   onPermissions: (plugin: PluginInfo) => void;
   onTrustFingerprint: (pluginId: string) => void;
   /** Present when this device can sign plugins with the account's identity key. */
@@ -477,7 +503,7 @@ function PluginRow({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onUninstall(plugin.plugin_id)}
+            onClick={() => onUninstall(plugin)}
             title="Uninstall"
             aria-label="Uninstall plugin"
           >
