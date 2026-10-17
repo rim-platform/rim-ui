@@ -369,8 +369,7 @@ pub async fn plugin_uninstall(
         uninstalled?
     };
     if let PluginFolder::Trashed(trashed) = folder {
-        let plugin_id = plugin_id.clone();
-        tauri::async_runtime::spawn_blocking(move || delete_trashed_folder(&plugin_id, &trashed));
+        trash::delete_in_background(&plugin_id, trashed);
     }
 
     state
@@ -394,7 +393,7 @@ pub async fn plugin_uninstall(
 #[derive(Debug, PartialEq, Eq)]
 enum PluginFolder {
     /// The folder the app installed the plugin into was moved to the trash, to
-    /// this path, for [`delete_trashed_folder`] to delete.
+    /// this path, for [`trash::delete_in_background`] to delete.
     Trashed(std::path::PathBuf),
     /// A link stood in the folder's place; the link was removed, its target kept.
     Unlinked,
@@ -489,21 +488,6 @@ fn trash_installed_folder(
         trashed.display()
     );
     Ok(PluginFolder::Trashed(trashed))
-}
-
-/// Delete the folder of `plugin_id` that uninstall moved to the trash at
-/// `trashed`. A failure is only logged; the next start sweeps the trash.
-fn delete_trashed_folder(plugin_id: &str, trashed: &std::path::Path) {
-    match trash::delete_trashed(trashed) {
-        Ok(()) => log::warn!(
-            "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink=false",
-            trashed.display()
-        ),
-        Err(e) => log::warn!(
-            "[AUDIT] event=plugin_uninstall_folder_delete_failed plugin_id={plugin_id} path={} error={e}",
-            trashed.display()
-        ),
-    }
 }
 
 #[tauri::command]
@@ -1646,7 +1630,8 @@ mod tests {
         assert!(store.get(HELLO).is_none());
         assert!(!store.audit.contains_key(HELLO));
 
-        delete_trashed_folder(HELLO, &trashed);
+        tauri::async_runtime::block_on(trash::delete_in_background(HELLO, trashed.clone()))
+            .unwrap();
         assert!(fs::symlink_metadata(&trashed).is_err());
     }
 
@@ -1747,7 +1732,8 @@ mod tests {
 
         let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
         let trashed = trashed(folder);
-        delete_trashed_folder(HELLO, &trashed);
+        tauri::async_runtime::block_on(trash::delete_in_background(HELLO, trashed.clone()))
+            .unwrap();
         assert!(fs::symlink_metadata(&trashed).is_err());
         assert!(outside.path().join("keep.txt").exists());
     }

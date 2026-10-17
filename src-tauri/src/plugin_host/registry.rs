@@ -26,6 +26,7 @@ use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install;
 use crate::plugin_host::runtime;
 use crate::plugin_host::state::{InstallSource, PluginRecord, PluginStatus};
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::validate_plugin_manifest_for_host;
 use crate::plugin_host::PluginHostState;
 
@@ -643,32 +644,23 @@ pub async fn plugin_install_registry_git(
     )
     .map_err(cleanup)?;
 
-    // Swap the copies only now; the old one waits aside until the new one is ready.
+    // Swap the copies only now; the old one waits in the trash until the new one is ready.
     if previous.is_some() {
         runtime::stop_plugin(&plugin_id, &state)
             .await
             .map_err(|e| cleanup(GitInstallError::Io(std::io::Error::other(e.to_string()))))?;
     }
-    let aside = plugins_dir().join(format!(".replaced-{}", uuid::Uuid::new_v4()));
-    let had_dir = final_dir.exists();
-    if had_dir {
-        std::fs::rename(&final_dir, &aside).map_err(|e| cleanup(e.into()))?;
+    std::fs::create_dir_all(plugins_dir()).map_err(|e| cleanup(e.into()))?;
+    let swap =
+        trash::swap_in(&plugins_dir(), &plugin_id, &staged).map_err(|e| cleanup(e.into()))?;
+    if let Err(e) =
+        post_install::gate_and_run(&plugin_id, steps, allow, post_install::run_steps).await
+    {
+        // A failed put-back is logged; the post-install error is the one to report.
+        let _ = swap.undo();
+        return Err(e);
     }
-    let restore = |e: GitInstallError| {
-        let _ = std::fs::remove_dir_all(&final_dir);
-        if had_dir {
-            let _ = std::fs::rename(&aside, &final_dir);
-        }
-        e
-    };
-    std::fs::create_dir_all(plugins_dir()).map_err(|e| restore(cleanup(e.into())))?;
-    std::fs::rename(&staged, &final_dir).map_err(|e| restore(cleanup(e.into())))?;
-    post_install::gate_and_run(&plugin_id, steps, allow, post_install::run_steps)
-        .await
-        .map_err(restore)?;
-    if had_dir {
-        let _ = std::fs::remove_dir_all(&aside);
-    }
+    swap.keep();
 
     let previous = previous.filter(|_| keep_approvals == Some(true));
     record_install(
