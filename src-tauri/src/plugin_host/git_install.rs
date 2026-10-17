@@ -3,6 +3,7 @@ use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install::{self, PostInstallStep};
 use crate::plugin_host::simple_manifest;
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::{
     validate_plugin_manifest, validate_plugin_manifest_for_host, ValidationError,
 };
@@ -308,7 +309,7 @@ pub async fn install_from_git(
     .await
     {
         // Clean up on post-install failure
-        let _ = std::fs::remove_dir_all(&final_dir);
+        let _ = trash::delete_later(&plugins_dir(), &manifest.plugin_id);
         return Err(e);
     }
 

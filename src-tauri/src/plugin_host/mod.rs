@@ -77,7 +77,9 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     let mut manifests = HashMap::new();
     let mut plugin_dirs = HashMap::new();
     let plugins_dir = discovery::plugins_dir();
-    // Folders an earlier uninstall left in the trash go in the background.
+    // Copies an unfinished update set aside go back before discovery; then
+    // what is left in the trash goes in the background.
+    trash::recover_replaced(&plugins_dir);
     let swept = plugins_dir.clone();
     tauri::async_runtime::spawn_blocking(move || trash::sweep(&swept));
     for result in discovery::discover_plugins(&plugins_dir) {

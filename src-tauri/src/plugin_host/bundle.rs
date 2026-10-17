@@ -13,6 +13,7 @@
 use crate::plugin_host::discovery::MANIFEST_FILE;
 use crate::plugin_host::local_install::check_path_safe;
 use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::is_bundle_path;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -355,7 +356,7 @@ pub fn check_dir(dir: &Path) -> Result<Bundle, BundleError> {
 /// Unpack `bundle` into `<plugins_root>/<plugin_id>/` through a staging
 /// directory: a `DesktopLocalProcess` entrypoint gets mode 0755 and every other
 /// file 0644. With `replace`, an existing directory for the plugin is swapped
-/// out; otherwise one is an error.
+/// out and deleted in the background; otherwise one is an error.
 pub fn unpack(bundle: &Bundle, plugins_root: &Path, replace: bool) -> Result<PathBuf, BundleError> {
     let plugin_id = &bundle.manifest.plugin_id;
     let final_dir = plugins_root.join(plugin_id);
@@ -372,14 +373,16 @@ pub fn unpack(bundle: &Bundle, plugins_root: &Path, replace: bool) -> Result<Pat
         let _ = std::fs::remove_dir_all(&staging);
         return Err(e);
     }
-    if final_dir.exists() {
-        std::fs::remove_dir_all(&final_dir)?;
+    match trash::swap_in(plugins_root, plugin_id, &staging) {
+        Ok(swap) => {
+            swap.keep();
+            Ok(final_dir)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            Err(e.into())
+        }
     }
-    if let Err(e) = std::fs::rename(&staging, &final_dir) {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(e.into());
-    }
-    Ok(final_dir)
 }
 
 fn write_files(bundle: &Bundle, staging: &Path) -> Result<(), BundleError> {
@@ -637,6 +640,33 @@ port.onmessage = (event) => {
             .filter(|e| e.file_name().to_string_lossy().starts_with(".staging"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn a_replacing_unpack_moves_the_old_copy_to_the_trash() {
+        let root = TempDir::new().unwrap();
+        let bundle = read_bundle(&write_bundle(&hello_web_with_panel())).unwrap();
+        let dir = unpack(&bundle, root.path(), false).unwrap();
+        std::fs::write(dir.join("panels/main/old.txt"), "old").unwrap();
+
+        assert_eq!(unpack(&bundle, root.path(), true).unwrap(), dir);
+        assert!(dir.join("panels/main/index.html").exists());
+        assert!(!dir.join("panels/main/old.txt").exists());
+        let mut names: Vec<_> = std::fs::read_dir(root.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, [trash::TRASH_DIR, "dev.example.hello-web"]);
+        // The old copy is in the trash, or already deleted from it.
+        for entry in std::fs::read_dir(root.path().join(trash::TRASH_DIR))
+            .unwrap()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            assert!(name.starts_with("dev.example.hello-web-"), "{name}");
+        }
     }
 
     #[cfg(unix)]
