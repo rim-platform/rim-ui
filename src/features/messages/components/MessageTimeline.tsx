@@ -22,8 +22,13 @@ import {
 } from "../../e2ee/hooks/useE2eeConversation";
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
 import type { EncryptionContext, TimelineMessage } from "../../e2ee/utils/timeline";
+import { useConversation } from "../../conversations/api/useConversation";
+import { useDmRequestPending } from "../../conversations/api/useDmRequestPending";
+import { directPeerId } from "../../conversations/utils";
 import { Composer } from "./Composer";
+import { DmRequestPendingNotice } from "./DmRequestPendingNotice";
 import { TypingIndicator } from "./TypingIndicator";
+import { HiddenPresenceContext } from "./message-item/hiddenPresence";
 import { computeGroups } from "./timeline/computeGroups";
 import { useNewMessagesDivider } from "./timeline/useNewMessagesDivider";
 import { useMarkSeen } from "./timeline/useMarkSeen";
@@ -49,7 +54,33 @@ function authorNameOf(msg: TimelineMessage, member: { displayName?: string | nul
   );
 }
 
+/**
+ * The open conversation's timeline. In a direct conversation the other member has not accepted
+ * yet, their presence stays hidden.
+ */
 export function MessageTimeline() {
+  const peerId = usePendingPeer();
+  return (
+    <HiddenPresenceContext.Provider value={peerId}>
+      <Timeline pendingPeerId={peerId} />
+    </HiddenPresenceContext.Provider>
+  );
+}
+
+/**
+ * The other member of the open direct conversation while they have the viewer's DM as a
+ * request they have not accepted; `null` otherwise.
+ */
+function usePendingPeer(): string | null {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const conversationId = useShellStore((s) => s.selectedConversationId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const pending = useDmRequestPending(workspaceId, conversationId);
+  return pending && conversation ? (directPeerId(conversation, currentUserId) ?? null) : null;
+}
+
+function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
   const openThread = useShellStore((s) => s.openThreadForMessage);
@@ -92,6 +123,12 @@ export function MessageTimeline() {
 
   const timeline = useTimelineItems(workspaceId, conversationId, encryption);
   const items: TimelineMessage[] = timeline.items;
+  // What the viewer sent while their DM waits as a request.
+  const sentCount = useMemo(
+    () =>
+      pendingPeerId ? items.filter((m) => !m.e2eeNotice && m.authorId === currentUserId).length : 0,
+    [pendingPeerId, items, currentUserId],
+  );
   const { isLensActive, activeLens } = timeline;
   const groups = useMemo(() => computeGroups(items), [items]);
   const itemsById = useMemo(() => new Map(items.map((m) => [m.id, m])), [items]);
@@ -337,6 +374,12 @@ export function MessageTimeline() {
       )}
 
       <TypingIndicator workspaceId={workspaceId} conversationId={conversationId} />
+      {pendingPeerId && (
+        <DmRequestPendingNotice
+          name={memberLookup.resolve(pendingPeerId).displayName}
+          sent={sentCount}
+        />
+      )}
       {workspaceId && <EncryptionNotices workspaceId={workspaceId} e2ee={e2ee} />}
       {workspaceId && (
         <Composer

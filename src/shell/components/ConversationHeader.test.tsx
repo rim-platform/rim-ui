@@ -37,6 +37,7 @@ import type { ConversationSummary } from "../../features/conversations/types";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useE2eeStore } from "../../features/e2ee/state/useE2eeStore";
+import { usePresenceStore } from "../../features/presence/state/usePresenceStore";
 
 function renderHeader() {
   const qc = createTestQueryClient();
@@ -147,6 +148,54 @@ describe("ConversationHeader — unencrypted conversation", () => {
     expect(
       screen.getByRole("dialog", { name: "This conversation is not encrypted" }),
     ).toHaveTextContent("Bob has not set up encryption on a desktop device yet.");
+  });
+});
+
+describe("ConversationHeader — DM sent as a request", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    usePresenceStore.getState().setPresence("u-bob", "ONLINE");
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: null });
+    usePresenceStore.setState({ presenceMap: {} });
+  });
+
+  it.each([
+    [false, "shows"],
+    [true, "hides"],
+  ])("with the request pending %s, %s the other member's presence", async (pending) => {
+    const dm = makeConversation({
+      title: "Bob",
+      conversationType: ConversationTypeEnum.DIRECT,
+      memberIds: ["me", "u-bob"],
+      memberCount: 2,
+    });
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ConversationDmRequestPending")) {
+        return Promise.resolve({ conversation: { id: dm.id, dmRequestPending: pending } });
+      }
+      if (document.includes("query Conversation(")) return Promise.resolve({ conversation: dm });
+      if (document.includes("query InboxConversations")) return Promise.resolve(emptyInbox);
+      return new Promise(() => {});
+    });
+    renderHeader();
+    await waitFor(() =>
+      expect(
+        requestMock.mock.calls.some(([doc]) =>
+          String(doc).includes("query ConversationDmRequestPending"),
+        ),
+      ).toBe(true),
+    );
+    const dot = () => document.querySelector(".bg-rim-success");
+    if (pending) await waitFor(() => expect(dot()).toBeNull());
+    else await waitFor(() => expect(dot()).not.toBeNull());
   });
 });
 
