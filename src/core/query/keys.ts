@@ -107,6 +107,12 @@ export const queryKeys = {
   relayContacts: ["relayContacts"] as const,
   dmRequests: (status?: string | null) => ["dmRequests", status ?? null] as const,
   remoteIdentity: (principalId?: string) => ["remoteIdentity", principalId] as const,
+  // Who may start a DM: the caller's own choices, a workspace's policy, and whether the other
+  // member of a direct conversation still has the caller's request pending.
+  myDmSettings: ["myDmSettings"] as const,
+  workspaceDmPolicy: (workspaceId?: string) => ["workspaceDmPolicy", workspaceId] as const,
+  dmRequestPending: (workspaceId?: string, conversationId?: string) =>
+    ["dmRequestPending", workspaceId, conversationId] as const,
   // Whether the signed-in account is an instance operator; under `me` like probation.
   instanceOperator: (userId?: string) => ["me", "instanceOperator", userId] as const,
   // The instance moderation queue: abuse reports keyed by the open-only filter, principal blocks

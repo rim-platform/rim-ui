@@ -65,6 +65,21 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **Who can message me** in Settings → Direct messages: choose whether people outside your
+  workspaces can send you a request or nobody can, and for each workspace whether its members'
+  DMs arrive directly or as requests. When your server's operator or one of your workspaces
+  closes DMs from outside, the setting says who did. Contacts, and a workspace's owner and
+  moderators, always reach you directly.
+- A workspace owner sets in Settings → Workspace → Direct messages whether people outside can
+  message its members (no floor, at least a request, or closed) and whether members' DMs to each
+  other arrive directly or as requests. Moderators see these settings read-only, and About
+  shows the DM settings of your server's operator.
+- Message requests are split by where they come from: a workspace's requests sit under
+  "Requests" at the top of its Conversations, and requests from outside your workspaces at the
+  top of Direct messages, so a stranger's message never looks like a colleague's. The bell
+  still counts them all. A DM you sent that waits for acceptance says so, and says when the
+  rest of your messages wait for it; the other person's presence and typing stay hidden until
+  they accept.
 - A plugin command can act on the conversation you are in: one that declares
   `required_context: ["conversation"]` in `rim-plugin.json` gets `conversation_id` and, with a
   thread open, `thread_id` in its `args`, and `["message"]` gets the message it was run on. Such

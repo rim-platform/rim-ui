@@ -1,19 +1,34 @@
 /**
- * Workspace members are never strangers: a pending DM request from someone who shares a
- * workspace with this person is accepted without asking. Membership is read from the member
- * lists the workspaces' hosts answer (this relay for its own workspaces, the forward path for
- * others), never from the request.
+ * A pending DM request from a fellow member of a workspace is accepted without asking when that
+ * workspace lets them through: the person's choice for it (else the workspace's default) is
+ * `DIRECT`, or the sender is its Owner or a Moderator. Membership and roles are read from the
+ * member lists the workspaces' hosts answer (this relay for its own workspaces, the forward
+ * path for others), never from the request. A workspace the person's settings do not list,
+ * one on another server, counts as `DIRECT`.
  */
 
-import { DmRequestStatus } from "../../../core/graphql/generated/schema-types";
+import {
+  DmMembers,
+  DmRequestStatus,
+  type ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
+import { fetchMyDmSettings } from "../../dm-policy/api/dmPolicy";
 import { fetchServerMembers } from "../../workspaces/api/useServerMembers";
+import { canModerate } from "../../workspaces/role";
 import { acceptDmRequest, fetchDmRequests, type DmRequestView } from "../api/relayApi";
 import { useRelayStore } from "../state/useRelayStore";
 
 const MEMBERS_STALE_MS = 60_000;
+const SETTINGS_STALE_MS = 60_000;
+
+/** One workspace's members, as its host answered them. */
+export interface WorkspaceMembers {
+  workspaceId: string;
+  members: readonly { principalId?: string | null; memberRole?: ServerMemberRoleGql }[];
+}
 
 /** The workspaces (not direct spaces) this person is in, here and on other hosts. */
 async function workspaceIds(): Promise<string[]> {
@@ -26,39 +41,61 @@ async function workspaceIds(): Promise<string[]> {
   return [...local, ...remote].filter((id) => id !== info?.directSpaceId);
 }
 
-/** Whether `principalId` is a member of one of the workspaces in `memberLists`. */
-export function sharesWorkspace(
+/**
+ * Whether a DM from `principalId` reaches this person without a request: they share a
+ * workspace of `lists` whose setting in `members` (absent counts as `DIRECT`) is `DIRECT`, or
+ * where they are Owner or Moderator.
+ */
+export function admittedByWorkspace(
   principalId: string,
-  memberLists: readonly { principalId?: string | null }[][],
+  lists: readonly WorkspaceMembers[],
+  members: ReadonlyMap<string, DmMembers>,
 ): boolean {
-  return memberLists.some((members) => members.some((m) => m.principalId === principalId));
+  return lists.some(({ workspaceId, members: list }) => {
+    const member = list.find((m) => m.principalId === principalId);
+    if (!member) return false;
+    if (canModerate(member.memberRole)) return true;
+    return (members.get(workspaceId) ?? DmMembers.DIRECT) === DmMembers.DIRECT;
+  });
 }
 
-async function memberLists(): Promise<{ principalId?: string | null }[][]> {
+async function memberLists(): Promise<WorkspaceMembers[]> {
   const ids = await workspaceIds();
-  const lists = await Promise.all(
-    ids.map((serverId) =>
-      queryClient
+  return Promise.all(
+    ids.map(async (workspaceId) => ({
+      workspaceId,
+      members: await queryClient
         .fetchQuery({
-          queryKey: queryKeys.serverMembers(serverId),
-          queryFn: () => fetchServerMembers(serverId),
+          queryKey: queryKeys.serverMembers(workspaceId),
+          queryFn: () => fetchServerMembers(workspaceId),
           staleTime: MEMBERS_STALE_MS,
         })
         .catch(() => []),
-    ),
+    })),
   );
-  return lists;
 }
 
-/** Accept every pending request from a workspace member. Returns the requests accepted. */
+/** This person's choice for each workspace; empty for a server without DM settings. */
+async function memberSettings(): Promise<Map<string, DmMembers>> {
+  const settings = await queryClient
+    .fetchQuery({
+      queryKey: queryKeys.myDmSettings,
+      queryFn: fetchMyDmSettings,
+      staleTime: SETTINGS_STALE_MS,
+    })
+    .catch(() => null);
+  return new Map((settings?.workspaces ?? []).map((w) => [w.workspaceId, w.members]));
+}
+
+/** Accept every pending request its workspace lets through. Returns the requests accepted. */
 export async function acceptWorkspaceMembers(pending?: DmRequestView[]): Promise<DmRequestView[]> {
   const requests = pending ?? (await fetchDmRequests(DmRequestStatus.PENDING));
   if (requests.length === 0) return [];
-  const lists = await memberLists();
+  const [lists, settings] = await Promise.all([memberLists(), memberSettings()]);
   const accepted: DmRequestView[] = [];
   for (const request of requests) {
     if (request.status !== DmRequestStatus.PENDING) continue;
-    if (!sharesWorkspace(request.fromPrincipalId, lists)) continue;
+    if (!admittedByWorkspace(request.fromPrincipalId, lists, settings)) continue;
     try {
       await acceptDmRequest(request.id);
       accepted.push(request);

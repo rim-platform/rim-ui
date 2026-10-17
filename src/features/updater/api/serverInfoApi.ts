@@ -1,19 +1,30 @@
 import { GraphQLClient, gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import type { ServerInfo, ServerLimits } from "../../../core/graphql/generated/schema-types";
+import type {
+  DmInbound,
+  DmOutbound,
+  ServerInfo,
+  ServerLimits,
+} from "../../../core/graphql/generated/schema-types";
 
 /** The major GraphQL API version this client speaks. */
 export const CLIENT_API_VERSION = 1;
 
 /**
  * What the client knows about the server: `limits` is undefined for a server older than
- * instance limits, which reports none, and `signupRequiresKeys` for one older than the signup
- * policy, which takes password signups.
+ * instance limits, which reports none, `signupRequiresKeys` for one older than the signup
+ * policy, which takes password signups, and the `dm*` settings for one older than DM policies.
  */
-export type KnownServerInfo = Omit<ServerInfo, "limits" | "signupRequiresKeys"> & {
+export type KnownServerInfo = Omit<
+  ServerInfo,
+  "limits" | "signupRequiresKeys" | "dmInbound" | "dmOutbound" | "dmPartners"
+> & {
   limits?: ServerLimits;
   signupRequiresKeys?: boolean;
+  dmInbound?: DmInbound;
+  dmOutbound?: DmOutbound;
+  dmPartners?: string[];
 };
 
 const LIMITS_FIELDS = `
@@ -35,6 +46,29 @@ const LIMITS_FIELDS = `
 
 const SERVER_INFO_QUERY = gql`
   query ServerInfo {
+    serverInfo {
+      version
+      apiVersion
+      features {
+        key
+        state
+        reason
+      }
+      auditRetentionDays
+      instanceNotice
+      termsUrl
+      ${LIMITS_FIELDS}
+      signupRequiresKeys
+      dmInbound
+      dmOutbound
+      dmPartners
+    }
+  }
+`;
+
+/** The same without the DM settings, for a server older than DM policies. */
+const SERVER_SIGNUP_QUERY = gql`
+  query ServerInfoWithSignup {
     serverInfo {
       version
       apiVersion
@@ -129,8 +163,9 @@ function refusedByServer(err: unknown): boolean {
 
 /**
  * The connected server's release version, API version, features, audit retention, instance
- * notice, terms URL, limits and signup policy; needs no session. Each query a server refuses
- * falls back to the next older one. A server older than the signup policy leaves
+ * notice, terms URL, limits, signup policy and DM settings; needs no session. Each query a
+ * server refuses falls back to the next older one. A server older than DM policies leaves the
+ * `dm*` settings undefined; one older than the signup policy also leaves
  * `signupRequiresKeys` undefined; one older than instance limits also leaves `limits` undefined; one older than
  * the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
  * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
@@ -151,6 +186,7 @@ export function fetchServerInfoAt(endpoint: string): Promise<KnownServerInfo> {
 async function readServerInfo(client: GraphQLClient): Promise<KnownServerInfo> {
   for (const query of [
     SERVER_INFO_QUERY,
+    SERVER_SIGNUP_QUERY,
     SERVER_LIMITS_QUERY,
     SERVER_POLICY_QUERY,
     SERVER_FEATURES_QUERY,

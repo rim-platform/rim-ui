@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useDirectInbox } from "../../relay/api/useDirectInbox";
+import { usePendingDmRequestsIn } from "../../relay/api/useDmRequests";
+import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { selectDirectConversation } from "../state/directSelection";
@@ -22,6 +24,8 @@ export function DirectConversationList() {
   const draftDirect = useShellStore((s) => s.draftDirect);
   const draft = draftDirect && "spaceId" in draftDirect ? draftDirect : null;
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  // Requests from outside every workspace; a workspace's own requests stay in its sidebar.
+  const requestCount = usePendingDmRequestsIn(null).length;
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
   const open = useCallback(
@@ -73,6 +77,7 @@ export function DirectConversationList() {
       <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
         Direct messages
       </h3>
+      <DmRequestsRow workspaceId={null} count={requestCount} />
       {items.length === 0 && !draft ? (
         <p className="px-2 py-2 text-sm text-rim-text-muted">
           No conversations yet. Start one with a contact.

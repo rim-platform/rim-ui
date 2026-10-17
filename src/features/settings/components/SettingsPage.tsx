@@ -28,6 +28,7 @@ import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsInstanceOperator } from "../../instance-moderation/api/instanceModeration";
 import { RimMark } from "../../../shared/brand/RimLogo";
+import { OperatorDmPolicy } from "../../dm-policy/components/OperatorDmPolicy";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -83,6 +84,16 @@ const InstanceModerationSettings = lazy(() =>
     default: m.InstanceModerationSettings,
   })),
 );
+const DmSettings = lazy(() =>
+  import("../../dm-policy/components/DmSettings").then((m) => ({
+    default: m.DmSettings,
+  })),
+);
+const WorkspaceDmPolicySettings = lazy(() =>
+  import("../../dm-policy/components/WorkspaceDmPolicySettings").then((m) => ({
+    default: m.WorkspaceDmPolicySettings,
+  })),
+);
 const ContactsSettings = lazy(() =>
   import("../../relay/components/ContactsSettings").then((m) => ({
     default: m.ContactsSettings,
@@ -121,6 +132,8 @@ function AboutRim() {
         </div>
 
         <AboutServerFeatures />
+
+        <OperatorDmPolicy />
 
         <AboutServerApiBanner />
 
@@ -204,6 +217,7 @@ type SettingsTab =
   | "state"
   | "agent"
   | "messages"
+  | "direct-messages"
   | "notifications"
   | "history"
   | "workspace"
@@ -235,6 +249,7 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "security", label: "Security", group: "You" },
   { key: "contacts", label: "Contacts", group: "You" },
   { key: "messages", label: "Messages", group: "Messaging" },
+  { key: "direct-messages", label: "Direct messages", group: "Messaging" },
   { key: "notifications", label: "Notifications", group: "Messaging" },
   { key: "history", label: "History", group: "Messaging" },
   { key: "keybinds", label: "Keybinds", group: "Programmable" },
@@ -379,11 +394,13 @@ export function SettingsPage() {
               )}
               {shownTab === "agent" && <AgentSettingsPanel />}
               {shownTab === "messages" && <MessageDisplaySettings />}
+              {shownTab === "direct-messages" && <DmSettings />}
               {shownTab === "notifications" && <NotificationSettings />}
               {shownTab === "history" && <HistoryArchiveSettings />}
               {shownTab === "workspace" && (
                 <div className="space-y-10">
                   <ModerationSettings serverId={workspaceId} />
+                  <WorkspaceDmPolicySettings serverId={workspaceId} />
                   <WorkspacePluginSettings serverId={workspaceId} />
                   <WorkspaceOwnerSettings serverId={workspaceId} />
                 </div>

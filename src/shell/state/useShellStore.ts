@@ -17,7 +17,12 @@ export type MainSurface =
   | { kind: "settings"; tab?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
-  | { kind: "audit-log" };
+  | { kind: "audit-log" }
+  /**
+   * The message requests of one workspace's conversations, or with `workspaceId: null`, those
+   * from outside every workspace.
+   */
+  | { kind: "dm-requests"; workspaceId: string | null };
 
 /**
  * A direct message not created yet: with a workspace member, or with someone in a relay's

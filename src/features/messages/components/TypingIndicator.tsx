@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { useIsDirectConversation } from "../../conversations/api/useConversation";
+import { useDmRequestPending } from "../../conversations/api/useDmRequestPending";
 import { useTypingStore } from "../state/useTypingStore";
 
 const EMPTY_ENTRIES: { userId: string; username: string; expiresAt: number }[] = [];
@@ -10,9 +11,13 @@ interface TypingIndicatorProps {
   conversationId: string;
 }
 
-/** "<name> is typing..." under a direct conversation's timeline; nothing elsewhere. */
+/**
+ * "<name> is typing..." under a direct conversation's timeline; nothing elsewhere, nor while
+ * the other member has the viewer's DM as a request they have not accepted.
+ */
 export function TypingIndicator({ workspaceId, conversationId }: TypingIndicatorProps) {
   const direct = useIsDirectConversation(workspaceId, conversationId);
+  const requestPending = useDmRequestPending(workspaceId, conversationId);
   const rawEntries = useTypingStore((s) => s.typingByConversation[conversationId]);
   const entries = rawEntries ?? EMPTY_ENTRIES;
   const removeExpired = useTypingStore((s) => s.removeExpired);
@@ -24,7 +29,7 @@ export function TypingIndicator({ workspaceId, conversationId }: TypingIndicator
     return () => clearInterval(interval);
   }, [entries.length, removeExpired]);
 
-  if (!direct || entries.length === 0) return null;
+  if (!direct || requestPending || entries.length === 0) return null;
 
   const names = entries.map((e) => e.username);
   let label: string;

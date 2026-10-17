@@ -360,6 +360,13 @@ export type Conversation = {
   conversationType: ConversationTypeEnum;
   createdBy?: Maybe<Scalars['ID']['output']>;
   /**
+   * For a DM: whether the other member's DM request for it is still pending, so the caller
+   * sees their messages wait for acceptance; false once it is accepted or ignored, when
+   * there is none, and for another member whose relay is another server. Null for groups
+   * and channels.
+   */
+  dmRequestPending?: Maybe<Scalars['Boolean']['output']>;
+  /**
    * The level that applies to the viewer now: `NONE` while muted, else `notificationLevel`,
    * else the workspace default.
    */
@@ -657,6 +664,71 @@ export enum DigestFrequency {
   DAILY = 'DAILY',
   HOURLY = 'HOURLY',
   OFF = 'OFF'
+}
+
+/** Where the floor that refuses DMs from outside comes from. */
+export type DmFloorSource = {
+  kind: DmFloorSourceKind;
+  /** The workspace, for `WORKSPACE`. */
+  workspaceId?: Maybe<Scalars['ID']['output']>;
+  workspaceName?: Maybe<Scalars['String']['output']>;
+};
+
+/** Who set a floor. */
+export enum DmFloorSourceKind {
+  /** The server's operator (`RIM_DM_INBOUND`). */
+  OPERATOR = 'OPERATOR',
+  /** A workspace's owner. */
+  WORKSPACE = 'WORKSPACE'
+}
+
+/**
+ * DMs from people on other servers, and from people here outside the recipient's workspaces
+ * (`RIM_DM_INBOUND`).
+ */
+export enum DmInbound {
+  /** Nobody outside a shared workspace. */
+  NONE = 'NONE',
+  /** No floor; each person's choice applies. */
+  OPEN = 'OPEN',
+  /** Only people on the partner servers and this one, with a request. */
+  PARTNERS = 'PARTNERS',
+  /** The first message is a request. */
+  REQUESTS = 'REQUESTS'
+}
+
+/** How a DM from a fellow member of a workspace arrives. */
+export enum DmMembers {
+  /** Straight into the conversation list. */
+  DIRECT = 'DIRECT',
+  /** As a request. */
+  REQUESTS = 'REQUESTS'
+}
+
+/** DMs people here start with people on other servers (`RIM_DM_OUTBOUND`). */
+export enum DmOutbound {
+  ALLOWED = 'ALLOWED',
+  NONE = 'NONE',
+  /** Only with people on the partner servers. */
+  PARTNERS = 'PARTNERS'
+}
+
+/** A person's choice for DMs from people outside their workspaces. */
+export enum DmOutside {
+  /** Refused. */
+  NONE = 'NONE',
+  /** The first message is a request. */
+  REQUESTS = 'REQUESTS'
+}
+
+/** A workspace's floor for DMs to its members from people outside their workspaces. */
+export enum DmOutsideFloor {
+  /** Refused. */
+  CLOSED = 'CLOSED',
+  /** No floor. */
+  NONE = 'NONE',
+  /** At least a request. */
+  REQUESTS = 'REQUESTS'
 }
 
 /** A conversation started by someone outside the caller's contacts. */
@@ -1666,10 +1738,26 @@ export type Mutation = {
    */
   setMemberRole: ServerMember;
   /**
+   * Set who outside the caller's workspaces may start a DM with them: `REQUESTS`, or
+   * `NONE`. `REQUESTS` under a floor that refuses such DMs is `VALIDATION`, naming it.
+   */
+  setMyDmSettings: MyDmSettings;
+  /**
+   * Set how a DM from the members of one of the caller's workspaces arrives, whatever the
+   * workspace's default. `NOT_FOUND` unless the caller is a member.
+   */
+  setMyWorkspaceDmSetting: MyDmSettings;
+  /**
    * Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
    * Audited (`chat.set_slow_mode`).
    */
   setSlowMode: Conversation;
+  /**
+   * Set a workspace's DM rules: the floor for DMs to its members from outside their
+   * workspaces, and how a DM from a fellow member arrives unless the recipient chose. The
+   * workspace's Owner only; anyone else gets `FORBIDDEN`.
+   */
+  setWorkspaceDmPolicy: WorkspaceDmPolicy;
   setWorkspaceState: WorkspaceStateEntryGql;
   /**
    * Unified signup mutation for all token-based and open-mode registration paths.
@@ -2267,10 +2355,28 @@ export type MutationSetMemberRoleArgs = {
 };
 
 
+export type MutationSetMyDmSettingsArgs = {
+  outside: DmOutside;
+};
+
+
+export type MutationSetMyWorkspaceDmSettingArgs = {
+  members: DmMembers;
+  workspaceId: Scalars['ID']['input'];
+};
+
+
 export type MutationSetSlowModeArgs = {
   conversationId: Scalars['ID']['input'];
   seconds: Scalars['Int']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetWorkspaceDmPolicyArgs = {
+  memberDefault: DmMembers;
+  outsideFloor: DmOutsideFloor;
+  workspaceId: Scalars['ID']['input'];
 };
 
 
@@ -2404,6 +2510,21 @@ export type MuteConversationInput = {
 export type MutedConversation = {
   conversationId: Scalars['ID']['output'];
   mutedUntil?: Maybe<Scalars['DateTime']['output']>;
+};
+
+/** Who may start a DM with the caller, as they chose and as it applies. */
+export type MyDmSettings = {
+  /**
+   * What applies to DMs from outside: their choice, or `NONE` under a floor that refuses
+   * them.
+   */
+  effectiveOutside: DmOutside;
+  /** Their choice for DMs from outside their workspaces. */
+  outside: DmOutside;
+  /** The floor that refuses DMs from outside; null when none does. */
+  outsideFloorFrom?: Maybe<DmFloorSource>;
+  /** Their choice for each of their workspaces' members. */
+  workspaces: Array<WorkspaceDmSetting>;
 };
 
 /** One entry of the viewer's notification inbox. */
@@ -2756,6 +2877,12 @@ export type Query = {
    */
   mlsCommits: MlsCommitPage;
   mutedConversations: Array<MutedConversation>;
+  /**
+   * Who may start a DM with the caller: their choice for people outside their workspaces,
+   * for each workspace's members, and what applies once the operator's and the workspaces'
+   * floors are taken in, with where a refusing floor comes from.
+   */
+  myDmSettings: MyDmSettings;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
   /** The caller's own macros in the workspace. `FORBIDDEN` for a non-member. */
@@ -2833,7 +2960,7 @@ export type Query = {
   serverBans: Array<ServerBan>;
   /**
    * The server's release version, API version, features, audit retention, instance notice,
-   * terms URL and limits. Readable without a session.
+   * terms URL, limits and DM settings. Readable without a session.
    */
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
@@ -3424,6 +3551,16 @@ export type SendMessageInput = {
 };
 
 export type Server = {
+  /**
+   * How a DM from a fellow member arrives unless the recipient chose; null in the direct
+   * space. Every member sees it.
+   */
+  dmMemberDefault?: Maybe<DmMembers>;
+  /**
+   * The workspace's floor for DMs to its members from people outside their workspaces;
+   * null in the direct space, which has no rules. Every member sees it.
+   */
+  dmOutsideFloor?: Maybe<DmOutsideFloor>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   /**
@@ -3488,6 +3625,15 @@ export type ServerInfo = {
    * forever.
    */
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
+  /**
+   * DMs from people on other servers, and from people here outside the recipient's
+   * workspaces (`RIM_DM_INBOUND`): a floor for every account here.
+   */
+  dmInbound: DmInbound;
+  /** DMs people here start with people on other servers (`RIM_DM_OUTBOUND`). */
+  dmOutbound: DmOutbound;
+  /** The server ids the `PARTNERS` settings name (`RIM_DM_PARTNERS`). */
+  dmPartners: Array<Scalars['String']['output']>;
   /** Every optional feature with its state on this instance. */
   features: Array<ServerFeatureInfo>;
   /**
@@ -3922,6 +4068,24 @@ export type UserPresenceGql = {
   lastSeenAt: Scalars['DateTime']['output'];
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
+};
+
+/** A workspace's DM rules. */
+export type WorkspaceDmPolicy = {
+  /** How a DM from a fellow member arrives unless the recipient chose. */
+  memberDefault: DmMembers;
+  /** The floor for DMs to its members from outside their workspaces. */
+  outsideFloor: DmOutsideFloor;
+  workspaceId: Scalars['ID']['output'];
+};
+
+/** The caller's choice for DMs from the members of one of their workspaces. */
+export type WorkspaceDmSetting = {
+  /** The workspace's default. */
+  memberDefault: DmMembers;
+  /** Their choice, or the workspace's default when they made none. */
+  members: DmMembers;
+  workspaceId: Scalars['ID']['output'];
 };
 
 /**

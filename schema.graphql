@@ -434,6 +434,13 @@ type Conversation {
 	The conversation this one succeeds, on the host that held it; null for any other.
 	"""
 	predecessor: ConversationPredecessor
+	"""
+	For a DM: whether the other member's DM request for it is still pending, so the caller
+	sees their messages wait for acceptance; false once it is accepted or ignored, when
+	there is none, and for another member whose relay is another server. Null for groups
+	and channels.
+	"""
+	dmRequestPending: Boolean
 }
 
 """
@@ -741,6 +748,113 @@ enum DigestFrequency {
 	OFF
 	HOURLY
 	DAILY
+}
+
+"""
+Where the floor that refuses DMs from outside comes from.
+"""
+type DmFloorSource {
+	kind: DmFloorSourceKind!
+	"""
+	The workspace, for `WORKSPACE`.
+	"""
+	workspaceId: ID
+	workspaceName: String
+}
+
+"""
+Who set a floor.
+"""
+enum DmFloorSourceKind {
+	"""
+	The server's operator (`RIM_DM_INBOUND`).
+	"""
+	OPERATOR
+	"""
+	A workspace's owner.
+	"""
+	WORKSPACE
+}
+
+"""
+DMs from people on other servers, and from people here outside the recipient's workspaces
+(`RIM_DM_INBOUND`).
+"""
+enum DmInbound {
+	"""
+	No floor; each person's choice applies.
+	"""
+	OPEN
+	"""
+	The first message is a request.
+	"""
+	REQUESTS
+	"""
+	Only people on the partner servers and this one, with a request.
+	"""
+	PARTNERS
+	"""
+	Nobody outside a shared workspace.
+	"""
+	NONE
+}
+
+"""
+How a DM from a fellow member of a workspace arrives.
+"""
+enum DmMembers {
+	"""
+	Straight into the conversation list.
+	"""
+	DIRECT
+	"""
+	As a request.
+	"""
+	REQUESTS
+}
+
+"""
+DMs people here start with people on other servers (`RIM_DM_OUTBOUND`).
+"""
+enum DmOutbound {
+	ALLOWED
+	"""
+	Only with people on the partner servers.
+	"""
+	PARTNERS
+	NONE
+}
+
+"""
+A person's choice for DMs from people outside their workspaces.
+"""
+enum DmOutside {
+	"""
+	The first message is a request.
+	"""
+	REQUESTS
+	"""
+	Refused.
+	"""
+	NONE
+}
+
+"""
+A workspace's floor for DMs to its members from people outside their workspaces.
+"""
+enum DmOutsideFloor {
+	"""
+	No floor.
+	"""
+	NONE
+	"""
+	At least a request.
+	"""
+	REQUESTS
+	"""
+	Refused.
+	"""
+	CLOSED
 }
 
 """
@@ -2149,6 +2263,22 @@ type Mutation {
 	Decline the caller's pending invitation; `NOT_FOUND` when there is none.
 	"""
 	declineConversationInvite(serverId: ID!, conversationId: ID!): Boolean!
+	"""
+	Set a workspace's DM rules: the floor for DMs to its members from outside their
+	workspaces, and how a DM from a fellow member arrives unless the recipient chose. The
+	workspace's Owner only; anyone else gets `FORBIDDEN`.
+	"""
+	setWorkspaceDmPolicy(workspaceId: ID!, outsideFloor: DmOutsideFloor!, memberDefault: DmMembers!): WorkspaceDmPolicy!
+	"""
+	Set who outside the caller's workspaces may start a DM with them: `REQUESTS`, or
+	`NONE`. `REQUESTS` under a floor that refuses such DMs is `VALIDATION`, naming it.
+	"""
+	setMyDmSettings(outside: DmOutside!): MyDmSettings!
+	"""
+	Set how a DM from the members of one of the caller's workspaces arrives, whatever the
+	workspace's default. `NOT_FOUND` unless the caller is a member.
+	"""
+	setMyWorkspaceDmSetting(workspaceId: ID!, members: DmMembers!): MyDmSettings!
 }
 
 input MuteConversationInput {
@@ -2160,6 +2290,29 @@ input MuteConversationInput {
 type MutedConversation {
 	conversationId: ID!
 	mutedUntil: DateTime
+}
+
+"""
+Who may start a DM with the caller, as they chose and as it applies.
+"""
+type MyDmSettings {
+	"""
+	Their choice for DMs from outside their workspaces.
+	"""
+	outside: DmOutside!
+	"""
+	Their choice for each of their workspaces' members.
+	"""
+	workspaces: [WorkspaceDmSetting!]!
+	"""
+	What applies to DMs from outside: their choice, or `NONE` under a floor that refuses
+	them.
+	"""
+	effectiveOutside: DmOutside!
+	"""
+	The floor that refuses DMs from outside; null when none does.
+	"""
+	outsideFloorFrom: DmFloorSource
 }
 
 """
@@ -2647,7 +2800,7 @@ type Query {
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
 	The server's release version, API version, features, audit retention, instance notice,
-	terms URL and limits. Readable without a session.
+	terms URL, limits and DM settings. Readable without a session.
 	"""
 	serverInfo: ServerInfo!
 	"""
@@ -2670,6 +2823,12 @@ type Query {
 	only; anyone else gets `FORBIDDEN`.
 	"""
 	instanceIpBlocks: [InstanceIpBlock!]!
+	"""
+	Who may start a DM with the caller: their choice for people outside their workspaces,
+	for each workspace's members, and what applies once the operator's and the workspaces'
+	floors are taken in, with where a refusing floor comes from.
+	"""
+	myDmSettings: MyDmSettings!
 }
 
 type ReactionGroup {
@@ -3035,6 +3194,16 @@ type Server {
 	included.
 	"""
 	owner: User
+	"""
+	The workspace's floor for DMs to its members from people outside their workspaces;
+	null in the direct space, which has no rules. Every member sees it.
+	"""
+	dmOutsideFloor: DmOutsideFloor
+	"""
+	How a DM from a fellow member arrives unless the recipient chose; null in the direct
+	space. Every member sees it.
+	"""
+	dmMemberDefault: DmMembers
 }
 
 """
@@ -3132,6 +3301,19 @@ type ServerInfo {
 	works either way.
 	"""
 	signupRequiresKeys: Boolean!
+	"""
+	DMs from people on other servers, and from people here outside the recipient's
+	workspaces (`RIM_DM_INBOUND`): a floor for every account here.
+	"""
+	dmInbound: DmInbound!
+	"""
+	DMs people here start with people on other servers (`RIM_DM_OUTBOUND`).
+	"""
+	dmOutbound: DmOutbound!
+	"""
+	The server ids the `PARTNERS` settings name (`RIM_DM_PARTNERS`).
+	"""
+	dmPartners: [String!]!
 }
 
 """
@@ -3588,6 +3770,36 @@ type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
+}
+
+"""
+A workspace's DM rules.
+"""
+type WorkspaceDmPolicy {
+	workspaceId: ID!
+	"""
+	The floor for DMs to its members from outside their workspaces.
+	"""
+	outsideFloor: DmOutsideFloor!
+	"""
+	How a DM from a fellow member arrives unless the recipient chose.
+	"""
+	memberDefault: DmMembers!
+}
+
+"""
+The caller's choice for DMs from the members of one of their workspaces.
+"""
+type WorkspaceDmSetting {
+	workspaceId: ID!
+	"""
+	Their choice, or the workspace's default when they made none.
+	"""
+	members: DmMembers!
+	"""
+	The workspace's default.
+	"""
+	memberDefault: DmMembers!
 }
 
 """

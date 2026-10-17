@@ -23,7 +23,8 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/features/relay/transport/` | `remoteFetch.ts` (signed requests, verified answers), `requestSeq.ts`, `relayHealth.ts` |
 | `src/features/relay/stream/` | `relayStream.ts` (the queue on the WebSocket), `sequencer.ts`, `streamRules.ts` |
 | `src/features/relay/contacts/` | Contact links, fingerprints, verified identities, aliases, relays seen in invites |
-| `src/features/relay/inbox/autoAccept.ts`, `components/DmRequestInbox.tsx` | Message requests |
+| `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx` | Message requests |
+| `src/features/dm-policy/` | Who may start a DM: the person's settings, a workspace's policy, the operator's settings in About |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
 | `src/features/relay/runtime/relayRuntime.ts` | Start-up and wiring (`useRelayRuntime`, mounted in `AppShell`) |
 | `src/features/relay/runtime/useDirectSpaceRuntime.ts` | This relay's direct space from sign-in (`useDirectSpaceRuntime`, mounted in `AppShell`) |
@@ -163,8 +164,35 @@ Pending `dmRequests` sit above the notifications, counted on the bell. Each show
 the request's card, verified against the sender's key log, and the fingerprint. "Read first"
 verifies the held `DmInvite`, binds the space, processes the Welcome and opens the conversation;
 Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
-relay. A request from someone who is a member of a workspace this person is in (by the member
-lists the workspaces' hosts answer) is accepted without asking.
+relay.
+
+A request belongs to a workspace when a held item names it as its space and the request's host
+(`hostServerId`) hosts it: this relay for its own workspaces, the bound host for one elsewhere
+(`inbox/requestWorkspace.ts`). Anything else, a direct space included, is from outside every
+workspace. A workspace's sidebar heads its Conversations with "Requests (n)" for its own
+requests, and the direct space's list with "Requests (n)" for those from outside; each opens
+the inbox filtered to that scope in the main area. A stranger's DM therefore never sits among a
+colleague's.
+
+A request from a fellow member is accepted without asking only when their shared workspace lets
+them through: the person's choice for it in `myDmSettings` (else the workspace's default) is
+`DIRECT`, or the sender is its Owner or a Moderator by the member list its host answers. A
+workspace `myDmSettings` does not list, such as one on another server, counts as `DIRECT`.
+
+### Who can message me
+
+The person's own choices live in Settings → Direct messages (`myDmSettings`,
+`setMyDmSettings`, `setMyWorkspaceDmSetting`): Requests or Nobody for people outside their
+workspaces, locked with the reason ("Set by your server's operator", "Set by the workspace …")
+while `outsideFloorFrom` names a refusing floor, and Direct or Requests per workspace beside the
+workspace's default. An Owner sets the workspace's floor and default in Settings → Workspace →
+Direct messages (`setWorkspaceDmPolicy`); a Moderator sees them read-only. About shows the
+operator's `serverInfo.dmInbound`, `dmOutbound` and `dmPartners`.
+
+While the other member has the viewer's DM as a pending request
+(`Conversation.dmRequestPending`, asked on its own so a host without it fails only there), the
+conversation says "Sent as a request; … has not accepted yet", and after the two messages the
+relay holds beside the invite, that the rest waits; their presence and typing stay hidden.
 
 ## Workspaces on other servers
 
