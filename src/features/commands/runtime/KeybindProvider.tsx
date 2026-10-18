@@ -2,10 +2,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
 import { dispatchCommand } from "./commandDispatcher";
+import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
 import {
   findPluginCommand,
@@ -52,7 +52,6 @@ function hostOverlayOpen(): boolean {
 
 export function KeybindProvider({ children }: KeybindProviderProps) {
   const { capabilities } = useRuntime();
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
   const resolvedKeybinds = useEffectiveKeybinds();
@@ -145,9 +144,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
     dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
       args: match.presetArgs as Record<string, unknown> | undefined,
-      commandContext: {
-        workspaceId: workspaceId ?? undefined,
-      },
+      commandContext: currentCommandContext(),
     })
       .then((result) => {
         // A plugin command runs on this device, out of sight: say how it went.

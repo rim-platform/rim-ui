@@ -12,9 +12,9 @@ import {
   isCancelledResult,
   toastPluginCommandResult,
 } from "../../plugins/runtime/pluginCommandInfo";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { commandResultOf, dispatchCommand } from "../runtime/commandDispatcher";
+import { currentCommandContext } from "../runtime/commandContext";
 import { runWithHumanConfirmation, strictestSensitivity } from "../runtime/humanConfirmation";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
 import { LOCAL_COMMANDS } from "../runtime/localCommands";
@@ -44,7 +44,6 @@ export function CommandPalette() {
   const closeCommandPalette = useCommandStore((s) => s.closeCommandPalette);
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
 
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
   const runnableHere = useRunnableHere();
@@ -190,7 +189,7 @@ export function CommandPalette() {
           async (confirmation) => {
             const res = await executeCommandMutation.mutateAsync({
               commandId: pipeExpression,
-              commandContext: { workspaceId: workspaceId ?? undefined },
+              commandContext: currentCommandContext(),
               isPipe: true,
               confirmation,
             });
@@ -236,7 +235,7 @@ export function CommandPalette() {
         setPipeExecuting(false);
       }
     },
-    [closeCommandPalette, executeCommandMutation, workspaceId, commands],
+    [closeCommandPalette, executeCommandMutation, commands],
   );
 
   const executeSelected = useCallback(
@@ -262,11 +261,7 @@ export function CommandPalette() {
         const result = await dispatchCommand(
           command,
           (input) => executeCommandMutation.mutateAsync(input),
-          {
-            commandContext: {
-              workspaceId: workspaceId ?? undefined,
-            },
-          },
+          { commandContext: currentCommandContext() },
         );
         if (command.sourceKind === "PLUGIN") {
           // A plugin answers in words (its payload is for scripts and the agent).
@@ -288,7 +283,7 @@ export function CommandPalette() {
         toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
       }
     },
-    [closeCommandPalette, executeCommandMutation, workspaceId, pipeSegments, executePipeChain],
+    [closeCommandPalette, executeCommandMutation, pipeSegments, executePipeChain],
   );
 
   const handleKeyDown = useCallback(

@@ -35,10 +35,12 @@ vi.mock("../../../shell/state/useShellStore", () => {
   return { useShellStore };
 });
 
-vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
-  useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ workspaceId: "ws-1" }),
-}));
+vi.mock("../../workspaces/state/useWorkspaceStore", () => {
+  const state = { workspaceId: "ws-1" };
+  const useWorkspaceStore = (selector: (s: typeof state) => unknown) => selector(state);
+  useWorkspaceStore.getState = () => state;
+  return { useWorkspaceStore };
+});
 
 vi.mock("../state/useCommandStore", () => ({
   useCommandStore: { getState: () => ({ isCommandPaletteOpen: false }) },

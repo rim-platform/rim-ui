@@ -87,7 +87,7 @@ export interface ExecuteCommandInput {
   isPipe?: boolean;
 }
 
-export interface CommandContextInput {
+export type CommandContextInput = {
   workspaceId?: string;
   conversationId?: string;
   threadId?: string;
@@ -96,7 +96,7 @@ export interface CommandContextInput {
   selectedMessageIds?: string[];
   focusedSurface?: string;
   activePanel?: string;
-}
+};
 
 export interface CreateKeybindInput {
   scope: KeybindScope;

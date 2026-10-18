@@ -45,6 +45,7 @@ vi.mock("../../../shared/toast", () => ({
 
 import { useCallback } from "react";
 import { dispatchCommand } from "../runtime/commandDispatcher";
+import { currentCommandContext } from "../runtime/commandContext";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { CANCELLED_PAYLOAD, isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
@@ -62,16 +63,13 @@ function useExecuteSelected(
     commandId: string;
     commandContext?: Record<string, unknown>;
   }) => Promise<{ executeCommand: CommandResult }>,
-  workspaceId: string | null,
 ) {
   return useCallback(
     async (command: CommandDefinition) => {
       closeCommandPalette();
       try {
         const result = await dispatchCommand(command, (input) => executeBackend(input), {
-          commandContext: {
-            workspaceId: workspaceId ?? undefined,
-          },
+          commandContext: currentCommandContext(),
         });
         if (isCancelledResult(result)) {
           // The user declined the confirmation, or was told it expired.
@@ -88,7 +86,7 @@ function useExecuteSelected(
         toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
       }
     },
-    [closeCommandPalette, executeBackend, workspaceId],
+    [closeCommandPalette, executeBackend],
   );
 }
 
@@ -123,11 +121,11 @@ function makeResult(overrides: Partial<CommandResult> = {}): CommandResult {
 }
 
 /** Render the hook with a fresh close spy and backend mock each test. */
-function setup(workspaceId: string | null = "ws-test") {
+function setup() {
   const closeSpy = vi.fn();
   const executeSpy = vi.fn();
 
-  const { result } = renderHook(() => useExecuteSelected(closeSpy, executeSpy, workspaceId));
+  const { result } = renderHook(() => useExecuteSelected(closeSpy, executeSpy));
 
   return { executeSelected: result.current, closeSpy, executeSpy };
 }

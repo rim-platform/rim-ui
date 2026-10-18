@@ -22,10 +22,12 @@ three places:
 **Arguments and context.** A command takes typed arguments, such as a conversation, a user or a
 piece of text. Context is where you are when it runs: the open workspace, the open conversation,
 a selected message. A command whose workspace or conversation argument is empty takes it from the
-context. The palette, keybinds and the composer's `/` list send the open workspace; a message's
-context menu adds the conversation and the message, and the AI agent the open conversation. A
-server command that needs a conversation therefore runs from a context menu, from the agent, or
-with the conversation's id in its arguments. A plugin command that needs a conversation gets the
+context; one given in its arguments, such as a keybind's preset arguments, wins. The palette,
+keybinds, the composer's `/` list and the AI agent send the open workspace, the open conversation
+and the thread open beside it; a message's context menu sends the message's conversation, its
+thread and the message instead. A server command that needs a conversation, such as marking it
+read or setting its notification level, therefore acts on the open one, and with none open it
+needs the conversation's id in its arguments. A plugin command that needs a conversation gets the
 open one; with none open, the palette leaves it out and its keybind says "Open a conversation
 first".
 
