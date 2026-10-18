@@ -20,6 +20,7 @@ import {
   useRemoveConversationMemberMutation,
 } from "../api/useChannelMembership";
 import { useLeaveConversation } from "../hooks/useLeaveConversation";
+import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import type { ConversationSummary } from "../types";
 import {
   canInviteToConversation,
@@ -96,7 +97,6 @@ function MembersList({
   const memberLookup = useMemberLookup(workspaceId);
   const canModerate = useCanModerate(workspaceId);
   const isGuest = useIsGuest(workspaceId);
-  const [inviting, setInviting] = useState(false);
   const [inviteIds, setInviteIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -113,6 +113,10 @@ function MembersList({
     conversation,
     onRemoveFromConversation: canRemoveOthers ? setConfirmRemoveId : undefined,
   });
+
+  // The picker can also be opened from a conversation menu, which opens the panel with it.
+  const inviting = useMembersPanelStore((s) => s.invitingIn === conversation.id);
+  const { openInvite, closeInvite } = useMembersPanelStore.getState();
 
   // Members first, then whoever is invited and waits for a device set up for encryption; the
   // viewer leads their group.
@@ -145,7 +149,7 @@ function MembersList({
             });
           }
           setInviteIds([]);
-          setInviting(false);
+          closeInvite();
         },
         onError: (err) => toast.error(graphqlErrorMessage(err, "Could not add members")),
       },
@@ -173,7 +177,7 @@ function MembersList({
           variant="secondary"
           size="sm"
           className="flex w-full items-center justify-center gap-1.5"
-          onClick={() => setInviting(true)}
+          onClick={() => openInvite(conversation.id)}
         >
           <UserPlus className="h-3.5 w-3.5" />
           Invite
@@ -188,7 +192,7 @@ function MembersList({
             onChange={setInviteIds}
             excludeUserIds={[...conversation.memberIds, ...pendingIds]}
             onConfirm={handleInvite}
-            onEscape={() => setInviting(false)}
+            onEscape={closeInvite}
             autoFocus
             placeholder="Find people to invite..."
             listClassName="max-h-48"
@@ -199,7 +203,7 @@ function MembersList({
               variant="ghost"
               size="sm"
               onClick={() => {
-                setInviting(false);
+                closeInvite();
                 setInviteIds([]);
               }}
             >

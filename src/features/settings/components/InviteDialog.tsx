@@ -33,6 +33,8 @@ const INVITE_ROLES: { role: InviteRole; label: string; hint: string }[] = [
 interface InviteDialogProps {
   open: boolean;
   onClose: () => void;
+  /** The workspace the invite is for: the open one when left out. */
+  workspaceId?: string;
 }
 
 /** Basic client-side email format check — mirrors the pattern used for signup's email field. */
@@ -60,8 +62,9 @@ function mapCreateInviteError(err: unknown): string | null {
   return null;
 }
 
-export function InviteDialog({ open, onClose }: InviteDialogProps) {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialogProps) {
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const workspaceId = target ?? openWorkspaceId;
   const createInvite = useCreateInviteMutation();
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);

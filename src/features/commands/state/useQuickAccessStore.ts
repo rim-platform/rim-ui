@@ -14,3 +14,6 @@ export const useQuickAccessStore = create<QuickAccessState>((set) => ({
   open: (target) => set({ isOpen: true, target }),
   close: () => set({ isOpen: false, target: null }),
 }));
+
+/** The keys that open the assigner on the hovered item, as a menu shows them. */
+export const QUICK_ACCESS_SHORTCUT = "Ctrl+Shift+B";

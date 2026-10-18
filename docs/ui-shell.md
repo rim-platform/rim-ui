@@ -216,6 +216,17 @@ menu. The surfaces with a menu:
 - **A notification**: Mark as read while unread; Mute conversation (a submenu of durations) or
   Unmute conversation, and Open, while its conversation is readable.
 - **A plugin panel's header**: Plugin settings, when the plugin has settings, and Close panel.
+- **A conversation** in the sidebar: the same items as the "…" menu in its header (read state,
+  notifications with timed mutes, members, invite, topic, a keybind to open it, the Owner and
+  Moderator's slow mode and archive, leave), or Accept and Decline for an invitation.
+- **A section heading** of the sidebar: Browse channels and Create channel on Channels, Expand
+  or Collapse on Archived.
+- **A workspace** on the rail: Mark all as read, Pause notifications, Browse channels, Create
+  channel, Invite people, a keybind to switch to it and its settings, acting on that workspace
+  without switching to it (except for its settings).
+- **A message request**: Accept, Read first, Ignore, Report and Block.
+
+Items the viewer cannot use are left out rather than shown disabled.
 
 Where the app has no menu of its own, the desktop app shows no menu at all, except in text
 fields, in the composer and over selected text, which keep the system's cut, copy and paste

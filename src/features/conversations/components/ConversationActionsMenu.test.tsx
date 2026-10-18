@@ -19,6 +19,9 @@ import {
 } from "../__fixtures__/conversations";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
+import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
+import { useTopicEditStore } from "../state/useTopicEditStore";
+import { useUnreadStore } from "../state/useUnreadStore";
 
 const requestMock = vi.fn();
 
@@ -66,8 +69,11 @@ async function openMenu(conversation: ConversationSummary, role: ServerMemberRol
   return qc;
 }
 
+/** The top level's items by accessible name, which joins a label and its detail. */
 function menuLabels(): string[] {
-  return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+  return screen
+    .getAllByRole("menuitem")
+    .map((el) => el.getAttribute("aria-label") ?? el.firstElementChild?.textContent ?? "");
 }
 
 describe("ConversationActionsMenu — role gating", () => {
@@ -76,17 +82,39 @@ describe("ConversationActionsMenu — role gating", () => {
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
     useShellStore.getState().reset();
-    useMembersPanelStore.setState({ open: false });
+    useMembersPanelStore.setState({ open: false, invitingIn: null });
+    useTopicEditStore.getState().stop();
+    useQuickAccessStore.getState().close();
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
   });
 
   afterEach(() => {
     useShellStore.getState().reset();
   });
 
-  it("a guest member of a channel gets Members and Leave, but no Archive", async () => {
+  it("a guest member of a channel gets no invite and no moderation", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await openMenu(makeConversation(), ServerMemberRoleGql.GUEST);
-    expect(menuLabels()).toEqual(["Members", "Notifications: All messages", "Leave channel"]);
+    expect(menuLabels()).toEqual([
+      "Notifications: All messages",
+      "Members",
+      "Edit topic…",
+      "Assign keybind…",
+      "Leave channel",
+    ]);
+  });
+
+  it("a member of a channel can invite people", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()).toEqual([
+      "Notifications: All messages",
+      "Members",
+      "Invite people…",
+      "Edit topic…",
+      "Assign keybind…",
+      "Leave channel",
+    ]);
   });
 
   it.each([ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR])(
@@ -95,26 +123,49 @@ describe("ConversationActionsMenu — role gating", () => {
       serve(role);
       await openMenu(makeConversation(), role);
       expect(menuLabels()).toEqual([
-        "Members",
         "Notifications: All messages",
-        "Slow mode",
-        "Archive channel",
+        "Members",
+        "Invite people…",
+        "Edit topic…",
+        "Assign keybind…",
+        "Slow mode…",
+        "Archive channel…",
         "Leave channel",
       ]);
+      expect(screen.getByText("Moderation")).toBeInTheDocument();
     },
   );
 
-  it("offers Unarchive on an archived channel to a moderator", async () => {
+  it("an archived channel offers only Members, a moderator's Unarchive, and Leave", async () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await openMenu(makeConversation({ isArchived: true }), ServerMemberRoleGql.MODERATOR);
-    expect(menuLabels()).toContain("Unarchive channel");
-    expect(menuLabels()).not.toContain("Archive channel");
+    expect(menuLabels()).toEqual(["Members", "Unarchive channel", "Leave channel"]);
   });
 
-  it("offers no Leave for a public channel the viewer has not joined", async () => {
+  it("an archived channel offers no Unarchive to a member", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation({ isArchived: true }), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()).toEqual(["Members", "Leave channel"]);
+  });
+
+  it("puts Join channel first for a public channel the viewer has not joined", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation JoinChannel": () => ({ joinChannel: makeConversation() }),
+    });
+    await openMenu(makeConversation({ isMember: false }), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()).toEqual(["Join channel", "Members", "Edit topic…", "Assign keybind…"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Join channel" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
+        { serverId: "ws-1", conversationId: "conv-1" },
+      ]),
+    );
+  });
+
+  it("offers a guest no Join channel", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await openMenu(makeConversation({ isMember: false }), ServerMemberRoleGql.GUEST);
-    expect(menuLabels()).toEqual(["Members"]);
+    expect(menuLabels()).not.toContain("Join channel");
   });
 
   it("offers no Leave or Archive for a DM, even to an owner", async () => {
@@ -123,16 +174,36 @@ describe("ConversationActionsMenu — role gating", () => {
       makeConversation({ conversationType: ConversationTypeEnum.DIRECT, title: null }),
       ServerMemberRoleGql.OWNER,
     );
-    expect(menuLabels()).toEqual(["Members", "Notifications: All messages"]);
+    expect(menuLabels()).toEqual(["Notifications: All messages", "Members", "Assign keybind…"]);
   });
 
-  it("offers Leave conversation for a group", async () => {
-    serve(ServerMemberRoleGql.GUEST);
+  it("offers Add people and a confirmed Leave group for a group", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
     await openMenu(
       makeConversation({ conversationType: ConversationTypeEnum.GROUP, title: "crew" }),
-      ServerMemberRoleGql.GUEST,
+      ServerMemberRoleGql.MEMBER,
     );
-    expect(menuLabels()).toEqual(["Members", "Notifications: All messages", "Leave conversation"]);
+    expect(menuLabels()).toEqual([
+      "Notifications: All messages",
+      "Members",
+      "Add people…",
+      "Assign keybind…",
+      "Leave group…",
+    ]);
+  });
+
+  it("offers Mark as read while the conversation has unread messages", async () => {
+    serve(ServerMemberRoleGql.MEMBER, { "mutation MarkAsRead": () => ({ markAsRead: true }) });
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 });
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()[0]).toBe("Mark as read");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation MarkAsRead")).toEqual([
+        { input: expect.objectContaining({ conversationId: "conv-1", workspaceId: "ws-1" }) },
+      ]),
+    );
+    expect(useUnreadStore.getState().counts["conv-1"] ?? 0).toBe(0);
   });
 
   it("Members toggles the members panel", async () => {
@@ -140,6 +211,35 @@ describe("ConversationActionsMenu — role gating", () => {
     await openMenu(makeConversation(), ServerMemberRoleGql.GUEST);
     fireEvent.click(screen.getByRole("menuitem", { name: "Members" }));
     expect(useMembersPanelStore.getState().open).toBe(true);
+  });
+
+  it("Invite people opens the members panel with its invite picker", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Invite people…" }));
+    expect(useMembersPanelStore.getState()).toMatchObject({ open: true, invitingIn: "conv-1" });
+  });
+
+  it("Edit topic starts the header's topic edit from the current topic", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation({ topic: "Daily standup" }), ServerMemberRoleGql.MEMBER);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
+    expect(useTopicEditStore.getState()).toMatchObject({
+      conversationId: "conv-1",
+      draft: "Daily standup",
+    });
+  });
+
+  it("Assign keybind opens the quick-access assigner for the channel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    const item = screen.getByRole("menuitem", { name: "Assign keybind…" });
+    expect(item).toHaveAttribute("aria-keyshortcuts", "Ctrl+Shift+B");
+    fireEvent.click(item);
+    expect(useQuickAccessStore.getState()).toMatchObject({
+      isOpen: true,
+      target: { kind: "channel", conversationId: "conv-1", serverId: "ws-1", label: "general" },
+    });
   });
 });
 
@@ -154,7 +254,7 @@ describe("ConversationActionsMenu — actions", () => {
   it("asks for confirmation before archiving, then archives with the right variables", async () => {
     serve(ServerMemberRoleGql.OWNER);
     await openMenu(makeConversation(), ServerMemberRoleGql.OWNER);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Archive #general?" });
     expect(callsTo(requestMock, "mutation SetConversationArchived")).toHaveLength(0);
@@ -188,7 +288,7 @@ describe("ConversationActionsMenu — actions", () => {
       },
     });
     await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel…" }));
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Only owners and moderators can archive channels"),
@@ -211,7 +311,7 @@ describe("ConversationActionsMenu — actions", () => {
   it("confirms before leaving a private channel", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await openMenu(makeConversation({ isPrivate: true }), ServerMemberRoleGql.GUEST);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel…" }));
     await screen.findByRole("dialog", { name: "Leave #general?" });
     expect(callsTo(requestMock, "mutation LeaveConversation")).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Leave" }));
@@ -241,10 +341,10 @@ describe("ConversationActionsMenu — slow mode", () => {
     expect(menuLabels().some((l) => l.startsWith("Slow mode"))).toBe(false);
   });
 
-  it("shows the current interval in the menu label", async () => {
+  it("shows the current interval beside the item", async () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await openMenu(makeConversation({ slowModeSeconds: 300 }), ServerMemberRoleGql.MODERATOR);
-    expect(menuLabels()).toContain("Slow mode (5 min)");
+    expect(menuLabels()).toContain("Slow mode…: 5 min");
   });
 
   it("a moderator picks an interval and saves it", async () => {
@@ -252,7 +352,7 @@ describe("ConversationActionsMenu — slow mode", () => {
       "mutation SetSlowMode": () => ({ setSlowMode: makeConversation({ slowModeSeconds: 30 }) }),
     });
     await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Slow mode in #general" });
     const options = screen.getAllByRole("radio").map((r) => r.parentElement?.textContent);
@@ -285,7 +385,7 @@ describe("ConversationActionsMenu — slow mode", () => {
       "mutation SetSlowMode": () => ({ setSlowMode: makeConversation() }),
     });
     await openMenu(makeConversation({ slowModeSeconds: 60 }), ServerMemberRoleGql.OWNER);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode (1 min)" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode…: 1 min" }));
     fireEvent.click(await screen.findByRole("radio", { name: "Off" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
@@ -302,7 +402,7 @@ describe("ConversationActionsMenu — slow mode", () => {
       },
     });
     await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode…" }));
     fireEvent.click(await screen.findByRole("radio", { name: "10 seconds" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("slow mode is for channels only");

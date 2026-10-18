@@ -198,6 +198,9 @@ may act on them also gets a **Moderation** section: **Change role**, **Time out*
 confirmation. On yourself the menu has **View profile**, **Set status…**, **Copy @username** and
 **Settings**.
 
+Right-click a workspace, a conversation or a section heading of the sidebar for its actions;
+the conversation's are also under **…** in its header.
+
 The keys that matter on the first day, as a new device has them:
 
 | Keys | What they do |

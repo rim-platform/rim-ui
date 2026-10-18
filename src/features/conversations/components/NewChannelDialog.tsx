@@ -18,11 +18,20 @@ import { MemberPicker } from "./MemberPicker";
 const PRIVATE_CHANNEL_HINT =
   "Only invited members can see this channel. This cannot be changed later.";
 
-export function NewChannelDialog({ onClose }: { onClose: () => void }) {
+export function NewChannelDialog({
+  onClose,
+  workspaceId: target,
+}: {
+  onClose: () => void;
+  /** The workspace the channel is created in: the open one when left out. */
+  workspaceId?: string;
+}) {
   const [title, setTitle] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const workspaceId = target ?? openWorkspaceId;
+  const setWorkspace = useWorkspaceStore((s) => s.setWorkspaceId);
   const setConversation = useShellStore((s) => s.setSelectedConversationId);
   const create = useCreateConversationMutation();
   const addMembers = useAddConversationMembersMutation();
@@ -68,6 +77,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
       }
     }
 
+    if (workspaceId !== openWorkspaceId) setWorkspace(workspaceId);
     setConversation(conversationId);
     onClose();
   }

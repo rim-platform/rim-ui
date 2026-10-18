@@ -44,7 +44,7 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
   }, [data, query]);
 
   function open(conversationId: string) {
-    openConversation(conversationId);
+    openConversation(conversationId, workspaceId);
     onClose();
   }
 

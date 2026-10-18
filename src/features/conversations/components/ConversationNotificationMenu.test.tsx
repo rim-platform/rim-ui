@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { createTestQueryClient } from "../../../test/utils";
 import {
   NotificationLevel,
   ServerMemberRoleGql,
@@ -56,7 +55,7 @@ function serve({ defaultLevel = NotificationLevel.MENTIONS, muted = (): MutedRow
   });
 }
 
-async function openNotifications(conversation: ConversationSummary, summary: string) {
+async function openNotifications(conversation: ConversationSummary, summary: string | RegExp) {
   // Keeps unobserved cache entries so the test can read the patched conversation.
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(queryKeys.conversation("ws-1", conversation.id), conversation);
@@ -65,15 +64,24 @@ async function openNotifications(conversation: ConversationSummary, summary: str
       <ConversationActionsMenu workspaceId="ws-1" conversation={conversation} />
     </QueryClientProvider>,
   );
+  // The menu reads the workspace default and the mutes from the cache when it opens.
+  await waitFor(() => {
+    expect(qc.getQueryData(queryKeys.notificationSettings("ws-1"))).toBeDefined();
+    expect(qc.getQueryData(queryKeys.mutedConversations("ws-1"))).toBeDefined();
+  });
   fireEvent.click(screen.getByRole("button", { name: "Conversation menu" }));
-  fireEvent.click(await screen.findByRole("menuitem", { name: `Notifications: ${summary}` }));
-  // The workspace default loads when the menu opens.
-  await screen.findByRole("menuitem", { name: /Use workspace default \(/ });
+  const name = typeof summary === "string" ? `Notifications: ${summary}` : summary;
+  fireEvent.click(screen.getByRole("menuitem", { name }));
   return qc;
 }
 
-function menuItem(name: string | RegExp) {
-  return screen.getByRole("menuitem", { name });
+/** The open Notifications submenu. */
+function submenu() {
+  return screen.getByRole("menu", { name: "Notifications" });
+}
+
+function choice(name: string | RegExp) {
+  return within(submenu()).getByRole("menuitemradio", { name });
 }
 
 describe("ConversationActionsMenu — Notifications submenu", () => {
@@ -83,44 +91,51 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     useMutedStore.setState({ mutedIds: new Set() });
   });
 
-  it("lists the levels and marks the workspace default when there is no override", async () => {
+  it("lists the levels and the mutes, and checks the workspace default without an override", async () => {
     serve();
     await openNotifications(
       makeConversation({ effectiveNotificationLevel: NotificationLevel.MENTIONS }),
-      "Mentions",
+      "Mentions only",
     );
 
-    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
-    expect(labels).toEqual([
-      "Back",
+    const radios = within(submenu()).getAllByRole("menuitemradio");
+    expect(radios.map((el) => el.getAttribute("aria-label") ?? el.textContent)).toEqual([
       "All messages",
-      "Mentions",
-      "None",
-      "Current:Use workspace default (Mentions)",
-      "Mute for 1 hour",
-      "Mute for 8 hours",
-      "Mute until tomorrow",
+      "Mentions only",
+      "Nothing",
+      "Workspace default: Mentions only",
     ]);
+    expect(radios.map((el) => el.getAttribute("aria-checked"))).toEqual([
+      "false",
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(
+      within(submenu())
+        .getAllByRole("menuitem")
+        .map((el) => el.textContent),
+    ).toEqual(["Mute for 1 hour", "Mute for 8 hours", "Mute until tomorrow"]);
   });
 
-  it("marks the conversation's own level", async () => {
+  it("checks the conversation's own level", async () => {
     serve();
     await openNotifications(
       makeConversation({
         notificationLevel: NotificationLevel.NONE,
         effectiveNotificationLevel: NotificationLevel.NONE,
       }),
-      "None",
+      "Nothing",
     );
-    expect(menuItem(/None$/)).toHaveTextContent("Current:None");
-    expect(menuItem(/Use workspace default/)).not.toHaveTextContent("Current:");
+    expect(choice("Nothing")).toHaveAttribute("aria-checked", "true");
+    expect(choice(/^Workspace default/)).toHaveAttribute("aria-checked", "false");
   });
 
   it("sets a level and writes it into the conversation cache", async () => {
     serve();
     const qc = await openNotifications(makeConversation(), "All messages");
 
-    fireEvent.click(menuItem("Mentions"));
+    fireEvent.click(choice("Mentions only"));
 
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation SetConversationNotificationLevel")).toEqual([
@@ -135,7 +150,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
         effectiveNotificationLevel: NotificationLevel.MENTIONS,
       }),
     );
-    expect(toast.success).toHaveBeenCalledWith("Notifications for #general: Mentions");
+    expect(toast.success).toHaveBeenCalledWith("Notifications for #general: Mentions only");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
@@ -146,7 +161,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
       "All messages",
     );
 
-    fireEvent.click(menuItem(/Use workspace default/));
+    fireEvent.click(choice(/^Workspace default/));
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation SetConversationNotificationLevel")).toEqual([
         { serverId: "ws-1", conversationId: "conv-1", level: null },
@@ -154,7 +169,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     );
   });
 
-  it("None marks the conversation muted in the sidebar store", async () => {
+  it("Nothing marks the conversation muted in the sidebar store", async () => {
     // Like the server: level NONE lists the conversation as muted (without an end).
     serve({
       muted: () =>
@@ -163,7 +178,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
           : [],
     });
     await openNotifications(makeConversation(), "All messages");
-    fireEvent.click(menuItem("None"));
+    fireEvent.click(choice("Nothing"));
     await waitFor(() => expect(useMutedStore.getState().mutedIds.has("conv-1")).toBe(true));
   });
 
@@ -172,7 +187,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     await openNotifications(makeConversation(), "All messages");
 
     const before = Date.now();
-    fireEvent.click(menuItem("Mute for 1 hour"));
+    fireEvent.click(within(submenu()).getByRole("menuitem", { name: "Mute for 1 hour" }));
 
     await waitFor(() => expect(callsTo(requestMock, "mutation MuteConversation")).toHaveLength(1));
     const input = callsTo(requestMock, "mutation MuteConversation")[0].input as {
@@ -186,37 +201,20 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     expect(delta).toBeLessThanOrEqual(61 * 60 * 1000);
   });
 
-  it("offers Unmute while a timed mute is in effect", async () => {
+  it("offers Unmute in place of the mutes while a timed mute is in effect", async () => {
     const until = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     serve({ muted: () => [{ conversationId: "conv-1", mutedUntil: until }] });
-    const qc = createTestQueryClient();
-    const conversation = makeConversation({
-      effectiveNotificationLevel: NotificationLevel.NONE,
-    });
-    render(
-      <QueryClientProvider client={qc}>
-        <ConversationActionsMenu workspaceId="ws-1" conversation={conversation} />
-      </QueryClientProvider>,
+    await openNotifications(
+      makeConversation({ effectiveNotificationLevel: NotificationLevel.NONE }),
+      /^Notifications: Muted until/,
     );
-    await waitFor(() =>
-      expect(qc.getQueryData(queryKeys.mutedConversations("ws-1"))).toBeDefined(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Conversation menu" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^Notifications: Muted until/ }));
 
-    expect(screen.queryByRole("menuitem", { name: "Mute for 1 hour" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: /^Unmute \(muted until/ }));
+    expect(within(submenu()).queryByRole("menuitem")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unmute" }));
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation UnmuteConversation")).toEqual([
         { input: { serverId: "ws-1", conversationId: "conv-1" } },
       ]),
     );
-  });
-
-  it("Back returns to the main menu", async () => {
-    serve();
-    await openNotifications(makeConversation(), "All messages");
-    fireEvent.click(menuItem("Back"));
-    expect(screen.getByRole("menuitem", { name: "Members" })).toBeInTheDocument();
   });
 });

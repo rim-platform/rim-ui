@@ -34,6 +34,7 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
+import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { ConversationMembersPanel } from "./ConversationMembersPanel";
 
 const channel = makeConversation({ memberIds: ["me", "u-alice"], memberCount: 2 });
@@ -106,6 +107,7 @@ describe("ConversationMembersPanel", () => {
     requestMock.mockReset();
     useShellStore.getState().reset();
     useAuthStore.setState({ session: { userId: "me" } });
+    useMembersPanelStore.setState({ open: false, invitingIn: null });
   });
 
   afterEach(() => {
@@ -138,6 +140,16 @@ describe("ConversationMembersPanel", () => {
         { serverId: "ws-1", conversationId: "conv-1", userIds: ["u-bob"] },
       ]),
     );
+  });
+
+  it("opens with the invite picker when a conversation menu asked for it", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    useMembersPanelStore.getState().openInvite("conv-1");
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    expect(screen.getByPlaceholderText("Find people to invite...")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useMembersPanelStore.getState().invitingIn).toBeNull();
+    expect(screen.getByRole("button", { name: /invite/i })).toBeInTheDocument();
   });
 
   it("lists invited members after the members, marked as invited and not counted", async () => {

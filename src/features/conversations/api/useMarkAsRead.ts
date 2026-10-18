@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { toast } from "../../../shared/toast";
 import { invalidateUnreadNotificationCount } from "../../notifications/api/useNotifications";
 import { useUnreadStore } from "../state/useUnreadStore";
 
@@ -16,6 +17,14 @@ export const MARK_ALL_AS_READ = gql`
     markAllAsRead(input: $input)
   }
 `;
+
+/** Clears a workspace's unread counts at once and marks all of it read on the server. */
+export function markWorkspaceRead(workspaceId: string): void {
+  useUnreadStore.getState().markAllRead(workspaceId);
+  graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
+    toast.error("Failed to mark all as read");
+  });
+}
 
 interface MarkAsReadInput {
   conversationId: string;

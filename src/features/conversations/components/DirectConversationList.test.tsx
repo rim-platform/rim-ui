@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
 
 const inbox = vi.hoisted(() => ({ fetchInboxConversations: vi.fn() }));
 const relayApi = vi.hoisted(() => ({
   fetchConversationPredecessor: vi.fn(),
   fetchDmRequests: vi.fn(),
+  fetchContacts: vi.fn(),
 }));
 vi.mock("../api/useInboxConversations", () => inbox);
 vi.mock("../../relay/api/relayApi", () => relayApi);
@@ -35,6 +37,7 @@ function dm(id: string, serverId: string) {
     conversationType: "DIRECT",
     memberIds: ["u1", "u2"],
     memberCount: 2,
+    isMember: true,
     encryptedAt: "2026-10-10T00:00:00Z",
     effectiveNotificationLevel: "ALL",
   };
@@ -60,6 +63,7 @@ beforeEach(() => {
     pageInfo: { hasNext: false, hasPrev: false },
   }));
   relayApi.fetchDmRequests.mockResolvedValue([]);
+  relayApi.fetchContacts.mockResolvedValue([]);
   relayApi.fetchConversationPredecessor.mockImplementation(async (_s: string, id: string) => ({
     id,
     memberIds: [],
@@ -134,5 +138,24 @@ describe("DirectConversationList", () => {
     await screen.findByText("Carol");
     await waitFor(() => expect(relayApi.fetchDmRequests).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: /^Requests/ })).not.toBeInTheDocument();
+  });
+
+  it("opens a row's menu with right click, about the conversation's own space", async () => {
+    renderWithProviders(<DirectConversationList />);
+    fireEvent.contextMenu((await screen.findByText("Alice")).closest("button")!);
+    const menu = screen.getByRole("menu", { name: "Conversation actions" });
+    const labels = within(menu)
+      .getAllByRole("menuitem")
+      .map((el) => el.getAttribute("aria-label") ?? el.firstElementChild?.textContent);
+    expect(labels).toEqual(["Notifications: All messages", "Assign keybind…"]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Assign keybind…" }));
+    expect(useQuickAccessStore.getState().target).toEqual({
+      kind: "dm",
+      conversationId: "remote-dm",
+      serverId: "remote-space",
+      label: "Alice",
+    });
+    // The menu acts on the row without opening it.
+    expect(useWorkspaceStore.getState().workspaceId).toBe("direct-1");
   });
 });

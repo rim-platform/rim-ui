@@ -9,6 +9,7 @@ import { useHoverContextStore } from "../../../shell/state/useHoverContextStore"
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { cn } from "../../../shared/ui/cn";
+import type { ContextMenuBindings } from "../../../shared/ui/contextMenu/useContextMenu";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../commands/hooks/useKeybindLabel";
 import { LockMark } from "../../e2ee/components/LockMark";
@@ -31,6 +32,7 @@ export const ConversationItem = memo(function ConversationItem({
   select,
   unreadCount,
   isMuted,
+  bindMenu,
 }: {
   conv: ConversationSummary;
   globalIndex: number;
@@ -42,6 +44,8 @@ export const ConversationItem = memo(function ConversationItem({
   select: (id: string) => void;
   unreadCount: number;
   isMuted: boolean;
+  /** The context-menu handlers for a row, from the list's shared menu. */
+  bindMenu?: (conv: ConversationSummary, label: string) => ContextMenuBindings;
 }) {
   const active = conv.id === selectedId;
   const focused = globalIndex === focusedIndex;
@@ -84,6 +88,7 @@ export const ConversationItem = memo(function ConversationItem({
   const button = (
     <button
       type="button"
+      {...bindMenu?.(conv, displayTitle ?? "Untitled")}
       onClick={() => {
         select(conv.id);
         // Entering a conversation always resets to COMPOSE mode and focuses
@@ -175,7 +180,7 @@ export const ConversationItem = memo(function ConversationItem({
   );
 
   return (
-    <li role="option" aria-selected={active}>
+    <li role="option" aria-selected={active} data-conversation-id={conv.id}>
       {keystroke ? (
         <HoverTooltip
           content={
