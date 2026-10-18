@@ -26,8 +26,21 @@ const stepTitles: Record<Step, string> = {
   join: "Join workspace",
 };
 
-export function AddWorkspaceDialog({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<Step>("choose");
+/**
+ * Dialog that creates a workspace or joins one with an invite code, and opens the result.
+ *
+ * @param onClose - Called when the dialog closes, after a workspace was created or joined too.
+ * @param initialStep - The step it opens on: the choice between creating and joining (the
+ *   default), or straight on the create or join form.
+ */
+export function AddWorkspaceDialog({
+  onClose,
+  initialStep = "choose",
+}: {
+  onClose: () => void;
+  initialStep?: Step;
+}) {
+  const [step, setStep] = useState<Step>(initialStep);
   const [name, setName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);

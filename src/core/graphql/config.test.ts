@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { endpointHost, getGraphqlEndpoint, getApiOrigin, getWsEndpoint } from "./config";
+import {
+  endpointHost,
+  getGraphqlEndpoint,
+  getApiOrigin,
+  getWebBaseUrl,
+  getWsEndpoint,
+} from "./config";
 
 describe("getGraphqlEndpoint", () => {
   it("returns the default endpoint when env var is not set", () => {
@@ -45,6 +51,25 @@ describe("getApiOrigin", () => {
     // jsdom's default test origin is http://localhost:3000.
     vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "/api");
     expect(getApiOrigin()).toBe("http://localhost:3000");
+  });
+});
+
+describe("getWebBaseUrl", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it("is the page's own origin in the web app, whatever the endpoint", () => {
+    vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://api.example.com/api");
+    // jsdom's default test origin is http://localhost:3000.
+    expect(getWebBaseUrl()).toBe("http://localhost:3000");
+  });
+
+  it("is the API origin of the configured server in the desktop app", () => {
+    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://rim.example.org/api");
+    expect(getWebBaseUrl()).toBe("https://rim.example.org");
   });
 });
 

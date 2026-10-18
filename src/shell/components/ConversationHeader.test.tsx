@@ -52,7 +52,14 @@ function renderHeader() {
 describe("ConversationHeader — keyboard", () => {
   beforeEach(() => {
     requestMock.mockReset();
-    requestMock.mockImplementation(() => new Promise(() => {}));
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Server(")) {
+        return Promise.resolve({
+          server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.OWNER },
+        });
+      }
+      return new Promise(() => {});
+    });
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
     useShellStore.setState({ selectedConversationId: "conv-1" });
   });
@@ -65,6 +72,7 @@ describe("ConversationHeader — keyboard", () => {
   it("reaches the conversation actions by keyboard", async () => {
     const user = userEvent.setup();
     renderHeader();
+    await screen.findByRole("button", { name: "Invite member" });
     await expectReachableByKeyboard(user, [
       screen.getByRole("button", { name: "Invite member" }),
       screen.getByRole("button", { name: /^Search in/ }),
@@ -199,7 +207,7 @@ describe("ConversationHeader — DM sent as a request", () => {
   });
 });
 
-describe("ConversationHeader — guest gate", () => {
+describe("ConversationHeader — invite gate", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
@@ -212,8 +220,10 @@ describe("ConversationHeader — guest gate", () => {
   });
 
   it.each([
+    [ServerMemberRoleGql.OWNER, true],
+    [ServerMemberRoleGql.MODERATOR, false],
+    [ServerMemberRoleGql.MEMBER, false],
     [ServerMemberRoleGql.GUEST, false],
-    [ServerMemberRoleGql.MEMBER, true],
   ])("viewer %s: Invite member shown = %s", async (role, shown) => {
     requestMock.mockImplementation((document: string) => {
       if (document.includes("query Server(")) {

@@ -83,6 +83,16 @@ export function getApiOrigin(): string {
 }
 
 /**
+ * The base URL of the RIM web app, for links that leave the app such as invite links. The web
+ * app returns the page's own origin. The desktop app returns {@link getApiOrigin}, the server
+ * it talks to: a deployment serves the web app on the same origin as the API, and the server
+ * builds its own emailed links on that base.
+ */
+export function getWebBaseUrl(): string {
+  return isDesktop() ? getApiOrigin() : window.location.origin;
+}
+
+/**
  * The graphql-ws endpoint (`ws(s)://…/api/ws`), derived from {@link getApiOrigin}
  * so the WS and REST/GraphQL endpoints always agree on the API origin.
  */
