@@ -38,10 +38,10 @@ unit; the desktop's `release` is unchanged. No `wasm-opt` pass (binaryen is not 
 
 | | Bytes |
 |---|---|
-| `rim_mls_wasm_bg.wasm` | 2,426,824 |
-| gzip -9 (`source.json`) | 692,971 |
-| gzip -6 (as the Docker image's nginx serves it) | 699,817 |
-| brotli -q 11 | 511,257 |
+| `rim_mls_wasm_bg.wasm` | 2,456,866 |
+| gzip -9 (`source.json`) | 703,263 |
+| gzip -6 (as the Docker image's nginx serves it) | 710,195 |
+| brotli -q 11 | 519,291 |
 
 **The build is committed**, because `npm run build` must work without a Rust toolchain: CI's
 build job and the Docker image build the web app with Node only, and Vitest loads the module.
