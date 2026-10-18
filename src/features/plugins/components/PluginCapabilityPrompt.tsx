@@ -3,6 +3,7 @@ import { Shield } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
+import { usePluginEnable } from "../api/usePluginActions";
 import { useApproveCapabilities } from "../api/usePluginCapabilities";
 import {
   parsePluginCapabilities,
@@ -49,14 +50,24 @@ interface PluginCapabilityPromptProps {
   open: boolean;
   onClose: () => void;
   plugin: PluginInfo;
+  /** Set right after an install: approving also turns the plugin on. */
+  startOnApprove?: boolean;
 }
 
-export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabilityPromptProps) {
+export function PluginCapabilityPrompt({
+  open,
+  onClose,
+  plugin,
+  startOnApprove = false,
+}: PluginCapabilityPromptProps) {
   const parsedCapabilities = parsePluginCapabilities(plugin.capabilities);
   const [selected, setSelected] = useState<Set<PluginCapability>>(
     () => new Set(parsedCapabilities),
   );
   const approve = useApproveCapabilities();
+  const enable = usePluginEnable();
+  const [startError, setStartError] = useState<string | null>(null);
+  const start = startOnApprove && !plugin.enabled;
 
   // An encrypted chat capability needs its plain one: checking it checks the plain one,
   // and unchecking the plain one unchecks it.
@@ -80,9 +91,24 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
   }
 
   function handleApprove() {
+    setStartError(null);
     approve.mutate(
       { pluginId: plugin.plugin_id, capabilities: Array.from(selected) },
-      { onSuccess: onClose },
+      {
+        onSuccess: () => {
+          if (!start) {
+            onClose();
+            return;
+          }
+          enable.mutate(plugin.plugin_id, {
+            onSuccess: onClose,
+            onError: (err) =>
+              setStartError(
+                `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings → Plugins.`,
+              ),
+          });
+        },
+      },
     );
   }
 
@@ -156,13 +182,30 @@ export function PluginCapabilityPrompt({ open, onClose, plugin }: PluginCapabili
           ))}
         </div>
 
+        {start && (
+          <p className="text-xs text-rim-text-muted">
+            The plugin starts once you approve. Cancel leaves it installed and turned off.
+          </p>
+        )}
+        {startError && (
+          <p className="text-xs text-rim-danger" role="alert">
+            {startError}
+          </p>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" size="sm" onClick={onClose}>
-            Cancel
+            {startError ? "Close" : "Cancel"}
           </Button>
-          <Button size="sm" isLoading={approve.isPending} onClick={handleApprove}>
-            Approve
-          </Button>
+          {!startError && (
+            <Button
+              size="sm"
+              isLoading={approve.isPending || enable.isPending}
+              onClick={handleApprove}
+            >
+              {start ? "Approve and turn on" : "Approve"}
+            </Button>
+          )}
         </div>
       </div>
     </Dialog>
