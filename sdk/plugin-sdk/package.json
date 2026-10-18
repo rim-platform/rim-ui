@@ -1,6 +1,6 @@
 {
   "name": "@rim-platform/plugin-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript SDK for RIM plugin protocol v1",
   "license": "Apache-2.0",
   "homepage": "https://github.com/rim-platform/rim-ui/tree/master/sdk/plugin-sdk",

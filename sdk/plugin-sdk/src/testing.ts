@@ -26,7 +26,16 @@ export interface TestHostOptions {
   readonly principal?: wire.Principal | null;
   /** Capabilities the user approved. Gated requests without one get `CAPABILITY_DENIED`. */
   readonly grantedCapabilities?: string[];
-  /** Answers the plugin's own requests. Throw a `wire.Error`-shaped object to fail one. */
+  /**
+   * The plugin's settings, which the test host answers `rim.settings.get` with until
+   * {@link TestHost.changeSettings} replaces them. Without it `rim.settings.get` goes
+   * to `onRequest`, or gets `METHOD_NOT_FOUND` as from a host from before settings.
+   */
+  readonly settings?: Readonly<Record<string, unknown>>;
+  /**
+   * Answers the plugin's own requests. Throw a `wire.Error`-shaped object, with
+   * `data` when it needs one, to fail one.
+   */
   readonly onRequest?: (method: string, params: unknown) => unknown;
   /** How long to wait for each plugin answer. Defaults to 5 seconds. */
   readonly timeoutMs?: number;
@@ -76,6 +85,12 @@ export interface TestHost {
   request(method: string, params?: unknown): Promise<Record<string, unknown>>;
   /** Send a notification. */
   notify(method: string, params?: unknown): void;
+  /**
+   * Replace the plugin's settings with `values` and send them in
+   * `rim.settings.changed`, as the host does after the user saves. From then on the
+   * test host answers `rim.settings.get` with them too.
+   */
+  changeSettings(values: Readonly<Record<string, unknown>>): void;
   /** Send `rim.shutdown` and wait for the plugin to stop. */
   shutdown(): Promise<number>;
   /** Close the plugin's input (stdio) or the host's end of the port, as the host does after `rim.shutdown`. */
@@ -115,6 +130,7 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
   const waiting = new Map<wire.Id, (frame: Record<string, unknown>) => void>();
   const timeoutMs = options.timeoutMs ?? 5_000;
   const principal = options.principal === undefined ? TEST_PRINCIPAL : options.principal;
+  let settings = options.settings;
   let nextId = 1;
   let nextHeartbeat = -1;
 
@@ -153,6 +169,10 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
       });
       return;
     }
+    if (frame.method === Method.settingsGet && settings !== undefined) {
+      send({ jsonrpc: "2.0", id, result: { values: { ...settings } } });
+      return;
+    }
     if (!options.onRequest) {
       send({
         jsonrpc: "2.0",
@@ -170,7 +190,9 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
     } catch (error) {
       const e = error as Partial<wire.Error>;
       const code = typeof e.code === "number" ? e.code : ErrorCode.INTERNAL_ERROR;
-      send({ jsonrpc: "2.0", id, error: { code, message: String(e.message ?? error) } });
+      const body: wire.Error = { code, message: String(e.message ?? error) };
+      if (e.data !== undefined) body.data = e.data;
+      send({ jsonrpc: "2.0", id, error: body });
     }
   };
 
@@ -234,6 +256,15 @@ export function startTestHost(plugin: Plugin, options: TestHostOptions = {}): Te
     request,
     notify(method, params) {
       send(params === undefined ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", method, params });
+    },
+    changeSettings(values) {
+      settings = { ...values };
+      const notification: wire.SettingsChangedNotification = {
+        jsonrpc: "2.0",
+        method: Method.settingsChanged,
+        params: { values: { ...values } },
+      };
+      send(notification);
     },
     async shutdown() {
       send({ jsonrpc: "2.0", method: Method.shutdown });

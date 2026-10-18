@@ -36,6 +36,16 @@ async function buildTemplate(): Promise<string> {
   return outfile;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** Wait, a macrotask at a time, until `done` holds. */
+async function waitFor(done: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !done(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(done()).toBe(true);
+}
+
 afterEach(() => {
   delete (globalThis as Record<string, unknown>).rimPluginPort;
   delete (globalThis as Record<string, unknown>).rimPluginManifest;
@@ -61,6 +71,7 @@ describe("the template's browser build over a port", () => {
     };
     const logs: string[] = [];
     let stopped: string | null = null;
+    let settings: Record<string, unknown> = { greeting: "Hi" };
     const session = new PluginSession(
       hostPort,
       {
@@ -76,7 +87,7 @@ describe("the template's browser build over a port", () => {
         updatePanel: () => ({}),
         storageGet: async () => null,
         storageSet: async () => {},
-        settingsGet: async () => ({}),
+        settingsGet: async () => settings,
         stopped: (reason) => {
           stopped = reason;
         },
@@ -94,6 +105,8 @@ describe("the template's browser build over a port", () => {
     await session.handshake();
     expect(session.running).toBe(true);
 
+    // The plugin read its settings once ready; a heartbeat later it has them.
+    await waitFor(() => sent.some((m) => isRecord(m.result) && "values" in m.result));
     await session.heartbeat();
     expect(
       await session.execute({
@@ -104,7 +117,7 @@ describe("the template's browser build over a port", () => {
         confirmed: false,
       }),
     ).toEqual({
-      payload: "Hello, RIM!",
+      payload: "Hi, RIM!",
       message: "1 greeting so far",
     });
     await expect(
@@ -135,6 +148,19 @@ describe("the template's browser build over a port", () => {
     await expect(unknown).rejects.toBeInstanceOf(RpcError);
     await expect(unknown).rejects.toMatchObject({ code: -32602 });
 
+    settings = { greeting: "Howdy" };
+    session.settingsChanged();
+    await waitFor(() => sent.some((m) => m.method === "rim.settings.changed"));
+    expect(
+      await session.execute({
+        commandId: "greet",
+        args: { name: "RIM" },
+        invoker: PRINCIPAL,
+        initiator: "user",
+        confirmed: false,
+      }),
+    ).toMatchObject({ payload: "Howdy, RIM!" });
+
     session.setPrincipal(null);
     session.setMappings([
       { from: PRINCIPAL.principalId, to: "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo" },
@@ -150,10 +176,13 @@ describe("the template's browser build over a port", () => {
     const methods = sent.map((m) => m.method ?? "response");
     expect(methods).toEqual([
       "rim.handshake",
+      "response",
       "rim.heartbeat",
       "rim.command.execute",
       "rim.command.execute",
       "rim.command.execute",
+      "rim.command.execute",
+      "rim.settings.changed",
       "rim.command.execute",
       "rim.principal.changed",
       "rim.principals.remapped",

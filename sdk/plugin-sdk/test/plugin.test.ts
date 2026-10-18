@@ -285,6 +285,96 @@ describe("signed-in user", () => {
   });
 });
 
+describe("settings", () => {
+  it("reads the plugin's settings from the host, frozen", async () => {
+    let host: Host | undefined;
+    const testHost = start(
+      { onReady: (h) => void (host = h) },
+      { settings: { namespace: "prod", refresh_seconds: 30 } },
+    );
+    await testHost.handshake();
+    const values = await host?.settings.get();
+    expect(values).toEqual({ namespace: "prod", refresh_seconds: 30 });
+    expect(Object.isFrozen(values)).toBe(true);
+    expect(testHost.frames).toContainEqual({ jsonrpc: "2.0", id: 1, method: "rim.settings.get" });
+    await testHost.shutdown();
+  });
+
+  it("rejects with METHOD_NOT_FOUND on a host from before settings", async () => {
+    let host: Host | undefined;
+    const testHost = start({ onReady: (h) => void (host = h) });
+    await testHost.handshake();
+    const error = await host?.settings.get().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HostRequestError);
+    expect((error as HostRequestError).code).toBe(ErrorCode.METHOD_NOT_FOUND);
+    await testHost.shutdown();
+  });
+
+  it("rejects with the host's reason when a secret cannot be read", async () => {
+    let host: Host | undefined;
+    const testHost = start(
+      { onReady: (h) => void (host = h) },
+      {
+        onRequest: () => {
+          throw {
+            code: ErrorCode.INTERNAL_ERROR,
+            message: "the secret vault is locked",
+            data: { reason: "secretsLocked" },
+          };
+        },
+      },
+    );
+    await testHost.handshake();
+    const error = await host?.settings.get().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HostRequestError);
+    expect(error).toMatchObject({
+      code: ErrorCode.INTERNAL_ERROR,
+      data: { reason: "secretsLocked" },
+    });
+    await testHost.shutdown();
+  });
+
+  it("rejects an answer without a values object", async () => {
+    let host: Host | undefined;
+    const testHost = start(
+      { onReady: (h) => void (host = h) },
+      { onRequest: () => ({ values: ["not", "an", "object"] }) },
+    );
+    await testHost.handshake();
+    await expect(host?.settings.get()).rejects.toThrow(/without a values object/);
+    await testHost.shutdown();
+  });
+
+  it("hands every change to onSettingsChanged and ignores malformed ones", async () => {
+    const onSettingsChanged = vi.fn();
+    let host: Host | undefined;
+    const testHost = start(
+      { onReady: (h) => void (host = h), onSettingsChanged },
+      { settings: { namespace: "prod" } },
+    );
+    await testHost.handshake();
+
+    testHost.changeSettings({ namespace: "staging" });
+    testHost.notify("rim.settings.changed", { values: "staging" });
+    testHost.notify("rim.settings.changed", {});
+    testHost.changeSettings({});
+    await testHost.heartbeat();
+
+    expect(onSettingsChanged.mock.calls.map((call) => call[0])).toEqual([
+      { namespace: "staging" },
+      {},
+    ]);
+    expect(Object.isFrozen(onSettingsChanged.mock.calls[0][0])).toBe(true);
+    expect(onSettingsChanged.mock.calls[0][1]).toBe(host);
+    expect(
+      testHost.logs.filter((l) => l.message.startsWith("ignored rim.settings.changed")),
+    ).toHaveLength(2);
+    // The test host answers with the last set it sent, as a host does.
+    expect(await host?.settings.get()).toEqual({});
+    await testHost.shutdown();
+  });
+});
+
 describe("panels", () => {
   it("send rim.ui.update_panel and resolve when the host accepts", async () => {
     const onRequest = vi.fn(() => ({ ok: true }));

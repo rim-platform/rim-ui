@@ -591,13 +591,18 @@ async fn no_settings_changed_is_sent_while_the_vault_is_locked() {
 
 // ── The reference plugin ──
 
-/// Reads plugin frames until a response arrives, checking every `rim.log` on the way.
+/// Reads plugin frames until a response arrives, checking every `rim.log` and
+/// `rim.settings.get` on the way; the settings requests go unanswered.
 async fn next_response(stdout: &mut (impl tokio::io::AsyncRead + Unpin)) -> Value {
     loop {
         let frame = tokio::time::timeout(WAIT, wire::read_raw_frame(stdout))
             .await
             .expect("plugin answered in time")
             .expect("plugin frame is valid");
+        if frame.get("method") == Some(&json!(method::SETTINGS_GET)) {
+            assert_valid("SettingsGetRequest", &frame);
+            continue;
+        }
         if frame.get("method").is_some() {
             assert_valid("LogRequest", &frame);
             continue;
@@ -842,6 +847,19 @@ async fn template_ts_speaks_v1() {
     assert_valid("ErrorResponse", &response);
     assert_eq!(response["error"]["code"], wire::METHOD_NOT_FOUND);
 
+    // The plugin greets with the greeting the user saved.
+    let mut settings = example("SettingsChangedNotification");
+    settings["params"]["values"] = json!({"greeting": "Howdy"});
+    wire::write_frame(&mut stdin, &settings).await.unwrap();
+    let response = ask(
+        &mut stdin,
+        &mut stdout,
+        &execute_frame(8, "greet", "user", false),
+    )
+    .await;
+    assert_valid("CommandExecuteResponse", &response);
+    assert_eq!(response["result"]["payload"], "Howdy, Jakub!");
+
     let unknown_notice = json!({"jsonrpc": "2.0", "method": "rim.future.notice"});
     wire::write_frame(&mut stdin, &unknown_notice)
         .await
@@ -889,14 +907,16 @@ async fn template_ts_runs_through_the_host() {
         return;
     }
     let manifest = template_ts_manifest();
-    let state = PluginHostState::with_installed(vec![manifest.clone()]);
+    let host = SettingsFixture::new(vec![manifest.clone()]);
+    let state = &host.state;
     *state.principal.lock().unwrap() = Some(principal());
+    host.sign_in(Some(&principal().principal_id));
     state
         .plugin_dirs
         .lock()
         .unwrap()
         .insert(TEMPLATE_TS.into(), template_ts_dir());
-    runtime::start_plugin(TEMPLATE_TS, &manifest, &state).unwrap();
+    runtime::start_plugin(TEMPLATE_TS, &manifest, state).unwrap();
     // The host registers the plugin's client once the handshake is accepted.
     for _ in 0..750 {
         if state.clients.lock().unwrap().contains_key(TEMPLATE_TS) {
@@ -907,7 +927,7 @@ async fn template_ts_runs_through_the_host() {
 
     let run = |command: &'static str, confirmed: bool| {
         command_exec::execute(
-            &state,
+            state,
             TEMPLATE_TS,
             command,
             json!({}),
@@ -916,8 +936,15 @@ async fn template_ts_runs_through_the_host() {
             Initiator::User,
         )
     };
+    // A save reaches the running plugin before the next command does.
+    host.save(
+        TEMPLATE_TS,
+        &principal().principal_id,
+        json!({"greeting": "Hi"}),
+    );
+    settings::on_saved(state, TEMPLATE_TS);
     let greeting = run("greet", false).await.expect("greet runs");
-    assert_eq!(greeting.payload, json!("Hello, Jakub!"));
+    assert_eq!(greeting.payload, json!("Hi, Jakub!"));
     assert!(
         run("reset_greetings", false).await.is_err(),
         "the host refuses an unconfirmed dangerous command"
@@ -927,7 +954,7 @@ async fn template_ts_runs_through_the_host() {
         .expect("confirmed reset runs");
     assert_eq!(reset.payload, json!({"cleared": 1}));
 
-    runtime::stop_plugin(TEMPLATE_TS, &state).await.unwrap();
+    runtime::stop_plugin(TEMPLATE_TS, state).await.unwrap();
 }
 
 // ── A plugin with a panel ──

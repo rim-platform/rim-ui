@@ -9,13 +9,17 @@ A starting point for a RIM plugin written with the
   asks you to confirm it, the AI agent can never run it, and the SDK refuses it if it
   ever arrives unconfirmed.
 
+and one setting, **Greeting** (`greeting`), the word each greeting starts with. You set it
+with **Settings** on the plugin's row in Settings → Plugins; the plugin reads it when it
+starts and follows every change.
+
 ## Files
 
 ```
 template-ts/
-  rim-plugin.json   # manifest: id, commands, the dangerous flag
+  rim-plugin.json   # manifest: id, commands, the dangerous flag, the setting
   main.ts           # entrypoint the host runs (executable, #!/usr/bin/env node)
-  plugin.ts         # the commands
+  plugin.ts         # the commands and the setting
   plugin.test.ts    # tests against the SDK's in-memory host
   package.json      # the SDK, esbuild, TypeScript and Vitest as dev dependencies
   tsconfig.json

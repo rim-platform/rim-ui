@@ -129,6 +129,7 @@ yourself.
 | `log`                 | Lines for the RIM log.                                       |
 | `panels`              | Panel state, below.                                          |
 | `storage`             | A WebSandboxed plugin's small store, below.                  |
+| `settings`            | What the user saved in the plugin's settings form, below.    |
 | `chat`                | The person's messages, below.                                |
 
 ### Context
@@ -182,6 +183,49 @@ rejects with `INVALID_PARAMS` and `data: { reason: "quota" }`, and with nobody s
 in both reject with `INVALID_PARAMS`. `rim.storage.*` is not frozen in v1. A
 local-process host answers both with `METHOD_NOT_FOUND`: a process has its own files.
 
+### Settings
+
+The settings a plugin declares in `settings_schema` in `rim-plugin.json` get a form in
+the plugin manager; only the user changes them. `await host.settings.get()` answers the
+whole set, frozen: one member per setting that has a saved value or a `default`, named by
+its `key`, a secret setting's value in plain form. With nobody signed in it holds the
+defaults only. `onSettingsChanged(values, host)` in `definePlugin` gets the whole set
+again after every save and after every principal change; replace what the plugin held,
+since a setting missing from `values` was cleared. Of all the sets the plugin received,
+from either, the last is the current one.
+
+```ts
+let namespace = "default";
+const apply = (values: Readonly<Record<string, unknown>>) => {
+  namespace = typeof values.namespace === "string" ? values.namespace : "default";
+};
+
+definePlugin({
+  id: "dev.example.pods",
+  async onReady(host) {
+    try {
+      apply(await host.settings.get());
+    } catch (error) {
+      // A host from before settings: keep the defaults.
+      if (!(error instanceof HostRequestError && error.code === ErrorCode.METHOD_NOT_FOUND)) {
+        throw error;
+      }
+    }
+  },
+  onSettingsChanged: (values) => apply(values),
+});
+```
+
+A value saved under an older version of the plugin may not fit the current schema, so
+check each value before using it and ignore keys you do not know. `host.settings.get()`
+rejects with a `HostRequestError` whose `code` is `METHOD_NOT_FOUND` on a host from
+before settings, which also never calls `onSettingsChanged`, and with `INTERNAL_ERROR`
+and `data: { reason: "secretsLocked" }` while the host cannot read a saved secret, for
+example while the desktop's keyring is locked; the host sends no change then either.
+Reading its own settings needs no capability. The web app keeps no secret settings, so a
+web plugin running there never gets a value for one. `rim.settings.get` and
+`rim.settings.changed` are frozen in protocol v1.
+
 ### Chat (experimental)
 
 `host.chat` reads and posts the person's messages through the app's message service, the
@@ -221,7 +265,11 @@ await host.shutdown();
 ```
 
 `startTestHost(plugin, { transport: "port" })` runs the plugin over a Node
-`MessageChannel`, as a web plugin's frame does, with the same assertions. `onRequest`
+`MessageChannel`, as a web plugin's frame does, with the same assertions. With
+`settings: { ... }` the test host answers `rim.settings.get` with those values, and
+`host.changeSettings(values)` sends them in `rim.settings.changed`, as a save does, and
+answers with them from then on; without `settings` a read gets `METHOD_NOT_FOUND`, as from
+a host from before settings, unless `onRequest` answers it. `onRequest`
 can answer `rim.storage.get` and `rim.storage.set` to test a plugin's store, and the
 `rim.chat.*` calls, which the test host refuses with `CAPABILITY_DENIED` unless
 `grantedCapabilities` has `"chat.read"` (or `"chat.write"` for posting).
