@@ -218,17 +218,18 @@ runs them as the person who created it.
 "Create Pipeline" with **Name**, **Description**, **Trigger**, **Filters** (**Add filter**),
 **Actions** (**Add action**, a command and an optional JSON arguments field) and **Cooldown
 (seconds, optional)**, then **Save**. The list shows each pipeline as Active or Disabled, with
-its trigger, its number of actions and when it last fired. The power button enables or disables
-it, the pencil edits it, and the bin deletes it after a confirmation.
+its trigger, its number of actions and, to its creator, when it last fired. The power button
+enables or disables it, the pencil edits it, and the bin deletes it after a confirmation.
 
 **Who.** Any member of the workspace can create a pipeline, and every member sees the list. Only
 its creator, an Owner or a Moderator can change, toggle or delete it.
 
 **What runs.** Nobody is there to confirm, so the server skips any action that would need a
 confirmation: every mutating, restricted or dangerous command, which includes posting a message,
-reacting and writing workspace state. Safe and sensitive server commands run. On every firing,
-each member with the workspace open sees "Pipeline "\<name\>" fired", with the number of actions
-that ran; skipped actions are not counted.
+reacting and writing workspace state. Safe and sensitive server commands run. A pipeline reacts
+only to events its creator may see: a message in a private channel its creator is not in fires
+nothing. On every firing, its creator, with the workspace open, sees "Pipeline "\<name\>"
+fired", with the number of actions that ran; skipped actions are not counted.
 
 **Limits.** The cooldown stops a pipeline from firing again until it has passed. A pipeline that
 fires more than 10 times in 60 seconds is switched off, with "Pipeline "\<name\>" suspended";
@@ -237,9 +238,9 @@ the server's own cap when it sets one.
 
 **Example.** "Deploy failed": trigger New Message, scoped to the id of #deploys, with the filter
 "Message contains pattern" `FAILED`, a cooldown of 300 and the action `chat.search_messages`
-with `{"query": "FAILED"}`. Each failure posted to #deploys shows every member the firing, at
-most once in five minutes. The action's result is not shown anywhere, and an action such as
-`chat.post_message` would be skipped.
+with `{"query": "FAILED"}`. Each failure posted to #deploys shows the pipeline's creator the
+firing, at most once in five minutes. The action's result is not shown anywhere, and an action
+such as `chat.post_message` would be skipped.
 
 ## Workspace state
 

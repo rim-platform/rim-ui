@@ -3,7 +3,7 @@
   "plugin_id": "dev.example.hello-world",
   "display_name": "Hello World",
   "version": "0.1.0",
-  "description": "Reference plugin — proof-of-life for the Phase 1 spawn→broker→capability-gate cycle.",
+  "description": "Reference plugin: the smallest local process plugin, with one command and a panel that uses the bridge without the SDK.",
   "author": "RIM team",
   "runtime_kind": "DesktopLocalProcess",
   "entrypoint": "main.py",
