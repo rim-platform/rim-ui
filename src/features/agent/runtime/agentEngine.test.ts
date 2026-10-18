@@ -9,6 +9,7 @@ import type {
   AiStreamChunk,
 } from "../providers/types";
 import { useAgentStore } from "../state/useAgentStore";
+import { useConfirmationModalStore } from "../state/confirmationModalStore";
 import { useLiveModelsStore } from "../state/useLiveModelsStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -565,5 +566,126 @@ describe("runAgent — backend errors surface as is_error tool_result", () => {
     expect(block.content!.length).toBeGreaterThan(0);
 
     expect(useAgentStore.getState().status).toBe("done");
+  });
+});
+
+/* ----------------------------------------------- tool-result-origin flag */
+
+describe("runAgent — sameTurnAfterToolResult on confirmation requests", () => {
+  const postArgs = { server_id: "ws-1", conversation_id: "c1", text: "hi" };
+  const listArgs = { server_id: "ws-1" };
+  const done: AiStreamChunk = { kind: "done", usage: { inputTokens: 1, outputTokens: 1 } };
+
+  /** Registers a Safe read and a Mutating post, both routed through the backend handler. */
+  function registerTools(): void {
+    for (const tool of commandsToBackendTools([
+      makeCommand({ id: "chat.list_channels", sensitivity: CommandSensitivity.SAFE }),
+      makeCommand({ id: "chat.post_message", sensitivity: CommandSensitivity.MUTATING }),
+    ])) {
+      registerTool(tool.definition, tool.handler, tool.options);
+    }
+  }
+
+  const challengeResponse = {
+    executeCommand: {
+      status: "CONFIRMATION_REQUIRED",
+      message: "confirm",
+      payload: null,
+      confirmationRequired: {
+        token: "tok-1",
+        argsHash: "hash-1",
+        expiresAt: "2026-04-24T12:00:05Z",
+      },
+    },
+  };
+
+  /** Rejects every request the modal store receives and records its flag. */
+  function captureRequests(): { seen: Array<boolean | undefined>; stop: () => void } {
+    const seen: Array<boolean | undefined> = [];
+    const stop = useConfirmationModalStore.subscribe((state) => {
+      if (state.request) {
+        seen.push(state.request.sameTurnAfterToolResult);
+        useConfirmationModalStore.getState().reject();
+      }
+    });
+    return { seen, stop };
+  }
+
+  beforeEach(() => {
+    useConfirmationModalStore.setState({ request: null });
+    registerTools();
+  });
+
+  it("leaves the flag off for a call proposed in the first round", async () => {
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce(challengeResponse);
+    vi.mocked(getProvider).mockReturnValue(
+      makeScriptedProvider({
+        rounds: [
+          [{ kind: "tool_use", id: "call-1", name: "chat.post_message", input: postArgs }, done],
+          [{ kind: "text_delta", text: "Cancelled." }, done],
+        ],
+      }),
+    );
+    const { seen, stop } = captureRequests();
+
+    await runOneTurn("post hi");
+    stop();
+
+    expect(seen).toEqual([false]);
+  });
+
+  it("sets the flag for a call proposed after a tool_result in the same run", async () => {
+    vi.mocked(graphqlClient.request)
+      .mockResolvedValueOnce({
+        executeCommand: { status: "SUCCESS", message: "ok", payload: { channels: [] } },
+      })
+      .mockResolvedValueOnce(challengeResponse);
+    vi.mocked(getProvider).mockReturnValue(
+      makeScriptedProvider({
+        rounds: [
+          [{ kind: "tool_use", id: "call-1", name: "chat.list_channels", input: listArgs }, done],
+          [{ kind: "tool_use", id: "call-2", name: "chat.post_message", input: postArgs }, done],
+          [{ kind: "text_delta", text: "Cancelled." }, done],
+        ],
+      }),
+    );
+    const { seen, stop } = captureRequests();
+
+    await runOneTurn("read the channels, then post");
+    stop();
+
+    expect(seen).toEqual([true]);
+  });
+
+  it("starts each new prompt without the flag, even after earlier tool results", async () => {
+    vi.mocked(graphqlClient.request).mockResolvedValueOnce(challengeResponse);
+    vi.mocked(getProvider).mockReturnValue(
+      makeScriptedProvider({
+        rounds: [
+          [{ kind: "tool_use", id: "call-3", name: "chat.post_message", input: postArgs }, done],
+          [{ kind: "text_delta", text: "Cancelled." }, done],
+        ],
+      }),
+    );
+    const earlier: AiMessage[] = [
+      { role: "user", content: "read the channels" },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call-1", name: "chat.list_channels", input: listArgs }],
+      },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "call-1", content: "[]" }] },
+      { role: "assistant", content: "There are no channels." },
+    ];
+    const { seen, stop } = captureRequests();
+
+    await runAgent({
+      prompt: "post hi",
+      providerId: "test-provider",
+      modelId: "test-model",
+      existingMessages: earlier,
+    });
+    stop();
+
+    expect(seen).toEqual([false]);
   });
 });

@@ -50,6 +50,11 @@ interface RunOptions {
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
   description?: string;
+  /**
+   * Whether the agent proposed this call after reading a tool_result in the same run; copied
+   * into the confirmation request so the modal shows its tool-result warning.
+   */
+  sameTurnAfterToolResult?: boolean;
 }
 
 /**
@@ -89,6 +94,7 @@ export async function runWithConfirmation(
       nlDescription: opts.nlDescription ?? challenge.nlDescription,
       description: opts.description ?? challenge.description,
       serverMessage: challenge.serverMessage,
+      sameTurnAfterToolResult: opts.sameTurnAfterToolResult,
     };
     const decision = await modal.open(request);
     if (!decision.approved) return null;

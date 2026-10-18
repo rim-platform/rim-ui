@@ -23,6 +23,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- When the agent asks to run a command after reading messages or other tool output in the same
+  run, the confirmation dialog warns "This action was suggested while the agent was reading
+  external content" and asks you to type the command's verb before a Mutating command runs.
 - A server command run from the palette, a keybind or the composer's `/` list acts on the open
   conversation and thread, as it does from the AI agent: marking a conversation read, setting its
   notification level or its slow mode no longer fails or asks for the conversation. A

@@ -20,9 +20,9 @@ export interface ConfirmationRequest {
   description?: string;
   serverMessage?: string;
   /**
-   * Whether this challenge was issued in the same agent turn that consumed an
-   * untrusted tool_result block. When true the modal shows the prominent
-   * tool-result warning banner; undefined hides it.
+   * Whether the agent proposed this command after reading an untrusted tool_result in the
+   * same run. When true the modal shows its tool-result warning banner and asks for the typed
+   * word on a `MUTATING` command; false or undefined hides the banner.
    */
   sameTurnAfterToolResult?: boolean;
   /** Who started the command: the AI agent (the default) or the user. */
