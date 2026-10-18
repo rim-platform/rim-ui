@@ -303,4 +303,34 @@ describe("runWithConfirmation", () => {
 
     expect(capturedSensitivity).toBe("RESTRICTED");
   });
+
+  it("copies opts.sameTurnAfterToolResult into the request handed to modal.open", async () => {
+    const challenge = {
+      commandId: "chat.post_message",
+      toolName: "chat.post_message",
+      args: {},
+      token: "tok",
+      argsHash: "h",
+      expiresAt: "2026-04-24T12:00:05Z",
+    };
+
+    const seen: Array<boolean | undefined> = [];
+    const unsubscribe = useConfirmationModalStore.subscribe((state) => {
+      if (state.request) {
+        seen.push(state.request.sameTurnAfterToolResult);
+        useConfirmationModalStore.getState().reject();
+      }
+    });
+
+    const challenged = async (): Promise<string> => {
+      throw new ConfirmationRequiredError(challenge);
+    };
+    await runWithConfirmation(challenged, { sameTurnAfterToolResult: true });
+    await runWithConfirmation(challenged, { sameTurnAfterToolResult: false });
+    await runWithConfirmation(challenged);
+
+    unsubscribe();
+
+    expect(seen).toEqual([true, false, undefined]);
+  });
 });

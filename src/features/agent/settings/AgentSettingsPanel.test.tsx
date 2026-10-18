@@ -79,14 +79,9 @@ vi.mock("../providers/registry", () => ({
 const { agentStoreState } = vi.hoisted(() => {
   const agentStoreState = {
     settings: { providerId: "anthropic", modelId: "claude-sonnet-5-5", systemPrompt: "" },
-    hasApiKey: false,
     updateSettings: vi.fn((patch: Record<string, unknown>) => {
       Object.assign(agentStoreState.settings, patch);
     }),
-    setHasApiKey: vi.fn((v: boolean) => {
-      agentStoreState.hasApiKey = v;
-    }),
-    setLoadApiKeyStatus: vi.fn(),
   };
   return { agentStoreState };
 });
@@ -174,7 +169,6 @@ describe("AgentSettingsPanel", () => {
       modelId: "claude-sonnet-5-5",
       systemPrompt: "",
     };
-    agentStoreState.hasApiKey = false;
     useLiveModelsStore.setState({ byProvider: {} });
     answerIpc({});
   });

@@ -23,6 +23,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- When the agent asks to run a command after reading messages or other tool output in the same
+  run, the confirmation dialog warns "This action was suggested while the agent was reading
+  external content" and asks you to type the command's verb before a Mutating command runs.
 - The first encrypted message to someone who set up encryption moments earlier goes out instead
   of failing with "Failed to send the encrypted message" until a minute later. When someone in
   the conversation really has no device set up yet, the composer says "<name> has no device set
