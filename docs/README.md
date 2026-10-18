@@ -38,6 +38,9 @@ them.
 
 - `plugins.md`: the official plugins, and installing, using, trusting and removing a plugin, for
   the person using the app.
+- `plugin-tutorial.md`: your first plugin, from the template to a workspace registry.
+- `plugin-manifest.md`: every field of `rim-plugin.json`, its rules and errors, and the content
+  hash.
 - `web-plugins.md`: sandboxed web plugins on the desktop and the web.
 - `workspace-plugins.md`: workspace plugin registries and signed manifests.
 - `plugin-chat-methods.md`: the `rim.chat.*` methods a plugin reads and posts messages with.
