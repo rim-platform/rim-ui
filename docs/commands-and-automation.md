@@ -257,10 +257,10 @@ and a pipeline can react when it changes. Plugins have no access to it. An entry
 of two scopes: the workspace's, which every member reads and writes, or your own, which only you
 see.
 
-Settings → State shows it, outside Direct messages. **Server** and **User** switch between the
-workspace's scope and yours, and "Filter by prefix..." narrows the list. **New entry** asks for a
-**Key**, a **Value (JSON)** and a **TTL (minutes, optional)**, then **Create**; each entry can be
-edited and deleted, and shows when it expires.
+Settings → State shows it, outside Direct messages. **Workspace** and **User** switch between
+the workspace's scope and yours, and "Filter by prefix..." narrows the list. **New entry** asks
+for a **Key**, a **Value (JSON)** and a **TTL (minutes, optional)**, then **Create**; each entry
+can be edited and deleted, and shows when it expires.
 
 - A key starts with a lowercase letter, uses `a-z`, `0-9`, `.`, `_`, `:` and `-`, and ends with
   a letter or digit. Keys starting with `system.` belong to the server.
