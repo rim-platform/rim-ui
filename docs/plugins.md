@@ -1,0 +1,247 @@
+# Plugins
+
+A plugin adds commands, panels and keybinds to RIM. This page is for the person using the app:
+what a plugin can do, the official plugins, and how to install, use, trust and remove one. How
+the client hosts plugins is in [Web plugins](web-plugins.md) and
+[Workspace plugins](workspace-plugins.md); the model behind both is rim-server's
+[plugin model](../../rim-server/docs/plugin_model.md).
+
+## What a plugin is
+
+A plugin runs in the client, beside the app, never on the server. It acts for the user: it
+reaches RIM only through the app, which uses the user's own session, and a plugin that runs on
+the computer uses the user's own local credentials. There are two kinds, and Settings names
+each in a few words:
+
+- **Sandboxed** (`WebSandboxed`) runs in a sandboxed frame of the app, in the web app and the
+  desktop app alike. It cannot read files, run programs or use the RIM session. It reaches RIM
+  only through the permissions it was granted, and the network only at the sites its manifest
+  lists, once allowed.
+- **Runs on this computer** (`DesktopLocalProcess`) is a program the desktop app starts. It runs
+  as the user, with the user's access to files, the network and local credentials such as a
+  kubeconfig. Its permissions govern what the app does for it, not what the program can do on
+  the machine. The web app does not run this kind and lists it as "Needs the desktop app"; the
+  [local plugin host](../../rim-server/docs/local_plugin_host.md) describes how the desktop
+  runs it.
+
+A plugin contributes some of these:
+
+- commands, listed in the command palette under the plugin's name, bindable to keys and, when
+  the plugin marks them so and the user agrees, callable by the AI agent;
+- panels, shown next to the tool panel or in place of the conversation;
+- context actions in a message's context menu;
+- keybind suggestions the user can assign.
+
+Without the matching permission the app does not show a plugin's panel, read or post messages
+for it, or show its notifications, and a sandboxed plugin cannot reach any site. A command the
+plugin marks dangerous runs only after the user confirms that run: the AI agent can never
+confirm one, and a plugin's panel cannot confirm one for its own plugin.
+
+## The official plugins
+
+The project publishes four plugins, each in its own repository, all at version 0.0.x. Each
+README lists the plugin's commands and the ways to install it.
+
+| Plugin | What it does | Kind | Permissions it asks for | Repository |
+|---|---|---|---|---|
+| Poll | Runs a quick poll in the open conversation; the poll and every vote are messages | Sandboxed | `ui.panel`, `chat.read`, `chat.write`; optionally `chat.read.encrypted` and `chat.write.encrypted` | [plugin-poll](https://github.com/rim-platform/plugin-poll) |
+| GitHub Pull Requests | Lists the open pull requests of up to 10 public GitHub repositories | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com` and `avatars.githubusercontent.com` | [plugin-github-prs](https://github.com/rim-platform/plugin-github-prs) |
+| Kubernetes Pods | Lists a namespace's pods, shows and follows a container's logs, restarts a pod after you confirm | Runs on this computer | `ui.panel`, `ui.notify` | [plugin-k8s-pods](https://github.com/rim-platform/plugin-k8s-pods) |
+| Releases | Watches the GitHub releases of up to 10 public repositories and posts them into a conversation when asked | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com`, `chat.write` | [plugin-releases](https://github.com/rim-platform/plugin-releases) |
+
+- **Poll** needs the two encrypted permissions to work in encrypted DMs and groups; without them
+  it works in plaintext channels only. On the web it reads messages only in a browser set up as
+  a [linked device](web-linked-device.md).
+- **GitHub Pull Requests** and **Releases** use no token, so they see public repositories only.
+  GitHub allows 60 requests an hour per IP address without one.
+- **Kubernetes Pods** needs the desktop app, Node.js 22 or newer and `kubectl`, which it runs
+  with your own kubeconfig. Four of its commands can be called by the AI agent once approved in
+  Settings → Plugin AI; **Pods: Restart pod** is dangerous, so it runs only after you confirm,
+  also when the agent asks for it. It suggests <kbd>Ctrl+Alt+P</kbd> for **Pods: Refresh**.
+
+## Installing
+
+Settings → Plugins has three install buttons.
+
+- **Install from local folder** (desktop) opens a folder picker. The app copies the plugin from
+  the chosen folder into its plugins folder; for a sandboxed plugin it copies only the bundle's
+  files.
+- **Install from git URL** (desktop) takes an `https://`, `ssh://` or `user@host:owner/repo`
+  URL, then **Install**. For a sandboxed plugin the app keeps only `rim-plugin.json`, the entry
+  module and `panels/` from the checkout. For a plugin that runs on this computer, a
+  `package.json` that declares dependencies or a `requirements.txt` means install steps. Before
+  any of them runs, the **Run plugin install scripts?** dialog lists each command exactly as it
+  will run (`npm install --production`, `pip install -r requirements.txt --user`), with its
+  folder, and warns that it runs the author's code with your privileges, outside the
+  permissions you approve later. **Run commands and install** continues; **Cancel** installs
+  nothing.
+- **Install from link** (desktop and web) takes a link of the form
+  `https://<host>/<name>.rimbundle#sha256=<hash>`, then **Install**. The bundle is fetched
+  without credentials, must hash to the value after `#sha256=` and must pass the manifest rules
+  before anything is installed. The bundle's host must allow cross-origin requests, so a link
+  to a GitHub release asset does not install this way. A link to a plugin already installed
+  opens **Replace \<name\>?**, which shows the version change and the permissions added or
+  dropped; the permissions are approved again afterwards.
+
+Every install ends in the **Plugin Permissions** dialog, described under
+[Trust and permissions](#trust-and-permissions). Then turn the plugin on with the switch on its
+row.
+
+### Workspace registry
+
+Each workspace keeps a registry of plugins it recommends or requires, managed by its Owners and
+Moderators. An entry pins one exact version through a statement its publisher signed with their
+identity key. Every client verifies that statement against the publisher's key log before it
+offers the plugin, so the server is not trusted for what the plugin is, and checks a bundle's
+size and SHA-256 before asking for any consent. An instance can switch the registry off.
+[Workspace plugins](workspace-plugins.md) has the details.
+
+- **The palette's "Workspace plugins" section** lists the entries this device has not
+  installed, as `Install <name>` with a line such as
+  `Recommended by Acme · signed by Ada (rimp1_txDLbnip)`. An entry installed at another version
+  shows as `Update <name>`, one installed from another workspace as
+  `Switch <name> to <workspace>'s version`, and an unsigned copy of the same plugin as
+  `Replace <name> with <workspace>'s signed version`. An entry this device cannot install shows
+  the reason, such as "Needs the desktop app" or "Signature does not verify", and cannot be
+  chosen.
+- **Required plugins** are offered when the workspace opens, in **\<workspace\> requires
+  plugins**, with **Review and install** for each. **Not now** hides the dialog until the entry
+  is signed again. Settings → Plugins also lists them under **\<workspace\>'s plugins**, with
+  **Review**.
+- **The install dialog** shows the version, the publisher's badge, the status, the source, the
+  kind of plugin and whether the bundle matches its signature. **Install** is followed by the
+  permission prompt; a git source's install steps ask for consent as above.
+
+On workspace open, and whenever the registry changes, each plugin installed from it is compared
+with its entry. A new version installs on its own, with the notice "Updated \<name\> to
+\<version\>", when it keeps the kind and the publisher, asks for no new permission and adds no
+new command the AI agent can run; the approvals carry over. Anything else waits behind
+**Update \<name\>?**, which lists what is new: another publisher, another kind, new permissions,
+new commands the AI agent can run, or install steps. **Review update** opens the install
+dialog; **Later** keeps the installed version running. A failed update keeps the old copy.
+
+When an entry leaves the registry, its plugin is stopped and **\<name\> was removed** offers
+**Remove**, which uninstalls it and deletes its data, or **Keep**, which leaves it installed,
+turned off, as a local plugin that no longer gets updates.
+
+## Using a plugin
+
+- **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
+  shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
+  with the app. On the web, plugins are turned on per account in that browser: signing out
+  stops them and signing in starts those the account turned on.
+- **Panels.** The side rail's **Plugins** entry opens a menu with one row per panel of every
+  running plugin, showing the plugin's name and the panel's title. Choosing a row opens the
+  panel; with no running plugin that has a panel, the menu offers **Manage plugins**. The entry
+  stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
+  Pods panel, in place of the conversation. Its header shows the panel's title, the plugin's
+  name, its kind and where it came from, and a close button. [UI shell](ui-shell.md) describes
+  the menu's keys.
+- **"Open \<panel\>" commands.** Each panel of a running plugin also has an "Open \<panel\>"
+  command in the palette, such as "Open Pull requests", which a keybind can run too.
+- **Commands.** The palette lists a plugin's commands under the plugin's name. A command that
+  needs arguments is not listed; its plugin's panel runs it. A dangerous command opens
+  **\<command\>?**, which says "\<plugin\> marks this command as dangerous. It runs only if you
+  confirm.", shows the arguments, and offers **Run it** or **Cancel**.
+- **Context actions.** A plugin's context actions appear at the end of a message's context menu.
+  None of the official plugins declares one.
+- **Keybinds.** On the desktop, Settings → Keybinds lists the suggestions of turned-on plugins
+  that are not bound yet under **Plugin Suggestions**; **Assign** binds one. A plugin command
+  marked keybind-capable can also be bound like any other command. Bindings to plugin commands
+  stay on this device, marked **This device**; [Keyboard](keyboard.md) explains the layers.
+- **The AI agent.** On the desktop, Settings → Plugin AI lists the plugins with commands the
+  agent can call. The first approval for a plugin, of one command or with **Approve all**,
+  asks in **Grant AI Access?**; the agent then calls an approved command without asking each
+  time. **Revoke all** on a plugin and **Revoke all grants** for every plugin take the approvals
+  back.
+
+## Trust and permissions
+
+The **Plugin Permissions** dialog opens after every install and from **Permissions** on a
+plugin's row. It shows the plugin's name, version and author; its description under "From the
+plugin author:", which is the author's claim, not the app's; and what the kind of plugin means:
+
+- Sandboxed: "Runs sandboxed in this app. It cannot read your files, run programs, or use your
+  RIM session. It reaches RIM only through the permissions below."
+- Runs on this computer: "Runs as a program on this computer with your account's access. It is
+  not sandboxed: it can read your files and use the network whatever you approve below. Install
+  it only if you trust its author."
+
+Each permission has a checkbox, checked at first. Unchecking one denies it, and **Approve**
+grants the rest. The prompt names them like this:
+
+| Capability | What the prompt says |
+|---|---|
+| `ui.panel` | Render UI Panels |
+| `ui.notify` | Show Notifications |
+| `network.fetch` | Connect to listed sites: send and receive data from the sites the plugin lists, named one by one. Anything you show this plugin can be sent to these sites. |
+| `chat.read` | Read your conversations, except those of encrypted DMs and groups |
+| `chat.write` | Post as you, except in encrypted DMs and groups |
+| `chat.read.encrypted` | Read your encrypted DMs and groups: their decrypted text, which the plugin can send anywhere its other permissions allow |
+| `chat.write.encrypted` | Post as you in your encrypted DMs and groups |
+| `events.read`, `local.process`, `network`, `fs.read`, `fs.write` | Receive Workspace Events, Run Local Processes, Network Access, Read Files, Write Files; no sandboxed plugin can hold them |
+
+An encrypted chat permission needs its plain one: checking it checks the plain one, and
+unchecking the plain one unchecks it.
+
+**Activity** on a plugin's row shows what it holds and did:
+
+- **Approved permissions**, each with **Revoke**. Revoking a permission stops the plugin, and
+  revoking a plain chat permission takes its encrypted one with it.
+- **Encrypted messages read**, a count per day for the last 14 days.
+- **Permission history**, the latest 20 grants and revocations with their times.
+
+**A changed bundle** (desktop). The app records a fingerprint of a plugin's folder when it
+installs it. When the files change afterwards, the row shows "Plugin bundle has changed" and the
+switch cannot turn the plugin on. **Trust new version** accepts the new files and keeps the
+approvals. **Dismiss** turns the plugin off and hides the warning on this device until the
+files change again; the **Bundle changed** badge beside the name stays, and clicking it brings
+the warning back. The web app hashes a plugin's bundle again at every start instead, and fetches
+it again from its link when it is missing or damaged.
+
+**Signed and unsigned.** The row and the panel header say where a plugin came from:
+
+- `Unsigned · installed from a link (<host>)`
+- `Unsigned · installed from git (<host>)`
+- `Unsigned · installed from a folder`
+- `From the workspace registry`
+
+The app does not use the word "sideloaded", but that is what the first three are: installed by
+hand, with no publisher's signature, and trusted only as far as their source. The link field
+says so: "Plugins from links are not signed: install one only if you trust where the link came
+from." A registry plugin carries its publisher's signature, which every device verifies. Its
+badge reads `Signed by Ada · rimp1_txDLbnip` when a member of the workspace has the publisher's
+principal id; otherwise it quotes the name the publisher chose and adds "(not a member of this
+workspace)", since that name proves nothing. Hovering shows the whole id, and a button copies
+it. If the publisher later recovers their key, the installed copy keeps running, Settings says
+"The publisher recovered their key: ask for a re-signed version", and nothing new installs from
+that statement.
+
+**Signing and publishing.** On a desktop that holds the account's identity key (Settings →
+Security shows it), each row has **Sign and publish…**. It signs the plugin as installed. An
+Owner or Moderator of the open workspace then picks Recommended or Required and chooses
+**Publish**; anyone can **Export…** a `.rimsig.json` to send to one of them, who adds it in
+Workspace settings → Plugins with "Add from files".
+
+## Managing and removing
+
+- **Turn it off** with the switch. The plugin stops and its commands and panels leave the app;
+  its permissions and data stay.
+- **A plugin that did not start.** A sandboxed plugin whose start was cut short, because the app
+  closed while starting it, is not started again, and Settings says so. Turning it off and on
+  retries.
+- **Uninstall** with the bin icon on the row, then **Uninstall** in **Uninstall \<name\>?**. On
+  the desktop the plugin is removed from this device with the permissions granted to it and the
+  data it stored, and its folder leaves the plugins folder and is deleted. A folder the app did
+  not install itself stays where it is. In the web app the plugin is removed from that browser
+  for your account, with its permissions, data and files. To use it again, install it again.
+
+Where plugins live:
+
+| What | Desktop | Web |
+|---|---|---|
+| The plugin's files, both kinds | `~/.rim/plugins/<plugin_id>/`, or `%USERPROFILE%\.rim\plugins\<plugin_id>\` on Windows | The browser's IndexedDB database `rim-plugins` |
+| Install records, approvals and activity | `plugin_state.json` in the app data folder | The same database |
+| Data a plugin stores | `plugin_storage/<plugin_id>/` in the app data folder | The same database |
+
+[Install](install.md) lists the app data folder of each operating system.
