@@ -175,7 +175,7 @@ the SDK inside, and `panels/`. In the desktop app, choose that folder with Setti
 Install from local folder. The app copies it to `~/.rim/plugins/dev.example.greeter/` and opens
 Plugin Permissions: the name, version and author, the description under "From the plugin
 author:", the warning that a local process runs with your account's access, and one checkbox,
-"Render UI Panels". Approve, then turn the plugin on with its toggle.
+"Render UI Panels". **Approve and turn on** grants it and starts the plugin.
 
 ## 7. Try it
 

@@ -412,7 +412,10 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
 
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Permissions" }));
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(within(screen.getByRole("dialog")).getByText("Plugin Permissions")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+    // Opened from the menu, it only changes permissions.
+    expect(within(dialog).getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
   it("uninstalls a plugin only once the user confirms", async () => {
@@ -503,6 +506,8 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+    // Right after an install, approving also turns the plugin on.
+    expect(within(dialog).getByRole("button", { name: "Approve and turn on" })).toBeInTheDocument();
     expect(
       within(dialog).getByText("Your cluster credentials never leave this device."),
     ).toBeInTheDocument();

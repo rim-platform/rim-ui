@@ -182,7 +182,12 @@ export function RegistryHost() {
         />
       )}
       {approving && (
-        <PluginCapabilityPrompt open onClose={() => setApprovingId(null)} plugin={approving} />
+        <PluginCapabilityPrompt
+          open
+          onClose={() => setApprovingId(null)}
+          plugin={approving}
+          startOnApprove
+        />
       )}
     </>
   );
