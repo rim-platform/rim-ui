@@ -2,6 +2,7 @@ import type { MessageAttachment, MessageE2ee } from "../../../../core/types/mess
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 import type { PresenceStatus } from "../../../../shared/ui/Avatar";
 import type { LinkPreview } from "../LinkPreviewCard";
+import type { ContextMenuBindings } from "../../../../shared/ui/contextMenu/useContextMenu";
 
 export interface Reaction {
   emoji: string;
@@ -109,6 +110,8 @@ export interface MessageItemHandlers {
   onOpenThread: (messageId: string) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
   onContextMenu?: (event: React.MouseEvent, messageId: string, messageText: string) => void;
+  /** The handlers that open the row's context menu on a long press, for its touch events. */
+  bindContextMenu?: (messageId: string, messageText: string) => ContextMenuBindings;
   onSaveEdit?: (messageId: string, newText: string) => void;
   onCancelEdit?: () => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;

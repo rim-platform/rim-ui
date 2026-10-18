@@ -21,6 +21,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Changed
+
+- The desktop app no longer shows the webview's own right-click menu (reload, inspect) where
+  the app has no menu of its own; text fields, the composer and selected text keep the cut,
+  copy and paste menu. A message's context menu also opens with a touch held for half a second.
+
 ### Fixed
 
 - **Upgrade:** run a rim-server with the `userCommand` and `userCommands` queries. Editing a

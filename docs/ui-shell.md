@@ -176,6 +176,27 @@ Guidance:
 - Overlay opening and closing should preserve user context and focus.
 - The command palette should feel global and central, not like a secondary utility.
 
+### Context Menus
+
+A context menu holds the actions for the thing under the pointer or the focus, such as a
+message. It opens:
+
+- with a right click, at the pointer;
+- with the ContextMenu key or Shift+F10 on the focused item, under it;
+- with a touch held still for half a second, at the finger. Moving the finger more than a few
+  pixels first scrolls instead, and a mouse button held down opens nothing.
+
+One context menu is open at a time: opening another closes the first. The arrows move through
+the items, skipping section headings; ArrowRight or Enter opens a submenu and ArrowLeft or
+Escape closes it again; Escape closes the menu and returns the focus where it was. Choosing an
+action closes the whole menu. Items can show a check mark for the current choice of a group and
+a muted keybind hint at the right.
+
+Where the app has no menu of its own, the desktop app shows no menu at all, except in text
+fields, in the composer and over selected text, which keep the system's cut, copy and paste
+menu. The web app leaves the browser's menu wherever it opens none of its own. Plugin frames
+handle their own right clicks.
+
 ## Navigation Model
 
 The app should distinguish between three kinds of navigation.

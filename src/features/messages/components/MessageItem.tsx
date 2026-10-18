@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "../../../shared/ui/cn";
 import { areMessageItemPropsEqual } from "./message-item/areMessageItemPropsEqual";
@@ -47,7 +47,14 @@ export const MessageItem = memo(function MessageItem({
     isFirstInGroup = true,
     displayDensity = "comfortable",
   } = view;
-  const { onContextMenu, onOpenThread, onToggleReaction, onSaveEdit, onCancelEdit } = handlers;
+  const {
+    onContextMenu,
+    bindContextMenu,
+    onOpenThread,
+    onToggleReaction,
+    onSaveEdit,
+    onCancelEdit,
+  } = handlers;
 
   const isDeleted = message.isDeleted === true;
   const encrypted = Boolean(message.e2ee || message.encryption);
@@ -63,11 +70,18 @@ export const MessageItem = memo(function MessageItem({
   const messageText = message.text ?? "";
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      e.preventDefault();
       if (!isDeleted) onContextMenu?.(e, messageId, messageText);
     },
     [isDeleted, onContextMenu, messageId, messageText],
   );
+  const longPressProps = useMemo(() => {
+    if (isDeleted || !bindContextMenu) return undefined;
+    const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } = bindContextMenu(
+      messageId,
+      messageText,
+    );
+    return { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel };
+  }, [isDeleted, bindContextMenu, messageId, messageText]);
 
   const textProps = (variant: MessageTextVariant) => ({
     text: unverifiable ? `*A message from ${author.name} could not be verified*` : message.text,
@@ -120,6 +134,7 @@ export const MessageItem = memo(function MessageItem({
     role: "option",
     "aria-selected": isSelected,
     onContextMenu: handleContextMenu,
+    ...longPressProps,
   } as const;
   const stateClasses = [
     isSelected && "border-l-2 border-rim-accent bg-rim-accent/5",

@@ -22,14 +22,16 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
+const pluginCommands = vi.hoisted(() => ({ list: [] as { id: string; title: string }[] }));
 vi.mock("../../plugins/api/usePluginCommands", () => ({
-  usePluginContextMenuCommands: () => [],
+  usePluginContextMenuCommands: () => pluginCommands.list,
 }));
 
 import { toast } from "../../../shared/toast";
 import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
-import { MessageContextMenu } from "./MessageContextMenu";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
+import { useMessageContextMenu } from "./useMessageContextMenu";
 
 const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
 const deleteContext = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
@@ -63,24 +65,35 @@ function serve(role: ServerMemberRoleGql, extra: Record<string, () => unknown> =
   });
 }
 
+/** A message row with the conversation's message menu on it. */
+function MessageRow({ isOwnMessage, message }: { isOwnMessage: boolean; message?: MessageItem }) {
+  const contextMenu = useContextMenu();
+  const messageMenu = useMessageContextMenu({ workspaceId: "ws-1", conversationId: "conv-1" });
+  const target = {
+    messageId: "msg-1",
+    messageText: "hello",
+    isOwnMessage,
+    isPinned: false,
+    hasThread: false,
+    message,
+  };
+  return (
+    <>
+      <div data-testid="row" {...contextMenu.bind(() => messageMenu.getItems(target))}>
+        hello
+      </div>
+      {contextMenu.menu}
+      {messageMenu.dialog}
+    </>
+  );
+}
+
+/** Renders the row, waits for the viewer's role, and opens the menu with a right click. */
 async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean, message?: MessageItem) {
   const qc = createTestQueryClient();
-  const onClose = vi.fn();
   render(
     <QueryClientProvider client={qc}>
-      <MessageContextMenu
-        x={10}
-        y={10}
-        messageId="msg-1"
-        messageText="hello"
-        conversationId="conv-1"
-        workspaceId="ws-1"
-        isOwnMessage={isOwnMessage}
-        isPinned={false}
-        hasThread={false}
-        message={message}
-        onClose={onClose}
-      />
+      <MessageRow isOwnMessage={isOwnMessage} message={message} />
       <ConfirmCommandModal />
     </QueryClientProvider>,
   );
@@ -89,19 +102,56 @@ async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean, mess
       role,
     ),
   );
-  return { qc, onClose };
+  fireEvent.contextMenu(screen.getByTestId("row"));
+  return { qc };
+}
+
+function menuIsOpen(): boolean {
+  return screen.queryByRole("menu") !== null;
 }
 
 function labels(): string[] {
   return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
 }
 
-describe("MessageContextMenu — report and delete", () => {
+describe("useMessageContextMenu — report and delete", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
     useConfirmationModalStore.getState().reset();
+  });
+
+  it("lists the actions in order, the plugins' message actions last", async () => {
+    pluginCommands.list = [{ id: "plugin.translate", title: "Translate" }];
+    try {
+      serve(ServerMemberRoleGql.MODERATOR);
+      await renderMenu(ServerMemberRoleGql.MODERATOR, false);
+      expect(labels()).toEqual([
+        "Copy Text",
+        "Forward",
+        "Open Thread",
+        "Report Message",
+        "Delete Message",
+        "Pin Message",
+        "Translate",
+      ]);
+    } finally {
+      pluginCommands.list = [];
+    }
+  });
+
+  it("offers Edit and Delete on the viewer's own message", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, true);
+    expect(labels()).toEqual([
+      "Copy Text",
+      "Forward",
+      "Open Thread",
+      "Edit Message",
+      "Delete Message",
+      "Pin Message",
+    ]);
   });
 
   it("offers Report but no Delete on someone else's message to a member", async () => {
@@ -120,7 +170,7 @@ describe("MessageContextMenu — report and delete", () => {
 
   it("reports with a required reason and confirms with a toast", async () => {
     serve(ServerMemberRoleGql.GUEST);
-    const { onClose } = await renderMenu(ServerMemberRoleGql.GUEST, false);
+    await renderMenu(ServerMemberRoleGql.GUEST, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
 
     const dialog = screen.getByRole("dialog", { name: "Report message" });
@@ -139,7 +189,7 @@ describe("MessageContextMenu — report and delete", () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Message reported to the moderators"),
     );
-    expect(onClose).toHaveBeenCalled();
+    expect(menuIsOpen()).toBe(false);
   });
 
   it("shows the server's message when the message was already reported", async () => {
@@ -161,7 +211,7 @@ describe("MessageContextMenu — report and delete", () => {
         executeCommand: { status: "SUCCESS", message: "message deleted", payload: null },
       })),
     });
-    const { onClose } = await renderMenu(ServerMemberRoleGql.MODERATOR, false);
+    await renderMenu(ServerMemberRoleGql.MODERATOR, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
@@ -184,7 +234,7 @@ describe("MessageContextMenu — report and delete", () => {
         },
       },
     ]);
-    expect(onClose).toHaveBeenCalled();
+    expect(menuIsOpen()).toBe(false);
   });
 
   it("sends nothing more when the moderator cancels the confirmation", async () => {
@@ -284,7 +334,7 @@ const CACHED_E2EE: NonNullable<MessageItem["e2ee"]> = {
   content: '{"body":"hello"}',
 };
 
-describe("MessageContextMenu — reporting an encrypted message", () => {
+describe("useMessageContextMenu — reporting an encrypted message", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();

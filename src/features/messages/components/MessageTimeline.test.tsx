@@ -69,10 +69,13 @@ vi.mock("../../conversations/api/useMarkAsRead", () => ({
 }));
 
 vi.mock("./Composer", () => ({ Composer: () => null }));
-vi.mock("./MessageContextMenu", () => ({
-  MessageContextMenu: ({ messageId }: { messageId: string }) => (
-    <div role="menu" aria-label={`Actions for ${messageId}`} />
-  ),
+vi.mock("../hooks/useMessageContextMenu", () => ({
+  useMessageContextMenu: () => ({
+    getItems: ({ messageId }: { messageId: string }) => [
+      { id: "actions", label: `Actions for ${messageId}`, onSelect: () => {} },
+    ],
+    dialog: null,
+  }),
 }));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));
 
@@ -677,11 +680,11 @@ describe("MessageTimeline keyboard", () => {
     act(() => useShellStore.setState({ navigationMode: true }));
 
     fireEvent.keyDown(list, { key: "ContextMenu" });
-    expect(screen.getByRole("menu", { name: "Actions for m-002" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Actions for m-002" })).toBeInTheDocument();
 
     fireEvent.keyDown(list, { key: "k" });
     fireEvent.keyDown(list, { key: "F10", shiftKey: true });
-    expect(screen.getByRole("menu", { name: "Actions for m-001" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Actions for m-001" })).toBeInTheDocument();
   });
 
   it("keeps Escape in the list in Vim mode: it drops the selection, not the mode", () => {
