@@ -8,6 +8,7 @@ import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
@@ -154,12 +155,12 @@ export function MessageContextMenu({
         onSelect: () => {
           onClose();
           dispatchCommand(cmd, (input) => executeCommandMutation.mutateAsync(input), {
-            commandContext: {
+            commandContext: currentCommandContext({
               workspaceId,
               conversationId,
               selectedMessageId: messageId,
               threadId: message?.threadId ?? undefined,
-            },
+            }),
           });
         },
       });
