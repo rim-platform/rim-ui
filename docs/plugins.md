@@ -106,7 +106,10 @@ Each workspace keeps a registry of plugins it recommends or requires, managed by
 Moderators. An entry pins one exact version through a statement its publisher signed with their
 identity key. Every client verifies that statement against the publisher's key log before it
 offers the plugin, so the server is not trusted for what the plugin is, and checks a bundle's
-size and SHA-256 before asking for any consent. An instance can switch the registry off.
+size and SHA-256 before asking for any consent. A bundle an entry keeps on another host, such
+as a GitHub release asset, is fetched by the desktop app itself, as **Install from link** does;
+the web app needs that host to allow cross-origin requests. An instance can switch the registry
+off.
 [Workspace plugins](workspace-plugins.md) has the details.
 
 - **The palette's "Workspace plugins" section** lists the entries this device has not
