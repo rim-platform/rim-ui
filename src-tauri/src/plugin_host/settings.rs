@@ -11,13 +11,15 @@
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
-use crate::plugin_host::manifest::SettingSchema;
+use crate::plugin_host::manifest::{PluginManifest, SettingSchema};
+use crate::plugin_host::runtime;
 use crate::plugin_host::validation::setting_value_error;
+use crate::plugin_host::wire::{JsonRpcError, INTERNAL_ERROR};
 use crate::plugin_host::PluginHostState;
 use crate::secret_store::SecretVault;
 
@@ -97,11 +99,55 @@ impl serde::Serialize for SettingsError {
 pub enum SettingsReadError {
     #[error("plugin not found: {0}")]
     NotFound(String),
+    /// The plugin is not an enabled `WebSandboxed` plugin, the only kind whose
+    /// settings the UI may read for it.
+    #[error("{0} is not an enabled WebSandboxed plugin")]
+    NotWebPlugin(String),
     /// A saved secret could not be read, for example while the keyring is locked.
     #[error("the plugin's secret settings are not available: {0}")]
     SecretsLocked(String),
     #[error("plugin settings failed: {0}")]
     Io(String),
+}
+
+impl SettingsReadError {
+    /// The `data` of the error a plugin gets: `{ "reason": "secretsLocked" }`
+    /// for a locked vault, else none.
+    fn data(&self) -> Option<Value> {
+        match self {
+            Self::SecretsLocked(_) => Some(serde_json::json!({ "reason": "secretsLocked" })),
+            _ => None,
+        }
+    }
+
+    /// The JSON-RPC error a plugin's `rim.settings.get` gets for this failure:
+    /// always `INTERNAL_ERROR`, saying why when the vault is locked.
+    pub(crate) fn to_rpc_error(&self) -> JsonRpcError {
+        JsonRpcError {
+            code: INTERNAL_ERROR,
+            message: self.to_string(),
+            data: self.data(),
+        }
+    }
+}
+
+impl serde::Serialize for SettingsReadError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(None)?;
+        let kind = match self {
+            Self::NotFound(_) => "NOT_FOUND",
+            Self::NotWebPlugin(_) => "NOT_WEB_PLUGIN",
+            Self::SecretsLocked(_) => "SECRETS_LOCKED",
+            Self::Io(_) => "INTERNAL_ERROR",
+        };
+        map.serialize_entry("kind", kind)?;
+        map.serialize_entry("message", &self.to_string())?;
+        if let Some(data) = self.data() {
+            map.serialize_entry("data", &data)?;
+        }
+        map.end()
+    }
 }
 
 /// The settings the installed plugin `plugin_id` reads for `account`: each
@@ -114,21 +160,27 @@ pub enum SettingsReadError {
 /// Returns [`SettingsReadError::NotFound`] for a plugin that is not installed,
 /// [`SettingsReadError::SecretsLocked`] when a saved secret cannot be read, and
 /// [`SettingsReadError::Io`] when the values cannot be read.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn resolved_values(
     state: &PluginHostState,
     plugin_id: &str,
     account: Option<&str>,
 ) -> Result<Map<String, Value>, SettingsReadError> {
-    let schema = state
-        .manifests
+    read_values(&state.manifests, &state.settings, plugin_id, account)
+}
+
+fn read_values(
+    manifests: &Mutex<HashMap<String, PluginManifest>>,
+    settings: &PluginSettings,
+    plugin_id: &str,
+    account: Option<&str>,
+) -> Result<Map<String, Value>, SettingsReadError> {
+    let schema = manifests
         .lock()
         .map_err(|e| SettingsReadError::Io(e.to_string()))?
         .get(plugin_id)
         .map(|m| m.settings_schema.clone())
         .ok_or_else(|| SettingsReadError::NotFound(plugin_id.to_string()))?;
-    state
-        .settings
+    settings
         .values(plugin_id, &schema, account)
         .map_err(|e| match e {
             SettingsError::SecretsLocked(reason) => SettingsReadError::SecretsLocked(reason),
@@ -137,10 +189,53 @@ pub(crate) fn resolved_values(
         })
 }
 
+/// Reads one plugin's settings for whoever is signed in when each read runs,
+/// as [`resolved_values`] does: what the broker of a running local-process
+/// plugin holds.
+#[derive(Clone)]
+pub struct SettingsReader {
+    plugin_id: String,
+    manifests: Arc<Mutex<HashMap<String, PluginManifest>>>,
+    settings: Arc<PluginSettings>,
+    account: Arc<Mutex<Option<String>>>,
+}
+
+impl SettingsReader {
+    /// A reader of `plugin_id`'s settings in `state`.
+    pub(crate) fn new(state: &PluginHostState, plugin_id: &str) -> Self {
+        Self {
+            plugin_id: plugin_id.to_string(),
+            manifests: state.manifests.clone(),
+            settings: state.settings.clone(),
+            account: state.account.clone(),
+        }
+    }
+
+    /// The plugin's settings for the account signed in now, the defaults only
+    /// with nobody signed in. Reading a secret can wait on the keyring's unlock
+    /// prompt, so this blocks.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`resolved_values`].
+    pub fn read(&self) -> Result<Map<String, Value>, SettingsReadError> {
+        let account = self.account.lock().ok().and_then(|a| a.clone());
+        read_values(
+            &self.manifests,
+            &self.settings,
+            &self.plugin_id,
+            account.as_deref(),
+        )
+    }
+}
+
 /// Runs after a save or a reset changed `plugin_id`'s settings for the
-/// signed-in account: the one place the host learns that the values a running
-/// plugin holds are out of date. It tells the plugin nothing.
-pub(crate) fn on_saved(_state: &PluginHostState, _plugin_id: &str) {}
+/// signed-in account: sends the running local-process plugin its new settings
+/// in `rim.settings.changed`. A `WebSandboxed` plugin hears it from the UI,
+/// which runs it.
+pub(crate) fn on_saved(state: &PluginHostState, plugin_id: &str) {
+    runtime::announce_settings_changed(state, plugin_id);
+}
 
 /// What the settings form shows: the saved non-secret values and which secret
 /// settings are set. A secret's value is never part of it.
@@ -443,6 +538,11 @@ impl MemorySecrets {
         self.locked.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    pub(crate) fn unlock(&self) {
+        self.locked
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
     pub(crate) fn names(&self) -> Vec<String> {
         self.records.lock().unwrap().keys().cloned().collect()
     }
@@ -491,6 +591,68 @@ impl SettingSecrets for MemorySecrets {
             .retain(|name, _| !name.starts_with(prefix));
         Ok(())
     }
+}
+
+/// A host state for tests with plugins installed, their settings under a
+/// temporary directory and secret settings in memory.
+#[cfg(test)]
+pub(crate) struct SettingsFixture {
+    pub(crate) state: PluginHostState,
+    pub(crate) secrets: Arc<MemorySecrets>,
+    _dir: tempfile::TempDir,
+}
+
+#[cfg(test)]
+impl SettingsFixture {
+    /// A host with `manifests` installed and nobody signed in.
+    pub(crate) fn new(manifests: Vec<PluginManifest>) -> Self {
+        let dir = tempfile::TempDir::new().expect("temporary directory");
+        let secrets = Arc::new(MemorySecrets::default());
+        let mut state = PluginHostState::with_installed(manifests);
+        state.settings = Arc::new(PluginSettings::new(dir.path(), secrets.clone()));
+        Self {
+            state,
+            secrets,
+            _dir: dir,
+        }
+    }
+
+    /// Makes `account` the signed-in account, or signs out with `None`.
+    pub(crate) fn sign_in(&self, account: Option<&str>) {
+        *self.state.account.lock().unwrap() = account.map(str::to_string);
+    }
+
+    /// Saves `values`, a JSON object, to `plugin_id`'s settings for `account`,
+    /// as the settings form does.
+    pub(crate) fn save(&self, plugin_id: &str, account: &str, values: Value) {
+        let schema = self.state.manifests.lock().unwrap()[plugin_id]
+            .settings_schema
+            .clone();
+        let Value::Object(values) = values else {
+            panic!("settings values are an object");
+        };
+        self.state
+            .settings
+            .save(plugin_id, &schema, Some(account), &values)
+            .expect("settings save");
+    }
+}
+
+/// A manifest of the local-process plugin `plugin_id` declaring `schema`, its
+/// `settings_schema`, for tests.
+#[cfg(test)]
+pub(crate) fn test_manifest(plugin_id: &str, schema: Value) -> PluginManifest {
+    serde_json::from_value(serde_json::json!({
+        "manifest_version": 1,
+        "plugin_id": plugin_id,
+        "display_name": "Settings test",
+        "version": "1.0.0",
+        "description": "test",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main",
+        "settings_schema": schema,
+    }))
+    .expect("test manifest")
 }
 
 #[cfg(test)]
@@ -847,7 +1009,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let secrets = Arc::new(MemorySecrets::default());
         let mut state = PluginHostState::with_installed(vec![manifest]);
-        state.settings = PluginSettings::new(dir.path(), secrets.clone());
+        state.settings = Arc::new(PluginSettings::new(dir.path(), secrets.clone()));
         state
             .settings
             .save(PLUGIN, &schema(), A, &changes(json!({ "api_token": "t" })))

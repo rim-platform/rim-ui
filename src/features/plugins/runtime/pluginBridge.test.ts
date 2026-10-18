@@ -30,6 +30,10 @@ vi.mock("../../../shared/toast", () => ({
   toast: { error: vi.fn(), info: vi.fn() },
 }));
 
+vi.mock("../pluginSettingsLink", () => ({
+  openPluginSettings: vi.fn(),
+}));
+
 import {
   createPluginBridge,
   fetchAndRelayPanelState,
@@ -43,6 +47,7 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "../../../shared/toast";
 import { logger } from "../../../core/logger";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { openPluginSettings } from "../pluginSettingsLink";
 import type { PluginCapability } from "../types";
 
 function createMockIframe(): HTMLIFrameElement {
@@ -210,6 +215,47 @@ describe("createPluginBridge", () => {
     const context = vi.mocked(dispatchCommand).mock.calls[0][2];
     expect(context).toEqual({ args: { target: "all" }, callerPluginId: "my-plugin" });
     bridge.destroy();
+  });
+
+  describe("a panel opening its plugin's settings", () => {
+    let bridge: ReturnType<typeof createPluginBridge>;
+    let posted: unknown[];
+
+    beforeEach(() => {
+      vi.mocked(openPluginSettings).mockClear();
+      posted = [];
+      bridge = createPluginBridge({ pluginId: "my-plugin", approvedCapabilities: [], iframe });
+      vi.spyOn(iframe.contentWindow as Window, "postMessage").mockImplementation(
+        (message: unknown) => {
+          posted.push(message);
+        },
+      );
+    });
+
+    afterEach(() => bridge.destroy());
+
+    function post(data: unknown, source: MessageEventSource | null = iframe.contentWindow) {
+      window.dispatchEvent(new MessageEvent("message", { origin: "null", source, data }));
+    }
+
+    it("opens the frame's own plugin's settings, needing no capability and sending no answer", () => {
+      post({ type: "rim.settings.open", pluginId: "other-plugin", requestId: "r1" });
+      expect(openPluginSettings).toHaveBeenCalledTimes(1);
+      expect(openPluginSettings).toHaveBeenCalledWith("my-plugin");
+      expect(posted).toEqual([]);
+    });
+
+    it("ignores rim.settings.open from any other window", () => {
+      post({ type: "rim.settings.open" }, window);
+      expect(openPluginSettings).not.toHaveBeenCalled();
+    });
+
+    it("gives a panel no way to read or write the values", () => {
+      post({ type: "rim.settings.get", key: "api_token", requestId: "r1" });
+      post({ type: "rim.settings.set", key: "api_token", value: "x" });
+      expect(posted).toEqual([]);
+      expect(openPluginSettings).not.toHaveBeenCalled();
+    });
   });
 
   describe("a panel running its plugin's commands", () => {

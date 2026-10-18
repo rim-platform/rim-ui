@@ -133,7 +133,13 @@ export function hostMessageDef(message: Record<string, unknown>): string {
       return "PrincipalsRemappedNotification";
     case "rim.shutdown":
       return "ShutdownNotification";
-    default:
-      return "error" in message ? "ErrorResponse" : "LogResponse";
+    case "rim.settings.changed":
+      return "SettingsChangedNotification";
+    default: {
+      if ("error" in message) return "ErrorResponse";
+      const result = message.result;
+      const settings = typeof result === "object" && result !== null && "values" in result;
+      return settings ? "SettingsGetResponse" : "LogResponse";
+    }
   }
 }

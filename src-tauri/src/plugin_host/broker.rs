@@ -2,6 +2,7 @@ use crate::plugin_host::capability::{self, CapabilityGate, CHAT_METHODS};
 use crate::plugin_host::chat_relay::ChatRelay;
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::protocol::{method, LogLevel, LogParams};
+use crate::plugin_host::settings::{SettingsReadError, SettingsReader};
 use crate::plugin_host::wire::{
     self, JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, WireError,
     CAPABILITY_DENIED, INTERNAL_ERROR, METHOD_NOT_FOUND, RATE_LIMITED,
@@ -76,6 +77,9 @@ pub struct PluginBroker {
     manifest_panel_ids: Vec<String>,
     /// Where `rim.chat.*` calls go; without it they are METHOD_NOT_FOUND.
     chat_relay: Option<Arc<ChatRelay>>,
+    /// Reads this plugin's settings; without it `rim.settings.get` is METHOD_NOT_FOUND
+    /// and no `rim.settings.changed` is sent.
+    settings: Option<SettingsReader>,
 }
 
 /// How the broker answers one admitted plugin request.
@@ -127,7 +131,14 @@ impl PluginBroker {
             panel_relay: None,
             manifest_panel_ids: vec![],
             chat_relay: None,
+            settings: None,
         }
+    }
+
+    /// Serves `rim.settings.get` and `rim.settings.changed` from `settings`.
+    pub fn with_settings(mut self, settings: SettingsReader) -> Self {
+        self.settings = Some(settings);
+        self
     }
 
     pub fn with_chat_relay(mut self, relay: Arc<ChatRelay>) -> Self {
@@ -227,6 +238,7 @@ impl PluginBroker {
         let method = request.method.as_str();
         match method {
             method::LOG => self.handle_log(request),
+            method::SETTINGS_GET => self.handle_settings_get(request).await,
             "rim.ui.update_panel" => self.handle_update_panel(request),
             _ => JsonRpcResponse::error(
                 request.id.clone(),
@@ -256,6 +268,61 @@ impl PluginBroker {
         };
         log::log!(level, "[plugin:{}] {}", self.plugin_id, params.message);
         JsonRpcResponse::success(request.id.clone(), serde_json::json!({"ok": true}))
+    }
+
+    /// `rim.settings.get`: this connection's plugin's settings, for the account
+    /// signed in now. Params are ignored.
+    async fn handle_settings_get(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        match self.read_settings().await {
+            Some(Ok(values)) => JsonRpcResponse::success(
+                request.id.clone(),
+                serde_json::json!({ "values": values }),
+            ),
+            Some(Err(e)) => JsonRpcResponse {
+                jsonrpc: "2.0".into(),
+                result: None,
+                error: Some(e.to_rpc_error()),
+                id: request.id.clone(),
+            },
+            None => JsonRpcResponse::error(
+                request.id.clone(),
+                METHOD_NOT_FOUND,
+                format!("method not found: {}", request.method),
+            ),
+        }
+    }
+
+    /// This plugin's settings as they are now, read off the loop's thread since
+    /// a secret's first read can wait on the keyring; `None` without a reader.
+    async fn read_settings(
+        &self,
+    ) -> Option<Result<serde_json::Map<String, serde_json::Value>, SettingsReadError>> {
+        let reader = self.settings.clone()?;
+        Some(
+            tokio::task::spawn_blocking(move || reader.read())
+                .await
+                .unwrap_or_else(|e| Err(SettingsReadError::Io(e.to_string()))),
+        )
+    }
+
+    /// The `rim.settings.changed` notice with the settings as they are now, or
+    /// `None` when there is nothing to send: no reader, or a failed read, which
+    /// the plugin's next `rim.settings.get` reports.
+    async fn settings_changed_notice(&self) -> Option<JsonRpcNotification> {
+        match self.read_settings().await? {
+            Ok(values) => Some(JsonRpcNotification::new(
+                method::SETTINGS_CHANGED,
+                Some(serde_json::json!({ "values": values })),
+            )),
+            Err(e) => {
+                log::warn!(
+                    "[plugin_host] settings of {} not sent: {}",
+                    self.plugin_id,
+                    e
+                );
+                None
+            }
+        }
     }
 
     fn handle_update_panel(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -342,11 +409,22 @@ impl PluginBroker {
 }
 
 /// A host → plugin message waiting for the broker loop to send it.
-pub struct OutboundRequest {
-    method: String,
-    params: Option<serde_json::Value>,
-    /// `None` sends a notification: no id, and no response is expected.
-    reply: Option<oneshot::Sender<JsonRpcResponse>>,
+pub enum OutboundRequest {
+    /// A request; the plugin's response goes to `reply`.
+    Request {
+        method: String,
+        params: Option<serde_json::Value>,
+        reply: oneshot::Sender<JsonRpcResponse>,
+    },
+    /// A notification: no id, and no response is expected.
+    Notification {
+        method: String,
+        params: Option<serde_json::Value>,
+    },
+    /// `rim.settings.changed`, with the settings read when the loop sends it. The
+    /// loop also answers `rim.settings.get`, so every set the plugin receives was
+    /// read after the one before it.
+    SettingsChanged,
 }
 
 /// Why a host → plugin request did not produce a result.
@@ -396,10 +474,10 @@ impl PluginClient {
         wait: Duration,
     ) -> Result<serde_json::Value, RequestError> {
         let (reply, response) = oneshot::channel();
-        let outbound = OutboundRequest {
+        let outbound = OutboundRequest::Request {
             method: method.to_string(),
             params,
-            reply: Some(reply),
+            reply,
         };
         let exchange = async {
             self.tx
@@ -427,15 +505,37 @@ impl PluginClient {
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<(), RequestError> {
-        let outbound = OutboundRequest {
+        let outbound = OutboundRequest::Notification {
             method: method.to_string(),
             params,
-            reply: None,
         };
         self.tx
             .send(outbound)
             .await
             .map_err(|_| RequestError::Closed)
+    }
+
+    /// Sends `rim.settings.changed` to the plugin with its settings as they are when
+    /// the broker loop writes it. Nothing is sent when the read fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RequestError::Closed`] when the broker loop is gone.
+    pub async fn settings_changed(&self) -> Result<(), RequestError> {
+        self.tx
+            .send(OutboundRequest::SettingsChanged)
+            .await
+            .map_err(|_| RequestError::Closed)
+    }
+
+    /// Queues `rim.settings.changed` as [`Self::settings_changed`] does, without
+    /// waiting. Returns `false` when the queue is full, so the caller sends it
+    /// with [`Self::settings_changed`] instead; a closed loop has nobody to tell.
+    pub fn try_settings_changed(&self) -> bool {
+        !matches!(
+            self.tx.try_send(OutboundRequest::SettingsChanged),
+            Err(mpsc::error::TrySendError::Full(_))
+        )
     }
 
     /// True when both handles talk to the same broker loop.
@@ -564,19 +664,32 @@ pub async fn run_broker_loop<R, W>(
                 }
             }
             Some(outbound) = outbound_rx.recv() => {
-                let Some(reply) = outbound.reply else {
-                    let notification = JsonRpcNotification::new(outbound.method, outbound.params);
-                    if wire::write_frame(&mut writer, &notification).await.is_err() {
-                        log::warn!("failed to send notification to plugin {}", broker.plugin_id());
-                        break;
+                let (method, params, reply) = match outbound {
+                    OutboundRequest::Request { method, params, reply } => (method, params, reply),
+                    OutboundRequest::Notification { method, params } => {
+                        let notification = JsonRpcNotification::new(method, params);
+                        if wire::write_frame(&mut writer, &notification).await.is_err() {
+                            log::warn!("failed to send notification to plugin {}", broker.plugin_id());
+                            break;
+                        }
+                        continue;
                     }
-                    continue;
+                    OutboundRequest::SettingsChanged => {
+                        let Some(notification) = broker.settings_changed_notice().await else {
+                            continue;
+                        };
+                        if wire::write_frame(&mut writer, &notification).await.is_err() {
+                            log::warn!("failed to send settings to plugin {}", broker.plugin_id());
+                            break;
+                        }
+                        continue;
+                    }
                 };
                 // Forget requests whose callers gave up (timeout or cancellation).
                 pending.retain(|_, reply| !reply.is_closed());
                 let id = next_request_id;
                 next_request_id += 1;
-                let request = JsonRpcRequest::new(outbound.method, outbound.params, id);
+                let request = JsonRpcRequest::new(method, params, id);
                 pending.insert(id_key(&request.id), reply);
                 if wire::write_frame(&mut writer, &request).await.is_err() {
                     log::warn!("failed to send request to plugin {}", broker.plugin_id());
@@ -656,6 +769,7 @@ pub async fn run_broker_loop<R, W>(
 mod tests {
     use super::*;
     use crate::plugin_host::capability::CapabilityGate;
+    use crate::plugin_host::settings::{test_manifest, SettingsFixture};
 
     fn test_broker() -> PluginBroker {
         PluginBroker::new(
@@ -814,6 +928,136 @@ mod tests {
             Routed::Done(resp) => assert_eq!(resp.error.unwrap().code, RATE_LIMITED),
             Routed::Chat(_) => panic!("the third chat.read call is over the limit"),
         }
+    }
+
+    // ── Settings ──
+
+    const SETTINGS_PLUGIN: &str = "dev.example.settings";
+    const OTHER_PLUGIN: &str = "dev.example.other";
+    const NO_SETTINGS_PLUGIN: &str = "dev.example.plain";
+    const ACCOUNT: &str = "rimp0_a";
+
+    /// [`SETTINGS_PLUGIN`] and [`OTHER_PLUGIN`] declaring the same settings, and
+    /// [`NO_SETTINGS_PLUGIN`] declaring none, with [`ACCOUNT`] signed in.
+    fn settings_host() -> SettingsFixture {
+        let schema = serde_json::json!([
+            { "key": "namespace", "title": "Namespace", "value_type": "string", "default": "default" },
+            { "key": "refresh_seconds", "title": "Refresh", "value_type": "integer", "default": 30 },
+            { "key": "context", "title": "Context", "value_type": "string" },
+            { "key": "api_token", "title": "Token", "value_type": "string", "is_secret": true }
+        ]);
+        let host = SettingsFixture::new(vec![
+            test_manifest(SETTINGS_PLUGIN, schema.clone()),
+            test_manifest(OTHER_PLUGIN, schema),
+            test_manifest(NO_SETTINGS_PLUGIN, serde_json::json!([])),
+        ]);
+        host.sign_in(Some(ACCOUNT));
+        host
+    }
+
+    /// A broker for `plugin_id` reading its settings from `host`, as a started
+    /// plugin's broker does.
+    fn settings_broker(host: &SettingsFixture, plugin_id: &str) -> PluginBroker {
+        PluginBroker::new(
+            plugin_id.into(),
+            CapabilityGate::new(vec![]),
+            BrokerConfig::default(),
+        )
+        .with_settings(SettingsReader::new(&host.state, plugin_id))
+    }
+
+    fn settings_get(id: i64) -> JsonRpcRequest {
+        JsonRpcRequest::new(method::SETTINGS_GET, None, id)
+    }
+
+    #[tokio::test]
+    async fn settings_get_answers_saved_values_over_defaults_with_secrets_in_plain_form() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "prod", "api_token": "t0k"}),
+        );
+        let mut broker = settings_broker(&host, SETTINGS_PLUGIN);
+        let resp = broker.handle_request(&settings_get(1)).await;
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        assert_eq!(
+            resp.result.unwrap(),
+            serde_json::json!({"values": {
+                "namespace": "prod",
+                "refresh_seconds": 30,
+                "api_token": "t0k",
+            }}),
+            "context has neither a saved value nor a default, so it is left out"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_get_of_a_plugin_without_settings_is_an_empty_set() {
+        let host = settings_host();
+        let mut broker = settings_broker(&host, NO_SETTINGS_PLUGIN);
+        let resp = broker.handle_request(&settings_get(1)).await;
+        assert_eq!(resp.result.unwrap(), serde_json::json!({"values": {}}));
+    }
+
+    #[tokio::test]
+    async fn settings_get_signed_out_answers_the_defaults_only() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "prod", "api_token": "t0k"}),
+        );
+        host.sign_in(None);
+        let mut broker = settings_broker(&host, SETTINGS_PLUGIN);
+        let resp = broker.handle_request(&settings_get(1)).await;
+        assert_eq!(
+            resp.result.unwrap(),
+            serde_json::json!({"values": {"namespace": "default", "refresh_seconds": 30}})
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_get_with_a_locked_vault_says_why() {
+        let host = settings_host();
+        host.secrets.lock();
+        let mut broker = settings_broker(&host, SETTINGS_PLUGIN);
+        let error = broker.handle_request(&settings_get(1)).await.error.unwrap();
+        assert_eq!(error.code, INTERNAL_ERROR);
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!({"reason": "secretsLocked"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_get_reads_the_connections_plugin_whatever_the_params_say() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "own"}),
+        );
+        host.save(
+            OTHER_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "other"}),
+        );
+        let mut broker = settings_broker(&host, SETTINGS_PLUGIN);
+        let req = JsonRpcRequest::new(
+            method::SETTINGS_GET,
+            Some(serde_json::json!({"pluginId": OTHER_PLUGIN, "plugin_id": OTHER_PLUGIN})),
+            1,
+        );
+        let resp = broker.handle_request(&req).await;
+        assert_eq!(resp.result.unwrap()["values"]["namespace"], "own");
+    }
+
+    #[tokio::test]
+    async fn settings_get_without_a_reader_is_method_not_found() {
+        let mut broker = test_broker();
+        let resp = broker.handle_request(&settings_get(1)).await;
+        assert_eq!(resp.error.unwrap().code, METHOD_NOT_FOUND);
     }
 
     #[test]
@@ -1102,6 +1346,111 @@ mod tests {
             frame.get("id").is_none(),
             "a notification has no id: {frame}"
         );
+    }
+
+    /// Starts a broker loop for [`SETTINGS_PLUGIN`] reading `host`, on an
+    /// in-memory pipe; the other end plays the plugin.
+    fn spawn_settings_loop(
+        host: &SettingsFixture,
+    ) -> (PluginClient, PluginSide, tokio::sync::watch::Sender<bool>) {
+        let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
+        let (reader, writer) = tokio::io::split(host_end);
+        let (client, outbound_rx) = PluginClient::channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        tokio::spawn(run_broker_loop(
+            settings_broker(host, SETTINGS_PLUGIN),
+            reader,
+            writer,
+            outbound_rx,
+            shutdown_rx,
+        ));
+        (client, plugin_end, shutdown_tx)
+    }
+
+    #[tokio::test]
+    async fn settings_changed_carries_the_settings_of_whoever_is_signed_in_when_sent() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "a"}),
+        );
+        host.save(
+            SETTINGS_PLUGIN,
+            "rimp0_b",
+            serde_json::json!({"namespace": "b"}),
+        );
+        let (client, mut plugin, _shutdown) = spawn_settings_loop(&host);
+
+        client.settings_changed().await.unwrap();
+        let frame = read_json(&mut plugin).await;
+        assert_eq!(frame["method"], method::SETTINGS_CHANGED);
+        assert!(
+            frame.get("id").is_none(),
+            "a notification has no id: {frame}"
+        );
+        assert_eq!(frame["params"]["values"]["namespace"], "a");
+
+        host.sign_in(Some("rimp0_b"));
+        assert!(client.try_settings_changed());
+        let frame = read_json(&mut plugin).await;
+        assert_eq!(frame["params"]["values"]["namespace"], "b");
+    }
+
+    #[tokio::test]
+    async fn settings_changed_is_not_sent_while_the_vault_is_locked() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"api_token": "t0k"}),
+        );
+        let (client, mut plugin, _shutdown) = spawn_settings_loop(&host);
+
+        host.secrets.lock();
+        client.settings_changed().await.unwrap();
+        // The plugin asks; the answer says why, and it is the first frame it gets.
+        wire::write_frame(&mut plugin, &settings_get(9))
+            .await
+            .unwrap();
+        let frame = read_json(&mut plugin).await;
+        assert_eq!(frame["id"], 9);
+        assert_eq!(frame["error"]["data"]["reason"], "secretsLocked");
+
+        host.secrets.unlock();
+        client.settings_changed().await.unwrap();
+        let frame = read_json(&mut plugin).await;
+        assert_eq!(frame["method"], method::SETTINGS_CHANGED);
+        assert_eq!(frame["params"]["values"]["api_token"], "t0k");
+    }
+
+    #[tokio::test]
+    async fn settings_are_read_when_written_so_no_older_set_follows_a_newer_one() {
+        let host = settings_host();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "old"}),
+        );
+        let (client, mut plugin, _shutdown) = spawn_settings_loop(&host);
+
+        // Queued before the newer values were saved, written after: the notice
+        // carries the newer set, and so does the answer the plugin gets next.
+        client.settings_changed().await.unwrap();
+        host.save(
+            SETTINGS_PLUGIN,
+            ACCOUNT,
+            serde_json::json!({"namespace": "new"}),
+        );
+        wire::write_frame(&mut plugin, &settings_get(1))
+            .await
+            .unwrap();
+        let first = read_json(&mut plugin).await;
+        let second = read_json(&mut plugin).await;
+        assert_eq!(first["method"], method::SETTINGS_CHANGED);
+        assert_eq!(first["params"]["values"]["namespace"], "new");
+        assert_eq!(second["id"], 1);
+        assert_eq!(second["result"]["values"]["namespace"], "new");
     }
 
     #[tokio::test]

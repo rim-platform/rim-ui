@@ -184,7 +184,9 @@ The values are kept on the device per plugin, signed-in account and device, neve
 deleted on uninstall; the web app keeps no secret settings and its form says they are only
 available in the desktop app. A save is checked against the schema and refused with the field
 that is wrong. An update that changes the schema leaves saved values as they are, so a plugin
-checks each value it uses and ignores keys it does not know.
+checks each value it uses and ignores keys it does not know. The plugin reads the values with
+`rim.settings.get` and hears every change in `rim.settings.changed`; with the SDK, that is
+`host.settings.get()` and `onSettingsChanged` ([the SDK's README](../sdk/plugin-sdk/README.md)).
 
 ```json
 "settings_schema": [

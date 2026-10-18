@@ -1,5 +1,5 @@
 // Tests the template against the SDK's in-memory host: no RIM app needed.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { startTestHost } from "@rim-platform/plugin-sdk/testing";
 
 import { createPlugin } from "./plugin.ts";
@@ -17,6 +17,27 @@ describe("template plugin", () => {
       result: { payload: "Hello, RIM!", message: "2 greetings so far" },
     });
     expect((await host.execute("greet", { name: 7 })).error?.message).toBe("name must be a string");
+    await host.shutdown();
+  });
+
+  it("greets with the greeting the user saved, and follows every change", async () => {
+    const host = startTestHost(createPlugin(), {
+      manifestPath: `${import.meta.dirname}/rim-plugin.json`,
+      settings: { greeting: "Hi" },
+    });
+    await host.handshake();
+    // The plugin reads its settings once it is ready.
+    await vi.waitFor(() =>
+      expect(host.frames).toContainEqual(expect.objectContaining({ method: "rim.settings.get" })),
+    );
+    await host.heartbeat();
+    expect((await host.execute("greet")).result?.payload).toBe("Hi, Test User!");
+
+    host.changeSettings({ greeting: "Howdy" });
+    expect((await host.execute("greet")).result?.payload).toBe("Howdy, Test User!");
+    // A cleared setting is missing from the new set: back to the default.
+    host.changeSettings({});
+    expect((await host.execute("greet")).result?.payload).toBe("Hello, Test User!");
     await host.shutdown();
   });
 

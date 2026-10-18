@@ -220,7 +220,47 @@ stored on this device, except those of encrypted DMs and groups." Unchecked, the
 with `CAPABILITY_DENIED`. The Permissions button reopens the prompt; revoking any permission stops
 the plugin. Encrypted conversations also take `chat.read.encrypted` ([how](plugin-chat-methods.md)).
 
-## 9. Publish from git
+## 9. Add a setting
+
+A setting is a value the user fills in once in the plugin manager, such as the greeting's
+first word. In `rim-plugin.json`, add:
+
+```json
+"settings_schema": [
+  { "key": "greeting", "title": "Greeting", "value_type": "string", "default": "Hello" }
+]
+```
+
+In `plugin.ts`, keep the current greeting and use it in `greet` (`` `${greeting}, ${name}!` ``):
+
+```ts
+let greeting = "Hello";
+const apply = (values: Readonly<Record<string, unknown>>) => {
+  greeting = typeof values.greeting === "string" && values.greeting ? values.greeting : "Hello";
+};
+```
+
+and read it when the plugin starts, then follow every change:
+
+```ts
+async onReady(host) {
+  apply(await host.settings.get());
+  await host.panels.set("greetings", { last, count });
+},
+onSettingsChanged: (values) => apply(values),
+```
+
+`host.settings.get()` answers every setting that has a saved value or a `default`;
+`onSettingsChanged` gets the whole set again after each save, and after a sign-in or sign-out,
+since the values belong to the signed-in account. Reading them needs no permission. The plugin's
+row in Settings → Plugins now has **Settings**, a form with one text field; a panel can open it
+with `window.parent.postMessage({ type: "rim.settings.open" }, "*")`, and never sees the values.
+A setting with `"is_secret": true`, such as a token, is kept in the desktop's secret vault and
+reaches the plugin in plain form. In the test, `startTestHost(createPlugin(), { settings:
+{ greeting: "Hi" } })` answers the read, and `host.changeSettings({ greeting: "Howdy" })` sends a
+change. The SDK's README has what an older app without settings answers.
+
+## 10. Publish from git
 
 A plugin repository holds its build at the root, so **Install from git URL** finds a complete
 plugin. Set `"entrypoint": "main.mjs"` in `rim-plugin.json` and the `bundle` script in
@@ -241,7 +281,7 @@ link as `https://host/path/dev.example.greeter-0.1.0.rimbundle#sha256=<hash>`. W
 `npx rim-plugin-bundle .` takes the committed `main.mjs` as it is instead of building it; once
 `--check` passes, both give the same `.rimbundle`.
 
-## 10. Sign and publish to a workspace
+## 11. Sign and publish to a workspace
 
 On a desktop that holds your account's identity key (Settings → Security), Settings → Plugins
 shows **Sign and publish…** on each installed plugin. A plugin installed from git is signed as its

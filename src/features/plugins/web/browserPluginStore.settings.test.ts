@@ -3,12 +3,13 @@
 // uninstall; and the database's upgrade that adds the settings store.
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PluginSettingsError } from "../pluginSettings";
 import { sha256Hex, writeBundle } from "./bundle";
 import * as storeModule from "./browserPluginStore";
 import { BrowserPluginStore } from "./browserPluginStore";
+import { webPluginHost } from "./webPluginHost";
 
 const encoder = new TextEncoder();
 const PLUGIN = "dev.example.pods";
@@ -56,6 +57,10 @@ async function installed(account: string): Promise<BrowserPluginStore> {
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("browser plugin settings", () => {
@@ -107,6 +112,29 @@ describe("browser plugin settings", () => {
     await expect(storeModule.resolvedPluginSettings("dev.example.none", null)).rejects.toThrow(
       "plugin not found",
     );
+  });
+
+  it("gives the web plugin host the signed-in account's values, never a secret", async () => {
+    const store = await installed("rimp0_a");
+    await store.settingsSave(PLUGIN, { namespace: "prod", api_token: null });
+    expect(await store.pluginSettings(PLUGIN)).toEqual({
+      namespace: "prod",
+      refresh_seconds: 30,
+    });
+    store.setAccount(null);
+    expect(await store.pluginSettings(PLUGIN)).toEqual({
+      namespace: "default",
+      refresh_seconds: 30,
+    });
+  });
+
+  it("tells the plugin's running session after every save and reset", async () => {
+    const changed = vi.spyOn(webPluginHost, "settingsChanged");
+    const store = await installed("rimp0_a");
+    await store.settingsSave(PLUGIN, { namespace: "prod" });
+    await store.settingsReset(PLUGIN);
+    await expect(store.settingsSave(PLUGIN, { output: "yaml" })).rejects.toThrow();
+    expect(changed.mock.calls).toEqual([[PLUGIN], [PLUGIN]]);
   });
 
   it("clears a value saved as null and keeps the keys left out", async () => {

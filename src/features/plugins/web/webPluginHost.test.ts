@@ -20,6 +20,7 @@ import {
   type WindowMessage,
 } from "./webPluginHost";
 import type { SessionPort } from "./pluginSession";
+import { RpcError } from "./rpc";
 
 const realImmediate = setImmediate;
 
@@ -147,6 +148,11 @@ function testServices(
 ) {
   const starting: [string, boolean][] = [];
   const store = new Map<string, unknown>();
+  /** What `pluginSettings` answers, and the plugin ids it was asked for. */
+  const settings = {
+    read: (): Promise<Record<string, unknown>> => Promise.resolve({}),
+    asked: [] as string[],
+  };
   const services: HostServices = {
     loadFiles: async () => ({
       manifestText,
@@ -161,8 +167,12 @@ function testServices(
     storageSet: async (_id, key, value) => {
       store.set(key, value);
     },
+    pluginSettings: (id) => {
+      settings.asked.push(id);
+      return settings.read();
+    },
   };
-  return { services, starting, store };
+  return { services, starting, store, settings };
 }
 
 function installed(overrides: Partial<InstalledWebPlugin> = {}): InstalledWebPlugin {
@@ -330,6 +340,7 @@ describe("web plugin frames", () => {
       "rim.command.execute",
       "rim.principal.changed",
       "rim.principals.remapped",
+      "rim.settings.changed",
       "rim.heartbeat",
       "rim.shutdown",
     ]);
@@ -592,6 +603,87 @@ describe("web plugin frames", () => {
     await flush();
     expect(t.frames).toHaveLength(2);
     expect(t.frame.removed).toBe(true);
+  });
+});
+
+describe("settings", () => {
+  it("answers rim.settings.get with the port's own plugin's settings, whatever the params say", async () => {
+    const t = await startScripted();
+    t.settings.read = async () => ({ namespace: "prod", refresh_seconds: 30 });
+    const answer = await t.remote.call("rim.settings.get", { pluginId: "dev.example.other" });
+    expect(answer.result).toEqual({ values: { namespace: "prod", refresh_seconds: 30 } });
+    expect(schemaProblems("SettingsGetResponse", answer)).toEqual([]);
+    expect(t.settings.asked).toEqual(["dev.example.scripted"]);
+    expect((await t.remote.call("rim.settings.get")).result).toEqual({
+      values: { namespace: "prod", refresh_seconds: 30 },
+    });
+  });
+
+  it("sends the whole set after a save and after every principal change", async () => {
+    const t = await startScripted();
+    t.settings.read = async () => ({ namespace: "staging" });
+    t.host.settingsChanged("dev.example.scripted");
+    t.host.settingsChanged("dev.example.not-running");
+    await flush();
+    expect(t.remote.received.at(-1)).toEqual({
+      jsonrpc: "2.0",
+      method: "rim.settings.changed",
+      params: { values: { namespace: "staging" } },
+    });
+
+    t.settings.read = async () => ({ namespace: "default" });
+    t.host.setPrincipal(null);
+    await flush();
+    expect(t.remote.received.slice(-2).map((m) => m.method)).toEqual([
+      "rim.principal.changed",
+      "rim.settings.changed",
+    ]);
+    expect(t.remote.received.at(-1)?.params).toEqual({ values: { namespace: "default" } });
+    t.host.setPrincipal(null);
+    await flush();
+    expect(t.remote.received.filter((m) => m.method === "rim.settings.changed")).toHaveLength(2);
+    for (const message of t.sent)
+      expect(schemaProblems(hostMessageDef(message), message)).toEqual([]);
+  });
+
+  it("says why when a secret cannot be read, and sends no change meanwhile", async () => {
+    const t = await startScripted();
+    t.settings.read = async () => {
+      throw new RpcError(-32603, "the vault is locked", { reason: "secretsLocked" });
+    };
+    expect((await t.remote.call("rim.settings.get")).error).toEqual({
+      code: -32603,
+      message: "the vault is locked",
+      data: { reason: "secretsLocked" },
+    });
+    const before = t.remote.received.length;
+    t.host.settingsChanged("dev.example.scripted");
+    await flush();
+    expect(t.remote.received).toHaveLength(before);
+    expect(t.logs).toContain("warn: settings not sent: the vault is locked");
+  });
+
+  it("reads one set at a time, so no older set reaches the plugin after a newer one", async () => {
+    const t = await startScripted();
+    const reads: ((values: Record<string, unknown>) => void)[] = [];
+    t.settings.read = () => new Promise((resolve) => reads.push(resolve));
+    t.host.settingsChanged("dev.example.scripted");
+    t.remote.send({ id: "get-1", method: "rim.settings.get" });
+    await flush();
+    // The second read starts only once the first set was sent.
+    expect(reads).toHaveLength(1);
+    reads[0]({ v: 1 });
+    await flush();
+    expect(reads).toHaveLength(2);
+    reads[1]({ v: 2 });
+    await flush();
+    const settings = t.remote.received.filter(
+      (m) => m.method === "rim.settings.changed" || m.id === "get-1",
+    );
+    expect(settings).toEqual([
+      { jsonrpc: "2.0", method: "rim.settings.changed", params: { values: { v: 1 } } },
+      { jsonrpc: "2.0", id: "get-1", result: { values: { v: 2 } } },
+    ]);
   });
 });
 

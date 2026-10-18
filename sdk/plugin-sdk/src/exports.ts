@@ -16,6 +16,7 @@ export {
   type Plugin,
   type PluginDefinition,
   type RunOptions,
+  type Settings,
   type Storage,
 } from "./plugin.ts";
 export { ErrorCode, HostRequestError, PluginError } from "./errors.ts";

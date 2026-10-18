@@ -3,7 +3,7 @@
   "plugin_id": "dev.example.template-ts",
   "display_name": "TypeScript Template",
   "version": "0.1.0",
-  "description": "Starting point for a plugin written with the TypeScript SDK: one safe command and one dangerous one.",
+  "description": "Starting point for a plugin written with the TypeScript SDK: one safe command, one dangerous one and one setting.",
   "author": "RIM team",
   "runtime_kind": "DesktopLocalProcess",
   "entrypoint": "main.ts",
@@ -37,5 +37,14 @@
   "keybind_suggestions": [],
   "context_actions": [],
   "panels": [],
-  "settings_schema": []
+  "settings_schema": [
+    {
+      "key": "greeting",
+      "title": "Greeting",
+      "description": "The word each greeting starts with.",
+      "value_type": "string",
+      "default": "Hello",
+      "placeholder": "Hello"
+    }
+  ]
 }

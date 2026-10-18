@@ -36,6 +36,8 @@ export const Method = {
   principalsRemapped: "rim.principals.remapped",
   commandExecute: "rim.command.execute",
   log: "rim.log",
+  settingsGet: "rim.settings.get",
+  settingsChanged: "rim.settings.changed",
 } as const;
 
 /** Always the string 2.0. */
@@ -215,5 +217,33 @@ export interface LogResponse {
   id: Id;
   result: {
     ok: true;
+  };
+}
+
+/** A plugin's whole settings: one member per declared setting that has a saved value or a default, named by its key, with the saved value, or else the default. A setting with neither is left out, and a secret's value is in plain form. Values follow the settings_schema of the plugin's manifest, but one saved under an older schema may not, so a plugin checks each value it uses and ignores keys it does not know. */
+export type SettingsValues = Record<string, unknown>;
+
+/** Plugin to host: read the plugin's own settings. Added within v1. Needs no capability; the host knows the plugin from the connection, never from the message. A host from before settings answers METHOD_NOT_FOUND, and the plugin falls back to its own defaults. When the host cannot read a saved secret it answers INTERNAL_ERROR with data { reason: "secretsLocked" }. */
+export interface SettingsGetRequest {
+  jsonrpc: JsonRpcVersion;
+  id: Id;
+  method: "rim.settings.get";
+}
+
+/** Host to plugin. With nobody signed in the values are the defaults only; a plugin without settings, or with nothing saved and no defaults, gets an empty object. */
+export interface SettingsGetResponse {
+  jsonrpc: JsonRpcVersion;
+  id: Id;
+  result: {
+    values: SettingsValues;
+  };
+}
+
+/** Host to plugin: the plugin's settings changed. Added within v1. Sent to a running plugin after every save of its settings, and right after every rim.principal.changed with the new account's values (the defaults only after sign-out). values is the whole set, in the shape of the rim.settings.get result: a setting missing from it has been cleared. The host never sends an older set after a newer one, so of the values a plugin has received, in a rim.settings.get result or in this notification, the last are the current ones. While the host cannot read a saved secret it sends none. */
+export interface SettingsChangedNotification {
+  jsonrpc: JsonRpcVersion;
+  method: "rim.settings.changed";
+  params: {
+    values: SettingsValues;
   };
 }

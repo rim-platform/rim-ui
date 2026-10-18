@@ -5,6 +5,7 @@ import { logger } from "../../../core/logger";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { toast } from "../../../shared/toast";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { openPluginSettings } from "../pluginSettingsLink";
 import { showPluginNotification } from "./pluginNotification";
 import { isCancelledResult } from "./pluginCommandInfo";
 import type { PluginCapability } from "../types";
@@ -19,8 +20,8 @@ type PluginToHostMessage =
       args?: Record<string, unknown>;
       requestId?: string;
     }
-  | { type: "rim.settings.get"; key: string; requestId: string }
-  | { type: "rim.settings.set"; key: string; value: unknown }
+  /** Open the plugin's own settings in the plugin manager. A panel never receives their values. */
+  | { type: "rim.settings.open" }
   | { type: "rim.plugin.ui_event"; eventName: string; payload: unknown };
 
 // Host → Plugin iframe message types
@@ -48,8 +49,7 @@ const messageCapabilities: Record<string, PluginCapability | null> = {
   "rim.ui.notification.show": "ui.notify",
   "rim.ui.dialog.confirm": null,
   "rim.command.execute": null,
-  "rim.settings.get": null,
-  "rim.settings.set": null,
+  "rim.settings.open": null,
   "rim.plugin.ui_event": null,
 };
 
@@ -183,12 +183,10 @@ export function createPluginBridge(config: BridgeConfig) {
         relayUiEventToProcess(pluginId, msg.eventName, msg.payload);
         break;
 
-      case "rim.settings.get":
-        logger.debug(`[RIM:PluginBridge] ${pluginId} settings.get:`, msg.key);
-        break;
-
-      case "rim.settings.set":
-        logger.debug(`[RIM:PluginBridge] ${pluginId} settings.set:`, msg.key);
+      case "rim.settings.open":
+        // The frame's plugin, whatever the message carries.
+        logger.debug(`[RIM:PluginBridge] ${pluginId} settings.open`);
+        openPluginSettings(pluginId);
         break;
     }
   }

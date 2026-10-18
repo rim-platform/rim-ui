@@ -37,7 +37,8 @@ use std::sync::{Arc, Mutex};
 
 pub struct PluginHostState {
     pub store: Mutex<PluginStateStore>,
-    pub manifests: Mutex<HashMap<String, PluginManifest>>,
+    /// Arc so a broker task can read its plugin's settings schema.
+    pub manifests: Arc<Mutex<HashMap<String, PluginManifest>>>,
     pub state_path: PathBuf,
     pub plugin_dirs: Mutex<HashMap<String, PathBuf>>,
     /// Shutdown senders for running plugin broker loops, keyed by plugin_id.
@@ -63,11 +64,13 @@ pub struct PluginHostState {
     pub events: Arc<host_events::PluginEvents>,
     /// The stores `WebSandboxed` plugins keep through `rim.storage.*`.
     pub storage: storage::PluginStorage,
-    /// The values users save in each plugin's settings form.
-    pub settings: settings::PluginSettings,
+    /// The values users save in each plugin's settings form. Arc so a broker
+    /// task can read its plugin's settings.
+    pub settings: Arc<settings::PluginSettings>,
     /// The signed-in account's provisional principal id, which names its plugin
-    /// stores; `None` when nobody is signed in.
-    pub account: Mutex<Option<String>>,
+    /// stores and settings; `None` when nobody is signed in. Arc for the broker
+    /// tasks.
+    pub account: Arc<Mutex<Option<String>>>,
     /// Local-process plugins' `rim.chat.*` calls on their way to the UI's message
     /// service. Arc for the broker tasks.
     pub chat_relay: Arc<chat_relay::ChatRelay>,
@@ -110,7 +113,7 @@ pub(crate) fn init(
 
     let plugin_host_state = PluginHostState {
         store: Mutex::new(store),
-        manifests: Mutex::new(manifests),
+        manifests: Arc::new(Mutex::new(manifests)),
         state_path,
         plugin_dirs: Mutex::new(plugin_dirs),
         shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
@@ -122,8 +125,8 @@ pub(crate) fn init(
         pids: Arc::new(Mutex::new(HashMap::new())),
         events: Arc::new(host_events::PluginEvents::new()),
         storage: storage::PluginStorage::new(app_data_dir),
-        settings: settings::PluginSettings::new(app_data_dir, vault),
-        account: Mutex::new(None),
+        settings: Arc::new(settings::PluginSettings::new(app_data_dir, vault)),
+        account: Arc::new(Mutex::new(None)),
         chat_relay: Arc::new(chat_relay::ChatRelay::default()),
     };
 
@@ -237,12 +240,12 @@ impl PluginHostState {
         }
         Self {
             store: Mutex::new(store),
-            manifests: Mutex::new(
+            manifests: Arc::new(Mutex::new(
                 manifests
                     .into_iter()
                     .map(|m| (m.plugin_id.clone(), m))
                     .collect(),
-            ),
+            )),
             state_path: PathBuf::from("/nonexistent/plugins.json"),
             plugin_dirs: Mutex::new(HashMap::new()),
             shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
@@ -254,8 +257,10 @@ impl PluginHostState {
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(host_events::PluginEvents::new()),
             storage: storage::PluginStorage::new(std::path::Path::new("/nonexistent")),
-            settings: settings::PluginSettings::in_memory(std::path::Path::new("/nonexistent")),
-            account: Mutex::new(None),
+            settings: Arc::new(settings::PluginSettings::in_memory(std::path::Path::new(
+                "/nonexistent",
+            ))),
+            account: Arc::new(Mutex::new(None)),
             chat_relay: Arc::new(chat_relay::ChatRelay::default()),
         }
     }

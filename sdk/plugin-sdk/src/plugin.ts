@@ -137,6 +137,25 @@ export interface Storage {
   set(key: string, value: unknown): Promise<void>;
 }
 
+/**
+ * The settings the user saved for this plugin in the plugin manager, from the
+ * manifest's `settings_schema`: one member per setting that has a saved value or a
+ * `default`, named by its `key`. A secret setting's value is in plain form. Only
+ * the user changes them; the host sends every change to `onSettingsChanged`.
+ *
+ * A value saved under an older version of the plugin may not match the current
+ * schema, so check each value before using it, and ignore keys you do not know.
+ */
+export interface Settings {
+  /**
+   * The plugin's settings now. Rejects with a {@link HostRequestError} whose code is
+   * `METHOD_NOT_FOUND` on a host from before settings, where the plugin uses its own
+   * defaults, and `INTERNAL_ERROR` with `data.reason` `"secretsLocked"` when the host
+   * cannot read a saved secret, for example while the desktop's keyring is locked.
+   */
+  get(): Promise<Readonly<Record<string, unknown>>>;
+}
+
 /** A message as the person reads it. Ids of messages, conversations and threads are opaque. */
 export interface ChatMessage {
   readonly id: string;
@@ -207,6 +226,7 @@ export interface Host {
   readonly log: Logger;
   readonly panels: Panels;
   readonly storage: Storage;
+  readonly settings: Settings;
   readonly chat: Chat;
 }
 
@@ -227,6 +247,17 @@ export interface PluginDefinition {
    */
   readonly onPrincipalsRemapped?: (
     mappings: readonly PrincipalMapping[],
+    host: Host,
+  ) => void | Promise<void>;
+  /**
+   * Called with the plugin's whole settings each time they change: after the user
+   * saves them, and after every principal change, with the new account's settings.
+   * Replace what the plugin held: a setting missing from `values` was cleared. The
+   * last values the plugin received, here or from `host.settings.get()`, are the
+   * current ones.
+   */
+  readonly onSettingsChanged?: (
+    values: Readonly<Record<string, unknown>>,
     host: Host,
   ) => void | Promise<void>;
   /** Called before the plugin exits. The host kills it about a second later. */
@@ -573,6 +604,8 @@ class Session {
       this.onPrincipalChanged(params);
     } else if (method === Method.principalsRemapped) {
       this.onPrincipalsRemapped(params);
+    } else if (method === Method.settingsChanged) {
+      this.onSettingsChanged(params);
     }
     // Any other notification is ignored: v1 may add new ones.
   }
@@ -691,6 +724,18 @@ class Session {
     );
   }
 
+  private onSettingsChanged(params: unknown): void {
+    const values = isRecord(params) ? params.values : undefined;
+    if (!isRecord(values)) {
+      this.log("warn", "ignored rim.settings.changed: values must be an object");
+      return;
+    }
+    const settings = Object.freeze({ ...values });
+    void this.callHook("onSettingsChanged", () =>
+      this.definition.onSettingsChanged?.(settings, this.host),
+    );
+  }
+
   request(method: string, params: unknown): Promise<unknown> {
     if (this.closed || this.stopping || !this.ready) {
       const message = this.ready
@@ -763,6 +808,18 @@ class Session {
           await session.request(STORAGE_SET_METHOD, { key, value });
         },
       }),
+      settings: Object.freeze({
+        get: async () => {
+          const result = await session.request(Method.settingsGet, undefined);
+          if (!isRecord(result) || !isRecord(result.values)) {
+            throw new HostRequestError(Method.settingsGet, {
+              code: ErrorCode.INTERNAL_ERROR,
+              message: "the host answered without a values object",
+            });
+          }
+          return Object.freeze({ ...result.values });
+        },
+      } satisfies Settings),
       chat: Object.freeze({
         listMessages: async (conversationId: string, options = {}) =>
           (await session.request(CHAT_LIST_MESSAGES_METHOD, {

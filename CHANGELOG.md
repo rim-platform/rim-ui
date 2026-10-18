@@ -137,7 +137,20 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   app offers none. A manifest whose `settings_schema` breaks a rule, such as a `value_type`
   other than `string`, `boolean`, `integer`, `path` or `enum`, no longer installs
   (`INVALID_SETTINGS_SCHEMA`); `manifestRules.ts` gains `validateSettingsSchema` and
-  `settingValueError`. Plugins cannot read the values yet.
+  `settingValueError`.
+- **Plugins read their settings.** A running plugin of either kind gets the values you saved,
+  over the defaults, with the new protocol v1 request `rim.settings.get`, and the whole set again
+  in the notification `rim.settings.changed` after every save or reset and after every sign-in,
+  sign-out or account switch. On the desktop a secret setting reaches only its own plugin, in
+  plain form; while the secret vault cannot be read, `rim.settings.get` answers `INTERNAL_ERROR`
+  with `data.reason: "secretsLocked"` and no change is sent. A plugin's panel can open its own
+  settings form with the panel bridge message `rim.settings.open`, and never sees the values;
+  `rim.settings.get` and `rim.settings.set` from a panel, which only ever were logged, are gone.
+- Plugin SDK 0.2.0: `host.settings.get()` and the type `Settings`, `onSettingsChanged(values,
+  host)` in `definePlugin`, and in `@rim-platform/plugin-sdk/testing` the `settings` option of
+  `startTestHost` and `TestHost.changeSettings(values)`. On an app from before settings,
+  `host.settings.get()` rejects with a `HostRequestError` whose code is `METHOD_NOT_FOUND`. The
+  template plugin has a `greeting` setting.
 - **View details** on a plugin's row in Settings → Plugins opens a dialog with its whole
   description, under "From the plugin author:" and shown as plain text, its id, version,
   author, kind, source and signature, each permission it asks for and whether it is granted,

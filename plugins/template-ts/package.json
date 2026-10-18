@@ -9,7 +9,7 @@
     "bundle": "rim-plugin-bundle ."
   },
   "devDependencies": {
-    "@rim-platform/plugin-sdk": "^0.1.0",
+    "@rim-platform/plugin-sdk": "^0.2.0",
     "@types/node": "^22.18.0",
     "esbuild": "^0.28.1",
     "typescript": "~5.8.3",

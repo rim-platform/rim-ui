@@ -6,7 +6,7 @@ import type { AppPlatform } from "../../../core/runtime/runtime";
 import { safeInvoke, type SafeInvokeError } from "../../../core/tauri/safeInvoke";
 import { PluginSettingsError } from "../pluginSettings";
 import type { PluginSettingsFormState } from "../types";
-import { browserPluginStore } from "../web/browserPluginStore";
+import { browserPluginStore, onPluginSettingsSaved } from "../web/browserPluginStore";
 
 /**
  * A desktop host failure as a {@link PluginSettingsError}, naming the setting
@@ -51,13 +51,16 @@ export async function savePluginSettings(
   changes: Record<string, unknown>,
 ): Promise<void> {
   if (platform === "web") return browserPluginStore.settingsSave(pluginId, changes);
+  // The desktop's host tells its local-process plugins; a web plugin runs in this page.
   await invokeSettings<null>("plugin_settings_save", { pluginId, values: changes });
+  onPluginSettingsSaved(pluginId);
 }
 
 /** Clear every saved setting of `pluginId`, secret ones included. */
 export async function resetPluginSettings(platform: AppPlatform, pluginId: string): Promise<void> {
   if (platform === "web") return browserPluginStore.settingsReset(pluginId);
   await invokeSettings<null>("plugin_settings_reset", { pluginId });
+  onPluginSettingsSaved(pluginId);
 }
 
 /** The settings form state of `pluginId`, fetched again after every save and reset. */

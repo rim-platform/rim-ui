@@ -6,9 +6,15 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
   safeInvoke: (...args: unknown[]) => safeInvokeMock(...args),
 }));
 
-const runtime = { capabilities: { pluginHost: true } };
+const runtime = { platform: "desktop", capabilities: { pluginHost: true, webPlugins: false } };
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => runtime,
+}));
+
+const webHost = vi.hoisted(() => ({ setPrincipal: vi.fn(), setMappings: vi.fn() }));
+vi.mock("../web/webPluginHost", () => ({ webPluginHost: webHost }));
+vi.mock("../web/webPluginEnvironment", () => ({
+  pluginServices: () => ({ mappings: async () => [] }),
 }));
 
 type Me =
@@ -28,6 +34,8 @@ describe("usePluginPrincipalSync", () => {
     safeInvokeMock.mockReset();
     safeInvokeMock.mockResolvedValue({ ok: true, value: null });
     runtime.capabilities.pluginHost = true;
+    runtime.capabilities.webPlugins = false;
+    webHost.setPrincipal.mockReset();
     me = undefined;
     useAuthStore.setState({ session: null });
   });
@@ -87,6 +95,25 @@ describe("usePluginPrincipalSync", () => {
 
     await waitFor(() =>
       expect(safeInvokeMock).toHaveBeenLastCalledWith("plugin_set_principal", { user: null }),
+    );
+  });
+
+  it("tells the desktop's web plugins only once the desktop host has the new principal", async () => {
+    runtime.capabilities.webPlugins = true;
+    let answer: (result: unknown) => void = () => {};
+    safeInvokeMock.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    useAuthStore.setState({ session: { userId: USER.id } });
+    me = USER;
+    renderHook(() => usePluginPrincipalSync());
+
+    await waitFor(() => expect(safeInvokeMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(webHost.setPrincipal).not.toHaveBeenCalled();
+    answer({ ok: true, value: null });
+    await waitFor(() =>
+      expect(webHost.setPrincipal).toHaveBeenCalledWith(
+        expect.objectContaining({ displayName: "Jakub" }),
+      ),
     );
   });
 

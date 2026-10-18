@@ -1,8 +1,9 @@
 // The host of WebSandboxed plugins, on the web and on the desktop: one hidden
 // sandboxed frame per enabled plugin, loading the frame shell and speaking
 // protocol v1 over a transferred MessagePort; the command gates in the order of
-// the desktop's `command_exec.rs`; panel state through `WebPanelRelay`; and
-// safe start, so a plugin the page died starting is not started again.
+// the desktop's `command_exec.rs`; panel state through `WebPanelRelay`; each
+// plugin's own storage and settings, scoped by the plugin the port belongs to;
+// and safe start, so a plugin the page died starting is not started again.
 
 import { checkFiles, type Bundle, type BundleFile } from "./bundle";
 import {
@@ -84,6 +85,11 @@ export interface HostServices {
   setStarting(pluginId: string, starting: boolean): Promise<void>;
   storageGet(pluginId: string, key: string): Promise<unknown>;
   storageSet(pluginId: string, key: string, value: unknown): Promise<void>;
+  /**
+   * The settings `pluginId` reads for the signed-in account: saved values over
+   * defaults, secret ones in plain form where the store keeps them.
+   */
+  pluginSettings(pluginId: string): Promise<Record<string, unknown>>;
 }
 
 /** Answers a plugin's `rim.chat.*` call with the capabilities it started with. */
@@ -323,6 +329,7 @@ export class WebPluginHost {
         updatePanel: (panelId, state, patch) => this.updatePanel(id, panelId, state, patch),
         storageGet: (key) => services.storageGet(id, key),
         storageSet: (key, value) => services.storageSet(id, key, value),
+        settingsGet: () => services.pluginSettings(id),
         ...(chat
           ? {
               chat: (method: string, params: unknown) =>
@@ -478,6 +485,11 @@ export class WebPluginHost {
   setPrincipal(principal: Principal | null): void {
     this.principal = principal;
     for (const entry of this.entries.values()) entry.session?.setPrincipal(principal);
+  }
+
+  /** The user saved or reset `pluginId`'s settings: its running session sends the new ones. */
+  settingsChanged(pluginId: string): void {
+    this.entries.get(pluginId)?.session?.settingsChanged();
   }
 
   /** Every provisional-to-key mapping this device knows. */

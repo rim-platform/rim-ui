@@ -43,6 +43,11 @@ pub mod method {
     pub const COMMAND_EXECUTE: &str = "rim.command.execute";
     /// Plugin → host request or notification: write a line to the host log.
     pub const LOG: &str = "rim.log";
+    /// Plugin → host request: the plugin's own settings, as `{ "values": { .. } }`.
+    pub const SETTINGS_GET: &str = "rim.settings.get";
+    /// Host → plugin notification: the plugin's whole settings, after a save or a
+    /// principal change.
+    pub const SETTINGS_CHANGED: &str = "rim.settings.changed";
 }
 
 /// Prefix of a provisional principal id, derived from the account id.

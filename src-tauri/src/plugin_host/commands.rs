@@ -13,7 +13,7 @@ use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
-use crate::plugin_host::settings::{self, SettingsError, SettingsFormState};
+use crate::plugin_host::settings::{self, SettingsError, SettingsFormState, SettingsReadError};
 use crate::plugin_host::state::{
     InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
 };
@@ -1759,6 +1759,50 @@ pub fn plugin_settings_reset(
     Ok(())
 }
 
+/// The settings the `WebSandboxed` plugin `plugin_id` reads with
+/// `rim.settings.get`, for the signed-in account: saved values over defaults,
+/// secrets in plain form. The UI's web plugin host calls it for the plugin whose
+/// session asked, so it serves only an enabled `WebSandboxed` plugin whose files
+/// still match the ones the user trusted, the plugins that session can belong to;
+/// a local-process plugin reads its own through its broker. Runs off the main
+/// thread, since the secret vault's first read can wait on the keyring's unlock
+/// prompt.
+///
+/// # Errors
+///
+/// Returns [`SettingsReadError::NotWebPlugin`] for any other plugin and the
+/// errors of [`settings::resolved_values`], with
+/// [`SettingsReadError::SecretsLocked`] while a saved secret cannot be read.
+#[tauri::command(async)]
+pub fn plugin_web_settings(
+    plugin_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<serde_json::Map<String, serde_json::Value>, SettingsReadError> {
+    web_settings(&state, &plugin_id)
+}
+
+fn web_settings(
+    state: &PluginHostState,
+    plugin_id: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>, SettingsReadError> {
+    let web = state
+        .manifests
+        .lock()
+        .map_err(|e| SettingsReadError::Io(e.to_string()))?
+        .get(plugin_id)
+        .is_some_and(|m| m.runtime_kind == RuntimeKind::WebSandboxed);
+    let runnable = state
+        .store
+        .lock()
+        .map_err(|e| SettingsReadError::Io(e.to_string()))?
+        .get(plugin_id)
+        .is_some_and(|r| r.status == PluginStatus::Enabled && !r.fingerprint_changed);
+    if !web || !runnable {
+        return Err(SettingsReadError::NotWebPlugin(plugin_id.to_string()));
+    }
+    settings::resolved_values(state, plugin_id, signed_in_account(state).as_deref())
+}
+
 /// Every provisional principal id this device has seen switch to a key-based id,
 /// for the plugins the UI runs.
 #[tauri::command]
@@ -1903,7 +1947,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let secrets = std::sync::Arc::new(MemorySecrets::default());
         let mut state = PluginHostState::with_installed(vec![manifest.clone()]);
-        state.settings = PluginSettings::new(tmp.path(), secrets.clone());
+        state.settings = std::sync::Arc::new(PluginSettings::new(tmp.path(), secrets.clone()));
         let values = serde_json::json!({ "repo": "a/b", "token": "t" });
         state
             .settings
@@ -1928,6 +1972,115 @@ mod tests {
     }
 
     const HELLO: &str = "dev.example.hello";
+
+    /// A host with `plugin_id` installed as `kind`, declaring a namespace and a
+    /// secret token, recorded with `status`, and `rimp0_a` signed in.
+    fn settings_host(
+        plugin_id: &str,
+        kind: &str,
+        status: PluginStatus,
+    ) -> settings::SettingsFixture {
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": plugin_id,
+            "display_name": "Web",
+            "version": "1.0.0",
+            "description": "test",
+            "runtime_kind": kind,
+            "entrypoint": "main.mjs",
+            "settings_schema": [
+                { "key": "namespace", "title": "Namespace", "value_type": "string", "default": "default" },
+                { "key": "token", "title": "Token", "value_type": "string", "is_secret": true }
+            ],
+        }))
+        .unwrap();
+        let host = settings::SettingsFixture::new(vec![manifest]);
+        {
+            let mut store = host.state.store.lock().unwrap();
+            let record = store.get(plugin_id).unwrap().clone();
+            store.upsert(PluginRecord { status, ..record });
+        }
+        host.sign_in(Some("rimp0_a"));
+        host
+    }
+
+    #[test]
+    fn a_web_plugin_gets_its_settings_with_secrets_for_the_signed_in_account() {
+        let host = settings_host("dev.example.web", "WebSandboxed", PluginStatus::Enabled);
+        host.save(
+            "dev.example.web",
+            "rimp0_a",
+            serde_json::json!({"token": "t0k"}),
+        );
+        host.save(
+            "dev.example.web",
+            "rimp0_b",
+            serde_json::json!({"namespace": "b"}),
+        );
+        let values = web_settings(&host.state, "dev.example.web").unwrap();
+        assert_eq!(
+            serde_json::Value::Object(values),
+            serde_json::json!({"namespace": "default", "token": "t0k"})
+        );
+
+        host.sign_in(None);
+        let values = web_settings(&host.state, "dev.example.web").unwrap();
+        assert_eq!(
+            serde_json::Value::Object(values),
+            serde_json::json!({"namespace": "default"}),
+            "signed out: the defaults only"
+        );
+
+        host.sign_in(Some("rimp0_a"));
+        host.secrets.lock();
+        let locked = web_settings(&host.state, "dev.example.web").unwrap_err();
+        assert!(matches!(locked, SettingsReadError::SecretsLocked(_)));
+        assert_eq!(
+            serde_json::to_value(&locked).unwrap()["data"],
+            serde_json::json!({"reason": "secretsLocked"})
+        );
+    }
+
+    #[test]
+    fn only_an_enabled_web_plugin_whose_files_still_match_gets_its_settings() {
+        let refused = |host: &settings::SettingsFixture, plugin_id: &str| {
+            let error = web_settings(&host.state, plugin_id).unwrap_err();
+            assert!(
+                matches!(error, SettingsReadError::NotWebPlugin(_)),
+                "{plugin_id}: {error}"
+            );
+            assert_eq!(
+                serde_json::to_value(&error).unwrap()["kind"],
+                "NOT_WEB_PLUGIN"
+            );
+        };
+        let local = settings_host(
+            "dev.example.local",
+            "DesktopLocalProcess",
+            PluginStatus::Enabled,
+        );
+        local.save(
+            "dev.example.local",
+            "rimp0_a",
+            serde_json::json!({"token": "t0k"}),
+        );
+        refused(&local, "dev.example.local");
+        refused(&local, "dev.example.missing");
+
+        let disabled = settings_host("dev.example.web", "WebSandboxed", PluginStatus::Disabled);
+        refused(&disabled, "dev.example.web");
+
+        let changed = settings_host("dev.example.web", "WebSandboxed", PluginStatus::Enabled);
+        {
+            let mut store = changed.state.store.lock().unwrap();
+            let record = store.get("dev.example.web").unwrap().clone();
+            store.upsert(PluginRecord {
+                fingerprint_changed: true,
+                ..record
+            });
+        }
+        refused(&changed, "dev.example.web");
+    }
 
     /// The plugin of [`installed`] recorded in a store with `status` and
     /// `source`, beside the plugins folder holding its files.

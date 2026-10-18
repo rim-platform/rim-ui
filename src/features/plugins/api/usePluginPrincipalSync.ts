@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { queryClient } from "../../../core/query/queryClient";
@@ -38,12 +38,16 @@ export function usePluginPrincipalSync(): void {
   const displayName = userId !== null && me ? me.displayName || me.username : null;
   const principalId = userId !== null ? (me?.principalId ?? null) : null;
   const pending = sessionUserId !== null && userId === null;
+  // The desktop host's last principal update. Web plugins on the desktop read their
+  // settings from that host for its signed-in account, so they hear of a new principal
+  // only once it has one.
+  const hostPrincipal = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     if (!capabilities.pluginHost || pending) return;
     const user: SignedInUser | null =
       userId !== null && displayName !== null ? { userId, displayName, principalId } : null;
-    void safeInvoke<null>("plugin_set_principal", { user }).then((result) => {
+    hostPrincipal.current = safeInvoke<null>("plugin_set_principal", { user }).then((result) => {
       if (!result.ok && result.error.kind !== "ipc_unavailable") {
         logger.warn("[RIM:Plugin] Failed to update the plugin principal", result.error);
       }
@@ -66,6 +70,7 @@ export function usePluginPrincipalSync(): void {
         browserPluginStore.setAccount(account);
         void queryClient.invalidateQueries({ queryKey: queryKeys.plugins() });
       }
+      if (platform === "desktop") await hostPrincipal.current;
       if (!live) return;
       webPluginHost.setPrincipal(principal);
       webPluginHost.setMappings(await pluginServices(platform).mappings());
