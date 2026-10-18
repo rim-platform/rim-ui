@@ -1,14 +1,14 @@
-import { useShellStore } from "../../shell/state/useShellStore";
+import { usePluginSettingsDialogStore } from "./state/usePluginSettingsDialogStore";
 
 const OPEN_PLUGIN_SETTINGS_PREFIX = "workspace.open_plugin_settings.";
 
 /**
- * Open the settings form of the installed plugin `pluginId`: the Settings page
- * on its Plugins tab, with that plugin's settings dialog open. A plugin that is
- * not installed or declares no settings leaves the tab open without a dialog.
+ * Open the settings form of the installed plugin `pluginId` over whatever is open, so the
+ * user stays in the plugin's panel or wherever they were. A plugin that is not installed or
+ * declares no settings opens nothing.
  */
 export function openPluginSettings(pluginId: string): void {
-  useShellStore.getState().setMainSurface({ kind: "settings", tab: "plugins", plugin: pluginId });
+  usePluginSettingsDialogStore.getState().open(pluginId);
 }
 
 /**

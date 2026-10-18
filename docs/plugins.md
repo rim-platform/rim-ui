@@ -181,7 +181,9 @@ Plugins names.
 - **Settings.** A plugin that declares settings has **Settings** on its row in Settings →
   Plugins, a settings button beside the close button in the header of each of its panels, and,
   while it is on, **Plugin settings: \<plugin\>** in the command palette, which a keybind can
-  run too. All three open **\<plugin\> settings**, a form with a field per setting: a text
+  run too. The panel button and the palette open **\<plugin\> settings** over what you have
+  open, so closing it leaves you in the plugin's panel; the row opens it over Settings. It is a
+  form with a field per setting: a text
   field, a number field, a switch or a list, each with its description under it. **Save**
   checks every changed field and names the one that is wrong, **Cancel** closes without saving,
   and **Reset to defaults** clears every saved value, secret ones included, after asking. A
@@ -192,7 +194,7 @@ Plugins names.
   gets the new values as soon as you save or reset them, and the values of whoever signs in
   next. It receives a secret setting's value too, in plain form, as it needs it to use the
   token; other plugins never do. A plugin's panel can open this form, for example from a
-  "Configure" button, but never sees the values.
+  "Configure" button, which shows it over the panel in the same way, but never sees the values.
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
   shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
   with the app. On the web, plugins are turned on per account in that browser: signing out

@@ -43,6 +43,7 @@ vi.mock("../runtime/pluginFocusManager", () => ({
 }));
 
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { usePluginSettingsDialogStore } from "../state/usePluginSettingsDialogStore";
 import { LOCAL_PANEL_SHELL_URL } from "./PluginPanel";
 import { PluginSlotContainer } from "./PluginSlotContainer";
 import { mountedFrame } from "./testing/frame";
@@ -112,12 +113,12 @@ describe("PluginSlotContainer", () => {
     unmount();
 
     render(<PluginSlotContainer plugin={withSettings} panel={mockPanel} onClose={vi.fn()} />);
+    const before = useShellStore.getState().mainSurface;
     fireEvent.click(screen.getByRole("button", { name: "Settings for Test Plugin" }));
-    expect(useShellStore.getState().mainSurface).toEqual({
-      kind: "settings",
-      tab: "plugins",
-      plugin: "test-plugin",
-    });
+    // The form opens over the panel; the view stays where it was.
+    expect(usePluginSettingsDialogStore.getState().pluginId).toBe("test-plugin");
+    expect(useShellStore.getState().mainSurface).toEqual(before);
+    usePluginSettingsDialogStore.getState().close();
   });
 
   it("renders a local plugin's panel in the frame shell", async () => {

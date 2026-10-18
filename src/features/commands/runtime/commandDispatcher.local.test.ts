@@ -8,6 +8,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { usePluginSettingsDialogStore } from "../../plugins/state/usePluginSettingsDialogStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommandStore } from "../state/useCommandStore";
@@ -197,11 +198,10 @@ describe("plugin settings commands", () => {
     const executeBackend = vi.fn();
     const result = await dispatchCommand(command, executeBackend);
     expect(result?.status).toBe("SUCCESS");
-    expect(useShellStore.getState().mainSurface).toEqual({
-      kind: "settings",
-      tab: "plugins",
-      plugin: "chat.rim.k8s-pods",
-    });
+    // Over the current view, which stays as it was.
+    expect(usePluginSettingsDialogStore.getState().pluginId).toBe("chat.rim.k8s-pods");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    usePluginSettingsDialogStore.getState().close();
     expect(executeBackend).not.toHaveBeenCalled();
   });
 });
