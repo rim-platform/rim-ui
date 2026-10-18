@@ -27,11 +27,11 @@ npm run skew:check -- <ref>  # Operations a server built from <ref> would refuse
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
 
-# Rust (from src-tauri/)
-cargo check
-cargo test                              # Primary Rust validation
-cargo fmt --check                       # Formatting check
-cargo clippy --all-targets --all-features -- -D warnings  # Lint
+# Rust (from src-tauri/): the app and the MLS crates under crates/
+cargo check --workspace
+cargo test --workspace                  # Primary Rust validation
+cargo fmt --all --check                 # Formatting check
+cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint
 cargo test test_name -- --exact         # Single test
 ```
 
