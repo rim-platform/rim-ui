@@ -19,7 +19,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut context = tauri::generate_context!();
-    let updater_config = updater::UpdaterConfig::bundled();
+    let (updater_config, updater_warning) = updater::UpdaterConfig::bundled();
     let builder = updater::register(
         tauri::Builder::default(),
         &mut context,
@@ -41,7 +41,11 @@ pub fn run() {
             let path = uri.strip_prefix("rim-plugin://").unwrap_or(&uri);
             responder.respond(plugin_host::plugin_protocol::respond(path));
         })
-        .setup(|app| {
+        .setup(move |app| {
+            // The log plugin installed its logger while plugins were initialized, before this hook.
+            if let Some(warning) = updater_warning {
+                warning.emit();
+            }
             let app_data_dir = app
                 .path()
                 .app_data_dir()
