@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { LensBanner } from "../../lenses/components/LensBanner";
 import { cn } from "../../../shared/ui/cn";
@@ -191,13 +192,32 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const getMenuItems = (target: TimelineMenuTarget) =>
     messageMenu.getItems({ ...target, message: itemsById.get(target.messageId) });
 
-  const { handlers, editError, contextMenu, openActionsFor } = useTimelineHandlers({
+  const {
+    handlers: rowHandlers,
+    editError,
+    contextMenu,
+    openActionsFor,
+  } = useTimelineHandlers({
     items,
     workspaceId,
     conversationId,
     currentUserId,
     getMenuItems,
   });
+
+  // A person's name, avatar or mention opens their menu, which wins over the row's.
+  const userMenu = useUserContextMenu({ workspaceId });
+  const { bind: bindUserContextMenu, openFrom: openUserMenu } = userMenu;
+  const onMentionContextMenu = useCallback(
+    (userId: string, mention: Element, event: React.MouseEvent | React.KeyboardEvent) => {
+      openUserMenu(event, { userId }, mention);
+    },
+    [openUserMenu],
+  );
+  const handlers = useMemo(
+    () => ({ ...rowHandlers, bindUserContextMenu, onMentionContextMenu }),
+    [rowHandlers, bindUserContextMenu, onMentionContextMenu],
+  );
 
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
   const handleDeleteMessage = useCallback(
@@ -395,6 +415,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       )}
       {contextMenu}
       {messageMenu.dialog}
+      {userMenu.element}
       {forwardMessage && workspaceId && (
         <ForwardDialog
           open={!!forwardMessage}

@@ -57,6 +57,13 @@ function serveEncryptedGroup(add: () => unknown) {
   });
 }
 
+/** The labels of the open menu's top-level items. */
+function menuItems() {
+  return within(screen.getByRole("menu"))
+    .getAllByRole("menuitem")
+    .map((el) => el.textContent ?? "");
+}
+
 async function inviteBob() {
   fireEvent.click(screen.getByRole("button", { name: /invite/i }));
   fireEvent.click(await screen.findByRole("option", { name: /Bob/ }));
@@ -248,17 +255,60 @@ describe("ConversationMembersPanel", () => {
     const alice = screen.getByTestId("member-row-u-alice");
     await waitFor(() => expect(within(alice).getByTestId("role-badge")).toHaveTextContent("Guest"));
     expect(within(alice).getByTestId("timeout-marker")).toHaveTextContent("Timed out until");
-    expect(within(alice).getByRole("button", { name: "Moderate Alice" })).toBeInTheDocument();
+    fireEvent.click(within(alice).getByRole("button", { name: "Actions for Alice" }));
+    expect(screen.getByText("Moderation")).toBeInTheDocument();
+    expect(menuItems()).toContain("Clear timeout");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 
     const me = screen.getByTestId("member-row-me");
     expect(within(me).getByTestId("role-badge")).toHaveTextContent("Moderator");
-    expect(within(me).queryByRole("button", { name: /moderate/i })).not.toBeInTheDocument();
+    fireEvent.contextMenu(me);
+    expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
   });
 
-  it("gives ordinary members no badge and no moderation menu", async () => {
+  it("gives ordinary members no badge, no moderation and no removal", async () => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderPanel(ServerMemberRoleGql.MEMBER);
     expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /moderate/i })).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByTestId("member-row-u-alice"));
+    expect(menuItems()).toEqual(["View profile", "Send message", "Copy @username"]);
+  });
+
+  it("opens the same person menu from a right click on a row and from its button", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    const { qc } = await renderPanel(ServerMemberRoleGql.MODERATOR);
+    await waitFor(() => expect(qc.getQueryData(queryKeys.serverMembers("ws-1"))).toBeDefined());
+    const alice = screen.getByTestId("member-row-u-alice");
+    fireEvent.contextMenu(alice);
+    const fromRow = menuItems();
+    expect(fromRow).toEqual([
+      "View profile",
+      "Send message",
+      "Copy @username",
+      "Remove from #general…",
+      "Change role",
+      "Time out",
+      "Kick…",
+      "Ban…",
+    ]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.click(within(alice).getByRole("button", { name: "Actions for Alice" }));
+    expect(menuItems()).toEqual(fromRow);
+  });
+
+  it("removes a member from the menu after the row's confirmation", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await renderPanel(ServerMemberRoleGql.MODERATOR);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Remove Alice" }), {
+      key: "ContextMenu",
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove from #general…" }));
+    expect(callsTo(requestMock, "mutation RemoveConversationMember")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm removing Alice" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation RemoveConversationMember")).toEqual([
+        { serverId: "ws-1", conversationId: "conv-1", userId: "u-alice" },
+      ]),
+    );
   });
 });

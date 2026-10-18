@@ -54,6 +54,8 @@ export const MessageItem = memo(function MessageItem({
     onToggleReaction,
     onSaveEdit,
     onCancelEdit,
+    bindUserContextMenu,
+    onMentionContextMenu,
   } = handlers;
 
   const isDeleted = message.isDeleted === true;
@@ -89,6 +91,7 @@ export const MessageItem = memo(function MessageItem({
     variant,
     memberDisplayMap: members?.displayMap,
     resolveMember: members?.resolve,
+    onMentionContextMenu,
   });
 
   const extras = (
@@ -156,7 +159,12 @@ export const MessageItem = memo(function MessageItem({
           {formatShortTime(message.sentAt)}
         </span>
         {!hideAuthorLine && (
-          <span className="shrink-0 text-sm font-semibold text-rim-accent">{author.name}:</span>
+          <span
+            className="shrink-0 text-sm font-semibold text-rim-accent"
+            {...bindUserContextMenu?.({ userId: message.authorId, displayName: author.name })}
+          >
+            {author.name}:
+          </span>
         )}
         {isDeleted ? (
           <DeletedMessageText variant="inline" />
@@ -205,7 +213,12 @@ export const MessageItem = memo(function MessageItem({
         // Preserve alignment: invisible placeholder matching avatar width
         <div className={cn("shrink-0", isCompact ? "w-6" : "w-10")} />
       ) : (
-        <MessageAvatar authorId={message.authorId} author={author} compact={isCompact} />
+        <MessageAvatar
+          authorId={message.authorId}
+          author={author}
+          compact={isCompact}
+          bindUserContextMenu={bindUserContextMenu}
+        />
       )}
       <div className="min-w-0 flex-1">
         {hideAuthorLine ? (
@@ -246,6 +259,7 @@ export const MessageItem = memo(function MessageItem({
               beforeEncryption={message.beforeEncryption}
               onOpenThread={onOpenThread}
               onNavigateToForwardedSource={handlers.onNavigateToForwardedSource}
+              bindUserContextMenu={bindUserContextMenu}
             />
             {replyQuote}
             <MessageContent {...contentProps} {...textProps("full")} />

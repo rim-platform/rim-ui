@@ -188,6 +188,16 @@ From left to right:
 - **Main surface**: the conversation's header, timeline and composer. Settings, message requests
   and some plugin panels take its place, and a thread opens in a pane to its right.
 
+A person has one menu wherever they appear: right-click their name or avatar on a message, an
+@mention of them, or their row in a conversation's members or in **Workspace members** (the row's
+**⋮** button opens the same menu). It offers **View profile**, **Send message** and
+**Copy @username**, adds them to or removes them from your contacts, and in a conversation's
+members, to an Owner or Moderator, **Remove from** the conversation. An Owner or Moderator who
+may act on them also gets a **Moderation** section: **Change role**, **Time out** (10 minutes,
+1 hour, 1 day, 1 week or a custom end) or **Clear timeout**, **Kick…** and **Ban…**, each behind its
+confirmation. On yourself the menu has **View profile**, **Set status…**, **Copy @username** and
+**Settings**.
+
 The keys that matter on the first day, as a new device has them:
 
 | Keys | What they do |

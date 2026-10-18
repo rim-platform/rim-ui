@@ -186,6 +186,11 @@ message. It opens:
 - with a touch held still for half a second, at the finger. Moving the finger more than a few
   pixels first scrolls instead, and a mouse button held down opens nothing.
 
+The innermost thing wins: a right click or a long press on an author's name or avatar, or on
+an @mention, opens that person's menu rather than the message's, and a person has the same menu
+in the timeline, in a conversation's members and in the workspace member directory, whose
+**⋮** button opens it too.
+
 One context menu is open at a time: opening another closes the first. The arrows move through
 the items, skipping section headings; ArrowRight or Enter opens a submenu and ArrowLeft or
 Escape closes it again; Escape closes the menu and returns the focus where it was. Choosing an

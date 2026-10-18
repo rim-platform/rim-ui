@@ -5,6 +5,7 @@ import { addCodeBlockToolbars, copyCodeBlock } from "./markdown/codeBlockToolbar
 import { renderMarkdown } from "./markdown/renderMarkdown";
 import { isSafeLinkUrl } from "./markdown/safeUrl";
 import { useHighlighter } from "./markdown/useHighlighter";
+import { isContextMenuKey } from "./contextMenu/useContextMenu";
 
 interface MarkdownRendererProps {
   content: string;
@@ -16,6 +17,12 @@ interface MarkdownRendererProps {
   onMentionClick?: (userId: string, rect: DOMRect) => void;
   onMentionHover?: (userId: string, rect: DOMRect) => void;
   onMentionLeave?: () => void;
+  /** Called for a right click, the ContextMenu key or Shift+F10 on a mention. */
+  onMentionContextMenu?: (
+    userId: string,
+    mention: HTMLElement,
+    event: React.MouseEvent | React.KeyboardEvent,
+  ) => void;
   /** Markdown images render inline when true (the default), as links when false. */
   showInlineMedia?: boolean;
 }
@@ -28,6 +35,7 @@ export function MarkdownRenderer({
   onMentionClick,
   onMentionHover,
   onMentionLeave,
+  onMentionContextMenu,
   showInlineMedia = true,
 }: MarkdownRendererProps) {
   const highlight = useHighlighter(content);
@@ -88,8 +96,23 @@ export function MarkdownRenderer({
     onMentionLeave?.();
   }, [onMentionLeave]);
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const mention = (e.target as HTMLElement).closest<HTMLElement>(".mention");
+      const userId = mention?.getAttribute("data-user-id");
+      if (mention && userId) onMentionContextMenu?.(userId, mention, e);
+    },
+    [onMentionContextMenu],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (isContextMenuKey(e)) {
+        const mention = (e.target as HTMLElement).closest<HTMLElement>(".mention");
+        const userId = mention?.getAttribute("data-user-id");
+        if (mention && userId) onMentionContextMenu?.(userId, mention, e);
+        return;
+      }
       if (e.key !== "Enter" && e.key !== " ") return;
       const mention = (e.target as HTMLElement).closest(".mention");
       if (mention) {
@@ -100,7 +123,7 @@ export function MarkdownRenderer({
         }
       }
     },
-    [onMentionClick],
+    [onMentionClick, onMentionContextMenu],
   );
 
   return (
@@ -111,6 +134,7 @@ export function MarkdownRenderer({
       onClick={handleClick}
       onMouseOver={handleMouseOver}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={onMentionContextMenu ? handleContextMenu : undefined}
       onKeyDown={handleKeyDown}
     />
   );

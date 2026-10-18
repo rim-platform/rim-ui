@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import type { PresenceStatus } from "./Avatar";
@@ -21,6 +21,8 @@ interface UserHoverCardPortalProps {
   anchorRect: DOMRect;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** Closes a card opened on purpose rather than by hovering: on Escape or a press outside it. */
+  onDismiss?: () => void;
 }
 
 export function UserHoverCardPortal({
@@ -38,8 +40,25 @@ export function UserHoverCardPortal({
   anchorRect,
   onMouseEnter,
   onMouseLeave,
+  onDismiss,
 }: UserHoverCardPortalProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onDismiss) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!cardRef.current?.contains(event.target as Node)) onDismiss();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onDismiss();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onDismiss]);
 
   const cardWidth = 288; // w-72
   const cardHeight = 320; // estimated max height

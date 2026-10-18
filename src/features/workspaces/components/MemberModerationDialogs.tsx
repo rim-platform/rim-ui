@@ -1,26 +1,20 @@
 import { useRef, useState } from "react";
-import { Ban, Clock, MoreVertical, Shield, TimerOff, UserX } from "lucide-react";
 
-import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMyServerRole } from "../api/useMyServerRole";
 import {
   useBanMemberMutation,
-  useClearTimeoutMutation,
   useKickMemberMutation,
   useSetMemberRoleMutation,
   useTimeoutMemberMutation,
 } from "../api/useModeration";
-import { assignableRoles, canTargetMember, roleLabel, type ServerMemberRoleGql } from "../role";
+import { assignableRoles, roleLabel, type ServerMemberRoleGql } from "../role";
 import {
   BAN_EXPIRY_PRESETS,
   TIMEOUT_PRESETS,
   futureIsoFromLocalInput,
-  isTimeoutActive,
   isoInSeconds,
 } from "../timeout";
 import { ModerationDialog, ReasonField } from "./ModerationDialog";
@@ -32,128 +26,57 @@ export interface ModeratedMember {
   timeoutUntil?: string | null;
 }
 
-interface MemberActionsMenuProps {
-  workspaceId: string;
-  member: ModeratedMember;
-  className?: string;
-}
-
-type PendingAction = "role" | "timeout" | "kick" | "ban" | null;
+/** The duration choice of the timeout dialog that reveals a date and time input. */
+export const CUSTOM_DURATION = "custom";
 
 /**
- * The per-member moderation menu (member directory and conversation members panel). Renders
- * nothing unless the viewer may target this member: Owner/Moderator only, never on themselves,
- * never on the Owner, and a Moderator never on another Moderator (see `canTarget`).
+ * A moderation action waiting for its confirmation: the role the menu picked, or the timeout
+ * preset (a `TIMEOUT_PRESETS` id or {@link CUSTOM_DURATION}).
  */
-export function MemberActionsMenu({ workspaceId, member, className }: MemberActionsMenuProps) {
-  const viewerId = useAuthStore((s) => s.session?.userId);
-  const viewerRole = useMyServerRole(workspaceId);
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [pending, setPending] = useState<PendingAction>(null);
-  const clearTimeoutMutation = useClearTimeoutMutation();
+export type MemberModeration =
+  | { action: "role"; member: ModeratedMember; role: ServerMemberRoleGql }
+  | { action: "timeout"; member: ModeratedMember; preset: string }
+  | { action: "kick"; member: ModeratedMember }
+  | { action: "ban"; member: ModeratedMember };
 
-  if (!canTargetMember({ userId: viewerId, role: viewerRole }, member)) return null;
-
-  const roles = assignableRoles(viewerRole, member.role);
-  const name = member.displayName;
-  const close = () => setPending(null);
-
-  function open(action: Exclude<PendingAction, null>) {
-    setMenuPosition(null);
-    setPending(action);
-  }
-
-  function handleClearTimeout() {
-    setMenuPosition(null);
-    clearTimeoutMutation.mutate(
-      { serverId: workspaceId, userId: member.userId },
-      {
-        onSuccess: () => toast.success(`Cleared ${name}'s timeout`),
-        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not clear the timeout")),
-      },
-    );
-  }
-
-  const items: DropdownMenuItem[] = [];
-  if (roles.length > 0) {
-    items.push({
-      id: "change-role",
-      label: "Change role...",
-      icon: <Shield className="h-4 w-4" />,
-      onSelect: () => open("role"),
-    });
-  }
-  items.push({
-    id: "timeout",
-    label: "Time out...",
-    icon: <Clock className="h-4 w-4" />,
-    onSelect: () => open("timeout"),
-  });
-  if (isTimeoutActive(member.timeoutUntil)) {
-    items.push({
-      id: "clear-timeout",
-      label: "Clear timeout",
-      icon: <TimerOff className="h-4 w-4" />,
-      onSelect: handleClearTimeout,
-    });
-  }
-  items.push(
-    {
-      id: "kick",
-      label: "Kick...",
-      icon: <UserX className="h-4 w-4" />,
-      danger: true,
-      onSelect: () => open("kick"),
-    },
-    {
-      id: "ban",
-      label: "Ban...",
-      icon: <Ban className="h-4 w-4" />,
-      danger: true,
-      onSelect: () => open("ban"),
-    },
-  );
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label={`Moderate ${name}`}
-        aria-haspopup="menu"
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          setMenuPosition({ x: rect.right - 180, y: rect.bottom + 4 });
-        }}
-        className={cn(
-          "shrink-0 rounded p-1 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text",
-          className,
-        )}
-      >
-        <MoreVertical className="h-3.5 w-3.5" />
-      </button>
-
-      {menuPosition && (
-        <DropdownMenu items={items} position={menuPosition} onClose={() => setMenuPosition(null)} />
-      )}
-
-      {pending === "role" && member.role && (
+/**
+ * The confirmation dialog of a moderation action on a member, with the menu's choice already
+ * made: change role, time out, kick or ban. The server re-checks that the viewer may act.
+ */
+export function MemberModerationDialog({
+  workspaceId,
+  moderation,
+  onClose,
+}: {
+  workspaceId: string;
+  moderation: MemberModeration;
+  onClose: () => void;
+}) {
+  const { member } = moderation;
+  switch (moderation.action) {
+    case "role":
+      return (
         <ChangeRoleDialog
           workspaceId={workspaceId}
           member={member}
-          currentRole={member.role}
-          roles={roles}
-          onClose={close}
+          initialRole={moderation.role}
+          onClose={onClose}
         />
-      )}
-      {pending === "timeout" && (
-        <TimeoutDialog workspaceId={workspaceId} member={member} onClose={close} />
-      )}
-      {pending === "kick" && (
-        <KickDialog workspaceId={workspaceId} member={member} onClose={close} />
-      )}
-      {pending === "ban" && <BanDialog workspaceId={workspaceId} member={member} onClose={close} />}
-    </>
-  );
+      );
+    case "timeout":
+      return (
+        <TimeoutDialog
+          workspaceId={workspaceId}
+          member={member}
+          initialPreset={moderation.preset}
+          onClose={onClose}
+        />
+      );
+    case "kick":
+      return <KickDialog workspaceId={workspaceId} member={member} onClose={onClose} />;
+    case "ban":
+      return <BanDialog workspaceId={workspaceId} member={member} onClose={onClose} />;
+  }
 }
 
 interface ActionDialogProps {
@@ -170,20 +93,24 @@ function trimmedOrNull(value: string): string | null {
 function ChangeRoleDialog({
   workspaceId,
   member,
-  currentRole,
-  roles,
+  initialRole,
   onClose,
-}: ActionDialogProps & { currentRole: ServerMemberRoleGql; roles: ServerMemberRoleGql[] }) {
-  const [role, setRole] = useState<ServerMemberRoleGql>(roles[0]);
+}: ActionDialogProps & { initialRole: ServerMemberRoleGql }) {
+  const viewerRole = useMyServerRole(workspaceId);
+  const roles = assignableRoles(viewerRole, member.role);
+  const [role, setRole] = useState<ServerMemberRoleGql>(initialRole);
   const setMemberRole = useSetMemberRoleMutation();
 
   return (
     <ModerationDialog
       title={`Change ${member.displayName}'s role`}
-      description={`${member.displayName} is currently ${roleLabel(currentRole)}.`}
+      description={
+        member.role ? `${member.displayName} is currently ${roleLabel(member.role)}.` : undefined
+      }
       tone="warm"
       chips={["MUTATING", member.displayName]}
       confirmLabel="Change role"
+      confirmDisabled={!roles.includes(role)}
       errorFallback="Could not change the role"
       onConfirm={() =>
         setMemberRole.mutateAsync({ serverId: workspaceId, userId: member.userId, role })
@@ -217,8 +144,6 @@ function ChangeRoleDialog({
   );
 }
 
-const CUSTOM = "custom";
-
 /** Segmented preset picker with a "Custom" option revealing a date-time input. */
 function DurationPicker({
   label,
@@ -237,7 +162,7 @@ function DurationPicker({
   onCustomChange: (value: string) => void;
   extraOptions?: { id: string; label: string }[];
 }) {
-  const options = [...extraOptions, ...presets, { id: CUSTOM, label: "Custom" }];
+  const options = [...extraOptions, ...presets, { id: CUSTOM_DURATION, label: "Custom" }];
   return (
     <div>
       <p className="mb-1 text-xs font-medium text-rim-text">{label}</p>
@@ -259,7 +184,7 @@ function DurationPicker({
           </button>
         ))}
       </div>
-      {value === CUSTOM && (
+      {value === CUSTOM_DURATION && (
         <input
           type="datetime-local"
           aria-label={`${label}: custom date and time`}
@@ -272,17 +197,22 @@ function DurationPicker({
   );
 }
 
-function TimeoutDialog({ workspaceId, member, onClose }: ActionDialogProps) {
-  const [preset, setPreset] = useState(TIMEOUT_PRESETS[0].id);
+function TimeoutDialog({
+  workspaceId,
+  member,
+  initialPreset,
+  onClose,
+}: ActionDialogProps & { initialPreset: string }) {
+  const [preset, setPreset] = useState(initialPreset);
   const [custom, setCustom] = useState("");
   const [reason, setReason] = useState("");
   const timeoutMember = useTimeoutMemberMutation();
   const confirmedUntil = useRef<string | null>(null);
 
-  const customUntil = preset === CUSTOM ? futureIsoFromLocalInput(custom) : null;
+  const customUntil = preset === CUSTOM_DURATION ? futureIsoFromLocalInput(custom) : null;
 
   function computeUntil(): string | null {
-    if (preset === CUSTOM) return futureIsoFromLocalInput(custom);
+    if (preset === CUSTOM_DURATION) return futureIsoFromLocalInput(custom);
     const chosen = TIMEOUT_PRESETS.find((p) => p.id === preset);
     return chosen ? isoInSeconds(chosen.seconds) : null;
   }
@@ -294,7 +224,7 @@ function TimeoutDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       tone="warm"
       chips={["MUTATING", member.displayName]}
       confirmLabel="Time out"
-      confirmDisabled={preset === CUSTOM && !customUntil}
+      confirmDisabled={preset === CUSTOM_DURATION && !customUntil}
       errorFallback="Could not time the member out"
       onConfirm={async () => {
         const until = computeUntil();
@@ -369,11 +299,11 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
   const [custom, setCustom] = useState("");
   const banMember = useBanMemberMutation();
 
-  const customExpiry = expiry === CUSTOM ? futureIsoFromLocalInput(custom) : null;
+  const customExpiry = expiry === CUSTOM_DURATION ? futureIsoFromLocalInput(custom) : null;
 
   function computeExpiry(): string | null {
     if (expiry === NEVER) return null;
-    if (expiry === CUSTOM) return futureIsoFromLocalInput(custom);
+    if (expiry === CUSTOM_DURATION) return futureIsoFromLocalInput(custom);
     const chosen = BAN_EXPIRY_PRESETS.find((p) => p.id === expiry);
     return chosen ? isoInSeconds(chosen.seconds) : null;
   }
@@ -385,7 +315,7 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       tone="danger"
       chips={["DANGEROUS", member.displayName]}
       confirmLabel="Ban"
-      confirmDisabled={expiry === CUSTOM && !customExpiry}
+      confirmDisabled={expiry === CUSTOM_DURATION && !customExpiry}
       errorFallback="Could not ban the member"
       onConfirm={() =>
         banMember.mutateAsync({

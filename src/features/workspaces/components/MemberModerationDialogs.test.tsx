@@ -24,7 +24,12 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
-import { MemberActionsMenu, type ModeratedMember } from "./MemberActionsMenu";
+import {
+  CUSTOM_DURATION,
+  MemberModerationDialog,
+  type MemberModeration,
+  type ModeratedMember,
+} from "./MemberModerationDialogs";
 
 const { OWNER, MODERATOR, MEMBER, GUEST } = ServerMemberRoleGql;
 
@@ -35,108 +40,38 @@ function serve(viewerRole: ServerMemberRoleGql, extra: Record<string, () => unkn
     "mutation TimeoutMember": () => ({
       timeoutMember: { userId: "u-alice", until: "2026-10-05T11:00:00.000Z" },
     }),
-    "mutation ClearTimeout": () => ({ clearTimeout: true }),
     "mutation KickMember": () => ({ kickMember: true }),
     "mutation BanMember": () => ({ banMember: { userId: "u-alice", expiresAt: null } }),
     ...extra,
   });
 }
 
-async function renderMenu(viewerRole: ServerMemberRoleGql, member: Partial<ModeratedMember> = {}) {
+const alice: ModeratedMember = { userId: "u-alice", displayName: "Alice", role: MEMBER };
+
+/** Renders the dialog of `moderation`; a role change waits for the viewer's role. */
+async function renderDialog(viewerRole: ServerMemberRoleGql, moderation: MemberModeration) {
   const qc = createTestQueryClient();
+  const onClose = vi.fn();
   render(
     <QueryClientProvider client={qc}>
-      <MemberActionsMenu
-        workspaceId="ws-1"
-        member={{ userId: "u-alice", displayName: "Alice", role: MEMBER, ...member }}
-      />
+      <MemberModerationDialog workspaceId="ws-1" moderation={moderation} onClose={onClose} />
     </QueryClientProvider>,
   );
-  await waitFor(() =>
-    expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
-      viewerRole,
-    ),
-  );
-  return qc;
-}
-
-function openMenu() {
-  fireEvent.click(screen.getByRole("button", { name: "Moderate Alice" }));
-  return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+  if (moderation.action === "role") {
+    await waitFor(() =>
+      expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
+        viewerRole,
+      ),
+    );
+  }
+  return { onClose };
 }
 
 function confirmButton(label: string) {
   return within(screen.getByTestId("moderation-dialog")).getByRole("button", { name: label });
 }
 
-describe("MemberActionsMenu — visibility", () => {
-  beforeEach(() => {
-    requestMock.mockReset();
-    useAuthStore.setState({ session: { userId: "me" } });
-  });
-
-  afterEach(() => {
-    useAuthStore.setState({ session: null });
-  });
-
-  const matrix: [ServerMemberRoleGql, ServerMemberRoleGql, boolean][] = [
-    [OWNER, OWNER, false],
-    [OWNER, MODERATOR, true],
-    [OWNER, MEMBER, true],
-    [OWNER, GUEST, true],
-    [MODERATOR, OWNER, false],
-    [MODERATOR, MODERATOR, false],
-    [MODERATOR, MEMBER, true],
-    [MODERATOR, GUEST, true],
-    [MEMBER, MODERATOR, false],
-    [MEMBER, MEMBER, false],
-    [MEMBER, GUEST, false],
-    [GUEST, MEMBER, false],
-    [GUEST, GUEST, false],
-  ];
-
-  it.each(matrix)("viewer %s on target %s: menu %s", async (viewer, target, shown) => {
-    serve(viewer);
-    await renderMenu(viewer, { role: target });
-    if (shown) {
-      expect(screen.getByRole("button", { name: "Moderate Alice" })).toBeInTheDocument();
-    } else {
-      expect(screen.queryByRole("button", { name: "Moderate Alice" })).not.toBeInTheDocument();
-    }
-  });
-
-  it("is never offered on the viewer's own row", async () => {
-    serve(OWNER);
-    await renderMenu(OWNER, { userId: "me", role: MEMBER });
-    expect(screen.queryByRole("button", { name: "Moderate Alice" })).not.toBeInTheDocument();
-  });
-
-  it("is hidden while the target's role is unknown", async () => {
-    serve(OWNER);
-    await renderMenu(OWNER, { role: undefined });
-    expect(screen.queryByRole("button", { name: "Moderate Alice" })).not.toBeInTheDocument();
-  });
-
-  it("offers an owner every action, and Clear timeout while one is active", async () => {
-    serve(OWNER);
-    await renderMenu(OWNER, { timeoutUntil: "2999-01-01T00:00:00Z" });
-    expect(openMenu()).toEqual([
-      "Change role...",
-      "Time out...",
-      "Clear timeout",
-      "Kick...",
-      "Ban...",
-    ]);
-  });
-
-  it("omits Clear timeout when the timeout has run out", async () => {
-    serve(MODERATOR);
-    await renderMenu(MODERATOR, { timeoutUntil: "2000-01-01T00:00:00Z" });
-    expect(openMenu()).toEqual(["Change role...", "Time out...", "Kick...", "Ban..."]);
-  });
-});
-
-describe("MemberActionsMenu — actions", () => {
+describe("MemberModerationDialog", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
@@ -151,11 +86,10 @@ describe("MemberActionsMenu — actions", () => {
 
   it("an owner is offered Moderator and Guest for a member and changes the role", async () => {
     serve(OWNER);
-    await renderMenu(OWNER);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Change role..." }));
+    await renderDialog(OWNER, { action: "role", member: alice, role: MODERATOR });
     const radios = screen.getAllByRole("radio").map((r) => (r as HTMLInputElement).value);
     expect(radios).toEqual([MODERATOR, GUEST]);
+    expect(screen.getByRole("radio", { name: "Moderator" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "Guest" }));
     fireEvent.click(confirmButton("Change role"));
 
@@ -169,20 +103,16 @@ describe("MemberActionsMenu — actions", () => {
 
   it("a moderator can only move a member to Guest", async () => {
     serve(MODERATOR);
-    await renderMenu(MODERATOR);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Change role..." }));
+    await renderDialog(MODERATOR, { action: "role", member: alice, role: GUEST });
     expect(screen.getAllByRole("radio").map((r) => (r as HTMLInputElement).value)).toEqual([GUEST]);
   });
 
-  it("times a member out for a preset duration with a reason", async () => {
+  it("times a member out for the preset the menu chose, with a reason", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
     serve(MODERATOR);
-    await renderMenu(MODERATOR);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Time out..." }));
-    fireEvent.click(screen.getByRole("button", { name: "1 hour" }));
+    await renderDialog(MODERATOR, { action: "timeout", member: alice, preset: "1h" });
+    expect(screen.getByRole("button", { name: "1 hour" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: " spam " } });
     fireEvent.click(confirmButton("Time out"));
 
@@ -203,10 +133,8 @@ describe("MemberActionsMenu — actions", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
     serve(OWNER);
-    await renderMenu(OWNER);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Time out..." }));
-    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    await renderDialog(OWNER, { action: "timeout", member: alice, preset: CUSTOM_DURATION });
+    expect(screen.getByRole("button", { name: "Custom" })).toHaveAttribute("aria-pressed", "true");
     expect(confirmButton("Time out")).toBeDisabled();
 
     const input = screen.getByLabelText("Duration: custom date and time");
@@ -227,24 +155,9 @@ describe("MemberActionsMenu — actions", () => {
     );
   });
 
-  it("clears an active timeout", async () => {
-    serve(OWNER);
-    await renderMenu(OWNER, { timeoutUntil: "2999-01-01T00:00:00Z" });
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Clear timeout" }));
-    await waitFor(() =>
-      expect(callsTo(requestMock, "mutation ClearTimeout")).toEqual([
-        { serverId: "ws-1", userId: "u-alice" },
-      ]),
-    );
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Cleared Alice's timeout"));
-  });
-
   it("kicks after confirming in the dangerous-action dialog", async () => {
     serve(MODERATOR);
-    await renderMenu(MODERATOR);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kick..." }));
+    const { onClose } = await renderDialog(MODERATOR, { action: "kick", member: alice });
     expect(screen.getByRole("dialog", { name: "Kick Alice?" })).toBeInTheDocument();
     expect(screen.getByText("DANGEROUS")).toBeInTheDocument();
     expect(callsTo(requestMock, "mutation KickMember")).toHaveLength(0);
@@ -256,14 +169,12 @@ describe("MemberActionsMenu — actions", () => {
       ]),
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Kicked Alice"));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("confirms with Ctrl+Enter", async () => {
     serve(OWNER);
-    await renderMenu(OWNER);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kick..." }));
+    await renderDialog(OWNER, { action: "kick", member: alice });
     fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "rude" } });
     fireEvent.keyDown(screen.getByLabelText("Reason (optional)"), { key: "Enter", ctrlKey: true });
     await waitFor(() =>
@@ -279,9 +190,7 @@ describe("MemberActionsMenu — actions", () => {
         throw graphqlError("FORBIDDEN", "permission denied");
       },
     });
-    await renderMenu(MODERATOR);
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Kick..." }));
+    await renderDialog(MODERATOR, { action: "kick", member: alice });
     fireEvent.click(confirmButton("Kick"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
@@ -294,9 +203,7 @@ describe("MemberActionsMenu — actions", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
     serve(OWNER);
-    await renderMenu(OWNER, { role: MODERATOR });
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Ban..." }));
+    await renderDialog(OWNER, { action: "ban", member: { ...alice, role: MODERATOR } });
     fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "raid" } });
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     fireEvent.click(confirmButton("Ban"));
@@ -316,9 +223,7 @@ describe("MemberActionsMenu — actions", () => {
 
   it("bans until lifted by default", async () => {
     serve(MODERATOR);
-    await renderMenu(MODERATOR, { role: GUEST });
-    openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Ban..." }));
+    await renderDialog(MODERATOR, { action: "ban", member: { ...alice, role: GUEST } });
     expect(screen.getByRole("button", { name: "Never" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(confirmButton("Ban"));
     await waitFor(() =>

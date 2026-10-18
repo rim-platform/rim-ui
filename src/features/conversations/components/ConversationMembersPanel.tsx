@@ -10,7 +10,8 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useCanModerate, useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
-import { MemberActionsMenu } from "../../workspaces/components/MemberActionsMenu";
+import { MemberMenuButton } from "../../workspaces/components/MemberMenuButton";
+import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { joinNames } from "../../e2ee/utils/names";
 import { useConversation } from "../api/useConversation";
@@ -38,8 +39,9 @@ interface ConversationMembersPanelProps {
 
 /**
  * The open conversation's members, shown in the tool panel. Any member but a guest can invite
- * (channels and groups); Owner/Moderator can remove others and open the per-member moderation
- * menu; the viewer's own row offers Leave. Rows show the workspace role and any timeout.
+ * (channels and groups); Owner/Moderator can remove others; the viewer's own row offers Leave.
+ * Rows show the workspace role and any timeout, and open the person's menu on a right click,
+ * the ContextMenu key, a long press or their actions button.
  */
 export function ConversationMembersPanel({
   workspaceId,
@@ -106,6 +108,11 @@ function MembersList({
   const canInvite = canInviteToConversation(conversation) && !isGuest;
   const canLeave = canLeaveConversation(conversation);
   const canRemoveOthers = canModerate && !isDm;
+  const userMenu = useUserContextMenu({
+    workspaceId,
+    conversation,
+    onRemoveFromConversation: canRemoveOthers ? setConfirmRemoveId : undefined,
+  });
 
   // Members first, then whoever is invited and waits for a device set up for encryption; the
   // viewer leads their group.
@@ -215,10 +222,12 @@ function MembersList({
       <ul className="space-y-0.5" aria-label="Conversation members">
         {members.map((member) => {
           const isSelf = member.userId === currentUserId;
+          const target = { userId: member.userId, displayName: member.displayName };
           return (
             <li
               key={member.userId}
               data-testid={`member-row-${member.userId}`}
+              {...userMenu.bind(target)}
               className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
             >
               <MemberRowAvatar
@@ -272,9 +281,9 @@ function MembersList({
                 </Button>
               )}
               {confirmRemoveId !== member.userId && (
-                <MemberActionsMenu
-                  workspaceId={workspaceId}
-                  member={member}
+                <MemberMenuButton
+                  name={member.displayName}
+                  onOpen={(button) => userMenu.openUnder(button, target)}
                   className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 />
               )}
@@ -304,6 +313,7 @@ function MembersList({
           );
         })}
       </ul>
+      {userMenu.element}
 
       {confirmLeave && (
         <ConfirmActionDialog
