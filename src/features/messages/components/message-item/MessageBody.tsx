@@ -5,7 +5,7 @@ import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { MessageEditForm } from "./MessageEditForm";
-import type { MemberResolver } from "./types";
+import type { MemberResolver, MessageItemHandlers } from "./types";
 
 /** Class sets per layout; kept verbatim from the pre-split row so density modes look identical. */
 const TEXT_STYLES = {
@@ -39,15 +39,20 @@ interface MessageTextProps {
   variant: MessageTextVariant;
   memberDisplayMap?: Map<string, string>;
   resolveMember?: MemberResolver;
+  onMentionContextMenu?: MessageItemHandlers["onMentionContextMenu"];
 }
 
-/** Markdown body (DOMPurify-sanitised by MarkdownRenderer) plus the mention hover card. */
+/**
+ * Markdown body (DOMPurify-sanitised by MarkdownRenderer) plus the mention hover card. A right
+ * click or the ContextMenu key on a mention opens the mentioned person's menu.
+ */
 export const MessageText = memo(function MessageText({
   text,
   hasAttachments,
   variant,
   memberDisplayMap,
   resolveMember,
+  onMentionContextMenu,
 }: MessageTextProps) {
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
   const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
@@ -114,6 +119,7 @@ export const MessageText = memo(function MessageText({
           onMentionClick={handleMentionClick}
           onMentionHover={handleMentionHover}
           onMentionLeave={scheduleMentionClose}
+          onMentionContextMenu={onMentionContextMenu}
           showInlineMedia={showInlineMedia}
         />
       ) : !hasAttachments ? (

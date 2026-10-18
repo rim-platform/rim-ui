@@ -112,6 +112,17 @@ export interface MessageItemHandlers {
   onContextMenu?: (event: React.MouseEvent, messageId: string, messageText: string) => void;
   /** The handlers that open the row's context menu on a long press, for its touch events. */
   bindContextMenu?: (messageId: string, messageText: string) => ContextMenuBindings;
+  /** The handlers that open the context menu of the person a name or an avatar shows. */
+  bindUserContextMenu?: (target: { userId: string; displayName?: string }) => ContextMenuBindings;
+  /**
+   * Opens the context menu of a mentioned person, from a right click or the ContextMenu key on
+   * the mention.
+   */
+  onMentionContextMenu?: (
+    userId: string,
+    mention: Element,
+    event: React.MouseEvent | React.KeyboardEvent,
+  ) => void;
   onSaveEdit?: (messageId: string, newText: string) => void;
   onCancelEdit?: () => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;

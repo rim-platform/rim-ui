@@ -7,8 +7,9 @@ import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { AddContactButton } from "../../relay/components/AddContactButton";
 import { useServerMembers, type ServerMember } from "../api/useServerMembers";
 import { ServerMemberRoleGql } from "../role";
-import { MemberActionsMenu } from "./MemberActionsMenu";
+import { useUserContextMenu } from "../hooks/useUserContextMenu";
 import { RoleBadge, TimeoutMarker } from "./MemberBadges";
+import { MemberMenuButton } from "./MemberMenuButton";
 
 const ROLE_RANK: Record<ServerMemberRoleGql, number> = {
   [ServerMemberRoleGql.OWNER]: 0,
@@ -27,14 +28,16 @@ interface WorkspaceMemberDirectoryProps {
 }
 
 /**
- * Every member of the workspace, in the tool panel: role badge, timeout marker and, for
- * Owner/Moderator, the per-member moderation menu. Not offered to guests (the server also
- * narrows a guest's `serverMembers` to people they share a conversation with).
+ * Every member of the workspace, in the tool panel: role badge, timeout marker, and the
+ * person's menu on a right click, the ContextMenu key, a long press or their actions button.
+ * Not offered to guests (the server also narrows a guest's `serverMembers` to people they
+ * share a conversation with).
  */
 export function WorkspaceMemberDirectory({ workspaceId, onClose }: WorkspaceMemberDirectoryProps) {
   const { data: members, isPending, isError } = useServerMembers(workspaceId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const [filter, setFilter] = useState("");
+  const userMenu = useUserContextMenu({ workspaceId });
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -85,10 +88,12 @@ export function WorkspaceMemberDirectory({ workspaceId, onClose }: WorkspaceMemb
         <ul className="space-y-0.5" aria-label="Workspace members">
           {rows.map((member) => {
             const name = memberName(member);
+            const target = { userId: member.userId, displayName: name };
             return (
               <li
                 key={member.userId}
                 data-testid={`directory-row-${member.userId}`}
+                {...userMenu.bind(target)}
                 className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
               >
                 <DirectoryAvatar userId={member.userId} name={name} avatarUrl={member.avatarUrl} />
@@ -103,19 +108,15 @@ export function WorkspaceMemberDirectory({ workspaceId, onClose }: WorkspaceMemb
                   <TimeoutMarker until={member.timeoutUntil} />
                 </span>
                 <AddContactButton principalId={member.principalId} name={name} />
-                <MemberActionsMenu
-                  workspaceId={workspaceId}
-                  member={{
-                    userId: member.userId,
-                    displayName: name,
-                    role: member.memberRole,
-                    timeoutUntil: member.timeoutUntil,
-                  }}
+                <MemberMenuButton
+                  name={name}
+                  onOpen={(button) => userMenu.openUnder(button, target)}
                 />
               </li>
             );
           })}
         </ul>
+        {userMenu.element}
       </div>
     </div>
   );

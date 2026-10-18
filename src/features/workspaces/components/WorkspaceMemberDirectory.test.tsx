@@ -6,7 +6,11 @@ import { createTestQueryClient } from "../../../test/utils";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { routeRequests, workspaceMembers } from "../../conversations/__fixtures__/conversations";
+import {
+  currentUser,
+  routeRequests,
+  workspaceMembers,
+} from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
 
@@ -42,6 +46,7 @@ async function renderDirectory(viewerRole: ServerMemberRoleGql) {
   routeRequests(requestMock, {
     "query ServerMembers": () => ({ serverMembers: members }),
     "query Server(": () => ({ server: { id: "ws-1", name: "Acme", viewerRole } }),
+    "query Me": () => ({ me: currentUser }),
   });
   const qc = createTestQueryClient();
   const onClose = vi.fn();
@@ -51,8 +56,18 @@ async function renderDirectory(viewerRole: ServerMemberRoleGql) {
     </QueryClientProvider>,
   );
   await screen.findByTestId("directory-row-u-olga");
-  await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined());
+  await waitFor(() => {
+    expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined();
+    expect(qc.getQueryData(queryKeys.me)).toBeDefined();
+  });
   return { onClose };
+}
+
+/** The labels of the open menu's top-level items. */
+function menuItems() {
+  return within(screen.getByRole("menu"))
+    .getAllByRole("menuitem")
+    .map((el) => el.textContent ?? "");
 }
 
 function rowIds() {
@@ -91,17 +106,46 @@ describe("WorkspaceMemberDirectory", () => {
     expect(within(alice).getByTestId("timeout-marker")).toHaveTextContent("Timed out until");
   });
 
-  it("offers a moderator the menu on members and guests only", async () => {
+  it("opens the same person menu from a right click on a row and from its button", async () => {
     await renderDirectory(ServerMemberRoleGql.MODERATOR);
-    expect(screen.getByRole("button", { name: "Moderate Alice" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Moderate Bob" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Moderate Olga" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Moderate Me Myself" })).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByTestId("directory-row-u-bob"));
+    const fromRow = menuItems();
+    expect(fromRow).toEqual([
+      "View profile",
+      "Send message",
+      "Copy @username",
+      "Change role",
+      "Time out",
+      "Kick…",
+      "Ban…",
+    ]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Bob" }));
+    expect(menuItems()).toEqual(fromRow);
   });
 
-  it("offers an ordinary member no moderation menu", async () => {
+  it("opens the person menu from the ContextMenu key inside a row", async () => {
+    await renderDirectory(ServerMemberRoleGql.MODERATOR);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Actions for Alice" }), {
+      key: "ContextMenu",
+    });
+    expect(screen.getByRole("menu", { name: "Actions for Alice" })).toBeInTheDocument();
+    expect(screen.getByText("Moderation")).toBeInTheDocument();
+  });
+
+  it("offers a moderator no moderation of the owner or of themselves", async () => {
+    await renderDirectory(ServerMemberRoleGql.MODERATOR);
+    fireEvent.contextMenu(screen.getByTestId("directory-row-u-olga"));
+    expect(menuItems()).toEqual(["View profile", "Send message", "Copy @username"]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.contextMenu(screen.getByTestId("directory-row-me"));
+    expect(menuItems()).toEqual(["View profile", "Set status…", "Copy @username", "Settings"]);
+  });
+
+  it("offers an ordinary member no moderation", async () => {
     await renderDirectory(ServerMemberRoleGql.MEMBER);
-    expect(screen.queryByRole("button", { name: /^Moderate / })).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByTestId("directory-row-u-bob"));
+    expect(menuItems()).toEqual(["View profile", "Send message", "Copy @username"]);
   });
 
   it("filters by name and closes", async () => {

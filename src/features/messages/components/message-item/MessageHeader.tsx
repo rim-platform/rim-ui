@@ -9,7 +9,7 @@ import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { LockMark } from "../../../e2ee/components/LockMark";
 import { sameAuthor } from "./areMessageItemPropsEqual";
 import { useAuthorPresence } from "./useAuthorPresence";
-import type { ForwardedFromInfo, MessageAuthorView } from "./types";
+import type { ForwardedFromInfo, MessageAuthorView, MessageItemHandlers } from "./types";
 
 /** Shallow prop equality, except `author`, which is rebuilt by parents and compared by value. */
 function authorPropsEqual<P extends { author: MessageAuthorView }>(prev: P, next: P): boolean {
@@ -51,16 +51,22 @@ interface MessageAvatarProps {
   authorId: string;
   author: MessageAuthorView;
   compact: boolean;
+  /** Binds the author's context menu to the avatar. */
+  bindUserContextMenu?: MessageItemHandlers["bindUserContextMenu"];
 }
 
 export const MessageAvatar = memo(function MessageAvatar({
   authorId,
   author,
   compact,
+  bindUserContextMenu,
 }: MessageAvatarProps) {
   return (
     <AuthorHoverCard authorId={authorId} author={author}>
-      <span className="cursor-pointer">
+      <span
+        className="cursor-pointer"
+        {...bindUserContextMenu?.({ userId: authorId, displayName: author.name })}
+      >
         <Avatar
           url={author.avatarUrl}
           name={author.name}
@@ -88,9 +94,14 @@ interface MessageHeaderProps {
   beforeEncryption?: boolean;
   onOpenThread: (messageId: string) => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;
+  /** Binds the author's context menu to their name. */
+  bindUserContextMenu?: MessageItemHandlers["bindUserContextMenu"];
 }
 
-/** Author line: name (with hover card), time, pin, forwarded marker, status and thread link. */
+/**
+ * Author line: name (with hover card and the author's context menu), time, pin, forwarded
+ * marker, status and thread link.
+ */
 export const MessageHeader = memo(function MessageHeader({
   messageId,
   authorId,
@@ -105,11 +116,13 @@ export const MessageHeader = memo(function MessageHeader({
   beforeEncryption,
   onOpenThread,
   onNavigateToForwardedSource,
+  bindUserContextMenu,
 }: MessageHeaderProps) {
   return (
     <div className="flex items-baseline gap-2">
       <AuthorHoverCard authorId={authorId} author={author}>
         <span
+          {...bindUserContextMenu?.({ userId: authorId, displayName: author.name })}
           className={cn(
             "text-sm font-medium cursor-pointer hover:underline",
             author.isCurrentUser ? "text-rim-accent" : "text-rim-text",

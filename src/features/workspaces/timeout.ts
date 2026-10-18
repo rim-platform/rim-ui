@@ -28,10 +28,12 @@ export interface DurationPreset {
   seconds: number;
 }
 
+/** The timeout lengths offered by the member menu and the timeout dialog. */
 export const TIMEOUT_PRESETS: DurationPreset[] = [
-  { id: "5m", label: "5 minutes", seconds: 5 * 60 },
+  { id: "10m", label: "10 minutes", seconds: 10 * 60 },
   { id: "1h", label: "1 hour", seconds: 60 * 60 },
   { id: "1d", label: "1 day", seconds: 24 * 60 * 60 },
+  { id: "1w", label: "1 week", seconds: 7 * 24 * 60 * 60 },
 ];
 
 export const BAN_EXPIRY_PRESETS: DurationPreset[] = [

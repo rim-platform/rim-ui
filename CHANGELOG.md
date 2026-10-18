@@ -21,6 +21,16 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Added
+
+- A person has one context menu wherever they appear: right-click or long-press a message's
+  author or an @mention, or a row of a conversation's members or of **Workspace members**, or
+  press the ContextMenu key on a focused mention or member row. It offers View profile, Send
+  message, Copy @username, adding or removing a contact and, from a conversation's members,
+  removing them from it; Owners and Moderators also get Change role, Time out, Kick and Ban
+  there. The rows' **⋮** button opens the same menu, and timeouts now offer 10 minutes, 1 hour,
+  1 day and 1 week.
+
 ### Changed
 
 - The desktop app no longer shows the webview's own right-click menu (reload, inspect) where
