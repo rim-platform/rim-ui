@@ -259,6 +259,9 @@ plugin at its root so the desktop installs it from its git URL:
 
 ## Documentation
 
+The documentation of this repository and `rim-server` is rendered at
+[rim-platform.org](https://rim-platform.org).
+
 `docs/README.md` lists every document in `docs/`. The product contracts the client implements,
 such as the command, keybind, context, plugin and capability models and the specifications for
 key identity, device linking, encryption and server-to-server, are in `rim-server`'s `docs/`.
