@@ -21,7 +21,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | `rim.chat.*`, the client message service | `src/features/plugins/chat/`, shared with local processes, which the Rust broker relays to it; see `docs/plugin-chat-methods.md` |
 | Grant history and encrypted reads | desktop: the `audit` of the Rust `PluginStateStore`; web: the install record's `audit`; shown by `components/PluginAuditPanel.tsx` |
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |
-| Install from link, Settings, consent text, panel chrome | `components/InstallFromLink.tsx`, `PluginSettingsPage.tsx`, `PluginCapabilityPrompt.tsx`, `PluginSlotContainer.tsx`, `pluginTrust.ts` |
+| Install from link, Settings, consent text, panel chrome | `components/InstallFromLink.tsx`, `PluginSettingsPage.tsx`, `PluginCapabilityPrompt.tsx`, `PluginSlotContainer.tsx`, `pluginTrust.ts`; the link fetch in `web/bundleLink.ts`, through `src-tauri/src/plugin_host/bundle_fetch.rs` on the desktop |
 | SDK transports and browser build | `sdk/plugin-sdk/src/transport.ts`, `index.browser.ts`, `scripts/bundle-plugin.mjs`, `scripts/browser-build.mjs`; the npm package `@rim-platform/plugin-sdk` ships them built |
 | Showcase | [`rim-platform/plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), a repository of its own |
 
@@ -64,6 +64,22 @@ module's relative `import` does not reach them.
 Before starting a plugin the host sets a `starting` marker and clears it after the
 handshake. A plugin whose marker is still set when the app loads (the page died starting
 it) is not started; Settings says so, and turning it off and on clears it.
+
+## Installing from a link
+
+**Install from link** takes `https://<host>/<name>.rimbundle#sha256=<hash>`. The bytes must
+hash to the value after `#sha256=` before anything reads them, on every platform.
+
+- **Desktop.** The host fetches the link (`plugin_fetch_bundle`): `https://` only, redirects
+  followed only to `https://` links and at most 10 of them, no cookies, no credentials, no
+  headers of its own, at most 8 MiB, within 2 minutes. It returns the bytes only when they
+  match the pin, and the UI checks them again. A refused scheme, redirect, size or hash is an
+  `[AUDIT] event=plugin_bundle_fetch_refused` line in the app's log. Any `https://` host
+  works, GitHub release assets included.
+- **Web.** The browser fetches the link without credentials, so the bundle's host must send
+  `Access-Control-Allow-Origin`. GitHub Pages, `raw.githubusercontent.com` and jsDelivr do;
+  GitHub release assets do not, so a link to one fails in the web app. A workspace's plugin
+  registry serves its bundles from the app's own origin and needs none.
 
 ## Build and try the showcase
 

@@ -23,6 +23,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- **Install from link** on the desktop installs a bundle from a GitHub release asset, or any
+  other `https://` host that does not allow cross-origin requests: the desktop app fetches
+  the link itself. The web app still needs a host that sends `Access-Control-Allow-Origin`,
+  such as GitHub Pages, `raw.githubusercontent.com` or jsDelivr, or the workspace's plugin
+  registry.
 - The first encrypted message to someone who set up encryption moments earlier goes out instead
   of failing with "Failed to send the encrypted message" until a minute later. When someone in
   the conversation really has no device set up yet, the composer says "<name> has no device set

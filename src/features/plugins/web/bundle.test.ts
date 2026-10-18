@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -122,6 +125,14 @@ describe("bundles", () => {
     padded.set(bundle);
     expect(refusal(padded)).toContain("over the");
     expect(() => readBundle(padded.subarray(0, MAX_BUNDLE_BYTES))).not.toThrow();
+  });
+
+  it("caps bundles at the desktop host's limit, which its link fetch also enforces", () => {
+    const rust = readFileSync(join(process.cwd(), "src-tauri/src/plugin_host/bundle.rs"), "utf8");
+    const match = /pub const MAX_BUNDLE_BYTES: usize = ([\d *]+);/.exec(rust);
+    expect(match).not.toBeNull();
+    const desktop = match![1].split("*").reduce((product, n) => product * Number(n.trim()), 1);
+    expect(MAX_BUNDLE_BYTES).toBe(desktop);
   });
 
   it("refuses unknown and duplicate fields at any level", () => {

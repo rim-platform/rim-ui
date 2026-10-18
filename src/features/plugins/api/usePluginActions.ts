@@ -2,13 +2,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import type { AppPlatform } from "../../../core/runtime/runtime";
 import { reloadCommands } from "../../commands/api/useCommands";
 import { safeInvoke, type PluginIpcError } from "./ipc";
 import { safeInvoke as coreSafeInvoke } from "../../../core/tauri/safeInvoke";
 import type { PluginInstallResult } from "../types";
 import { browserPluginStore } from "../web/browserPluginStore";
 import { readBundle, type Bundle } from "../web/bundle";
-import { fetchBundle, parseBundleLink, type BundleLink } from "../web/bundleLink";
+import { fetchLinkBytes, parseBundleLink, type BundleLink } from "../web/bundleLink";
 import { checkInstall } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins } from "../web/pluginServices";
 import { pluginServices } from "../web/webPluginEnvironment";
@@ -174,10 +175,16 @@ export interface FetchedLinkBundle {
  * Fetch the bundle a pasted `…#sha256=…` link names and check it: the hash, the
  * bundle rules and the manifest rules of this host. Nothing is installed yet,
  * so the UI can show what it is, and what changed when it replaces a plugin.
+ *
+ * @param input - The pasted link.
+ * @param platform - Where the app runs: the desktop fetches through its host, the web from the webview.
  */
-export async function fetchLinkBundle(input: string): Promise<FetchedLinkBundle> {
+export async function fetchLinkBundle(
+  input: string,
+  platform: AppPlatform,
+): Promise<FetchedLinkBundle> {
   const link = parseBundleLink(input);
-  const bytes = await fetchBundle(link.url, link.sha256);
+  const bytes = await fetchLinkBytes(link, platform);
   const bundle = readBundle(bytes);
   checkInstall(bundle.manifest, { forbiddenOrigins: rimOrigins() });
   return { link, bytes, bundle };
