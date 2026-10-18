@@ -175,9 +175,10 @@ chosen, and the new steps replace the old.
 **Macros** carry arguments for each step. Settings → Macros, **New Macro**, opens "Create
 Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
 "Search commands...", and an arguments field that takes JSON, such as
-`{"conversation_id": "…", "text": "…"}`. **Save** stores it. On the desktop, **Build with AI**
-turns a description into steps with the provider set in Settings → AI Agent: **Generate**, check
-the preview, then **Use these steps** opens them in the editor.
+`{"conversation_id": "…", "text": "…"}`. The search leaves out commands that only run in the app,
+and a step typed as one is marked as failing. **Save** stores it. On the desktop, **Build with
+AI** turns a description into steps with the provider set in Settings → AI Agent: **Generate**,
+check the preview, then **Use these steps** opens them in the editor.
 
 A macro runs from the play button on its row ("Run macro"), or from the composer: send
 `/macro <name>` ("Run Macro"). It runs on the server, step by step, with the open workspace as
@@ -230,7 +231,9 @@ its creator, an Owner or a Moderator can change, toggle or delete it.
 
 **What runs.** Nobody is there to confirm, so the server skips any action that would need a
 confirmation: every mutating, restricted or dangerous command, which includes posting a message,
-reacting and writing workspace state. Safe and sensitive server commands run. A pipeline reacts
+reacting and writing workspace state. Safe and sensitive server commands run. The editor's
+command search offers only these, and says why above the actions; an action set to a command the
+pipeline would skip, or to one that only runs in the app, is marked. A pipeline reacts
 only to events its creator may see: a message in a private channel its creator is not in fires
 nothing. On every firing, its creator, with the workspace open, sees "Pipeline "\<name\>"
 fired", with the number of actions that ran; skipped actions are not counted.

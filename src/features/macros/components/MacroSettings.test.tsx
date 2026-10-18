@@ -226,3 +226,50 @@ describe("MacroSettings macro cap", () => {
     );
   });
 });
+
+describe("MacroSettings step picker", () => {
+  const openSettings = {
+    ...deleteCommand,
+    id: "workspace.open_settings",
+    title: "Open Settings",
+    category: "Workspace",
+    executionTarget: "DESKTOP_LOCAL",
+    dangerous: false,
+    sensitivity: CommandSensitivity.SAFE,
+  };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    routeRequests(requestMock, {
+      "query MyMacros": () => ({ myMacros: [macro] }),
+      "query Commands": () => ({ commands: [deleteCommand, openSettings] }),
+    });
+  });
+
+  async function openEditor() {
+    renderSettings();
+    fireEvent.click(await screen.findByRole("button", { name: /new macro/i }));
+    // The registry loads after the editor opens.
+    await waitFor(() => expect(callsTo(requestMock, "query Commands")).toHaveLength(1));
+  }
+
+  it("offers server commands as steps and leaves out desktop-local ones", async () => {
+    await openEditor();
+    fireEvent.focus(screen.getByPlaceholderText("Search commands..."));
+
+    expect(await screen.findByText("Delete Message")).toBeInTheDocument();
+    expect(screen.queryByText("Open Settings")).not.toBeInTheDocument();
+  });
+
+  it("warns under a step typed as a desktop-local command", async () => {
+    await openEditor();
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: "workspace.open_settings" },
+    });
+
+    expect(
+      await screen.findByText("This command only runs in the app, so it fails as a macro step."),
+    ).toBeInTheDocument();
+  });
+});

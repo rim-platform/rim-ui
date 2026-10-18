@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Plus,
   Pencil,
@@ -21,6 +21,7 @@ import {
 import type { Macro, MacroStep } from "../api/useMacros";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
+import { runsOnServer } from "../../commands/runtime/serverRunnable";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -59,6 +60,12 @@ function MacroEditor({
   );
 
   const { data: commands } = useCommands("PALETTE");
+  // A macro runs on the server, which refuses desktop-local commands as steps.
+  const stepCommands = useMemo(() => commands?.filter(runsOnServer), [commands]);
+  const appOnlyIds = useMemo(
+    () => new Set(commands?.filter((cmd) => !runsOnServer(cmd)).map((cmd) => cmd.id)),
+    [commands],
+  );
   const createMacro = useCreateMacroMutation();
   const updateMacro = useUpdateMacroMutation();
 
@@ -177,9 +184,14 @@ function MacroEditor({
                 <CommandIdInput
                   value={step.commandId}
                   onChange={(v) => updateStep(index, "commandId", v)}
-                  commands={commands}
+                  commands={stepCommands}
                   placeholder="Search commands..."
                 />
+                {appOnlyIds.has(step.commandId) && (
+                  <p className="text-xs text-rim-danger">
+                    This command only runs in the app, so it fails as a macro step.
+                  </p>
+                )}
                 <input
                   type="text"
                   defaultValue={

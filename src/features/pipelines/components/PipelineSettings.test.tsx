@@ -16,11 +16,29 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
+/** A registry entry with the fields the action picker reads. */
+function command(id: string, title: string, fields: Record<string, unknown> = {}) {
+  return {
+    id,
+    title,
+    category: "chat",
+    executionTarget: "BACKEND",
+    sensitivity: "SAFE",
+    dangerous: false,
+    ...fields,
+  };
+}
+
 vi.mock("../../commands/api/useCommands", () => ({
   useCommands: () => ({
     data: [
-      { id: "chat.pin", title: "Pin message", category: "chat" },
-      { id: "chat.notify", title: "Notify", category: "chat" },
+      command("chat.pin", "Pin message"),
+      command("chat.notify", "Notify"),
+      command("chat.search_messages", "Search messages", { sensitivity: "SENSITIVE" }),
+      command("chat.post_message", "Post message", { sensitivity: "MUTATING" }),
+      command("chat.delete_message", "Delete message", { sensitivity: "RESTRICTED" }),
+      command("member.kick", "Kick member", { dangerous: true }),
+      command("workspace.open_settings", "Open settings", { executionTarget: "DESKTOP_LOCAL" }),
     ],
   }),
 }));
@@ -293,6 +311,47 @@ describe("PipelineSettings create flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Escalate urgent")).toBeInTheDocument();
     expect(callsTo("CreatePipeline")).toHaveLength(0);
+  });
+});
+
+describe("PipelineSettings action picker", () => {
+  async function openCreate() {
+    render(<PipelineSettings />);
+    await screen.findByText("Escalate urgent");
+    fireEvent.click(screen.getByText("New Pipeline"));
+  }
+
+  it("offers only commands a firing pipeline runs, and says why", async () => {
+    await openCreate();
+    expect(screen.getByText(/Nobody is there to confirm a pipeline's actions/)).toBeInTheDocument();
+    fireEvent.focus(screen.getByPlaceholderText("Search commands..."));
+
+    for (const title of ["Pin message", "Notify", "Search messages"]) {
+      expect(screen.getByText(title)).toBeInTheDocument();
+    }
+    for (const title of ["Post message", "Delete message", "Kick member", "Open settings"]) {
+      expect(screen.queryByText(title)).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["chat.post_message", "This command needs a confirmation, so this action is skipped."],
+    ["member.kick", "This command needs a confirmation, so this action is skipped."],
+    ["workspace.open_settings", "This command only runs in the app, so this action fails."],
+  ])("warns under an action on %s", async (commandId, warning) => {
+    await openCreate();
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: commandId },
+    });
+    expect(screen.getByText(warning)).toBeInTheDocument();
+  });
+
+  it("shows no warning under an action that runs", async () => {
+    await openCreate();
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: "chat.pin" },
+    });
+    expect(screen.queryByText(/so this action/)).not.toBeInTheDocument();
   });
 });
 

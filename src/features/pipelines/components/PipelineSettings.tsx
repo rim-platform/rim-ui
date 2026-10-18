@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Plus, Pencil, Trash2, Power, ChevronDown, X } from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -12,6 +12,8 @@ import {
 import type { Pipeline, CreatePipelineInput, UpdatePipelineInput } from "../api/usePipelines";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
+import { runsOnServer, skippedUnattended } from "../../commands/runtime/serverRunnable";
+import type { CommandDefinition } from "../../commands/types";
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -32,6 +34,24 @@ const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
 /** Shown under a text condition: the server cannot read encrypted messages. */
 const MESSAGE_CONTAINS_NOTE =
   "Never matches messages in end-to-end encrypted DMs and groups: the server cannot read them. Other triggers still fire there, on metadata only.";
+
+/** Shown above the actions: why the command picker offers only some commands. */
+const ACTIONS_NOTE =
+  "Nobody is there to confirm a pipeline's actions, so commands that change data or need a confirmation are skipped when it fires and are not offered here.";
+
+/**
+ * The warning shown under an action whose command a firing pipeline does not run.
+ *
+ * @param command - The action's command, when the registry knows it.
+ * @returns The warning, or `null` when the command runs.
+ */
+function actionWarning(command: CommandDefinition | undefined): string | null {
+  if (!command) return null;
+  if (!runsOnServer(command)) return "This command only runs in the app, so this action fails.";
+  if (skippedUnattended(command))
+    return "This command needs a confirmation, so this action is skipped.";
+  return null;
+}
 
 const CONDITION_TYPES = [
   { value: "MessageContains", label: "Message contains pattern" },
@@ -88,6 +108,14 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
   });
 
   const { data: allCommands } = useCommands("PALETTE");
+  const actionCommands = useMemo(
+    () => allCommands?.filter((cmd) => runsOnServer(cmd) && !skippedUnattended(cmd)),
+    [allCommands],
+  );
+  const commandsById = useMemo(
+    () => new Map(allCommands?.map((cmd) => [cmd.id, cmd])),
+    [allCommands],
+  );
   const createPipeline = useCreatePipelineMutation();
   const updatePipeline = useUpdatePipelineMutation();
 
@@ -364,37 +392,42 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
             <Plus className="h-3 w-3" /> Add action
           </button>
         </div>
+        <p className="mb-2 text-xs text-rim-text-muted">{ACTIONS_NOTE}</p>
         <div className="space-y-2">
-          {actions.map((action, index) => (
-            <div
-              key={index}
-              className="flex items-start gap-2 rounded-lg border border-rim-line bg-rim-void p-3"
-            >
-              <span className="mt-1 font-mono text-xs text-rim-text-muted">{index + 1}.</span>
-              <div className="flex-1 space-y-2">
-                <CommandIdInput
-                  value={action.commandId}
-                  onChange={(v) => updateAction(index, "commandId", v)}
-                  commands={allCommands}
-                />
-                <input
-                  type="text"
-                  value={action.args}
-                  onChange={(e) => updateAction(index, "args", e.target.value)}
-                  placeholder='{"key": "value"} (optional)'
-                  className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 font-mono text-xs text-rim-text-muted outline-none focus:border-rim-accent"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => removeAction(index)}
-                disabled={actions.length <= 1}
-                className="mt-1 rounded p-0.5 text-rim-text-muted transition hover:text-rim-danger disabled:opacity-30"
+          {actions.map((action, index) => {
+            const warning = actionWarning(commandsById.get(action.commandId));
+            return (
+              <div
+                key={index}
+                className="flex items-start gap-2 rounded-lg border border-rim-line bg-rim-void p-3"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
+                <span className="mt-1 font-mono text-xs text-rim-text-muted">{index + 1}.</span>
+                <div className="flex-1 space-y-2">
+                  <CommandIdInput
+                    value={action.commandId}
+                    onChange={(v) => updateAction(index, "commandId", v)}
+                    commands={actionCommands}
+                  />
+                  {warning && <p className="text-xs text-rim-danger">{warning}</p>}
+                  <input
+                    type="text"
+                    value={action.args}
+                    onChange={(e) => updateAction(index, "args", e.target.value)}
+                    placeholder='{"key": "value"} (optional)'
+                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 font-mono text-xs text-rim-text-muted outline-none focus:border-rim-accent"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeAction(index)}
+                  disabled={actions.length <= 1}
+                  className="mt-1 rounded p-0.5 text-rim-text-muted transition hover:text-rim-danger disabled:opacity-30"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
