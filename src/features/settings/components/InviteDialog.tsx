@@ -20,7 +20,7 @@ const INVITE_ROLES: { role: InviteRole; label: string; hint: string }[] = [
   {
     role: ServerMemberRoleGql.MEMBER,
     label: "Member",
-    hint: "Can browse and join channels, create channels and invite people.",
+    hint: "Can browse and join channels, create channels and add people to conversations.",
   },
   {
     role: ServerMemberRoleGql.GUEST,

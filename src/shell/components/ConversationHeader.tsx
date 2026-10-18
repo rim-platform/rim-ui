@@ -25,7 +25,7 @@ import {
 } from "../../features/presence/state/usePresenceStore";
 import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
-import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
+import { useIsOwner } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
@@ -93,8 +93,8 @@ function SelectedConversationHeader() {
 
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
-  // Guests cannot invite; the server refuses anyway.
-  const isGuest = useIsGuest(workspaceId ?? undefined);
+  // Only the Owner can create invites; the server refuses everyone else.
+  const canInvite = useIsOwner(workspaceId ?? undefined);
 
   const topic = conversation?.topic ?? null;
   const [isEditingTopic, setIsEditingTopic] = useState(false);
@@ -199,7 +199,7 @@ function SelectedConversationHeader() {
       </div>
       {conversationId && (
         <div className="flex items-center gap-1">
-          {!isGuest && <InviteButton onClick={() => setInviteOpen(true)} />}
+          {canInvite && <InviteButton onClick={() => setInviteOpen(true)} />}
           {isChannel && workspaceId && (
             <LensPicker serverId={workspaceId} conversationId={conversationId} />
           )}
@@ -216,7 +216,7 @@ function SelectedConversationHeader() {
           )}
         </div>
       )}
-      <InviteDialog open={inviteOpen && !isGuest} onClose={() => setInviteOpen(false)} />
+      <InviteDialog open={inviteOpen && canInvite} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }
