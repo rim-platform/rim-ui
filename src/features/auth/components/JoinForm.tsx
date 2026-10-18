@@ -1,10 +1,15 @@
 /**
- * `JoinForm` — registration form used on `/join/:token` and `/join` (open mode).
+ * `JoinForm` — registration form used on `/join/:token` and `/join` (no invite link).
  *
- * Handles three token-type variants via the `variant` prop:
+ * Handles three variants via the `variant` prop:
  * - `"WORKSPACE"`: header shows workspace name, copy says "Create your account."
  * - `"INSTANCE"`: header says "Create your RIM account." No workspace name. Routes via `instanceInviteToken`.
- * - `"OPEN"`: same as INSTANCE copy but the form submits without any token.
+ * - `"CODE"`: same as INSTANCE copy, with an "Invite code" field (`InviteCodeField`) that takes
+ *   the bare token or a whole invite link: required on an invite-only server, optional
+ *   otherwise. The checked code routes to `workspaceInviteToken` or `instanceInviteToken` by its
+ *   type. An open server takes no token at signup, so there a workspace invite is accepted with
+ *   `joinServerByInvite` once the account exists, and a failure of that step says the account
+ *   is ready and lets the person go on without the workspace.
  *
  * The server's instance notice shows at the top. When the server has terms of service, both
  * signups ask for "I accept the terms of use" and send the terms URL back as `acceptedTermsUrl`.
@@ -31,7 +36,8 @@
  *
  * Props:
  * - `variant` — token type discriminator; controls header copy and mutation input.
- * - `token` — raw token string (`null` for open registration).
+ * - `token` — raw token string (`null` for the `CODE` variant).
+ * - `registrationMode` — the server's registration mode, for the `CODE` variant's field.
  * - `workspaceName` — workspace name shown in the header when `variant === "WORKSPACE"`.
  * - `workspaceId` — the invite's workspace, from its preview, when `variant === "WORKSPACE"`.
  * - `invitedBy`, `ownerName` — who invited and who owns the workspace, from its preview.
@@ -40,15 +46,24 @@
 
 import { useState } from "react";
 
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import {
+  EXPIRED_TOKEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  INVALID_TOKEN,
+} from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { isTermsRefusal, useSignupTerms } from "../api/useSignupTerms";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
+import { useInviteCode } from "../api/useInviteCode";
+import { useJoinServerMutation } from "../../workspaces/api/useJoinServer";
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { checkDisplayName } from "../displayName";
-import { InviteTokenType } from "../types";
+import { InviteTokenType, type RegistrationMode } from "../types";
+import { Button } from "../../../shared/ui/Button";
 import { InviteByline } from "./InviteByline";
+import { InviteCodeField } from "./InviteCodeField";
 import { JoinField } from "./JoinField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 import { TermsAcceptance } from "./TermsAcceptance";
@@ -62,18 +77,20 @@ import { ServerChoice } from "./ServerChoice";
  */
 export const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
-type JoinFormVariant = InviteTokenType | "OPEN";
+type JoinFormVariant = InviteTokenType | "CODE";
 
 interface JoinFormProps {
   /**
    * Which registration path this form represents.
    * - `WORKSPACE` — workspace invite token, shows workspace name.
    * - `INSTANCE` — instance invite token; routes via `instanceInviteToken`.
-   * - `OPEN` — no token; open registration.
+   * - `CODE` — no invite link; the form asks for an invite code.
    */
   variant: JoinFormVariant;
-  /** Raw invite token. `null` for open registration. */
+  /** Raw invite token. `null` for the `CODE` variant. */
   token: string | null;
+  /** The server's registration mode; the `CODE` variant's field follows it. */
+  registrationMode?: RegistrationMode;
   /** Workspace name shown in the header when `variant === "WORKSPACE"`. */
   workspaceName?: string;
   /** The invite's workspace, from its preview, when `variant === "WORKSPACE"`. */
@@ -93,8 +110,8 @@ interface JoinFormProps {
 }
 
 /**
- * The token field a signup sends for the given variant: exactly one for a token variant, none
- * in OPEN mode.
+ * The token field a signup sends for an invite link's variant: exactly one for a token variant,
+ * none for `CODE`, whose field gives its own.
  *   - `WORKSPACE` → `workspaceInviteToken`
  *   - `INSTANCE`  → `instanceInviteToken`
  */
@@ -110,7 +127,7 @@ function headerCopy(variant: JoinFormVariant, workspaceName?: string): string {
   if (variant === InviteTokenType.WORKSPACE && workspaceName) {
     return `You're joining ${workspaceName}`;
   }
-  // INSTANCE and OPEN show the same default copy.
+  // INSTANCE and CODE show the same default copy.
   return "Create your RIM account";
 }
 
@@ -176,6 +193,7 @@ export function JoinForm({
   workspaceId,
   invitedBy,
   ownerName,
+  registrationMode,
   keyOnly = false,
   onSuccess,
 }: JoinFormProps) {
@@ -201,6 +219,47 @@ export function JoinForm({
   const [formError, setFormError] = useState<string | null>(null);
   const signup = useSignupWithInviteMutation();
   const terms = useSignupTerms();
+  const byCode = variant === "CODE";
+  const invite = useInviteCode(registrationMode);
+  const join = useJoinServerMutation();
+  // The new account while its invite's workspace is joined, and why that failed, if it did.
+  const [joining, setJoining] = useState<{ userId: string; error: string | null } | null>(null);
+  const signupTokens = byCode ? invite.tokens : tokenFields(variant, token);
+  const signupWorkspaceId = signupTokens.workspaceInviteToken
+    ? byCode
+      ? invite.workspaceId
+      : workspaceId
+    : undefined;
+  const inviteReady = !byCode || invite.ready;
+  const invitedWorkspace = invite.preview?.workspace?.serverName ?? "the workspace";
+
+  /**
+   * Opens the new account, joining the invite code's workspace first where the signup could not
+   * take the code.
+   */
+  function signedUp(userId: string, serverId: string | null) {
+    const joinToken = byCode ? invite.joinAfter : null;
+    if (!joinToken) {
+      onSuccess(userId, serverId);
+      return;
+    }
+    setJoining({ userId, error: null });
+    join.mutate(joinToken, {
+      onSuccess: (data) => onSuccess(userId, data.joinServerByInvite.serverId),
+      onError: (err) =>
+        setJoining({ userId, error: graphqlErrorMessage(err, "Could not join the workspace.") }),
+    });
+  }
+
+  /** Offers a failed signup to the invite code field, which shows a refused token itself. */
+  function inviteRefused(err: unknown): boolean {
+    return byCode && invite.noteRefusal(err);
+  }
+
+  // A refused token already shows under the invite code field.
+  const signupErrorCode = graphqlErrorCode(signup.error);
+  const errorAtField =
+    byCode && (signupErrorCode === INVALID_TOKEN || signupErrorCode === EXPIRED_TOKEN);
 
   /**
    * Validates the email field client-side. Sets inline error and returns
@@ -242,7 +301,7 @@ export function JoinForm({
    * - `email`: always included, trimmed client-side.
    * - `displayName`: omitted entirely from the payload when blank after trim
    *   (NOT sent as `""`). Falls back to `username` server-side.
-   * - Token fields: from `tokenFields`.
+   * - Token fields: from `tokenFields`, or the invite code field for `CODE`.
    * - `acceptedTermsUrl`: the server's terms URL once accepted, absent without terms.
    */
   function buildInput() {
@@ -252,7 +311,7 @@ export function JoinForm({
       email: email.trim(),
       password,
       ...(trimmedDisplayName.length > 0 ? { displayName: trimmedDisplayName } : {}),
-      ...tokenFields(variant, token),
+      ...signupTokens,
       ...terms.fields,
     };
   }
@@ -272,10 +331,11 @@ export function JoinForm({
 
     signup.mutate(buildInput(), {
       onSuccess: (data) => {
-        onSuccess(data.signupWithInvite.userId, data.signupWithInvite.serverId ?? null);
+        signedUp(data.signupWithInvite.userId, data.signupWithInvite.serverId ?? null);
       },
       onError: (err) => {
         if (terms.noteFailure(err)) return;
+        if (inviteRefused(err)) return;
         const mapped = mapSignupError(err);
         if (mapped?.field === "email") {
           setEmailError(mapped.message);
@@ -290,7 +350,8 @@ export function JoinForm({
     username.trim().length > 0 &&
     email.trim().length > 0 &&
     password.trim().length >= 8 &&
-    terms.satisfied;
+    terms.satisfied &&
+    inviteReady;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
@@ -309,19 +370,56 @@ export function JoinForm({
         </header>
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          {offer === "no-keys" ? (
+          {joining ? (
+            joining.error ? (
+              <div role="alert" className="space-y-3 text-sm">
+                <p className="font-medium text-rim-text">Your account is ready</p>
+                <p className="text-rim-danger">
+                  It could not join {invitedWorkspace}: {joining.error}
+                </p>
+                <p className="text-rim-text-muted">
+                  Continue to the app and join with the invite code from there.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => onSuccess(joining.userId, null)}
+                >
+                  Continue
+                </Button>
+              </div>
+            ) : (
+              <p role="status" className="text-sm text-rim-text-muted">
+                Your account is ready. Joining {invitedWorkspace}...
+              </p>
+            )
+          ) : offer === "no-keys" ? (
             <NoKeysHere />
           ) : offer === "checking" ? (
             <p className="text-sm text-rim-text-muted">Loading...</p>
           ) : method === "key" ? (
-            <KeySignupForm
-              tokens={tokenFields(variant, token)}
-              workspaceId={variant === InviteTokenType.WORKSPACE ? workspaceId : undefined}
-              onSuccess={onSuccess}
-              onBusyChange={setKeySignupBusy}
-            />
+            <div className="space-y-4">
+              {byCode && (
+                <InviteCodeField invite={invite} mode={registrationMode} disabled={keySignupBusy} />
+              )}
+              <KeySignupForm
+                tokens={signupTokens}
+                workspaceId={signupWorkspaceId}
+                onSuccess={signedUp}
+                onBusyChange={setKeySignupBusy}
+                ready={inviteReady}
+                onFailure={inviteRefused}
+              />
+            </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              {byCode && (
+                <InviteCodeField
+                  invite={invite}
+                  mode={registrationMode}
+                  disabled={signup.isPending}
+                />
+              )}
               <JoinField
                 label="Username"
                 value={username}
@@ -363,11 +461,12 @@ export function JoinForm({
                 error={displayNameError}
               />
               <TermsAcceptance terms={terms} disabled={signup.isPending} />
-              {(formError || (signup.error && !isTermsRefusal(signup.error))) && !emailError && (
-                <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                  {formError ?? graphqlErrorMessage(signup.error, "Registration failed.")}
-                </p>
-              )}
+              {(formError || (signup.error && !isTermsRefusal(signup.error) && !errorAtField)) &&
+                !emailError && (
+                  <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
+                    {formError ?? graphqlErrorMessage(signup.error, "Registration failed.")}
+                  </p>
+                )}
               <button
                 type="submit"
                 disabled={signup.isPending || !canSubmit}
@@ -379,7 +478,7 @@ export function JoinForm({
           )}
         </div>
 
-        {offer === "key-or-password" && method === "key" && (
+        {!joining && offer === "key-or-password" && method === "key" && (
           <div className="space-y-1 text-center text-xs text-rim-text-faint">
             <button
               type="button"
@@ -392,7 +491,7 @@ export function JoinForm({
             <p>A password account can add a key later in Settings &gt; Security.</p>
           </div>
         )}
-        {offer === "key-or-password" && method === "password" && (
+        {!joining && offer === "key-or-password" && method === "password" && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />

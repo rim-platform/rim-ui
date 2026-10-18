@@ -96,9 +96,9 @@ export function JoinPage() {
  * through codegen, this function will fail to type-check until the new
  * case is mapped explicitly.
  *
- * Note: `JoinForm`'s own `JoinFormVariant` is `InviteTokenType | "OPEN"`.
- * `OPEN` is intentionally not produced here — it is only used by the
- * open-registration route, which never reaches preview.
+ * Note: `JoinForm`'s own `JoinFormVariant` is `InviteTokenType | "CODE"`.
+ * `CODE` is intentionally not produced here — it is only used by the
+ * `/join` route without an invite link, whose invite code field previews its own token.
  *
  * @throws Never at runtime under correct typing. Throws an `Error` only
  *   if a non-enum value is passed at runtime (e.g. server returned an

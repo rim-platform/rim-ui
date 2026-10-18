@@ -1,18 +1,19 @@
 /**
  * `OpenJoinPage` — the `/join` (no token) route component.
  *
- * Functional when the server reports `registrationMode === "OPEN"`, or `"POW"` in the desktop
- * app: a relay in pow mode takes a key-only signup with a proof-of-work instead of a token, so
- * the form offers only the key. In all other cases (including while loading, which defaults to
- * `INVITE_ONLY` for safety), renders a 404-like message and schedules a redirect to `/login`
- * after 3 seconds.
+ * Renders `JoinForm` with the `"CODE"` variant, whose "Invite code" field takes the code or
+ * the whole invite link, once the server's registration mode is known:
+ * - `INVITE_ONLY`: the code is required, and the signup sends it.
+ * - `OPEN`: the code is optional; the signup sends no token and the backend rate-limits it.
+ * - `POW`, in the desktop app: a relay in pow mode takes a key-only signup with a proof-of-work
+ *   or an invite instead, so the form offers only the key, with the code optional.
  *
- * When open registration is available, renders `JoinForm` with the `"OPEN"`
- * variant. Signup submits without any token field; the backend rate-limits
- * this endpoint.
+ * While the mode loads it shows "Loading...". In the web app on a pow server, or when the mode
+ * cannot be read, it says so and redirects to `/login` after 3 seconds.
  *
- * Post-signup: navigate to `/`. `WorkspaceSelector` opens the server's default workspace,
- * which every new account joins, or shows the empty-workspace state when the server names none.
+ * Post-signup: navigate to `/`, with the invite's workspace open for a workspace invite.
+ * Otherwise `WorkspaceSelector` opens the server's default workspace, which every new account
+ * joins, or shows the empty-workspace state when the server names none.
  *
  * A signed-in account has no use for the form: once `useSessionHydration` has checked the
  * session cookie, it is sent on to `/`.
@@ -31,10 +32,9 @@ import { RestoringSession } from "./RestoringSession";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 /**
- * Route component for open (tokenless) account registration.
+ * Route component for account registration without an invite link.
  *
- * Renders a forbidden state with a 3-second redirect to `/login` when the
- * server is in `INVITE_ONLY` mode or while the config is still loading.
+ * Renders a refusal with a 3-second redirect to `/login` where this app cannot sign up here.
  */
 export function OpenJoinPage() {
   const navigate = useNavigate();
@@ -45,16 +45,18 @@ export function OpenJoinPage() {
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
   const { capabilities } = useRuntime();
 
-  const isPow = serverConfig?.registrationMode === RegistrationMode.POW;
+  const registrationMode = serverConfig?.registrationMode;
+  const isPow = registrationMode === RegistrationMode.POW;
   const canSignUp =
-    serverConfig?.registrationMode === RegistrationMode.OPEN ||
+    registrationMode === RegistrationMode.OPEN ||
+    registrationMode === RegistrationMode.INVITE_ONLY ||
     (isPow && capabilities.identityKeys);
 
   useEffect(() => {
     if (!isHydrating && session) navigate("/", { replace: true });
   }, [isHydrating, session, navigate]);
 
-  // Redirect to /login when invite-only (or still loading — safe default).
+  // Redirect to /login where this app cannot sign up here.
   useEffect(() => {
     if (isPending || canSignUp || isHydrating || session) return;
 
@@ -89,7 +91,7 @@ export function OpenJoinPage() {
           <p className="text-sm text-rim-text-muted">
             {isPow
               ? "Signing up here takes the RIM desktop app, or an invite."
-              : "Registration is invite-only on this RIM instance."}
+              : "Could not read how this server creates accounts."}
           </p>
           <p className="text-xs text-rim-text-faint">Redirecting to login...</p>
         </div>
@@ -105,5 +107,13 @@ export function OpenJoinPage() {
     navigate("/");
   }
 
-  return <JoinForm variant="OPEN" token={null} keyOnly={isPow} onSuccess={handleSuccess} />;
+  return (
+    <JoinForm
+      variant="CODE"
+      token={null}
+      registrationMode={registrationMode}
+      keyOnly={isPow}
+      onSuccess={handleSuccess}
+    />
+  );
 }

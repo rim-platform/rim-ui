@@ -3,15 +3,16 @@
  *
  * Renders the login form with contextual copy based on `registrationMode`:
  *
- * - `INVITE_ONLY` (default, and the safe fallback while loading): shows the
- *   locked copy "No account? Ask your workspace admin for an invite." as plain
- *   text below the form card.
- * - `OPEN`: shows a `─── OR ───` divider and a "Create account" link to
- *   `/join` instead.
+ * - While loading, the safe fallback: the copy "No account? Ask your workspace admin for an
+ *   invite." as plain text below the form card.
+ * - `OPEN`: shows a `─── OR ───` divider and a "Create account" link to `/join` instead.
+ * - `INVITE_ONLY`: the same link, whose form asks for the invite code, with copy saying that an
+ *   account here takes one.
  * - `POW` (a public relay): the same link where this app can hold keys, which signs up with a
  *   key and a proof-of-work; elsewhere, copy that points to the desktop app or an invite.
- * - A server that takes key signups only (`serverInfo.signupRequiresKeys`) in `OPEN` mode, in a
- *   browser that cannot create keys: copy that points to the desktop app instead of the link.
+ * - A server that takes key signups only (`serverInfo.signupRequiresKeys`) in `OPEN` or
+ *   `INVITE_ONLY` mode, in a browser that cannot create keys: copy that points to the desktop
+ *   app instead of the link.
  *
  * **Session redirect:** if a session is already restored via
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
@@ -84,12 +85,14 @@ export function LoginPage() {
 
   const registrationMode = serverConfig?.registrationMode;
   const isPow = registrationMode === RegistrationMode.POW;
+  const inviteOnly = registrationMode === RegistrationMode.INVITE_ONLY;
   // While the browser is probed, the join page says whether it can sign up.
   const noKeysHere = !capabilities.identityKeys && deviceKeyStore !== "checking";
-  const keyOnlyHere = registrationMode === RegistrationMode.OPEN && keysRequired && noKeysHere;
+  const keyOnlyHere =
+    (registrationMode === RegistrationMode.OPEN || inviteOnly) && keysRequired && noKeysHere;
   // A relay in pow mode takes key-only signups without an invite, which needs keys here.
   const canCreate =
-    (registrationMode === RegistrationMode.OPEN && !keyOnlyHere) ||
+    ((registrationMode === RegistrationMode.OPEN || inviteOnly) && !keyOnlyHere) ||
     (isPow && capabilities.identityKeys);
 
   function handleLoginSuccess(userId: string) {
@@ -155,6 +158,11 @@ export function LoginPage() {
             >
               Create account
             </Link>
+            {inviteOnly && (
+              <p className="text-xs text-rim-text-muted">
+                Creating an account here takes an invite code or link from someone on this server.
+              </p>
+            )}
           </div>
         ) : keyOnlyHere ? (
           <p className="text-center text-xs text-rim-text-muted">

@@ -62,7 +62,7 @@ vi.mock("./KeySignupForm");
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import { JoinForm } from "./JoinForm";
-import { InviteTokenType } from "../types";
+import { InviteTokenType, RegistrationMode } from "../types";
 import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 
 // The web app, unless a test says otherwise.
@@ -528,7 +528,7 @@ describe("JoinForm — create account with a key", () => {
   });
 
   function renderVariant(
-    variant: InviteTokenType | "OPEN",
+    variant: InviteTokenType | "CODE",
     token: string | null,
     onSuccess = vi.fn(),
   ) {
@@ -560,7 +560,7 @@ describe("JoinForm — create account with a key", () => {
   it.each([
     [InviteTokenType.WORKSPACE, "ws-tok", { workspaceInviteToken: "ws-tok" }],
     [InviteTokenType.INSTANCE, "inst-tok", { instanceInviteToken: "inst-tok" }],
-    ["OPEN" as const, null, {}],
+    ["CODE" as const, null, {}],
   ])("%s: hands the page's token to the key form", (variant, token, expected) => {
     renderVariant(variant, token);
 
@@ -591,7 +591,13 @@ describe("JoinForm — create account with a key", () => {
   it("offers only the key, with no token, on a relay that takes key signups with a proof-of-work", () => {
     renderWithServerInfo(
       <MemoryRouter>
-        <JoinForm variant="OPEN" token={null} keyOnly onSuccess={vi.fn()} />
+        <JoinForm
+          variant="CODE"
+          token={null}
+          registrationMode={RegistrationMode.POW}
+          keyOnly
+          onSuccess={vi.fn()}
+        />
       </MemoryRouter>,
     );
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();

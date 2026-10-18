@@ -12,16 +12,25 @@ web address, and a server to join. Every release of the desktop app signs in to 
 team's server ([Use another server](install.md#use-another-server)). The web app always uses the
 server that serves it. A server is open to anyone, invite-only, or, like the public relay, takes
 new accounts that prove they come from a real device. On an invite-only server you need an invite
-link from someone there: open it in a browser, and its page creates your account.
+from someone there: open its link in a browser, whose page creates your account, or give the link
+or its code to **Create account** in the app.
 
 ## Create your account
 
 Choose **Create account** on the sign-in page, or open your invite link. A workspace invite says
-"You're joining \<workspace\>" and who invited you. Where the app can hold keys (the desktop app,
-and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key: no
-password and no email. The device keeps a key that signs you in, and a recovery kit gets the
+"You're joining \<workspace\>" and who invited you. On an invite-only server the sign-in page says
+that creating an account takes an invite code or link. Where the app can hold keys (the desktop
+app, and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key:
+no password and no email. The device keeps a key that signs you in, and a recovery kit gets the
 account back if you lose it.
 
+- **Invite code**, only when you did not open an invite link: the code you were given, or the
+  whole invite link, which the app reads the code from. An invite-only server needs it; elsewhere
+  it says "(optional)". Under it the form says what the code does: "Invite to \<workspace\> from
+  \<name\>. The new account joins it." for a workspace invite, "Invite to this server." for a
+  server invite, or the server's reason when it refuses the code, such as an expired one. An
+  invite to a workspace on another server (`rim-invite:1:…`) is joined after the account exists,
+  with **Join with an invite code**.
 - **Username**: 3 to 32 characters, letters, digits, `_` and `-`, free on this server. It cannot
   start with `r_` or `deleted-`.
 - **Display name (optional)**: at most 80 characters. Left blank, your username is shown.
@@ -32,9 +41,9 @@ account back if you lose it.
 
 Then choose **Create account**. In a browser the app first asks the browser to keep this site's
 data; if the browser refuses, the app says your keys could be cleared with it and goes on only
-after **Continue anyway**. On the public relay the app then proves it is a real device: "Proving
-this is a real device…" counts the seconds, with **Cancel**. It takes seconds in the desktop app
-and can take tens of seconds in a browser.
+after **Continue anyway**. On the public relay, without an invite code, the app then proves it is a
+real device: "Proving this is a real device…" counts the seconds, with **Cancel**. It takes seconds
+in the desktop app and can take tens of seconds in a browser.
 
 **The recovery kit.** Once the account exists, the form says "Your account is ready." and shows
 **Save your recovery kit**: your account id (`rimp1_…`) and a recovery phrase of 12 numbered
@@ -54,18 +63,21 @@ its secret vault, an encrypted file whose key is in the operating system's crede
 in this site's IndexedDB storage, as keys that cannot be exported: clearing the site's data
 deletes them, and a private window may not keep them.
 
-**Password accounts.** Servers take key signups only unless their operator allows passwords. On
-one that does, **Create account with a password** under the key form asks for a username, an
-email, a password of at least 8 characters and an optional display name. A password account can
-add a key later in Settings > Security, and after signing in the app offers it in **Set up
-encryption for this account**. A browser that cannot create keys on a key-only server shows "This
-server needs a key signup" and points to the desktop app.
+**Password accounts.** Servers take key signups only unless their operator allows passwords. On one
+that does, **Create account with a password** under the key form asks for a username, an email, a
+password of at least 8 characters and an optional display name, under the same **Invite code**
+field. A password account can add a key later in Settings > Security, and after signing in the app
+offers it in **Set up encryption for this account**. A browser that cannot create keys on a
+key-only server shows "This server needs a key signup" and points to the desktop app.
 
 ## Where you land
 
 After signup the app opens one of these:
 
-- **The invite's workspace**, when you signed up with a workspace invite.
+- **The invite's workspace**, when you signed up with a workspace invite. A server open to anyone
+  takes no invite at signup, so there the app joins the workspace right after creating the
+  account. If that fails, the form says "Your account is ready" and why it could not join, and
+  **Continue** opens the app, where **Join with an invite code** takes the code again.
 - **The server's default workspace**, when its operator named one. Every new account joins it as
   a Member and is in its public channels from the start.
 - **Welcome to RIM** otherwise: "You don't belong to any workspaces yet.", with

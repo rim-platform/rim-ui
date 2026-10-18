@@ -112,7 +112,7 @@ describe("OpenJoinPage", () => {
     expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
   });
 
-  it("renders invite-only forbidden state when registrationMode is INVITE_ONLY", () => {
+  it("renders the signup form with a required invite code when registrationMode is INVITE_ONLY", () => {
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "INVITE_ONLY" },
       isPending: false,
@@ -120,10 +120,30 @@ describe("OpenJoinPage", () => {
 
     renderPage();
 
+    expect(screen.getByPlaceholderText("Invite code or link")).toBeRequired();
+    expect(screen.getByText("Invite code")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("yourname")).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("asks for an optional invite code when registrationMode is OPEN", () => {
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "OPEN" }, isPending: false });
+
+    renderPage();
+
+    expect(screen.getByPlaceholderText("Invite code or link")).not.toBeRequired();
+    expect(screen.getByText("Invite code (optional)")).toBeInTheDocument();
+  });
+
+  it("says so and goes back to sign-in when the registration mode cannot be read", () => {
+    mockUseServerConfig.mockReturnValue({ data: undefined, isPending: false });
+
+    renderPage();
+
     expect(
-      screen.getByText("Registration is invite-only on this RIM instance."),
+      screen.getByText("Could not read how this server creates accounts."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Create account")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
   });
 
   it("renders loading state and does not redirect while isPending", () => {
