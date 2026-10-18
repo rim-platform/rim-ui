@@ -1277,7 +1277,7 @@ mod tests {
                 version: 1,
                 key_seq: 0,
                 display_name: "Ada",
-                relays: &["https://relay.rim.chat".to_string()],
+                relays: &["https://relay.example.org".to_string()],
                 devices: &[CardDevice {
                     device_id: DEVICE_ID.into(),
                     device_key: DEVICE.into(),
