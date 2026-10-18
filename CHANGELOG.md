@@ -311,6 +311,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The side rail's **Plugins** menu lists only the panels of the running plugins, then **Manage
+  plugins…**; the per-plugin Settings rows left it. A plugin's settings now open from a settings
+  button in the header of its panel, from **Plugin settings: \<plugin\>** in the command
+  palette, which a keybind can run, and from its row in Settings → Plugins as before.
 - A plugin's row in Settings → Plugins no longer squeezes its name and description into a
   narrow column: the name, version and state sit on one line, the kind, signature and source
   are chips, and only **Update**, **Settings**, the switch and a **⋯** menu sit beside them.

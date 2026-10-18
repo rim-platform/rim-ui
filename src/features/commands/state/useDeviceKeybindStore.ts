@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { isLocalCommand } from "../runtime/localCommands";
 import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
+import { openPluginSettingsTarget } from "../../plugins/pluginSettingsLink";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 /**
@@ -17,11 +18,15 @@ export function isDeviceKeybind(keybindId: string): boolean {
   return keybindId.startsWith(DEVICE_KEYBIND_PREFIX);
 }
 
-/** Whether a binding to `commandId` belongs on this device (a plugin, panel or app command). */
+/**
+ * Whether a binding to `commandId` belongs on this device (a plugin, panel, plugin settings or
+ * app command).
+ */
 export function bindsOnDevice(commandId: string): boolean {
   return (
     commandId.startsWith("plugin.") ||
     isOpenPluginPanelCommand(commandId) ||
+    openPluginSettingsTarget(commandId) !== null ||
     isLocalCommand(commandId)
   );
 }

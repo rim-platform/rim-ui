@@ -174,3 +174,34 @@ describe("plugin panel commands", () => {
     expect(executeBackend).not.toHaveBeenCalled();
   });
 });
+
+describe("plugin settings commands", () => {
+  const command: CommandDefinition = {
+    id: "workspace.open_plugin_settings.chat.rim.k8s-pods",
+    title: "Plugin settings: Kubernetes Pods",
+    description: "",
+    category: "Kubernetes Pods",
+    sourceKind: "PLUGIN",
+    executionTarget: "DESKTOP_LOCAL",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+  };
+
+  beforeEach(() => useShellStore.getState().reset());
+
+  it("opens the plugin's settings form without asking the server or the plugin", async () => {
+    const executeBackend = vi.fn();
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result?.status).toBe("SUCCESS");
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "settings",
+      tab: "plugins",
+      plugin: "chat.rim.k8s-pods",
+    });
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+});

@@ -3,6 +3,8 @@ import { useMemo } from "react";
 import { usePluginList } from "./usePluginList";
 import type { CommandDefinition } from "../../commands/types";
 import { openPluginPanelCommandId, runningPluginPanels } from "../pluginPanels";
+import { hasSettings } from "../pluginSettings";
+import { openPluginSettingsCommandId } from "../pluginSettingsLink";
 import type { PluginContextType } from "../types";
 
 // Extended command definition that carries context_types metadata
@@ -13,8 +15,9 @@ export interface PluginCommandDefinition extends CommandDefinition {
 /**
  * Every command of the enabled plugins: their manifest commands (for the
  * palette, the keybind picker and keybinds), their context actions (for
- * context menus), and an "Open <panel>" command per panel of a running plugin,
- * which the shell runs itself. A stopped plugin's manifest commands stay
+ * context menus), an "Open <panel>" command per panel of a running plugin,
+ * and a "Plugin settings: <plugin>" command per plugin that declares settings,
+ * both of which the shell runs itself. A stopped plugin's manifest commands stay
  * listed; running one says the plugin is not running.
  */
 export function usePluginCommands() {
@@ -74,6 +77,24 @@ export function usePluginCommands() {
         title: `Open ${panel.title}`,
         description: `Show the ${panel.title} panel of ${pluginName}`,
         category: pluginName,
+        sourceKind: "PLUGIN",
+        executionTarget: "DESKTOP_LOCAL",
+        requiredContext: [],
+        requiredCapabilities: [],
+        visibleInPalette: true,
+        visibleInContextMenus: false,
+        keybindCapable: true,
+        dangerous: false,
+        contextTypes: [],
+      });
+    }
+    for (const plugin of plugins) {
+      if (!plugin.enabled || !hasSettings(plugin.settings_schema)) continue;
+      commands.push({
+        id: openPluginSettingsCommandId(plugin.plugin_id),
+        title: `Plugin settings: ${plugin.display_name}`,
+        description: `Open the settings of ${plugin.display_name}`,
+        category: plugin.display_name,
         sourceKind: "PLUGIN",
         executionTarget: "DESKTOP_LOCAL",
         requiredContext: [],

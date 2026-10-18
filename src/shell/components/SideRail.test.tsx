@@ -209,10 +209,13 @@ describe("SideRail — plugin panels", () => {
     await user.click(plugins());
     expect(menu()).toBeInTheDocument();
     expect(plugins()).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getAllByRole("menuitem").map((item) => item.getAttribute("aria-label"))).toEqual([
-      "Kubernetes Pods: Pods",
-      "Kubernetes Pods: Notes",
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Kubernetes PodsPods",
+      "Kubernetes PodsNotes",
+      "Manage plugins…",
     ]);
+    expect(pods()).toBeInTheDocument();
+    expect(notes()).toBeInTheDocument();
   });
 
   it("opens the chosen panel in its slot and closes the menu", async () => {
@@ -284,12 +287,12 @@ describe("SideRail — plugin panels", () => {
     renderWithProviders(<SideRail />);
     await user.click(plugins());
     expect(screen.getByText("No running plugin has a panel.")).toBeInTheDocument();
-    await user.click(screen.getByRole("menuitem", { name: "Manage plugins" }));
+    await user.click(screen.getByRole("menuitem", { name: "Manage plugins…" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugins" });
     expect(menu()).not.toBeInTheDocument();
   });
 
-  it("lists a Settings row for each enabled plugin with settings, opening its form", async () => {
+  it("lists only panels, then Manage plugins set apart, never a plugin's settings", async () => {
     const user = userEvent.setup();
     const setting = {
       key: "context",
@@ -300,26 +303,15 @@ describe("SideRail — plugin panels", () => {
     };
     pluginList.data = [
       makePlugin({ panels: [{ id: "pods", title: "Pods" }], settings_schema: [setting] }),
-      makePlugin({
-        plugin_id: "dev.example.off",
-        display_name: "Off",
-        enabled: false,
-        settings_schema: [setting],
-      }),
     ];
     renderWithProviders(<SideRail />);
     await user.click(plugins());
+    expect(screen.getByText("Plugin panels")).toBeInTheDocument();
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
       "Kubernetes PodsPods",
-      "Kubernetes PodsSettings",
+      "Manage plugins…",
     ]);
-    await user.click(screen.getByRole("menuitem", { name: "Kubernetes Pods: Settings" }));
-    expect(useShellStore.getState().mainSurface).toEqual({
-      kind: "settings",
-      tab: "plugins",
-      plugin: "chat.rim.k8s-pods",
-    });
-    expect(menu()).not.toBeInTheDocument();
+    expect(screen.getByRole("separator").nextElementSibling).toHaveTextContent("Manage plugins…");
   });
 
   it("marks Plugins instead of Inbox while a main-area panel covers the conversation", () => {

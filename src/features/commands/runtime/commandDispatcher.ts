@@ -11,6 +11,7 @@ import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/plug
 import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
 import { findOpenPluginPanelTarget, isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
+import { openPluginSettings, openPluginSettingsTarget } from "../../plugins/pluginSettingsLink";
 import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plugins/types";
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
@@ -316,6 +317,12 @@ export async function dispatchCommand(
 
   if (isOpenPluginPanelCommand(command.id)) {
     return openPluginPanelCommand(command);
+  }
+
+  const settingsTarget = openPluginSettingsTarget(command.id);
+  if (settingsTarget) {
+    openPluginSettings(settingsTarget);
+    return { status: "SUCCESS", message: "", payload: null, followUpCommands: [] };
   }
 
   // Plugin commands (identified by composite ID like "plugin.my-plugin.command")

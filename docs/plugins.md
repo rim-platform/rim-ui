@@ -177,8 +177,9 @@ Plugins names.
   it asks for, marked Granted or Not granted; the sites `network.fetch` may reach; and its
   commands with their descriptions, a dangerous one marked Dangerous.
 - **Settings.** A plugin that declares settings has **Settings** on its row in Settings →
-  Plugins, and while it is on, a row named after it with "Settings" in the side rail's
-  **Plugins** menu. Both open **\<plugin\> settings**, a form with a field per setting: a text
+  Plugins, a settings button beside the close button in the header of each of its panels, and,
+  while it is on, **Plugin settings: \<plugin\>** in the command palette, which a keybind can
+  run too. All three open **\<plugin\> settings**, a form with a field per setting: a text
   field, a number field, a switch or a list, each with its description under it. **Save**
   checks every changed field and names the one that is wrong, **Cancel** closes without saving,
   and **Reset to defaults** clears every saved value, secret ones included, after asking. A
@@ -195,8 +196,10 @@ Plugins names.
   with the app. On the web, plugins are turned on per account in that browser: signing out
   stops them and signing in starts those the account turned on.
 - **Panels.** The side rail's **Plugins** entry opens a menu with one row per panel of every
-  running plugin, showing the plugin's name and the panel's title. Choosing a row opens the
-  panel; with no running plugin that has a panel, the menu offers **Manage plugins**. The entry
+  running plugin, showing the plugin's name and the panel's title, and below them, set apart,
+  **Manage plugins…**, which opens Settings → Plugins. Choosing a row opens the panel; with no
+  running plugin that has a panel, the menu says so above **Manage plugins…**. A plugin's
+  settings are not in this menu: they open from the places listed under **Settings**. The entry
   stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
   Pods panel, in place of the conversation. Its header shows the panel's title, the plugin's
   name, its kind and where it came from, and a close button. [UI shell](ui-shell.md) describes
