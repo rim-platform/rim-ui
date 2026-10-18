@@ -216,7 +216,7 @@ a `settings_schema` entry asks for AI consent again too.
 ## Example
 
 The manifest of [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), a web
-plugin with a network permission and a tool panel, verbatim:
+plugin with a network permission, a tool panel and a secret setting, verbatim:
 
 ```json
 {
@@ -227,7 +227,7 @@ plugin with a network permission and a tool panel, verbatim:
   "author": "RIM team",
   "runtime_kind": "WebSandboxed",
   "entrypoint": "main.mjs",
-  "description": "Lists the open pull requests of public GitHub repositories you choose. Talks only to GitHub, without a token.",
+  "description": "Lists the open pull requests of the GitHub repositories you choose. Talks only to GitHub, with your own token if you add one in its settings.",
   "capabilities": ["ui.panel", "network.fetch"],
   "network_origins": ["https://api.github.com", "https://avatars.githubusercontent.com"],
   "commands": [
@@ -240,7 +240,7 @@ plugin with a network permission and a tool panel, verbatim:
     {
       "id": "add_repo",
       "title": "Pull requests: Add repository",
-      "description": "Adds a public GitHub repository to the list, at most 10.",
+      "description": "Adds a GitHub repository to the list, at most 10.",
       "arguments": [
         {
           "name": "repo",
@@ -270,6 +270,16 @@ plugin with a network permission and a tool panel, verbatim:
       "title": "Pull requests",
       "description": "Open pull requests of the repositories on your list.",
       "slot": "tool_panel"
+    }
+  ],
+  "settings_schema": [
+    {
+      "key": "github_token",
+      "title": "GitHub token",
+      "description": "Optional, desktop app only. A fine-grained personal access token with Public repositories (read-only) access and an expiry date raises GitHub's limit from 60 to 5,000 requests an hour. Kept in this device's encrypted secret vault, never synced, sent only to api.github.com.",
+      "value_type": "string",
+      "is_secret": true,
+      "placeholder": "github_pat_…"
     }
   ]
 }
