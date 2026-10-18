@@ -473,7 +473,7 @@ mod tests {
         lifecycle::install(&mut store, &manifest).unwrap();
         PluginHostState {
             store: Mutex::new(store),
-            manifests: Mutex::new(manifests(vec![manifest])),
+            manifests: std::sync::Arc::new(Mutex::new(manifests(vec![manifest]))),
             state_path: std::path::PathBuf::from("/nonexistent/plugins.json"),
             plugin_dirs: Mutex::new(HashMap::new()),
             shutdown_txs: Arc::new(Mutex::new(HashMap::new())),
@@ -487,10 +487,10 @@ mod tests {
             storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
                 "/nonexistent",
             )),
-            settings: crate::plugin_host::settings::PluginSettings::in_memory(
+            settings: std::sync::Arc::new(crate::plugin_host::settings::PluginSettings::in_memory(
                 std::path::Path::new("/nonexistent"),
-            ),
-            account: std::sync::Mutex::new(None),
+            )),
+            account: std::sync::Arc::new(std::sync::Mutex::new(None)),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }
     }
@@ -781,11 +781,11 @@ mod tests {
     #[test]
     fn panel_cannot_run_a_nested_plugins_command() {
         // `dev.example` passes the UI's prefix check for `plugin.dev.example.tool.greet`.
-        let mut state = installed_state(manifest(PLUGIN, vec![command("greet")]));
+        let state = installed_state(manifest(PLUGIN, vec![command("greet")]));
         let parent = manifest("dev.example", vec![]);
         state
             .manifests
-            .get_mut()
+            .lock()
             .unwrap()
             .insert(parent.plugin_id.clone(), parent);
 

@@ -95,6 +95,7 @@ pub fn run() {
             plugin_host::commands::plugin_settings_get,
             plugin_host::commands::plugin_settings_save,
             plugin_host::commands::plugin_settings_reset,
+            plugin_host::commands::plugin_web_settings,
             plugin_host::commands::plugin_principal_mappings,
             plugin_host::commands::plugin_check_ai_consent,
             plugin_host::commands::plugin_chat_respond,

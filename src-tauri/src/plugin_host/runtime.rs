@@ -34,6 +34,7 @@ use crate::plugin_host::process::{self, PluginProcess};
 use crate::plugin_host::protocol::{
     method, Principal, PrincipalChangedParams, PrincipalMapping, PrincipalsRemappedParams,
 };
+use crate::plugin_host::settings::SettingsReader;
 use crate::plugin_host::state::PluginStateStore;
 use crate::plugin_host::PluginHostState;
 use std::path::PathBuf;
@@ -140,7 +141,8 @@ pub fn start_plugin(
     let gate = CapabilityGate::new(approved_caps.clone());
     let broker = PluginBroker::new(plugin_id.to_string(), gate, BrokerConfig::default())
         .with_panel_relay(state.panel_relay.clone(), panel_ids)
-        .with_chat_relay(state.chat_relay.clone());
+        .with_chat_relay(state.chat_relay.clone())
+        .with_settings(SettingsReader::new(state, plugin_id));
 
     let (client, outbound_rx) = PluginClient::channel();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -201,8 +203,8 @@ pub fn start_plugin(
             events.publish(&pid_str, PluginEventKind::PluginStarted);
             // A sign-in or sign-out during the handshake reached every client but this one.
             let current = principal.lock().ok().and_then(|p| p.clone());
-            if current != sent_principal {
-                let _ = notify_principal(&client, current).await;
+            if current != sent_principal && notify_principal(&client, current).await.is_ok() {
+                let _ = notify_settings(&client).await;
             }
             // Every connection hears the id switch, so a plugin that was not running when it
             // happened can still rewrite the ids it stored.
@@ -379,9 +381,39 @@ pub async fn set_principal(state: &PluginHostState, principal: Option<Principal>
         Err(_) => Vec::new(),
     };
     for client in clients {
-        // A plugin that just exited has nothing left to tell.
-        let _ = notify_principal(&client, principal.clone()).await;
+        // A plugin that just exited has nothing left to tell. The settings belong to
+        // the signed-in account, so they follow every principal change.
+        if notify_principal(&client, principal.clone()).await.is_ok() {
+            let _ = notify_settings(&client).await;
+        }
     }
+}
+
+/// Sends `rim.settings.changed` to the running local-process plugin `plugin_id`,
+/// if there is one, with its settings as they are when its broker loop writes the
+/// notice. A plugin that is not running reads its settings when it starts.
+pub fn announce_settings_changed(state: &PluginHostState, plugin_id: &str) {
+    let Some(client) = state
+        .clients
+        .lock()
+        .ok()
+        .and_then(|clients| clients.get(plugin_id).cloned())
+    else {
+        return;
+    };
+    if !client.try_settings_changed() {
+        // A full queue takes the notice once the loop catches up.
+        tauri::async_runtime::spawn(async move {
+            let _ = client.settings_changed().await;
+        });
+    }
+}
+
+/// Queues `rim.settings.changed` for one plugin.
+async fn notify_settings(client: &PluginClient) -> Result<(), RequestError> {
+    timeout(NOTIFY_TIMEOUT, client.settings_changed())
+        .await
+        .unwrap_or(Err(RequestError::TimedOut(NOTIFY_TIMEOUT)))
 }
 
 /// Sends `rim.principal.changed` to one plugin.
@@ -532,7 +564,7 @@ mod tests {
         dirs.insert(plugin_id.to_string(), plugin_dir.to_path_buf());
         PluginHostState {
             store: std::sync::Mutex::new(PluginStateStore::default()),
-            manifests: std::sync::Mutex::new(HashMap::new()),
+            manifests: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             state_path,
             plugin_dirs: std::sync::Mutex::new(dirs),
             shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -546,10 +578,10 @@ mod tests {
             storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
                 "/nonexistent",
             )),
-            settings: crate::plugin_host::settings::PluginSettings::in_memory(
+            settings: std::sync::Arc::new(crate::plugin_host::settings::PluginSettings::in_memory(
                 std::path::Path::new("/nonexistent"),
-            ),
-            account: std::sync::Mutex::new(None),
+            )),
+            account: std::sync::Arc::new(std::sync::Mutex::new(None)),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }
     }
@@ -661,7 +693,7 @@ mod tests {
         let state_path = state_file_path(tmp.path());
         let state = PluginHostState {
             store: std::sync::Mutex::new(PluginStateStore::default()),
-            manifests: std::sync::Mutex::new(HashMap::new()),
+            manifests: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             state_path,
             plugin_dirs: std::sync::Mutex::new(HashMap::new()),
             shutdown_txs: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -675,10 +707,10 @@ mod tests {
             storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
                 "/nonexistent",
             )),
-            settings: crate::plugin_host::settings::PluginSettings::in_memory(
+            settings: std::sync::Arc::new(crate::plugin_host::settings::PluginSettings::in_memory(
                 std::path::Path::new("/nonexistent"),
-            ),
-            account: std::sync::Mutex::new(None),
+            )),
+            account: std::sync::Arc::new(std::sync::Mutex::new(None)),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");
@@ -846,5 +878,40 @@ mod tests {
             .lock()
             .unwrap()
             .contains_key("dev.example.test"));
+    }
+
+    #[tokio::test]
+    async fn a_save_reaches_a_running_plugin_even_through_a_full_queue() {
+        let state = PluginHostState::with_installed(vec![]);
+        let (client, mut outbound) = PluginClient::channel();
+        state
+            .clients
+            .lock()
+            .unwrap()
+            .insert("dev.example.busy".into(), client.clone());
+        let mut queued = 0;
+        while outbound.capacity() > 0 {
+            assert!(client.try_settings_changed());
+            queued += 1;
+        }
+
+        announce_settings_changed(&state, "dev.example.busy");
+        announce_settings_changed(&state, "dev.example.not-running");
+        let mut notices = 0;
+        while let Ok(Some(outbound)) = timeout(Duration::from_secs(5), outbound.recv()).await {
+            assert!(matches!(
+                outbound,
+                crate::plugin_host::broker::OutboundRequest::SettingsChanged
+            ));
+            notices += 1;
+            if notices == queued + 1 {
+                break;
+            }
+        }
+        assert_eq!(
+            notices,
+            queued + 1,
+            "the notice after the full queue arrived"
+        );
     }
 }

@@ -12,7 +12,9 @@
 //!   also refuses an unconfirmed dangerous command on its own, and runs through
 //!   the host's real start-up and command path;
 //! - a test plugin's panel state reaches the host's panel store and its live
-//!   updates, whole and patched, and is cleared when the plugin stops.
+//!   updates, whole and patched, and is cleared when the plugin stops;
+//! - the settings the host reads reach a plugin in `rim.settings.get` answers and
+//!   in `rim.settings.changed` after a save or a principal change.
 
 use super::{method, Initiator, Principal};
 use crate::plugin_host::broker::{run_broker_loop, BrokerConfig, PluginBroker, PluginClient};
@@ -20,6 +22,7 @@ use crate::plugin_host::capability::CapabilityGate;
 use crate::plugin_host::host_events::PluginEventKind;
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::process::PluginProcess;
+use crate::plugin_host::settings::{self, test_manifest, SettingsFixture, SettingsReader};
 use crate::plugin_host::validation::validate_plugin_manifest;
 use crate::plugin_host::wire::{self, JsonRpcRequest, JsonRpcResponse};
 use crate::plugin_host::{command_exec, handshake, runtime, PluginHostState};
@@ -124,15 +127,34 @@ fn assert_no_raw_ids(frame: &Value) {
 
 /// Starts a broker loop for HELLO_WORLD on an in-memory pipe; the other end plays the plugin.
 fn connect(state: Option<&PluginHostState>) -> (PluginClient, DuplexStream, Shutdown) {
-    let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
-    let (reader, writer) = tokio::io::split(host_end);
-    let (client, outbound_rx) = PluginClient::channel();
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let broker = PluginBroker::new(
         HELLO_WORLD.into(),
         CapabilityGate::new(vec![]),
         BrokerConfig::default(),
     );
+    connect_broker(broker, state)
+}
+
+/// As [`connect`], with the broker reading its settings from `state`, as a started
+/// plugin's does.
+fn connect_with_settings(state: &PluginHostState) -> (PluginClient, DuplexStream, Shutdown) {
+    let broker = PluginBroker::new(
+        HELLO_WORLD.into(),
+        CapabilityGate::new(vec![]),
+        BrokerConfig::default(),
+    )
+    .with_settings(SettingsReader::new(state, HELLO_WORLD));
+    connect_broker(broker, Some(state))
+}
+
+fn connect_broker(
+    broker: PluginBroker,
+    state: Option<&PluginHostState>,
+) -> (PluginClient, DuplexStream, Shutdown) {
+    let (host_end, plugin_end) = tokio::io::duplex(64 * 1024);
+    let (reader, writer) = tokio::io::split(host_end);
+    let (client, outbound_rx) = PluginClient::channel();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     tokio::spawn(run_broker_loop(
         broker,
         reader,
@@ -439,6 +461,132 @@ async fn host_errors_are_error_responses() {
         let response = serde_json::to_value(broker.handle_request(&request).await).unwrap();
         assert_valid("ErrorResponse", &response);
     }
+}
+
+// ── Settings ──
+
+/// A host with HELLO_WORLD declaring the settings of the protocol's examples, and
+/// the examples' account signed in.
+fn settings_host() -> SettingsFixture {
+    let host = SettingsFixture::new(vec![test_manifest(
+        HELLO_WORLD,
+        json!([
+            { "key": "context", "title": "Kubernetes context", "value_type": "string", "placeholder": "prod-eu" },
+            { "key": "namespace", "title": "Default namespace", "value_type": "string", "default": "default" },
+            { "key": "refresh_seconds", "title": "Refresh every (seconds)", "value_type": "integer", "default": 30, "min": 5, "max": 3600 },
+            { "key": "output", "title": "Output", "value_type": "enum", "options": ["table", "json"], "default": "table" },
+            { "key": "api_token", "title": "API server token", "value_type": "string", "is_secret": true }
+        ]),
+    )]);
+    host.sign_in(Some(&principal().principal_id));
+    host
+}
+
+#[tokio::test]
+async fn settings_get_response_is_frozen() {
+    let host = settings_host();
+    let expected = example("SettingsGetResponse");
+    host.save(
+        HELLO_WORLD,
+        &principal().principal_id,
+        json!({
+            "namespace": expected["result"]["values"]["namespace"],
+            "api_token": expected["result"]["values"]["api_token"],
+        }),
+    );
+    let (_client, mut plugin, _shutdown) = connect_with_settings(&host.state);
+
+    let request = example("SettingsGetRequest");
+    wire::write_frame(&mut plugin, &request).await.unwrap();
+    let response = read(&mut plugin).await;
+    assert_valid("SettingsGetResponse", &response);
+    assert_eq!(response, expected);
+}
+
+#[tokio::test]
+async fn settings_get_with_a_locked_vault_is_an_error_response() {
+    let host = settings_host();
+    host.secrets.lock();
+    let (_client, mut plugin, _shutdown) = connect_with_settings(&host.state);
+
+    wire::write_frame(&mut plugin, &example("SettingsGetRequest"))
+        .await
+        .unwrap();
+    let response = read(&mut plugin).await;
+    assert_valid("ErrorResponse", &response);
+    // The schema's example of it; the message names the keyring's own reason.
+    let expected = &SCHEMA["$defs"]["ErrorResponse"]["examples"][1];
+    assert_eq!(response["id"], expected["id"]);
+    assert_eq!(response["error"]["code"], wire::INTERNAL_ERROR);
+    assert_eq!(response["error"]["code"], expected["error"]["code"]);
+    assert_eq!(response["error"]["data"], expected["error"]["data"]);
+}
+
+#[tokio::test]
+async fn settings_changed_notification_is_frozen() {
+    let host = settings_host();
+    let (_client, mut plugin, _shutdown) = connect_with_settings(&host.state);
+
+    // What a save of the plugin's settings sends.
+    host.save(
+        HELLO_WORLD,
+        &principal().principal_id,
+        json!({"namespace": "staging", "output": "json"}),
+    );
+    settings::on_saved(&host.state, HELLO_WORLD);
+    let frame = read(&mut plugin).await;
+    assert_valid("SettingsChangedNotification", &frame);
+    assert_eq!(frame, example("SettingsChangedNotification"));
+}
+
+#[tokio::test]
+async fn settings_changed_follows_every_principal_change() {
+    let host = settings_host();
+    let account = principal().principal_id;
+    host.save(HELLO_WORLD, &account, json!({"namespace": "prod"}));
+    host.sign_in(None);
+    let state = &host.state;
+    let (_client, mut plugin, _shutdown) = connect_with_settings(state);
+
+    // The UI records the account before it announces the principal.
+    host.sign_in(Some(&account));
+    runtime::set_principal(state, Some(principal())).await;
+    assert_eq!(read(&mut plugin).await["method"], method::PRINCIPAL_CHANGED);
+    let settings = read(&mut plugin).await;
+    assert_valid("SettingsChangedNotification", &settings);
+    assert_eq!(settings["params"]["values"]["namespace"], "prod");
+
+    host.sign_in(None);
+    runtime::set_principal(state, None).await;
+    assert_eq!(
+        read(&mut plugin).await,
+        example("PrincipalChangedNotification")
+    );
+    let settings = read(&mut plugin).await;
+    assert_valid("SettingsChangedNotification", &settings);
+    assert_eq!(
+        settings["params"],
+        json!({"values": {"namespace": "default", "refresh_seconds": 30, "output": "table"}}),
+        "signed out: the defaults only"
+    );
+}
+
+#[tokio::test]
+async fn no_settings_changed_is_sent_while_the_vault_is_locked() {
+    let host = settings_host();
+    let (_client, mut plugin, _shutdown) = connect_with_settings(&host.state);
+
+    host.secrets.lock();
+    settings::on_saved(&host.state, HELLO_WORLD);
+    runtime::set_principal(&host.state, Some(principal())).await;
+    assert_eq!(read(&mut plugin).await["method"], method::PRINCIPAL_CHANGED);
+    // The next frame answers this request: nothing came in between.
+    wire::write_frame(&mut plugin, &example("SettingsGetRequest"))
+        .await
+        .unwrap();
+    let response = read(&mut plugin).await;
+    assert_eq!(response["id"], example("SettingsGetRequest")["id"]);
+    assert_eq!(response["error"]["data"]["reason"], "secretsLocked");
 }
 
 // ── The reference plugin ──
