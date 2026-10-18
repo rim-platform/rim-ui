@@ -65,6 +65,44 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The Inbox unread badge no longer comes back for conversations already read: opening a
   conversation and reaching its newest message tells the server it is read, as does a new
   message arriving while you are at the bottom.
+- On desktops with WebKitGTK 2.54, such as current Linux distributions, a local-process
+  plugin's panel and a web plugin's panel load instead of hanging until they time out.
+- Uninstalling a plugin on the desktop deletes the folder the app installed it into, so the
+  plugin can be installed again, and turns an enabled plugin off first instead of failing with
+  "must disable first". Removing or replacing a plugin with many files no longer holds up other
+  plugin actions, and an update interrupted during `npm install` keeps the previous version.
+- Choosing a conversation closes a plugin panel that covers the main area, such as Kubernetes
+  Pods, and Escape closes it too. Panels in the tool panel stay open.
+- A plugin panel in the tool panel stays within its column instead of spilling over the
+  conversation, and a long header line is cut short.
+- Plugin panels receive `conversation.changed` with the open conversation's id, or `null` when
+  none is open, when they load and whenever it changes. The message was declared but never
+  sent; only a plugin with `chat.read` approved gets it.
+- **Dismiss** on a plugin's changed-bundle warning in Settings → Plugins hides the warning on
+  this device until the files change again, and stops the plugin if it is running; the "Bundle
+  changed" badge brings the warning back. The plugin's switch can turn a changed plugin off;
+  only turning it on waits for **Trust new version**.
+- Invite links copied in the desktop app open: they use the server's address instead of the
+  app's own.
+- An invite link creates an account on a server with open registration instead of being
+  refused for carrying a token, and **Join with an invite code** in Add workspace takes a
+  pasted invite link as well as the bare code.
+- Accented letters, emoji and other non-ASCII text in the AI agent's streamed answers on the
+  desktop no longer turn into replacement characters now and then.
+- A command the AI agent runs with a thread open gets that thread's id instead of its root
+  message's, which the server did not recognise.
+- Keybind rows from the server's default layer in Settings → Keybinds show a **Default** tag and
+  an **Override** button that opens the add form with their keys, command and context, instead
+  of a switch and keys that did nothing.
+- Editing a user command no longer saves it without steps: its saved steps cannot be loaded
+  here, so the form says new ones replace them and Save waits for one. The macro and pipeline
+  editors offer only commands the server runs as steps, and a step already set to one it
+  refuses or skips shows a warning.
+- Settings → State names its scopes Workspace and User instead of Server.
+- The notifications panel shows a notification about a reaction, labelled "Reaction", instead
+  of failing to render it.
+- When a desktop build's updater settings are unusable, the "updates disabled" warning reaches
+  `rim.log` instead of being lost.
 
 ### Added
 
@@ -195,6 +233,23 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   four old files kept; Settings > About has "Open log folder". It holds the app's and the web
   view's warnings and errors with no message text, keys or tokens. `RIM_LOG=debug` adds more
   detail for a bug report.
+- Uninstalling a plugin in Settings → Plugins asks first, and the dialog says whether the
+  plugin's files are deleted.
+- Each panel of a running plugin has an **Open <panel>** command, so the palette or a keybind
+  opens it. A keybind to a panel whose plugin is not running shows an error.
+- The "Welcome to RIM" screen of an account without a workspace offers **Join with an invite
+  code**.
+- The sign-up form takes an **Invite code**, the bare code or a whole invite link. An
+  invite-only server requires it, a proof-of-work server takes it in place of the proof, and on
+  an open server a workspace invite joins that workspace once the account exists. The sign-in
+  page offers "Create account" on invite-only servers too and says an account there takes an
+  invite.
+- The web app says, under Set up encryption and in Settings → Security, that encrypted messages
+  are kept only in this browser and that clearing the site's data deletes them, and points to
+  the desktop app's history archive for a lasting copy.
+- `rim-plugin-bundle` without `--entry`, in a folder whose manifest's entrypoint is a `main.mjs`
+  that exists, packs that file as it is instead of rebuilding it, so the `.rimbundle` matches
+  the committed build. `--entry` still builds from source.
 
 ### Changed
 
@@ -234,5 +289,31 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   in `plugins/`. Each holds the built plugin at its root for Install from git URL and attaches
   a `.rimbundle` to its releases; GitHub Pull Requests now starts with rim-ui and rim-server
   in its list.
+- Plugin panels are listed in a menu under **Plugins** in the side rail, one row per panel of
+  each running plugin, instead of a puzzle icon each; with none, the menu links to Settings →
+  Plugins. The plugin list in the tool panel, whose rows did nothing, is gone, and a crashed
+  plugin shows its state in Settings → Plugins.
+- **Invite member** shows only for the workspace's owner, the only role the server lets invite.
+- **Upgrade:** a command whose `required_capabilities` names a capability the manifest's
+  `capabilities` does not declare is refused at install with `UNDECLARED_CAPABILITY`, instead of
+  failing when it runs. The SDK's `validateManifest` applies this rule and the capability rule
+  under Security. A plugin installed earlier that breaks either rule is skipped at launch:
+  reinstall it from a fixed manifest. An install refused for its manifest shows the reason
+  instead of raw JSON.
+
+### Removed
+
+- Simple mode: a plugin folder or repository without `rim-plugin.json` no longer installs from
+  comment headers in `main.ts`, `main.js` or `main.py`, which never started. Install says every
+  plugin needs `rim-plugin.json` at its root.
+
+### Security
+
+- A desktop plugin whose files changed while the app was closed no longer starts at launch. It
+  waits for **Trust new version**, which starts it if it is switched on.
+- Installing a plugin refuses capability names other than the built-in ones, and
+  `network.fetch` for a web plugin, in the manifest's `capabilities` and in each command's
+  `required_capabilities`, naming the key. A `plugin.<id>.<verb>` key used to install although
+  no permission prompt could approve it.
 
 [Unreleased]: https://github.com/rim-platform/rim-ui/commits/master
