@@ -1,9 +1,8 @@
 import { useCallback } from "react";
 
 import { CONTEXT_ARGUMENTS } from "../../../../sdk/plugin-sdk/src/manifestRules";
-import { queryClient } from "../../../core/query/queryClient";
-import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { openThreadId } from "../../threads/api/openThreadId";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 /** What a plugin command runs against: the workspace, conversation, thread and selected message. */
@@ -44,16 +43,6 @@ function compact(context: PluginInvocationContext): PluginInvocationContext {
   return Object.fromEntries(
     Object.entries(context).filter(([, value]) => value !== undefined),
   ) as PluginInvocationContext;
-}
-
-/** The id of the thread open in the thread pane, once the thread exists and has loaded. */
-function openThreadId(workspaceId: string | undefined, conversationId: string): string | undefined {
-  const shell = useShellStore.getState();
-  if (!shell.isThreadOpen || !shell.selectedRootMessageId) return undefined;
-  const thread = queryClient.getQueryData<{ id: string } | null>(
-    queryKeys.threadByRoot(workspaceId, conversationId, shell.selectedRootMessageId),
-  );
-  return thread?.id ?? undefined;
 }
 
 /** The context the user is in: the workspace, the open conversation and the thread open beside it. */

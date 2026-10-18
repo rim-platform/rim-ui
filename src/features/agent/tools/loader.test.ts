@@ -5,6 +5,8 @@ import {
   CommandExecutionTarget,
   CommandSensitivity,
 } from "../../../core/graphql/generated/schema-types";
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { AiToolDefinition } from "../providers/types";
@@ -579,6 +581,7 @@ describe("commandContext bridge", () => {
   afterEach(() => {
     useWorkspaceStore.getState().clearWorkspaceId();
     useShellStore.getState().reset();
+    queryClient.clear();
   });
 
   it("makeBackendToolHandler omits commandContext when no workspace is selected", async () => {
@@ -619,6 +622,9 @@ describe("commandContext bridge", () => {
     useWorkspaceStore.getState().setWorkspaceId("ws-7");
     useShellStore.getState().setSelectedConversationId("conv-3");
     useShellStore.getState().openThreadForMessage("msg-root-2");
+    queryClient.setQueryData(queryKeys.threadByRoot("ws-7", "conv-3", "msg-root-2"), {
+      id: "thread-2",
+    });
 
     vi.mocked(graphqlClient.request).mockResolvedValueOnce({
       executeCommand: { status: "SUCCESS", message: "ok", payload: null },
@@ -635,7 +641,7 @@ describe("commandContext bridge", () => {
     expect(variables.input.commandContext).toEqual({
       workspaceId: "ws-7",
       conversationId: "conv-3",
-      threadId: "msg-root-2",
+      threadId: "thread-2",
     });
     expect(variables.input.confirmation).toEqual({
       inBandToken: { token: "tok", argsHash: "hash" },
