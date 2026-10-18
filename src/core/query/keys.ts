@@ -44,6 +44,10 @@ export const queryKeys = {
   // Keyed by workspace too: the list is fetched with the active workspace as context.
   commands: (surface?: string, workspaceId?: string) => ["commands", surface, workspaceId] as const,
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
+  // The signed-in account's user commands with their saved steps, and one of them by id; the
+  // `["userCommands"]` prefix covers both.
+  userCommands: ["userCommands"] as const,
+  userCommand: (id?: string | null) => ["userCommands", "byId", id ?? null] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
   // Hits from the desktop app's local search index. Keyed by the signed-in user, as the cache

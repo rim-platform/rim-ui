@@ -2985,6 +2985,14 @@ export type Query = {
   threadByRootMessage?: Maybe<Thread>;
   threadMessages: MessagePage;
   unreadCounts: Array<UnreadCount>;
+  /**
+   * The caller's user command with this id (`user.<key>`), enabled or not, with its steps
+   * in the order they run. Null when the caller has no user command with that id: a
+   * built-in id, another user's command and an unknown one all answer null.
+   */
+  userCommand?: Maybe<UserCommand>;
+  /** The caller's user commands, enabled or not, with their steps, sorted by id. */
+  userCommands: Array<UserCommand>;
   /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
   workspacePlugins: Array<WorkspacePlugin>;
   /**
@@ -3266,6 +3274,11 @@ export type QueryThreadMessagesArgs = {
 
 export type QueryUnreadCountsArgs = {
   workspaceId: Scalars['ID']['input'];
+};
+
+
+export type QueryUserCommandArgs = {
+  id: Scalars['String']['input'];
 };
 
 
@@ -4076,6 +4089,24 @@ export type User = {
   probationEndsAt?: Maybe<Scalars['DateTime']['output']>;
   statusText?: Maybe<Scalars['String']['output']>;
   username: Scalars['String']['output'];
+};
+
+/** A user command as its owner saved it, in the shape `updateUserCommand` takes. */
+export type UserCommand = {
+  description: Scalars['String']['output'];
+  /** The command id, `user.<key>`, the same as the listed `Command.id`. */
+  id: Scalars['String']['output'];
+  /** `false` while the command is disabled; a disabled command is not listed by `commands`. */
+  isEnabled: Scalars['Boolean']['output'];
+  /** The steps in the order they run. */
+  steps: Array<UserCommandStep>;
+  title: Scalars['String']['output'];
+};
+
+/** One step of a user command: the command it runs and the arguments it passes. */
+export type UserCommandStep = {
+  args?: Maybe<Scalars['JSON']['output']>;
+  commandId: Scalars['String']['output'];
 };
 
 export type UserCommandStepInput = {

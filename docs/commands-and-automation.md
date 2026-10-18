@@ -170,9 +170,12 @@ command**, asks for a **Command ID** (saved as `user.<id>`), a **Title**, a **De
 the **Steps**: **+ Add step** picks a command the server runs, and the arrows reorder. **Create**
 saves it. Its steps take no arguments here, so each one uses the context. A user command can be
 bound when all its steps can, is dangerous when one step is, and can include other user
-commands, eight levels deep at most. Editing one, with the pencil, asks for its steps again,
-since the saved ones cannot be loaded back into the form: **Save** stays off until a step is
-chosen, and the new steps replace the old.
+commands, eight levels deep at most. The list shows each one's id and number of steps. The
+pencil loads the saved command into the form, its title, description and steps in order, with
+a step's arguments shown under it. Changing a step's command drops its arguments; **Save**
+stays off until a step is chosen, and the steps on the form replace the saved ones. A command
+deleted elsewhere closes the editor with "\<title\> no longer exists for this account, so it
+cannot be edited."
 
 **Macros** carry arguments for each step. Settings → Macros, **New Macro**, opens "Create
 Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
