@@ -86,6 +86,20 @@ describe("AddWorkspaceDialog", () => {
     expect(await screen.findByText(shown)).toBeInTheDocument();
   });
 
+  it("opens on the join form when asked, and Back leads to the choice", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AddWorkspaceDialog initialStep="join" onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("dialog", { name: "Join workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Join Existing")).toBeInTheDocument();
+    expect(screen.getByText("Create New")).toBeInTheDocument();
+  });
+
   it("keeps plain invite codes on this server", async () => {
     const user = userEvent.setup();
     renderDialog();
