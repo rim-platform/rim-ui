@@ -320,4 +320,48 @@ describe("SearchOverlay", () => {
       expect(useSearchOverlayStore.getState().query).toBe("");
     });
   });
+
+  describe("result context menu", () => {
+    function resultRow(): HTMLElement {
+      return screen.getByText("Alice").closest("button") as HTMLElement;
+    }
+
+    it("offers Jump to message and Copy text, drawn above the overlay", () => {
+      mockSearchResult([makeItem()]);
+      render(<SearchOverlay />);
+      fireEvent.contextMenu(resultRow());
+      const menu = screen.getByRole("menu");
+      expect(screen.getAllByRole("menuitem").map((el) => el.textContent)).toEqual([
+        "Jump to message",
+        "Copy text",
+      ]);
+      expect(Number(menu.style.zIndex)).toBeGreaterThan(300);
+    });
+
+    it("jumps to the message as a click does", () => {
+      mockSearchResult([makeItem({ conversationId: "conv-1", id: "m1" })]);
+      render(<SearchOverlay />);
+      fireEvent.contextMenu(resultRow());
+      fireEvent.click(screen.getByRole("menuitem", { name: "Jump to message" }));
+      expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+      expect(useSearchOverlayStore.getState().recentSearches).toEqual(["deploy"]);
+      expect(useShellStore.getState().highlightedMessageId).toBe("m1");
+    });
+
+    it("copies the text and keeps the overlay open, its menu's keys to itself", () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+      mockSearchResult([makeItem()]);
+      render(<SearchOverlay />);
+      fireEvent.keyDown(resultRow(), { key: "ContextMenu" });
+      fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(useSearchOverlayStore.getState().query).toBe("deploy");
+
+      fireEvent.contextMenu(resultRow());
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy text" }));
+      expect(writeText).toHaveBeenCalledWith("the deploy failed");
+      expect(useSearchOverlayStore.getState().isOpen).toBe(true);
+    });
+  });
 });

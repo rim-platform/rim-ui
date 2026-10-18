@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { X, Puzzle, SlidersHorizontal } from "lucide-react";
 
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { PluginPanel } from "./PluginPanel";
 import { kindLabel, trustBadge } from "./pluginTrust";
 import { hasSettings } from "../pluginSettings";
@@ -19,6 +21,11 @@ interface PluginSlotContainerProps {
   onClose: () => void;
 }
 
+/**
+ * A plugin's panel in its slot: the host's header (title, plugin, trust; Plugin settings when
+ * the plugin has any, and Close) above the plugin's frame. The header's context menu offers
+ * the same two actions; the frame keeps its own.
+ */
 export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContainerProps) {
   // A stable list, so the panel keeps its bridge across re-renders.
   const approvedCapabilities = useMemo(
@@ -28,11 +35,28 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
   const web = runtimeKind(plugin) === "WebSandboxed";
   // A new frame for another panel, never the old one navigated.
   const frameKey = `${plugin.plugin_id}/${panel.id}`;
+  const settings = hasSettings(plugin.settings_schema);
+  const contextMenu = useContextMenu();
+  const headerMenuItems = (): DropdownMenuItem[] => [
+    ...(settings
+      ? [
+          {
+            id: "plugin-settings",
+            label: "Plugin settings",
+            onSelect: () => openPluginSettings(plugin.plugin_id),
+          },
+        ]
+      : []),
+    { id: "close-panel", label: "Close panel", onSelect: onClose },
+  ];
   return (
     <div className="flex h-full flex-col">
       {/* Header: the host's chrome names the plugin and how far to trust it, so a
           plugin cannot pass its panel off as part of the app. */}
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-rim-line px-3">
+      <div
+        className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-rim-line px-3"
+        {...contextMenu.bind(headerMenuItems, { label: `${panel.title} panel` })}
+      >
         <div className="flex min-w-0 items-center gap-2">
           <Puzzle className="h-4 w-4 shrink-0 text-rim-accent" />
           <span className="truncate text-sm font-medium text-rim-text">{panel.title}</span>
@@ -41,7 +65,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {hasSettings(plugin.settings_schema) && (
+          {settings && (
             <button
               type="button"
               onClick={() => openPluginSettings(plugin.plugin_id)}
@@ -63,6 +87,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
           </button>
         </div>
       </div>
+      {contextMenu.menu}
 
       {/* Plugin iframe */}
       <div className="min-h-0 flex-1">

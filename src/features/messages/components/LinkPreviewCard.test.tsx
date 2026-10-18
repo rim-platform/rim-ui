@@ -151,4 +151,29 @@ describe("LinkPreviewCard", () => {
     fireEvent.click(card);
     expect(openUrl).not.toHaveBeenCalled();
   });
+
+  it("offers Open link and Copy link address on a right click", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    vi.mocked(openUrl).mockClear();
+    render(<LinkPreviewCard preview={fullPreview} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Example Article/ }));
+    expect(screen.getAllByRole("menuitem").map((el) => el.textContent)).toEqual([
+      "Open link",
+      "Copy link address",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy link address" }));
+    expect(writeText).toHaveBeenCalledWith("https://example.com/article");
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Example Article/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open link" }));
+    await vi.waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://example.com/article"));
+  });
+
+  it("opens no menu for a preview whose URL may not open", () => {
+    render(<LinkPreviewCard preview={{ ...fullPreview, url: "javascript:alert(1)" }} />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: /Example Article/ }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
 });

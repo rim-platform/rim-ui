@@ -217,6 +217,33 @@ describe("useContextMenu", () => {
       expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     });
 
+    it("lets an inner target's long press win over its container's", () => {
+      vi.useFakeTimers();
+      function Nested() {
+        const outer = useContextMenu();
+        const inner = useContextMenu();
+        return (
+          <>
+            <div {...outer.bind(() => itemsNamed("Message actions"), { label: "outer" })}>
+              <span
+                data-testid="link"
+                {...inner.bind(() => itemsNamed("Copy link"), { label: "inner" })}
+              >
+                link
+              </span>
+            </div>
+            {outer.menu}
+            {inner.menu}
+          </>
+        );
+      }
+      render(<Nested />);
+      fireEvent.touchStart(screen.getByTestId("link"), touch(60, 70));
+      act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+      expect(screen.getByRole("menu", { name: "inner" })).toBeInTheDocument();
+      expect(screen.queryByRole("menu", { name: "outer" })).not.toBeInTheDocument();
+    });
+
     it("opens nothing for a mouse button held down", () => {
       vi.useFakeTimers();
       render(<Row name="general" getItems={() => itemsNamed("Mark read")} />);

@@ -2,6 +2,10 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Dialog } from "../../../../shared/ui/Dialog";
+import type { DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
+import { IsolatedMenu } from "../../../../shared/ui/contextMenu/IsolatedMenu";
+import { followLink } from "../../../../shared/ui/contextMenu/menuActions";
+import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
 import type { MediaKind } from "./mediaKind";
 
 interface MediaLightboxProps {
@@ -57,29 +61,40 @@ interface InlineMediaProps {
 
 /**
  * An attachment shown in the conversation: an image thumbnail that opens full size, or a
- * video with its controls that only loads its metadata until played.
+ * video with its controls that only loads its metadata until played. Its context menu offers
+ * Open (an image) and Download.
  */
 export function InlineMedia({ kind, src, filename }: InlineMediaProps) {
   const [open, setOpen] = useState(false);
   const thumbnailRef = useRef<HTMLButtonElement>(null);
+  const contextMenu = useContextMenu();
   const close = () => {
     setOpen(false);
     thumbnailRef.current?.focus();
   };
+  const download: DropdownMenuItem = {
+    id: "download-attachment",
+    label: "Download",
+    onSelect: () => followLink(src, filename),
+  };
+  const menuOptions = { label: `Actions for ${filename}` };
 
   if (kind === "video") {
     return (
-      <figure className="w-fit max-w-full">
-        <video
-          src={src}
-          controls
-          preload="metadata"
-          playsInline
-          aria-label={filename}
-          className="max-h-80 max-w-[min(100%,28rem)] rounded-lg border border-rim-line bg-rim-void"
-        />
-        <figcaption className="mt-1 truncate text-xs text-rim-text-faint">{filename}</figcaption>
-      </figure>
+      <>
+        <figure className="w-fit max-w-full" {...contextMenu.bind(() => [download], menuOptions)}>
+          <video
+            src={src}
+            controls
+            preload="metadata"
+            playsInline
+            aria-label={filename}
+            className="max-h-80 max-w-[min(100%,28rem)] rounded-lg border border-rim-line bg-rim-void"
+          />
+          <figcaption className="mt-1 truncate text-xs text-rim-text-faint">{filename}</figcaption>
+        </figure>
+        <IsolatedMenu>{contextMenu.menu}</IsolatedMenu>
+      </>
     );
   }
 
@@ -91,6 +106,10 @@ export function InlineMedia({ kind, src, filename }: InlineMediaProps) {
         onClick={() => setOpen(true)}
         aria-label={`Open image ${filename}`}
         className="block w-fit max-w-full rounded-lg"
+        {...contextMenu.bind(
+          () => [{ id: "open-attachment", label: "Open", onSelect: () => setOpen(true) }, download],
+          menuOptions,
+        )}
       >
         <img
           src={src}
@@ -100,6 +119,7 @@ export function InlineMedia({ kind, src, filename }: InlineMediaProps) {
           className="max-h-64 max-w-[min(100%,28rem)] rounded-lg border border-rim-line object-contain"
         />
       </button>
+      <IsolatedMenu>{contextMenu.menu}</IsolatedMenu>
       {open && <MediaLightbox src={src} filename={filename} onClose={close} />}
     </>
   );

@@ -1,4 +1,5 @@
 import { useMemo, useCallback } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { Pin } from "lucide-react";
 
 import { usePinnedMessages } from "../api/usePinnedMessages";
@@ -7,6 +8,14 @@ import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettin
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { formatTime } from "../../../shared/utils/formatTime";
+import { toast } from "../../../shared/toast";
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
+import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
+import { queryKeys } from "../../../core/query/keys";
+import type { MessageItem, MessagesPage } from "../../../core/types/messages";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import { useUnpinMessageMutation } from "../api/usePinMessage";
 
 interface PinnedMessagesPanelProps {
   conversationId: string;
@@ -50,6 +59,42 @@ export function PinnedMessagesPanel({
     items[next].focus();
   }, []);
 
+  const qc = useQueryClient();
+  const unpinMessage = useUnpinMessageMutation();
+  const contextMenu = useContextMenu();
+
+  /** Scrolls the timeline to the message and flashes it, when it is loaded there. */
+  const jumpTo = useCallback(
+    (messageId: string) => {
+      const timeline = qc.getQueryData<InfiniteData<MessagesPage>>(
+        queryKeys.messages(workspaceId, conversationId),
+      );
+      if (timeline?.pages.some((page) => page.items.some((m) => m.id === messageId))) {
+        useShellStore.getState().setHighlightedMessageId(messageId);
+      } else {
+        toast.info("The message is not loaded", {
+          description: "Scroll up to load older messages.",
+        });
+      }
+    },
+    [qc, workspaceId, conversationId],
+  );
+
+  const menuItems = (msg: MessageItem): DropdownMenuItem[] => [
+    { id: "jump-to-message", label: "Jump to message", onSelect: () => jumpTo(msg.id) },
+    { id: "copy-text", label: "Copy text", onSelect: () => copyToClipboard(msg.text ?? "") },
+    {
+      id: "unpin-message",
+      label: "Unpin message",
+      separatorBefore: true,
+      onSelect: () =>
+        unpinMessage.mutate(
+          { serverId: workspaceId, conversationId, messageId: msg.id },
+          { onError: () => toast.error("Could not unpin the message") },
+        ),
+    },
+  ];
+
   return (
     <div className="flex h-full flex-col border-l border-rim-line bg-rim-panel">
       <div className="flex items-center justify-between border-b border-rim-line px-4 py-2">
@@ -78,6 +123,7 @@ export function PinnedMessagesPanel({
                 key={msg.id}
                 data-pinned-item
                 tabIndex={0}
+                {...contextMenu.bind(() => menuItems(msg), { label: "Pinned message actions" })}
                 className="rounded-lg border border-rim-line bg-rim-void p-3 outline-none focus:ring-1 focus:ring-rim-accent"
               >
                 <div className="flex items-center gap-2">
@@ -103,6 +149,7 @@ export function PinnedMessagesPanel({
           </div>
         )}
       </div>
+      {contextMenu.menu}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, screen } from "@testing-library/react";
 
 import { renderWithProviders as render } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -685,6 +685,20 @@ describe("MessageTimeline keyboard", () => {
     fireEvent.keyDown(list, { key: "k" });
     fireEvent.keyDown(list, { key: "F10", shiftKey: true });
     expect(screen.getByRole("menuitem", { name: "Actions for m-001" })).toBeInTheDocument();
+  });
+
+  it("leaves the context-menu key to a link or attachment in the row that took it", () => {
+    setMessages([0, 1, 2].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    act(() => useShellStore.setState({ navigationMode: true }));
+
+    const taken = createEvent.keyDown(screen.getByText("message 2"), { key: "ContextMenu" });
+    taken.preventDefault();
+    fireEvent(screen.getByText("message 2"), taken);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+    expect(screen.getByRole("menuitem", { name: "Actions for m-002" })).toBeInTheDocument();
   });
 
   it("keeps Escape in the list in Vim mode: it drops the selection, not the mode", () => {

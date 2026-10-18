@@ -197,6 +197,26 @@ Escape closes it again; Escape closes the menu and returns the focus where it wa
 action closes the whole menu. Items can show a check mark for the current choice of a group and
 a muted keybind hint at the right.
 
+The menu belongs to the innermost target: a right click on a link, an image or a file inside a
+message opens that link's or attachment's menu, and anywhere else on the message the message's
+menu. The surfaces with a menu:
+
+- **A message**, in the timeline and in the thread panel: Add reaction (a submenu of quick
+  reactions), Copy selection (while part of the message is selected, since the menu takes the
+  place of the system's one there), Copy text, Reply in thread (not in the thread panel),
+  Forward…, Pin or Unpin message; Edit message (not in the thread panel) and Delete message… on
+  your own message, Report message… on someone else's; a Moderation section with Delete
+  message… for an Owner or a Moderator; then the plugins' message actions.
+- **A pinned message** in the pinned panel and **a search result**: Jump to message and Copy
+  text, and Unpin message in the pinned panel.
+- **An attachment**: Open (an image full size, a file in a new window) and Download once it is
+  uploaded, Delete attachment when its upload failed. A video offers Download only.
+- **A link** in a message or a link preview: Open link and Copy link address. Mentions keep
+  their own click.
+- **A notification**: Mark as read while unread; Mute conversation (a submenu of durations) or
+  Unmute conversation, and Open, while its conversation is readable.
+- **A plugin panel's header**: Plugin settings, when the plugin has settings, and Close panel.
+
 Where the app has no menu of its own, the desktop app shows no menu at all, except in text
 fields, in the composer and over selected text, which keep the system's cut, copy and paste
 menu. The web app leaves the browser's menu wherever it opens none of its own. Plugin frames

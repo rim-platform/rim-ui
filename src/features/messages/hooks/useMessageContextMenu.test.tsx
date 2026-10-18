@@ -27,11 +27,16 @@ vi.mock("../../plugins/api/usePluginCommands", () => ({
   usePluginContextMenuCommands: () => pluginCommands.list,
 }));
 
+const dispatched = vi.hoisted(() => vi.fn());
+vi.mock("../../commands/runtime/commandDispatcher", () => ({
+  dispatchCommand: (...args: unknown[]) => dispatched(...args),
+}));
+
 import { toast } from "../../../shared/toast";
 import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
-import { useMessageContextMenu } from "./useMessageContextMenu";
+import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
 
 const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
 const deleteContext = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
@@ -65,10 +70,25 @@ function serve(role: ServerMemberRoleGql, extra: Record<string, () => unknown> =
   });
 }
 
+const onForward = vi.fn();
+
 /** A message row with the conversation's message menu on it. */
-function MessageRow({ isOwnMessage, message }: { isOwnMessage: boolean; message?: MessageItem }) {
+function MessageRow({
+  isOwnMessage,
+  message,
+  threadId,
+}: {
+  isOwnMessage: boolean;
+  message?: MessageItem;
+  threadId?: string;
+}) {
   const contextMenu = useContextMenu();
-  const messageMenu = useMessageContextMenu({ workspaceId: "ws-1", conversationId: "conv-1" });
+  const messageMenu = useMessageContextMenu({
+    workspaceId: "ws-1",
+    conversationId: "conv-1",
+    onForward,
+    threadId,
+  });
   const target = {
     messageId: "msg-1",
     messageText: "hello",
@@ -79,9 +99,15 @@ function MessageRow({ isOwnMessage, message }: { isOwnMessage: boolean; message?
   };
   return (
     <>
-      <div data-testid="row" {...contextMenu.bind(() => messageMenu.getItems(target))}>
-        hello
+      <div
+        data-testid="row"
+        data-message-id="msg-1"
+        tabIndex={0}
+        {...contextMenu.bind(() => messageMenu.getItems(target))}
+      >
+        <span data-testid="text">hello world</span>
       </div>
+      <div data-testid="other">elsewhere</div>
       {contextMenu.menu}
       {messageMenu.dialog}
     </>
@@ -89,11 +115,16 @@ function MessageRow({ isOwnMessage, message }: { isOwnMessage: boolean; message?
 }
 
 /** Renders the row, waits for the viewer's role, and opens the menu with a right click. */
-async function renderMenu(role: ServerMemberRoleGql, isOwnMessage: boolean, message?: MessageItem) {
+async function renderMenu(
+  role: ServerMemberRoleGql,
+  isOwnMessage: boolean,
+  message?: MessageItem,
+  threadId?: string,
+) {
   const qc = createTestQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <MessageRow isOwnMessage={isOwnMessage} message={message} />
+      <MessageRow isOwnMessage={isOwnMessage} message={message} threadId={threadId} />
       <ConfirmCommandModal />
     </QueryClientProvider>,
   );
@@ -128,14 +159,16 @@ describe("useMessageContextMenu — report and delete", () => {
       serve(ServerMemberRoleGql.MODERATOR);
       await renderMenu(ServerMemberRoleGql.MODERATOR, false);
       expect(labels()).toEqual([
-        "Copy Text",
-        "Forward",
-        "Open Thread",
-        "Report Message",
-        "Delete Message",
-        "Pin Message",
+        "Add reaction",
+        "Copy text",
+        "Reply in thread",
+        "Forward…",
+        "Pin message",
+        "Report message…",
+        "Delete message…",
         "Translate",
       ]);
+      expect(screen.getByText("Moderation")).toBeInTheDocument();
     } finally {
       pluginCommands.list = [];
     }
@@ -145,33 +178,35 @@ describe("useMessageContextMenu — report and delete", () => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, true);
     expect(labels()).toEqual([
-      "Copy Text",
-      "Forward",
-      "Open Thread",
-      "Edit Message",
-      "Delete Message",
-      "Pin Message",
+      "Add reaction",
+      "Copy text",
+      "Reply in thread",
+      "Forward…",
+      "Pin message",
+      "Edit message",
+      "Delete message…",
     ]);
+    expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
   });
 
   it("offers Report but no Delete on someone else's message to a member", async () => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, false);
-    expect(labels()).toContain("Report Message");
-    expect(labels()).not.toContain("Delete Message");
+    expect(labels()).toContain("Report message…");
+    expect(labels()).not.toContain("Delete message…");
   });
 
   it("offers no Report on the viewer's own message", async () => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, true);
-    expect(labels()).not.toContain("Report Message");
-    expect(labels().filter((l) => l === "Delete Message")).toHaveLength(1);
+    expect(labels()).not.toContain("Report message…");
+    expect(labels().filter((l) => l === "Delete message…")).toHaveLength(1);
   });
 
   it("reports with a required reason and confirms with a toast", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await renderMenu(ServerMemberRoleGql.GUEST, false);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
 
     const dialog = screen.getByRole("dialog", { name: "Report message" });
     const submit = within(dialog).getByRole("button", { name: "Report" });
@@ -199,7 +234,7 @@ describe("useMessageContextMenu — report and delete", () => {
       },
     });
     await renderMenu(ServerMemberRoleGql.MEMBER, false);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
     fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "spam" } });
     fireEvent.click(screen.getByRole("button", { name: "Report" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("you already reported this message");
@@ -212,7 +247,7 @@ describe("useMessageContextMenu — report and delete", () => {
       })),
     });
     await renderMenu(ServerMemberRoleGql.MODERATOR, false);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete message…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
     expect(within(dialog).getByText(/as a moderator/)).toBeInTheDocument();
@@ -244,7 +279,7 @@ describe("useMessageContextMenu — report and delete", () => {
       }),
     });
     await renderMenu(ServerMemberRoleGql.OWNER, false);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete message…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -265,7 +300,7 @@ describe("useMessageContextMenu — report and delete", () => {
       },
     });
     await renderMenu(ServerMemberRoleGql.OWNER, false);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete message…" }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not found"));
     expect(toast.success).not.toHaveBeenCalled();
@@ -278,7 +313,7 @@ describe("useMessageContextMenu — report and delete", () => {
       })),
     });
     await renderMenu(ServerMemberRoleGql.MEMBER, true);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete message…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Confirm: Delete Message" });
     expect(within(dialog).queryByText(/as a moderator/)).not.toBeInTheDocument();
@@ -345,7 +380,7 @@ describe("useMessageContextMenu — reporting an encrypted message", () => {
       "mutation ReportEncryptedMessage": () => ({ reportEncryptedMessage: true }),
     });
     await renderMenu(ServerMemberRoleGql.MEMBER, false, encryptedMessage(CACHED_E2EE));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
     const dialog = screen.getByRole("dialog", { name: "Report message" });
     expect(dialog).toHaveTextContent("sends its exact content and attachments to the server");
     fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: " threats " } });
@@ -382,10 +417,126 @@ describe("useMessageContextMenu — reporting an encrypted message", () => {
   ])("refuses to report %s and says why", async (_name, e2ee, why) => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, false, encryptedMessage(e2ee));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Report Message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
     const dialog = screen.getByRole("dialog", { name: "Report message" });
     expect(within(dialog).getByRole("alert")).toHaveTextContent(why);
     expect(within(dialog).queryByLabelText("Reason")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Report" })).toBeDisabled();
+  });
+});
+
+/** Makes `range` the document's only selection. */
+function select(range: Range) {
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+describe("useMessageContextMenu — reactions, copying and the thread panel", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    onForward.mockReset();
+    dispatched.mockReset();
+    vi.mocked(toast.success).mockReset();
+    window.getSelection()?.removeAllRanges();
+  });
+
+  it("toggles a quick reaction from the Add reaction submenu", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ToggleReaction": () => ({
+        toggleReaction: { emoji: "🎉", count: 1, reactedByMe: true },
+      }),
+    });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add reaction" }));
+    const submenu = screen.getByRole("menu", { name: "Add reaction" });
+    expect(
+      within(submenu)
+        .getAllByRole("menuitem")
+        .map((el) => el.textContent),
+    ).toEqual([...QUICK_REACTIONS]);
+    fireEvent.click(within(submenu).getByRole("menuitem", { name: "🎉" }));
+
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation ToggleReaction")).toEqual([
+        { input: { serverId: "ws-1", conversationId: "conv-1", messageId: "msg-1", emoji: "🎉" } },
+      ]),
+    );
+    expect(menuIsOpen()).toBe(false);
+  });
+
+  it("offers Copy selection while text of the message is selected, and copies only it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain("Copy selection");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+
+    const text = screen.getByTestId("text").firstChild as Text;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 5);
+    select(range);
+    fireEvent.contextMenu(screen.getByTestId("row"));
+    expect(labels().slice(1, 3)).toEqual(["Copy selection", "Copy text"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy selection" }));
+    expect(writeText).toHaveBeenCalledWith("hello");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Copied to clipboard"));
+  });
+
+  it("offers no Copy selection when the selection is outside the message", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    const range = document.createRange();
+    range.selectNodeContents(screen.getByTestId("other"));
+    select(range);
+    fireEvent.contextMenu(screen.getByTestId("row"));
+    expect(labels()).not.toContain("Copy selection");
+  });
+
+  it("opens the forward dialog through onForward", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Forward…" }));
+    expect(onForward).toHaveBeenCalledWith("msg-1", "hello");
+  });
+
+  it("opens from the keyboard with the ContextMenu key", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(menuIsOpen()).toBe(false);
+    fireEvent.keyDown(screen.getByTestId("row"), { key: "ContextMenu" });
+    expect(labels()[0]).toBe("Add reaction");
+  });
+
+  it("drops Reply in thread and Edit in the thread panel and gives plugins the thread", async () => {
+    pluginCommands.list = [{ id: "plugin.translate", title: "Translate" }];
+    try {
+      serve(ServerMemberRoleGql.MEMBER);
+      await renderMenu(ServerMemberRoleGql.MEMBER, true, undefined, "thread-9");
+      expect(labels()).toEqual([
+        "Add reaction",
+        "Copy text",
+        "Forward…",
+        "Pin message",
+        "Delete message…",
+        "Translate",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Translate" }));
+      expect(dispatched).toHaveBeenCalledTimes(1);
+      expect(dispatched.mock.calls[0][2]).toEqual({
+        commandContext: expect.objectContaining({
+          workspaceId: "ws-1",
+          conversationId: "conv-1",
+          selectedMessageId: "msg-1",
+          threadId: "thread-9",
+        }),
+      });
+    } finally {
+      pluginCommands.list = [];
+    }
   });
 });

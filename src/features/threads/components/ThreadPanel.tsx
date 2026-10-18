@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Send, X } from "lucide-react";
 
 import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
@@ -11,6 +11,11 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { replaceShortcodes } from "../../messages/utils/emojiShortcodes";
 import { MessageItem } from "../../messages/components/MessageItem";
 import type { MessageItemHandlers } from "../../messages/components/MessageItem";
+import { ForwardDialog } from "../../messages/components/ForwardDialog";
+import { useMessageContextMenu } from "../../messages/hooks/useMessageContextMenu";
+import type { MessageItem as MessageItemData } from "../../../core/types/messages";
+import { usePinnedMessages } from "../../messages/api/usePinnedMessages";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { logger } from "../../../core/logger";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useEncryptedHere, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
@@ -21,6 +26,18 @@ import { withSenderAsAuthor } from "../../e2ee/utils/timeline";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { toast } from "../../../shared/toast";
+import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
+
+/** A message the thread panel shows: the root or a reply. */
+type ThreadPanelMessage = { id: string; author?: { id: string } | null };
+
+/**
+ * The message as the report dialog takes it. The replies of an encrypted conversation come
+ * from this device's cache and carry their `e2ee`; the dialog reports any other as plaintext.
+ */
+function reportable(message: ThreadPanelMessage | undefined): MessageItemData | undefined {
+  return message && "e2ee" in message ? (message as MessageItemData) : undefined;
+}
 
 export function ThreadPanel() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -135,7 +152,7 @@ export function ThreadPanel() {
     }
 
     return null;
-  }, [conversationData?.pages, rootMessageId, thread, encrypted, userOf]);
+  }, [conversationData, rootMessageId, thread, encrypted, userOf]);
 
   // Backend returns thread messages in display order (oldest-first); no reverse needed.
   // Decrypted replies name mentioned principals; the renderer names users.
@@ -205,12 +222,67 @@ export function ThreadPanel() {
     [workspaceId, conversationId, toggleReactionMutate],
   );
 
-  // No-op context menu for thread messages (simplified)
-  const handleContextMenu = useCallback(
-    (_event: React.MouseEvent, _messageId: string, _messageText: string) => {
-      // Context menu not supported in thread panel
+  const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
+  const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
+  const messageMenu = useMessageContextMenu({
+    workspaceId,
+    conversationId,
+    onForward: forward,
+    threadId: threadId ?? null,
+  });
+  const contextMenu = useContextMenu();
+  const { openFromEvent, bind } = contextMenu;
+
+  // The handlers stay stable for the rows' memo; the messages and the menu's items are read
+  // through refs when a menu opens.
+  const { data: pinnedMessages } = usePinnedMessages(
+    workspaceId ?? undefined,
+    conversationId ?? undefined,
+  );
+  const messagesRef = useRef<ThreadPanelMessage[]>([]);
+  const pinnedRef = useRef(pinnedMessages);
+  const getMenuItemsRef = useRef(messageMenu.getItems);
+  useLayoutEffect(() => {
+    messagesRef.current = rootMessage ? [rootMessage, ...items] : items;
+    pinnedRef.current = pinnedMessages;
+    getMenuItemsRef.current = messageMenu.getItems;
+  }, [rootMessage, items, pinnedMessages, messageMenu.getItems]);
+
+  const menuItemsFor = useCallback(
+    (messageId: string, messageText: string) => () => {
+      const message = messagesRef.current.find((m) => m.id === messageId);
+      return getMenuItemsRef.current({
+        messageId,
+        messageText,
+        isOwnMessage: message?.author?.id === currentUserId,
+        isPinned: pinnedRef.current?.some((m) => m.id === messageId) ?? false,
+        hasThread: true,
+        message: reportable(message),
+      });
     },
-    [],
+    [currentUserId],
+  );
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, messageId: string, messageText: string) => {
+      openFromEvent(event, menuItemsFor(messageId, messageText));
+    },
+    [openFromEvent, menuItemsFor],
+  );
+
+  const bindContextMenu = useCallback(
+    (messageId: string, messageText: string) => bind(menuItemsFor(messageId, messageText)),
+    [bind, menuItemsFor],
+  );
+
+  // A person's name, avatar or mention opens their menu, which wins over the message's.
+  const userMenu = useUserContextMenu({ workspaceId });
+  const { bind: bindUserContextMenu, openFrom: openUserMenu } = userMenu;
+  const onMentionContextMenu = useCallback(
+    (userId: string, mention: Element, event: React.MouseEvent | React.KeyboardEvent) => {
+      openUserMenu(event, { userId }, mention);
+    },
+    [openUserMenu],
   );
 
   const handlers = useMemo<MessageItemHandlers>(
@@ -218,10 +290,19 @@ export function ThreadPanel() {
       onOpenThread: openThread,
       onToggleReaction: handleToggleReaction,
       onContextMenu: handleContextMenu,
+      bindContextMenu,
+      bindUserContextMenu,
+      onMentionContextMenu,
     }),
-    [openThread, handleToggleReaction, handleContextMenu],
+    [
+      openThread,
+      handleToggleReaction,
+      handleContextMenu,
+      bindContextMenu,
+      bindUserContextMenu,
+      onMentionContextMenu,
+    ],
   );
-
   if (!rootMessageId) return null;
 
   const headerText = !thread
@@ -306,6 +387,19 @@ export function ThreadPanel() {
         )}
         <div ref={bottomRef} />
       </div>
+      {contextMenu.menu}
+      {userMenu.element}
+      {messageMenu.dialog}
+      {forwardMessage && workspaceId && conversationId && (
+        <ForwardDialog
+          open
+          onClose={() => setForwardMessage(null)}
+          messageId={forwardMessage.id}
+          messageText={forwardMessage.text}
+          workspaceId={workspaceId}
+          sourceConversationId={conversationId}
+        />
+      )}
 
       {/* Composer — always visible */}
       {workspaceId && conversationId && (

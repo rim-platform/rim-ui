@@ -121,6 +121,43 @@ describe("PluginSlotContainer", () => {
     usePluginSettingsDialogStore.getState().close();
   });
 
+  it("offers Plugin settings and Close panel on the header's context menu", () => {
+    const onClose = vi.fn();
+    const withSettings: PluginInfo = {
+      ...mockPlugin,
+      settings_schema: [
+        {
+          key: "context",
+          title: "Context",
+          description: "",
+          value_type: "string",
+          is_secret: false,
+        },
+      ],
+    };
+    render(<PluginSlotContainer plugin={withSettings} panel={mockPanel} onClose={onClose} />);
+    fireEvent.contextMenu(screen.getByText("Test Panel"));
+    expect(screen.getAllByRole("menuitem").map((el) => el.textContent)).toEqual([
+      "Plugin settings",
+      "Close panel",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plugin settings" }));
+    expect(usePluginSettingsDialogStore.getState().pluginId).toBe("test-plugin");
+    usePluginSettingsDialogStore.getState().close();
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "Close plugin panel" }), {
+      key: "ContextMenu",
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close panel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers only Close panel when the plugin has no settings", () => {
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
+    fireEvent.contextMenu(screen.getByText("Test Panel"));
+    expect(screen.getAllByRole("menuitem").map((el) => el.textContent)).toEqual(["Close panel"]);
+  });
+
   it("renders a local plugin's panel in the frame shell", async () => {
     const { container } = render(
       <PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />,

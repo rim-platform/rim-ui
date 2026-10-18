@@ -1,16 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders as render } from "../../../../test/utils";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+const graphqlRequest = vi.hoisted(() => vi.fn());
+vi.mock("../../../../core/graphql/client", () => ({
+  graphqlClient: { request: (...args: unknown[]) => graphqlRequest(...args) },
+}));
 
 import { InlineMedia } from "./InlineMedia";
 import { mediaKindOf } from "./mediaKind";
 import { MessageAttachments } from "./MessageAttachments";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import type { MessageAttachment } from "../../../../core/types/messages";
+import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
 
 function attachment(overrides: Partial<MessageAttachment> = {}): MessageAttachment {
   return {
@@ -147,5 +152,116 @@ describe("MessageAttachments embeds", () => {
       />,
     );
     expect(screen.getByRole("link", { name: /notes\.pdf/ })).toBeInTheDocument();
+  });
+});
+
+describe("attachment context menus", () => {
+  /** A message row with its own menu around the attachments, as the timeline has. */
+  function Row({ attachments }: { attachments: MessageAttachment[] }) {
+    const contextMenu = useContextMenu();
+    return (
+      <>
+        <div
+          data-testid="row"
+          {...contextMenu.bind(() => [{ id: "row", label: "Copy text", onSelect: () => {} }])}
+        >
+          <p>message text</p>
+          <MessageAttachments attachments={attachments} hasText serverId="ws-1" />
+        </div>
+        {contextMenu.menu}
+      </>
+    );
+  }
+
+  function labels(): string[] {
+    return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+  }
+
+  /** The anchors the menu follows, with their href and download attribute. */
+  function followedLinks() {
+    const followed: { href: string; download: string }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      followed.push({ href: this.href, download: this.download });
+    });
+    return followed;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    graphqlRequest.mockReset();
+  });
+
+  it("opens an image's menu, not the message's, and opens the image full size", async () => {
+    render(<Row attachments={[attachment()]} />);
+    fireEvent.contextMenu(screen.getByAltText("photo.png"));
+    expect(labels()).toEqual(["Open", "Download"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    expect(await screen.findByRole("dialog", { name: "photo.png" })).toBeInTheDocument();
+  });
+
+  it("leaves the rest of the row to the message's menu", () => {
+    render(<Row attachments={[attachment()]} />);
+    fireEvent.contextMenu(screen.getByText("message text"));
+    expect(labels()).toEqual(["Copy text"]);
+  });
+
+  it("downloads an image under its file name", () => {
+    const followed = followedLinks();
+    render(<Row attachments={[attachment()]} />);
+    fireEvent.contextMenu(screen.getByAltText("photo.png"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Download" }));
+    expect(followed).toHaveLength(1);
+    expect(followed[0].href).toMatch(/\/api\/attachments\/att-1\/download$/);
+    expect(followed[0].download).toBe("photo.png");
+  });
+
+  it("offers only Download on a video", () => {
+    const { container } = render(
+      <Row attachments={[attachment({ filename: "clip.mp4", contentType: "video/mp4" })]} />,
+    );
+    fireEvent.contextMenu(container.querySelector("video")!);
+    expect(labels()).toEqual(["Download"]);
+  });
+
+  it("opens and downloads a file chip", () => {
+    const followed = followedLinks();
+    render(
+      <Row attachments={[attachment({ filename: "notes.pdf", contentType: "application/pdf" })]} />,
+    );
+    fireEvent.contextMenu(screen.getByRole("link", { name: /notes\.pdf/ }));
+    expect(labels()).toEqual(["Open", "Download"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    fireEvent.contextMenu(screen.getByRole("link", { name: /notes\.pdf/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Download" }));
+    expect(followed.map((link) => link.download)).toEqual(["", "notes.pdf"]);
+  });
+
+  it("opens the file chip's menu from the keyboard", () => {
+    render(
+      <Row attachments={[attachment({ filename: "notes.pdf", contentType: "application/pdf" })]} />,
+    );
+    fireEvent.keyDown(screen.getByRole("link", { name: /notes\.pdf/ }), { key: "ContextMenu" });
+    expect(labels()).toEqual(["Open", "Download"]);
+  });
+
+  it("offers only Delete attachment on a failed upload, and deletes it", async () => {
+    graphqlRequest.mockResolvedValue({ deleteAttachment: true });
+    render(<Row attachments={[attachment({ status: "FAILED" })]} />);
+    fireEvent.contextMenu(screen.getByText("photo.png"));
+    expect(labels()).toEqual(["Delete attachment"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete attachment" }));
+    await waitFor(() =>
+      expect(graphqlRequest).toHaveBeenCalledWith(expect.anything(), {
+        input: { attachmentId: "att-1", serverId: "ws-1" },
+      }),
+    );
+  });
+
+  it("leaves an attachment still uploading to the message's menu", () => {
+    render(<Row attachments={[attachment({ status: "PENDING_UPLOAD" })]} />);
+    fireEvent.contextMenu(screen.getByText("photo.png"));
+    expect(labels()).toEqual(["Copy text"]);
   });
 });
