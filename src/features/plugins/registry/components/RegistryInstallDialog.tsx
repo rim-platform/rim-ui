@@ -50,14 +50,14 @@ export function RegistryInstallDialog({
   useEffect(() => {
     if (refusal !== null || !isInstallable(check) || !bundleSource) return;
     let live = true;
-    fetchEntryBundle(check).then(
+    fetchEntryBundle(check, platform).then(
       (bytes) => live && setBundle({ bytes }),
       (err: unknown) => live && setBundle({ error: messageOf(err) }),
     );
     return () => {
       live = false;
     };
-  }, [check, refusal, bundleSource]);
+  }, [check, refusal, bundleSource, platform]);
 
   const state = item.state;
   const replace = state.kind !== "notInstalled";

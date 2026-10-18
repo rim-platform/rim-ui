@@ -31,6 +31,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   the link itself. The web app still needs a host that sends `Access-Control-Allow-Origin`,
   such as GitHub Pages, `raw.githubusercontent.com` or jsDelivr, or the workspace's plugin
   registry.
+- A workspace plugin registry entry whose bundle is a GitHub release asset, or on any other
+  `https://` host that does not allow cross-origin requests, installs and updates on the
+  desktop: the desktop app fetches it itself, as **Install from link** does. The web app still
+  needs that host to send `Access-Control-Allow-Origin`.
 - A server command run from the palette, a keybind or the composer's `/` list acts on the open
   conversation and thread, as it does from the AI agent: marking a conversation read, setting its
   notification level or its slow mode no longer fails or asks for the conversation. A

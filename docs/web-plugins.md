@@ -78,8 +78,14 @@ hash to the value after `#sha256=` before anything reads them, on every platform
   works, GitHub release assets included.
 - **Web.** The browser fetches the link without credentials, so the bundle's host must send
   `Access-Control-Allow-Origin`. GitHub Pages, `raw.githubusercontent.com` and jsDelivr do;
-  GitHub release assets do not, so a link to one fails in the web app. A workspace's plugin
-  registry serves its bundles from the app's own origin and needs none.
+  GitHub release assets do not, so a link to one fails in the web app. A bundle the workspace's
+  plugin registry keeps on its own server comes from the app's own origin and needs none.
+
+A workspace registry entry whose bundle is on another host is fetched the same way: through
+`plugin_fetch_bundle` on the desktop, with the entry's signed SHA-256 as the pin, so an entry
+pointing at a GitHub release asset installs there; from the browser without credentials on the
+web, where that host must send `Access-Control-Allow-Origin`. The workspace server's own copy
+is fetched from the app with the session on both.
 
 ## Build and try the showcase
 

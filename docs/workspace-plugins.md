@@ -44,7 +44,8 @@ Before anything is offered, installed or updated:
    says.
 5. The bundle, fetched before any consent, has the signed size and SHA-256 and a
    byte-identical `rim-plugin.json`. The workspace server's copy is fetched with the
-   session; a bundle on another host only over `https://`, without credentials. A git
+   session; a bundle on another host only over `https://`, without credentials, and on the
+   desktop through the host's `plugin_fetch_bundle` with the signed SHA-256 as its pin. A git
    source is checked by the desktop right after its checkout, before any post-install step.
 
 ## Signing and publishing

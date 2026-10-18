@@ -79,7 +79,7 @@ export async function installEntry(
     if (!result.ok) throw result.error;
     return result.value;
   }
-  const bytes = options.bytes ?? (await fetchEntryBundle(check));
+  const bytes = options.bytes ?? (await fetchEntryBundle(check, platform));
   // A running web plugin is stopped first; the host starts the new copy once it is listed.
   if (options.replace && webPluginHost.knows(signed.pluginId)) {
     await webPluginHost.stop(signed.pluginId);

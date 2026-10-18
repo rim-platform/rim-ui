@@ -4,6 +4,8 @@
 // A git source's tree is checked by the desktop after its checkout.
 
 import { getApiOrigin } from "../../../core/graphql/config";
+import type { AppPlatform } from "../../../core/runtime/runtime";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import {
   PluginRuntimeKind,
   PluginSourceKind,
@@ -16,7 +18,7 @@ import type {
   PluginManifestValidity,
 } from "../../key-identity/browser/pluginManifest";
 import { readBundle, sha256Hex } from "../web/bundle";
-import { fetchBundle } from "../web/bundleLink";
+import { fetchBundle, fetchBundleOnDesktop, type InvokeImpl } from "../web/bundleLink";
 import {
   checkInstall,
   parseManifestText,
@@ -164,16 +166,31 @@ export function bundleRequest(bundleUrl: string): { url: string; credentials: Re
   return { url: url.href, credentials: "omit" };
 }
 
-/** Step 5 for a bundle source: fetch the entry's bundle and check it. */
+/**
+ * Step 5 for a bundle source: fetch the entry's bundle and check it. The server's own copy is
+ * fetched from the webview with the session on every platform. A bundle on another host is
+ * fetched through the desktop host's `plugin_fetch_bundle` command on the desktop, which reads
+ * hosts that send no `Access-Control-Allow-Origin`, and from the webview without credentials
+ * elsewhere. Either way the bytes must hash to the signed SHA-256.
+ *
+ * @param check - The verified entry.
+ * @param platform - The platform this client runs on.
+ * @returns The bundle's bytes, with the signed size, hash and manifest.
+ */
 export async function fetchEntryBundle(
   check: VerifiedEntry,
+  platform: AppPlatform,
   fetchImpl: typeof fetch = fetch,
+  invokeImpl: InvokeImpl = safeInvoke,
 ): Promise<Uint8Array> {
   const source = check.statement.source;
   const url = check.entry.source.bundleUrl;
   if (source.kind !== "bundle" || !url) throw new Error("this plugin does not come as a bundle");
   const request = bundleRequest(url);
-  const bytes = await fetchBundle(request.url, source.sha256, fetchImpl, request.credentials);
+  const bytes =
+    platform === "desktop" && request.credentials === "omit"
+      ? await fetchBundleOnDesktop(request.url, source.sha256, invokeImpl)
+      : await fetchBundle(request.url, source.sha256, fetchImpl, request.credentials);
   await checkBundleBytes(check.statement, bytes);
   return bytes;
 }
