@@ -11,13 +11,17 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { isContextMenuKey, useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useMutedStore } from "../state/useMutedStore";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../messages/api/useMessages";
 import { usePendingDmRequestsIn } from "../../relay/api/useDmRequests";
 import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
-import { isInvited } from "../utils";
+import { useConversationMenuItems } from "../hooks/useConversationMenuItems";
+import type { ConversationSummary } from "../types";
+import { conversationRowIn, isInvited } from "../utils";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
 import { DirectConversationList } from "./DirectConversationList";
@@ -26,6 +30,8 @@ import { DraftDirectItem } from "./DraftDirectItem";
 interface ConversationListProps {
   onNewChannel: () => void;
 }
+
+const ROW_MENU = { label: "Conversation actions" };
 
 /**
  * The side rail's conversations: a workspace's channels and DMs, or, in a direct space, the
@@ -56,6 +62,15 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const scopedRequests = usePendingDmRequestsIn(workspaceId ?? undefined);
   const requestCount = workspaceId ? scopedRequests.length : 0;
   const qc = useQueryClient();
+  const contextMenu = useContextMenu();
+  const { bind: bindContextMenu, openUnder } = contextMenu;
+  const { getItems: conversationMenuItems, dialogs: conversationDialogs } =
+    useConversationMenuItems(workspaceId);
+  const bindRowMenu = useCallback(
+    (conv: ConversationSummary, label: string) =>
+      bindContextMenu(() => conversationMenuItems(conv, { label }), ROW_MENU),
+    [bindContextMenu, conversationMenuItems],
+  );
 
   // Track the previous conversation so it can be snapshotted before switching
   const prevSelectedIdRef = useRef<string | null>(null);
@@ -141,9 +156,11 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   }, [allItems, selectedId, focusedIndex]);
 
   // Reset focused index when items change
-  useEffect(() => {
+  const [itemCount, setItemCount] = useState(allConversationIds.length);
+  if (itemCount !== allConversationIds.length) {
+    setItemCount(allConversationIds.length);
     setFocusedIndex(-1);
-  }, [allConversationIds.length]);
+  }
 
   // Open the first conversation when nothing is open; a draft DM counts as open. A plugin
   // panel the user has open stays over it.
@@ -158,6 +175,16 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   }, [selectedId, draftOpen, channels, messages, select]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (isContextMenuKey(e)) {
+      // A focused row or header opened its own menu; otherwise the highlighted row's opens.
+      if (e.defaultPrevented) return;
+      const conv = focusedIndex >= 0 ? allItems[focusedIndex] : undefined;
+      const row = conv ? conversationRowIn(e.currentTarget, conv.id) : null;
+      if (conv && row && openUnder(row, () => conversationMenuItems(conv), ROW_MENU)) {
+        e.preventDefault();
+      }
+      return;
+    }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
 
@@ -223,106 +250,88 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const archivedOffset = channels.length;
   const messagesOffset = channels.length + visibleArchived.length;
 
-  return (
-    <div
-      className="space-y-4"
-      tabIndex={0}
-      role="listbox"
-      onKeyDown={handleKeyDown}
-      onFocus={handleFocus}
-      onBlur={() => {
-        setIsKeyboardNavigating(false);
-        setFocusedIndex(-1);
-      }}
-      onMouseDown={() => {
-        setIsKeyboardNavigating(false);
-        setFocusedIndex(-1);
-      }}
-    >
-      <div>
-        <div className="flex items-center justify-between px-2 pb-1">
-          <h3 className="text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
-            Channels
-          </h3>
-          {!isGuest && (
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={() => setBrowseOpen(true)}
-                title="Browse channels"
-                aria-label="Browse channels"
-                className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
-              >
-                <Compass className="h-3 w-3" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onNewChannel()}
-                title="New channel"
-                aria-label="New channel"
-                className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
-              >
-                <Plus className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-        </div>
-        {channels.length === 0 && isGuest ? (
-          <p className="px-2 py-2 text-sm text-rim-text-muted">
-            No channels yet. A member can add you to one.
-          </p>
-        ) : channels.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => setBrowseOpen(true)}
-            className="w-full rounded-lg px-2 py-2 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-          >
-            No channels joined yet. Browse channels
-          </button>
-        ) : (
-          <ul className="space-y-0.5">
-            {channels.map((conv, i) => (
-              <ConversationItem
-                key={conv.id}
-                conv={conv}
-                globalIndex={i}
-                selectedId={selectedId}
-                focusedIndex={focusedIndex}
-                isKeyboardNavigating={isKeyboardNavigating}
-                currentUserId={currentUserId}
-                memberLookup={memberLookup}
-                select={select}
-                unreadCount={unreadCounts[conv.id] ?? 0}
-                isMuted={mutedIds.has(conv.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
+  const channelSectionItems = (): DropdownMenuItem[] =>
+    isGuest
+      ? []
+      : [
+          { id: "browse-channels", label: "Browse channels…", onSelect: () => setBrowseOpen(true) },
+          { id: "create-channel", label: "Create channel…", onSelect: () => onNewChannel() },
+        ];
+  const archivedSectionItems = (): DropdownMenuItem[] => [
+    {
+      id: "toggle-section",
+      label: archivedOpen ? "Collapse section" : "Expand section",
+      onSelect: () => setArchivedOpen((v) => !v),
+    },
+  ];
 
-      {archivedChannels.length > 0 && (
+  return (
+    <>
+      <div
+        className="space-y-4"
+        tabIndex={0}
+        role="listbox"
+        onKeyDown={handleKeyDown}
+        onFocus={handleFocus}
+        onBlur={() => {
+          setIsKeyboardNavigating(false);
+          setFocusedIndex(-1);
+        }}
+        onMouseDown={() => {
+          setIsKeyboardNavigating(false);
+          setFocusedIndex(-1);
+        }}
+      >
         <div>
-          <button
-            type="button"
-            onClick={() => setArchivedOpen((v) => !v)}
-            aria-expanded={archivedOpen}
-            className="flex w-full items-center gap-1 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint transition hover:text-rim-text"
+          <div
+            {...bindContextMenu(channelSectionItems, { label: "Channels" })}
+            className="flex items-center justify-between px-2 pb-1"
           >
-            {archivedOpen ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
+              Channels
+            </h3>
+            {!isGuest && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setBrowseOpen(true)}
+                  title="Browse channels"
+                  aria-label="Browse channels"
+                  className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+                >
+                  <Compass className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNewChannel()}
+                  title="New channel"
+                  aria-label="New channel"
+                  className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
             )}
-            <Archive className="h-3 w-3" />
-            Archived ({archivedChannels.length})
-          </button>
-          {archivedOpen && (
-            <ul className="space-y-0.5" aria-label="Archived channels">
-              {visibleArchived.map((conv, i) => (
+          </div>
+          {channels.length === 0 && isGuest ? (
+            <p className="px-2 py-2 text-sm text-rim-text-muted">
+              No channels yet. A member can add you to one.
+            </p>
+          ) : channels.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setBrowseOpen(true)}
+              className="w-full rounded-lg px-2 py-2 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+            >
+              No channels joined yet. Browse channels
+            </button>
+          ) : (
+            <ul className="space-y-0.5">
+              {channels.map((conv, i) => (
                 <ConversationItem
                   key={conv.id}
                   conv={conv}
-                  globalIndex={archivedOffset + i}
+                  globalIndex={i}
                   selectedId={selectedId}
                   focusedIndex={focusedIndex}
                   isKeyboardNavigating={isKeyboardNavigating}
@@ -331,43 +340,87 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
                   select={select}
                   unreadCount={unreadCounts[conv.id] ?? 0}
                   isMuted={mutedIds.has(conv.id)}
+                  bindMenu={bindRowMenu}
                 />
               ))}
             </ul>
           )}
         </div>
-      )}
 
-      {(messages.length > 0 || draft || requestCount > 0) && (
-        <div>
-          <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
-            Conversations
-          </h3>
-          {workspaceId && <DmRequestsRow workspaceId={workspaceId} count={requestCount} />}
-          <ul className="space-y-0.5">
-            {draft && <DraftDirectItem draft={draft} />}
-            {messages.map((conv, i) => (
-              <ConversationItem
-                key={conv.id}
-                conv={conv}
-                globalIndex={messagesOffset + i}
-                selectedId={selectedId}
-                focusedIndex={focusedIndex}
-                isKeyboardNavigating={isKeyboardNavigating}
-                currentUserId={currentUserId}
-                memberLookup={memberLookup}
-                select={select}
-                unreadCount={unreadCounts[conv.id] ?? 0}
-                isMuted={mutedIds.has(conv.id)}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
+        {archivedChannels.length > 0 && (
+          <div>
+            <button
+              type="button"
+              {...bindContextMenu(archivedSectionItems, { label: "Archived" })}
+              onClick={() => setArchivedOpen((v) => !v)}
+              aria-expanded={archivedOpen}
+              className="flex w-full items-center gap-1 px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint transition hover:text-rim-text"
+            >
+              {archivedOpen ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+              <Archive className="h-3 w-3" />
+              Archived ({archivedChannels.length})
+            </button>
+            {archivedOpen && (
+              <ul className="space-y-0.5" aria-label="Archived channels">
+                {visibleArchived.map((conv, i) => (
+                  <ConversationItem
+                    key={conv.id}
+                    conv={conv}
+                    globalIndex={archivedOffset + i}
+                    selectedId={selectedId}
+                    focusedIndex={focusedIndex}
+                    isKeyboardNavigating={isKeyboardNavigating}
+                    currentUserId={currentUserId}
+                    memberLookup={memberLookup}
+                    select={select}
+                    unreadCount={unreadCounts[conv.id] ?? 0}
+                    isMuted={mutedIds.has(conv.id)}
+                    bindMenu={bindRowMenu}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
-      {browseOpen && workspaceId && !isGuest && (
-        <BrowseChannelsDialog workspaceId={workspaceId} onClose={() => setBrowseOpen(false)} />
-      )}
-    </div>
+        {(messages.length > 0 || draft || requestCount > 0) && (
+          <div>
+            <h3 className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
+              Conversations
+            </h3>
+            {workspaceId && <DmRequestsRow workspaceId={workspaceId} count={requestCount} />}
+            <ul className="space-y-0.5">
+              {draft && <DraftDirectItem draft={draft} />}
+              {messages.map((conv, i) => (
+                <ConversationItem
+                  key={conv.id}
+                  conv={conv}
+                  globalIndex={messagesOffset + i}
+                  selectedId={selectedId}
+                  focusedIndex={focusedIndex}
+                  isKeyboardNavigating={isKeyboardNavigating}
+                  currentUserId={currentUserId}
+                  memberLookup={memberLookup}
+                  select={select}
+                  unreadCount={unreadCounts[conv.id] ?? 0}
+                  isMuted={mutedIds.has(conv.id)}
+                  bindMenu={bindRowMenu}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {browseOpen && workspaceId && !isGuest && (
+          <BrowseChannelsDialog workspaceId={workspaceId} onClose={() => setBrowseOpen(false)} />
+        )}
+      </div>
+      {contextMenu.menu}
+      {conversationDialogs}
+    </>
   );
 }

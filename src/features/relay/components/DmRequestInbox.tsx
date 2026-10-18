@@ -6,6 +6,8 @@ import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { leaveConversation } from "../../conversations/api/useChannelMembership";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
@@ -102,6 +104,7 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
   });
   const [busy, setBusy] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const contextMenu = useContextMenu();
   const name = sender.data ?? "Unverified sender";
 
   async function act(action: () => Promise<void>, failure: string) {
@@ -143,67 +146,109 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
     }
   }
 
+  function report(reason: string) {
+    void act(async () => {
+      await reportDmRequest(request.id, reason);
+      setReporting(false);
+      toast.success("Reported to your relay's operators");
+    }, "Could not report");
+  }
+
+  // The row's buttons, as a context menu; nothing opens while one of them runs.
+  const menuItems = (): DropdownMenuItem[] =>
+    busy
+      ? []
+      : [
+          {
+            id: "accept",
+            label: "Accept",
+            onSelect: () => void act(() => acceptDmRequest(request.id), "Could not accept"),
+          },
+          { id: "read-first", label: "Read first", onSelect: () => void readFirst() },
+          {
+            id: "ignore",
+            label: "Ignore",
+            onSelect: () => void act(() => ignoreDmRequest(request.id), "Could not ignore"),
+          },
+          {
+            id: "report",
+            label: "Report",
+            submenu: REPORT_REASONS.map((reason) => ({
+              id: `report-${reason.toLowerCase()}`,
+              label: reason,
+              onSelect: () => report(reason),
+            })),
+          },
+          {
+            id: "block",
+            label: "Block",
+            danger: true,
+            separatorBefore: true,
+            onSelect: () => void act(block, "Could not block"),
+          },
+        ];
+
   return (
-    <li className="space-y-2 px-3 py-2">
-      <div>
-        <p className="text-sm text-rim-text">{name}</p>
-        <p className="text-xs text-rim-text-faint">
-          <PrincipalFingerprint principalId={request.fromPrincipalId} />
-          {sender.isError && " · their card could not be verified"}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => void act(() => acceptDmRequest(request.id), "Could not accept")}
-        >
-          Accept
-        </Button>
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void readFirst()}>
-          Read first
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          onClick={() => void act(() => ignoreDmRequest(request.id), "Could not ignore")}
-        >
-          Ignore
-        </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={busy}
-          onClick={() => void act(block, "Could not block")}
-        >
-          Block
-        </Button>
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReporting((v) => !v)}>
-          Report
-        </Button>
-      </div>
-      {reporting && (
-        <div className="flex flex-wrap gap-1.5" aria-label="Report reason">
-          {REPORT_REASONS.map((reason) => (
-            <Button
-              key={reason}
-              variant="secondary"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  await reportDmRequest(request.id, reason);
-                  setReporting(false);
-                  toast.success("Reported to your relay's operators");
-                }, "Could not report")
-              }
-            >
-              {reason}
-            </Button>
-          ))}
+    <>
+      <li
+        {...contextMenu.bind(menuItems, { label: `Message request from ${name}` })}
+        className="space-y-2 px-3 py-2"
+      >
+        <div>
+          <p className="text-sm text-rim-text">{name}</p>
+          <p className="text-xs text-rim-text-faint">
+            <PrincipalFingerprint principalId={request.fromPrincipalId} />
+            {sender.isError && " · their card could not be verified"}
+          </p>
         </div>
-      )}
-    </li>
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => void act(() => acceptDmRequest(request.id), "Could not accept")}
+          >
+            Accept
+          </Button>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void readFirst()}>
+            Read first
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void act(() => ignoreDmRequest(request.id), "Could not ignore")}
+          >
+            Ignore
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={busy}
+            onClick={() => void act(block, "Could not block")}
+          >
+            Block
+          </Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReporting((v) => !v)}>
+            Report
+          </Button>
+        </div>
+        {reporting && (
+          <div className="flex flex-wrap gap-1.5" aria-label="Report reason">
+            {REPORT_REASONS.map((reason) => (
+              <Button
+                key={reason}
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => report(reason)}
+              >
+                {reason}
+              </Button>
+            ))}
+          </div>
+        )}
+      </li>
+      {contextMenu.menu}
+    </>
   );
 }

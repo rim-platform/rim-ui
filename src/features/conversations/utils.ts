@@ -60,3 +60,13 @@ export function directPeerId(
   const people = [...conversation.memberIds, ...pendingMembersOf(conversation)];
   return people.find((id) => id !== userId) ?? people[0];
 }
+
+/**
+ * The row of `conversationId` among the conversation rows inside `container`.
+ *
+ * @returns The row's element, or `null` when it is not rendered.
+ */
+export function conversationRowIn(container: Element, conversationId: string): HTMLElement | null {
+  const rows = container.querySelectorAll<HTMLElement>("[data-conversation-id]");
+  return Array.from(rows).find((row) => row.dataset.conversationId === conversationId) ?? null;
+}

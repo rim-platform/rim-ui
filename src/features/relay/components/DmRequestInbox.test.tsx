@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
@@ -112,6 +112,29 @@ describe("DmRequestInbox", () => {
     await user.click(await screen.findByRole("button", { name: "Report" }));
     await user.click(screen.getByRole("button", { name: "Spam" }));
     await waitFor(() => expect(api.reportDmRequest).toHaveBeenCalledWith("req-1", "Spam"));
+  });
+
+  it("offers the row's actions in a context menu, with the report reasons in a submenu", async () => {
+    renderWithProviders(<DmRequestInbox />);
+    const row = (await screen.findByText("Alice")).closest("li")!;
+    fireEvent.contextMenu(row);
+    const menu = screen.getByRole("menu", { name: "Message request from Alice" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((el) => el.textContent),
+    ).toEqual(["Accept", "Read first", "Ignore", "Report", "Block"]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Report" }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Report" })).getByRole("menuitem", {
+        name: "Harassment",
+      }),
+    );
+    await waitFor(() => expect(api.reportDmRequest).toHaveBeenCalledWith("req-1", "Harassment"));
+
+    fireEvent.keyDown(within(row).getByRole("button", { name: "Accept" }), { key: "ContextMenu" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Accept" }));
+    await waitFor(() => expect(api.acceptDmRequest).toHaveBeenCalledWith("req-1"));
   });
 
   it("opens the conversation to read it before deciding", async () => {

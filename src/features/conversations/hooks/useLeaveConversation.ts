@@ -10,7 +10,8 @@ import { conversationLabel } from "../utils";
 
 /**
  * Leaves a channel or group and, when it is the open conversation, returns to the workspace
- * home (the conversation list selects the first conversation). Errors surface the server's
+ * home (the conversation list selects the first conversation). A conversation that names its
+ * `serverId` is left in that workspace, any other in `workspaceId`. Errors surface the server's
  * message.
  */
 export function useLeaveConversation(workspaceId: string | null | undefined) {
@@ -18,10 +19,14 @@ export function useLeaveConversation(workspaceId: string | null | undefined) {
   const { mutate } = mutation;
 
   const leave = useCallback(
-    (conversation: Pick<ConversationSummary, "id" | "conversationType" | "title">) => {
-      if (!workspaceId) return;
+    (
+      conversation: Pick<ConversationSummary, "id" | "conversationType" | "title"> &
+        Partial<Pick<ConversationSummary, "serverId">>,
+    ) => {
+      const serverId = conversation.serverId ?? workspaceId;
+      if (!serverId) return;
       mutate(
-        { serverId: workspaceId, conversationId: conversation.id },
+        { serverId, conversationId: conversation.id },
         {
           onSuccess: () => {
             const shell = useShellStore.getState();

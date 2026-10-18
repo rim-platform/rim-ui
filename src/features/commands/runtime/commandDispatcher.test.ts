@@ -118,7 +118,7 @@ vi.mock("../../conversations/state/useUnreadStore", () => ({
 }));
 
 vi.mock("../../conversations/api/useMarkAsRead", () => ({
-  MARK_ALL_AS_READ: "mutation MarkAllAsRead",
+  markWorkspaceRead: vi.fn(),
 }));
 
 vi.mock("../../../core/graphql/client", () => ({

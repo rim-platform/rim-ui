@@ -39,7 +39,7 @@ import {
 import { authorDisplayName, notificationConversationLabel } from "../labels";
 import { jumpToNotification } from "../runtime/jumpToNotification";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
-import { MUTE_DURATIONS } from "../hooks/useConversationNotificationMenu";
+import { MUTE_DURATIONS } from "../hooks/useConversationNotificationItems";
 
 const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> = {
   [NotificationReason.DIRECT]: { label: "Direct message", icon: MessageCircle },

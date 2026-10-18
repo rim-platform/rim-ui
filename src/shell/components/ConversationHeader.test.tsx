@@ -35,6 +35,7 @@ import {
 } from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../features/conversations/types";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useTopicEditStore } from "../../features/conversations/state/useTopicEditStore";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useE2eeStore } from "../../features/e2ee/state/useE2eeStore";
 import { usePresenceStore } from "../../features/presence/state/usePresenceStore";
@@ -112,6 +113,26 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     fireEvent.click(count);
     expect(useMembersPanelStore.getState().open).toBe(true);
     expect(screen.getByRole("button", { name: "Conversation menu" })).toBeInTheDocument();
+  });
+
+  it("edits the topic from the conversation menu and saves it with Enter", async () => {
+    serveConversation(makeConversation({ id: "conv-1", topic: "Old topic" }));
+    renderHeader();
+    fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
+
+    const input = await screen.findByPlaceholderText("Set a topic...");
+    expect(input).toHaveValue("Old topic");
+    await waitFor(() => expect(input).toHaveFocus());
+    fireEvent.change(input, { target: { value: "New topic" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(
+        requestMock.mock.calls.filter(([doc]) => String(doc).includes("UpdateConversationTopic")),
+      ).toHaveLength(1),
+    );
+    expect(useTopicEditStore.getState().conversationId).toBeNull();
+    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
   });
 
   it("marks an archived channel", async () => {

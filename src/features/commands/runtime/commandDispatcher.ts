@@ -17,8 +17,7 @@ import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost"
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
-import { MARK_ALL_AS_READ } from "../../conversations/api/useMarkAsRead";
-import { graphqlClient } from "../../../core/graphql/client";
+import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
@@ -243,12 +242,7 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   },
   "chat.mark_all_as_read": () => {
     const workspaceId = useWorkspaceStore.getState().workspaceId;
-    if (workspaceId) {
-      useUnreadStore.getState().markAllRead(workspaceId);
-      graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
-        toast.error("Failed to mark all as read");
-      });
-    }
+    if (workspaceId) markWorkspaceRead(workspaceId);
   },
   "workspace.reload_commands": () => {
     reloadCommands();

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { Hash, Pin, Search, UserPlus } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
@@ -11,6 +11,7 @@ import { ChannelIcon } from "../../features/conversations/components/ChannelIcon
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
 import { directPeerId, isInvited, pendingMembersOf } from "../../features/conversations/utils";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useTopicEditStore } from "../../features/conversations/state/useTopicEditStore";
 import { useShellStore, type DirectDraft } from "../state/useShellStore";
 import { draftSpaceId, useDraftPeer } from "../../features/conversations/hooks/useDraftPeer";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
@@ -97,36 +98,44 @@ function SelectedConversationHeader() {
   const canInvite = useIsOwner(workspaceId ?? undefined);
 
   const topic = conversation?.topic ?? null;
-  const [isEditingTopic, setIsEditingTopic] = useState(false);
-  const [topicDraft, setTopicDraft] = useState("");
+  const isEditingTopic = useTopicEditStore(
+    (s) => conversationId !== null && s.conversationId === conversationId,
+  );
+  const topicDraft = useTopicEditStore((s) => s.draft);
+  const {
+    start: startTopicEdit,
+    setDraft: setTopicDraft,
+    stop: stopTopicEdit,
+  } = useTopicEditStore.getState();
   const topicInputRef = useRef<HTMLInputElement>(null);
   const updateTopic = useUpdateTopicMutation();
 
+  // The edit can start from a menu before the channel has loaded.
+  const showTopicInput = isChannel && isEditingTopic;
   useEffect(() => {
-    if (isEditingTopic && topicInputRef.current) {
+    if (showTopicInput && topicInputRef.current) {
       topicInputRef.current.focus();
     }
-  }, [isEditingTopic]);
+  }, [showTopicInput]);
 
   const handleTopicClick = useCallback(() => {
-    if (isChannel && !conversation?.isArchived) {
-      setTopicDraft(topic ?? "");
-      setIsEditingTopic(true);
+    if (conversationId && isChannel && !conversation?.isArchived) {
+      startTopicEdit(conversationId, topic ?? "");
     }
-  }, [isChannel, conversation?.isArchived, topic]);
+  }, [conversationId, isChannel, conversation?.isArchived, topic, startTopicEdit]);
 
   const handleTopicKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Escape") {
-        setIsEditingTopic(false);
+        stopTopicEdit();
       } else if (e.key === "Enter") {
         if (workspaceId && conversationId && topicDraft !== (topic ?? "")) {
           updateTopic.mutate({ serverId: workspaceId, conversationId, topic: topicDraft });
         }
-        setIsEditingTopic(false);
+        stopTopicEdit();
       }
     },
-    [workspaceId, conversationId, topicDraft, topic, updateTopic],
+    [workspaceId, conversationId, topicDraft, topic, updateTopic, stopTopicEdit],
   );
 
   return (
@@ -168,14 +177,14 @@ function SelectedConversationHeader() {
             <PlaintextNotice workspaceId={workspaceId} conversationId={conversationId} />
           </div>
           {isChannel &&
-            (isEditingTopic ? (
+            (showTopicInput ? (
               <input
                 ref={topicInputRef}
                 type="text"
                 value={topicDraft}
                 onChange={(e) => setTopicDraft(e.target.value)}
                 onKeyDown={handleTopicKeyDown}
-                onBlur={() => setIsEditingTopic(false)}
+                onBlur={stopTopicEdit}
                 placeholder="Set a topic..."
                 className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
               />

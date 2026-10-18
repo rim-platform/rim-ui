@@ -33,6 +33,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Context menus on messages in the thread panel, pinned messages, search results, attachments,
   links and link previews, notifications and plugin panel headers. A message's menu adds quick
   reactions, Copy selection and Reply in thread, and its labels read in sentence case.
+- Right click (or the ContextMenu key, or a long press) on a conversation in the sidebar, a
+  sidebar section heading, a workspace on the rail or a message request opens a menu of its
+  actions. A conversation's menu is the same as the "…" menu in its header, whose Notifications
+  entry is now a submenu, and adds Mark as read, Invite people, Edit topic and Assign keybind.
 
 ### Changed
 
