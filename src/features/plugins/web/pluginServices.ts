@@ -1,6 +1,6 @@
 // What the web plugin host needs from where plugins are installed: on the
-// desktop, Tauri commands over the Rust `PluginStateStore` and plugin folders;
-// on the web, IndexedDB (`browserPluginStore.ts`).
+// desktop, Tauri commands over the Rust `PluginStateStore`, plugin folders and
+// settings; on the web, IndexedDB (`browserPluginStore.ts`).
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
@@ -93,6 +93,18 @@ export const desktopPluginServices: PluginServices = {
   async storageSet(pluginId, key, value) {
     const result = await safeInvoke<null>("plugin_storage_set", { pluginId, key, value });
     if (!result.ok) throw toRpcError(result.error);
+  },
+
+  async pluginSettings(pluginId) {
+    const result = await safeInvoke<Record<string, unknown>>("plugin_web_settings", { pluginId });
+    if (result.ok) return result.value;
+    const error = result.error;
+    const locked = "code" in error && error.code === "SECRETS_LOCKED";
+    throw new RpcError(
+      ErrorCode.INTERNAL_ERROR,
+      error.message,
+      locked ? { reason: "secretsLocked" } : undefined,
+    );
   },
 
   installBundle({ bytes, sha256, source, replace, manifest, keepApprovals }) {

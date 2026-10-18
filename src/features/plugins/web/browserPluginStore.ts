@@ -29,6 +29,7 @@ import {
 } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins, type BundleInstall, type PluginServices } from "./pluginServices";
 import { ErrorCode, RpcError, type PrincipalMapping } from "./rpc";
+import { webPluginHost } from "./webPluginHost";
 
 const DB_NAME = "rim-plugins";
 const DB_VERSION = 2;
@@ -579,6 +580,11 @@ export class BrowserPluginStore implements PluginServices {
     return mergeSettings(schema, saved);
   }
 
+  /** The settings `pluginId` reads for the signed-in account, as {@link resolvedPluginSettings} gives them. */
+  pluginSettings(pluginId: string): Promise<Record<string, unknown>> {
+    return resolvedPluginSettings(pluginId, this.account);
+  }
+
   private async anyInstall(pluginId: string): Promise<InstallRecord | undefined> {
     const tx = (await database()).transaction(INSTALLS, "readonly");
     const records = await done(tx.objectStore(INSTALLS).getAll() as IDBRequest<InstallRecord[]>);
@@ -623,9 +629,9 @@ export function resolvedPluginSettings(
 
 /**
  * Runs after a save or a reset changed `pluginId`'s settings for the signed-in
- * account in this browser: the one place the web store says the values a
- * running plugin holds are out of date. It tells the plugin nothing.
+ * account, in this browser or in the desktop's host: the web plugin host sends
+ * the plugin's running session its new settings in `rim.settings.changed`.
  */
 export function onPluginSettingsSaved(pluginId: string): void {
-  void pluginId;
+  webPluginHost.settingsChanged(pluginId);
 }

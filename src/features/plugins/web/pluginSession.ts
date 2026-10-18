@@ -53,6 +53,12 @@ export interface SessionHooks {
   updatePanel(panelId: string, state: unknown, patch: boolean): unknown;
   storageGet(key: string): Promise<unknown>;
   storageSet(key: string, value: unknown): Promise<void>;
+  /**
+   * The plugin's settings for the signed-in account, for `rim.settings.get` and
+   * `rim.settings.changed`. Throws an {@link RpcError} with `data.reason`
+   * `"secretsLocked"` when a saved secret cannot be read.
+   */
+  settingsGet(): Promise<Record<string, unknown>>;
   /** A `rim.chat.*` call, already past the capability gate and its rate limit. */
   chat?(method: string, params: unknown): Promise<unknown>;
   /** The session ended on its own: a failed handshake, a flood, missed heartbeats. */
@@ -173,6 +179,8 @@ export class PluginSession {
   private readonly messages: Window;
   private readonly logLines: Window;
   private readonly capabilityCalls = new Map<string, Window>();
+  /** The settings reads, each started after the one before has been sent. */
+  private settingsQueue: Promise<void> = Promise.resolve();
 
   constructor(port: SessionPort, config: SessionConfig, hooks: SessionHooks) {
     this.port = port;
@@ -277,6 +285,18 @@ export class PluginSession {
     }
   }
 
+  /**
+   * The plugin's settings changed: a running plugin gets them in
+   * `rim.settings.changed` once they are read, and none while they cannot be.
+   */
+  settingsChanged(): void {
+    if (this.state !== "running") return;
+    this.queueSettings(
+      (values) => this.notify(Method.settingsChanged, { values }),
+      (error) => this.hooks.log("warn", `settings not sent: ${error.message}`),
+    );
+  }
+
   /** The whole provisional-to-key mapping this host knows. */
   setMappings(mappings: readonly PrincipalMapping[]): void {
     if (JSON.stringify(mappings) === JSON.stringify(this.mappings)) return;
@@ -314,6 +334,36 @@ export class PluginSession {
   private sendPrincipal(): void {
     this.sentPrincipal = this.principal;
     this.notify(Method.principalChanged, { principal: this.principal });
+    // The settings belong to the signed-in account, so they follow every principal change.
+    this.settingsChanged();
+  }
+
+  /**
+   * Read the plugin's settings once every read queued before has been sent, and
+   * hand them to `deliver`, or why they could not be read to `failed`. One read
+   * at a time, each sent before the next starts, so the plugin never gets an
+   * older set after a newer one.
+   */
+  private queueSettings(
+    deliver: (values: Record<string, unknown>) => void,
+    failed: (error: RpcError) => void,
+  ): void {
+    this.settingsQueue = this.settingsQueue.then(async () => {
+      let values: Record<string, unknown>;
+      try {
+        values = await this.hooks.settingsGet();
+      } catch (error) {
+        failed(asRpcError(error));
+        return;
+      }
+      try {
+        deliver(values);
+      } catch (error) {
+        if (!(error instanceof SessionClosedError)) {
+          this.hooks.log("warn", `settings not sent: ${(error as Error).message}`);
+        }
+      }
+    });
   }
 
   private fail(reason: string): void {
@@ -519,15 +569,18 @@ export class PluginSession {
       this.answerError(id, denied);
       return;
     }
+    if (method === Method.settingsGet) {
+      // Answered in turn with `rim.settings.changed`; its params are ignored.
+      this.queueSettings(
+        (values) => this.answer(id, { values }),
+        (error) => this.answerError(id, error),
+      );
+      return;
+    }
     try {
       this.answer(id, await this.dispatch(method, params));
     } catch (error) {
-      this.answerError(
-        id,
-        error instanceof RpcError
-          ? error
-          : new RpcError(ErrorCode.INTERNAL_ERROR, (error as Error).message ?? String(error)),
-      );
+      this.answerError(id, asRpcError(error));
     }
   }
 
@@ -581,6 +634,13 @@ export class PluginSession {
       );
     }
   }
+}
+
+/** `error` as the JSON-RPC error a plugin gets: itself, or `INTERNAL_ERROR` with its message. */
+function asRpcError(error: unknown): RpcError {
+  return error instanceof RpcError
+    ? error
+    : new RpcError(ErrorCode.INTERNAL_ERROR, (error as Error).message ?? String(error));
 }
 
 function storageKey(params: unknown): string {

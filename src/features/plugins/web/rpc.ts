@@ -17,6 +17,8 @@ export const Method = {
   updatePanel: "rim.ui.update_panel",
   storageGet: "rim.storage.get",
   storageSet: "rim.storage.set",
+  settingsGet: "rim.settings.get",
+  settingsChanged: "rim.settings.changed",
 } as const;
 
 export const ErrorCode = {

@@ -70,6 +70,7 @@ describe("rim.chat.list_messages over a port", () => {
         updatePanel: () => ({}),
         storageGet: async () => null,
         storageSet: async () => {},
+        settingsGet: async () => ({}),
         chat: (method, params) => service.call(PLUGIN, method, params, granted),
         stopped: () => {},
       },

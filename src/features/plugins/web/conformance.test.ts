@@ -76,6 +76,7 @@ describe("the template's browser build over a port", () => {
         updatePanel: () => ({}),
         storageGet: async () => null,
         storageSet: async () => {},
+        settingsGet: async () => ({}),
         stopped: (reason) => {
           stopped = reason;
         },
@@ -157,6 +158,8 @@ describe("the template's browser build over a port", () => {
       "rim.principal.changed",
       "rim.principals.remapped",
       "rim.heartbeat",
+      // Read after the principal changed, so it follows what was sent meanwhile.
+      "rim.settings.changed",
       "rim.shutdown",
     ]);
     for (const message of sent) {
