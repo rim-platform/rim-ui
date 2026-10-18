@@ -165,12 +165,20 @@ async function buildInto(outDir) {
   writeManifestAndPanels(outDir);
 }
 
-/** Copy the folder's own main.mjs into `outDir` unchanged, with the manifest and panel files. */
+/**
+ * Copy the folder's own main.mjs into `outDir` unchanged, with the manifest and panel files. A
+ * web plugin's copy is refused when it starts with a hashbang, which a build strips but a copy
+ * cannot without changing the committed bytes, or when it still imports something.
+ */
 function copyInto(outDir) {
   const outFile = emptyOutDir(outDir);
   writeFileSync(outFile, readFileSync(join(pluginDir, BUILT_ENTRY)));
-  if (web) refuseImports(outFile);
-  else chmodSync(outFile, 0o755);
+  if (web) {
+    if (readFileSync(outFile, "utf8").startsWith("#!")) {
+      fail(`${outFile} starts with a hashbang, which a web plugin cannot use`);
+    }
+    refuseImports(outFile);
+  } else chmodSync(outFile, 0o755);
   writeManifestAndPanels(outDir);
 }
 

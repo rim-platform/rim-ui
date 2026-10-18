@@ -255,6 +255,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - `rim-plugin-bundle` without `--entry`, in a folder whose manifest's entrypoint is a `main.mjs`
   that exists, packs that file as it is instead of rebuilding it, so the `.rimbundle` matches
   the committed build. `--entry` still builds from source.
+  A web plugin's committed `main.mjs` that starts with a hashbang is refused with the reason,
+  since the browser cannot load it and the copy keeps the committed bytes.
 
 ### Changed
 
