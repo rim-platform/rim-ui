@@ -19,9 +19,8 @@ import {
   useContextMenu,
   type ContextMenuBindings,
 } from "../../../shared/ui/contextMenu/useContextMenu";
-import { formatTime } from "../../../shared/utils/formatTime";
 import { toast } from "../../../shared/toast";
-import { formatRelativeTime } from "../../../shared/utils/formatTime";
+import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationReason } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
