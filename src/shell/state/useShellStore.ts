@@ -13,9 +13,10 @@ export type MainSurface =
    * Opens the Settings page. Pass an optional `tab` to land on a specific
    * settings tab (e.g. `"plugins"`). Falls back to `"profile"` when absent.
    * Use a string literal rather than importing `SettingsTab` to avoid a
-   * circular dependency with the settings feature module.
+   * circular dependency with the settings feature module. With `tab: "plugins"`,
+   * `plugin` names the installed plugin whose settings form opens there.
    */
-  | { kind: "settings"; tab?: string }
+  | { kind: "settings"; tab?: string; plugin?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
   | { kind: "audit-log" }

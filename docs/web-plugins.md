@@ -18,6 +18,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | Panel state | `src/features/plugins/web/webPanelRelay.ts`; panels render in `components/PluginFrame.tsx` (through `WebPluginPanel.tsx`) and use the panel bridge in `runtime/pluginBridge.ts` |
 | Installs | desktop: the Rust `PluginStateStore` and `~/.rim/plugins/<id>/`, through `pluginServices.ts`; web: IndexedDB `rim-plugins` (`browserPluginStore.ts`) |
 | `rim.storage.*` | desktop: `src-tauri/src/plugin_host/storage.rs` (app data directory); web: the `storage` store of `rim-plugins` |
+| Settings the user saves | desktop: `src-tauri/src/plugin_host/settings.rs`, non-secret values in the app data directory and secret ones in the secret vault, for both kinds of plugin; web: the `settings` store of `rim-plugins`, which keeps no secret settings; the form is `components/PluginSettingsDialog.tsx` |
 | `rim.chat.*`, the client message service | `src/features/plugins/chat/`, shared with local processes, which the Rust broker relays to it; see `docs/plugin-chat-methods.md` |
 | Grant history and encrypted reads | desktop: the `audit` of the Rust `PluginStateStore`; web: the install record's `audit`; shown by `components/PluginAuditPanel.tsx` |
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |

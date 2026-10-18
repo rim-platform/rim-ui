@@ -8,6 +8,7 @@ import { useSearchOverlayStore } from "../../features/messages/state/useSearchOv
 import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
 import { signOutLocally } from "../../features/auth/runtime/signOut";
 import { runningPluginPanels } from "../../features/plugins/pluginPanels";
+import { enabledPluginsWithSettings } from "../../features/plugins/pluginSettings";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
 import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
@@ -50,6 +51,7 @@ export function SideRail() {
   const avatarInitial = (user?.displayName ?? user?.username ?? "?").charAt(0).toUpperCase();
 
   const pluginPanels = runningPluginPanels(plugins);
+  const pluginSettings = enabledPluginsWithSettings(plugins);
   // Where the plugin panel menu opens, beside the Plugins item; null while it is closed.
   const [pluginMenuAt, setPluginMenuAt] = useState<{ x: number; y: number } | null>(null);
   const pluginsItemRef = useRef<HTMLButtonElement>(null);
@@ -132,6 +134,7 @@ export function SideRail() {
       {pluginMenuAt && (
         <PluginPanelMenu
           panels={pluginPanels}
+          settings={pluginSettings}
           shown={panelShown}
           position={pluginMenuAt}
           anchorRef={pluginsItemRef}

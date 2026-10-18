@@ -289,6 +289,39 @@ describe("SideRail — plugin panels", () => {
     expect(menu()).not.toBeInTheDocument();
   });
 
+  it("lists a Settings row for each enabled plugin with settings, opening its form", async () => {
+    const user = userEvent.setup();
+    const setting = {
+      key: "context",
+      title: "Context",
+      description: "",
+      value_type: "string",
+      is_secret: false,
+    };
+    pluginList.data = [
+      makePlugin({ panels: [{ id: "pods", title: "Pods" }], settings_schema: [setting] }),
+      makePlugin({
+        plugin_id: "dev.example.off",
+        display_name: "Off",
+        enabled: false,
+        settings_schema: [setting],
+      }),
+    ];
+    renderWithProviders(<SideRail />);
+    await user.click(plugins());
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Kubernetes PodsPods",
+      "Kubernetes PodsSettings",
+    ]);
+    await user.click(screen.getByRole("menuitem", { name: "Kubernetes Pods: Settings" }));
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "settings",
+      tab: "plugins",
+      plugin: "chat.rim.k8s-pods",
+    });
+    expect(menu()).not.toBeInTheDocument();
+  });
+
   it("marks Plugins instead of Inbox while a main-area panel covers the conversation", () => {
     renderWithProviders(<SideRail />);
     expect(inbox()).toHaveAttribute("aria-current", "page");

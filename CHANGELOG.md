@@ -127,6 +127,17 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **Plugin settings.** A plugin's manifest declares its settings in `settings_schema`, with
+  the new optional fields `default`, `min`, `max`, `options` and `placeholder`, and a plugin
+  that declares any gets **Settings** on its row in Settings → Plugins and in the side rail's
+  Plugins menu: a form with a text field, number field, switch or list per setting, **Save**
+  that names the field that is wrong, **Cancel** and **Reset to defaults**. Values are kept per
+  account on the device and deleted on uninstall. A secret setting is kept in the desktop's
+  secret vault and shows only "Configured" once saved, with **Replace** and **Clear**; the web
+  app offers none. A manifest whose `settings_schema` breaks a rule, such as a `value_type`
+  other than `string`, `boolean`, `integer`, `path` or `enum`, no longer installs
+  (`INVALID_SETTINGS_SCHEMA`); `manifestRules.ts` gains `validateSettingsSchema` and
+  `settingValueError`. Plugins cannot read the values yet.
 - **View details** on a plugin's row in Settings → Plugins opens a dialog with its whole
   description, under "From the plugin author:" and shown as plain text, its id, version,
   author, kind, source and signature, each permission it asks for and whether it is granted,
