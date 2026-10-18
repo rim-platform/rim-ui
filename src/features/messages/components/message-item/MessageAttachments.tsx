@@ -4,6 +4,10 @@ import { AlertCircle, Download, FileIcon, Loader2, Trash2 } from "lucide-react";
 import { getApiOrigin } from "../../../../core/graphql/config";
 import { toast } from "../../../../shared/toast/useToastStore";
 import { cn } from "../../../../shared/ui/cn";
+import type { DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
+import { IsolatedMenu } from "../../../../shared/ui/contextMenu/IsolatedMenu";
+import { followLink } from "../../../../shared/ui/contextMenu/menuActions";
+import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
 import { useDeleteAttachmentMutation } from "../../api/useAttachments";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { InlineMedia } from "./InlineMedia";
@@ -24,6 +28,7 @@ export const MessageAttachments = memo(function MessageAttachments({
   const baseUrl = getApiOrigin();
   const deleteAttachment = useDeleteAttachmentMutation();
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
+  const contextMenu = useContextMenu();
 
   // When each attachment was first seen uploading, for the client-side timeout
   const uploadTimestamps = useRef<Map<string, number>>(new Map());
@@ -94,6 +99,37 @@ export const MessageAttachments = memo(function MessageAttachments({
     );
   }
 
+  /**
+   * A file attachment's menu: Open and Download once it is uploaded, Delete attachment when
+   * its upload failed. An attachment still uploading has none, so the message's menu opens.
+   */
+  function fileMenuItems(
+    att: MessageAttachment,
+    downloadUrl: string | null,
+    canDelete: boolean,
+  ): DropdownMenuItem[] {
+    const items: DropdownMenuItem[] = [];
+    if (downloadUrl) {
+      items.push(
+        { id: "open-attachment", label: "Open", onSelect: () => followLink(downloadUrl) },
+        {
+          id: "download-attachment",
+          label: "Download",
+          onSelect: () => followLink(downloadUrl, att.filename),
+        },
+      );
+    }
+    if (canDelete) {
+      items.push({
+        id: "delete-attachment",
+        label: "Delete attachment",
+        danger: true,
+        onSelect: () => handleDelete(att.id),
+      });
+    }
+    return items;
+  }
+
   return (
     <div className={cn("flex flex-col gap-2", hasText ? "mt-2" : "mt-0.5")}>
       {attachments.map((att) => {
@@ -113,9 +149,16 @@ export const MessageAttachments = memo(function MessageAttachments({
           );
         }
 
+        const canDelete = isFailed && Boolean(serverId);
         return (
           <div key={att.id}>
-            <div className="flex items-center gap-1">
+            <div
+              className="flex w-fit items-center gap-1"
+              {...contextMenu.bind(
+                () => fileMenuItems(att, canDownload ? downloadUrl : null, canDelete),
+                { label: `Actions for ${att.filename}` },
+              )}
+            >
               <a
                 href={canDownload ? downloadUrl : undefined}
                 target="_blank"
@@ -141,7 +184,7 @@ export const MessageAttachments = memo(function MessageAttachments({
                   <Download className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />
                 )}
               </a>
-              {isFailed && serverId && (
+              {canDelete && (
                 <button
                   type="button"
                   onClick={() => handleDelete(att.id)}
@@ -162,6 +205,7 @@ export const MessageAttachments = memo(function MessageAttachments({
           </div>
         );
       })}
+      <IsolatedMenu>{contextMenu.menu}</IsolatedMenu>
     </div>
   );
 });

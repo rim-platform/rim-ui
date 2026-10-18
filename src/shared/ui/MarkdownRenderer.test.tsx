@@ -1,8 +1,10 @@
 import "../../test/mocks/tauri";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { useContextMenu } from "./contextMenu/useContextMenu";
 
 /** Replaces the clipboard (after userEvent installed its own) with a spy. */
 function stubClipboard() {
@@ -136,5 +138,76 @@ describe("MarkdownRenderer", () => {
     render(<MarkdownRenderer content="[safe](https://example.com)" />);
     await user.click(screen.getByText("safe"));
     await waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://example.com"));
+  });
+});
+
+describe("MarkdownRenderer — link context menu", () => {
+  /** A message row with a menu of its own around the rendered Markdown. */
+  function Row({ content }: { content: string }) {
+    const contextMenu = useContextMenu();
+    return (
+      <>
+        <div
+          data-testid="row"
+          {...contextMenu.bind(() => [{ id: "row", label: "Row action", onSelect: () => {} }])}
+        >
+          <MarkdownRenderer content={content} memberMap={new Map([["user-1", "Alice"]])} />
+        </div>
+        {contextMenu.menu}
+      </>
+    );
+  }
+
+  function labels(): string[] {
+    return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+  }
+
+  it("opens the link's menu instead of the row's on a link", () => {
+    render(<Row content="see [docs](https://example.com/docs)" />);
+    fireEvent.contextMenu(screen.getByText("docs"));
+    expect(labels()).toEqual(["Open link", "Copy link address"]);
+  });
+
+  it("leaves text outside the links and mentions to the row's menu", () => {
+    render(<Row content="hi <@user-1> see [docs](https://example.com)" />);
+    fireEvent.contextMenu(screen.getByText(/hi/));
+    expect(labels()).toEqual(["Row action"]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.contextMenu(document.querySelector(".mention")!);
+    expect(labels()).toEqual(["Row action"]);
+  });
+
+  it("opens the link through the opener and copies its address", async () => {
+    const writeText = stubClipboard();
+    vi.mocked(openUrl).mockClear();
+    render(<Row content="[docs](https://example.com/docs)" />);
+    fireEvent.contextMenu(screen.getByText("docs"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open link" }));
+    await waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://example.com/docs"));
+
+    fireEvent.contextMenu(screen.getByText("docs"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy link address" }));
+    expect(writeText).toHaveBeenCalledWith("https://example.com/docs");
+  });
+
+  it("opens the link's menu from the keyboard on a focused link", () => {
+    render(<Row content="[docs](https://example.com/docs)" />);
+    fireEvent.keyDown(screen.getByText("docs"), { key: "ContextMenu" });
+    expect(labels()).toEqual(["Open link", "Copy link address"]);
+  });
+
+  it("keeps the row's handlers out of the link menu's keys and clicks", () => {
+    const onRowKeyDown = vi.fn();
+    const onRowClick = vi.fn();
+    render(
+      <div onKeyDown={onRowKeyDown} onClick={onRowClick}>
+        <MarkdownRenderer content="[docs](https://example.com/docs)" />
+      </div>,
+    );
+    fireEvent.contextMenu(screen.getByText("docs"));
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy link address" }));
+    expect(onRowKeyDown).not.toHaveBeenCalled();
+    expect(onRowClick).not.toHaveBeenCalled();
   });
 });

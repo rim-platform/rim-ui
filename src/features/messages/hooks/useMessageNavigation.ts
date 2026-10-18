@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { toast } from "../../../shared/toast";
@@ -70,9 +70,11 @@ export function useMessageNavigation({
   // Stabilize mutation functions via refs so the handleMessageListKeyDown
   // callback is not recreated every render (useMutation returns new objects).
   const pinMessageRef = useRef(pinMessage.mutate);
-  pinMessageRef.current = pinMessage.mutate;
   const unpinMessageRef = useRef(unpinMessage.mutate);
-  unpinMessageRef.current = unpinMessage.mutate;
+  useLayoutEffect(() => {
+    pinMessageRef.current = pinMessage.mutate;
+    unpinMessageRef.current = unpinMessage.mutate;
+  }, [pinMessage.mutate, unpinMessage.mutate]);
 
   /** Select a row and scroll it into view. */
   const selectIndex = useCallback(
@@ -85,11 +87,16 @@ export function useMessageNavigation({
     [items, scrollToIndex],
   );
 
-  // Reset selected message and editing state when conversation changes
-  useEffect(() => {
+  // Reset the selection and the pending delete when the conversation changes, while rendering
+  // it, and the editing state and the delete timer once it is shown.
+  const [selectionConversationId, setSelectionConversationId] = useState(conversationId);
+  if (selectionConversationId !== conversationId) {
+    setSelectionConversationId(conversationId);
     setSelectedMessageId(null);
-    setEditingMessageId(null);
     setDeleteConfirmMessageId(null);
+  }
+  useEffect(() => {
+    setEditingMessageId(null);
     if (deleteConfirmTimerRef.current) {
       clearTimeout(deleteConfirmTimerRef.current);
     }
@@ -192,8 +199,9 @@ export function useMessageNavigation({
       const isOwnMessage = msg.author?.id === currentUserId;
 
       // The context-menu key or Shift+F10: the message's actions menu, as a right click opens.
+      // A link or an attachment inside the row that opened its own menu has taken the key.
       if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
-        if (onOpenActions) {
+        if (onOpenActions && !e.defaultPrevented) {
           e.preventDefault();
           onOpenActions(msg.id);
         }

@@ -2,6 +2,10 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import { Search, Loader2, X, Clock, Info } from "lucide-react";
 
 import { Z } from "../../../shared/ui/zIndex";
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { IsolatedMenu } from "../../../shared/ui/contextMenu/IsolatedMenu";
+import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
+import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { cn } from "../../../shared/ui/cn";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import {
@@ -177,12 +181,14 @@ export function SearchOverlay() {
     }
   }, [isOpen]);
 
-  // Reset selection whenever the user starts a new search. (Not on `data`
-  // change — that also fires when a page is appended via fetchNextPage, and
+  // Reset selection whenever the user starts a new search, while rendering it. (Not on
+  // `data` change — that also fires when a page is appended via fetchNextPage, and
   // resetting then would fight the user's in-progress keyboard navigation.)
-  useEffect(() => {
+  const [selectionQuery, setSelectionQuery] = useState(query);
+  if (selectionQuery !== query) {
+    setSelectionQuery(query);
     setSelectedIndex(0);
-  }, [query]);
+  }
 
   // Scroll selected row into view
   useEffect(() => {
@@ -228,6 +234,12 @@ export function SearchOverlay() {
       openThreadForMessage,
     ],
   );
+
+  const contextMenu = useContextMenu();
+  const resultMenuItems = (msg: SearchMessageItem): DropdownMenuItem[] => [
+    { id: "jump-to-message", label: "Jump to message", onSelect: () => jumpToMessage(msg) },
+    { id: "copy-text", label: "Copy text", onSelect: () => copyToClipboard(msg.text ?? "") },
+  ];
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -482,6 +494,7 @@ export function SearchOverlay() {
                     )}
                     onMouseEnter={() => setSelectedIndex(idx)}
                     onClick={() => jumpToMessage(msg)}
+                    {...contextMenu.bind(() => resultMenuItems(msg))}
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-xs font-medium text-rim-text">
@@ -554,6 +567,8 @@ export function SearchOverlay() {
           </span>
         </div>
       </div>
+      {/* The overlay's click closes it and its keys move the selection; the menu's do not. */}
+      <IsolatedMenu>{contextMenu.menu}</IsolatedMenu>
     </div>
   );
 }

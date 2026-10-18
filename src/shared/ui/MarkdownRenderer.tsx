@@ -5,7 +5,9 @@ import { addCodeBlockToolbars, copyCodeBlock } from "./markdown/codeBlockToolbar
 import { renderMarkdown } from "./markdown/renderMarkdown";
 import { isSafeLinkUrl } from "./markdown/safeUrl";
 import { useHighlighter } from "./markdown/useHighlighter";
-import { isContextMenuKey } from "./contextMenu/useContextMenu";
+import { IsolatedMenu } from "./contextMenu/IsolatedMenu";
+import { linkMenuItems, openExternalUrl } from "./contextMenu/menuActions";
+import { isContextMenuKey, useContextMenu } from "./contextMenu/useContextMenu";
 
 interface MarkdownRendererProps {
   content: string;
@@ -71,11 +73,7 @@ export function MarkdownRenderer({
       if (link) {
         e.preventDefault();
         const href = link.getAttribute("href");
-        if (href && isSafeLinkUrl(href)) {
-          import("@tauri-apps/plugin-opener")
-            .then(({ openUrl }) => openUrl(href))
-            .catch(() => window.open(href, "_blank"));
-        }
+        if (href && isSafeLinkUrl(href)) openExternalUrl(href);
       }
     },
     [onMentionClick],
@@ -96,13 +94,31 @@ export function MarkdownRenderer({
     onMentionLeave?.();
   }, [onMentionLeave]);
 
+  const contextMenu = useContextMenu();
+  const { bind, openFromEvent, openUnder } = contextMenu;
+
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       const mention = (e.target as HTMLElement).closest<HTMLElement>(".mention");
       const userId = mention?.getAttribute("data-user-id");
-      if (mention && userId) onMentionContextMenu?.(userId, mention, e);
+      if (mention && userId) {
+        onMentionContextMenu?.(userId, mention, e);
+        return;
+      }
+      const link = linkAt(e.target, e.currentTarget);
+      if (link) openFromEvent(e, () => linkMenuItems(link.getAttribute("href") ?? ""));
     },
-    [onMentionContextMenu],
+    [onMentionContextMenu, openFromEvent],
+  );
+
+  // A long press on a link opens its menu; once it starts, these follow the touch.
+  const pressHandlers = useMemo(() => bind(() => []), [bind]);
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLElement>) => {
+      const link = linkAt(e.target, e.currentTarget);
+      if (link) bind(() => linkMenuItems(link.getAttribute("href") ?? "")).onTouchStart(e);
+    },
+    [bind],
   );
 
   const handleKeyDown = useCallback(
@@ -110,7 +126,14 @@ export function MarkdownRenderer({
       if (isContextMenuKey(e)) {
         const mention = (e.target as HTMLElement).closest<HTMLElement>(".mention");
         const userId = mention?.getAttribute("data-user-id");
-        if (mention && userId) onMentionContextMenu?.(userId, mention, e);
+        if (mention && userId) {
+          onMentionContextMenu?.(userId, mention, e);
+          return;
+        }
+        const link = linkAt(e.target, e.currentTarget);
+        if (link && openUnder(link, () => linkMenuItems(link.getAttribute("href") ?? ""))) {
+          e.preventDefault();
+        }
         return;
       }
       if (e.key !== "Enter" && e.key !== " ") return;
@@ -123,19 +146,36 @@ export function MarkdownRenderer({
         }
       }
     },
-    [onMentionClick, onMentionContextMenu],
+    [onMentionClick, onMentionContextMenu, openUnder],
   );
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      dangerouslySetInnerHTML={{ __html: html }}
-      onClick={handleClick}
-      onMouseOver={handleMouseOver}
-      onMouseLeave={handleMouseLeave}
-      onContextMenu={onMentionContextMenu ? handleContextMenu : undefined}
-      onKeyDown={handleKeyDown}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className={className}
+        dangerouslySetInnerHTML={{ __html: html }}
+        onClick={handleClick}
+        onMouseOver={handleMouseOver}
+        onMouseLeave={handleMouseLeave}
+        onKeyDown={handleKeyDown}
+        onContextMenu={handleContextMenu}
+        onTouchStart={handleTouchStart}
+        onTouchMove={pressHandlers.onTouchMove}
+        onTouchEnd={pressHandlers.onTouchEnd}
+        onTouchCancel={pressHandlers.onTouchCancel}
+      />
+      <IsolatedMenu>{contextMenu.menu}</IsolatedMenu>
+    </>
   );
+}
+
+/**
+ * The rendered link an event on `target` is on, inside `container`. A mention is not a link
+ * here: it keeps its own click and the mentioned person's menu.
+ */
+function linkAt(target: EventTarget | null, container: Element): HTMLAnchorElement | null {
+  if (!(target instanceof Element) || target.closest(".mention")) return null;
+  const link = target.closest("a[href]");
+  return link instanceof HTMLAnchorElement && container.contains(link) ? link : null;
 }
