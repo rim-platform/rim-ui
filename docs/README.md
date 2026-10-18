@@ -7,6 +7,8 @@ them.
 
 ## The app
 
+- `getting-started.md`: from a fresh install to a first conversation: the account and its
+  recovery kit, the first workspace, channels, DMs and requests, the shell, and a second device.
 - `install.md`: downloads, run-time needs, verifying a download, where the app keeps its data,
   updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread

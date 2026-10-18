@@ -1,0 +1,237 @@
+# Getting started
+
+This page takes you from a fresh install to your first conversation: creating an account, finding
+a workspace, talking, finding your way around the app and keeping the account safe. It is for the
+person using the app; [Install](install.md) covers getting the app itself.
+
+## Before you start
+
+You need the RIM desktop app ([Install](install.md)) or a current browser open at a RIM server's
+web address, and a server to join. Every release of the desktop app signs in to the public relay
+`relay.rim-platform.org`; **Use another server** on the sign-in page moves it to your own or your
+team's server ([Use another server](install.md#use-another-server)). The web app always uses the
+server that serves it. A server is open to anyone, invite-only, or, like the public relay, takes
+new accounts that prove they come from a real device. On an invite-only server you need an invite
+link from someone there: open it in a browser, and its page creates your account.
+
+## Create your account
+
+Choose **Create account** on the sign-in page, or open your invite link. A workspace invite says
+"You're joining \<workspace\>" and who invited you. Where the app can hold keys (the desktop app,
+and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key: no
+password and no email. The device keeps a key that signs you in, and a recovery kit gets the
+account back if you lose it.
+
+- **Username**: 3 to 32 characters, letters, digits, `_` and `-`, free on this server. It cannot
+  start with `r_` or `deleted-`.
+- **Display name (optional)**: at most 80 characters. Left blank, your username is shown.
+- **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
+  browser, a name such as "Firefox on Linux". It names this device in your device list.
+- **I accept the terms of use**, with a link to the server's terms, only when the server has
+  terms. The account is not created without it.
+
+Then choose **Create account**. In a browser the app first asks the browser to keep this site's
+data; if the browser refuses, the app says your keys could be cleared with it and goes on only
+after **Continue anyway**. On the public relay the app then proves it is a real device: "Proving
+this is a real device…" counts the seconds, with **Cancel**. It takes seconds in the desktop app
+and can take tens of seconds in a browser.
+
+**The recovery kit.** Once the account exists, the form says "Your account is ready." and shows
+**Save your recovery kit**: your account id (`rimp1_…`) and a recovery phrase of 12 numbered
+words. **Copy kit** copies both as text. Write the words down in order with the account id, or
+keep the kit in a password manager, somewhere that is not this device. If you lose every device,
+the kit is the only way back into the account, and anyone who has it can take the account over.
+
+- **I saved it** confirms. The device then deletes its copy, and RIM cannot show the kit again.
+- **Later** closes it. Until you confirm, the device keeps the kit and a bar across the top of the
+  app says "Save your recovery kit. Losing this device's data can permanently remove your ability
+  to manage this account.", with **Show recovery kit**.
+
+**Where the keys live.** The device that created the account holds two keys: the identity key,
+which adds and removes devices, and its device key, which signs in. The desktop app keeps them in
+its secret vault, an encrypted file whose key is in the operating system's credential store
+([Where the app keeps its data](install.md#where-the-app-keeps-its-data)). A browser keeps them
+in this site's IndexedDB storage, as keys that cannot be exported: clearing the site's data
+deletes them, and a private window may not keep them.
+
+**Password accounts.** Servers take key signups only unless their operator allows passwords. On
+one that does, **Create account with a password** under the key form asks for a username, an
+email, a password of at least 8 characters and an optional display name. A password account can
+add a key later in Settings > Security, and after signing in the app offers it in **Set up
+encryption for this account**. A browser that cannot create keys on a key-only server shows "This
+server needs a key signup" and points to the desktop app.
+
+## Where you land
+
+After signup the app opens one of these:
+
+- **The invite's workspace**, when you signed up with a workspace invite.
+- **The server's default workspace**, when its operator named one. Every new account joins it as
+  a Member and is in its public channels from the start.
+- **Welcome to RIM** otherwise: "You don't belong to any workspaces yet.", with
+  **+ Create workspace** and "Or ask a teammate to invite you."
+
+A server can hold a new account back for a while. A bar then says "New account: you can create
+workspaces and message strangers after \<time\>."
+
+**The direct space.** On a server that relays between servers, as the public relay does,
+**Direct messages** at the top of the workspace rail opens your direct space. It holds the DMs and
+groups that belong to no workspace, with people on this server or, through it, on other servers.
+Its badge counts unread messages before you open it. The rail shows once a workspace is open.
+
+## Join or create a workspace
+
+- **Join with an invite link.** Opened in a browser while you are signed in, the link says "You
+  have been invited to join \<workspace\>"; **Join workspace** joins it. In the app, **Add
+  workspace** (the **+** at the bottom of the workspace rail), then **Join Existing**, takes the
+  invite code: the part of the link that starts with `rim_inv_`, or a whole `rim-invite:1:…` link
+  for a workspace on another server. **Join** opens it.
+- **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
+  New**, asks for a name. **Create** opens the new workspace with you as its Owner.
+
+Every workspace member has one role:
+
+- **Owner**: one per workspace, the person who created it. Can do everything, including inviting
+  people and changing roles.
+- **Moderator**: removes, bans and times out members, deletes any message, sets slow mode, handles
+  reports and archives channels.
+- **Member**: the role everyone who joins gets. Reads and writes in public channels, joins and
+  creates channels, starts groups and adds people to conversations.
+- **Guest**: sees and writes only in the conversations someone adds them to.
+
+The Owner invites people with **Invite member** in a conversation's header: choose **Member** or
+**Guest** under **Joins as**, then **Generate invite link**, and send the link.
+
+**Creating a channel.** **New channel** (the **+** beside Channels in the tool panel, or
+<kbd>Ctrl+Shift+C</kbd>) asks for a **Channel name**. The **Private** switch says "Only invited
+members can see this channel. This cannot be changed later." **Add members (optional)** picks
+people to add, and **Create** opens the channel. **Browse channels**, the compass beside
+**New channel**, lists the public channels you can join.
+
+## Talk
+
+**Channels.** A public channel is readable by every member of the workspace. The tool panel lists
+the channels you joined; one you have not joined shows **Join channel** above its timeline.
+
+**Threads.** Replies live in threads. Hover a message and choose **Open thread**, choose **Open
+Thread** in its context menu (right-click), or select it and press <kbd>r</kbd> or <kbd>t</kbd>.
+The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
+the thread.
+
+**DMs and groups.** **New message** (the **+** at the top of the tool panel, or
+<kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a
+group. A DM opens as a draft and is created when you send its first message. In Direct messages
+the picker lists your contacts instead. Settings > Contacts shows your contact link and adds
+someone from theirs; a workspace's member list has **Add as contact**.
+
+**DM requests.** A first DM from someone can arrive as a request, which you see before the
+conversation joins your list. Settings > Direct messages decides who reaches you how:
+
+- **Outside your workspaces**: **Requests** (the default) or **Nobody**. The server's operator or
+  a workspace can turn requests from outside off for you.
+- **Members of your workspaces**: **Direct** (the default) or **Requests**, per workspace.
+- Your contacts, and the Owner and Moderators of a workspace you share, always reach you directly.
+
+Requests sit at the top of Notifications, and the bell counts them. "Requests (n)" also heads the
+conversation list of the workspace they came from, or the Direct messages list for those from
+outside. Each request shows the sender's verified name and fingerprint, with **Accept**, **Read
+first**, **Ignore**, **Block** and **Report**. The sender sees "Sent as a request; \<name\> has
+not accepted yet." above their composer. rim-server's
+[Messaging](../../rim-server/docs/messaging.md#who-may-start-a-dm) has the full rules.
+
+**Reactions.** Hover a message and choose **Add reaction** to pick an emoji. Clicking a reaction
+under a message adds or removes yours.
+
+**Mentions.** Type `@` and the start of a name, then pick the person from the list. They get a
+notification when they can read the conversation.
+
+**The composer.** "Write a message..." takes Markdown. <kbd>Enter</kbd> sends and
+<kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
+start of a name suggests emoji. **Insert emoji** and **Attach file** sit beside the field; a
+server can turn attachments off. <kbd>Escape</kbd> moves from the composer to the message list,
+where the arrow keys move between messages and <kbd>e</kbd> edits your own.
+
+**Inbox and notifications.** **Inbox** on the side rail shows the conversation list in the tool
+panel, with the number of unread messages in the open workspace. The bell, **Notifications**,
+lists your mentions, DMs, thread replies, reactions and keyword matches in the open workspace,
+under any message requests; **Mark all read** clears them. Settings > Notifications sets what
+notifies you in the workspace and how this device shows it.
+
+## Find your way around
+
+From left to right:
+
+- **Workspace rail**: **Direct messages**, one button per workspace with its unread count, and
+  **Add workspace** at the bottom.
+- **Side rail**: **Inbox**, **Plugins**, **Notifications** and **Search workspace**, then
+  **Audit log**, **Settings** and your avatar, whose menu has **Set status...**, **Settings** and
+  **Sign out**.
+- **Tool panel**: Conversations, with Channels, archived channels and your DMs and groups, and
+  **Workspace members** and **New message** at the top. Notifications and member lists take its
+  place while open.
+- **Main surface**: the conversation's header, timeline and composer. Settings, message requests
+  and some plugin panels take its place, and a thread opens in a pane to its right.
+
+The keys that matter on the first day, as a new device has them:
+
+| Keys | What they do |
+|---|---|
+| <kbd>Ctrl+K</kbd> | Open the command palette |
+| <kbd>Ctrl+Shift+F</kbd> | Search the workspace |
+| <kbd>Ctrl+F</kbd> | Search in this conversation |
+| <kbd>Ctrl+Shift+G</kbd> | New message |
+| <kbd>Ctrl+Shift+C</kbd> | Create a channel |
+| <kbd>Alt+ArrowUp</kbd>, <kbd>Alt+ArrowDown</kbd> | Previous or next conversation |
+| <kbd>Ctrl+E</kbd> | Focus the composer |
+| <kbd>Escape</kbd> | Close the open panel |
+| <kbd>?</kbd> or <kbd>Ctrl+/</kbd> | Show the keyboard shortcuts |
+
+On a Mac, <kbd>Cmd</kbd> works wherever <kbd>Ctrl</kbd> is written. The command palette ("Type a
+command...") lists every command you can run here, built in, from a plugin or your own, with its
+keybind. Search takes filters such as `from:@user`, `in:#channel`, `has:link` and
+`before:2026-01-01`. The shortcuts panel lists the bindings as they stand; Settings > Keybinds and
+Settings > Keyboard change them, and [Keyboard](keyboard.md) explains profiles and the Vim layer.
+
+**Plugins** on the side rail opens a menu of the panels of your running plugins, or **Manage
+plugins** when none has a panel. [Plugins](plugins.md) covers installing and trusting one, and
+[UI shell](ui-shell.md) describes the shell's design.
+
+## Keep your account safe
+
+- **Save the recovery phrase.** If you chose **Later**, **Show recovery kit** in the bar at the
+  top of the app shows it again until you confirm.
+- **Link a second device.** A device that holds the identity key shows **Link a device** in
+  Settings > Security, with a QR code and a text code. On the new device's sign-in page, choose
+  "Have another device signed in? Link this device with its code" (in a browser, "Signed in on the
+  desktop app? Link this browser with its code"), paste the text code, name the device and choose
+  **Link this device**. Check that the first device shows the same fingerprint, then choose
+  **Confirm** there. The new device gets a key of its own and signs in with it; managing devices
+  stays with the device that holds the identity key. [Device linking](device-linking-desktop.md) and
+  [The web app as a linked device](web-linked-device.md) have the details.
+- **Back up the identity key** (desktop app). With the history archive set up in
+  Settings > History, the computer that holds the identity key keeps a sealed copy of it there,
+  which Settings > Security reports under **Identity key backup**. Another of your computers can
+  then choose **Take over the identity key...** and type the recovery phrase
+  ([Identity key backup](identity-key-backup.md)). An identity key held by a browser is never
+  backed up.
+
+When a device is lost:
+
+1. **You still have the device with the identity key.** In Settings > Security, under Devices,
+   choose **Remove** beside the lost one, then **Remove device**. It is signed out at once and its
+   key never signs in again.
+2. **You lost the device with the identity key, but another computer of yours has the backup.**
+   Take the identity key over there, then remove the lost device.
+3. **You lost every device.** On the sign-in page, choose "Lost your devices? Recover an account
+   with its recovery kit". Paste the kit or type the phrase, check the account id, name the device
+   and choose **Recover account**. The device becomes your account's new device with a new
+   identity key, and every other device and session is signed out. Recovery gives back the
+   account, not its encrypted messages: those come back only from the history archive.
+
+## Next
+
+- [Plugins](plugins.md): the official plugins, and installing, using, trusting and removing one.
+- [End-to-end encrypted DMs and groups on the desktop](e2ee-desktop.md), and
+  [in the web app](e2ee-web.md): channels are never end-to-end encrypted, DMs and groups can be.
+- [Self-hosting](../../rim-server/docs/self-hosting.md): running your own server, including a
+  default workspace for new accounts.
