@@ -15,8 +15,8 @@ import { useJoinServerMutation } from "../api/useJoinServer";
 import { useWorkspaceCreationLimit } from "../hooks/useWorkspaceCreationLimit";
 import { WorkspaceCreationNote } from "./CreateWorkspaceDialog";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
-import { isInviteLink } from "../../relay/remote/inviteLink";
 import { joinWithInvite } from "../../relay/remote/remoteWorkspaces";
+import { inviteCodeToken } from "../../auth/inviteCode";
 
 type Step = "choose" | "create" | "join";
 
@@ -27,7 +27,10 @@ const stepTitles: Record<Step, string> = {
 };
 
 /**
- * Dialog that creates a workspace or joins one with an invite code, and opens the result.
+ * Dialog that creates a workspace or joins one with an invite code, and opens the result. The
+ * join form takes the bare code, a whole invite link of this server (`https://…/join/<token>`),
+ * whose token it joins with, or a `rim-invite:1:…` link to a workspace on another server, which
+ * it joins through this server.
  *
  * @param onClose - Called when the dialog closes, after a workspace was created or joined too.
  * @param initialStep - The step it opens on: the choice between creating and joining (the
@@ -48,7 +51,8 @@ export function AddWorkspaceDialog({
   const create = useCreateServerMutation();
   const join = useJoinServerMutation();
   const joinRemote = useMutation({ mutationFn: joinWithInvite });
-  const remote = isInviteLink(inviteCode);
+  const code = inviteCodeToken(inviteCode);
+  const remote = code.kind === "remote";
   const joining = remote ? joinRemote : join;
   const creation = useWorkspaceCreationLimit();
 
@@ -69,9 +73,9 @@ export function AddWorkspaceDialog({
 
   function handleJoin(e: React.FormEvent) {
     e.preventDefault();
-    if (!inviteCode.trim()) return;
+    if (code.kind === "empty") return;
 
-    if (remote) {
+    if (code.kind === "remote") {
       joinRemote.mutate(inviteCode, {
         onSuccess: (joined) => {
           setWorkspaceId(joined.workspaceId);
@@ -80,7 +84,7 @@ export function AddWorkspaceDialog({
       });
       return;
     }
-    join.mutate(inviteCode.trim(), {
+    join.mutate(code.token, {
       onSuccess: (data) => {
         setWorkspaceId(data.joinServerByInvite.serverId);
         onClose();
@@ -200,7 +204,7 @@ export function AddWorkspaceDialog({
               type="text"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.currentTarget.value)}
-              placeholder="rim_inv_... or rim-invite:1:..."
+              placeholder="rim_inv_..., an invite link or rim-invite:1:..."
               autoFocus
               className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
             />
@@ -221,7 +225,7 @@ export function AddWorkspaceDialog({
           <Button
             type="submit"
             variant="primary"
-            disabled={!inviteCode.trim()}
+            disabled={code.kind === "empty"}
             isLoading={joining.isPending}
             className="w-full"
           >

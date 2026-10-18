@@ -110,11 +110,27 @@ describe("LoginPage", () => {
     expect(screen.getByText("Log in")).toBeInTheDocument();
   });
 
-  it("renders the exact locked invite-only copy when registrationMode is INVITE_ONLY", () => {
+  it("offers Create account, which takes an invite code, when registrationMode is INVITE_ONLY", () => {
     renderPage();
+    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
     expect(
-      screen.getByText("No account? Ask your workspace admin for an invite."),
+      screen.getByText(
+        "Creating an account here takes an invite code or link from someone on this server.",
+      ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No account? Ask your workspace admin for an invite."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says nothing about invite codes when registrationMode is OPEN", () => {
+    mockUseServerConfig.mockReturnValue({
+      data: { registrationMode: "OPEN" },
+      isPending: false,
+      isError: false,
+    });
+    renderPage();
+    expect(screen.queryByText(/takes an invite code/)).not.toBeInTheDocument();
   });
 
   it("renders the Create account link when registrationMode is OPEN", () => {
@@ -153,23 +169,26 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
   });
 
-  it("points a browser without keys to the desktop app on an open server that takes key signups only", () => {
-    mockUseServerConfig.mockReturnValue({
-      data: { registrationMode: "OPEN" },
-      isPending: false,
-      isError: false,
-    });
-    const { unmount } = renderPage({}, { signupRequiresKeys: true });
-    expect(screen.getByText(/signs up new accounts with a key/i)).toHaveTextContent(
-      /RIM desktop app/,
-    );
-    expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
-    unmount();
+  it.each(["OPEN", "INVITE_ONLY"])(
+    "points a browser without keys to the desktop app on a %s server that takes key signups only",
+    (registrationMode) => {
+      mockUseServerConfig.mockReturnValue({
+        data: { registrationMode },
+        isPending: false,
+        isError: false,
+      });
+      const { unmount } = renderPage({}, { signupRequiresKeys: true });
+      expect(screen.getByText(/signs up new accounts with a key/i)).toHaveTextContent(
+        /RIM desktop app/,
+      );
+      expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
+      unmount();
 
-    desktop.value = true;
-    renderPage({}, { signupRequiresKeys: true });
-    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
-  });
+      desktop.value = true;
+      renderPage({}, { signupRequiresKeys: true });
+      expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
+    },
+  );
 
   it("hides the Create account link while registrationMode is loading — defaults to invite-only", () => {
     mockUseServerConfig.mockReturnValue({

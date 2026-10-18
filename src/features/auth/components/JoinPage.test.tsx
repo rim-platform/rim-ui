@@ -65,6 +65,16 @@ vi.mock("../api/usePreviewInviteToken", () => ({
   },
 }));
 
+// The server's registration mode, and whether it is still being read.
+const config = vi.hoisted(() => ({ mode: "INVITE_ONLY", isPending: false }));
+
+vi.mock("../api/useServerConfig", () => ({
+  useServerConfig: () => ({
+    data: config.isPending ? undefined : { registrationMode: config.mode },
+    isPending: config.isPending,
+  }),
+}));
+
 // Mutable session state — defaults to no session
 let mockSession: { userId: string } | null = null;
 
@@ -108,6 +118,11 @@ vi.mock("./KeySignupForm");
 
 import { JoinPage } from "./JoinPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
+
+beforeEach(() => {
+  config.mode = "INVITE_ONLY";
+  config.isPending = false;
+});
 
 describe("JoinPage — no-referrer meta tag", () => {
   beforeEach(() => {
@@ -225,6 +240,28 @@ describe("JoinPage", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("waits for the registration mode before showing the form", () => {
+    config.isPending = true;
+    renderAtPath("/join/ws-token-abc");
+
+    expect(screen.getByText("Loading invite...")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+  });
+
+  it("workspace token on an open server: signs up with no token", async () => {
+    config.mode = "OPEN";
+    const user = userEvent.setup();
+    renderAtPath("/join/ws-token-abc");
+
+    await user.type(screen.getByPlaceholderText("yourname"), "alice");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
+    await user.type(screen.getByPlaceholderText("password"), "password123");
+    await user.click(screen.getByText("Create account"));
+
+    expect(mockSignupMutate).toHaveBeenCalledTimes(1);
+    expect(mockSignupMutate.mock.calls[0][0]).not.toHaveProperty("workspaceInviteToken");
   });
 
   it("instance token happy path: shows generic copy, no workspace name", () => {

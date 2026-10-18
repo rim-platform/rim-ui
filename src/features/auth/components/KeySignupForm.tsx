@@ -47,6 +47,13 @@ interface KeySignupFormProps {
   onSuccess: (userId: string, serverId: string | null) => void;
   /** Told when a step that must not be interrupted starts and ends. */
   onBusyChange?: (busy: boolean) => void;
+  /** Whether the page's own fields let the signup go ahead; `true` when absent. */
+  ready?: boolean;
+  /**
+   * Offered a failed signup first: returns `true` when the page shows the failure itself, as an
+   * invite code field does with a refused token.
+   */
+  onFailure?: (err: unknown) => boolean;
 }
 
 /** `retry` offers to try again: a refused proof-of-work is searched for again. */
@@ -167,6 +174,8 @@ export function KeySignupForm({
   workspaceId,
   onSuccess,
   onBusyChange,
+  ready = true,
+  onFailure,
 }: KeySignupFormProps) {
   const qc = useQueryClient();
   // Read once: the form follows one flow from start to end.
@@ -272,6 +281,7 @@ export function KeySignupForm({
       // Cancelled by the person: nothing to tell them, and Create account starts again.
       if (err instanceof PowCancelled) return;
       if (terms.noteFailure(err)) return;
+      if (onFailure?.(err)) return;
       // The draft stays: trying again uses the same keys, so the saved kit stays valid.
       const mapped = signupError(err);
       if (mapped.field === "username") setUsernameError(mapped.message);
@@ -330,6 +340,7 @@ export function KeySignupForm({
   }
 
   const canSubmit =
+    ready &&
     terms.satisfied &&
     (draft
       ? (kitAfter || saved) && username.trim().length > 0

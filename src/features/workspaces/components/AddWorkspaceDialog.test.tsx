@@ -110,6 +110,18 @@ describe("AddWorkspaceDialog", () => {
     expect(remote.joinWithInvite).not.toHaveBeenCalled();
   });
 
+  it("joins with the token of a pasted invite link of this server", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.click(screen.getByRole("textbox"));
+    await user.paste("https://rim.example.org/join/rim_inv_local\n");
+    expect(screen.queryByText(/This workspace is on another server/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Join" }));
+    expect(local.mutate).toHaveBeenCalledWith("rim_inv_local", expect.anything());
+    expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+
   it("gives a new account on probation the reason on the create choice and holds the form", async () => {
     const user = userEvent.setup();
     render(<AddWorkspaceDialog onClose={vi.fn()} />, {

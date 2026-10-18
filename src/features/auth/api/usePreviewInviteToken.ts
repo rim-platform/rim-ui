@@ -16,7 +16,7 @@
  * Consumers use `extractInviteErrorCode` to map to the `InviteErrorCode`
  * discriminator before rendering copy.
  *
- * @param token - The raw token string from the URL.
+ * @param token - The raw token string, from the URL or an invite code.
  * @returns TanStack Query result containing `InviteTokenPreview` on success.
  */
 
@@ -73,11 +73,13 @@ export function extractInviteErrorCode(err: unknown): InviteErrorCode {
 /**
  * Fetches a read-only preview of a registration token.
  *
- * @param token - The raw token from the `/join/:token` URL.
+ * @param token - The raw token, from the `/join/:token` URL or an invite code typed at signup.
+ * @param enabled - Whether to fetch it; `false` leaves the query idle, as for a blank code.
  */
-export function usePreviewInviteToken(token: string) {
+export function usePreviewInviteToken(token: string, enabled = true) {
   return useQuery<InviteTokenPreview, Error>({
     queryKey: queryKeys.previewInviteToken(token),
+    enabled,
     queryFn: async (): Promise<InviteTokenPreview> => {
       const res = await graphqlClient.request<PreviewInviteTokenResponse>(
         PREVIEW_INVITE_TOKEN_QUERY,

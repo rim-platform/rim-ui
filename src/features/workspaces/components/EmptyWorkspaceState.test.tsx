@@ -104,7 +104,9 @@ describe("EmptyWorkspaceState", () => {
     renderComponent();
     await user.click(screen.getByRole("button", { name: "Join with an invite code" }));
     expect(screen.getByRole("dialog", { name: "Join workspace" })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("rim_inv_... or rim-invite:1:...")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("rim_inv_..., an invite link or rim-invite:1:..."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Join Existing")).not.toBeInTheDocument();
   });
 

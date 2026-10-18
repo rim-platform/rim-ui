@@ -14,6 +14,10 @@
  *
  * And the desktop's "Create account with a key", which hands the page's token to
  * `KeySignupForm` (tested on its own).
+ *
+ * And invite links on an open server, which takes no token at signup: the signup sends none and
+ * a workspace invite is joined once the account exists; invite-only and pow servers still get
+ * the token.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -58,11 +62,16 @@ vi.mock("../../updater/api/serverInfoApi", async (importOriginal) => ({
 }));
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
+const mockJoinMutate = vi.fn();
+vi.mock("../../workspaces/api/useJoinServer", () => ({
+  useJoinServerMutation: () => ({ mutate: mockJoinMutate, isPending: false, error: null }),
+}));
+
 vi.mock("./KeySignupForm");
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import { JoinForm } from "./JoinForm";
-import { InviteTokenType } from "../types";
+import { InviteTokenType, RegistrationMode } from "../types";
 import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 
 // The web app, unless a test says otherwise.
@@ -528,7 +537,7 @@ describe("JoinForm — create account with a key", () => {
   });
 
   function renderVariant(
-    variant: InviteTokenType | "OPEN",
+    variant: InviteTokenType | "CODE",
     token: string | null,
     onSuccess = vi.fn(),
   ) {
@@ -560,7 +569,7 @@ describe("JoinForm — create account with a key", () => {
   it.each([
     [InviteTokenType.WORKSPACE, "ws-tok", { workspaceInviteToken: "ws-tok" }],
     [InviteTokenType.INSTANCE, "inst-tok", { instanceInviteToken: "inst-tok" }],
-    ["OPEN" as const, null, {}],
+    ["CODE" as const, null, {}],
   ])("%s: hands the page's token to the key form", (variant, token, expected) => {
     renderVariant(variant, token);
 
@@ -591,7 +600,13 @@ describe("JoinForm — create account with a key", () => {
   it("offers only the key, with no token, on a relay that takes key signups with a proof-of-work", () => {
     renderWithServerInfo(
       <MemoryRouter>
-        <JoinForm variant="OPEN" token={null} keyOnly onSuccess={vi.fn()} />
+        <JoinForm
+          variant="CODE"
+          token={null}
+          registrationMode={RegistrationMode.POW}
+          keyOnly
+          onSuccess={vi.fn()}
+        />
       </MemoryRouter>,
     );
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();
@@ -742,5 +757,128 @@ describe("JoinForm — instance notice and terms of service", () => {
       mockSignupMutate.mockClear();
       unmount();
     }
+  });
+});
+
+describe("JoinForm — invite links by registration mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The server creates the account; a workspace invite token also joins its workspace.
+    mockSignupMutate.mockImplementation(
+      (input: { workspaceInviteToken?: string }, opts: { onSuccess: (data: unknown) => void }) =>
+        opts.onSuccess({
+          signupWithInvite: {
+            userId: "user-new",
+            serverId: input.workspaceInviteToken ? "ws-acme" : null,
+          },
+        }),
+    );
+    mockJoinMutate.mockImplementation(
+      (_token: string, opts: { onSuccess: (data: unknown) => void }) =>
+        opts.onSuccess({ joinServerByInvite: { serverId: "ws-acme" } }),
+    );
+  });
+
+  function renderLink(
+    variant: InviteTokenType,
+    token: string,
+    registrationMode: RegistrationMode,
+    onSuccess = vi.fn(),
+  ) {
+    renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm
+          variant={variant}
+          token={token}
+          workspaceName={variant === InviteTokenType.WORKSPACE ? "Acme" : undefined}
+          workspaceId={variant === InviteTokenType.WORKSPACE ? "ws-acme" : undefined}
+          registrationMode={registrationMode}
+          onSuccess={onSuccess}
+        />
+      </MemoryRouter>,
+    );
+    return onSuccess;
+  }
+
+  async function signUp(user: ReturnType<typeof userEvent.setup>) {
+    await fillValidBase(user);
+    await user.type(screen.getByPlaceholderText("you@example.com"), "newbie@example.com");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+  }
+
+  function signupInput(): Record<string, unknown> {
+    return mockSignupMutate.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it("signs up from a workspace link on an open server with no token, then joins the workspace", async () => {
+    const user = userEvent.setup();
+    const onSuccess = renderLink(InviteTokenType.WORKSPACE, "ws-tok", RegistrationMode.OPEN);
+
+    await signUp(user);
+
+    expect(signupInput()).not.toHaveProperty("workspaceInviteToken");
+    expect(signupInput()).not.toHaveProperty("instanceInviteToken");
+    expect(mockJoinMutate).toHaveBeenCalledWith("ws-tok", expect.anything());
+    expect(onSuccess).toHaveBeenCalledWith("user-new", "ws-acme");
+  });
+
+  it("signs up from an instance link on an open server with no token, and joins nothing", async () => {
+    const user = userEvent.setup();
+    const onSuccess = renderLink(InviteTokenType.INSTANCE, "inst-tok", RegistrationMode.OPEN);
+
+    await signUp(user);
+
+    expect(signupInput()).not.toHaveProperty("instanceInviteToken");
+    expect(signupInput()).not.toHaveProperty("workspaceInviteToken");
+    expect(mockJoinMutate).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith("user-new", null);
+  });
+
+  it("says the account is ready when the open server's join fails, and goes on without it", async () => {
+    const user = userEvent.setup();
+    mockJoinMutate.mockImplementation((_token: string, opts: { onError: (err: unknown) => void }) =>
+      opts.onError({
+        response: {
+          errors: [{ message: "permission denied", extensions: { code: "FORBIDDEN" } }],
+        },
+      }),
+    );
+    const onSuccess = renderLink(InviteTokenType.WORKSPACE, "ws-tok", RegistrationMode.OPEN);
+
+    await signUp(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your account is ready");
+    expect(alert).toHaveTextContent("It could not join Acme: permission denied");
+    expect(onSuccess).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onSuccess).toHaveBeenCalledWith("user-new", null);
+  });
+
+  it("hands the key form no token on an open server, and joins the workspace after it", async () => {
+    desktop.value = true;
+    const user = userEvent.setup();
+    const onSuccess = renderLink(InviteTokenType.WORKSPACE, "ws-tok", RegistrationMode.OPEN);
+
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(mockJoinMutate).toHaveBeenCalledWith("ws-tok", expect.anything());
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", "ws-acme"));
+  });
+
+  it.each([
+    [RegistrationMode.INVITE_ONLY, InviteTokenType.WORKSPACE, "ws-tok", "workspaceInviteToken"],
+    [RegistrationMode.INVITE_ONLY, InviteTokenType.INSTANCE, "inst-tok", "instanceInviteToken"],
+    [RegistrationMode.POW, InviteTokenType.WORKSPACE, "ws-tok", "workspaceInviteToken"],
+    [RegistrationMode.POW, InviteTokenType.INSTANCE, "inst-tok", "instanceInviteToken"],
+  ])("still sends the link's token on a %s server (%s)", async (mode, variant, token, field) => {
+    const user = userEvent.setup();
+    renderLink(variant, token, mode);
+
+    await signUp(user);
+
+    expect(signupInput()).toMatchObject({ [field]: token });
+    expect(mockJoinMutate).not.toHaveBeenCalled();
   });
 });
