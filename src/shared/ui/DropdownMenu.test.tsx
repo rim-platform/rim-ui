@@ -170,3 +170,173 @@ describe("DropdownMenu", () => {
     expect(items[2].onSelect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("DropdownMenu submenus", () => {
+  function submenuItems() {
+    const leaves: DropdownMenuItem[] = [
+      { id: "all", label: "All messages", onSelect: vi.fn() },
+      { id: "none", label: "None", onSelect: vi.fn() },
+    ];
+    const items: DropdownMenuItem[] = [
+      { id: "members", label: "Members", onSelect: vi.fn() },
+      { id: "notifications", label: "Notifications", submenu: leaves },
+      { id: "leave", label: "Leave", onSelect: vi.fn() },
+    ];
+    return { items, leaves };
+  }
+
+  function parentRow() {
+    return screen.getByRole("menuitem", { name: "Notifications" });
+  }
+
+  it("opens on hover and closes when another row is hovered", () => {
+    const { items } = submenuItems();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    expect(parentRow()).toHaveAttribute("aria-haspopup", "menu");
+    expect(parentRow()).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.mouseEnter(parentRow());
+    expect(screen.getByRole("menu", { name: "Notifications" })).toBeInTheDocument();
+    expect(parentRow()).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.mouseEnter(screen.getByRole("menuitem", { name: "Leave" }));
+    expect(screen.queryByRole("menu", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("opens with ArrowRight and closes with ArrowLeft, back on its parent row", () => {
+    const { items, leaves } = submenuItems();
+    const onClose = vi.fn();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    const root = screen.getAllByRole("menu")[0];
+    fireEvent.keyDown(root, { key: "ArrowDown" });
+    fireEvent.keyDown(root, { key: "ArrowRight" });
+
+    const submenu = screen.getByRole("menu", { name: "Notifications" });
+    expect(document.activeElement).toBe(submenu);
+    fireEvent.keyDown(submenu, { key: "ArrowLeft" });
+    expect(screen.queryByRole("menu", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(root);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Focus stayed on the parent row: Enter opens the submenu again.
+    fireEvent.keyDown(root, { key: "Enter" });
+    expect(document.activeElement).toBe(screen.getByRole("menu", { name: "Notifications" }));
+    expect(leaves[0].onSelect).not.toHaveBeenCalled();
+  });
+
+  it("closes only the submenu on Escape", () => {
+    const { items } = submenuItems();
+    const onClose = vi.fn();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.click(parentRow());
+    const submenu = screen.getByRole("menu", { name: "Notifications" });
+    fireEvent.keyDown(submenu, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("moves through the submenu with the arrows and closes the whole menu on a choice", () => {
+    const { items, leaves } = submenuItems();
+    const onClose = vi.fn();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.click(parentRow());
+    const submenu = screen.getByRole("menu", { name: "Notifications" });
+    fireEvent.keyDown(submenu, { key: "ArrowDown" });
+    fireEvent.keyDown(submenu, { key: "Enter" });
+    expect(leaves[1].onSelect).toHaveBeenCalledTimes(1);
+    expect(leaves[0].onSelect).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // The parent's rows did not move.
+    expect(items[2].onSelect).not.toHaveBeenCalled();
+  });
+
+  it("closes the whole menu when a submenu row is clicked", () => {
+    const { items, leaves } = submenuItems();
+    const onClose = vi.fn();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.mouseEnter(parentRow());
+    fireEvent.click(screen.getByRole("menuitem", { name: "All messages" }));
+    expect(leaves[0].onSelect).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a click inside the submenu as inside the menu", () => {
+    const { items } = submenuItems();
+    const onClose = vi.fn();
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.mouseEnter(parentRow());
+    fireEvent.mouseDown(screen.getByRole("menuitem", { name: "None" }));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("DropdownMenu item kinds", () => {
+  it("marks radio items with their checked state and keeps the check mark's slot", () => {
+    const items: DropdownMenuItem[] = [
+      { id: "all", label: "All messages", checked: false, onSelect: vi.fn() },
+      { id: "mentions", label: "Mentions", checked: true, onSelect: vi.fn() },
+      { id: "plain", label: "Settings", onSelect: vi.fn() },
+    ];
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    const radios = screen.getAllByRole("menuitemradio");
+    expect(radios).toHaveLength(2);
+    expect(radios[0]).toHaveAttribute("aria-checked", "false");
+    expect(radios[1]).toHaveAttribute("aria-checked", "true");
+    // Both choices hold the slot; only the chosen one draws the mark in it.
+    expect(radios[0].firstElementChild?.tagName).toBe("SPAN");
+    expect(radios[0].querySelector("svg")).toBeNull();
+    expect(radios[1].firstElementChild?.querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Settings" })).not.toHaveAttribute("aria-checked");
+  });
+
+  it("draws section headings that the arrow keys pass over", () => {
+    const items: DropdownMenuItem[] = [
+      { id: "a", label: "Copy link", sectionBefore: "Share", onSelect: vi.fn() },
+      { id: "b", label: "Mark read", sectionBefore: "Manage", onSelect: vi.fn() },
+    ];
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    expect(screen.getByText("Share")).toBeInTheDocument();
+    expect(screen.getByText("Manage")).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    fireEvent.keyDown(menu, { key: "Enter" });
+    expect(items[1].onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a keybind hint that stays out of the item's name", () => {
+    const items: DropdownMenuItem[] = [
+      { id: "search", label: "Search", shortcut: "Ctrl+F", onSelect: vi.fn() },
+    ];
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    const item = screen.getByRole("menuitem", { name: "Search" });
+    expect(item).toHaveTextContent("Ctrl+F");
+    expect(item).toHaveAttribute("aria-keyshortcuts", "Ctrl+F");
+  });
+
+  it("closes before running a top-level action when asked to", () => {
+    const calls: string[] = [];
+    const items: DropdownMenuItem[] = [
+      { id: "a", label: "A", onSelect: () => calls.push("select") },
+    ];
+    render(
+      <DropdownMenu
+        items={items}
+        position={{ x: 0, y: 0 }}
+        onClose={() => calls.push("close")}
+        closeOnSelect
+      />,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "A" }));
+    expect(calls).toEqual(["close", "select"]);
+  });
+
+  it("keeps the browser's menu from opening over its own", () => {
+    render(<DropdownMenu items={makeItems()} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    screen.getByRole("menuitem", { name: "Item 0" }).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+});
