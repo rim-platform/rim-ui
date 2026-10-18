@@ -172,6 +172,16 @@ Plugins names.
   link with its SHA-256, the workspace registry, or a folder) and signature; each permission
   it asks for, marked Granted or Not granted; the sites `network.fetch` may reach; and its
   commands with their descriptions, a dangerous one marked Dangerous.
+- **Settings.** A plugin that declares settings has **Settings** on its row in Settings →
+  Plugins, and while it is on, a row named after it with "Settings" in the side rail's
+  **Plugins** menu. Both open **\<plugin\> settings**, a form with a field per setting: a text
+  field, a number field, a switch or a list, each with its description under it. **Save**
+  checks every changed field and names the one that is wrong, **Cancel** closes without saving,
+  and **Reset to defaults** clears every saved value, secret ones included, after asking. A
+  secret field says only "Configured" once saved, with **Replace** and **Clear**; the value is
+  never shown again. In the web app a secret field says it is only available in the desktop
+  app. Values are kept for your account on this device and never synced; emptying a field
+  clears its saved value, so the plugin falls back to the setting's default.
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
   shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
   with the app. On the web, plugins are turned on per account in that browser: signing out
@@ -277,10 +287,11 @@ Workspace settings → Plugins with "Add from files".
   closed while starting it, is not started again, and Settings says so. Turning it off and on
   retries.
 - **Uninstall** with the bin icon on the row, then **Uninstall** in **Uninstall \<name\>?**. On
-  the desktop the plugin is removed from this device with the permissions granted to it and the
-  data it stored, and its folder leaves the plugins folder and is deleted. A folder the app did
-  not install itself stays where it is. In the web app the plugin is removed from that browser
-  for your account, with its permissions, data and files. To use it again, install it again.
+  the desktop the plugin is removed from this device with the permissions granted to it, the
+  data it stored and its settings for every account, secret ones included, and its folder
+  leaves the plugins folder and is deleted. A folder the app did not install itself stays where
+  it is. In the web app the plugin is removed from that browser for your account, with its
+  permissions, data, settings and files. To use it again, install it again.
 
 Where plugins live:
 
@@ -289,5 +300,6 @@ Where plugins live:
 | The plugin's files, both kinds | `~/.rim/plugins/<plugin_id>/`, or `%USERPROFILE%\.rim\plugins\<plugin_id>\` on Windows | The browser's IndexedDB database `rim-plugins` |
 | Install records, approvals and activity | `plugin_state.json` in the app data folder | The same database |
 | Data a plugin stores | `plugin_storage/<plugin_id>/` in the app data folder | The same database |
+| Settings | `plugin_settings/<plugin_id>/` in the app data folder; secret ones in the [secret vault](secret-vault.md) | The same database; no secret settings |
 
 [Install](install.md) lists the app data folder of each operating system.

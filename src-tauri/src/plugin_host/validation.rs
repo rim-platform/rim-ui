@@ -1,11 +1,13 @@
 //! Install-time plugin manifest validation: capability names and the
 //! capabilities commands require, the install-ID leak check on AI-callable
-//! commands, and the rules of each runtime kind.
+//! commands, the rules of each runtime kind, and the `settings_schema` rules,
+//! which also check a value the user saves for a setting.
 
 use crate::plugin_host::capability::{
     BUILTIN_CAPABILITIES, ENCRYPTED_CHAT_CAPABILITIES, NETWORK_FETCH,
 };
-use crate::plugin_host::manifest::{ManifestCommand, PluginManifest, RuntimeKind};
+use crate::plugin_host::manifest::{ManifestCommand, PluginManifest, RuntimeKind, SettingSchema};
+use crate::plugin_host::storage::is_storage_key;
 
 /// How many origins `network_origins` may list.
 pub const MAX_NETWORK_ORIGINS: usize = 16;
@@ -14,6 +16,11 @@ pub const MAX_NETWORK_ORIGINS: usize = 16;
 const LOCAL_ONLY_CAPABILITIES: &[&str] = &["local.process", "fs.read", "fs.write"];
 /// Longest bundle path, in bytes.
 pub const MAX_BUNDLE_PATH_LEN: usize = 255;
+/// The value types a `settings_schema` entry may declare.
+pub const SETTING_VALUE_TYPES: &[&str] = &["string", "boolean", "integer", "path", "enum"];
+/// Largest magnitude of an `integer` setting, its bounds and its default: 2^53 - 1,
+/// which every JSON reader holds exactly.
+pub const MAX_SETTING_INTEGER: i64 = (1 << 53) - 1;
 /// The context kinds a command's `required_context` can name, and the arguments
 /// the host adds to the command's `args` for each.
 const CONTEXT_ARGUMENTS: &[(&str, &[&str])] = &[
@@ -71,6 +78,14 @@ pub enum ValidationError {
         argument: String,
         context: String,
     },
+    /// A `settings_schema` entry breaks a rule of its fields, named by its
+    /// position and its key.
+    #[serde(rename = "INVALID_SETTINGS_SCHEMA")]
+    InvalidSettingsSchema {
+        index: usize,
+        key: String,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -115,6 +130,9 @@ impl std::fmt::Display for ValidationError {
                 "command `{command_id}` declares argument `{argument}`, which the host sets \
                  from its required {context} context"
             ),
+            Self::InvalidSettingsSchema { index, key, reason } => {
+                write!(f, "invalid settings_schema[{index}] `{key}`: {reason}")
+            }
         }
     }
 }
@@ -629,9 +647,137 @@ fn validate_web_layout(manifest: &PluginManifest) -> Result<(), ValidationError>
     Ok(())
 }
 
+/// Whether `number` lies within ±[`MAX_SETTING_INTEGER`].
+fn is_setting_integer(number: i64) -> bool {
+    (-MAX_SETTING_INTEGER..=MAX_SETTING_INTEGER).contains(&number)
+}
+
+/// Why `value` cannot be the value of `setting`, or `None` when it can: a JSON
+/// string for `string` and `path`, `true` or `false` for `boolean`, an integer
+/// of at most 2^53 - 1 in magnitude within `min` and `max` for `integer`, and
+/// one of `options` for `enum`.
+pub fn setting_value_error(setting: &SettingSchema, value: &serde_json::Value) -> Option<String> {
+    match setting.value_type.as_str() {
+        "string" | "path" if !value.is_string() => Some("must be a string".into()),
+        "boolean" if !value.is_boolean() => Some("must be true or false".into()),
+        "integer" => {
+            let Some(number) = value.as_i64() else {
+                return Some("must be an integer".into());
+            };
+            if !is_setting_integer(number) {
+                return Some("must lie between -(2^53 - 1) and 2^53 - 1".into());
+            }
+            if let Some(min) = setting.min.filter(|min| number < *min) {
+                return Some(format!("must be at least {min}"));
+            }
+            if let Some(max) = setting.max.filter(|max| number > *max) {
+                return Some(format!("must be at most {max}"));
+            }
+            None
+        }
+        "enum" => {
+            let options = setting.options.as_deref().unwrap_or_default();
+            match value.as_str() {
+                Some(choice) if options.iter().any(|o| o == choice) => None,
+                _ => Some(format!("must be one of: {}", options.join(", "))),
+            }
+        }
+        "string" | "path" | "boolean" => None,
+        other => Some(format!("has the unsupported value_type `{other}`")),
+    }
+}
+
+/// Checks every `settings_schema` entry: a storage-key `key` unique in the
+/// manifest, a non-empty `title`, a known `value_type`, `is_secret` only on a
+/// `string` without a `default`, `min` and `max` only on an `integer` and in
+/// order, `options` exactly on an `enum`, non-empty and without duplicates,
+/// `placeholder` only on `string`, `path` and `integer`, integers of at most
+/// 2^53 - 1 in magnitude, and a `default` the setting accepts as a value.
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidSettingsSchema`] for the first entry that
+/// breaks a rule, naming the rule.
+pub fn validate_settings_schema(settings: &[SettingSchema]) -> Result<(), ValidationError> {
+    let mut keys = std::collections::HashSet::new();
+    for (index, setting) in settings.iter().enumerate() {
+        let reject = |reason: String| {
+            Err(ValidationError::InvalidSettingsSchema {
+                index,
+                key: setting.key.clone(),
+                reason,
+            })
+        };
+        let value_type = setting.value_type.as_str();
+        if !is_storage_key(&setting.key) {
+            return reject("key must be 1 to 128 characters of A-Z a-z 0-9 . _ -".into());
+        }
+        if !keys.insert(setting.key.as_str()) {
+            return reject("key is declared twice".into());
+        }
+        if setting.title.is_empty() {
+            return reject("title must not be empty".into());
+        }
+        if !SETTING_VALUE_TYPES.contains(&value_type) {
+            return reject(format!(
+                "value_type must be one of {}",
+                SETTING_VALUE_TYPES.join(", ")
+            ));
+        }
+        if setting.is_secret && value_type != "string" {
+            return reject("is_secret is allowed only with value_type string".into());
+        }
+        if setting.is_secret && setting.default.is_some() {
+            return reject("a secret setting may not have a default".into());
+        }
+        if (setting.min.is_some() || setting.max.is_some()) && value_type != "integer" {
+            return reject("min and max are allowed only with value_type integer".into());
+        }
+        for (name, bound) in [("min", setting.min), ("max", setting.max)] {
+            if bound.is_some_and(|b| !is_setting_integer(b)) {
+                return reject(format!("{name} must lie between -(2^53 - 1) and 2^53 - 1"));
+            }
+        }
+        if let (Some(min), Some(max)) = (setting.min, setting.max) {
+            if min > max {
+                return reject("min must be at most max".into());
+            }
+        }
+        match (&setting.options, value_type == "enum") {
+            (None, true) => return reject("an enum setting needs options".into()),
+            (Some(_), false) => {
+                return reject("options are allowed only with value_type enum".into())
+            }
+            (Some(options), true) => {
+                if options.is_empty() {
+                    return reject("options must list at least one value".into());
+                }
+                let mut seen = std::collections::HashSet::new();
+                if let Some(twice) = options.iter().find(|o| !seen.insert(o.as_str())) {
+                    return reject(format!("options lists `{twice}` twice"));
+                }
+            }
+            (None, false) => {}
+        }
+        if setting.placeholder.is_some() && !matches!(value_type, "string" | "path" | "integer") {
+            return reject(
+                "placeholder is allowed only with value_type string, path or integer".into(),
+            );
+        }
+        if let Some(reason) = setting
+            .default
+            .as_ref()
+            .and_then(|default| setting_value_error(setting, default))
+        {
+            return reject(format!("default {reason}"));
+        }
+    }
+    Ok(())
+}
+
 /// Validates a manifest for install: built-in capability names, commands that
-/// require only declared capabilities, the install-ID leak check and the kind's
-/// rules, with no host origins to refuse.
+/// require only declared capabilities, the install-ID leak check, the kind's
+/// rules and the `settings_schema` rules, with no host origins to refuse.
 ///
 /// # Errors
 ///
@@ -660,6 +806,7 @@ pub fn validate_plugin_manifest_for_host(
         validate_web_layout(manifest)?;
     }
     validate_context_arguments(&manifest.commands)?;
+    validate_settings_schema(&manifest.settings_schema)?;
     walk_output_schema_for_install_id_leak(&manifest.commands)?;
     Ok(())
 }
@@ -1312,6 +1459,59 @@ mod tests {
             validate_plugin_manifest(&m),
             Err(ValidationError::InstallIdLeakInAiSurface { .. })
         ));
+    }
+
+    #[test]
+    fn a_broken_setting_is_refused_with_its_position_and_key() {
+        let mut m = manifest_with_commands("dev.example.pods", vec![], vec![]);
+        m.settings_schema = serde_json::from_value(serde_json::json!([
+            { "key": "namespace", "title": "Namespace", "value_type": "string" },
+            { "key": "refresh", "title": "Refresh", "value_type": "integer", "min": 5, "default": 1 }
+        ]))
+        .unwrap();
+        let error = validate_plugin_manifest(&m).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::InvalidSettingsSchema {
+                index: 1,
+                key: "refresh".into(),
+                reason: "default must be at least 5".into(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid settings_schema[1] `refresh`: default must be at least 5"
+        );
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["kind"],
+            "INVALID_SETTINGS_SCHEMA"
+        );
+    }
+
+    #[test]
+    fn setting_values_are_checked_by_type_bounds_and_options() {
+        let setting =
+            |v: serde_json::Value| -> SettingSchema { serde_json::from_value(v).unwrap() };
+        let integer = setting(serde_json::json!({
+            "key": "n", "title": "N", "value_type": "integer", "min": -3, "max": 3
+        }));
+        assert_eq!(setting_value_error(&integer, &serde_json::json!(3)), None);
+        assert_eq!(
+            setting_value_error(&integer, &serde_json::json!(-4)).as_deref(),
+            Some("must be at least -3")
+        );
+        assert_eq!(
+            setting_value_error(&integer, &serde_json::json!(i64::MIN)).as_deref(),
+            Some("must lie between -(2^53 - 1) and 2^53 - 1")
+        );
+        let choice = setting(serde_json::json!({
+            "key": "c", "title": "C", "value_type": "enum", "options": ["a", "b"]
+        }));
+        assert_eq!(setting_value_error(&choice, &serde_json::json!("b")), None);
+        assert!(setting_value_error(&choice, &serde_json::json!("c")).is_some());
+        let unknown =
+            setting(serde_json::json!({ "key": "u", "title": "U", "value_type": "number" }));
+        assert!(setting_value_error(&unknown, &serde_json::json!(1)).is_some());
     }
 
     // ── Shared vectors, judged alike by manifestRules.ts ──

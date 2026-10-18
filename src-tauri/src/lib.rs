@@ -50,11 +50,11 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
-            let plugin_state = plugin_host::init(&app_data_dir);
+            let vault = Arc::new(secret_store::SecretVault::open(&app_data_dir));
+            let plugin_state = plugin_host::init(&app_data_dir, vault.clone());
             plugin_host::forward_to_ui(app.handle().clone(), &plugin_state);
             app.manage(plugin_state);
 
-            let vault = Arc::new(secret_store::SecretVault::open(&app_data_dir));
             app.manage(message_cache::init(&app_data_dir, vault.clone()));
             app.manage(history_archive::init(&app_data_dir, vault.clone()));
             app.manage(offline_session::init(vault.clone()));
@@ -92,6 +92,9 @@ pub fn run() {
             plugin_host::commands::plugin_set_starting,
             plugin_host::commands::plugin_storage_get,
             plugin_host::commands::plugin_storage_set,
+            plugin_host::commands::plugin_settings_get,
+            plugin_host::commands::plugin_settings_save,
+            plugin_host::commands::plugin_settings_reset,
             plugin_host::commands::plugin_principal_mappings,
             plugin_host::commands::plugin_check_ai_consent,
             plugin_host::commands::plugin_chat_respond,

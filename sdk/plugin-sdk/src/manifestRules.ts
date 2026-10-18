@@ -70,6 +70,45 @@ export interface ManifestPanel {
   slot?: "tool_panel" | "main_area";
 }
 
+/** The value types a `settings_schema` entry may declare. */
+export const SETTING_VALUE_TYPES = ["string", "boolean", "integer", "path", "enum"] as const;
+
+/** A name in {@link SETTING_VALUE_TYPES}. */
+export type SettingValueType = (typeof SETTING_VALUE_TYPES)[number];
+
+/**
+ * Largest magnitude of an `integer` setting, its bounds and its default: 2^53 - 1,
+ * {@link Number.MAX_SAFE_INTEGER}.
+ */
+export const MAX_SETTING_INTEGER = Number.MAX_SAFE_INTEGER;
+
+/**
+ * One `settings_schema` entry: a setting the user fills in the plugin's settings
+ * form. The optional fields are present only when the manifest sets them.
+ */
+export interface ManifestSetting {
+  /** The setting's name in the plugin's values. */
+  key: string;
+  /** The field's label in the form. */
+  title: string;
+  /** The help line under the field. */
+  description: string;
+  /** One of {@link SETTING_VALUE_TYPES} once installed; parsing takes any string. */
+  value_type: string;
+  /** Kept in the desktop's secret vault and never shown again once saved. */
+  is_secret: boolean;
+  /** The value the plugin gets while the user has saved none. */
+  default?: unknown;
+  /** Inclusive lower bound of an `integer` setting. */
+  min?: number;
+  /** Inclusive upper bound of an `integer` setting. */
+  max?: number;
+  /** The values an `enum` setting offers. */
+  options?: string[];
+  /** The hint an empty `string`, `path` or `integer` field shows. */
+  placeholder?: string;
+}
+
 /** A parsed `rim-plugin.json`, with every default filled in. */
 export interface PluginManifest {
   manifest_version: number;
@@ -91,13 +130,7 @@ export interface PluginManifest {
   }[];
   context_actions: { id: string; title: string; command_id: string; context_types: string[] }[];
   panels: ManifestPanel[];
-  settings_schema: {
-    key: string;
-    title: string;
-    description: string;
-    value_type: string;
-    is_secret: boolean;
-  }[];
+  settings_schema: ManifestSetting[];
 }
 
 /** A manifest the host refuses, with the reason. */
@@ -152,6 +185,8 @@ const asString = (v: unknown) => (typeof v === "string" ? v : undefined);
 const asStrings = (v: unknown) =>
   Array.isArray(v) && v.every((s) => typeof s === "string") ? (v as string[]) : undefined;
 const asArray = (v: unknown) => (Array.isArray(v) ? (v as unknown[]) : undefined);
+/** An `i64` field: a JSON integer; the setting rules bound it further. */
+const asInteger = (v: unknown) => (typeof v === "number" && Number.isInteger(v) ? v : undefined);
 
 function objects(object: Json, key: string, where: string): Json[] {
   const list = withDefault(object, key, [] as unknown[], asArray, where);
@@ -247,12 +282,25 @@ function parseShape(raw: unknown): PluginManifest {
     }),
     settings_schema: objects(raw, "settings_schema", where).map((s, i) => {
       const at = `settings_schema[${i}]`;
-      return {
+      const setting: ManifestSetting = {
         key: str(s, "key", at),
         title: str(s, "title", at),
         description: withDefault(s, "description", "", asString, at),
         value_type: str(s, "value_type", at),
         is_secret: withDefault(s, "is_secret", false, asBool, at),
+      };
+      const fallback = s.default ?? null;
+      const min = optional(s, "min", asInteger);
+      const max = optional(s, "max", asInteger);
+      const options = optional(s, "options", asStrings);
+      const placeholder = optional(s, "placeholder", asString);
+      return {
+        ...setting,
+        ...(fallback !== null ? { default: fallback } : {}),
+        ...(min !== null ? { min } : {}),
+        ...(max !== null ? { max } : {}),
+        ...(options !== null ? { options } : {}),
+        ...(placeholder !== null ? { placeholder } : {}),
       };
     }),
   };
@@ -594,6 +642,115 @@ function checkAiCommand(command: ManifestCommand): void {
   walkSchema(command.id, "", schema);
 }
 
+// ─── Settings (`validation.rs`) ──────────────────────────────────────────────
+
+const SETTING_KEY = /^[A-Za-z0-9._-]{1,128}$/;
+
+function isSettingInteger(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isInteger(value) && Math.abs(value) <= MAX_SETTING_INTEGER
+  );
+}
+
+/**
+ * Why `value` cannot be the value of `setting`: a JSON string for `string` and
+ * `path`, `true` or `false` for `boolean`, an integer of at most 2^53 - 1 in
+ * magnitude within `min` and `max` for `integer`, and one of `options` for `enum`.
+ *
+ * @returns The reason, such as "must be at least 5", or `null` when `value` fits.
+ */
+export function settingValueError(setting: ManifestSetting, value: unknown): string | null {
+  switch (setting.value_type) {
+    case "string":
+    case "path":
+      return typeof value === "string" ? null : "must be a string";
+    case "boolean":
+      return typeof value === "boolean" ? null : "must be true or false";
+    case "integer":
+      if (typeof value !== "number" || !Number.isInteger(value)) return "must be an integer";
+      if (!isSettingInteger(value)) return "must lie between -(2^53 - 1) and 2^53 - 1";
+      if (setting.min !== undefined && value < setting.min) {
+        return `must be at least ${setting.min}`;
+      }
+      if (setting.max !== undefined && value > setting.max) return `must be at most ${setting.max}`;
+      return null;
+    case "enum": {
+      const options = setting.options ?? [];
+      return typeof value === "string" && options.includes(value)
+        ? null
+        : `must be one of: ${options.join(", ")}`;
+    }
+    default:
+      return `has the unsupported value_type \`${setting.value_type}\``;
+  }
+}
+
+/**
+ * The `settings_schema` rules: a storage-key `key` unique in the manifest, a
+ * non-empty `title`, a known `value_type`, `is_secret` only on a `string` without
+ * a `default`, `min` and `max` only on an `integer` and in order, `options`
+ * exactly on an `enum`, non-empty and without duplicates, `placeholder` only on
+ * `string`, `path` and `integer`, integers of at most 2^53 - 1 in magnitude, and
+ * a `default` the setting accepts as a value.
+ */
+export function validateSettingsSchema(settings: readonly ManifestSetting[]): void {
+  const keys = new Set<string>();
+  settings.forEach((setting, index) => {
+    const reject = (reason: string): never => {
+      throw new ManifestError(`invalid settings_schema[${index}] \`${setting.key}\`: ${reason}`);
+    };
+    const type = setting.value_type;
+    if (!SETTING_KEY.test(setting.key)) {
+      reject("key must be 1 to 128 characters of A-Z a-z 0-9 . _ -");
+    }
+    if (keys.has(setting.key)) reject("key is declared twice");
+    keys.add(setting.key);
+    if (setting.title === "") reject("title must not be empty");
+    if (!(SETTING_VALUE_TYPES as readonly string[]).includes(type)) {
+      reject(`value_type must be one of ${SETTING_VALUE_TYPES.join(", ")}`);
+    }
+    if (setting.is_secret && type !== "string") {
+      reject("is_secret is allowed only with value_type string");
+    }
+    if (setting.is_secret && setting.default !== undefined) {
+      reject("a secret setting may not have a default");
+    }
+    if ((setting.min !== undefined || setting.max !== undefined) && type !== "integer") {
+      reject("min and max are allowed only with value_type integer");
+    }
+    for (const [name, bound] of [
+      ["min", setting.min],
+      ["max", setting.max],
+    ] as const) {
+      if (bound !== undefined && !isSettingInteger(bound)) {
+        reject(`${name} must lie between -(2^53 - 1) and 2^53 - 1`);
+      }
+    }
+    if (setting.min !== undefined && setting.max !== undefined && setting.min > setting.max) {
+      reject("min must be at most max");
+    }
+    if (type === "enum" && setting.options === undefined) reject("an enum setting needs options");
+    if (type !== "enum" && setting.options !== undefined) {
+      reject("options are allowed only with value_type enum");
+    }
+    if (setting.options !== undefined) {
+      if (setting.options.length === 0) reject("options must list at least one value");
+      const seen = new Set<string>();
+      for (const option of setting.options) {
+        if (seen.has(option)) reject(`options lists \`${option}\` twice`);
+        seen.add(option);
+      }
+    }
+    if (setting.placeholder !== undefined && !["string", "path", "integer"].includes(type)) {
+      reject("placeholder is allowed only with value_type string, path or integer");
+    }
+    if (setting.default !== undefined) {
+      const reason = settingValueError(setting, setting.default);
+      if (reason !== null) reject(`default ${reason}`);
+    }
+  });
+}
+
 /** Origins a manifest may never list: the app's and the RIM API's. */
 export interface InstallContext {
   forbiddenOrigins?: readonly string[];
@@ -603,8 +760,8 @@ export interface InstallContext {
  * The install rules: no reserved id, built-in capabilities this kind may hold
  * (an encrypted chat capability with its plain one), commands that require only
  * declared capabilities, `network_origins`, a web plugin's entrypoint and panel
- * ids, no argument named like one the host adds from a required context, and the
- * AI surface's install-id leak check.
+ * ids, no argument named like one the host adds from a required context, the
+ * `settings_schema` rules, and the AI surface's install-id leak check.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
   if (RESERVED_ID_PREFIXES.some((prefix) => manifest.plugin_id.startsWith(prefix))) {
@@ -624,6 +781,7 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
   validateNetworkOrigins(manifest, context.forbiddenOrigins ?? []);
   if (manifest.runtime_kind === "WebSandboxed") validateWebLayout(manifest);
   for (const command of manifest.commands) checkContextArguments(command);
+  validateSettingsSchema(manifest.settings_schema);
   for (const command of manifest.commands) {
     if (command.ai_callable) checkAiCommand(command);
   }

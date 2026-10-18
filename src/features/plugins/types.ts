@@ -2,6 +2,7 @@ import {
   BUILTIN_CAPABILITIES,
   NETWORK_FETCH,
   type BuiltinCapability,
+  type ManifestSetting,
 } from "../../../sdk/plugin-sdk/src/manifestRules";
 
 export type TrustLevel = "official" | "verified" | "community" | "unverified";
@@ -96,6 +97,25 @@ export interface PluginCommandInfo {
   required_capabilities?: string[];
 }
 
+/** One `settings_schema` entry as `plugin_list` reports it. Mirror of the Rust `SettingSchema`. */
+export type PluginSetting = ManifestSetting;
+
+/**
+ * What a plugin's settings form shows: the saved non-secret values and which
+ * secret settings are set, never a secret's value. Mirror of the Rust
+ * `SettingsFormState`; the web app keeps the same shape.
+ */
+export interface PluginSettingsFormState {
+  /** The saved value of each declared non-secret setting that has one. */
+  values: Record<string, unknown>;
+  /** Whether each declared secret setting has a saved value. */
+  secrets: Record<string, boolean>;
+  /** False in the web app, which keeps no secret settings. */
+  secrets_available: boolean;
+  /** Why the secret settings could not be read, such as a locked keyring. */
+  secrets_error: string | null;
+}
+
 export interface PluginManifest {
   id: string;
   name: string;
@@ -166,6 +186,8 @@ export interface PluginInfo {
   panels?: PluginPanelDef[];
   /** Every manifest command, for the palette, the keybind picker and the agent. */
   commands?: PluginCommandInfo[];
+  /** The manifest's settings, from which the settings form is built; left out by older hosts. */
+  settings_schema?: PluginSetting[];
   /** `running` once the plugin process (or, for a web plugin, its frame) finished its handshake. */
   health?: PluginHealth;
   /** Left out by older hosts, which only ran local processes. */

@@ -2,7 +2,7 @@
 
 The desktop app keeps its secrets in one encrypted file: the message cache key, the history
 archive keys and cloud refresh tokens, the offline session record, the key identity records and
-pending device links, and the AI provider keys. The OS credential store holds a single entry, the
+pending device links, the AI provider keys, and the secret settings of plugins. The OS credential store holds a single entry, the
 key that opens the file. The code is `src-tauri/src/secret_store.rs`.
 
 Keeping the secrets out of the credential store lifts its size limit (Windows Credential Manager
@@ -44,6 +44,24 @@ desktop keyring for one key per run instead of one record at a time.
 - One lock in the process serializes every read, write and delete. The file is read on every
   call; besides the key, the only thing remembered between calls is which names the credential
   store does not hold (below).
+
+## Plugin secret settings
+
+A setting a plugin declares with `is_secret` ([manifest](plugin-manifest.md#settings_schema)) is
+one record, `plugin-setting-v1:<plugin id>:<account>:<key>`, where the account is the signed-in
+account's provisional principal id (`rimp0_…`), which stays the same when the account switches to
+a key-based id. The settings form only asks whether the record exists; its value goes to no
+screen.
+
+- Saving the field writes the record, clearing it deletes it.
+- **Reset to defaults** deletes the plugin's records of the signed-in account, and uninstalling
+  the plugin deletes its records of every account, by the prefix `plugin-setting-v1:<plugin id>:`
+  (a plugin id holds no `:`, so no other plugin's records share it). Both open the vault only
+  when the plugin declares a secret setting.
+- These records never were in the credential store, so deleting them does not ask it.
+- While the vault does not open, the form says why in place of the secret fields. A save that
+  changes a secret fails with the vault's error and writes nothing; a save that changes no
+  secret does not open the vault.
 
 ## Moving secrets in from the credential store
 

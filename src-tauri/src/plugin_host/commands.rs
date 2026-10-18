@@ -7,11 +7,13 @@ use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
 use crate::plugin_host::manifest::{
     CommandInfo, ContextAction, KeybindSuggestion, PanelDef, PluginManifest, RuntimeKind,
+    SettingSchema,
 };
 use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
+use crate::plugin_host::settings::{self, SettingsError, SettingsFormState};
 use crate::plugin_host::state::{
     InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
 };
@@ -60,6 +62,8 @@ pub struct PluginInfo {
     /// Every manifest command, for the command palette, the keybind picker and
     /// the agent's tool definitions.
     pub commands: Vec<CommandInfo>,
+    /// The manifest's `settings_schema`, from which the UI builds the settings form.
+    pub settings_schema: Vec<SettingSchema>,
     /// `running` once the plugin process finished its handshake, else `stopped`.
     /// A `WebSandboxed` plugin runs in the UI, which knows its health.
     pub health: &'static str,
@@ -140,6 +144,9 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .unwrap_or_default(),
             panels: manifest.map(|m| m.panels.clone()).unwrap_or_default(),
             commands: manifest.map(|m| m.command_infos()).unwrap_or_default(),
+            settings_schema: manifest
+                .map(|m| m.settings_schema.clone())
+                .unwrap_or_default(),
             health: if clients.contains_key(id) {
                 "running"
             } else {
@@ -392,7 +399,7 @@ pub async fn plugin_uninstall(
         trash::delete_in_background(&plugin_id, trashed);
     }
 
-    state
+    let manifest = state
         .manifests
         .lock()
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
@@ -403,10 +410,21 @@ pub async fn plugin_uninstall(
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
         .remove(&plugin_id);
 
-    if let Err(e) = state.storage.remove_plugin(&plugin_id) {
+    forget_plugin_data(&state, &plugin_id, manifest.as_ref());
+    Ok(())
+}
+
+/// Deletes what the host kept for the uninstalled plugin `plugin_id`: its
+/// `rim.storage` stores and its saved settings, the secret ones too when its
+/// `manifest` declares any. A failure is logged; the plugin is gone either way.
+fn forget_plugin_data(state: &PluginHostState, plugin_id: &str, manifest: Option<&PluginManifest>) {
+    if let Err(e) = state.storage.remove_plugin(plugin_id) {
         log::warn!("[plugin_host] could not delete the storage of {plugin_id}: {e}");
     }
-    Ok(())
+    let has_secrets = manifest.is_some_and(|m| m.settings_schema.iter().any(|s| s.is_secret));
+    if let Err(e) = state.settings.remove_plugin(plugin_id, has_secrets) {
+        log::warn!("[plugin_host] could not delete the settings of {plugin_id}: {e}");
+    }
 }
 
 /// What uninstalling a plugin did with its folder.
@@ -1660,6 +1678,87 @@ pub fn plugin_storage_set(
     )
 }
 
+/// The `settings_schema` of the installed plugin `plugin_id`.
+fn settings_schema(
+    state: &PluginHostState,
+    plugin_id: &str,
+) -> Result<Vec<SettingSchema>, SettingsError> {
+    state
+        .manifests
+        .lock()
+        .map_err(|e| SettingsError::Io(std::io::Error::other(e.to_string())))?
+        .get(plugin_id)
+        .map(|m| m.settings_schema.clone())
+        .ok_or_else(|| SettingsError::NotFound(plugin_id.to_string()))
+}
+
+/// The settings form of `plugin_id` for the signed-in account: the saved
+/// non-secret values and whether each secret setting is set, never a secret's
+/// value. Runs off the main thread, since the secret vault's first read can wait
+/// on the keyring's unlock prompt.
+///
+/// # Errors
+///
+/// Returns [`SettingsError::NotFound`] for a plugin that is not installed,
+/// [`SettingsError::NotSignedIn`] with nobody signed in, and
+/// [`SettingsError::Io`] when the values cannot be read.
+#[tauri::command(async)]
+pub fn plugin_settings_get(
+    plugin_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<SettingsFormState, SettingsError> {
+    let schema = settings_schema(&state, &plugin_id)?;
+    state
+        .settings
+        .form_state(&plugin_id, &schema, signed_in_account(&state).as_deref())
+}
+
+/// Saves the user's changes to `plugin_id`'s settings for the signed-in
+/// account: `values` maps setting keys to new values, `null` clearing one.
+///
+/// # Errors
+///
+/// Returns [`SettingsError::InvalidValue`] naming the first key the schema
+/// refuses, before anything is written, and the errors of
+/// [`plugin_settings_get`], with [`SettingsError::SecretsLocked`] when a secret
+/// cannot be written.
+#[tauri::command(async)]
+pub fn plugin_settings_save(
+    plugin_id: String,
+    values: serde_json::Map<String, serde_json::Value>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), SettingsError> {
+    let schema = settings_schema(&state, &plugin_id)?;
+    state.settings.save(
+        &plugin_id,
+        &schema,
+        signed_in_account(&state).as_deref(),
+        &values,
+    )?;
+    settings::on_saved(&state, &plugin_id);
+    Ok(())
+}
+
+/// Clears every saved setting of `plugin_id` for the signed-in account, secret
+/// ones included, so each falls back to its default.
+///
+/// # Errors
+///
+/// The errors of [`plugin_settings_get`], with [`SettingsError::SecretsLocked`]
+/// when the secrets cannot be deleted.
+#[tauri::command(async)]
+pub fn plugin_settings_reset(
+    plugin_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), SettingsError> {
+    let schema = settings_schema(&state, &plugin_id)?;
+    state
+        .settings
+        .reset(&plugin_id, &schema, signed_in_account(&state).as_deref())?;
+    settings::on_saved(&state, &plugin_id);
+    Ok(())
+}
+
 /// Every provisional principal id this device has seen switch to a key-based id,
 /// for the plugins the UI runs.
 #[tauri::command]
@@ -1782,6 +1881,50 @@ mod tests {
         let (web, tmp) = installed(RuntimeKind::WebSandboxed);
         let error = local_panel_files(&web, ENABLED, "main", tmp.path()).unwrap_err();
         assert!(error.contains("not a local-process plugin"), "{error}");
+    }
+
+    #[test]
+    fn forgetting_an_uninstalled_plugin_deletes_its_settings_and_secret_settings() {
+        use crate::plugin_host::settings::{MemorySecrets, PluginSettings};
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.hello",
+            "display_name": "Hello",
+            "version": "1.0.0",
+            "description": "test",
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main",
+            "settings_schema": [
+                { "key": "repo", "title": "Repository", "value_type": "string" },
+                { "key": "token", "title": "Token", "value_type": "string", "is_secret": true }
+            ],
+        }))
+        .unwrap();
+        let tmp = TempDir::new().unwrap();
+        let secrets = std::sync::Arc::new(MemorySecrets::default());
+        let mut state = PluginHostState::with_installed(vec![manifest.clone()]);
+        state.settings = PluginSettings::new(tmp.path(), secrets.clone());
+        let values = serde_json::json!({ "repo": "a/b", "token": "t" });
+        state
+            .settings
+            .save(
+                HELLO,
+                &manifest.settings_schema,
+                Some("rimp0_a"),
+                values.as_object().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(secrets.names().len(), 1);
+
+        forget_plugin_data(&state, HELLO, Some(&manifest));
+
+        assert!(secrets.names().is_empty());
+        let state_after = state
+            .settings
+            .form_state(HELLO, &manifest.settings_schema, Some("rimp0_a"))
+            .unwrap();
+        assert!(state_after.values.is_empty());
+        assert_eq!(state_after.secrets.get("token"), Some(&false));
     }
 
     const HELLO: &str = "dev.example.hello";

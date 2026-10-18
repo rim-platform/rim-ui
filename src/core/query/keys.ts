@@ -62,6 +62,8 @@ export const queryKeys = {
     ["pinnedMessages", workspaceId, conversationId] as const,
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
   plugins: () => ["plugins"] as const,
+  // One plugin's settings form, apart from the list so reloading the list leaves an open form alone.
+  pluginSettings: (pluginId: string) => ["pluginSettings", pluginId] as const,
   // A workspace's plugin registry, and each entry's verification on this device.
   workspacePlugins: (serverId?: string | null) => ["workspacePlugins", serverId] as const,
   // Whether this device holds the identity key that signs plugin manifests.

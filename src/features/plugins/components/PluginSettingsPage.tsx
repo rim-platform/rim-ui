@@ -9,11 +9,13 @@ import {
   ShieldCheck,
   PenLine,
   RefreshCw,
+  SlidersHorizontal,
 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginList } from "../api/usePluginList";
 import {
   usePluginEnable,
@@ -28,6 +30,7 @@ import { InstallFromLink } from "./InstallFromLink";
 import { PluginAuditPanel } from "./PluginAuditPanel";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PluginDetailsDialog } from "./PluginDetailsDialog";
+import { PluginSettingsDialog } from "./PluginSettingsDialog";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
 import { UninstallPluginDialog } from "./UninstallPluginDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
@@ -35,6 +38,7 @@ import { RegistryNotes } from "../registry/components/RegistryNotes";
 import { SignAndPublishDialog } from "../registry/components/SignAndPublishDialog";
 import { usePluginSigning } from "../registry/signing";
 import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
+import { hasSettings } from "../pluginSettings";
 import {
   parsePostInstallConsent,
   runtimeKind,
@@ -61,6 +65,8 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
  * - Install from git URL button + text input, desktop only
  * - Install from link (a `.rimbundle` link pinned by its SHA-256), desktop and web
  * - List of installed plugins with enable/disable/uninstall + fingerprint trust action
+ * - Settings on the row of a plugin that declares settings, opening its settings form; a
+ *   `{ kind: "settings", tab: "plugins", plugin }` surface opens that plugin's form
  * - Update on the row of a plugin installed from a git URL, desktop only
  * - Empty state with onboarding copy when no plugins are installed
  *
@@ -86,6 +92,20 @@ export function PluginSettingsPage() {
   const [uninstallError, setUninstallError] = useState<string | null>(null);
 
   const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
+  // The plugin whose settings form is open: picked on its row, or named by the surface.
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const linkedSettingsId = useShellStore((s) =>
+    s.mainSurface.kind === "settings" ? (s.mainSurface.plugin ?? null) : null,
+  );
+  const setMainSurface = useShellStore((s) => s.setMainSurface);
+  const settingsTarget =
+    plugins?.find(
+      (p) => p.plugin_id === (settingsId ?? linkedSettingsId) && hasSettings(p.settings_schema),
+    ) ?? null;
+  const closeSettings = useCallback(() => {
+    setSettingsId(null);
+    if (linkedSettingsId !== null) setMainSurface({ kind: "settings", tab: "plugins" });
+  }, [linkedSettingsId, setMainSurface]);
   // A plugin just installed: its permission prompt opens once it is in the list,
   // so the user reads what it does and what it asks for before turning it on.
   const [installedId, setInstalledId] = useState<string | null>(null);
@@ -376,6 +396,11 @@ export function PluginSettingsPage() {
                 onToggle={handleToggle}
                 onUninstall={handleUninstall}
                 onPermissions={setPermissionsTarget}
+                onSettings={
+                  hasSettings(plugin.settings_schema)
+                    ? () => setSettingsId(plugin.plugin_id)
+                    : undefined
+                }
                 onTrustFingerprint={handleTrustFingerprint}
                 onDisable={(pluginId) => disable.mutate(pluginId)}
                 onSign={desktop && signing.canSign ? setSignTarget : undefined}
@@ -429,6 +454,14 @@ export function PluginSettingsPage() {
           plugin={signTarget}
           identity={signing.identity}
           onClose={() => setSignTarget(null)}
+        />
+      )}
+
+      {settingsTarget && (
+        <PluginSettingsDialog
+          key={settingsTarget.plugin_id}
+          plugin={settingsTarget}
+          onClose={closeSettings}
         />
       )}
 
@@ -503,6 +536,8 @@ interface PluginRowProps {
   onToggle: (plugin: PluginInfo) => void;
   onUninstall: (plugin: PluginInfo) => void;
   onPermissions: (plugin: PluginInfo) => void;
+  /** Present when the plugin declares settings: opens its settings form. */
+  onSettings?: () => void;
   onTrustFingerprint: (pluginId: string) => void;
   onDisable: (pluginId: string) => void;
   /** Present when this device can sign plugins with the account's identity key. */
@@ -520,8 +555,9 @@ interface PluginRowProps {
  *
  * Shows: name, the first two lines of the description, version, author,
  * health indicator, enable/disable toggle, update button for a plugin
- * installed from git, details button, permissions button, uninstall button,
- * and a line for the outcome of the last update.
+ * installed from git, details button, settings button for a plugin that
+ * declares settings, permissions button, uninstall button, and a line for the
+ * outcome of the last update.
  *
  * When `plugin.fingerprint_changed` is true, a `FingerprintChanged` warning
  * banner is shown with "Trust new version" and "Dismiss" actions. Dismiss stops
@@ -536,6 +572,7 @@ function PluginRow({
   onToggle,
   onUninstall,
   onPermissions,
+  onSettings,
   onTrustFingerprint,
   onDisable,
   onSign,
@@ -649,6 +686,17 @@ function PluginRow({
           >
             View details
           </Button>
+          {onSettings && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onSettings}
+              aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+            >
+              <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
+              Settings
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => onPermissions(plugin)}>
             Permissions
           </Button>

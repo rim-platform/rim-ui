@@ -155,22 +155,61 @@ sandboxed frame while its plugin runs ([loading](web-plugins.md#how-a-plugin-run
 
 ## `settings_schema`
 
-A list, default `[]`, of `{ key, title, description, value_type, is_secret }`: `key`, `title` and
-`value_type` are required strings, `description` defaults to `""`, `is_secret` to `false`. Nothing
-reads it yet: no settings page is built from it, and the panel bridge only logs `rim.settings.*`.
+A list, default `[]`, with one entry per setting the user fills in. A plugin with at least one
+gets a **Settings** button on its row in Settings → Plugins, which opens a form built from the
+list ([Using a plugin](plugins.md#using-a-plugin)). An entry that breaks a rule below fails
+install with `INVALID_SETTINGS_SCHEMA`, `invalid settings_schema[<index>] \`<key>\`: <reason>`.
+
+| Field | Type | Rule |
+|---|---|---|
+| `key` | string, required | 1 to 128 characters of `A-Z a-z 0-9 . _ -`, unique in the manifest: the setting's name in the values the plugin reads |
+| `title` | string, required | Not empty: the field's label |
+| `description` | string, default `""` | The help line under the field |
+| `value_type` | string, required | `string`, `boolean`, `integer`, `path` or `enum` |
+| `is_secret` | boolean, default `false` | Only with `string`. The value goes in the desktop's [secret vault](secret-vault.md) and is never shown again once saved |
+| `default` | optional | The value the plugin gets while the user has saved none: of the setting's type, within `min` and `max`, one of `options`. Not with `is_secret` |
+| `min`, `max` | integer, optional | `integer` only: inclusive bounds, `min` at most `max` |
+| `options` | list of strings, optional | Required for `enum` and allowed only there: at least one, no duplicates |
+| `placeholder` | string, optional | `string`, `path` and `integer` only: the hint an empty field shows |
+
+| `value_type` | The value | The form shows |
+|---|---|---|
+| `string` | A JSON string | A text field; a masked one with **Replace** and **Clear** when `is_secret` |
+| `path` | A JSON string | A text field for a path on the device, which the host neither opens nor checks |
+| `integer` | A JSON integer from -(2^53 - 1) to 2^53 - 1, within `min` and `max`; the same bound holds for `min`, `max` and `default` | A number field |
+| `boolean` | `true` or `false` | A switch |
+| `enum` | One of `options` | A list to pick from, with "Not set" |
+
+The values are kept on the device per plugin, signed-in account and device, never synced and
+deleted on uninstall; the web app keeps no secret settings and its form says they are only
+available in the desktop app. A save is checked against the schema and refused with the field
+that is wrong. An update that changes the schema leaves saved values as they are, so a plugin
+checks each value it uses and ignores keys it does not know.
+
+```json
+"settings_schema": [
+  { "key": "context", "title": "Kubernetes context", "description": "The kubectl context to use. Empty for the current one.", "value_type": "string", "placeholder": "prod-eu" },
+  { "key": "namespace", "title": "Default namespace", "value_type": "string", "default": "default" },
+  { "key": "refresh_seconds", "title": "Refresh every (seconds)", "value_type": "integer", "default": 30, "min": 5, "max": 3600 },
+  { "key": "output", "title": "Output", "value_type": "enum", "options": ["table", "json"], "default": "table" },
+  { "key": "api_token", "title": "API server token", "value_type": "string", "is_secret": true }
+]
+```
 
 ## The content hash
 
 The desktop records a hash of the manifest at install and when the user approves AI commands: the
 SHA-256, in lowercase hex, of the parsed manifest serialized as compact JSON, with the fields in
 the order above, defaults filled in and unknown fields gone. Whitespace, key order and spelled-out
-defaults do not change it. `network_origins` and a panel's `slot` are left out when absent, so a
-manifest without them hashes as on a host without those fields; other absent options are `null`.
+defaults do not change it. `network_origins`, a panel's `slot` and a setting's `default`, `min`,
+`max`, `options` and `placeholder` are left out when absent, so a manifest without them hashes as
+on a host without those fields; other absent options are `null`.
 
 It gates AI consent. When the hash differs from the recorded one and the manifest declares
 `ai_callable` commands, or the user approved some, the agent runs none of the plugin's commands
 until the user consents again (`manifest changed — re-consent required for AI commands`). Any
-change counts, since the old command set cannot be read from a hash.
+change counts, since the old command set cannot be read from a hash: adding, removing or changing
+a `settings_schema` entry asks for AI consent again too.
 
 ## Example
 

@@ -2267,6 +2267,762 @@
           }
         ]
       }
+    },
+    {
+      "name": "settings of every kind, as in the protocol's example",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "context",
+            "title": "Kubernetes context",
+            "description": "The kubectl context to use. Empty for the current one.",
+            "value_type": "string",
+            "placeholder": "prod-eu"
+          },
+          {
+            "key": "namespace",
+            "title": "Default namespace",
+            "value_type": "string",
+            "default": "default"
+          },
+          {
+            "key": "refresh_seconds",
+            "title": "Refresh every (seconds)",
+            "value_type": "integer",
+            "default": 30,
+            "min": 5,
+            "max": 3600
+          },
+          {
+            "key": "output",
+            "title": "Output",
+            "value_type": "enum",
+            "options": ["table", "json"],
+            "default": "table"
+          },
+          {
+            "key": "api_token",
+            "title": "API server token",
+            "value_type": "string",
+            "is_secret": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a path and a boolean with defaults",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "kubeconfig",
+            "title": "K",
+            "value_type": "path",
+            "default": "~/.kube/config",
+            "placeholder": "~/.kube/config"
+          },
+          {
+            "key": "all.namespaces_1-x",
+            "title": "K",
+            "value_type": "boolean",
+            "default": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an integer with only a min and a null default",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "min": -9007199254740991,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an integer at the largest bound",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "max": 9007199254740991,
+            "default": 9007199254740991
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a web plugin's secret string",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "is_secret": true,
+            "placeholder": "ghp_…"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an empty key",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "",
+            "title": "K",
+            "value_type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a key with a slash",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "a/b",
+            "title": "K",
+            "value_type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a key of 129 characters",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+            "title": "K",
+            "value_type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: the same key twice",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string"
+          },
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an empty title",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "",
+            "value_type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an unknown value_type",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "number"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a secret boolean",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "boolean",
+            "is_secret": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a secret with a default",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "is_secret": true,
+            "default": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: min on a string",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "min": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: min above max",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "min": 10,
+            "max": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a max past 2^53 - 1",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "max": 9007199254740992
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a fractional min",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "min": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a string default on an integer",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "default": "30"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a fractional default on an integer",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "default": 2.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a default below min",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "min": 5,
+            "default": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a default above max",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "max": 5,
+            "default": 6
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a default past 2^53 - 1",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "integer",
+            "default": 9007199254740992
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a number default on a string",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "default": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a string default on a boolean",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "boolean",
+            "default": "true"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an enum without options",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an enum with no options",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum",
+            "options": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an enum listing an option twice",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum",
+            "options": ["a", "a"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an enum default that is not an option",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum",
+            "options": ["a", "b"],
+            "default": "c"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: options on a string",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "options": ["a"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: an option that is not a string",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum",
+            "options": ["a", 1]
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a placeholder on a boolean",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "boolean",
+            "placeholder": "on"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a placeholder on an enum",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "enum",
+            "options": ["a"],
+            "placeholder": "a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: a placeholder that is not a string",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "placeholder": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings: is_secret that is not a boolean",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "settings_schema": [
+          {
+            "key": "k",
+            "title": "K",
+            "value_type": "string",
+            "is_secret": "yes"
+          }
+        ]
+      }
     }
   ]
 }

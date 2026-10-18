@@ -20,6 +20,7 @@ pub mod process;
 pub mod protocol;
 pub mod registry;
 pub mod runtime;
+pub mod settings;
 pub mod state;
 pub mod storage;
 pub mod trash;
@@ -62,6 +63,8 @@ pub struct PluginHostState {
     pub events: Arc<host_events::PluginEvents>,
     /// The stores `WebSandboxed` plugins keep through `rim.storage.*`.
     pub storage: storage::PluginStorage,
+    /// The values users save in each plugin's settings form.
+    pub settings: settings::PluginSettings,
     /// The signed-in account's provisional principal id, which names its plugin
     /// stores; `None` when nobody is signed in.
     pub account: Mutex<Option<String>>,
@@ -70,7 +73,13 @@ pub struct PluginHostState {
     pub chat_relay: Arc<chat_relay::ChatRelay>,
 }
 
-pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
+/// The plugin host: the installed plugins discovered and loaded, their state
+/// read from the app data directory, the enabled ones started, and secret
+/// settings kept in `vault`.
+pub(crate) fn init(
+    app_data_dir: &std::path::Path,
+    vault: Arc<crate::secret_store::SecretVault>,
+) -> PluginHostState {
     let state_path = state_file_path(app_data_dir);
     let store = PluginStateStore::load(&state_path);
     let principal_ids = runtime::mappings_of(&store);
@@ -113,6 +122,7 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         pids: Arc::new(Mutex::new(HashMap::new())),
         events: Arc::new(host_events::PluginEvents::new()),
         storage: storage::PluginStorage::new(app_data_dir),
+        settings: settings::PluginSettings::new(app_data_dir, vault),
         account: Mutex::new(None),
         chat_relay: Arc::new(chat_relay::ChatRelay::default()),
     };
@@ -244,6 +254,7 @@ impl PluginHostState {
             pids: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(host_events::PluginEvents::new()),
             storage: storage::PluginStorage::new(std::path::Path::new("/nonexistent")),
+            settings: settings::PluginSettings::in_memory(std::path::Path::new("/nonexistent")),
             account: Mutex::new(None),
             chat_relay: Arc::new(chat_relay::ChatRelay::default()),
         }
