@@ -39,7 +39,7 @@ Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vit
 
 ## Architecture
 
-**Stack:** React 19 + TypeScript strict + Vite 7 + Tailwind CSS v4 + Tauri 2 (Rust)
+**Stack:** React 19 + TypeScript strict + Vite 8 + Tailwind CSS v4 + Tauri 2 (Rust)
 
 **State management:**
 - **Zustand** for client UI state (auth session, shell navigation, thread visibility, unread counts, presence)
