@@ -178,13 +178,13 @@ export function PluginSettingsPage() {
   }
 
   function handleToggle(plugin: PluginInfo) {
-    if (plugin.fingerprint_changed) {
-      // Fingerprint check: block enable until user trusts the new version.
-      return;
-    }
     if (!desktop && runtimeKind(plugin) !== "WebSandboxed") return;
     if (plugin.enabled) {
+      // Turning a plugin off is allowed whatever its files hold.
       disable.mutate(plugin.plugin_id);
+    } else if (plugin.fingerprint_changed) {
+      // Enabling waits until the user trusts the new version.
+      return;
     } else {
       enable.mutate(plugin.plugin_id, {
         onError: (err) => {
@@ -403,8 +403,9 @@ interface PluginRowProps {
  * When `plugin.fingerprint_changed` is true, a `FingerprintChanged` warning
  * banner is shown with "Trust new version" and "Dismiss" actions. Dismiss stops
  * a running plugin and hides the banner on this device until the fingerprint
- * changes again; the "Bundle changed" badge then shows it again. The enable
- * toggle is disabled until the user trusts the new version.
+ * changes again; the "Bundle changed" badge then shows it again. The switch
+ * still turns an enabled plugin off, but cannot turn it on until the user
+ * trusts the new version.
  */
 function PluginRow({
   plugin,
@@ -418,7 +419,8 @@ function PluginRow({
   trustPending,
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
-  const blocked = plugin.fingerprint_changed || needsDesktop;
+  // A changed bundle blocks only enabling; turning the plugin off stays possible.
+  const blocked = needsDesktop || (plugin.fingerprint_changed && !plugin.enabled);
   const [activityOpen, setActivityOpen] = useState(false);
   const fingerprint = plugin.current_fingerprint ?? "";
   const warningDismissed = usePluginFingerprintDismissStore(
@@ -579,10 +581,18 @@ function PluginRow({
   );
 }
 
+/**
+ * The switch's label and tooltip: why it is off-limits, or what clicking it does.
+ *
+ * @param plugin - The plugin the switch belongs to.
+ * @param needsDesktop - Whether the plugin runs only in the desktop app.
+ * @returns The text for the switch's `title` and `aria-label`.
+ */
 function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
   if (needsDesktop) return "Needs the desktop app";
+  if (plugin.enabled) return "Disable plugin";
   if (plugin.fingerprint_changed) return "Trust the new version before enabling";
-  return plugin.enabled ? "Disable plugin" : "Enable plugin";
+  return "Enable plugin";
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────

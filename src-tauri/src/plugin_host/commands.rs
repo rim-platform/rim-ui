@@ -239,63 +239,8 @@ pub fn plugin_enable(
             .clone()
     };
 
-    // Recompute the fingerprint and compare it with the one trusted at install.
-    // On a mismatch, set fingerprint_changed in the store and return
-    // FingerprintChanged so the UI can surface the warning.
-    {
-        let plugin_dir_opt = {
-            let dirs = state
-                .plugin_dirs
-                .lock()
-                .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-            dirs.get(&plugin_id).cloned()
-        };
-
-        if let Some(plugin_dir) = plugin_dir_opt {
-            let stored_fingerprint = {
-                let store = state
-                    .store
-                    .lock()
-                    .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-                store
-                    .get(&plugin_id)
-                    .map(|r| r.bundle_fingerprint.clone())
-                    .unwrap_or_default()
-            };
-
-            if !stored_fingerprint.is_empty() {
-                match local_install::compute_bundle_fingerprint(&plugin_dir) {
-                    Ok(current_fp) if current_fp != stored_fingerprint => {
-                        // Mismatch: mark it in the store and fail so the UI warns.
-                        let mut store = state.store.lock().map_err(|e| {
-                            LifecycleError::Io(std::io::Error::other(e.to_string()))
-                        })?;
-                        if let Some(record) = store.get(&plugin_id).cloned() {
-                            store.upsert(PluginRecord {
-                                fingerprint_changed: true,
-                                ..record
-                            });
-                            let _ = store.save(&state.state_path);
-                        }
-                        log::warn!(
-                            "[AUDIT] event=plugin_fingerprint_changed plugin_id={} stored={} current={}",
-                            plugin_id, stored_fingerprint, current_fp
-                        );
-                        return Err(LifecycleError::FingerprintChanged(plugin_id));
-                    }
-                    Ok(_) => {} // fingerprint matches
-                    Err(e) => {
-                        // An IO error during the check is logged and does not block enabling.
-                        log::warn!(
-                            "[plugin_host] fingerprint check failed for {}: {}",
-                            plugin_id,
-                            e
-                        );
-                    }
-                }
-            }
-        }
-    }
+    // A bundle whose files changed since they were trusted is not started.
+    check_bundle_fingerprint(&state, &plugin_id)?;
 
     {
         let mut store = state
@@ -324,6 +269,72 @@ pub fn plugin_enable(
     }
 
     Ok(())
+}
+
+/// Recomputes the bundle fingerprint of `plugin_id` and compares it with the
+/// one trusted at install, before the plugin is started.
+///
+/// A mismatch sets `fingerprint_changed` in the store and saves it, so the
+/// plugin list shows the warning. A plugin with no pinned fingerprint or no
+/// recorded folder passes, and so does one whose files cannot be read: the
+/// read error is logged and does not block the start.
+///
+/// # Errors
+///
+/// - `LifecycleError::FingerprintChanged` — the files differ from the trusted ones.
+/// - `LifecycleError::Io` — a state lock was poisoned.
+pub(crate) fn check_bundle_fingerprint(
+    state: &PluginHostState,
+    plugin_id: &str,
+) -> Result<(), LifecycleError> {
+    let lock = |e: String| LifecycleError::Io(std::io::Error::other(e));
+    let Some(plugin_dir) = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(plugin_id)
+        .cloned()
+    else {
+        return Ok(());
+    };
+    let stored_fingerprint = state
+        .store
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(plugin_id)
+        .map(|r| r.bundle_fingerprint.clone())
+        .unwrap_or_default();
+    if stored_fingerprint.is_empty() {
+        return Ok(());
+    }
+    match local_install::compute_bundle_fingerprint(&plugin_dir) {
+        Ok(current_fp) if current_fp != stored_fingerprint => {
+            let mut store = state.store.lock().map_err(|e| lock(e.to_string()))?;
+            if let Some(record) = store.get(plugin_id).cloned() {
+                store.upsert(PluginRecord {
+                    fingerprint_changed: true,
+                    ..record
+                });
+                if let Err(e) = store.save(&state.state_path) {
+                    log::warn!(
+                        "[plugin_host] could not save the changed bundle of {plugin_id}: {e}"
+                    );
+                }
+            }
+            log::warn!(
+                "[AUDIT] event=plugin_fingerprint_changed plugin_id={} stored={} current={}",
+                plugin_id,
+                stored_fingerprint,
+                current_fp
+            );
+            Err(LifecycleError::FingerprintChanged(plugin_id.to_string()))
+        }
+        Ok(_) => Ok(()),
+        Err(e) => {
+            log::warn!("[plugin_host] fingerprint check failed for {plugin_id}: {e}");
+            Ok(())
+        }
+    }
 }
 
 #[tauri::command]
@@ -1093,12 +1104,10 @@ pub async fn plugin_install_from_local(
 
 /// Accepts the new bundle fingerprint of a plugin whose fingerprint has changed.
 ///
-/// This is the "Trust new version" action in the UI.  It:
-/// 1. Recomputes the current on-disk fingerprint.
-/// 2. Persists it as the new trusted fingerprint.
-/// 3. Clears the `fingerprint_changed` flag.
-///
-/// The plugin is NOT automatically enabled — the user must enable it separately.
+/// This is the "Trust new version" action in the UI. It recomputes the
+/// fingerprint from disk, pins it as the trusted one and clears
+/// `fingerprint_changed`. A plugin still Enabled, as one skipped at app start
+/// is, then starts; a stopped one stays stopped until the user enables it.
 ///
 /// # Errors
 ///
@@ -1109,42 +1118,73 @@ pub fn plugin_trust_fingerprint(
     plugin_id: String,
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
-    let plugin_dir = {
-        let dirs = state
-            .plugin_dirs
-            .lock()
-            .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-        dirs.get(&plugin_id)
-            .cloned()
-            .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?
-    };
+    trust_fingerprint(&state, &plugin_id)
+}
+
+/// Pins the fingerprint of the files of `plugin_id` on disk as trusted, clears
+/// `fingerprint_changed` and starts the plugin when its status is Enabled. A
+/// start that fails is logged and leaves the new fingerprint pinned.
+///
+/// # Errors
+///
+/// - `LifecycleError::NotFound` — plugin is not registered.
+/// - `LifecycleError::Io` — fingerprint recomputation or state persistence failed.
+pub(crate) fn trust_fingerprint(
+    state: &PluginHostState,
+    plugin_id: &str,
+) -> Result<(), LifecycleError> {
+    let lock = |e: String| LifecycleError::Io(std::io::Error::other(e));
+    let plugin_dir = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| lock(e.to_string()))?
+        .get(plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?;
 
     let new_fingerprint =
         local_install::compute_bundle_fingerprint(&plugin_dir).map_err(LifecycleError::Io)?;
 
-    let mut store = state
-        .store
-        .lock()
-        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    let enabled = {
+        let mut store = state.store.lock().map_err(|e| lock(e.to_string()))?;
+        let record = store
+            .get(plugin_id)
+            .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?
+            .clone();
 
-    let record = store
-        .get(&plugin_id)
-        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?
-        .clone();
+        log::warn!(
+            "[AUDIT] event=plugin_fingerprint_trusted plugin_id={} old={} new={}",
+            plugin_id,
+            record.bundle_fingerprint,
+            new_fingerprint
+        );
 
-    log::warn!(
-        "[AUDIT] event=plugin_fingerprint_trusted plugin_id={} old={} new={}",
-        plugin_id,
-        record.bundle_fingerprint,
-        new_fingerprint
-    );
+        let enabled = record.status == PluginStatus::Enabled;
+        store.upsert(PluginRecord {
+            bundle_fingerprint: new_fingerprint,
+            fingerprint_changed: false,
+            ..record
+        });
+        store.save(&state.state_path)?;
+        enabled
+    };
 
-    store.upsert(PluginRecord {
-        bundle_fingerprint: new_fingerprint,
-        fingerprint_changed: false,
-        ..record
-    });
-    store.save(&state.state_path)?;
+    if enabled {
+        let manifest = state
+            .manifests
+            .lock()
+            .map_err(|e| lock(e.to_string()))?
+            .get(plugin_id)
+            .cloned();
+        if let Some(manifest) = manifest {
+            match runtime::start_plugin(plugin_id, &manifest, state) {
+                Ok(()) | Err(runtime::RuntimeError::AlreadyRunning(_)) => {}
+                Err(e) => log::warn!(
+                    "[plugin_host] could not start {plugin_id} after trusting its files: {e}"
+                ),
+            }
+        }
+    }
 
     Ok(())
 }

@@ -146,7 +146,8 @@ export function usePluginInstallFromGit() {
  * Accept the new bundle fingerprint for a plugin whose fingerprint has changed.
  *
  * This is the "Trust new version" action in the UI.  After this call the plugin's
- * `fingerprint_changed` flag is cleared and the user can enable the plugin normally.
+ * `fingerprint_changed` flag is cleared; a plugin that is still on, as one the app
+ * did not start at launch is, starts, and a plugin that is off can be enabled.
  *
  * @returns TanStack mutation — `mutate(pluginId)`.
  */
@@ -157,6 +158,7 @@ export function usePluginTrustFingerprint() {
     mutationFn: (pluginId) => safeInvoke("plugin_trust_fingerprint", { pluginId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
+      reloadCommands();
     },
   });
 }

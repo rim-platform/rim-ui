@@ -37,6 +37,7 @@ vi.mock("../api/usePluginCapabilities", () => ({
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import {
   usePluginDisable,
+  usePluginEnable,
   usePluginInstallFromLocal,
   usePluginUninstall,
 } from "../api/usePluginActions";
@@ -274,18 +275,46 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.queryByText("Bundle changed")).not.toBeInTheDocument();
   });
 
-  it("disables the enable toggle when fingerprint_changed is true", () => {
-    vi.mocked(usePluginList).mockReturnValue({
-      data: [makePlugin({ fingerprint_changed: true, enabled: false })],
-      isLoading: false,
-    } as ReturnType<typeof usePluginList>);
+  describe("the switch of a plugin whose bundle changed", () => {
+    function mockToggles() {
+      const enable = vi.fn();
+      const disable = vi.fn();
+      vi.mocked(usePluginEnable).mockReturnValue({ mutate: enable } as unknown as ReturnType<
+        typeof usePluginEnable
+      >);
+      vi.mocked(usePluginDisable).mockReturnValue({ mutate: disable } as unknown as ReturnType<
+        typeof usePluginDisable
+      >);
+      return { enable, disable };
+    }
 
-    render(<PluginSettingsPage />);
+    it("cannot turn a stopped plugin on, and says why", () => {
+      const { enable } = mockToggles();
+      listPlugins([makePlugin({ fingerprint_changed: true, enabled: false })]);
+      render(<PluginSettingsPage />);
 
-    const toggle = screen.getByRole("button", {
-      name: /trust the new version before enabling/i,
+      const toggle = screen.getByRole("button", {
+        name: "Trust the new version before enabling",
+      });
+      expect(toggle).toBeDisabled();
+      expect(toggle).toHaveAttribute("title", "Trust the new version before enabling");
+      fireEvent.click(toggle);
+      expect(enable).not.toHaveBeenCalled();
     });
-    expect(toggle).toBeDisabled();
+
+    it("turns a running plugin off", () => {
+      const { enable, disable } = mockToggles();
+      listPlugins([makePlugin({ fingerprint_changed: true, enabled: true })]);
+      render(<PluginSettingsPage />);
+
+      const toggle = screen.getByRole("button", { name: "Disable plugin" });
+      expect(toggle).toBeEnabled();
+      expect(toggle).toHaveAttribute("title", "Disable plugin");
+      fireEvent.click(toggle);
+      expect(disable).toHaveBeenCalledWith("dev.example.test");
+      expect(enable).not.toHaveBeenCalled();
+      expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+    });
   });
 
   describe("dismissing the changed-bundle warning", () => {

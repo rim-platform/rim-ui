@@ -117,15 +117,25 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
         chat_relay: Arc::new(chat_relay::ChatRelay::default()),
     };
 
-    // Re-spawn any plugins that were Enabled on last shutdown.
-    // Collect (plugin_id, manifest) pairs first to avoid holding the lock
+    start_enabled_plugins(&plugin_host_state);
+
+    plugin_host_state
+}
+
+/// Starts the plugins that were Enabled when the app last closed, and returns
+/// the ids of those it tried to start.
+///
+/// Each plugin's bundle fingerprint is checked first, as enabling it does. A
+/// plugin whose files changed since they were trusted is marked
+/// `fingerprint_changed`, logged and not started; it keeps its Enabled status,
+/// so trusting the new files starts it. A plugin whose files cannot be read is
+/// started. A start that fails is logged.
+pub(crate) fn start_enabled_plugins(state: &PluginHostState) -> Vec<String> {
+    // Collect (plugin_id, manifest) pairs first to avoid holding the locks
     // across the spawn calls.
-    let to_spawn: Vec<(String, PluginManifest)> = {
-        let store = plugin_host_state.store.lock().expect("plugin store lock");
-        let manifests = plugin_host_state
-            .manifests
-            .lock()
-            .expect("plugin manifests lock");
+    let enabled: Vec<(String, PluginManifest)> = {
+        let store = state.store.lock().expect("plugin store lock");
+        let manifests = state.manifests.lock().expect("plugin manifests lock");
         store
             .plugins
             .iter()
@@ -134,8 +144,13 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
             .collect()
     };
 
-    for (plugin_id, manifest) in to_spawn {
-        match runtime::start_plugin(&plugin_id, &manifest, &plugin_host_state) {
+    let mut started = Vec::new();
+    for (plugin_id, manifest) in enabled {
+        if let Err(e) = commands::check_bundle_fingerprint(state, &plugin_id) {
+            log::warn!("[plugin_host] not starting plugin {plugin_id}: {e}");
+            continue;
+        }
+        match runtime::start_plugin(&plugin_id, &manifest, state) {
             Ok(()) => log::info!("[plugin_host] auto-started plugin {}", plugin_id),
             Err(e) => log::warn!(
                 "[plugin_host] failed to auto-start plugin {}: {}",
@@ -143,9 +158,9 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
                 e
             ),
         }
+        started.push(plugin_id);
     }
-
-    plugin_host_state
+    started
 }
 
 /// UI event that carries a [`panel_relay::PanelStateChange`] each time a plugin
@@ -232,5 +247,134 @@ impl PluginHostState {
             account: Mutex::new(None),
             chat_relay: Arc::new(chat_relay::ChatRelay::default()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin_host::process::test_plugins_dir;
+    use crate::plugin_host::state::PluginRecord;
+    use tempfile::TempDir;
+
+    const ID: &str = "dev.example.test";
+
+    /// A host with the Enabled local-process plugin [`ID`], whose folder in
+    /// `tmp` holds a copy of `exits_on_sigterm.sh` and whose fingerprint is
+    /// pinned as installing it does.
+    fn enabled_plugin(tmp: &TempDir) -> PluginHostState {
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": ID,
+            "display_name": "Test",
+            "version": "1.0.0",
+            "description": "test",
+            "author": null,
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "exits_on_sigterm.sh",
+        }))
+        .unwrap();
+        let dir = tmp.path().join(ID);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(
+            test_plugins_dir().join("exits_on_sigterm.sh"),
+            dir.join("exits_on_sigterm.sh"),
+        )
+        .unwrap();
+        let fingerprint = local_install::compute_bundle_fingerprint(&dir).unwrap();
+
+        let mut state = PluginHostState::with_installed(vec![manifest]);
+        state.state_path = state_file_path(tmp.path());
+        state.plugin_dirs.lock().unwrap().insert(ID.into(), dir);
+        {
+            let mut store = state.store.lock().unwrap();
+            lifecycle::enable(&mut store, ID).unwrap();
+            let record = store.get(ID).unwrap().clone();
+            store.upsert(PluginRecord {
+                bundle_fingerprint: fingerprint,
+                ..record
+            });
+        }
+        state
+    }
+
+    fn running(state: &PluginHostState) -> bool {
+        state.shutdown_txs.lock().unwrap().contains_key(ID)
+    }
+
+    fn record(state: &PluginHostState) -> PluginRecord {
+        state.store.lock().unwrap().get(ID).unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_plugin_starts_at_launch() {
+        let tmp = TempDir::new().unwrap();
+        let state = enabled_plugin(&tmp);
+
+        assert_eq!(start_enabled_plugins(&state), vec![ID.to_string()]);
+
+        assert!(running(&state));
+        assert!(!record(&state).fingerprint_changed);
+        runtime::stop_plugin(ID, &state).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_plugin_whose_files_changed_is_marked_and_not_started_at_launch() {
+        let tmp = TempDir::new().unwrap();
+        let state = enabled_plugin(&tmp);
+        std::fs::write(tmp.path().join(ID).join("extra.js"), b"changed").unwrap();
+
+        assert!(start_enabled_plugins(&state).is_empty());
+
+        assert!(!running(&state));
+        let record = record(&state);
+        assert!(record.fingerprint_changed);
+        assert_eq!(record.status, PluginStatus::Enabled);
+        let saved = PluginStateStore::load(&state.state_path);
+        assert!(saved.get(ID).unwrap().fingerprint_changed);
+    }
+
+    #[tokio::test]
+    async fn a_plugin_whose_folder_cannot_be_read_is_started_and_not_marked() {
+        let tmp = TempDir::new().unwrap();
+        let state = enabled_plugin(&tmp);
+        state
+            .plugin_dirs
+            .lock()
+            .unwrap()
+            .insert(ID.into(), tmp.path().join("missing"));
+
+        assert_eq!(start_enabled_plugins(&state), vec![ID.to_string()]);
+
+        assert!(!record(&state).fingerprint_changed);
+    }
+
+    #[tokio::test]
+    async fn trusting_a_plugin_skipped_at_launch_starts_it() {
+        let tmp = TempDir::new().unwrap();
+        let state = enabled_plugin(&tmp);
+        std::fs::write(tmp.path().join(ID).join("extra.js"), b"changed").unwrap();
+        start_enabled_plugins(&state);
+
+        commands::trust_fingerprint(&state, ID).unwrap();
+
+        assert!(running(&state));
+        let record = record(&state);
+        assert!(!record.fingerprint_changed);
+        assert_eq!(record.status, PluginStatus::Enabled);
+        runtime::stop_plugin(ID, &state).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn trusting_a_disabled_plugin_leaves_it_stopped() {
+        let tmp = TempDir::new().unwrap();
+        let state = enabled_plugin(&tmp);
+        lifecycle::disable(&mut state.store.lock().unwrap(), ID).unwrap();
+        std::fs::write(tmp.path().join(ID).join("extra.js"), b"changed").unwrap();
+
+        commands::trust_fingerprint(&state, ID).unwrap();
+
+        assert!(!running(&state));
+        assert!(!record(&state).fingerprint_changed);
     }
 }

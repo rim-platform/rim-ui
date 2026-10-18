@@ -7,9 +7,10 @@
 //!
 //! ## Lifecycle
 //!
-//! - `start_plugin` is called by `plugin_enable` (user action) and by the
-//!   startup sweep in `mod.rs::init` (re-spawns plugins that were Enabled on
-//!   last shutdown).
+//! - `start_plugin` is called by `plugin_enable` (user action), by
+//!   `plugin_trust_fingerprint` for a plugin still Enabled, and by the startup
+//!   sweep `start_enabled_plugins` (re-spawns plugins that were Enabled on last
+//!   shutdown and whose files still match their trusted fingerprint).
 //! - `stop_plugin` is called by `plugin_disable`, `plugin_uninstall` and
 //!   `plugin_revoke_capability`.
 //! - `stop_all` is called when the app exits.
@@ -126,7 +127,7 @@ pub fn start_plugin(
     let panel_ids: Vec<String> = manifest.panels.iter().map(|p| p.id.clone()).collect();
 
     // Tauri runs sync commands (`plugin_enable`) and the setup hook (the startup
-    // sweep in `mod.rs::init`) on the main thread, outside any Tokio runtime.
+    // sweep `start_enabled_plugins`) on the main thread, outside any Tokio runtime.
     // `tokio::process` and `tokio::spawn` below both panic there, so enter
     // Tauri's runtime when the caller is not already on one.
     let tauri_runtime = tokio::runtime::Handle::try_current()
