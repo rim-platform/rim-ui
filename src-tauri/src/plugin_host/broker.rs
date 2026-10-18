@@ -1435,7 +1435,8 @@ mod tests {
         let (client, mut plugin, _shutdown) = spawn_settings_loop(&host);
 
         // Queued before the newer values were saved, written after: the notice
-        // carries the newer set, and so does the answer the plugin gets next.
+        // carries the newer set, and so does the answer. The loop may write
+        // either frame first; both hold the newer set whichever it is.
         client.settings_changed().await.unwrap();
         host.save(
             SETTINGS_PLUGIN,
@@ -1445,12 +1446,17 @@ mod tests {
         wire::write_frame(&mut plugin, &settings_get(1))
             .await
             .unwrap();
-        let first = read_json(&mut plugin).await;
-        let second = read_json(&mut plugin).await;
-        assert_eq!(first["method"], method::SETTINGS_CHANGED);
-        assert_eq!(first["params"]["values"]["namespace"], "new");
-        assert_eq!(second["id"], 1);
-        assert_eq!(second["result"]["values"]["namespace"], "new");
+        let frames = [read_json(&mut plugin).await, read_json(&mut plugin).await];
+        let notice = frames
+            .iter()
+            .find(|f| f["method"] == method::SETTINGS_CHANGED)
+            .expect("a rim.settings.changed notice");
+        let answer = frames
+            .iter()
+            .find(|f| f["id"] == 1)
+            .expect("the rim.settings.get answer");
+        assert_eq!(notice["params"]["values"]["namespace"], "new");
+        assert_eq!(answer["result"]["values"]["namespace"], "new");
     }
 
     #[tokio::test]
