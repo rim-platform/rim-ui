@@ -216,4 +216,30 @@ describe("KeySetupStep", () => {
     expect(stepTitle()).toBeNull();
     expect(useKeySetupOfferStore.getState().available).toBeNull();
   });
+
+  it("says in a browser that encrypted history stays in it, when linking and when creating keys", async () => {
+    runtime.platform = "web";
+    account.principalId = KEY_PRINCIPAL;
+    const { unmount } = renderStep();
+    expect(await screen.findByText(/already has keys on another device/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/encrypted messages are kept only in this browser/i),
+    ).toBeInTheDocument();
+    unmount();
+
+    account.principalId = null;
+    runtime.browserIdentity = true;
+    renderStep();
+    expect(screen.getByText(/a key for this browser/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/encrypted messages are kept only in this browser/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the browser history notice in the desktop app", () => {
+    renderStep();
+
+    expect(stepTitle()).toBeInTheDocument();
+    expect(screen.queryByText(/kept only in this browser/i)).toBeNull();
+  });
 });

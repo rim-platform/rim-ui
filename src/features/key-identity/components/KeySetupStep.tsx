@@ -15,6 +15,7 @@ import {
   useKeySetupOfferStore,
   type KeySetupKind,
 } from "../state/keySetupOffer";
+import { BrowserHistoryNotice } from "./BrowserHistoryNotice";
 import { EnrollKeyIdentity, type Me } from "./EnrollKeyIdentity";
 import { LinkThisDeviceForm } from "./LinkThisDevice";
 
@@ -134,6 +135,7 @@ export function KeySetupStep() {
             />
           </>
         )}
+        <BrowserHistoryNotice />
       </div>
     </Dialog>
   );
