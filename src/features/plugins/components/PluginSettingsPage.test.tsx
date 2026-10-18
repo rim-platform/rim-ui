@@ -82,6 +82,12 @@ function mockUninstall(
   return mutate;
 }
 
+/** Opens the row's more-actions menu and picks Uninstall. */
+function clickUninstall() {
+  fireEvent.click(screen.getByRole("button", { name: /^More actions for / }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Uninstall…" }));
+}
+
 function listPlugins(plugins: PluginInfo[]) {
   vi.mocked(usePluginList).mockReturnValue({ data: plugins, isLoading: false } as ReturnType<
     typeof usePluginList
@@ -163,13 +169,15 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     } as ReturnType<typeof usePluginList>);
     render(<PluginSettingsPage />);
 
-    const web = screen.getByText("GitHub Pull Requests").closest(".rounded-lg") as HTMLElement;
+    const web = screen.getByText("GitHub Pull Requests").closest(".rounded-xl") as HTMLElement;
+    expect(within(web).getByText("Sandboxed")).toBeInTheDocument();
+    expect(within(web).getByText("Unsigned")).toBeInTheDocument();
     expect(
-      within(web).getByText("Sandboxed · Unsigned · installed from a link (plugins.example.com)"),
+      within(web).getByText("Installed from a link (plugins.example.com)"),
     ).toBeInTheDocument();
     expect(within(web).getByRole("button", { name: "Enable plugin" })).toBeEnabled();
 
-    const local = screen.getByText("Kubernetes Pods").closest(".rounded-lg") as HTMLElement;
+    const local = screen.getByText("Kubernetes Pods").closest(".rounded-xl") as HTMLElement;
     expect(within(local).getAllByText("Needs the desktop app").length).toBeGreaterThan(0);
     expect(within(local).getByRole("button", { name: "Needs the desktop app" })).toBeDisabled();
   });
@@ -179,7 +187,7 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     mockUninstall();
     render(<PluginSettingsPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    clickUninstall();
     const dialog = screen.getByRole("dialog", { name: "Uninstall dev.example.test?" });
     expect(dialog).toHaveTextContent(
       "removed from this browser for your account, with the permissions you granted it, the data it stored and its files",
@@ -384,13 +392,34 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     });
   });
 
+  it("keeps the rarer actions in the row's more-actions menu", () => {
+    listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
+    render(<PluginSettingsPage />);
+    expect(screen.queryByRole("button", { name: "Permissions" })).not.toBeInTheDocument();
+
+    const more = screen.getByRole("button", { name: "More actions for Kubernetes Pods" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    const menu = screen.getByRole("menu", { name: "More actions for Kubernetes Pods" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Permissions", "Activity", "Uninstall…"]);
+    // Uninstall stands apart from the rest.
+    expect(within(menu).getByRole("separator").nextElementSibling).toHaveTextContent("Uninstall…");
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Permissions" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Plugin Permissions")).toBeInTheDocument();
+  });
+
   it("uninstalls a plugin only once the user confirms", async () => {
     listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
     const mutate = mockUninstall(false, (_id, options) => options.onSuccess());
     render(<PluginSettingsPage />);
-    const trash = screen.getByRole("button", { name: "Uninstall plugin" });
-
-    fireEvent.click(trash);
+    clickUninstall();
     const dialog = screen.getByRole("dialog", { name: "Uninstall Kubernetes Pods?" });
     expect(dialog).toHaveTextContent(
       "removed from this device, with the permissions you granted it and the data it stored. Its files are deleted from the plugins folder.",
@@ -401,12 +430,12 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(trash);
+    clickUninstall();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mutate).not.toHaveBeenCalled();
 
-    fireEvent.click(trash);
+    clickUninstall();
     fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(mutate).toHaveBeenCalledWith("dev.example.test", expect.anything());
@@ -418,7 +447,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     mockUninstall();
     render(<PluginSettingsPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    clickUninstall();
     expect(screen.getByRole("dialog")).toHaveTextContent(
       "The app did not install it, so its folder stays in the plugins folder.",
     );
@@ -431,7 +460,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     );
     render(<PluginSettingsPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    clickUninstall();
     fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
     expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent(
       "io error: Permission denied",
@@ -443,7 +472,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     mockUninstall(true);
     render(<PluginSettingsPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    clickUninstall();
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
   });
 

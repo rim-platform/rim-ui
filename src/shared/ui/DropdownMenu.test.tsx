@@ -152,4 +152,21 @@ describe("DropdownMenu", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     anchor.remove();
   });
+
+  it("draws a divider above an item that asks for one, never above the first", () => {
+    const items: DropdownMenuItem[] = [
+      { id: "a", label: "A", separatorBefore: true, onSelect: vi.fn() },
+      { id: "b", label: "B", onSelect: vi.fn() },
+      { id: "c", label: "C", separatorBefore: true, onSelect: vi.fn() },
+    ];
+    render(<DropdownMenu items={items} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+    const separators = screen.getAllByRole("separator");
+    expect(separators).toHaveLength(1);
+    expect(separators[0].nextElementSibling).toHaveTextContent("C");
+    // Keyboard order counts only the items.
+    const menu = screen.getByRole("menu");
+    fireEvent.keyDown(menu, { key: "End" });
+    fireEvent.keyDown(menu, { key: "Enter" });
+    expect(items[2].onSelect).toHaveBeenCalledTimes(1);
+  });
 });
