@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link2 } from "lucide-react";
 
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import {
@@ -30,12 +31,14 @@ function changesOf(fetched: FetchedLinkBundle, current: PluginInfo) {
 
 /**
  * "Install from link": a pasted `https://…/name.rimbundle#sha256=…` link is
- * fetched without credentials, must hash to the value in the link, and goes
- * through manifest validation; then the permission prompt opens. A link for a
- * plugin already installed shows what changes and installs over it on a yes.
+ * fetched without credentials, through the host on the desktop and from the
+ * webview on the web, must hash to the value in the link, and goes through
+ * manifest validation; then the permission prompt opens. A link for a plugin
+ * already installed shows what changes and installs over it on a yes.
  */
 export function InstallFromLink({ installed, disabled, onInstalled }: InstallFromLinkProps) {
   const install = usePluginInstallFromLink();
+  const { platform } = useRuntime();
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState("");
   const [fetching, setFetching] = useState(false);
@@ -74,7 +77,7 @@ export function InstallFromLink({ installed, disabled, onInstalled }: InstallFro
     setError(null);
     setFetching(true);
     try {
-      const fetched = await fetchLinkBundle(trimmed);
+      const fetched = await fetchLinkBundle(trimmed, platform);
       const current = installed.find((p) => p.plugin_id === fetched.bundle.manifest.plugin_id);
       if (current) setReplacing({ fetched, current });
       else runInstall(fetched, false);

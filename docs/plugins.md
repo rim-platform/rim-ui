@@ -78,10 +78,12 @@ Settings → Plugins has three install buttons.
 - **Install from link** (desktop and web) takes a link of the form
   `https://<host>/<name>.rimbundle#sha256=<hash>`, then **Install**. The bundle is fetched
   without credentials, must hash to the value after `#sha256=` and must pass the manifest rules
-  before anything is installed. The bundle's host must allow cross-origin requests, so a link
-  to a GitHub release asset does not install this way. A link to a plugin already installed
-  opens **Replace \<name\>?**, which shows the version change and the permissions added or
-  dropped; the permissions are approved again afterwards.
+  before anything is installed. The desktop app fetches the link itself, so a link to a GitHub
+  release asset installs; it follows redirects only to other `https://` links and stops reading
+  past 8 MiB. The web app fetches from the browser, so there the bundle's host must allow
+  cross-origin requests ([web plugins](web-plugins.md#installing-from-a-link)). A link to a
+  plugin already installed opens **Replace \<name\>?**, which shows the version change and the
+  permissions added or dropped; the permissions are approved again afterwards.
 
 Each way installs only what passes the manifest rules ([the plugin manifest](plugin-manifest.md)),
 and the error names what failed:

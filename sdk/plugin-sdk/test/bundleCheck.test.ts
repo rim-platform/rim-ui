@@ -104,6 +104,16 @@ describe("rim-plugin-bundle on a built folder", () => {
     30_000,
   );
 
+  it("refuses a web main.mjs that starts with a hashbang", () => {
+    const dir = pluginRepo("WebSandboxed");
+    expect(bundler(["--in-place", "--entry", "src/main.ts", "."], dir).status).toBe(0);
+    const built = readFileSync(join(dir, "main.mjs"), "utf8");
+    writeFileSync(join(dir, "main.mjs"), `#!/usr/bin/env node\n${built}`);
+    const result = bundler(["."], dir);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("starts with a hashbang, which a web plugin cannot use");
+  }, 30_000);
+
   it("copies main.mjs without building it again", () => {
     const dir = pluginRepo("DesktopLocalProcess");
     expect(bundler(["--in-place", "--entry", "src/main.ts", "."], dir).status).toBe(0);

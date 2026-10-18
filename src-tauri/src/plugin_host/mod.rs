@@ -1,5 +1,6 @@
 pub mod broker;
 pub mod bundle;
+pub mod bundle_fetch;
 pub mod capability;
 pub mod chat_relay;
 pub mod command_exec;

@@ -86,6 +86,7 @@ pub fn run() {
             plugin_host::commands::plugin_relay_ui_event,
             plugin_host::commands::plugin_set_principal,
             plugin_host::commands::plugin_install_bundle,
+            plugin_host::bundle_fetch::plugin_fetch_bundle,
             plugin_host::commands::plugin_web_files,
             plugin_host::commands::plugin_panel_files,
             plugin_host::commands::plugin_set_starting,

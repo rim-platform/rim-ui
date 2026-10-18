@@ -26,6 +26,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - When the agent asks to run a command after reading messages or other tool output in the same
   run, the confirmation dialog warns "This action was suggested while the agent was reading
   external content" and asks you to type the command's verb before a Mutating command runs.
+- **Install from link** on the desktop installs a bundle from a GitHub release asset, or any
+  other `https://` host that does not allow cross-origin requests: the desktop app fetches
+  the link itself. The web app still needs a host that sends `Access-Control-Allow-Origin`,
+  such as GitHub Pages, `raw.githubusercontent.com` or jsDelivr, or the workspace's plugin
+  registry.
 - A server command run from the palette, a keybind or the composer's `/` list acts on the open
   conversation and thread, as it does from the AI agent: marking a conversation read, setting its
   notification level or its slow mode no longer fails or asks for the conversation. A
@@ -254,6 +259,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - `rim-plugin-bundle` without `--entry`, in a folder whose manifest's entrypoint is a `main.mjs`
   that exists, packs that file as it is instead of rebuilding it, so the `.rimbundle` matches
   the committed build. `--entry` still builds from source.
+  A web plugin's committed `main.mjs` that starts with a hashbang is refused with the reason,
+  since the browser cannot load it and the copy keeps the committed bytes.
 
 ### Changed
 
