@@ -546,6 +546,7 @@ export class BrowserPluginStore implements PluginServices {
       }
     }
     await committed(tx);
+    onPluginSettingsSaved(pluginId);
   }
 
   /** Clear every saved setting of `pluginId` for the signed-in account. */
@@ -555,17 +556,33 @@ export class BrowserPluginStore implements PluginServices {
     const tx = (await database()).transaction(SETTINGS, "readwrite");
     tx.objectStore(SETTINGS).delete(storageRange(pluginId, account));
     await committed(tx);
+    onPluginSettingsSaved(pluginId);
   }
 
   /**
-   * The settings `pluginId` reads for the signed-in account: each declared
-   * setting's saved value or else its default. A secret setting never has a
-   * value here.
+   * The settings `pluginId` reads for `account`: each declared setting's saved
+   * value or else its default; with `account` null, the defaults of any install
+   * of the plugin in this browser. A secret setting never has a value here.
+   *
+   * @throws Error when the plugin is not installed for `account`, or at all.
    */
-  async settingsValues(pluginId: string): Promise<Record<string, unknown>> {
-    const account = this.signedIn();
-    const schema = (await this.settingsSchema(pluginId)).filter((s) => !s.is_secret);
-    return mergeSettings(schema, await this.savedSettings(pluginId, account));
+  async settingsValues(pluginId: string, account: string | null): Promise<Record<string, unknown>> {
+    const record =
+      account === null
+        ? await this.anyInstall(pluginId)
+        : await read<InstallRecord>(INSTALLS, [account, pluginId]);
+    if (!record) throw new Error(`plugin not found: ${pluginId}`);
+    const schema = parseManifestText(record.manifestText).settings_schema.filter(
+      (s) => !s.is_secret,
+    );
+    const saved = account === null ? {} : await this.savedSettings(pluginId, account);
+    return mergeSettings(schema, saved);
+  }
+
+  private async anyInstall(pluginId: string): Promise<InstallRecord | undefined> {
+    const tx = (await database()).transaction(INSTALLS, "readonly");
+    const records = await done(tx.objectStore(INSTALLS).getAll() as IDBRequest<InstallRecord[]>);
+    return records.find((r) => r.pluginId === pluginId);
   }
 
   async checkAiConsent(pluginId: string, commandId: string): Promise<void> {
@@ -591,3 +608,24 @@ export class BrowserPluginStore implements PluginServices {
 
 /** The store the web app uses. */
 export const browserPluginStore = new BrowserPluginStore();
+
+/**
+ * The settings the web plugin `pluginId` reads for `account` (a provisional
+ * principal id, or null with nobody signed in): saved values over defaults,
+ * never a secret setting, which the web app does not keep.
+ */
+export function resolvedPluginSettings(
+  pluginId: string,
+  account: string | null,
+): Promise<Record<string, unknown>> {
+  return browserPluginStore.settingsValues(pluginId, account);
+}
+
+/**
+ * Runs after a save or a reset changed `pluginId`'s settings for the signed-in
+ * account in this browser: the one place the web store says the values a
+ * running plugin holds are out of date. It tells the plugin nothing.
+ */
+export function onPluginSettingsSaved(pluginId: string): void {
+  void pluginId;
+}

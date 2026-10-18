@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { PluginSettingsError } from "../pluginSettings";
 import { sha256Hex, writeBundle } from "./bundle";
+import * as storeModule from "./browserPluginStore";
 import { BrowserPluginStore } from "./browserPluginStore";
 
 const encoder = new TextEncoder();
@@ -83,13 +84,29 @@ describe("browser plugin settings", () => {
       refresh_seconds: 60,
       output: "json",
     });
-    expect(await a.settingsValues(PLUGIN)).toEqual({
+    expect(await a.settingsValues(PLUGIN, "rimp0_a")).toEqual({
       context: "prod-eu",
       namespace: "default",
       refresh_seconds: 60,
       output: "json",
     });
-    expect(await b.settingsValues(PLUGIN)).toEqual({ namespace: "default", refresh_seconds: 30 });
+    expect(await b.settingsValues(PLUGIN, "rimp0_b")).toEqual({
+      namespace: "default",
+      refresh_seconds: 30,
+    });
+  });
+
+  it("gives the defaults alone with nobody signed in, and refuses a plugin not installed", async () => {
+    const store = await installed("rimp0_a");
+    await store.settingsSave(PLUGIN, { namespace: "prod" });
+    expect(await store.settingsValues(PLUGIN, null)).toEqual({
+      namespace: "default",
+      refresh_seconds: 30,
+    });
+    await expect(store.settingsValues(PLUGIN, "rimp0_nobody")).rejects.toThrow("plugin not found");
+    await expect(storeModule.resolvedPluginSettings("dev.example.none", null)).rejects.toThrow(
+      "plugin not found",
+    );
   });
 
   it("clears a value saved as null and keeps the keys left out", async () => {
@@ -126,7 +143,7 @@ describe("browser plugin settings", () => {
       message: "api_token is a secret setting, which needs the desktop app",
     });
     await store.settingsSave(PLUGIN, { api_token: null });
-    expect(await store.settingsValues(PLUGIN)).not.toHaveProperty("api_token");
+    expect(await store.settingsValues(PLUGIN, "rimp0_a")).not.toHaveProperty("api_token");
   });
 
   it("resets the account's values and deletes them on uninstall", async () => {
