@@ -324,3 +324,111 @@ describe("NotificationBellButton", () => {
     expect(useNotificationsPanelStore.getState().open).toBe(false);
   });
 });
+
+describe("NotificationsPanel — entry context menu", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "me" } });
+    useNotificationsPanelStore.setState({ open: true, unreadOnly: false });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+  });
+
+  function labels(): string[] {
+    return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+  }
+
+  it("offers Mark as read, Mute conversation and Open on an unread entry", async () => {
+    serve(() => page([notification()]));
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("can you look at the deploy?"));
+    expect(labels()).toEqual(["Mark as read", "Mute conversation", "Open"]);
+  });
+
+  it("offers no Mark as read on a read entry", async () => {
+    serve(() => page([keyword]));
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("outage in eu-west"));
+    expect(labels()).toEqual(["Mute conversation", "Open"]);
+  });
+
+  it("offers only Mark as read on an entry whose conversation is gone", async () => {
+    serve(() => page([unavailable]));
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("No longer available"));
+    expect(labels()).toEqual(["Mark as read"]);
+  });
+
+  it("marks only that entry read", async () => {
+    serve(() => page([notification()]));
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("can you look at the deploy?"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation MarkNotificationsRead")).toEqual([
+        { serverId: "ws-1", ids: ["n-1"], allBefore: null },
+      ]),
+    );
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+  });
+
+  it("mutes the conversation for the duration chosen in the submenu", async () => {
+    serve(() => page([notification()]), {
+      "mutation MuteConversation": () => ({ muteConversation: true }),
+    });
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("can you look at the deploy?"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mute conversation" }));
+    const submenu = screen.getByRole("menu", { name: "Mute conversation" });
+    expect(
+      within(submenu)
+        .getAllByRole("menuitem")
+        .map((el) => el.textContent),
+    ).toEqual(["Mute for 1 hour", "Mute for 8 hours", "Mute until tomorrow"]);
+    const before = Date.now();
+    fireEvent.click(within(submenu).getByRole("menuitem", { name: "Mute for 1 hour" }));
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation MuteConversation")).toHaveLength(1));
+    const { input } = callsTo(requestMock, "mutation MuteConversation")[0] as {
+      input: { serverId: string; conversationId: string; mutedUntil: string };
+    };
+    expect(input.serverId).toBe("ws-1");
+    expect(input.conversationId).toBe("c-general");
+    expect(Date.parse(input.mutedUntil) - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
+  });
+
+  it("offers Unmute conversation while the conversation is muted", async () => {
+    serve(() => page([notification()]), {
+      "query MutedConversations": () => ({
+        mutedConversations: [{ conversationId: "c-general", mutedUntil: null }],
+      }),
+      "mutation UnmuteConversation": () => ({ unmuteConversation: true }),
+    });
+    renderPanel();
+    const entry = await screen.findByText("can you look at the deploy?");
+    await waitFor(() => expect(callsTo(requestMock, "query MutedConversations")).toHaveLength(1));
+    await waitFor(() => {
+      fireEvent.contextMenu(entry);
+      expect(labels()).toContain("Unmute conversation");
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unmute conversation" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation UnmuteConversation")).toEqual([
+        { input: { serverId: "ws-1", conversationId: "c-general" } },
+      ]),
+    );
+  });
+
+  it("opens the entry from the menu, and from the keyboard", async () => {
+    serve(() => page([notification()]));
+    renderPanel();
+    await screen.findByText("can you look at the deploy?");
+    fireEvent.keyDown(row("can you look at the deploy?"), { key: "ContextMenu" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+    expect(useShellStore.getState().highlightedMessageId).toBe("m-1");
+  });
+});

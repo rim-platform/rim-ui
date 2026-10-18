@@ -24,7 +24,7 @@ export const LEVEL_LABELS: Record<NotificationLevel, string> = {
 
 const LEVEL_ORDER = [NotificationLevel.ALL, NotificationLevel.MENTIONS, NotificationLevel.NONE];
 
-const MUTE_DURATIONS: { id: string; label: string; until: () => Date }[] = [
+export const MUTE_DURATIONS: { id: string; label: string; until: () => Date }[] = [
   { id: "mute-1h", label: "Mute for 1 hour", until: () => inOneHour() },
   {
     id: "mute-8h",

@@ -14,11 +14,22 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../../shared/ui/cn";
+import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import {
+  useContextMenu,
+  type ContextMenuBindings,
+} from "../../../shared/ui/contextMenu/useContextMenu";
+import { formatTime } from "../../../shared/utils/formatTime";
 import { toast } from "../../../shared/toast";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationReason } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import {
+  useMuteConversationMutation,
+  useUnmuteConversationMutation,
+} from "../../conversations/api/useMuteConversation";
+import { isMuteActive, useMutedConversations } from "../../conversations/api/useMutedConversations";
 import { DmRequestInbox } from "../../relay/components/DmRequestInbox";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import {
@@ -29,6 +40,7 @@ import {
 import { authorDisplayName, notificationConversationLabel } from "../labels";
 import { jumpToNotification } from "../runtime/jumpToNotification";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
+import { MUTE_DURATIONS } from "../hooks/useConversationNotificationMenu";
 
 const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> = {
   [NotificationReason.DIRECT]: { label: "Direct message", icon: MessageCircle },
@@ -58,7 +70,8 @@ interface NotificationsPanelProps {
 /**
  * The notification inbox in the tool panel: newest first, unread entries dotted.
  * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
- * can no longer read say so and can still be marked read.
+ * can no longer read say so and can still be marked read. An entry's context menu marks it
+ * read, mutes or unmutes its conversation, and opens it.
  */
 export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelProps) {
   const qc = useQueryClient();
@@ -96,6 +109,71 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   }
 
   const resolveName = (userId: string) => memberLookup.resolve(userId).displayName;
+
+  const contextMenu = useContextMenu();
+  const mute = useMuteConversationMutation();
+  const unmute = useUnmuteConversationMutation();
+  const { data: muted } = useMutedConversations(workspaceId);
+
+  /**
+   * An entry's menu: Mark as read while it is unread; then, while its conversation is
+   * readable, Mute conversation (or Unmute) and Open.
+   */
+  function menuItems(item: NotificationItem): DropdownMenuItem[] {
+    const result: DropdownMenuItem[] = [];
+    if (!item.readAt) {
+      result.push({
+        id: "mark-read",
+        label: "Mark as read",
+        onSelect: () =>
+          markRead.mutate(
+            { serverId: workspaceId, ids: [item.id] },
+            {
+              onError: (err) =>
+                toast.error(graphqlErrorMessage(err, "Could not mark the notification read")),
+            },
+          ),
+      });
+    }
+    const conversation = item.conversation;
+    if (!conversation) return result;
+    const label = notificationConversationLabel(conversation, resolveName, currentUserId);
+    const vars = { serverId: workspaceId, conversationId: item.conversationId };
+    const mutedEntry = muted?.find((m) => m.conversationId === item.conversationId);
+    if (mutedEntry && isMuteActive(mutedEntry)) {
+      result.push({
+        id: "unmute-conversation",
+        label: "Unmute conversation",
+        onSelect: () =>
+          unmute.mutate(vars, {
+            onError: (err) =>
+              toast.error(graphqlErrorMessage(err, "Could not unmute the conversation")),
+          }),
+      });
+    } else {
+      result.push({
+        id: "mute-conversation",
+        label: "Mute conversation",
+        submenu: MUTE_DURATIONS.map((duration) => ({
+          id: duration.id,
+          label: duration.label,
+          onSelect: () => {
+            const until = duration.until().toISOString();
+            mute.mutate(
+              { ...vars, mutedUntil: until },
+              {
+                onSuccess: () => toast.success(`Muted ${label} until ${formatTime(until)}`),
+                onError: (err) =>
+                  toast.error(graphqlErrorMessage(err, "Could not mute the conversation")),
+              },
+            );
+          },
+        })),
+      });
+    }
+    result.push({ id: "open", label: "Open", onSelect: () => handleOpen(item) });
+    return result;
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -175,6 +253,9 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
                 resolveName={resolveName}
                 currentUserId={currentUserId}
                 onOpen={() => handleOpen(item)}
+                contextMenu={contextMenu.bind(() => menuItems(item), {
+                  label: "Notification actions",
+                })}
               />
             ))}
           </ul>
@@ -191,6 +272,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
           </button>
         )}
       </div>
+      {contextMenu.menu}
     </div>
   );
 }
@@ -200,11 +282,13 @@ function NotificationRow({
   resolveName,
   currentUserId,
   onOpen,
+  contextMenu,
 }: {
   item: NotificationItem;
   resolveName: (userId: string) => string;
   currentUserId: string | undefined;
   onOpen: () => void;
+  contextMenu: ContextMenuBindings;
 }) {
   const reason = REASONS[item.reason];
   const Icon = reason.icon;
@@ -222,6 +306,7 @@ function NotificationRow({
       <button
         type="button"
         onClick={onOpen}
+        {...contextMenu}
         data-notification-id={item.id}
         className={cn(
           "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-white/5",
