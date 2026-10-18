@@ -1,7 +1,9 @@
 // Where the web app keeps web plugins: IndexedDB database `rim-plugins` with
 // verified bundles keyed by hash (`bundles`), install records per account
-// (`installs`), each plugin's `rim.storage` per account (`storage`), and the
-// provisional-to-key principal ids this browser has seen (`principalIds`).
+// (`installs`), each plugin's `rim.storage` per account (`storage`), the
+// provisional-to-key principal ids this browser has seen (`principalIds`), and
+// the non-secret values each account saved in a plugin's settings form
+// (`settings`); the web app keeps no secret settings.
 // Bundles are hashed again at every start; a damaged or evicted one is fetched
 // again from its link and must hash the same.
 
@@ -13,23 +15,28 @@ import type {
   PluginInfo,
   PluginInstallResult,
   PluginInstallSource,
+  PluginSettingsFormState,
 } from "../types";
+import { mergeSettings, PluginSettingsError } from "../pluginSettings";
 import { readBundle, sha256Hex, type BundleFile } from "./bundle";
 import { fetchBundle, serverBundleUrl } from "./bundleLink";
 import {
   checkInstall,
   parseManifestText,
+  settingValueError,
+  type ManifestSetting,
   type PluginManifest,
 } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins, type BundleInstall, type PluginServices } from "./pluginServices";
 import { ErrorCode, RpcError, type PrincipalMapping } from "./rpc";
 
 const DB_NAME = "rim-plugins";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const BUNDLES = "bundles";
 const INSTALLS = "installs";
 const STORAGE = "storage";
 const PRINCIPAL_IDS = "principalIds";
+const SETTINGS = "settings";
 
 /** Largest `rim.storage` store: key lengths plus the values' JSON text, in bytes. */
 export const MAX_STORE_BYTES = 1024 * 1024;
@@ -71,6 +78,15 @@ interface StorageRecord {
   json: string;
 }
 
+/** One saved non-secret setting of one plugin for one account. */
+interface SettingRecord {
+  pluginId: string;
+  account: string;
+  key: string;
+  /** The value's JSON text. */
+  json: string;
+}
+
 /** The plugin is already installed and the caller did not ask to replace it. */
 export class AlreadyInstalledError extends Error {
   readonly pluginId: string;
@@ -90,12 +106,17 @@ function database(): Promise<IDBDatabase> {
   if (opened?.factory === factory) return opened.db;
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      db.createObjectStore(BUNDLES, { keyPath: "sha256" });
-      db.createObjectStore(INSTALLS, { keyPath: ["account", "pluginId"] });
-      db.createObjectStore(STORAGE, { keyPath: ["pluginId", "account", "key"] });
-      db.createObjectStore(PRINCIPAL_IDS, { keyPath: "from" });
+      if (event.oldVersion < 1) {
+        db.createObjectStore(BUNDLES, { keyPath: "sha256" });
+        db.createObjectStore(INSTALLS, { keyPath: ["account", "pluginId"] });
+        db.createObjectStore(STORAGE, { keyPath: ["pluginId", "account", "key"] });
+        db.createObjectStore(PRINCIPAL_IDS, { keyPath: "from" });
+      }
+      if (event.oldVersion < 2) {
+        db.createObjectStore(SETTINGS, { keyPath: ["pluginId", "account", "key"] });
+      }
     };
     request.onsuccess = () => {
       const db = request.result;
@@ -141,6 +162,7 @@ async function write(store: string, value: unknown): Promise<void> {
   await committed(tx);
 }
 
+/** Every key of one plugin and account in a store keyed `[pluginId, account, key]`. */
 function storageRange(pluginId: string, account: string): IDBKeyRange {
   return IDBKeyRange.bound([pluginId, account, ""], [pluginId, account, "￿"]);
 }
@@ -191,6 +213,7 @@ export function toPluginInfo(record: InstallRecord): PluginInfo {
     context_actions: contextActions(manifest),
     panels: manifest.panels,
     commands: commandInfos(manifest),
+    settings_schema: manifest.settings_schema,
     health: "stopped",
     runtime_kind: manifest.runtime_kind,
     network_origins: manifest.network_origins ?? [],
@@ -285,15 +308,16 @@ export class BrowserPluginStore implements PluginServices {
     }));
   }
 
-  /** Remove the plugin, its storage, and its bundle when no other install uses it. */
+  /** Remove the plugin, its storage and settings, and its bundle when no other install uses it. */
   async uninstall(pluginId: string): Promise<void> {
     const account = this.signedIn();
     const record = await this.record(pluginId);
     const db = await database();
-    const tx = db.transaction([INSTALLS, STORAGE, BUNDLES], "readwrite");
+    const tx = db.transaction([INSTALLS, STORAGE, SETTINGS, BUNDLES], "readwrite");
     const installs = tx.objectStore(INSTALLS);
     installs.delete([account, pluginId]);
     tx.objectStore(STORAGE).delete(storageRange(pluginId, account));
+    tx.objectStore(SETTINGS).delete(storageRange(pluginId, account));
     const rest = await done(installs.getAll() as IDBRequest<InstallRecord[]>);
     if (!rest.some((r) => r.bundleSha256 === record.bundleSha256)) {
       tx.objectStore(BUNDLES).delete(record.bundleSha256);
@@ -445,6 +469,103 @@ export class BrowserPluginStore implements PluginServices {
       );
     }
     return this.account;
+  }
+
+  private async settingsSchema(pluginId: string): Promise<ManifestSetting[]> {
+    return parseManifestText((await this.record(pluginId)).manifestText).settings_schema;
+  }
+
+  private async savedSettings(pluginId: string, account: string): Promise<Record<string, unknown>> {
+    const tx = (await database()).transaction(SETTINGS, "readonly");
+    const entries = await done(
+      tx.objectStore(SETTINGS).getAll(storageRange(pluginId, account)) as IDBRequest<
+        SettingRecord[]
+      >,
+    );
+    return Object.fromEntries(entries.map((e) => [e.key, JSON.parse(e.json) as unknown]));
+  }
+
+  /**
+   * The settings form of `pluginId` for the signed-in account: the saved values
+   * of its non-secret settings. Secret settings are never set here, since the
+   * web app keeps none.
+   */
+  async settingsGet(pluginId: string): Promise<PluginSettingsFormState> {
+    const account = this.signedIn();
+    const schema = await this.settingsSchema(pluginId);
+    const saved = await this.savedSettings(pluginId, account);
+    const values: Record<string, unknown> = {};
+    for (const setting of schema) {
+      if (!setting.is_secret && Object.prototype.hasOwnProperty.call(saved, setting.key)) {
+        values[setting.key] = saved[setting.key];
+      }
+    }
+    const secrets = Object.fromEntries(
+      schema.filter((s) => s.is_secret).map((s) => [s.key, false] as const),
+    );
+    return { values, secrets, secrets_available: false, secrets_error: null };
+  }
+
+  /**
+   * Save the user's changes to `pluginId`'s settings: each key a declared
+   * setting, each value one it accepts, `null` clearing the saved value. Every
+   * change is checked before any is written.
+   *
+   * @throws PluginSettingsError naming the first key refused, a secret setting
+   *   among them, since the web app has no encrypted store for one.
+   */
+  async settingsSave(pluginId: string, changes: Readonly<Record<string, unknown>>): Promise<void> {
+    const account = this.signedIn();
+    const schema = await this.settingsSchema(pluginId);
+    const checked: [ManifestSetting, unknown][] = [];
+    for (const [key, value] of Object.entries(changes)) {
+      const setting = schema.find((s) => s.key === key);
+      if (!setting) throw new PluginSettingsError(`${key} is not a setting of this plugin`, key);
+      if (setting.is_secret) {
+        if (value === null) continue;
+        throw new PluginSettingsError(
+          `${key} is a secret setting, which needs the desktop app`,
+          key,
+        );
+      }
+      const reason = value === null ? null : settingValueError(setting, value);
+      if (reason !== null) throw new PluginSettingsError(`${key} ${reason}`, key);
+      checked.push([setting, value]);
+    }
+    const tx = (await database()).transaction(SETTINGS, "readwrite");
+    const store = tx.objectStore(SETTINGS);
+    for (const [setting, value] of checked) {
+      if (value === null) store.delete([pluginId, account, setting.key]);
+      else {
+        store.put({
+          pluginId,
+          account,
+          key: setting.key,
+          json: JSON.stringify(value),
+        } satisfies SettingRecord);
+      }
+    }
+    await committed(tx);
+  }
+
+  /** Clear every saved setting of `pluginId` for the signed-in account. */
+  async settingsReset(pluginId: string): Promise<void> {
+    const account = this.signedIn();
+    await this.record(pluginId);
+    const tx = (await database()).transaction(SETTINGS, "readwrite");
+    tx.objectStore(SETTINGS).delete(storageRange(pluginId, account));
+    await committed(tx);
+  }
+
+  /**
+   * The settings `pluginId` reads for the signed-in account: each declared
+   * setting's saved value or else its default. A secret setting never has a
+   * value here.
+   */
+  async settingsValues(pluginId: string): Promise<Record<string, unknown>> {
+    const account = this.signedIn();
+    const schema = (await this.settingsSchema(pluginId)).filter((s) => !s.is_secret);
+    return mergeSettings(schema, await this.savedSettings(pluginId, account));
   }
 
   async checkAiConsent(pluginId: string, commandId: string): Promise<void> {

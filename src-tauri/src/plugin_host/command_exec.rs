@@ -487,6 +487,9 @@ mod tests {
             storage: crate::plugin_host::storage::PluginStorage::new(std::path::Path::new(
                 "/nonexistent",
             )),
+            settings: crate::plugin_host::settings::PluginSettings::in_memory(
+                std::path::Path::new("/nonexistent"),
+            ),
             account: std::sync::Mutex::new(None),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }

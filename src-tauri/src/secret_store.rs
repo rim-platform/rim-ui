@@ -1,6 +1,6 @@
 //! The app's secrets: the message cache key, the history archive keys and cloud refresh
-//! tokens, the offline session record, the key identity records and pending device links, and
-//! the AI provider keys.
+//! tokens, the offline session record, the key identity records and pending device links, the
+//! AI provider keys, and the secret settings of plugins.
 //!
 //! They live in one encrypted file, `<app data>/secrets.vault` ([`SecretVault`]). Each record
 //! is sealed on its own with XChaCha20-Poly1305 under the vault key, with its name bound in as
@@ -297,6 +297,29 @@ impl SecretVault {
                 ),
             }
         }
+        Ok(())
+    }
+
+    /// Delete every record whose name starts with `prefix` from the vault, in one write.
+    /// The credential store is not asked: names that share a prefix belong to records the
+    /// vault itself created. Deleting what is not there is not an error.
+    pub(crate) fn delete_prefixed(&self, prefix: &str) -> Result<(), VaultError> {
+        if prefix.is_empty() {
+            return Err(VaultError::Failed(
+                "an empty prefix names every record".into(),
+            ));
+        }
+        let mut state = self.lock();
+        let mut vault = self.load(&mut state)?;
+        let before = vault.file.records.len();
+        vault
+            .file
+            .records
+            .retain(|name, _| !name.starts_with(prefix));
+        if vault.file.records.len() != before {
+            self.save(&vault.file)?;
+        }
+        state.unreadable.retain(|name, _| !name.starts_with(prefix));
         Ok(())
     }
 
@@ -999,6 +1022,43 @@ mod tests {
         assert_eq!(read(&first, "absent"), None);
         assert_eq!(read(&first, "absent"), None);
         assert_eq!(keyring.reads("absent"), 1);
+    }
+
+    #[test]
+    fn a_prefixed_delete_removes_only_the_records_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let keyring = MemoryKeyring::default();
+        let vault = vault(dir.path(), &keyring);
+        vault
+            .write("plugin-setting-v1:dev.a.b:rimp0_x:token", "one")
+            .unwrap();
+        vault
+            .write("plugin-setting-v1:dev.a.b:rimp0_y:token", "two")
+            .unwrap();
+        vault
+            .write("plugin-setting-v1:dev.a.bc:rimp0_x:token", "three")
+            .unwrap();
+        vault.write("ai-key", "four").unwrap();
+
+        vault.delete_prefixed("plugin-setting-v1:dev.a.b:").unwrap();
+
+        assert_eq!(
+            read(&vault, "plugin-setting-v1:dev.a.b:rimp0_x:token"),
+            None
+        );
+        assert_eq!(
+            read(&vault, "plugin-setting-v1:dev.a.b:rimp0_y:token"),
+            None
+        );
+        assert_eq!(
+            read(&vault, "plugin-setting-v1:dev.a.bc:rimp0_x:token").as_deref(),
+            Some("three")
+        );
+        assert_eq!(read(&vault, "ai-key").as_deref(), Some("four"));
+        vault
+            .delete_prefixed("plugin-setting-v1:dev.none:")
+            .unwrap();
+        assert!(vault.delete_prefixed("").is_err());
     }
 
     #[test]
