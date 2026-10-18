@@ -68,9 +68,9 @@ npm run test:wasm
 The target's runner is `wasm-bindgen-test-runner` (from wasm-bindgen-cli); it starts
 `chromedriver` from `PATH` (or `CHROMEDRIVER=/path/to/chromedriver`) and Chrome or Chromium,
 headless. The test modules use `wasm_bindgen_test` as `#[test]` on wasm32, so the same tests run
-natively with `cargo test`. Two tests stay native: the SQLite store's (no `sqlite` feature in
-the browser). `wait` in the simulations spins on the clock in the browser, which cannot block a
-thread.
+natively with `cargo test --workspace`. Two tests stay native: the SQLite store's (no `sqlite`
+feature in the browser). `wait` in the simulations spins on the clock in the browser, which
+cannot block a thread.
 
 ## Storage
 

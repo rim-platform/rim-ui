@@ -229,10 +229,10 @@ npm test                     # Vitest
 npm run sdk:typecheck        # the plugin SDK and the TypeScript example plugins
 npm run sdk:smoke            # the SDK's npm tarball, installed into a copy of the template
 
-# The Tauri side, from src-tauri/
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+# The Tauri side and the MLS crates, from src-tauri/
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
 ```
 
 `npm run codegen` regenerates the GraphQL types from `schema.graphql`, which is exported from a

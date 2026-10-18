@@ -22,8 +22,8 @@ The commands you ran and the tail of their output. If a gate could not run, say 
 - [ ] `npm run build`
 - [ ] `npm test`
 - [ ] `npm run sdk:typecheck` and `npm run sdk:smoke` (the plugin SDK, the protocol schema or `plugins/` changed)
-- [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` and
-      `cargo test` in `src-tauri/` (the Rust side changed)
+- [ ] `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+      and `cargo test --workspace` in `src-tauri/` (the Rust side changed)
 - [ ] `npm run build:wasm` with the rebuilt module committed (the MLS crates changed)
 
 ## Docs and schema

@@ -29,7 +29,7 @@ function press(
   return event;
 }
 
-/** Let focus-driven mode changes and repeated motions run. */
+/** Let focus-driven mode changes run. */
 async function settle(ms = 20): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -47,6 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   uninstall();
   useKeybindProfileStore.getState().setVimMode(false);
   document.body.innerHTML = "";
@@ -213,7 +214,10 @@ describe("Vim normal mode", () => {
     expect(document.activeElement).toBe(document.querySelector('[role="listbox"]'));
   });
 
-  it("repeats a motion by a count prefix and shows the count while typed", async () => {
+  it("repeats a motion by a count prefix and shows the count while typed", () => {
+    // Each repeat is its own timer task: draining the timers runs all of them, however slowly
+    // real time passes, so the focus checked is where the last one left it.
+    vi.useFakeTimers();
     mount(`
       <div data-panel="sideRail" tabindex="-1">
         <button>1</button><button>2</button><button>3</button><button>4</button><button>5</button>
@@ -224,7 +228,8 @@ describe("Vim normal mode", () => {
     expect(useVimStore.getState().pending).toBe("3");
     press("j");
     expect(useVimStore.getState().pending).toBe("");
-    await settle();
+    expect(document.activeElement).toBe(buttons[1]);
+    vi.runAllTimers();
     expect(document.activeElement).toBe(buttons[3]);
   });
 
