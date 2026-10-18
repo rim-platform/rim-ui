@@ -11,6 +11,8 @@ them.
   recovery kit, the first workspace, channels, DMs and requests, the shell, and a second device.
 - `commands-and-automation.md`: commands and their sensitivity, the command palette, keybinds,
   user commands and macros, pipelines, workspace state and how the AI agent runs commands.
+- `ai-agent.md`: the AI agent on the desktop: setting up a provider and key, using it, what it
+  may run, its confirmations, encrypted conversations, privacy and troubleshooting.
 - `install.md`: downloads, run-time needs, verifying a download, where the app keeps its data,
   updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
