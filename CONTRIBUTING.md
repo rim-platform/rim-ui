@@ -20,7 +20,9 @@ report it privately.
   fork.
 - **The maintainer releases.** Only the maintainer can push a `v*` tag. The tag starts
   `.github/workflows/release.yaml`, which publishes nothing until the maintainer approves the
-  run in the `release` environment.
+  run in the `release` environment. The plugin SDK is released apart from the app: the
+  maintainer's tag `plugin-sdk-v<version>` starts `.github/workflows/sdk-release.yaml`, which
+  waits for an approval in the `npm` environment (`docs/release-sdk.md`).
 - **Images are signed.** `ghcr.io/rim-platform/rim-web` is signed with cosign keyless by the
   release workflow. The certificate names the workflow and the tag, so an image built or signed
   anywhere else does not verify:
@@ -44,11 +46,13 @@ The rules above live in the repository's settings on GitHub, which the maintaine
    `Cargo Audit (src-tauri)`, `Build` and `Docker Build`. Block force pushes and deletion.
    Bypass list: the maintainer, for pull requests only, so the maintainer's own pull requests
    merge without a second reviewer.
-2. **Ruleset on tags `v*`.** Restrict creations, updates and deletions. Bypass list: the
-   maintainer only.
+2. **Ruleset on tags `v*` and `plugin-sdk-v*`.** Restrict creations, updates and deletions.
+   Bypass list: the maintainer only.
 3. **Environment `release`.** Required reviewer: the maintainer, with "Prevent self-review" off
    (the maintainer pushes the tag and approves the run). Deployment branches and tags: the tag
    pattern `v*` only. Administrators may not bypass the protection rules.
+   **Environment `npm`**, for the SDK: the same, with the tag pattern `plugin-sdk-v*` only. It
+   holds no secrets; npm trusts the workflow over OIDC.
 4. **Actions.** Workflow permissions: read repository contents and packages. Actions may not
    create or approve pull requests. Workflows from forks need approval for all external
    contributors. Allowed actions: GitHub's own and those the workflows name (`docker/*`,

@@ -50,7 +50,7 @@ them.
 - `web-plugins.md`: sandboxed web plugins on the desktop and the web.
 - `workspace-plugins.md`: workspace plugin registries and signed manifests.
 - `plugin-chat-methods.md`: the `rim.chat.*` methods a plugin reads and posts messages with.
-- `release-sdk.md`: publishing the plugin SDK to npm, and its first publish by hand.
+- `release-sdk.md`: releasing the plugin SDK to npm with its own tag, and setting that up.
 
 The plugin protocol itself is `../protocol/plugin-protocol-v1.schema.json`, and the SDK is
 `../sdk/plugin-sdk/README.md`.
@@ -78,8 +78,9 @@ repository:
    installers, then publishes the GitHub release with the changelog section, the installers,
    the updater's `latest.json`, `THIRD-PARTY-LICENSES.txt`, a cosign-signed `SHA256SUMS` and
    build provenance attestations.
-3. Once the GitHub release is out, the same workflow publishes the plugin SDK to npm when the
-   version in `sdk/plugin-sdk/package.json` is not on npm yet (`release-sdk.md`).
+
+The plugin SDK is released on its own, with the tag `plugin-sdk-v<version>`
+(`release-sdk.md`); an app release publishes no SDK.
 
 `updater.md` says what the release needs configured (the updater key, its variables and
 secrets) and how to roll an update back.

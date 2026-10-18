@@ -8,9 +8,9 @@ sandboxed frame of the app, on the desktop and on the web, and talks over a
 transport: the handshake and version negotiation, heartbeats, the dangerous-command
 gate, errors and shutdown.
 
-The SDK is developed in rim-ui and published to npm from rim-ui's releases; it keeps a
-version of its own. Start from [`plugins/template-ts`](../../plugins/template-ts), which
-uses it.
+The SDK is developed in rim-ui and released to npm on its own, with the tag
+`plugin-sdk-v<version>`; it keeps a version of its own, apart from the app's. Start from
+[`plugins/template-ts`](../../plugins/template-ts), which uses it.
 
 ## Install
 
