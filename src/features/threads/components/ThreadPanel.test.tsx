@@ -171,4 +171,12 @@ describe("ThreadPanel — message context menu", () => {
     expect(labels()).toContain("Copy text");
     expect(labels()).not.toContain("Reply in thread");
   });
+
+  it("opens the person's menu on a reply's author instead of the message's", async () => {
+    serve();
+    await renderPanel();
+    fireEvent.contextMenu(screen.getAllByText("u-bob")[0]);
+    expect(labels()).toContain("Send message");
+    expect(labels()).not.toContain("Copy text");
+  });
 });

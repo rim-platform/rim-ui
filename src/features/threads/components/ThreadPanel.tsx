@@ -26,6 +26,7 @@ import { withSenderAsAuthor } from "../../e2ee/utils/timeline";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { toast } from "../../../shared/toast";
+import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 
 /** A message the thread panel shows: the root or a reply. */
 type ThreadPanelMessage = { id: string; author?: { id: string } | null };
@@ -274,14 +275,33 @@ export function ThreadPanel() {
     [bind, menuItemsFor],
   );
 
+  // A person's name, avatar or mention opens their menu, which wins over the message's.
+  const userMenu = useUserContextMenu({ workspaceId });
+  const { bind: bindUserContextMenu, openFrom: openUserMenu } = userMenu;
+  const onMentionContextMenu = useCallback(
+    (userId: string, mention: Element, event: React.MouseEvent | React.KeyboardEvent) => {
+      openUserMenu(event, { userId }, mention);
+    },
+    [openUserMenu],
+  );
+
   const handlers = useMemo<MessageItemHandlers>(
     () => ({
       onOpenThread: openThread,
       onToggleReaction: handleToggleReaction,
       onContextMenu: handleContextMenu,
       bindContextMenu,
+      bindUserContextMenu,
+      onMentionContextMenu,
     }),
-    [openThread, handleToggleReaction, handleContextMenu, bindContextMenu],
+    [
+      openThread,
+      handleToggleReaction,
+      handleContextMenu,
+      bindContextMenu,
+      bindUserContextMenu,
+      onMentionContextMenu,
+    ],
   );
   if (!rootMessageId) return null;
 
@@ -368,6 +388,7 @@ export function ThreadPanel() {
         <div ref={bottomRef} />
       </div>
       {contextMenu.menu}
+      {userMenu.element}
       {messageMenu.dialog}
       {forwardMessage && workspaceId && conversationId && (
         <ForwardDialog
