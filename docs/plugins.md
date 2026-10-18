@@ -193,12 +193,12 @@ unchecking the plain one unchecks it.
 
 **A changed bundle** (desktop). The app records a fingerprint of a plugin's folder when it
 installs it. When the files change afterwards, the row shows "Plugin bundle has changed", the
-switch cannot turn the plugin on, and the app does not start it at launch. **Trust new version**
-accepts the new files and keeps the approvals, and starts the plugin if it is on. **Dismiss**
-turns the plugin off and hides the warning on this device until the files change again; the
-**Bundle changed** badge beside the name stays, and clicking it brings the warning back. The web
-app hashes a plugin's bundle again at every start instead, and fetches it again from its link
-when it is missing or damaged.
+switch can turn the plugin off but not on, and the app does not start it at launch. **Trust new
+version** accepts the new files and keeps the approvals, and starts the plugin if it is on.
+**Dismiss** turns the plugin off and hides the warning on this device until the files change
+again; the **Bundle changed** badge beside the name stays, and clicking it brings the warning
+back. The web app hashes a plugin's bundle again at every start instead, and fetches it again
+from its link when it is missing or damaged.
 
 **Signed and unsigned.** The row and the panel header say where a plugin came from:
 
