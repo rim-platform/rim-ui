@@ -4,14 +4,17 @@
  * Orchestrates the invite token preview → signup flow:
  *
  * 1. Extracts `token` from `useParams`. Missing token → `InvalidTokenState`.
- * 2. Calls `usePreviewInviteToken(token)` — no auth required.
- * 3. While loading: shows a loading skeleton.
+ * 2. Calls `usePreviewInviteToken(token)` — no auth required — and reads the server's
+ *    registration mode with `useServerConfig`.
+ * 3. While either loads: shows a loading skeleton.
  * 4. On preview error: shows `InvalidTokenState` with a code-keyed copy.
  * 5. While `useSessionHydration` checks the session cookie (a fresh tab starts with an empty
  *    auth store): shows "Restoring session...".
  * 6. If user is authenticated: renders `JoinAuthenticated` (workspace join or
  *    instance-token error).
- * 7. Otherwise: renders `JoinForm` with the appropriate variant copy.
+ * 7. Otherwise: renders `JoinForm` with the appropriate variant copy and the registration mode.
+ *    An open server takes no token at signup, so there `JoinForm` signs up without the link's
+ *    token and accepts a workspace invite once the account exists.
  *
  * Post-signup navigation:
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
@@ -34,6 +37,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { usePreviewInviteToken, extractInviteErrorCode } from "../api/usePreviewInviteToken";
+import { useServerConfig } from "../api/useServerConfig";
 import { useSessionHydration } from "../api/useSessionHydration";
 import { InviteTokenType } from "../types";
 import { JoinForm } from "./JoinForm";
@@ -132,8 +136,9 @@ function JoinPageWithToken({
   onSignupSuccess,
 }: JoinPageWithTokenProps) {
   const { data: preview, isPending, error, refetch } = usePreviewInviteToken(token);
+  const { data: serverConfig, isPending: configPending } = useServerConfig();
 
-  if (isPending) {
+  if (isPending || configPending) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
         <p className="text-sm text-rim-text-muted">Loading invite...</p>
@@ -182,6 +187,7 @@ function JoinPageWithToken({
       workspaceId={preview.workspace?.serverId}
       invitedBy={preview.workspace?.invitedByDisplayName}
       ownerName={preview.workspace?.ownerDisplayName}
+      registrationMode={serverConfig?.registrationMode}
       onSuccess={onSignupSuccess}
     />
   );

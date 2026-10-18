@@ -7,9 +7,12 @@
  * - `"CODE"`: same as INSTANCE copy, with an "Invite code" field (`InviteCodeField`) that takes
  *   the bare token or a whole invite link: required on an invite-only server, optional
  *   otherwise. The checked code routes to `workspaceInviteToken` or `instanceInviteToken` by its
- *   type. An open server takes no token at signup, so there a workspace invite is accepted with
- *   `joinServerByInvite` once the account exists, and a failure of that step says the account
- *   is ready and lets the person go on without the workspace.
+ *   type.
+ *
+ * An open server (`registrationMode` `OPEN`) takes no token at signup, whichever variant: there
+ * the signup sends none, a workspace invite, from a link or a code, is accepted with
+ * `joinServerByInvite` once the account exists, and an instance invite is not needed. A failure
+ * of that join says the account is ready and lets the person go on without the workspace.
  *
  * The server's instance notice shows at the top. When the server has terms of service, both
  * signups ask for "I accept the terms of use" and send the terms URL back as `acceptedTermsUrl`.
@@ -60,7 +63,7 @@ import { useInviteCode } from "../api/useInviteCode";
 import { useJoinServerMutation } from "../../workspaces/api/useJoinServer";
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { checkDisplayName } from "../displayName";
-import { InviteTokenType, type RegistrationMode } from "../types";
+import { InviteTokenType, RegistrationMode } from "../types";
 import { Button } from "../../../shared/ui/Button";
 import { InviteByline } from "./InviteByline";
 import { InviteCodeField } from "./InviteCodeField";
@@ -89,7 +92,10 @@ interface JoinFormProps {
   variant: JoinFormVariant;
   /** Raw invite token. `null` for the `CODE` variant. */
   token: string | null;
-  /** The server's registration mode; the `CODE` variant's field follows it. */
+  /**
+   * The server's registration mode: the `CODE` variant's field follows it, and on an `OPEN`
+   * server no variant sends a token with the signup.
+   */
   registrationMode?: RegistrationMode;
   /** Workspace name shown in the header when `variant === "WORKSPACE"`. */
   workspaceName?: string;
@@ -224,21 +230,29 @@ export function JoinForm({
   const join = useJoinServerMutation();
   // The new account while its invite's workspace is joined, and why that failed, if it did.
   const [joining, setJoining] = useState<{ userId: string; error: string | null } | null>(null);
-  const signupTokens = byCode ? invite.tokens : tokenFields(variant, token);
+  const openServer = registrationMode === RegistrationMode.OPEN;
+  const signupTokens = byCode ? invite.tokens : openServer ? {} : tokenFields(variant, token);
+  // The workspace invite to accept once the account exists, where the signup could not take it.
+  const joinAfter = byCode
+    ? invite.joinAfter
+    : openServer && variant === InviteTokenType.WORKSPACE
+      ? token
+      : null;
   const signupWorkspaceId = signupTokens.workspaceInviteToken
     ? byCode
       ? invite.workspaceId
       : workspaceId
     : undefined;
   const inviteReady = !byCode || invite.ready;
-  const invitedWorkspace = invite.preview?.workspace?.serverName ?? "the workspace";
+  const invitedWorkspace =
+    (byCode ? invite.preview?.workspace?.serverName : workspaceName) ?? "the workspace";
 
   /**
-   * Opens the new account, joining the invite code's workspace first where the signup could not
-   * take the code.
+   * Opens the new account, joining the invite's workspace first where the signup could not take
+   * the invite.
    */
   function signedUp(userId: string, serverId: string | null) {
-    const joinToken = byCode ? invite.joinAfter : null;
+    const joinToken = joinAfter;
     if (!joinToken) {
       onSuccess(userId, serverId);
       return;
@@ -378,7 +392,7 @@ export function JoinForm({
                   It could not join {invitedWorkspace}: {joining.error}
                 </p>
                 <p className="text-rim-text-muted">
-                  Continue to the app and join with the invite code from there.
+                  Continue to the app and join with the invite link or code from there.
                 </p>
                 <Button
                   type="button"

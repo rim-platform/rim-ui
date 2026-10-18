@@ -47,25 +47,49 @@ function FirstScreen() {
 }
 
 /**
- * The join routes and the first screen, against a server that names `defaultWorkspace` (or
- * none) and answers the signup with `serverId` and `myServers` with `servers`.
+ * The join routes and the first screen, against a server in `registrationMode` that names
+ * `defaultWorkspace` (or none) and answers `myServers` with `servers`. Its signup follows the
+ * server's token rule: an open server refuses any token and an invite-only one needs exactly
+ * one. A workspace invite token puts the invite's workspace in the signup's answer, and
+ * `joinServerByInvite` joins that workspace.
  */
 function renderSignup(
   path: string,
   {
     defaultWorkspace,
-    serverId = null,
     servers,
     tokenType = "INSTANCE",
+    registrationMode = "OPEN",
   }: {
     defaultWorkspace: string | null;
-    serverId?: string | null;
     servers: string[];
     tokenType?: "INSTANCE" | "WORKSPACE";
+    registrationMode?: "OPEN" | "INVITE_ONLY";
   },
 ) {
+  /** The server's answer to a signup with `input`, or its refusal. */
+  function signupAnswer(input: { instanceInviteToken?: string; workspaceInviteToken?: string }) {
+    const tokens = [input.instanceInviteToken, input.workspaceInviteToken].filter(Boolean).length;
+    const refusal =
+      registrationMode === "OPEN" && tokens > 0
+        ? "tokens must not be supplied in open registration mode"
+        : registrationMode === "INVITE_ONLY" && tokens !== 1
+          ? "exactly one token is required in invite-only mode"
+          : null;
+    if (refusal) {
+      return HttpResponse.json({
+        data: null,
+        errors: [{ message: refusal, extensions: { code: "VALIDATION" } }],
+      });
+    }
+    const serverId = input.workspaceInviteToken ? INVITE_WORKSPACE : null;
+    return HttpResponse.json({
+      data: { signupWithInvite: { userId: "user-new", serverId, csrfToken: "tok" } },
+    });
+  }
+
   const answers: Record<string, unknown> = {
-    RegistrationMode: { registrationMode: "OPEN" },
+    RegistrationMode: { registrationMode },
     PreviewInviteToken: {
       previewInviteToken: {
         tokenType,
@@ -81,12 +105,16 @@ function renderSignup(
             : null,
       },
     },
-    SignupWithInvite: { signupWithInvite: { userId: "user-new", serverId, csrfToken: "tok" } },
+    JoinServerByInvite: { joinServerByInvite: { serverId: INVITE_WORKSPACE } },
     MyServers: { myServers: servers.map((id) => ({ id, name: id, owner: null })) },
   };
   server.use(
     http.post("*/api", async ({ request }) => {
-      const { operationName } = (await request.json()) as { operationName?: string };
+      const { operationName, variables } = (await request.json()) as {
+        operationName?: string;
+        variables?: { input?: Record<string, string> };
+      };
+      if (operationName === "SignupWithInvite") return signupAnswer(variables?.input ?? {});
       const data = operationName ? answers[operationName] : undefined;
       if (data) return HttpResponse.json({ data });
     }),
@@ -164,29 +192,45 @@ describe("the first screen after signup", () => {
     expect(useWorkspaceStore.getState().workspaceId).toBeNull();
   });
 
-  it("opens the invite's workspace over the default after a workspace invite signup", async () => {
-    renderSignup("/join/workspace-token", {
+  it.each(["OPEN", "INVITE_ONLY"] as const)(
+    "opens the invite's workspace over the default after a workspace invite signup (%s)",
+    async (registrationMode) => {
+      renderSignup("/join/workspace-token", {
+        defaultWorkspace: DEFAULT_WORKSPACE,
+        servers: [DEFAULT_WORKSPACE, INVITE_WORKSPACE],
+        tokenType: "WORKSPACE",
+        registrationMode,
+      });
+
+      await signUpWithPassword();
+
+      expect(await screen.findByText(`Workspace ${INVITE_WORKSPACE} open`)).toBeInTheDocument();
+    },
+  );
+
+  it("opens the default workspace after an instance invite signup on an invite-only server", async () => {
+    renderSignup("/join/instance-token", {
       defaultWorkspace: DEFAULT_WORKSPACE,
-      serverId: INVITE_WORKSPACE,
-      servers: [DEFAULT_WORKSPACE, INVITE_WORKSPACE],
-      tokenType: "WORKSPACE",
+      servers: [DEFAULT_WORKSPACE],
+      registrationMode: "INVITE_ONLY",
     });
 
     await signUpWithPassword();
 
-    expect(await screen.findByText(`Workspace ${INVITE_WORKSPACE} open`)).toBeInTheDocument();
+    expect(await screen.findByText(`Workspace ${DEFAULT_WORKSPACE} open`)).toBeInTheDocument();
   });
 
   it("opens the invite's workspace over the default after a key signup with a workspace invite", async () => {
     desktop.value = true;
     renderSignup("/join/workspace-token", {
       defaultWorkspace: DEFAULT_WORKSPACE,
-      servers: [DEFAULT_WORKSPACE, "server-key"],
+      servers: [DEFAULT_WORKSPACE, INVITE_WORKSPACE],
       tokenType: "WORKSPACE",
     });
 
     await signUpWithKey();
 
-    expect(await screen.findByText("Workspace server-key open")).toBeInTheDocument();
+    // An open server takes no token at signup: the invite is joined once the account exists.
+    expect(await screen.findByText(`Workspace ${INVITE_WORKSPACE} open`)).toBeInTheDocument();
   });
 });
