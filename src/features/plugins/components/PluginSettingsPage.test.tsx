@@ -28,6 +28,7 @@ vi.mock("../api/usePluginActions", () => ({
     isPending: false,
     variables: undefined,
   })),
+  usePluginUpdate: vi.fn(() => ({ mutate: vi.fn(), isPending: false, variables: undefined })),
 }));
 
 vi.mock("../api/usePluginCapabilities", () => ({

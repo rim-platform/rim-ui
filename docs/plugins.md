@@ -137,6 +137,29 @@ When an entry leaves the registry, its plugin is stopped and **\<name\> was remo
 **Remove**, which uninstalls it and deletes its data, or **Keep**, which leaves it installed,
 turned off, as a local plugin that no longer gets updates.
 
+## Updating
+
+How a plugin gets a new version depends on where it came from, which its row in Settings →
+Plugins names.
+
+- **From git** (desktop). **Update** on the plugin's row fetches the repository it was installed
+  from and moves the plugin to the newest commit of its branch. The new copy must keep the
+  plugin id and pass the same manifest rules as an install, or the old copy stays. Install steps
+  the new version needs open **Run plugin install scripts?** first, as at install, and
+  **Cancel** changes nothing. The row then says "Updated to v\<version\>", "Already up to date
+  (v\<version\>)", or why the update failed. A running plugin restarts on the new files.
+  Approvals carry over for the permissions the new version still asks for and are dropped for
+  those it no longer does; a new permission opens the **Plugin Permissions** dialog, and the
+  plugin cannot use it until it is approved. A plugin with commands the AI agent can run asks
+  for that consent again in Settings → Plugin AI.
+- **From a link.** A link names one bundle by its hash, so it cannot change, and the row says
+  "Installed from a link pinned to one bundle: install the new version's link to update it."
+  Installing that link opens **Replace \<name\>?**, described under [Installing](#installing).
+- **From a folder.** There is no update in place: uninstall the plugin, which deletes its
+  permissions and data, then install the new folder.
+- **From the workspace registry.** The registry updates the plugin as its entry changes, as
+  [Workspace registry](#workspace-registry) describes; the row has no **Update**.
+
 ## Using a plugin
 
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row

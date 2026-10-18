@@ -491,7 +491,10 @@ async fn check_checkout(
 }
 
 /// Approvals that carry over to a replacing copy: those it still asks for, and its state.
-fn carried(old: &PluginRecord, manifest: &PluginManifest) -> (Vec<String>, Vec<String>, bool) {
+pub(crate) fn carried(
+    old: &PluginRecord,
+    manifest: &PluginManifest,
+) -> (Vec<String>, Vec<String>, bool) {
     let capabilities = old
         .approved_capabilities
         .iter()
