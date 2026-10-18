@@ -53,7 +53,7 @@ describe("ConfirmCommandModal — render gate", () => {
   });
 });
 
-describe("ConfirmCommandModal — subtitle copy source (C2 §4)", () => {
+describe("ConfirmCommandModal — subtitle copy source", () => {
   it("renders `description` as the subtitle when both description and nlDescription are present (precedence pin)", () => {
     render(<ConfirmCommandModal />);
     act(() => {

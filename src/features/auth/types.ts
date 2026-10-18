@@ -3,8 +3,8 @@
  *
  * The backend emits GraphQL type names with a `Gql` suffix (e.g.
  * `RegistrationModeGql`). The generated TypeScript enum values are used
- * directly at the network boundary. Inside the feature, we re-export them
- * under cleaner aliases so component code reads:
+ * directly at the network boundary. Inside the feature, this module re-exports
+ * them under cleaner aliases so component code reads:
  *
  *   `mode === RegistrationMode.OPEN`
  *

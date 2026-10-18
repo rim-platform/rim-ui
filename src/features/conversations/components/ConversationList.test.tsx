@@ -355,7 +355,7 @@ describe("ConversationList — channels sidebar", () => {
   });
 });
 
-describe("ConversationList — guest gate (Track 1.2)", () => {
+describe("ConversationList — guest gate", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useShellStore.getState().reset();

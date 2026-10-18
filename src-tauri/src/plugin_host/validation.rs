@@ -727,7 +727,7 @@ mod tests {
     // ── capability key shape: validate_plugin_capability ──
 
     #[test]
-    fn n1_rejects_dispatch_plan_garbage_set() {
+    fn capability_key_rejects_dispatch_plan_garbage_set() {
         let plugin_id = "self";
         for bad in [
             "*",
@@ -747,20 +747,20 @@ mod tests {
             let result = validate_plugin_capability(plugin_id, bad);
             assert!(
                 result.is_err(),
-                "N1 must reject `{bad}` but it passed: {result:?}"
+                "the capability key check must reject `{bad}` but it passed: {result:?}"
             );
         }
     }
 
     #[test]
-    fn n1_rejects_overlong_key() {
+    fn capability_key_rejects_overlong_key() {
         let plugin_id = "self";
         let key = format!("plugin.{plugin_id}.{}", "x".repeat(200));
         assert!(validate_plugin_capability(plugin_id, &key).is_err());
     }
 
     #[test]
-    fn n1_rejects_max_len_plus_one() {
+    fn capability_key_rejects_max_len_plus_one() {
         let plugin_id = "self";
         let prefix = format!("plugin.{plugin_id}.");
         let verb_len = MAX_KEY_LEN + 1 - prefix.len();
@@ -770,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_accepts_max_len_exactly() {
+    fn capability_key_accepts_max_len_exactly() {
         let plugin_id = "self";
         let prefix = format!("plugin.{plugin_id}.");
         let verb_len = MAX_KEY_LEN - prefix.len();
@@ -780,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_accepts_well_formed_keys() {
+    fn capability_key_accepts_well_formed_keys() {
         let plugin_id = "dev.example.k8s_tools";
         for good in [
             "plugin.dev.example.k8s_tools.restart_pod",
@@ -790,13 +790,13 @@ mod tests {
             let result = validate_plugin_capability(plugin_id, good);
             assert!(
                 result.is_ok(),
-                "N1 should accept `{good}` but rejected: {result:?}"
+                "the capability key check should accept `{good}` but rejected: {result:?}"
             );
         }
     }
 
     #[test]
-    fn n1_accepts_builtin_capabilities() {
+    fn capability_key_accepts_builtin_capabilities() {
         for cap in BUILTIN_CAPABILITIES {
             let result = validate_plugin_capability("dev.example.hello-world", cap);
             assert!(result.is_ok(), "`{cap}` should be accepted: {result:?}");
@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_rejects_builtin_names_that_guard_nothing() {
+    fn capability_key_rejects_builtin_names_that_guard_nothing() {
         for bad in [
             "local.process",
             "network",
@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_accepts_keys_of_a_hyphenated_plugin_id() {
+    fn capability_key_accepts_keys_of_a_hyphenated_plugin_id() {
         let plugin_id = "dev.example.hello-world";
         assert!(
             validate_plugin_capability(plugin_id, "plugin.dev.example.hello-world.greet").is_ok()
@@ -856,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_rejects_capability_for_other_plugin() {
+    fn capability_key_rejects_capability_for_other_plugin() {
         let result = validate_plugin_capability("attacker_plugin", "plugin.victim_plugin.do_thing");
         assert!(matches!(
             result,
@@ -865,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn n1_error_includes_offending_key_for_diagnostics() {
+    fn capability_key_error_includes_offending_key_for_diagnostics() {
         let err = validate_plugin_capability("self", "*").unwrap_err();
         match err {
             ValidationError::InvalidCapabilityKey { key, .. } => assert_eq!(key, "*"),
@@ -876,20 +876,20 @@ mod tests {
     // ── install-ID leak: walk_output_schema_for_install_id_leak ──
 
     #[test]
-    fn f2_no_ai_callable_commands_passes() {
+    fn install_id_leak_no_ai_callable_commands_passes() {
         let m = manifest_with_commands("self", vec![], vec![ai_command("safe.cmd", false, None)]);
         assert!(walk_output_schema_for_install_id_leak(&m.commands).is_ok());
     }
 
     #[test]
-    fn f2_ai_callable_without_schema_requires_manual_review() {
+    fn install_id_leak_ai_callable_without_schema_requires_manual_review() {
         let m = manifest_with_commands("self", vec![], vec![ai_command("opaque.cmd", true, None)]);
         let err = walk_output_schema_for_install_id_leak(&m.commands).unwrap_err();
         assert!(matches!(err, ValidationError::RequiresManualReview { .. }));
     }
 
     #[test]
-    fn f2_ai_callable_with_typed_clean_schema_passes() {
+    fn install_id_leak_ai_callable_with_typed_clean_schema_passes() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -906,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_ai_callable_with_install_id_leak_rejects() {
+    fn install_id_leak_ai_callable_with_leak_rejects() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -933,7 +933,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_nested_install_id_leak() {
+    fn install_id_leak_detects_nested_leak() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -965,7 +965,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_case_insensitive_install_id_variants() {
+    fn install_id_leak_detects_case_insensitive_variants() {
         for leak in ["INSTALL_ID", "InstallId", "Plugin_Install_Id", "installid"] {
             let schema = serde_json::json!({
                 "type": "object",
@@ -984,7 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_camel_and_kebab_case_install_id_variants() {
+    fn install_id_leak_detects_camel_and_kebab_case_variants() {
         for leak in [
             "installationId",
             "pluginInstallationId",
@@ -1011,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_does_not_match_legitimate_installer_fields() {
+    fn install_id_leak_ignores_legitimate_installer_fields() {
         for legit in [
             "installer",
             "installation_date",
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_array_items_object_form() {
+    fn install_id_leak_detects_under_array_items_object_form() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -1067,7 +1067,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_array_items_tuple_form() {
+    fn install_id_leak_detects_under_array_items_tuple_form() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -1088,7 +1088,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_one_of_branch() {
+    fn install_id_leak_detects_under_one_of_branch() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -1108,7 +1108,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_any_of_branch() {
+    fn install_id_leak_detects_under_any_of_branch() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -1128,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_all_of_branch() {
+    fn install_id_leak_detects_under_all_of_branch() {
         let schema = serde_json::json!({
             "type": "object",
             "allOf": [
@@ -1144,7 +1144,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_under_dollar_defs() {
+    fn install_id_leak_detects_under_dollar_defs() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": { "summary": { "type": "string" } },
@@ -1169,7 +1169,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_detects_install_id_named_dollar_def_key() {
+    fn install_id_leak_detects_named_dollar_def_key() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": { "summary": { "type": "string" } },
@@ -1185,7 +1185,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_root_oneof_without_properties_is_walked_not_escalated() {
+    fn install_id_leak_root_oneof_without_properties_is_walked_not_escalated() {
         let schema = serde_json::json!({
             "type": "object",
             "oneOf": [
@@ -1198,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_open_additional_properties_requires_manual_review() {
+    fn install_id_leak_open_additional_properties_requires_manual_review() {
         let schema = serde_json::json!({
             "type": "object",
             "additionalProperties": true,
@@ -1216,7 +1216,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_non_object_root_requires_manual_review() {
+    fn install_id_leak_non_object_root_requires_manual_review() {
         let schema = serde_json::json!({ "type": "string" });
         let m = manifest_with_commands(
             "self",
@@ -1230,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn f2_non_ai_command_with_install_id_field_passes() {
+    fn install_id_leak_non_ai_command_with_install_id_field_passes() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": { "plugin_install_id": { "type": "string" } }
@@ -1277,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn orchestrator_rejects_f2_leak_when_caps_are_clean() {
+    fn orchestrator_rejects_install_id_leak_when_caps_are_clean() {
         let leaky_schema = serde_json::json!({
             "type": "object",
             "properties": { "plugin_install_id": { "type": "string" } }

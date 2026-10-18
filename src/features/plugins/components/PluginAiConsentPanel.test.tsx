@@ -277,7 +277,7 @@ describe("PluginAiConsentPanel", () => {
   });
 
   it("does not leak listener when component unmounts before listen() resolves", async () => {
-    // Arrange: capture the resolve callback so we can settle the promise manually
+    // Arrange: capture the resolve callback to settle the promise manually
     // after the component has already unmounted (simulating a slow Tauri IPC call).
     const { listen: mockListen } = await import("@tauri-apps/api/event");
     const mockListenFn = mockListen as ReturnType<typeof vi.fn>;

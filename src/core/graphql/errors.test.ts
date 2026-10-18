@@ -77,7 +77,7 @@ function withExtensions(message: string, extensions: Record<string, unknown>) {
   });
 }
 
-describe("Track 1.2 error extensions", () => {
+describe("TIMED_OUT and RATE_LIMITED error extensions", () => {
   const until = "2026-10-05T12:30:00Z";
   const timedOut = withExtensions(`timed out until ${until}`, { code: TIMED_OUT, until });
   const slowMode = withExtensions("rate limit exceeded", {

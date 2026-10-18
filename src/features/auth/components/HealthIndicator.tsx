@@ -1,9 +1,6 @@
 /**
  * `HealthIndicator` — shows a coloured dot + text indicating whether the
- * backend GraphQL endpoint is reachable.
- *
- * Previously duplicated inline in both `AuthGate.tsx` and `JoinPage.tsx`.
- * Extracted here so all auth screens share the same widget.
+ * backend GraphQL endpoint is reachable. Every auth screen shares this widget.
  *
  * Relies on `useHealthCheck()` from the system feature and
  * `getGraphqlEndpoint()` from the graphql config module. Neither requires

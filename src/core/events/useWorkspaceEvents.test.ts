@@ -350,7 +350,7 @@ describe("useWorkspaceEvents conversation membership and archive", () => {
   });
 });
 
-describe("useWorkspaceEvents workspace roles and removal (Track 1.2)", () => {
+describe("useWorkspaceEvents workspace roles and removal", () => {
   function setup() {
     const qc = new QueryClient();
     qc.setQueryData(queryKeys.server("ws-1"), {

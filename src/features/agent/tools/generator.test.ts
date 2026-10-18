@@ -173,7 +173,7 @@ describe("buildAiToolRegistrationOptions", () => {
     expect(opts.sensitivity).toBe(CommandSensitivity.RESTRICTED);
   });
 
-  it("preserves description independently of nlDescription (C2 §4 threading)", () => {
+  it("preserves description independently of nlDescription", () => {
     const opts = buildAiToolRegistrationOptions(
       makeCommand({
         description:
@@ -187,7 +187,7 @@ describe("buildAiToolRegistrationOptions", () => {
     expect(opts.nlDescription).toBe("Archive the channel");
   });
 
-  it("description is present verbatim on the registration options (C2 §4)", () => {
+  it("description is present verbatim on the registration options", () => {
     const opts = buildAiToolRegistrationOptions(makeCommand({ description: "palette copy" }));
     expect(opts.description).toBe("palette copy");
   });

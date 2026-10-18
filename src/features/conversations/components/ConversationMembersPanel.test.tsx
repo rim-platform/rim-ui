@@ -175,7 +175,7 @@ describe("ConversationMembersPanel", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(refusal));
   });
 
-  it("offers no Invite to a guest (Track 1.2)", async () => {
+  it("offers no Invite to a guest", async () => {
     serve(ServerMemberRoleGql.GUEST);
     await renderPanel(ServerMemberRoleGql.GUEST);
     expect(screen.queryByRole("button", { name: /invite/i })).not.toBeInTheDocument();

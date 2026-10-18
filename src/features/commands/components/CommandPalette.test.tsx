@@ -4,7 +4,7 @@
  * Unit tests for the executeSelected toast-surfacing behaviour introduced to fix
  * the silent-discard bug.  Rather than rendering the full CommandPalette component
  * (which transitively loads the entire Tauri + Zustand module graph and runs out
- * of heap in a standalone jsdom worker), we exercise the dispatch-and-toast logic
+ * of heap in a standalone jsdom worker), the tests exercise the dispatch-and-toast logic
  * directly through a minimal React hook harness using renderHook.
  *
  * The hook under test, useExecuteSelected, is the extracted form of the
@@ -53,7 +53,7 @@ import type { CommandDefinition, CommandResult } from "../types";
 // ─── Minimal hook that mirrors executeSelected's dispatch+toast logic ─────────
 //
 // This is the exact logic from CommandPalette.executeSelected (single-command
-// branch, no pipe segments) extracted into a standalone hook so we can test it
+// branch, no pipe segments) extracted into a standalone hook, so it is tested
 // without mounting the full palette component.
 
 function useExecuteSelected(

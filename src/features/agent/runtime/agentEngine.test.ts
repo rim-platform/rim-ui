@@ -65,8 +65,8 @@ interface ScriptedProviderOptions {
 
 /**
  * Build a provider that yields one scripted chunk-stream per call to `chat`.
- * The agent engine calls `chat` once per LLM round (initial turn + one per
- * tool-result follow-up). Each inner array drains in order; the next call to
+ * The agent engine calls `chat` once per LLM round (the initial turn, then one
+ * after each tool result). Each inner array drains in order; the next call to
  * `chat` advances to the next array.
  *
  * If the engine asks for more rounds than scripted, the stream closes empty

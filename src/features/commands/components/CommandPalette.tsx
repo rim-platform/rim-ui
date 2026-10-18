@@ -250,7 +250,7 @@ export function CommandPalette() {
           .openInstall(command.registry.serverId, command.registry.pluginId);
         return;
       }
-      // If we have pipe segments, add this command to the chain and execute the whole pipe
+      // With pipe segments, add this command to the chain and execute the whole pipe
       if (pipeSegments.length > 0) {
         await executePipeChain(pipeSegments, command.id);
         return;

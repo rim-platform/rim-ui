@@ -107,7 +107,7 @@ export function KeybindSettings() {
   // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
   // `workspace.open_command_palette`), which causes their titles to fall back to
   // raw IDs in the keybind list. KEYBIND_PICKER surface returns all commands
-  // that are keybind-capable regardless of palette visibility, so we use it
+  // that are keybind-capable regardless of palette visibility, so it is used
   // here exclusively to build the title lookup map.
   const { data: commands } = useCommands("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();

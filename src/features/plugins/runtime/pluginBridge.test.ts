@@ -150,7 +150,7 @@ describe("createPluginBridge", () => {
       iframe,
     });
 
-    // We need the source to match
+    // The event's source must be the plugin's iframe.
     const event = new MessageEvent("message", {
       origin: "null",
       source: iframe.contentWindow,
