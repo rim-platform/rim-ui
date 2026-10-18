@@ -97,15 +97,39 @@ pub struct CommandInfo {
     pub required_capabilities: Vec<String>,
 }
 
+/// One entry of `settings_schema`: a setting the user fills in the plugin's
+/// settings form. The optional fields are skipped when absent, so they do not
+/// change the content hash of a manifest that leaves them out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingSchema {
+    /// The setting's name in the plugin's values: 1 to 128 characters of
+    /// `A-Z a-z 0-9 . _ -`, unique within the manifest.
     pub key: String,
+    /// The field's label in the form.
     pub title: String,
+    /// The help line under the field.
     #[serde(default)]
     pub description: String,
+    /// `string`, `boolean`, `integer`, `path` or `enum`; install refuses any other.
     pub value_type: String,
+    /// Kept in the secret vault and never shown again once saved; `string` only.
     #[serde(default)]
     pub is_secret: bool,
+    /// The value the plugin gets while the user has saved none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+    /// Inclusive lower bound of an `integer` setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<i64>,
+    /// Inclusive upper bound of an `integer` setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<i64>,
+    /// The values an `enum` setting offers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
+    /// The hint an empty `string`, `path` or `integer` field shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -451,6 +475,65 @@ mod tests {
         )
         .unwrap();
         assert_eq!(panel.slot, Some(PanelSlot::MainArea));
+    }
+
+    /// A manifest written before the optional setting fields existed.
+    fn manifest_with_plain_settings() -> PluginManifest {
+        serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.pods",
+            "display_name": "Pods",
+            "version": "1.2.0",
+            "description": "Lists pods.",
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main.py",
+            "settings_schema": [
+                { "key": "namespace", "title": "Namespace", "description": "The namespace to list.", "value_type": "string" },
+                { "key": "api_token", "title": "API token", "value_type": "string", "is_secret": true }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn optional_setting_fields_left_out_keep_the_content_hash() {
+        let m = manifest_with_plain_settings();
+        // The hash this manifest had before `default`, `min`, `max`, `options`
+        // and `placeholder` were part of the setting type.
+        assert_eq!(
+            m.content_hash(),
+            "c00efa8ebeef463c976cabab7fb655bd1131010f2b8bef9a03632baea8106091"
+        );
+        assert_eq!(
+            serde_json::to_value(&m.settings_schema[1]).unwrap(),
+            serde_json::json!({
+                "key": "api_token",
+                "title": "API token",
+                "description": "",
+                "value_type": "string",
+                "is_secret": true
+            })
+        );
+    }
+
+    #[test]
+    fn optional_setting_fields_change_the_content_hash_when_set() {
+        let plain = manifest_with_plain_settings();
+        let mut m = plain.clone();
+        m.settings_schema[0].placeholder = Some("default".into());
+        assert_ne!(m.content_hash(), plain.content_hash());
+        let setting: SettingSchema = serde_json::from_value(serde_json::json!({
+            "key": "refresh", "title": "Refresh", "value_type": "integer",
+            "default": 30, "min": 5, "max": 3600, "placeholder": "30"
+        }))
+        .unwrap();
+        assert_eq!(setting.default, Some(serde_json::json!(30)));
+        assert_eq!((setting.min, setting.max), (Some(5), Some(3600)));
+        let null_default: SettingSchema = serde_json::from_value(serde_json::json!({
+            "key": "k", "title": "K", "value_type": "string", "default": null
+        }))
+        .unwrap();
+        assert_eq!(null_default.default, None);
     }
 
     #[test]

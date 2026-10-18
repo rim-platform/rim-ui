@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   BUILTIN_CAPABILITIES,
   ManifestError,
+  parseManifest,
   parseNetworkOrigin,
+  settingValueError,
   siteOf,
   validateManifest,
 } from "../src/manifestRules.ts";
@@ -44,6 +46,67 @@ describe("manifest rules", () => {
     runtime_kind: "DesktopLocalProcess",
     entrypoint: "main.mjs",
   };
+
+  it("refuse a broken setting, naming its position and key", () => {
+    expect(() =>
+      validateManifest({
+        ...desktop,
+        settings_schema: [
+          { key: "namespace", title: "Namespace", value_type: "string" },
+          { key: "refresh", title: "Refresh", value_type: "integer", min: 5, default: 1 },
+        ],
+      }),
+    ).toThrow("invalid settings_schema[1] `refresh`: default must be at least 5");
+  });
+
+  it("keep a setting's optional fields only when the manifest sets them", () => {
+    const [plain, full] = parseManifest({
+      ...desktop,
+      settings_schema: [
+        { key: "a", title: "A", value_type: "string", default: null },
+        {
+          key: "b",
+          title: "B",
+          value_type: "integer",
+          default: 3,
+          min: 1,
+          max: 9,
+          placeholder: "3",
+        },
+      ],
+    }).settings_schema;
+    expect(plain).toEqual({
+      key: "a",
+      title: "A",
+      description: "",
+      value_type: "string",
+      is_secret: false,
+    });
+    expect(full).toMatchObject({ default: 3, min: 1, max: 9, placeholder: "3" });
+  });
+
+  it("check a setting's value by its type, bounds and options", () => {
+    const integer = {
+      key: "n",
+      title: "N",
+      description: "",
+      value_type: "integer",
+      is_secret: false,
+      min: -3,
+      max: 3,
+    };
+    expect(settingValueError(integer, 3)).toBeNull();
+    expect(settingValueError(integer, -4)).toBe("must be at least -3");
+    expect(settingValueError(integer, 1.5)).toBe("must be an integer");
+    expect(settingValueError(integer, 2 ** 53)).toBe("must lie between -(2^53 - 1) and 2^53 - 1");
+    const choice = { ...integer, value_type: "enum", options: ["a", "b"] };
+    expect(settingValueError(choice, "b")).toBeNull();
+    expect(settingValueError(choice, "c")).toBe("must be one of: a, b");
+    expect(settingValueError({ ...integer, value_type: "path" }, 1)).toBe("must be a string");
+    expect(settingValueError({ ...integer, value_type: "boolean" }, "true")).toBe(
+      "must be true or false",
+    );
+  });
 
   it("refuse a plugin-scoped capability and name it", () => {
     expect(() =>
