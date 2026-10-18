@@ -2,10 +2,10 @@ name: Release
 
 # For a tag v<version>: builds, signs and publishes ghcr.io/rim-platform/rim-web, the web client
 # image, builds the desktop installers, creates the GitHub release with the version's
-# CHANGELOG.md section, the installers, the updater's latest.json and signed checksums, and
-# publishes the plugin SDK to npm when its version is not there yet. Only the
-# maintainer may push v* tags. The image and desktop jobs wait together in the `release`
-# environment, so one approval starts them all.
+# CHANGELOG.md section, the installers, the updater's latest.json and signed checksums. The
+# plugin SDK is released on its own, by sdk-release.yaml. Only the maintainer may push v* tags.
+# The image and desktop jobs wait together in the `release` environment, so one approval starts
+# them all.
 #
 # A failed desktop leg is re-run from the run's page ("Re-run failed jobs"). The release is
 # created as a draft and published only once every asset is attached, so a failure leaves at
@@ -469,75 +469,3 @@ jobs:
           fi
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --notes-file release-notes.md "${flags[@]}"
-
-  # The plugin SDK on npm. It keeps its own version, so a tag whose SDK version npm already has
-  # publishes nothing. It runs after the GitHub release, so a failed publish never holds the
-  # release back and "Re-run failed jobs" retries it alone; being in the release environment, it
-  # waits for an approval of its own. npm trusts this workflow and environment as the package's
-  # publisher (docs/release-sdk.md): no token is stored, and the provenance npm records names
-  # this run. Trusted publishing needs npm 11.5.1 or newer, newer than Node 22 ships.
-  sdk-publish:
-    name: Publish the plugin SDK
-    needs: [github-release]
-    runs-on: ubuntu-24.04
-    environment: release
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
-          cache: npm
-          registry-url: https://registry.npmjs.org
-
-      - name: Check the SDK version
-        id: sdk
-        run: |
-          name=$(jq -r .name sdk/plugin-sdk/package.json)
-          version=$(jq -r .version sdk/plugin-sdk/package.json)
-          if ! [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::version $version in sdk/plugin-sdk/package.json is not <major>.<minor>.<patch>[-<pre-release>]"
-            exit 1
-          fi
-          # npm answers a version it does not have with nothing or with E404, depending on its
-          # version; only an answer naming the version counts as published.
-          published=$(npm view "$name@$version" version 2>/dev/null || true)
-          if [[ $published == "$version" ]]; then
-            echo "::notice::$name@$version is already on npm; nothing to publish"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Install the dependencies
-        if: steps.sdk.outputs.publish == 'true'
-        run: |
-          npm ci
-          npm install --global npm@11.21.0
-
-      # The build, then the tarball installed into a copy of the template plugin outside the
-      # repository: what is about to be published, used as a plugin would use it.
-      - name: Build and smoke-test the SDK
-        if: steps.sdk.outputs.publish == 'true'
-        run: |
-          npm run sdk:build
-          npm run sdk:smoke
-
-      # A pre-release goes out under the dist-tag `next`, so `npm install` keeps the last release.
-      - name: Publish to npm
-        if: steps.sdk.outputs.publish == 'true'
-        working-directory: sdk/plugin-sdk
-        env:
-          VERSION: ${{ steps.sdk.outputs.version }}
-        run: |
-          flags=(--provenance --access public)
-          if [[ $VERSION == *-* ]]; then
-            flags+=(--tag next)
-          fi
-          npm publish "${flags[@]}"
