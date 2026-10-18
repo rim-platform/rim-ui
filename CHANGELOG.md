@@ -35,6 +35,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   conversation and thread, as it does from the AI agent: marking a conversation read, setting its
   notification level or its slow mode no longer fails or asks for the conversation. A
   conversation given in the command's arguments still takes precedence.
+- A macro run from Settings → Macros or `/macro` acts on the open conversation and thread: a
+  step that marks a conversation read, sets its notification level or its slow mode no longer
+  fails without a `conversation_id` in its arguments. A macro that asks for confirmation runs in
+  the conversation that was open when it started, even if you move to another one meanwhile.
 - The first encrypted message to someone who set up encryption moments earlier goes out instead
   of failing with "Failed to send the encrypted message" until a minute later. When someone in
   the conversation really has no device set up yet, the composer says "<name> has no device set

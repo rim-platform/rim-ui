@@ -1,7 +1,8 @@
 import { graphqlClient } from "../../../core/graphql/client";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
-import type { CommandDefinition } from "../../commands/types";
+import type { CommandContextInput, CommandDefinition } from "../../commands/types";
+import { currentCommandContext } from "../../commands/runtime/commandContext";
 import {
   runWithHumanConfirmation,
   strictestSensitivity,
@@ -14,9 +15,22 @@ import {
 } from "../api/useMacros";
 
 /**
+ * The context a macro run sends, which the server hands to every step.
+ *
+ * @param workspaceId - The workspace the macro runs in.
+ * @returns The selected workspace's open conversation, open thread and focused surface when
+ *   `workspaceId` is the selected workspace; only `workspaceId` otherwise.
+ */
+function macroContext(workspaceId: string): CommandContextInput {
+  const current = currentCommandContext();
+  return current.workspaceId === workspaceId ? current : { workspaceId };
+}
+
+/**
  * Runs a saved macro for the user and toasts how it went. The server holds a macro with a
- * dangerous step until the user confirms it in the confirmation dialog. `commands` is the
- * registry the dialog reads step sensitivities from.
+ * dangerous step until the user confirms it in the confirmation dialog; the confirmed run sends
+ * the context the first call sent, read once when the run starts. `commands` is the registry
+ * the dialog reads step sensitivities from.
  */
 export async function runMacro(
   macro: Pick<Macro, "id" | "name" | "steps">,
@@ -24,12 +38,13 @@ export async function runMacro(
   commands: readonly CommandDefinition[] | undefined,
 ): Promise<void> {
   const stepIds = macro.steps.map((step) => step.commandId);
+  const commandContext = macroContext(workspaceId);
   try {
     const outcome = await runWithHumanConfirmation(
       async (confirmation) => {
         const input: ExecuteMacroInput = {
           macroId: macro.id,
-          commandContext: { workspaceId },
+          commandContext,
           ...(confirmation && { confirmation }),
         };
         const res = await graphqlClient.request<{ executeMacro: ExecuteMacroResult }>(
