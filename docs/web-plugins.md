@@ -122,8 +122,9 @@ manifest rules before the permission prompt opens. Installs from a workspace's p
 registry come with that registry; the install record already keeps their shape
 (`{ kind: "registry", … }`).
 
-The plugin talks to GitHub without a token (60 requests an hour per IP address). It starts
-with two repositories; add one or two more, not ten, while trying it.
+Without a token the plugin gets GitHub's 60 requests an hour per IP address. It starts with two
+repositories; add one or two more, not ten, while trying it, or save a GitHub token in its
+settings in the desktop app (the web app keeps no secret settings).
 
 ## Manual checks
 
