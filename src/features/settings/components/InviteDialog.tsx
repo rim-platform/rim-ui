@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
+import { getWebBaseUrl } from "../../../core/graphql/config";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { DEFAULT_INVITE_USES, useCreateInviteMutation } from "../api/useInviteMutations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -100,7 +101,7 @@ export function InviteDialog({ open, onClose }: InviteDialogProps) {
       },
       {
         onSuccess: (data) => {
-          const link = `${window.location.origin}/join/${data.createInvite.inviteToken}`;
+          const link = `${getWebBaseUrl()}/join/${data.createInvite.inviteToken}`;
           setInviteLink(link);
           setCopied(false);
         },

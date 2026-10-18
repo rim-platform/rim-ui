@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -86,6 +86,35 @@ describe("InviteDialog", () => {
 
     expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
     expect(screen.getByText(`${window.location.origin}/join/tok-1`)).toBeInTheDocument();
+  });
+
+  describe("invite link origin", () => {
+    function generateLink() {
+      const mutate = vi.fn((_input, options) => {
+        options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
+      });
+      mockCreateInvite({ mutate });
+      renderDialog();
+      fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    });
+
+    it("uses the page's origin in the web app", () => {
+      vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://rim.example.org/api");
+      generateLink();
+      expect(screen.getByText(`${window.location.origin}/join/tok-1`)).toBeInTheDocument();
+    });
+
+    it("uses the server's origin in the desktop app, not the webview's", () => {
+      (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+      vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://rim.example.org/api");
+      generateLink();
+      expect(screen.getByText("https://rim.example.org/join/tok-1")).toBeInTheDocument();
+    });
   });
 
   it("valid email: includes recipientEmail in the mutation call", () => {
