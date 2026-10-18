@@ -259,7 +259,7 @@ function MenuPanel({
               <div
                 key={`${item.id}-section`}
                 role="presentation"
-                className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-rim-text-faint"
+                className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-rim-text-muted"
               >
                 {item.sectionBefore}
               </div>
