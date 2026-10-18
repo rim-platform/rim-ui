@@ -1,5 +1,13 @@
 {
-  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and sdk/plugin-sdk/src/manifestRules.ts run every entry and must agree with `valid`. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
+  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and sdk/plugin-sdk/src/manifestRules.ts run every entry and must agree with `valid`. `builtinCapabilities` is the list of capability names a manifest may declare and a command may require, besides `network.fetch` for a WebSandboxed plugin; both hosts check that theirs equals it. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
+  "builtinCapabilities": [
+    "ui.panel",
+    "ui.notify",
+    "chat.read",
+    "chat.write",
+    "chat.read.encrypted",
+    "chat.write.encrypted"
+  ],
   "forbiddenOrigins": ["https://api.rim.example/api", "https://rim.example"],
   "vectors": [
     {
@@ -115,7 +123,7 @@
       }
     },
     {
-      "name": "web plugin with ui.notify, its own keys and a panel",
+      "name": "web plugin with ui.notify and a panel",
       "valid": true,
       "manifest": {
         "manifest_version": 1,
@@ -132,7 +140,7 @@
             "description": "Greets the signed-in user."
           }
         ],
-        "capabilities": ["ui.notify", "ui.panel", "plugin.dev.example.hello-web.greet"],
+        "capabilities": ["ui.notify", "ui.panel"],
         "panels": [
           {
             "id": "main",
@@ -189,7 +197,7 @@
       }
     },
     {
-      "name": "desktop plugin with its own capability and a dangerous command",
+      "name": "desktop plugin with a dangerous command requiring a declared capability",
       "valid": true,
       "manifest": {
         "manifest_version": 1,
@@ -205,10 +213,10 @@
             "title": "Reset",
             "description": "Resets.",
             "dangerous": true,
-            "required_capabilities": ["plugin.dev.example.greeter.reset"]
+            "required_capabilities": ["chat.write"]
           }
         ],
-        "capabilities": ["ui.panel", "plugin.dev.example.greeter.reset"]
+        "capabilities": ["ui.panel", "chat.write"]
       }
     },
     {
@@ -1539,6 +1547,188 @@
           }
         ],
         "capabilities": ["plugin.dev.example.hello-web.admin"]
+      }
+    },
+    {
+      "name": "web plugin declaring a capability of its own namespace",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user."
+          }
+        ],
+        "capabilities": ["plugin.dev.example.hello-web.greet"]
+      }
+    },
+    {
+      "name": "desktop plugin declaring a capability of its own namespace",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": []
+          }
+        ],
+        "capabilities": ["ui.panel", "plugin.dev.example.greeter.reset"]
+      }
+    },
+    {
+      "name": "command requiring a capability of the plugin's own namespace",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["plugin.dev.example.greeter.reset"]
+          }
+        ],
+        "capabilities": ["ui.panel"]
+      }
+    },
+    {
+      "name": "command requiring a capability that does not exist",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["chat.admin"]
+          }
+        ],
+        "capabilities": ["ui.panel"]
+      }
+    },
+    {
+      "name": "command requiring a capability the manifest does not declare",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["chat.read", "chat.write"]
+          }
+        ],
+        "capabilities": ["ui.panel", "chat.read"]
+      }
+    },
+    {
+      "name": "command requiring a capability with no capabilities declared",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["chat.write"]
+          }
+        ],
+        "capabilities": []
+      }
+    },
+    {
+      "name": "web command requiring network.fetch it declares",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.hello-web",
+        "display_name": "Hello Web",
+        "version": "0.1.0",
+        "description": "Says hello from a sandboxed frame.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "commands": [
+          {
+            "id": "greet",
+            "title": "Hello Web: Greet",
+            "description": "Greets the signed-in user.",
+            "required_capabilities": ["network.fetch"]
+          }
+        ],
+        "capabilities": ["network.fetch"],
+        "network_origins": ["https://api.example.com"]
+      }
+    },
+    {
+      "name": "command requiring an encrypted capability declared with its plain one",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.greeter",
+        "display_name": "Greeter",
+        "version": "0.1.0",
+        "description": "Says hello.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "reset",
+            "title": "Reset",
+            "description": "Resets.",
+            "dangerous": true,
+            "required_capabilities": ["chat.read", "chat.read.encrypted"]
+          }
+        ],
+        "capabilities": ["chat.read", "chat.read.encrypted"]
       }
     },
     {

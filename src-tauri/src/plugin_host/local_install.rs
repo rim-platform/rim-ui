@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LocalInstallError {
-    /// The source folder contains no `rim-plugin.json` and no simple-mode entry.
-    #[error("no manifest found (rim-plugin.json or simple mode entrypoint)")]
+    /// The source folder has no `rim-plugin.json` at its root.
+    #[error("no rim-plugin.json found in the plugin folder; every plugin needs one at its root")]
     NoManifest,
     /// A path segment contained `..`, `/`, `\`, NUL, or a percent-encoded form.
     #[error("path traversal rejected: {0}")]
@@ -69,6 +69,7 @@ impl serde::Serialize for LocalInstallError {
         match self {
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("message", &self.to_string())?;
                 map.serialize_entry("data", inner)?;
             }
             other => {
@@ -254,7 +255,7 @@ fn copy_dir_recursive(
 /// Steps:
 /// 1. Validate every component of `source_path` for path-traversal.
 /// 2. Canonicalize and assert `source_path` still exists on disk.
-/// 3. Load and structurally validate the manifest (`rim-plugin.json` or simple-mode).
+/// 3. Load and structurally validate the manifest (`rim-plugin.json`).
 /// 4. Run install validation via [`validate_plugin_manifest_for_host`],
 ///    refusing `network_origins` on one of `forbidden_origins`.
 /// 5. Check for reserved-prefix rejection.
@@ -271,7 +272,7 @@ fn copy_dir_recursive(
 /// # Errors
 ///
 /// - [`LocalInstallError::PathTraversal`] — `source_path` fails segment validation.
-/// - [`LocalInstallError::NoManifest`] — no manifest found in the folder.
+/// - [`LocalInstallError::NoManifest`] — the folder has no `rim-plugin.json`.
 /// - [`LocalInstallError::Manifest`] — manifest parse failure.
 /// - [`LocalInstallError::InvalidManifest`] — install validation failed.
 /// - [`LocalInstallError::AlreadyExists`] — the plugin ID is already installed.
@@ -324,7 +325,7 @@ pub async fn install_from_local(
         other => LocalInstallError::Io(std::io::Error::other(other.to_string())),
     })?;
 
-    // Step 4: capability key shape, the install-ID leak check, and the kind's rules.
+    // Step 4: capability names, the install-ID leak check, and the kind's rules.
     if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=local_install_rejected plugin_id={} reason={}",
@@ -548,8 +549,27 @@ mod tests {
     #[tokio::test]
     async fn folder_without_manifest_returns_no_manifest_error() {
         let tmp = TempDir::new().unwrap();
-        // No rim-plugin.json and no simple-mode file.
         std::fs::write(tmp.path().join("random.txt"), b"not a plugin").unwrap();
+
+        let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
+        assert!(
+            matches!(err, LocalInstallError::NoManifest),
+            "expected NoManifest, got {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "no rim-plugin.json found in the plugin folder; every plugin needs one at its root"
+        );
+    }
+
+    #[tokio::test]
+    async fn folder_with_only_a_main_script_returns_no_manifest_error() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("main.ts"),
+            b"// rim-plugin: dev.example.headers\n// rim-name: Headers\n",
+        )
+        .unwrap();
 
         let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
         assert!(

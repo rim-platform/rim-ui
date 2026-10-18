@@ -57,8 +57,8 @@ pub const CHAT_METHODS: &[&str] = &[
     CHAT_POST_MESSAGE,
 ];
 
-/// Built-in capability names a manifest may request next to its own
-/// `plugin.<plugin_id>.<verb>` keys (see `validation.rs`).
+/// The capability names a manifest may declare and a command may require, with
+/// [`NETWORK_FETCH`] for a `WebSandboxed` plugin; install refuses any other name.
 ///
 /// Each one guards something the running host does: `rim.ui.update_panel`
 /// (`ui.panel`), the notifications a panel sends through the frontend bridge,

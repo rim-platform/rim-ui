@@ -2,7 +2,6 @@ use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install::{self, PostInstallStep};
-use crate::plugin_host::simple_manifest;
 use crate::plugin_host::trash;
 use crate::plugin_host::validation::{
     validate_plugin_manifest, validate_plugin_manifest_for_host, ValidationError,
@@ -29,7 +28,8 @@ pub enum GitInstallError {
     },
     #[error("git clone failed: {0}")]
     CloneFailed(String),
-    #[error("no manifest found (rim-plugin.json or simple mode entrypoint)")]
+    /// The repository has no `rim-plugin.json` at its root.
+    #[error("no rim-plugin.json found at the root of the repository; every plugin needs one")]
     NoManifest,
     #[error("manifest error: {0}")]
     Manifest(#[from] ManifestError),
@@ -59,6 +59,7 @@ impl Serialize for GitInstallError {
             // specific rule the manifest broke without parsing the message.
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("message", &self.to_string())?;
                 map.serialize_entry("data", inner)?;
             }
             Self::InvalidUrl(_) => {
@@ -161,8 +162,7 @@ pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitIn
     Ok(clone_dir)
 }
 
-/// Detects and loads the manifest of a cloned directory, trying
-/// `rim-plugin.json` first and then simple mode.
+/// Loads and checks the `rim-plugin.json` at the root of a cloned directory.
 ///
 /// # Errors
 ///
@@ -173,12 +173,6 @@ pub fn detect_manifest(clone_dir: &Path) -> Result<PluginManifest, GitInstallErr
     if json_manifest.exists() {
         return Ok(PluginManifest::load(&json_manifest)?);
     }
-
-    // Try simple mode
-    if let Some(manifest) = simple_manifest::load_simple_manifest(clone_dir)? {
-        return Ok(manifest);
-    }
-
     Err(GitInstallError::NoManifest)
 }
 
@@ -283,7 +277,7 @@ pub async fn install_from_git(
         )));
     }
 
-    // Capability key shape and the AI-surface install-ID leak check. Runs before
+    // Capability names and the AI-surface install-ID leak check. Runs before
     // anything is persisted so a malformed manifest never reaches the registry.
     if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
@@ -645,45 +639,19 @@ mod tests {
     }
 
     #[test]
-    fn detect_simple_manifest() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let source = "# rim-plugin: dev.example.simple\n# rim-name: Simple\n";
-        std::fs::write(tmp.path().join("main.js"), source).unwrap();
-
-        let m = detect_manifest(tmp.path()).unwrap();
-        assert_eq!(m.plugin_id, "dev.example.simple");
-        assert_eq!(m.entrypoint, "node main.js");
-    }
-
-    #[test]
-    fn json_manifest_preferred_over_simple() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        // Both json and simple present — json wins
-        let json = serde_json::json!({
-            "manifest_version": 1,
-            "plugin_id": "dev.example.json-wins",
-            "display_name": "JSON",
-            "version": "1.0.0",
-            "description": "test",
-            "runtime_kind": "DesktopLocalProcess",
-            "entrypoint": "main.js",
-        });
-        std::fs::write(tmp.path().join(MANIFEST_FILE), json.to_string()).unwrap();
-        std::fs::write(
-            tmp.path().join("main.js"),
-            "# rim-plugin: dev.example.simple\n# rim-name: Simple\n",
-        )
-        .unwrap();
-
-        let m = detect_manifest(tmp.path()).unwrap();
-        assert_eq!(m.plugin_id, "dev.example.json-wins");
-    }
-
-    #[test]
     fn no_manifest_returns_error() {
         let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("main.js"),
+            "// rim-plugin: dev.example.headers\n// rim-name: Headers\n",
+        )
+        .unwrap();
         let err = detect_manifest(tmp.path()).unwrap_err();
         assert!(matches!(err, GitInstallError::NoManifest));
+        assert_eq!(
+            err.to_string(),
+            "no rim-plugin.json found at the root of the repository; every plugin needs one"
+        );
     }
 
     #[test]
@@ -755,7 +723,7 @@ mod tests {
             "description": "updated",
             "runtime_kind": "DesktopLocalProcess",
             "entrypoint": "main.js",
-            "capabilities": ["plugin.dev.example.test.do_thing"],
+            "capabilities": ["chat.read"],
             "commands": [{
                 "id": "expose",
                 "title": "Expose",

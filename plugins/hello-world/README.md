@@ -85,12 +85,12 @@ notifications are allowed).
 
 ## Capability model
 
-The manifest declares no capabilities. A manifest may declare the built-in
+The manifest declares no capabilities. A manifest may declare only the built-in
 names `ui.panel`, `ui.notify`, `chat.read`, `chat.write`, `chat.read.encrypted`
-and `chat.write.encrypted` (each encrypted one only with its plain one), and its
-own keys of the form `plugin.<plugin_id>.<verb>` with the verb in `[a-z0-9_.]`
-(validated at install time by `validation.rs`). `greet` needs none: it only
-answers the host.
+and `chat.write.encrypted` (each encrypted one only with its plain one), and a
+command's `required_capabilities` only names the manifest declares; install
+refuses anything else (`validation.rs`). `greet` needs none: it only answers the
+host.
 
 The panel's notification exercises the `ui.notify` gate in the bridge's
 postMessage handler (`pluginBridge.ts`).
