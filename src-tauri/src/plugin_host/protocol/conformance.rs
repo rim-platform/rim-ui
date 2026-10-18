@@ -223,7 +223,7 @@ fn principal_rejects_raw_ids_and_addresses() {
     assert_valid("Principal", &serde_json::to_value(principal()).unwrap());
     for bad in [
         USER_ID,
-        "jakub@rim.chat",
+        "someone@example.org",
         "0192b3c45d6e7f809a1b2c3d4e5f6a7b",
         "",
     ] {
