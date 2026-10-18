@@ -249,6 +249,11 @@ npm run plugin:bundle -- plugins/template-ts          # or, in rim-ui
 cp -r plugins/template-ts/dist/dev.example.template-ts ~/.rim/plugins/
 ```
 
+A folder that already holds its build, a manifest whose `entrypoint` is `main.mjs` with that
+`main.mjs` beside it, is bundled as it is: the bundler copies `main.mjs` without building it
+again and prints `using the built main.mjs as it is`. `--entry <file>` builds from that source
+instead.
+
 The output folder is emptied first, so the bundler refuses a folder that holds the
 plugin or has other files in it. The bundle directory holds `rim-plugin.json` (with
 `entrypoint` set to `main.mjs`), `main.mjs` with the SDK inside, and the plugin's
@@ -301,9 +306,10 @@ two such repositories, with CI that runs `--check` and a release workflow that a
 
 The build names no absolute path and no time, so the same sources and the same SDK
 version give the same bytes on every machine; commit the lockfile so CI builds with the
-SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle`
-(`npx rim-plugin-bundle --entry src/main.ts .`, whose `main.mjs` is the committed one
-byte for byte) can go on the release for **Install from link**.
+SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle` can go on
+the release for **Install from link**. `npx rim-plugin-bundle .` packages the committed
+`main.mjs` as it is; once `--check` passes, that is byte for byte the bundle
+`npx rim-plugin-bundle --entry src/main.ts .` builds from the sources.
 
 For a WebSandboxed plugin the desktop takes `rim-plugin.json`, the entrypoint and
 `panels/` from the checkout and ignores the rest: the sources, `package.json` and the

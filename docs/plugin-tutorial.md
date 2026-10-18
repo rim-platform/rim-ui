@@ -237,7 +237,9 @@ Push it to a host such as GitHub; others paste its `https://` URL into Settings 
 Install from git URL. With only `devDependencies` nothing more runs; with `dependencies` the app
 shows the `npm install --production` it would run and asks first. A release can attach the
 `.rimbundle` of `npm run bundle`, served with `Access-Control-Allow-Origin: *`, for Install from
-link as `https://host/path/dev.example.greeter-0.1.0.rimbundle#sha256=<hash>`.
+link as `https://host/path/dev.example.greeter-0.1.0.rimbundle#sha256=<hash>`. Without `--entry`,
+`npx rim-plugin-bundle .` takes the committed `main.mjs` as it is instead of building it; once
+`--check` passes, both give the same `.rimbundle`.
 
 ## 10. Sign and publish to a workspace
 

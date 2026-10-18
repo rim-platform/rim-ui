@@ -1,6 +1,6 @@
 // rim-plugin-bundle on a plugin folder that holds its own build, as a plugin
-// repository commits it: --in-place writes main.mjs and --check compares it
-// with a fresh build.
+// repository commits it: --in-place writes main.mjs, --check compares it with a
+// fresh build, and a bundle without --entry takes it as it is.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,4 +77,39 @@ describe("rim-plugin-bundle --check", () => {
     expect(check.status).toBe(2);
     expect(check.stderr).toContain("name its source with --entry <file>");
   });
+});
+
+describe("rim-plugin-bundle on a built folder", () => {
+  it.each<RuntimeKind>(["WebSandboxed", "DesktopLocalProcess"])(
+    "bundles a %s folder's main.mjs as the build from --entry src/main.ts does",
+    (runtimeKind) => {
+      const dir = pluginRepo(runtimeKind);
+      expect(bundler(["--in-place", "--entry", "src/main.ts", "."], dir).status).toBe(0);
+      const out = mkdtempSync(join(tmpdir(), "rim-plugin-out-"));
+
+      const asItIs = bundler([dir, join(out, "built/dev.example.check")], tmpdir());
+      expect(asItIs).toMatchObject({ status: 0, stderr: "" });
+      expect(asItIs.stdout).toContain("using the built main.mjs as it is");
+      const fromSource = bundler(
+        ["--entry", "src/main.ts", dir, join(out, "source/dev.example.check")],
+        tmpdir(),
+      );
+      expect(fromSource).toMatchObject({ status: 0, stderr: "" });
+      expect(fromSource.stdout).not.toContain("as it is");
+
+      const bundle = (from: string) =>
+        readFileSync(join(out, from, "dev.example.check-1.0.0.rimbundle"));
+      expect(bundle("built").equals(bundle("source"))).toBe(true);
+    },
+    30_000,
+  );
+
+  it("copies main.mjs without building it again", () => {
+    const dir = pluginRepo("DesktopLocalProcess");
+    expect(bundler(["--in-place", "--entry", "src/main.ts", "."], dir).status).toBe(0);
+    const edited = `${readFileSync(join(dir, "main.mjs"), "utf8")}// edited\n`;
+    writeFileSync(join(dir, "main.mjs"), edited);
+    expect(bundler(["."], dir).status).toBe(0);
+    expect(readFileSync(join(dir, "dist/dev.example.check/main.mjs"), "utf8")).toBe(edited);
+  }, 30_000);
 });
