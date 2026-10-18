@@ -59,6 +59,7 @@ impl Serialize for GitInstallError {
             // specific rule the manifest broke without parsing the message.
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("message", &self.to_string())?;
                 map.serialize_entry("data", inner)?;
             }
             Self::InvalidUrl(_) => {
@@ -647,11 +648,11 @@ mod tests {
         .unwrap();
         let err = detect_manifest(tmp.path()).unwrap_err();
         assert!(matches!(err, GitInstallError::NoManifest));
-    }
         assert_eq!(
             err.to_string(),
             "no rim-plugin.json found at the root of the repository; every plugin needs one"
         );
+    }
 
     #[test]
     fn finalize_install_moves_dir() {
@@ -722,7 +723,7 @@ mod tests {
             "description": "updated",
             "runtime_kind": "DesktopLocalProcess",
             "entrypoint": "main.js",
-            "capabilities": ["plugin.dev.example.test.do_thing"],
+            "capabilities": ["chat.read"],
             "commands": [{
                 "id": "expose",
                 "title": "Expose",

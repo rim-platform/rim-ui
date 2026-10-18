@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILTIN_CAPABILITIES,
   ManifestError,
   parseNetworkOrigin,
   siteOf,
@@ -28,6 +29,67 @@ describe("manifest rules", () => {
         valid: vector.valid,
       });
     }
+  });
+
+  it("know the built-in capabilities the desktop host knows", () => {
+    expect([...BUILTIN_CAPABILITIES]).toEqual(vectors.builtinCapabilities);
+  });
+
+  const desktop = {
+    manifest_version: 1,
+    plugin_id: "dev.example.poll",
+    display_name: "Poll",
+    version: "0.1.0",
+    description: "Runs polls.",
+    runtime_kind: "DesktopLocalProcess",
+    entrypoint: "main.mjs",
+  };
+
+  it("refuse a plugin-scoped capability and name it", () => {
+    expect(() =>
+      validateManifest({ ...desktop, capabilities: ["plugin.dev.example.poll.vote"] }),
+    ).toThrow(
+      "invalid capability key `plugin.dev.example.poll.vote`: plugin-scoped capability keys are not supported, since the permission prompt cannot approve them; a manifest names only built-in capabilities: ui.panel, ui.notify, chat.read, chat.write, chat.read.encrypted, chat.write.encrypted",
+    );
+  });
+
+  it("refuse a command requiring a name that is not built-in, naming the command", () => {
+    expect(() =>
+      validateManifest({
+        ...desktop,
+        capabilities: ["chat.read"],
+        commands: [
+          {
+            id: "vote",
+            title: "Vote",
+            description: "Votes.",
+            required_capabilities: ["chat.admin"],
+          },
+        ],
+      }),
+    ).toThrow(
+      "invalid capability key `chat.admin`: required by command `vote`: not a built-in capability; a manifest names only built-in capabilities: ui.panel, ui.notify, chat.read, chat.write, chat.read.encrypted, chat.write.encrypted",
+    );
+  });
+
+  it("refuse a command requiring a capability the manifest does not declare", () => {
+    const command = { id: "vote", title: "Vote", description: "Votes." };
+    expect(() =>
+      validateManifest({
+        ...desktop,
+        capabilities: ["chat.read"],
+        commands: [{ ...command, required_capabilities: ["chat.read", "chat.write"] }],
+      }),
+    ).toThrow(
+      "command `vote` requires capability `chat.write`, which the manifest's capabilities do not declare",
+    );
+    expect(() =>
+      validateManifest({
+        ...desktop,
+        capabilities: ["chat.read", "chat.write"],
+        commands: [{ ...command, required_capabilities: ["chat.read", "chat.write"] }],
+      }),
+    ).not.toThrow();
   });
 
   it("explains why a web plugin cannot hold a local capability", () => {

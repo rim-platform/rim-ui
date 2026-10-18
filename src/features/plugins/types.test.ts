@@ -26,19 +26,17 @@ describe("Plugin types", () => {
     expect(levels).toHaveLength(4);
   });
 
-  it("PluginCapability supports all expected values", () => {
+  it("PluginCapability is the built-in names and network.fetch", () => {
     const caps: PluginCapability[] = [
+      "ui.panel",
+      "ui.notify",
       "chat.read",
       "chat.write",
-      "events.read",
-      "local.process",
-      "network",
-      "fs.read",
-      "fs.write",
-      "ui.notify",
-      "ui.panel",
+      "chat.read.encrypted",
+      "chat.write.encrypted",
+      "network.fetch",
     ];
-    expect(caps).toHaveLength(9);
+    expect(PLUGIN_CAPABILITIES).toEqual(caps);
   });
 
   it("PluginHealth supports all expected values", () => {
@@ -174,6 +172,8 @@ describe("Plugin types", () => {
       expect(isPluginCapability("read_contacts")).toBe(false);
       expect(isPluginCapability("filesystem")).toBe(false);
       expect(isPluginCapability("NETWORK")).toBe(false);
+      expect(isPluginCapability("fs.read")).toBe(false);
+      expect(isPluginCapability("plugin.dev.example.tool.read")).toBe(false);
       expect(isPluginCapability("")).toBe(false);
     });
 
@@ -192,14 +192,14 @@ describe("Plugin types", () => {
     });
 
     it("returns all items when every element is a valid capability", () => {
-      const result = parsePluginCapabilities(["chat.read", "network"]);
-      expect(result).toEqual(["chat.read", "network"]);
+      const result = parsePluginCapabilities(["chat.read", "network.fetch"]);
+      expect(result).toEqual(["chat.read", "network.fetch"]);
     });
 
     it("drops bogus capabilities and keeps valid ones", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-      const result = parsePluginCapabilities(["network", "read_contacts", "fs.read"]);
-      expect(result).toEqual(["network", "fs.read"]);
+      const result = parsePluginCapabilities(["network.fetch", "read_contacts", "ui.panel"]);
+      expect(result).toEqual(["network.fetch", "ui.panel"]);
       expect(warnSpy).toHaveBeenCalledOnce();
     });
 
@@ -235,7 +235,7 @@ describe("Plugin types", () => {
 
     it("does not emit a warning when all capabilities are valid", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-      parsePluginCapabilities(["ui.notify", "fs.read"]);
+      parsePluginCapabilities(["ui.notify", "chat.read"]);
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });

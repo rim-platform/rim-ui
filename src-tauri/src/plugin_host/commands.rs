@@ -1019,7 +1019,7 @@ fn check_ai_consent(
 /// Steps executed (see [`local_install::install_from_local`] for full detail):
 /// 1. Path-traversal guard (per-segment + canonicalize prefix assertion).
 /// 2. Manifest detection and structural validation.
-/// 3. Install validation: capability key shape, the install-ID leak check and
+/// 3. Install validation: capability names, the install-ID leak check and
 ///    the kind's rules.
 /// 4. Reserved-prefix check.
 /// 5. Collision check against already-installed plugin IDs.
@@ -1033,7 +1033,7 @@ fn check_ai_consent(
 ///
 /// Returns [`LocalInstallError`] variants serialised as
 /// `{ kind: "LOCAL_INSTALL_ERROR", message }` or
-/// `{ kind: "INVALID_MANIFEST", data: { kind: … } }`.
+/// `{ kind: "INVALID_MANIFEST", message, data: { kind: … } }`.
 #[tauri::command]
 pub async fn plugin_install_from_local(
     path: String,

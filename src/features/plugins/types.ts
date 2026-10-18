@@ -1,36 +1,22 @@
+import {
+  BUILTIN_CAPABILITIES,
+  NETWORK_FETCH,
+  type BuiltinCapability,
+} from "../../../sdk/plugin-sdk/src/manifestRules";
+
 export type TrustLevel = "official" | "verified" | "community" | "unverified";
 
-// Authoritative list sourced from src-tauri/src/plugin_host/capability.rs METHOD_CAPABILITY_MAP.
-// If Rust adds a new capability key, add it here and update capabilityLabels in PluginCapabilityPrompt.
-export type PluginCapability =
-  | "chat.read"
-  | "chat.write"
-  | "chat.read.encrypted"
-  | "chat.write.encrypted"
-  | "events.read"
-  | "local.process"
-  | "network"
-  | "fs.read"
-  | "fs.write"
-  | "ui.notify"
-  | "ui.panel"
-  | "network.fetch";
+/**
+ * A capability a plugin may declare and the permission prompt offers: a built-in
+ * name of the manifest rules, or `network.fetch`.
+ */
+export type PluginCapability = BuiltinCapability | typeof NETWORK_FETCH;
 
-/** Exhaustive tuple of all valid PluginCapability values — used for runtime validation. */
+/** Every {@link PluginCapability}, in the order the manifest rules list them. */
 export const PLUGIN_CAPABILITIES: readonly PluginCapability[] = [
-  "chat.read",
-  "chat.write",
-  "chat.read.encrypted",
-  "chat.write.encrypted",
-  "events.read",
-  "local.process",
-  "network",
-  "fs.read",
-  "fs.write",
-  "ui.notify",
-  "ui.panel",
-  "network.fetch",
-] as const;
+  ...BUILTIN_CAPABILITIES,
+  NETWORK_FETCH,
+];
 
 /** Type guard: returns true when `v` is a known PluginCapability string. */
 export function isPluginCapability(v: unknown): v is PluginCapability {

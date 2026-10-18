@@ -39,9 +39,10 @@ impl serde::Serialize for LifecycleError {
         let mut map = s.serialize_map(None)?;
         match self {
             // Keep the inner typed ValidationError so the UI can pattern-match on
-            // `{kind: "INVALID_MANIFEST", data: {kind: "INSTALL_ID_LEAK", ...}}`.
+            // `{kind: "INVALID_MANIFEST", message, data: {kind: "INSTALL_ID_LEAK", ...}}`.
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("message", &self.to_string())?;
                 map.serialize_entry("data", inner)?;
             }
             other => {
@@ -332,8 +333,8 @@ mod tests {
     use crate::plugin_host::manifest::{ManifestCommand, RuntimeKind};
 
     fn test_manifest(plugin_id: &str) -> PluginManifest {
-        let cap1 = format!("plugin.{plugin_id}.run_process");
-        let cap2 = format!("plugin.{plugin_id}.fetch_data");
+        let cap1 = "chat.read".to_string();
+        let cap2 = "chat.write".to_string();
         PluginManifest {
             manifest_version: 1,
             plugin_id: plugin_id.into(),
@@ -357,7 +358,7 @@ mod tests {
     fn grants_and_revocations_are_audited() {
         let mut store = PluginStateStore::default();
         let manifest = test_manifest("dev.example.test");
-        let cap = "plugin.dev.example.test.run_process".to_string();
+        let cap = "chat.read".to_string();
         install(&mut store, &manifest).unwrap();
 
         approve_capabilities(&mut store, &manifest, std::slice::from_ref(&cap)).unwrap();
@@ -395,15 +396,10 @@ mod tests {
             PluginStatus::Installed
         );
 
-        approve_capabilities(
-            &mut store,
-            &manifest,
-            &["plugin.dev.example.test.run_process".into()],
-        )
-        .unwrap();
+        approve_capabilities(&mut store, &manifest, &["chat.read".into()]).unwrap();
         assert_eq!(
             store.get("dev.example.test").unwrap().approved_capabilities,
-            vec!["plugin.dev.example.test.run_process"]
+            vec!["chat.read"]
         );
 
         enable(&mut store, "dev.example.test").unwrap();
@@ -454,19 +450,9 @@ mod tests {
         let mut store = PluginStateStore::default();
         let manifest = test_manifest("dev.example.test");
         install(&mut store, &manifest).unwrap();
-        approve_capabilities(
-            &mut store,
-            &manifest,
-            &["plugin.dev.example.test.run_process".into()],
-        )
-        .unwrap();
+        approve_capabilities(&mut store, &manifest, &["chat.read".into()]).unwrap();
         enable(&mut store, "dev.example.test").unwrap();
-        revoke_capability(
-            &mut store,
-            "dev.example.test",
-            "plugin.dev.example.test.run_process",
-        )
-        .unwrap();
+        revoke_capability(&mut store, "dev.example.test", "chat.read").unwrap();
         assert_eq!(
             store.get("dev.example.test").unwrap().status,
             PluginStatus::Disabled
@@ -488,7 +474,7 @@ mod tests {
     #[test]
     fn install_rejects_invalid_capability_key_and_leaves_no_record() {
         let mut store = PluginStateStore::default();
-        // A capability key in a reserved namespace, outside `plugin.<id>.`.
+        // A capability that is not a built-in name.
         let manifest = PluginManifest {
             manifest_version: 1,
             plugin_id: "dev.example.test".into(),
@@ -522,7 +508,7 @@ mod tests {
     #[test]
     fn install_rejects_ai_callable_with_install_id_leak_and_leaves_no_record() {
         let mut store = PluginStateStore::default();
-        let cap = "plugin.dev.example.test.do_thing".to_string();
+        let cap = "chat.read".to_string();
         let leaky_schema = serde_json::json!({
             "type": "object",
             "properties": { "plugin_install_id": { "type": "string" } }
@@ -571,7 +557,7 @@ mod tests {
     // ── AI consent: approve / revoke / drift detection ──
 
     fn ai_manifest(plugin_id: &str) -> PluginManifest {
-        let cap = format!("plugin.{plugin_id}.do_thing");
+        let cap = "chat.read".to_string();
         let clean_schema = serde_json::json!({
             "type": "object",
             "properties": { "summary": { "type": "string" } }

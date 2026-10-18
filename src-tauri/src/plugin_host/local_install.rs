@@ -69,6 +69,7 @@ impl serde::Serialize for LocalInstallError {
         match self {
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
+                map.serialize_entry("message", &self.to_string())?;
                 map.serialize_entry("data", inner)?;
             }
             other => {
@@ -324,7 +325,7 @@ pub async fn install_from_local(
         other => LocalInstallError::Io(std::io::Error::other(other.to_string())),
     })?;
 
-    // Step 4: capability key shape, the install-ID leak check, and the kind's rules.
+    // Step 4: capability names, the install-ID leak check, and the kind's rules.
     if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=local_install_rejected plugin_id={} reason={}",
@@ -551,7 +552,6 @@ mod tests {
         std::fs::write(tmp.path().join("random.txt"), b"not a plugin").unwrap();
 
         let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
-        let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
         assert!(
             matches!(err, LocalInstallError::NoManifest),
             "expected NoManifest, got {err:?}"
@@ -571,6 +571,7 @@ mod tests {
         )
         .unwrap();
 
+        let err = install_from_local(tmp.path(), &[], &[]).await.unwrap_err();
         assert!(
             matches!(err, LocalInstallError::NoManifest),
             "expected NoManifest, got {err:?}"

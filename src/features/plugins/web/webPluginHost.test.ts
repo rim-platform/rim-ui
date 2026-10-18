@@ -124,6 +124,7 @@ function webManifest(overrides: Record<string, unknown> = {}): string {
     description: "A test plugin.",
     runtime_kind: "WebSandboxed",
     entrypoint: "main.mjs",
+    capabilities: ["ui.notify"],
     commands: [
       { id: "echo", title: "Echo", description: "Echoes." },
       { id: "wipe", title: "Wipe", description: "Wipes.", dangerous: true },
@@ -131,7 +132,7 @@ function webManifest(overrides: Record<string, unknown> = {}): string {
         id: "secret",
         title: "Secret",
         description: "Needs a key.",
-        required_capabilities: ["plugin.dev.example.scripted.key"],
+        required_capabilities: ["ui.notify"],
       },
       { id: "slow", title: "Slow", description: "Never answers." },
     ],
@@ -177,7 +178,7 @@ function installed(overrides: Partial<InstalledWebPlugin> = {}): InstalledWebPlu
       {
         id: "secret",
         dangerous: false,
-        required_capabilities: ["plugin.dev.example.scripted.key"],
+        required_capabilities: ["ui.notify"],
       },
       { id: "slow", dangerous: false, required_capabilities: [] },
     ],
@@ -336,7 +337,7 @@ describe("web plugin frames", () => {
 
   it("gives the frame its granted origins, never RIM's own", async () => {
     const manifest = webManifest({
-      capabilities: ["network.fetch"],
+      capabilities: ["ui.notify", "network.fetch"],
       network_origins: ["https://api.github.com"],
     });
     const granted = await startScripted({}, { approvedCapabilities: ["network.fetch"] }, manifest);
@@ -347,7 +348,7 @@ describe("web plugin frames", () => {
 
     const t = testEnvironment();
     const own = webManifest({
-      capabilities: ["network.fetch"],
+      capabilities: ["ui.notify", "network.fetch"],
       network_origins: ["https://api.rim.example"],
     });
     const host = new WebPluginHost();
@@ -800,7 +801,7 @@ describe("browser plugin storage", () => {
     vi.useRealTimers();
     const store = await storeWith("rimp0_storage-audit");
     const manifest = webManifest({
-      capabilities: ["chat.read", "chat.read.encrypted", "plugin.dev.example.scripted.key"],
+      capabilities: ["chat.read", "chat.read.encrypted", "ui.notify"],
     });
     const bytes = writeBundle([file("rim-plugin.json", manifest), file("main.mjs", "")]);
     const sha256 = await sha256Hex(bytes);

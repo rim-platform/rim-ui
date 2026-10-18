@@ -1,16 +1,12 @@
-//! Install-time plugin manifest validation: capability key shape, the
-//! install-ID leak check on AI-callable commands, and the rules of each runtime
-//! kind.
+//! Install-time plugin manifest validation: capability names and the
+//! capabilities commands require, the install-ID leak check on AI-callable
+//! commands, and the rules of each runtime kind.
 
 use crate::plugin_host::capability::{
     BUILTIN_CAPABILITIES, ENCRYPTED_CHAT_CAPABILITIES, NETWORK_FETCH,
 };
 use crate::plugin_host::manifest::{ManifestCommand, PluginManifest, RuntimeKind};
 
-const RESERVED_PREFIXES: &[&str] = &["system.", "internal.", "admin.", "audit."];
-const RESERVED_SEGMENTS: &[&str] = &["system", "internal", "admin", "audit"];
-const MIN_KEY_LEN: usize = 4;
-const MAX_KEY_LEN: usize = 128;
 /// How many origins `network_origins` may list.
 pub const MAX_NETWORK_ORIGINS: usize = 16;
 /// Capabilities a `WebSandboxed` plugin can never hold, because the browser
@@ -31,11 +27,16 @@ const CONTEXT_ARGUMENTS: &[(&str, &[&str])] = &[
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind")]
 pub enum ValidationError {
-    /// A capability key declared by the plugin is malformed or uses a
-    /// reserved namespace. The plugin is rejected at install time so the
-    /// capability gate can never be bypassed by creative key crafting.
+    /// A capability in `capabilities` or a command's `required_capabilities`
+    /// that is not a built-in name the plugin's kind may hold, or an encrypted
+    /// chat capability declared without its plain one.
     #[serde(rename = "INVALID_CAPABILITY_KEY")]
     InvalidCapabilityKey { key: String, reason: String },
+    /// A command requires a capability the manifest's `capabilities` does not
+    /// declare, so the permission prompt never offers it and the command could
+    /// never run.
+    #[serde(rename = "UNDECLARED_CAPABILITY")]
+    UndeclaredCapability { command_id: String, key: String },
     /// An `ai_callable` command's `output_schema` declares a field
     /// whose name normalises to `installid` or `installationid`. Exfiltrating
     /// the per-installation ID via an AI-visible surface breaks pseudonymity
@@ -78,6 +79,11 @@ impl std::fmt::Display for ValidationError {
             Self::InvalidCapabilityKey { key, reason } => {
                 write!(f, "invalid capability key `{key}`: {reason}")
             }
+            Self::UndeclaredCapability { command_id, key } => write!(
+                f,
+                "command `{command_id}` requires capability `{key}`, which the manifest's \
+                 capabilities do not declare"
+            ),
             Self::InstallIdLeakInAiSurface {
                 command_id,
                 field_path,
@@ -115,58 +121,36 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Validates one capability key of a `DesktopLocalProcess` plugin; see
+/// Validates one capability name of a `DesktopLocalProcess` plugin; see
 /// [`validate_capability`].
 ///
 /// # Errors
 ///
-/// Returns [`ValidationError::InvalidCapabilityKey`] when the key is refused.
+/// Returns [`ValidationError::InvalidCapabilityKey`] when the name is refused.
 #[cfg(test)]
-pub fn validate_plugin_capability(
-    plugin_id: &str,
-    capability_key: &str,
-) -> Result<(), ValidationError> {
-    validate_capability(RuntimeKind::DesktopLocalProcess, plugin_id, capability_key)
+pub fn validate_plugin_capability(capability_key: &str) -> Result<(), ValidationError> {
+    validate_capability(RuntimeKind::DesktopLocalProcess, capability_key)
 }
 
-/// Validates the shape of one capability key that `plugin_id` declares.
+/// Validates one capability name a plugin of `kind` declares or a command of it
+/// requires.
 ///
-/// A manifest may declare the built-in names in [`BUILTIN_CAPABILITIES`] and
-/// its own keys of the form `plugin.<plugin_id>.<verb>`, with the verb in
-/// `[a-z0-9_.]`. Hyphens are fine in the plugin id part, since manifests allow
-/// them there. A `WebSandboxed` plugin may also declare [`NETWORK_FETCH`], and
-/// is told why it can never hold the names of local programs, files and
-/// host-brokered requests.
+/// The names are the built-in ones in [`BUILTIN_CAPABILITIES`], and
+/// [`NETWORK_FETCH`] for a `WebSandboxed` plugin: the permission prompt offers
+/// only those, so any other name could never be approved.
 ///
 /// # Errors
 ///
-/// Returns [`ValidationError::InvalidCapabilityKey`] when the key is too short
-/// or too long, uses a reserved namespace or segment, is neither a built-in
-/// name nor a key in the plugin's own namespace, has a malformed verb, or is a
-/// name `kind` can never hold.
-pub fn validate_capability(
-    kind: RuntimeKind,
-    plugin_id: &str,
-    capability_key: &str,
-) -> Result<(), ValidationError> {
-    let reject = |reason: &str| {
+/// Returns [`ValidationError::InvalidCapabilityKey`] for any other name, saying
+/// why a `WebSandboxed` plugin can never hold the names of local programs, files
+/// and host-brokered requests, and why a `plugin.`-prefixed key is refused.
+pub fn validate_capability(kind: RuntimeKind, capability_key: &str) -> Result<(), ValidationError> {
+    let reject = |reason: String| {
         Err(ValidationError::InvalidCapabilityKey {
             key: capability_key.to_string(),
-            reason: reason.to_string(),
+            reason,
         })
     };
-
-    let len = capability_key.len();
-    if len < MIN_KEY_LEN {
-        return reject(&format!(
-            "capability key must be at least {MIN_KEY_LEN} bytes (got {len})"
-        ));
-    }
-    if len > MAX_KEY_LEN {
-        return reject(&format!(
-            "capability key must be at most {MAX_KEY_LEN} bytes (got {len})"
-        ));
-    }
 
     if BUILTIN_CAPABILITIES.contains(&capability_key) {
         return Ok(());
@@ -176,71 +160,73 @@ pub fn validate_capability(
             RuntimeKind::WebSandboxed => Ok(()),
             RuntimeKind::DesktopLocalProcess => reject(
                 "network.fetch is for WebSandboxed plugins; a local process reaches the \
-                 network on its own",
+                 network on its own"
+                    .into(),
             ),
         };
     }
     if kind == RuntimeKind::WebSandboxed {
         if LOCAL_ONLY_CAPABILITIES.contains(&capability_key) {
             return reject(
-                "WebSandboxed plugins cannot run programs or read files; use DesktopLocalProcess",
+                "WebSandboxed plugins cannot run programs or read files; use DesktopLocalProcess"
+                    .into(),
             );
         }
         if capability_key == "network" {
             return reject(
                 "network names host-brokered requests for local processes; a WebSandboxed \
-                 plugin asks for network.fetch",
+                 plugin asks for network.fetch"
+                    .into(),
             );
         }
     }
 
-    for reserved in RESERVED_PREFIXES {
-        if capability_key.starts_with(reserved) {
-            return reject(&format!(
-                "capability key starts with reserved namespace `{reserved}` \
-                 (reserved for builtin caps)"
-            ));
-        }
+    let mut allowed = BUILTIN_CAPABILITIES.join(", ");
+    if kind == RuntimeKind::WebSandboxed {
+        allowed.push_str(", ");
+        allowed.push_str(NETWORK_FETCH);
     }
-
-    // The plugin id is checked by the manifest loader (alphanumeric and `-`
-    // segments), so only the verb after it needs a character check here.
-    let required_prefix = format!("plugin.{plugin_id}.");
-    let Some(verb) = capability_key.strip_prefix(&required_prefix) else {
-        return reject(&format!(
-            "capability key must be one of {BUILTIN_CAPABILITIES:?} or start with \
-             `{required_prefix}` so the gate can attribute the cap back to its \
-             declaring plugin"
+    if capability_key.starts_with("plugin.") {
+        return reject(format!(
+            "plugin-scoped capability keys are not supported, since the permission prompt \
+             cannot approve them; a manifest names only built-in capabilities: {allowed}"
         ));
-    };
-    if verb.is_empty() {
-        return reject("capability key must declare a verb after `plugin.<id>.`");
     }
+    reject(format!(
+        "not a built-in capability; a manifest names only built-in capabilities: {allowed}"
+    ))
+}
 
-    if !verb
-        .bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
-    {
-        return reject(
-            "capability verb must match [a-z0-9_.]+ (lowercase ASCII alnum, underscore, dot)",
-        );
-    }
-    if verb.starts_with('.') || verb.ends_with('.') {
-        return reject("capability key may not start or end with `.`");
-    }
-    if verb.contains("..") {
-        return reject("capability key may not contain `..` (empty segment)");
-    }
-
-    for segment in capability_key.split('.') {
-        if RESERVED_SEGMENTS.contains(&segment) {
-            return reject(&format!(
-                "capability key segment `{segment}` is reserved and may not \
-                 appear as a component of a plugin cap"
-            ));
+/// Validates every command's `required_capabilities`: each is a name
+/// [`validate_capability`] accepts and one the manifest's `capabilities`
+/// declares.
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidCapabilityKey`] for a name that is not
+/// built-in, its reason naming the command, and
+/// [`ValidationError::UndeclaredCapability`] for one missing from
+/// `capabilities`.
+fn validate_required_capabilities(manifest: &PluginManifest) -> Result<(), ValidationError> {
+    for command in &manifest.commands {
+        for key in &command.required_capabilities {
+            validate_capability(manifest.runtime_kind, key).map_err(|error| match error {
+                ValidationError::InvalidCapabilityKey { key, reason } => {
+                    ValidationError::InvalidCapabilityKey {
+                        key,
+                        reason: format!("required by command `{}`: {reason}", command.id),
+                    }
+                }
+                other => other,
+            })?;
+            if !manifest.capabilities.contains(key) {
+                return Err(ValidationError::UndeclaredCapability {
+                    command_id: command.id.clone(),
+                    key: key.clone(),
+                });
+            }
         }
     }
-
     Ok(())
 }
 
@@ -643,8 +629,9 @@ fn validate_web_layout(manifest: &PluginManifest) -> Result<(), ValidationError>
     Ok(())
 }
 
-/// Validates a manifest for install: capability key shape, the install-ID leak
-/// check and the kind's rules, with no host origins to refuse.
+/// Validates a manifest for install: built-in capability names, commands that
+/// require only declared capabilities, the install-ID leak check and the kind's
+/// rules, with no host origins to refuse.
 ///
 /// # Errors
 ///
@@ -664,9 +651,10 @@ pub fn validate_plugin_manifest_for_host(
     forbidden_origins: &[String],
 ) -> Result<(), ValidationError> {
     for cap in &manifest.capabilities {
-        validate_capability(manifest.runtime_kind, &manifest.plugin_id, cap)?;
+        validate_capability(manifest.runtime_kind, cap)?;
     }
     validate_encrypted_chat(manifest)?;
+    validate_required_capabilities(manifest)?;
     validate_network_origins(manifest, forbidden_origins)?;
     if manifest.runtime_kind == RuntimeKind::WebSandboxed {
         validate_web_layout(manifest)?;
@@ -724,88 +712,23 @@ mod tests {
         }
     }
 
-    // ── capability key shape: validate_plugin_capability ──
-
-    #[test]
-    fn capability_key_rejects_dispatch_plan_garbage_set() {
-        let plugin_id = "self";
-        for bad in [
-            "*",
-            "a",
-            "abc",
-            "foo bar",
-            "system.evil",
-            "plugin.other.foo",
-            "PLUGIN.self.foo",
-            "plugin.self.",
-            "plugin.self..bad",
-            ".plugin.self.foo",
-            "plugin.self.foo.",
-            "plugin.self.audit",
-            "plugin.self.system",
-        ] {
-            let result = validate_plugin_capability(plugin_id, bad);
-            assert!(
-                result.is_err(),
-                "the capability key check must reject `{bad}` but it passed: {result:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn capability_key_rejects_overlong_key() {
-        let plugin_id = "self";
-        let key = format!("plugin.{plugin_id}.{}", "x".repeat(200));
-        assert!(validate_plugin_capability(plugin_id, &key).is_err());
-    }
-
-    #[test]
-    fn capability_key_rejects_max_len_plus_one() {
-        let plugin_id = "self";
-        let prefix = format!("plugin.{plugin_id}.");
-        let verb_len = MAX_KEY_LEN + 1 - prefix.len();
-        let key = format!("{prefix}{}", "a".repeat(verb_len));
-        assert_eq!(key.len(), MAX_KEY_LEN + 1);
-        assert!(validate_plugin_capability(plugin_id, &key).is_err());
-    }
-
-    #[test]
-    fn capability_key_accepts_max_len_exactly() {
-        let plugin_id = "self";
-        let prefix = format!("plugin.{plugin_id}.");
-        let verb_len = MAX_KEY_LEN - prefix.len();
-        let key = format!("{prefix}{}", "a".repeat(verb_len));
-        assert_eq!(key.len(), MAX_KEY_LEN);
-        assert!(validate_plugin_capability(plugin_id, &key).is_ok());
-    }
-
-    #[test]
-    fn capability_key_accepts_well_formed_keys() {
-        let plugin_id = "dev.example.k8s_tools";
-        for good in [
-            "plugin.dev.example.k8s_tools.restart_pod",
-            "plugin.dev.example.k8s_tools.list_pods",
-            "plugin.dev.example.k8s_tools.fetch_logs_2",
-        ] {
-            let result = validate_plugin_capability(plugin_id, good);
-            assert!(
-                result.is_ok(),
-                "the capability key check should accept `{good}` but rejected: {result:?}"
-            );
-        }
-    }
+    // ── capability names: validate_plugin_capability ──
 
     #[test]
     fn capability_key_accepts_builtin_capabilities() {
         for cap in BUILTIN_CAPABILITIES {
-            let result = validate_plugin_capability("dev.example.hello-world", cap);
+            let result = validate_plugin_capability(cap);
             assert!(result.is_ok(), "`{cap}` should be accepted: {result:?}");
         }
     }
 
     #[test]
-    fn capability_key_rejects_builtin_names_that_guard_nothing() {
+    fn capability_key_rejects_names_that_are_not_builtin() {
         for bad in [
+            "*",
+            "",
+            "foo bar",
+            "system.evil",
             "local.process",
             "network",
             "fs.read",
@@ -813,37 +736,49 @@ mod tests {
             "events.read",
             "chat.admin",
             "chat.read.all",
+            "CHAT.READ",
             "ui",
         ] {
+            let result = validate_plugin_capability(bad);
             assert!(
-                validate_plugin_capability("dev.example.tool", bad).is_err(),
-                "`{bad}` must be rejected"
+                matches!(result, Err(ValidationError::InvalidCapabilityKey { .. })),
+                "`{bad}` must be rejected: {result:?}"
             );
         }
     }
 
     #[test]
-    fn capability_key_accepts_keys_of_a_hyphenated_plugin_id() {
-        let plugin_id = "dev.example.hello-world";
-        assert!(
-            validate_plugin_capability(plugin_id, "plugin.dev.example.hello-world.greet").is_ok()
-        );
+    fn capability_key_rejects_plugin_scoped_keys() {
         for bad in [
-            "plugin.dev.example.hello-world.do-thing",
-            "plugin.dev.example.hello-world.",
-            "plugin.dev.example.hello-world..x",
-            "plugin.dev.example.hello.world.greet",
-            "plugin.dev.example.hello-world.audit",
+            "plugin.dev.example.tool.read",
+            "plugin.dev.example.other.read",
         ] {
-            assert!(
-                validate_plugin_capability(plugin_id, bad).is_err(),
-                "`{bad}` must be rejected"
+            let err = validate_plugin_capability(bad).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "invalid capability key `{bad}`: plugin-scoped capability keys are not \
+                     supported, since the permission prompt cannot approve them; a manifest \
+                     names only built-in capabilities: ui.panel, ui.notify, chat.read, \
+                     chat.write, chat.read.encrypted, chat.write.encrypted"
+                )
             );
         }
     }
 
     #[test]
-    fn manifest_with_builtin_and_own_capabilities_validates() {
+    fn capability_key_error_lists_network_fetch_for_web_plugins() {
+        let err = validate_capability(RuntimeKind::WebSandboxed, "events.read").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid capability key `events.read`: not a built-in capability; a manifest names \
+             only built-in capabilities: ui.panel, ui.notify, chat.read, chat.write, \
+             chat.read.encrypted, chat.write.encrypted, network.fetch"
+        );
+    }
+
+    #[test]
+    fn manifest_with_a_plugin_scoped_capability_is_refused() {
         let manifest = manifest_with_commands(
             "dev.example.k8s-pods",
             vec![
@@ -852,25 +787,111 @@ mod tests {
             ],
             vec![],
         );
-        assert_eq!(validate_plugin_manifest(&manifest), Ok(()));
-    }
-
-    #[test]
-    fn capability_key_rejects_capability_for_other_plugin() {
-        let result = validate_plugin_capability("attacker_plugin", "plugin.victim_plugin.do_thing");
-        assert!(matches!(
-            result,
-            Err(ValidationError::InvalidCapabilityKey { .. })
-        ));
+        let err = validate_plugin_manifest(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, ValidationError::InvalidCapabilityKey { key, .. }
+                if key == "plugin.dev.example.k8s-pods.restart_pod"),
+            "{err:?}"
+        );
     }
 
     #[test]
     fn capability_key_error_includes_offending_key_for_diagnostics() {
-        let err = validate_plugin_capability("self", "*").unwrap_err();
+        let err = validate_plugin_capability("*").unwrap_err();
         match err {
             ValidationError::InvalidCapabilityKey { key, .. } => assert_eq!(key, "*"),
             other => panic!("expected InvalidCapabilityKey, got {other:?}"),
         }
+    }
+
+    // ── required_capabilities ──
+
+    fn requiring(id: &str, required: &[&str]) -> ManifestCommand {
+        let mut command = ai_command(id, false, None);
+        command.required_capabilities = required.iter().map(|c| c.to_string()).collect();
+        command
+    }
+
+    #[test]
+    fn required_capabilities_within_capabilities_validate() {
+        let manifest = manifest_with_commands(
+            "dev.example.poll",
+            vec!["chat.read".into(), "chat.write".into()],
+            vec![
+                requiring("vote", &["chat.read", "chat.write"]),
+                requiring("results", &["chat.read"]),
+                requiring("help", &[]),
+            ],
+        );
+        assert_eq!(validate_plugin_manifest(&manifest), Ok(()));
+    }
+
+    #[test]
+    fn required_capability_that_is_not_builtin_is_refused() {
+        let manifest = manifest_with_commands(
+            "dev.example.tool",
+            vec!["chat.read".into()],
+            vec![requiring("read", &["plugin.dev.example.tool.read"])],
+        );
+        let err = validate_plugin_manifest(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, ValidationError::InvalidCapabilityKey { key, .. }
+                if key == "plugin.dev.example.tool.read"),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "invalid capability key `plugin.dev.example.tool.read`: required by command `read`: \
+             plugin-scoped capability keys are not supported, since the permission prompt \
+             cannot approve them; a manifest names only built-in capabilities: ui.panel, \
+             ui.notify, chat.read, chat.write, chat.read.encrypted, chat.write.encrypted"
+        );
+    }
+
+    #[test]
+    fn required_capability_missing_from_capabilities_is_refused() {
+        let manifest = manifest_with_commands(
+            "dev.example.poll",
+            vec!["chat.read".into()],
+            vec![
+                requiring("results", &["chat.read"]),
+                requiring("post", &["chat.read", "chat.write"]),
+            ],
+        );
+        let err = validate_plugin_manifest(&manifest).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::UndeclaredCapability {
+                command_id: "post".into(),
+                key: "chat.write".into(),
+            }
+        );
+        assert_eq!(
+            err.to_string(),
+            "command `post` requires capability `chat.write`, which the manifest's \
+             capabilities do not declare"
+        );
+        assert_eq!(
+            serde_json::to_value(&err).unwrap(),
+            serde_json::json!({
+                "kind": "UNDECLARED_CAPABILITY",
+                "command_id": "post",
+                "key": "chat.write",
+            })
+        );
+    }
+
+    #[test]
+    fn web_plugin_command_may_require_network_fetch_it_declares() {
+        let mut manifest = manifest_with_commands(
+            "dev.example.web",
+            vec!["network.fetch".into()],
+            vec![requiring("refresh", &["network.fetch"])],
+        );
+        manifest.runtime_kind = RuntimeKind::WebSandboxed;
+        manifest.entrypoint = "main.mjs".into();
+        manifest.network_origins = Some(vec!["https://api.example.com".into()]);
+        assert_eq!(validate_plugin_manifest(&manifest), Ok(()));
     }
 
     // ── install-ID leak: walk_output_schema_for_install_id_leak ──
@@ -1270,7 +1291,7 @@ mod tests {
         });
         let m = manifest_with_commands(
             "self",
-            vec!["plugin.self.do_thing".to_string()],
+            vec!["chat.read".to_string()],
             vec![ai_command("c", true, Some(clean_schema))],
         );
         assert!(validate_plugin_manifest(&m).is_ok());
@@ -1284,7 +1305,7 @@ mod tests {
         });
         let m = manifest_with_commands(
             "self",
-            vec!["plugin.self.do_thing".to_string()],
+            vec!["chat.read".to_string()],
             vec![ai_command("leaky.cmd", true, Some(leaky_schema))],
         );
         assert!(matches!(
@@ -1312,6 +1333,9 @@ mod tests {
         let doc: serde_json::Value =
             serde_json::from_str(include_str!("../../../protocol/manifest-vectors.json"))
                 .expect("manifest-vectors.json is JSON");
+        let builtin: Vec<String> = serde_json::from_value(doc["builtinCapabilities"].clone())
+            .expect("builtinCapabilities is a list of strings");
+        assert_eq!(builtin, BUILTIN_CAPABILITIES);
         let forbidden: Vec<String> = serde_json::from_value(doc["forbiddenOrigins"].clone())
             .expect("forbiddenOrigins is a list of strings");
         let vectors = doc["vectors"].as_array().expect("vectors is a list");

@@ -20,20 +20,24 @@ export const ENCRYPTED_CHAT_CAPABILITIES: readonly (readonly [string, string])[]
 export const MAX_NETWORK_ORIGINS = 16;
 export const MAX_BUNDLE_PATH_BYTES = 255;
 
-const RESERVED_ID_PREFIXES = ["dev.rim.", "com.rim."];
-const RESERVED_CAPABILITY_PREFIXES = ["system.", "internal.", "admin.", "audit."];
-const RESERVED_SEGMENTS = ["system", "internal", "admin", "audit"];
-const BUILTIN_CAPABILITIES = [
+/**
+ * The capability names a manifest may declare and a command may require, with
+ * {@link NETWORK_FETCH} for a WebSandboxed plugin; install refuses any other name.
+ */
+export const BUILTIN_CAPABILITIES = [
   "ui.panel",
   "ui.notify",
   CHAT_READ,
   CHAT_WRITE,
   CHAT_READ_ENCRYPTED,
   CHAT_WRITE_ENCRYPTED,
-];
+] as const;
+
+/** A name in {@link BUILTIN_CAPABILITIES}. */
+export type BuiltinCapability = (typeof BUILTIN_CAPABILITIES)[number];
+
+const RESERVED_ID_PREFIXES = ["dev.rim.", "com.rim."];
 const LOCAL_ONLY_CAPABILITIES = ["local.process", "fs.read", "fs.write"];
-const MIN_KEY_BYTES = 4;
-const MAX_KEY_BYTES = 128;
 
 /**
  * The context kinds a command's `required_context` can name, and the arguments
@@ -404,18 +408,21 @@ function forbiddenSite(origin: string): string | null {
   return authority;
 }
 
-function validateCapability(kind: RuntimeKind, pluginId: string, key: string): void {
+function isBuiltinCapability(key: string): key is BuiltinCapability {
+  return (BUILTIN_CAPABILITIES as readonly string[]).includes(key);
+}
+
+/**
+ * Refuses a capability name a plugin of `kind` may not declare or require: any
+ * name but the built-in ones, and {@link NETWORK_FETCH} for a WebSandboxed plugin.
+ *
+ * @param context - Put before the reason, such as the command that requires the name.
+ */
+function validateCapability(kind: RuntimeKind, key: string, context = ""): void {
   const reject = (reason: string): never => {
-    throw new ManifestError(`invalid capability key \`${key}\`: ${reason}`);
+    throw new ManifestError(`invalid capability key \`${key}\`: ${context}${reason}`);
   };
-  const length = byteLength(key);
-  if (length < MIN_KEY_BYTES) {
-    reject(`capability key must be at least ${MIN_KEY_BYTES} bytes (got ${length})`);
-  }
-  if (length > MAX_KEY_BYTES) {
-    reject(`capability key must be at most ${MAX_KEY_BYTES} bytes (got ${length})`);
-  }
-  if (BUILTIN_CAPABILITIES.includes(key)) return;
+  if (isBuiltinCapability(key)) return;
   if (key === NETWORK_FETCH) {
     if (kind === "WebSandboxed") return;
     reject(
@@ -432,25 +439,28 @@ function validateCapability(kind: RuntimeKind, pluginId: string, key: string): v
       );
     }
   }
-  for (const reserved of RESERVED_CAPABILITY_PREFIXES) {
-    if (key.startsWith(reserved))
-      reject(`capability key starts with reserved namespace \`${reserved}\``);
+  const allowed = [...BUILTIN_CAPABILITIES, ...(kind === "WebSandboxed" ? [NETWORK_FETCH] : [])];
+  if (key.startsWith("plugin.")) {
+    reject(
+      `plugin-scoped capability keys are not supported, since the permission prompt cannot approve them; a manifest names only built-in capabilities: ${allowed.join(", ")}`,
+    );
   }
-  const prefix = `plugin.${pluginId}.`;
-  if (!key.startsWith(prefix)) {
-    reject(`capability key must be a built-in name or start with \`${prefix}\``);
-  }
-  const verb = key.slice(prefix.length);
-  if (verb === "") reject("capability key must declare a verb after `plugin.<id>.`");
-  if (!/^[a-z0-9_.]+$/.test(verb)) {
-    reject("capability verb must match [a-z0-9_.]+ (lowercase ASCII alnum, underscore, dot)");
-  }
-  if (verb.startsWith(".") || verb.endsWith("."))
-    reject("capability key may not start or end with `.`");
-  if (verb.includes("..")) reject("capability key may not contain `..` (empty segment)");
-  for (const segment of key.split(".")) {
-    if (RESERVED_SEGMENTS.includes(segment))
-      reject(`capability key segment \`${segment}\` is reserved`);
+  reject(
+    `not a built-in capability; a manifest names only built-in capabilities: ${allowed.join(", ")}`,
+  );
+}
+
+/** Each command requires only built-in names that the manifest's `capabilities` declares. */
+function validateRequiredCapabilities(m: PluginManifest): void {
+  for (const command of m.commands) {
+    for (const key of command.required_capabilities) {
+      validateCapability(m.runtime_kind, key, `required by command \`${command.id}\`: `);
+      if (!m.capabilities.includes(key)) {
+        throw new ManifestError(
+          `command \`${command.id}\` requires capability \`${key}\`, which the manifest's capabilities do not declare`,
+        );
+      }
+    }
   }
 }
 
@@ -590,17 +600,18 @@ export interface InstallContext {
 }
 
 /**
- * The install rules: no reserved id, capabilities this kind may hold (an
- * encrypted chat capability with its plain one), `network_origins`, a web plugin's entrypoint and panel ids, no
- * argument named like one the host adds from a required context, and the AI
- * surface's install-id leak check.
+ * The install rules: no reserved id, built-in capabilities this kind may hold
+ * (an encrypted chat capability with its plain one), commands that require only
+ * declared capabilities, `network_origins`, a web plugin's entrypoint and panel
+ * ids, no argument named like one the host adds from a required context, and the
+ * AI surface's install-id leak check.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
   if (RESERVED_ID_PREFIXES.some((prefix) => manifest.plugin_id.startsWith(prefix))) {
     throw new ManifestError(`reserved plugin_id prefix: ${manifest.plugin_id}`);
   }
   for (const capability of manifest.capabilities) {
-    validateCapability(manifest.runtime_kind, manifest.plugin_id, capability);
+    validateCapability(manifest.runtime_kind, capability);
   }
   for (const [encrypted, plain] of ENCRYPTED_CHAT_CAPABILITIES) {
     if (manifest.capabilities.includes(encrypted) && !manifest.capabilities.includes(plain)) {
@@ -609,6 +620,7 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
       );
     }
   }
+  validateRequiredCapabilities(manifest);
   validateNetworkOrigins(manifest, context.forbiddenOrigins ?? []);
   if (manifest.runtime_kind === "WebSandboxed") validateWebLayout(manifest);
   for (const command of manifest.commands) checkContextArguments(command);

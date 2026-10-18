@@ -585,14 +585,13 @@ mod tests {
     #[test]
     fn required_capability_must_be_approved() {
         let mut cmd = command("read");
-        cmd.required_capabilities = vec!["plugin.dev.example.tool.read".into()];
+        cmd.required_capabilities = vec!["chat.read".into()];
         let err = check_gates(&cmd, &[], false).unwrap_err();
         assert!(
             matches!(err, PluginCommandError::CapabilityDenied { .. }),
             "{err:?}"
         );
-        check_gates(&cmd, &["plugin.dev.example.tool.read".into()], false)
-            .expect("approved capability passes");
+        check_gates(&cmd, &["chat.read".into()], false).expect("approved capability passes");
     }
 
     // ── prepare / execute ──

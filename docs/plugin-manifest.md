@@ -11,10 +11,14 @@ plugin's tests run them with `validateManifest` ([the SDK](../sdk/plugin-sdk/REA
 - The file is JSON with snake_case keys. Unknown fields are ignored and left out of the hash.
 - A field with a default may be left out, but `null` is refused for it. `author`,
   `network_origins`, `output_schema`, `preset_args` and `slot` take `null` as absent.
+- A folder or repository without `rim-plugin.json` at its root fails to install with `no
+  rim-plugin.json found in the plugin folder; every plugin needs one at its root` (local folder)
+  or `no rim-plugin.json found at the root of the repository; every plugin needs one` (git).
 - A missing field or a wrong type fails with `failed to parse manifest: <reason>`, the manifest's
   own checks with `validation error: <reason>`, the install checks with `invalid manifest:
-  <reason>` and, in the UI, `{ kind: "INVALID_MANIFEST", data }` with `data.kind` one of the tags
-  below. The first failing check is reported. The desktop repeats the checks at every start.
+  <reason>` and, in the UI, `{ kind: "INVALID_MANIFEST", message, data }` with `data.kind` one of
+  the tags below. The first failing check is reported. The desktop repeats the checks at every
+  start and skips a plugin that fails them.
 
 ## Identity and runtime
 
@@ -59,20 +63,21 @@ install and from Settings → Plugins → Permissions. Revoking any capability s
 | `chat.write.encrypted` | both | Posting in encrypted DMs and groups; needs `chat.write` |
 | `network.fetch` | `WebSandboxed` | Connecting to the origins in `network_origins` |
 
-A manifest may also declare keys of its own, `plugin.<plugin_id>.<verb>`, for a command's
-`required_capabilities` to name. The permission prompt lists only the names above, so the app
-offers no way to approve such a key, and a command that requires one is refused.
+These are the only names. A key fails with `INVALID_CAPABILITY_KEY` (``invalid capability key
+`<key>`: <reason>``) when:
 
-A key fails with `INVALID_CAPABILITY_KEY` (``invalid capability key `<key>`: <reason>``) when:
-
-- it is shorter than 4 or longer than 128 bytes, or `network.fetch` on a `DesktopLocalProcess`
-  plugin, or `local.process`, `fs.read`, `fs.write` or `network` on a `WebSandboxed` one;
-- it starts with a reserved namespace: `system.`, `internal.`, `admin.` or `audit.`;
-- it is neither a name above nor starts with `plugin.<plugin_id>.`, which refuses `events.read`,
-  `local.process`, `network` and `fs.*` on a local process too: nothing implements what they guard;
-- its verb is empty, uses anything but `a-z 0-9 _ .`, starts or ends with `.` or contains `..`,
-  or any segment of the key is `system`, `internal`, `admin` or `audit`;
+- it is `network.fetch` on a `DesktopLocalProcess` plugin, or `local.process`, `fs.read`,
+  `fs.write` or `network` on a `WebSandboxed` one, with the reason the kind cannot hold it;
+- it starts with `plugin.`: plugin-scoped keys such as `plugin.<plugin_id>.<verb>` are refused,
+  since the permission prompt lists only the names above and could never approve one
+  (``plugin-scoped capability keys are not supported, since the permission prompt cannot approve
+  them; a manifest names only built-in capabilities: <names>``);
+- it is any other name not in the table, such as `events.read`, `local.process`, `network` and
+  `fs.*` on a local process, which guard nothing the host implements (``not a built-in
+  capability; a manifest names only built-in capabilities: <names>``);
 - it is an encrypted chat name without its plain one (`chat.read.encrypted requires chat.read`).
+
+`<names>` lists the table's names the plugin's kind may hold.
 
 ## `network_origins`
 
@@ -101,7 +106,10 @@ the palette, keybinds, macros and, when allowed, the AI agent.
   `thread_id`, or `workspace_id` added to `args`; an argument of one of those names fails with
   `RESERVED_ARGUMENT`. Other values are not checked.
 - **`required_capabilities`** (strings, default `[]`): capabilities approved before the command
-  runs, or it fails with `CAPABILITY_DENIED`. They are not compared with `capabilities` at install.
+  runs, or it fails with `CAPABILITY_DENIED`. Each must be a name `capabilities` may hold, or
+  `INVALID_CAPABILITY_KEY` with ``required by command `<id>`: `` before the reason, and one
+  `capabilities` declares, or `UNDECLARED_CAPABILITY`: ``command `<id>` requires capability
+  `<key>`, which the manifest's capabilities do not declare``.
 - **`arguments`** (list, default `[]`): by convention objects with `name`, `type`, `required` and
   `description`. The palette and keybinds pass no arguments, so they leave out a command with a
   `required` one. The agent's tool schema takes `description`, and `type` when it is `string`,

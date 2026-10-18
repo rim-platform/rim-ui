@@ -83,6 +83,17 @@ Settings → Plugins has three install buttons.
   opens **Replace \<name\>?**, which shows the version change and the permissions added or
   dropped; the permissions are approved again afterwards.
 
+Each way installs only what passes the manifest rules ([the plugin manifest](plugin-manifest.md)),
+and the error names what failed:
+
+- A folder or repository without `rim-plugin.json` at its root: "no rim-plugin.json found in the
+  plugin folder; every plugin needs one at its root", or "… at the root of the repository".
+- A capability that is not one of the names in the table under
+  [Trust and permissions](#trust-and-permissions), such as a plugin-scoped
+  `plugin.<plugin_id>.<verb>` key: "invalid capability key `<key>`: …".
+- A command that requires a capability the manifest does not ask for: "command `<id>` requires
+  capability `<key>`, which the manifest's capabilities do not declare".
+
 Every install ends in the **Plugin Permissions** dialog, described under
 [Trust and permissions](#trust-and-permissions). Then turn the plugin on with the switch on its
 row.
@@ -179,7 +190,6 @@ grants the rest. The prompt names them like this:
 | `chat.write` | Post as you, except in encrypted DMs and groups |
 | `chat.read.encrypted` | Read your encrypted DMs and groups: their decrypted text, which the plugin can send anywhere its other permissions allow |
 | `chat.write.encrypted` | Post as you in your encrypted DMs and groups |
-| `events.read`, `local.process`, `network`, `fs.read`, `fs.write` | Receive Workspace Events, Run Local Processes, Network Access, Read Files, Write Files; no sandboxed plugin can hold them |
 
 An encrypted chat permission needs its plain one: checking it checks the plain one, and
 unchecking the plain one unchecks it.
