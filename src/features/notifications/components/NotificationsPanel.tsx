@@ -56,7 +56,7 @@ interface NotificationsPanelProps {
 }
 
 /**
- * The notification inbox in the tool panel (Track 1.3): newest first, unread entries dotted.
+ * The notification inbox in the tool panel: newest first, unread entries dotted.
  * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
  * can no longer read say so and can still be marked read.
  */

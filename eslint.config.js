@@ -5,11 +5,10 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import eslintConfigPrettier from "eslint-config-prettier";
 import globals from "globals";
 
-// Minimal, non-type-aware flat config (see docs/eslint-prettier.md for the
-// rationale). `tseslint.configs.recommended` deliberately, not
-// `recommendedTypeChecked` — type-aware linting needs `parserOptions.project`
-// wiring and `tsconfig.json` excludes test files, which would break typed
-// linting on the test suite. Fast today, room to upgrade later.
+// Minimal, non-type-aware flat config: `tseslint.configs.recommended`, not
+// `recommendedTypeChecked`, because type-aware linting needs
+// `parserOptions.project` wiring and `tsconfig.json` excludes test files, which
+// would break typed linting on the test suite.
 export default tseslint.config(
   {
     ignores: [
@@ -33,8 +32,8 @@ export default tseslint.config(
   },
   // `eslint-plugin-react-hooks` v7 bundles the React Compiler-oriented rule
   // set (immutability/purity/gating/etc.) under `recommended`, not just the
-  // two legacy hook rules. The `.flat` variant is the actual flat-config
-  // shape this version exposes (the plain `.recommended` export is still
+  // two classic hook rules. The `.flat` variant is the actual flat-config
+  // shape this version exposes (the plain `.recommended` export is
   // eslintrc-shaped and would silently no-op under flat config).
   reactHooks.configs.flat.recommended,
   reactRefresh.configs.vite,
@@ -53,9 +52,8 @@ export default tseslint.config(
       // globals, refs, set-state-in-effect, error-boundaries, purity,
       // set-state-in-render, unsupported-syntax, config, gating,
       // incompatible-library, void-use-memo, preserve-manual-memoization):
-      // downgraded to warn. The codebase predates these rules and fixing
-      // every violation is out of scope for standing up the lint gate — see
-      // docs/eslint-prettier.md for the full list and follow-up plan.
+      // downgraded to warn, because the codebase has existing violations of
+      // them.
       "react-hooks/static-components": "warn",
       "react-hooks/use-memo": "warn",
       "react-hooks/void-use-memo": "warn",

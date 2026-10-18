@@ -1,7 +1,7 @@
-//! History archive (master plan Stage 2): the local message cache, written as encrypted
-//! per-device files to a folder the user picks, and read back on a new device.
+//! History archive: the local message cache, written as encrypted per-device files to a
+//! folder the user picks, and read back on a new device.
 //!
-//! The format is specified in `docs/specs/history-archive-v1.md`. In short:
+//! The format ([`format`]) in short:
 //!
 //! - One random archive key per archive, wrapped under the user's passphrase (Argon2id) in
 //!   the archive's manifest. This device keeps the unwrapped key in the secret vault so exports
@@ -15,8 +15,8 @@
 //! [`provider`] holds the storage trait and the local folder provider, which also covers
 //! folders kept in sync by Dropbox, Google Drive or Syncthing clients. [`cloud`] holds the
 //! Google Drive, Dropbox and OneDrive API providers and their sign-in, S3-compatible storage,
-//! and the user's own backup endpoint. [`identity`] keeps each device's backup of the identity key and its wraps of the
-//! archive key under the identity key.
+//! and the user's own backup endpoint. [`identity`] keeps each device's backup of the identity
+//! key and its wraps of the archive key under the identity key.
 
 pub(crate) mod commands;
 

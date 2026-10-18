@@ -13,11 +13,11 @@ use super::{AccountId, CacheError};
 /// Bump with a new arm in [`migrate`] when the schema changes.
 pub(super) const SCHEMA_VERSION: i32 = 7;
 
-/// Schema v1: the cache (PR 9).
+/// Schema v1: the cache.
 ///
 /// `message` has the body in its own `text` column and an explicit `INTEGER PRIMARY KEY`
-/// (`seq`, an alias of the rowid), so PR 10 can add an external-content FTS5 index
-/// (`content='message', content_rowid='seq'`) without moving data. The alias matters: `VACUUM`
+/// (`seq`, an alias of the rowid), so the external-content FTS5 index of schema v2
+/// (`content='message', content_rowid='seq'`) reads the text in place. The alias matters: `VACUUM`
 /// may renumber the rowids of a table without one, which would leave the index pointing at the
 /// wrong rows. Writes upsert by `id` and never `REPLACE`, which keeps each message's `seq`.
 pub(super) const SCHEMA_V1: &str = "
@@ -63,7 +63,7 @@ CREATE INDEX message_timeline
     ON message (workspace_id, conversation_id, thread_id, sent_at_us, id);
 ";
 
-/// Schema v2: local full-text search (PR 10).
+/// Schema v2: local full-text search.
 ///
 /// An external-content FTS5 index over `message.text`: the index keeps only its token lists and
 /// reads the text back from `message` by `seq`, so the text is stored once, and the index lives
@@ -78,7 +78,7 @@ CREATE INDEX message_timeline
 /// `message_thread_root` finds a thread's root message by the thread id in its payload, which
 /// search does for each hit inside a thread; without it, that is a scan of the conversation.
 ///
-/// The last statement is the one-time backfill of a cache created by an earlier build.
+/// The last statement indexes the messages a schema v1 cache already holds.
 const SCHEMA_V2: &str = "
 CREATE VIRTUAL TABLE message_fts USING fts5(
     text,
@@ -107,7 +107,7 @@ CREATE INDEX message_thread_root
 INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 ";
 
-/// Schema v3: what the history archive needs (Stage 2 drive archive, `archive.rs`).
+/// Schema v3: what the history archive needs (`archive.rs`).
 ///
 /// - `change_counter` hands out a number to every change of a message or of a conversation's
 ///   sync state (`change_seq`), so an export picks up exactly what changed since the last one.
@@ -121,7 +121,7 @@ INSERT INTO message_fts (message_fts) VALUES ('rebuild');
 ///   to a new archive still carries its restored history over. Any later change of the row
 ///   (a sync) renumbers it and clears the mark.
 ///
-/// Rows cached by an earlier build are numbered once, so the first export covers them.
+/// Rows already cached are numbered once, so the first export covers them.
 pub(super) const SCHEMA_V3: &str = "
 ALTER TABLE message ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversation_sync ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;

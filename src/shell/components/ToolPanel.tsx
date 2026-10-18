@@ -27,7 +27,7 @@ export function ToolPanel() {
   const setMembersOpen = useMembersPanelStore((s) => s.setOpen);
   const directoryOpen = useMemberDirectoryStore((s) => s.open);
   const setDirectoryOpen = useMemberDirectoryStore((s) => s.setOpen);
-  // Guests have no member directory (Track 1.2); the server narrows their member list too.
+  // Guests have no member directory; the server narrows their member list too.
   const isGuest = useIsGuest(workspaceId ?? undefined);
   const notificationsOpen = useNotificationsPanelStore((s) => s.open);
   const setNotificationsOpen = useNotificationsPanelStore((s) => s.setOpen);

@@ -118,7 +118,7 @@ export function useMacroAgent(): UseMacroAgentResult {
         const { providerId, modelId } = settings;
 
         // Presence-check the secret vault, the single source of truth for
-        // provider keys (agent-settings-consolidation §3).
+        // provider keys.
         const hasKey = await invoke<boolean>("is_provider_key_configured", {
           provider: providerId,
         });
@@ -128,9 +128,8 @@ export function useMacroAgent(): UseMacroAgentResult {
 
         // Lazy-register: if the macro builder is invoked before AgentOverlay
         // has ever opened, there is no registered provider yet. Register one
-        // here the same way AgentOverlay does. If a provider is already
-        // registered, we reuse it — but first-open from the macro surface
-        // must still work.
+        // here the same way AgentOverlay does. A provider already registered
+        // is reused, but first-open from the macro surface must still work.
         let provider = getProvider(providerId);
         if (!provider) {
           if (providerId === "anthropic") {

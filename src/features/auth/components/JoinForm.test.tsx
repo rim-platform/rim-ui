@@ -1,7 +1,7 @@
 /**
- * Tests for `JoinForm` — amendment 2026-04-28b field additions + token routing.
+ * Tests for `JoinForm`: field validation and token routing.
  *
- * Covers the four new assertions from spec §13b:
+ * Covers the email and display-name fields:
  * (a) Malformed email rejected client-side, inline error before submit.
  * (b) SERVER EMAIL_TAKEN error renders inline next to email field.
  * (c) displayName trimming — leading/trailing whitespace stripped before send.
@@ -166,7 +166,7 @@ describe("JoinForm — amendment 2026-04-28b", () => {
 
     expect(mockSignupMutate).toHaveBeenCalledOnce();
 
-    // Locked copy from spec §13b §H.
+    // The exact copy for a taken email.
     expect(
       screen.getByText("This email is already in use. Try logging in instead."),
     ).toBeInTheDocument();
@@ -434,7 +434,7 @@ describe("JoinForm — displayName length guard", () => {
     // Client-side guard fires — no server round-trip.
     expect(mockSignupMutate).not.toHaveBeenCalled();
 
-    // Locked copy from spec.
+    // The exact copy for a display name over the limit.
     expect(screen.getByText("Display name must be at most 80 characters.")).toBeInTheDocument();
   });
 

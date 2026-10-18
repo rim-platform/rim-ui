@@ -11,7 +11,7 @@ import {
 } from "../api/useNotifications";
 
 /**
- * Realtime handlers for the notification inbox (Track 1.3), called from `useWorkspaceEvents`.
+ * Realtime handlers for the notification inbox, called from `useWorkspaceEvents`.
  */
 
 type NotificationDueEvent = Extract<WorkspaceEvent, { type: "NotificationDue" }>;

@@ -4,8 +4,8 @@
 // A reader takes the bytes exactly as fetched and never re-serializes them; the
 // bundle hash is the SHA-256 of those bytes. A writer sorts `files` by path and
 // writes compact JSON, so the same files always give the same bytes. The
-// desktop's reader is `src-tauri/src/plugin_host/bundle.rs`; both pass
-// appendix A of the web plugins spec byte for byte.
+// desktop's reader is `src-tauri/src/plugin_host/bundle.rs`; both accept the
+// same bundles and hash them the same.
 
 import {
   ManifestError,

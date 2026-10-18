@@ -30,7 +30,7 @@ import {
   type Suggestion,
 } from "./searchSuggestions";
 
-/** Operator legend shown in the "Search tips" popover. Mirrors `../rim-server/docs/search.md`. */
+/** Operator legend shown in the "Search tips" popover. Mirrors the server's operator grammar. */
 const SEARCH_OPERATORS: { operator: string; example: string; meaning: string }[] = [
   { operator: "from:", example: "from:@alice", meaning: "Only messages from this user." },
   { operator: "in:", example: "in:#general", meaning: "Only messages in this channel." },
@@ -75,13 +75,12 @@ export function SearchOverlay() {
 
   // The scope chip (All / current channel) sets `conversationId` as an explicit
   // query-input field. It coexists with an in-query `in:#x` operator — the
-  // backend intersects both rather than one overriding the other. We don't try
-  // to unify them into a single UI control; a user can narrow with the chip,
-  // the operator, or both.
+  // backend intersects both rather than one overriding the other. They stay
+  // two controls: a user can narrow with the chip, the operator, or both.
   const conversationId = scope.kind === "conversation" ? scope.conversationId : undefined;
   const { data, isPending, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSearchMessages(workspaceId ?? undefined, conversationId, query, directory);
-  // Desktop app: matches from the local search index (PR 10), added to the server's results.
+  // Desktop app: matches from the local search index, added to the server's results.
   const { data: localHits } = useLocalSearchHits(
     workspaceId ?? undefined,
     conversationId,

@@ -1,6 +1,6 @@
 /**
  * Plugin IPC shim — re-exports the central safeInvoke with plugin-specific
- * type aliases for backwards compatibility.
+ * type aliases.
  *
  * All error narrowing logic lives in src/core/tauri/safeInvoke.ts.
  */

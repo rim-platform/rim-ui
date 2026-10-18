@@ -11,7 +11,7 @@ const ESTIMATED_ROW_HEIGHT: Record<DisplayDensity, number> = {
   "ultra-compact": 28,
 };
 
-/** Vertical padding of the list (was `py-3` on the scroll container). */
+/** Vertical padding of the list. */
 export const LIST_PADDING_Y = 12;
 const AT_BOTTOM_THRESHOLD = 50;
 
@@ -54,7 +54,7 @@ interface UseTimelineScrollOptions {
  * - first load lands on the newest message, or on the "New messages" divider;
  * - an appended message scrolls into view when the user was at the bottom or
  *   sent it themselves; otherwise the viewport stays put;
- * - when an older page is prepended the previously-first row keeps its screen
+ * - when an older page is prepended the row that was first keeps its screen
  *   position (no jump), then the top sentinel can trigger the next page.
  *
  * A fresh list (new `listKey`, or a remounted scroll container after a

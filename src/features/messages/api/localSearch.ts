@@ -1,12 +1,12 @@
 /**
- * Local message search (master plan Stage 2, PR 10): the pure half. Turns the search box's
- * query into a {@link LocalSearchQuery} for the cache's FTS5 index, local hits into
- * `SearchMessageItem`s, and merges them with the server's results.
+ * Local message search, the pure half. Turns the search box's query into a
+ * {@link LocalSearchQuery} for the cache's FTS5 index, local hits into `SearchMessageItem`s,
+ * and merges them with the server's results.
  *
- * How local results are used (see `docs/search-ui.md`, "Local search"):
+ * How local results are used:
  * - Offline (the server cannot be reached): each results page comes from the local index, with
  *   the same recency order and cursor as the server's.
- * - Online: the server's results as before, plus the local hits it did not return, inside the
+ * - Online: the server's results, plus the local hits it did not return, inside the
  *   time range its loaded pages cover, from conversations the user's current channel and DM
  *   lists still show; never twice the same message.
  */
@@ -47,9 +47,9 @@ function utcMidnight(value: string): string | null {
 }
 
 /**
- * The search box's query as a local search, following the server's operator grammar
- * (rim-server `docs/search.md`): whitespace-separated `key:value` tokens with a known key and a
- * usable value are operators, everything else is free text.
+ * The search box's query as a local search, following the server's operator grammar:
+ * whitespace-separated `key:value` tokens with a known key and a usable value are operators,
+ * everything else is free text.
  *
  * `null` when nothing can match: `in:` names no channel in `directory`, or names a different
  * conversation than the scope chip (the server intersects both too), or the query is empty.

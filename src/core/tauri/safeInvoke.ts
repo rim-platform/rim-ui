@@ -1,9 +1,8 @@
 /**
  * safeInvoke — typed Tauri IPC wrapper with discriminated-union error narrowing.
  *
- * Replaces the duplicated try/catch + swallow pattern scattered across plugin
- * API hooks. Callers get a Result<T, SafeInvokeError> and can distinguish
- * error variants without brittle string-matching.
+ * Callers get a Result<T, SafeInvokeError> and can distinguish error variants
+ * without brittle string-matching.
  *
  * Tauri 2 error shapes observed in this codebase:
  *   - IPC unavailable (web mode): invoke() itself is not present / window.__TAURI_INTERNALS__
@@ -14,7 +13,6 @@
  *     "invalid type: …" or a structured object with `field`.
  *   - Backend error (Rust returned Err): Commands in this repo use `LifecycleError` / custom
  *     enums that serialize as `{ kind: "SCREAMING_SNAKE", message?: string, data?: unknown }`.
- *     usePluginAiConsent.ts documented this shape via `PluginCommandError`.
  *
  * The narrower inspects the raw thrown value and maps it to the union below.
  * Unknown shapes fall through to `backend_error` with a stringified message so
@@ -50,10 +48,6 @@ export type SafeInvokeResult<T> = SafeInvokeOk<T> | SafeInvokeErr;
  * - `confirmation_stale` — confirmation token expired or already used; caller should re-prompt.
  * - `backend_error` — Rust command returned an Err; carries a structured code + message,
  *   plus the variant's structured `data` payload when the Rust error has one.
- *
- * TODO(P8-FE-04): `rate_limited.retryAfterMs` and `confirmation_stale` are consumed by
- * ConfirmCommandModal / rate-limit banner in Phase 4. Until then callers fall back to
- * generic error rendering.
  */
 export type SafeInvokeError =
   | { kind: "ipc_unavailable"; message: string }
@@ -154,12 +148,10 @@ function narrowError(err: unknown): SafeInvokeError {
       return { kind: "backend_error", code: staticCode, message: err };
     }
     if (err.startsWith("confirmation proof is stale") || err.startsWith("confirmation failed:")) {
-      // TODO(P8-FE-04): `confirmation_stale` consumed by ConfirmCommandModal in Phase 4.
       return { kind: "confirmation_stale", message: err };
     }
     if (err.startsWith("rate limit exceeded")) {
       // Parse "rate limit exceeded; retry after {N}s" — extract N in milliseconds.
-      // TODO(P8-FE-04): `retryAfterMs` consumed by rate-limit banner/backoff in Phase 4.
       const match = /retry after (\d+)s/.exec(err);
       const retryAfterMs = match ? parseInt(match[1], 10) * 1000 : 0;
       return { kind: "rate_limited", retryAfterMs, message: err };

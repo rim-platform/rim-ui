@@ -60,11 +60,9 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
  * - Empty state with onboarding copy when no plugins are installed
  *
  * Note: folder-picker uses `<input type="file" webkitdirectory>` because
- * `@tauri-apps/plugin-dialog` is not yet a declared dependency.  The Tauri webview
+ * `@tauri-apps/plugin-dialog` is not a declared dependency.  The Tauri webview
  * exposes the full filesystem path via `file.path` (Tauri-injected property) when
  * running in the desktop shell.  On web the picker is disabled.
- * Adding `@tauri-apps/plugin-dialog` would give a nicer native OS
- * folder picker — current approach is functional but less polished.
  */
 export function PluginSettingsPage() {
   const { platform, capabilities } = useRuntime();
@@ -111,8 +109,8 @@ export function PluginSettingsPage() {
       if (!files || files.length === 0) return;
 
       // In Tauri the webview injects a `path` property on File objects that
-      // exposes the absolute filesystem path.  We extract the directory from
-      // the first file's path.
+      // exposes the absolute filesystem path.  The directory comes from the
+      // first file's path.
       const firstFile = files[0] as File & { path?: string };
       if (firstFile.path) {
         // Derive the folder path by stripping the filename.
@@ -193,7 +191,7 @@ export function PluginSettingsPage() {
           // FingerprintChanged errors bubble from plugin_enable — refresh the list
           // so the UI shows the updated fingerprint_changed flag.
           if ("message" in err && err.message?.includes("fingerprint")) {
-            // TanStack Query will not invalidate automatically on error, so we do nothing
+            // TanStack Query will not invalidate automatically on error, so nothing happens
             // here — the plugin list will show the updated flag on next list refresh.
           }
         },
@@ -592,9 +590,8 @@ function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
 /**
  * Empty state shown when no plugins are installed.
  *
- * Explains the sideload-only model for v1 and points the user to the install
- * affordances above.  Marketplace is deferred — copy says "coming soon" to
- * set expectations without blocking the install flow.
+ * Points the user to the install affordances above; on the desktop the copy
+ * also says a marketplace is coming soon.
  */
 function PluginEmptyState({ desktop }: { desktop: boolean }) {
   return (

@@ -128,9 +128,9 @@ describe("SearchOverlay", () => {
     render(<SearchOverlay />);
 
     expect(screen.getAllByRole("button", { name: /alice/i })).toHaveLength(2);
-    // No group-count header like "# general — 1 hit" from the old grouped UI.
+    // Results are a flat list: no group-count header like "# general — 1 hit".
     expect(screen.queryByText(/hit/)).not.toBeInTheDocument();
-    // No "next group" hint — Tab-to-next-group was removed with grouping.
+    // No "next group" hint either.
     expect(screen.queryByText(/next group/i)).not.toBeInTheDocument();
   });
 

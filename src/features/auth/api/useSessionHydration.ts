@@ -36,7 +36,7 @@ function restoreCsrfToken(record: SessionRecord | null, userId: string) {
  * Attempts to restore a session from an existing `rim_session` cookie.
  *
  * On app startup the Zustand auth store is empty (in-memory). If the user
- * previously logged in and the cookie is still valid, this hook calls the
+ * has signed in before and the cookie is still valid, this hook calls the
  * `me` query (which sends cookies automatically) to verify the session and
  * re-populate the auth store.
  *
@@ -45,7 +45,7 @@ function restoreCsrfToken(record: SessionRecord | null, userId: string) {
  * cannot be reached the recorded account opens offline from the local cache. Either way the
  * recorded CSRF token for that account goes back into the auth store. When the server
  * refuses the recorded account's session and this device holds that account's key, the app
- * signs in again with the key (key identity, Stage 3).
+ * signs in again with the key.
  */
 export function useSessionHydration() {
   const session = useAuthStore((s) => s.session);
@@ -54,7 +54,7 @@ export function useSessionHydration() {
   const [isHydrating, setIsHydrating] = useState(() => session === null);
 
   useEffect(() => {
-    // If we already have a session there's nothing to hydrate.
+    // With a session already in the store there's nothing to hydrate.
     if (session !== null) {
       setIsHydrating(false);
       return;

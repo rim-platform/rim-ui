@@ -1,5 +1,5 @@
 /**
- * The sync loop that keeps the local message cache current (master plan Stage 2, PR 9).
+ * The sync loop that keeps the local message cache current.
  *
  * The cache decides what to ask for (it keeps each conversation's cursor and whether more
  * changes are pending); this loop only carries requests to the server's `messageChanges` feed

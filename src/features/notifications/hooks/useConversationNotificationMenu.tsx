@@ -55,9 +55,9 @@ interface UseConversationNotificationMenuOptions {
 }
 
 /**
- * The conversation menu's Notifications submenu (Track 1.3): the viewer's level for the
- * conversation (All / Mentions / None / Use workspace default, the current choice checked)
- * and the timed-mute quick actions. `summary` names what applies now, for the parent item.
+ * The conversation menu's Notifications submenu: the viewer's level for the conversation
+ * (All / Mentions / None / Use workspace default, the current choice checked) and the
+ * timed-mute quick actions. `summary` names what applies now, for the parent item.
  */
 export function useConversationNotificationMenu({
   workspaceId,

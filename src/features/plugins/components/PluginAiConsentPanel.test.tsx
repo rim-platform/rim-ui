@@ -306,7 +306,7 @@ describe("PluginAiConsentPanel", () => {
   });
 
   // ──────────────────────────────────────────────────────────────
-  // Panel-level "Revoke all grants" button tests (Tony scope)
+  // Panel-level "Revoke all grants" button tests
   // ──────────────────────────────────────────────────────────────
 
   it("panel-level revoke-all button is hidden when no grants exist", () => {

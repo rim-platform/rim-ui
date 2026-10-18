@@ -1,17 +1,16 @@
-//! Encrypted local message cache (master plan Stage 2, PR 9).
+//! Encrypted local message cache.
 //!
 //! Messages of the conversations a user opens are kept on this device in an SQLCipher
 //! database, so the app starts with history and reads it offline. The server's
-//! `messageChanges` feed (rim-server `docs/message-change-feed.md`) keeps it current: creates,
-//! edits and deletes arrive in version order with a per-conversation cursor. Real-time events
-//! are only a signal to ask the feed again.
+//! `messageChanges` feed keeps it current: creates, edits and deletes arrive in version order
+//! with a per-conversation cursor. Real-time events are only a signal to ask the feed again.
 //!
 //! - One database file per account, named after a hash of (server endpoint, user id), and the
 //!   account is recorded inside it, so two accounts never share a cache.
 //! - One cache key per installation, in the secret vault ([`key`]).
 //! - Deleted messages stay as tombstones without text or attachments.
 //! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
-//!   ([`search`], PR 10).
+//!   ([`search`]).
 //! - Every change is numbered so the history archive can export incrementally, and a restore
 //!   from the archive writes back through the sync's own upsert ([`archive`]).
 //! - Last-known copies of the user, workspaces and sidebar lists let the app open offline

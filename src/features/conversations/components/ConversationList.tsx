@@ -57,23 +57,23 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const requestCount = workspaceId ? scopedRequests.length : 0;
   const qc = useQueryClient();
 
-  // Track the previous conversation so we can snapshot it before switching
+  // Track the previous conversation so it can be snapshotted before switching
   const prevSelectedIdRef = useRef<string | null>(null);
 
   // Snapshot watermark for the conversation being LEFT, then clear its sidebar unread count optimistically.
-  // markAsRead backend call is deferred — it fires only when the divider is dismissed.
+  // The markAsRead backend call fires only when the divider is dismissed.
   useEffect(() => {
     const prevId = prevSelectedIdRef.current;
     prevSelectedIdRef.current = selectedId;
 
     if (!prevId || !workspaceId || prevId === selectedId) return;
 
-    // Snapshot the sentAt of the last message in the conversation we're leaving
+    // Snapshot the sentAt of the last message in the conversation being left
     const cached = qc.getQueryData<{ pages: MessagesPage[] }>(
       queryKeys.messages(workspaceId, prevId),
     );
     if (cached?.pages && cached.pages.length > 0) {
-      // pages are in load order (newest first after our reverse), but getQueryData
+      // pages are in load order (newest first after the reverse), but getQueryData
       // returns them as stored — first page = newest page (reverse display order).
       // The last item of pages[0] is the newest message in the conversation.
       const newestPage = cached.pages[0];
@@ -83,7 +83,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
       }
     }
 
-    // Optimistically clear the sidebar unread badge for the conversation we left
+    // Optimistically clear the sidebar unread badge for the conversation just left
     useUnreadStore.getState().markRead(prevId);
   }, [selectedId, workspaceId, qc]);
 

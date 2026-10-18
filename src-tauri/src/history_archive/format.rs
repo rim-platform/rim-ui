@@ -1,4 +1,4 @@
-//! The on-drive format, version 1 (`docs/specs/history-archive-v1.md`).
+//! The on-drive format, version 1.
 //!
 //! ```text
 //! <folder>/
@@ -49,7 +49,7 @@ pub(crate) struct Manifest {
     pub archive_id: String,
     pub created_at: String,
     /// The archive key, wrapped once per way of unlocking it. Version 1 writes one
-    /// `passphrase` wrap; Stage 3 adds an identity-key wrap of the same key.
+    /// `passphrase` wrap; wraps under identity keys live in each device's `key-wraps.json`.
     pub key_wraps: Vec<KeyWrap>,
 }
 
@@ -388,8 +388,8 @@ pub(crate) struct ArchivedMessage {
     pub text: Option<String>,
     /// The rest of the message as the UI renders it (the timeline's message JSON, no text).
     pub payload: serde_json::Value,
-    /// The author's signature. Always null before Stage 3 (identity keys): such messages are
-    /// unsigned, which readers accept and do not treat as a failed verification.
+    /// The author's signature, or null for an unsigned message, which readers accept and do
+    /// not treat as a failed verification.
     #[serde(default)]
     pub sig: Option<String>,
 }
