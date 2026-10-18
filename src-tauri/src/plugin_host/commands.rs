@@ -13,7 +13,7 @@ use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
-use crate::plugin_host::settings::{SettingsError, SettingsFormState};
+use crate::plugin_host::settings::{self, SettingsError, SettingsFormState};
 use crate::plugin_host::state::{
     InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
 };
@@ -1734,7 +1734,9 @@ pub fn plugin_settings_save(
         &schema,
         signed_in_account(&state).as_deref(),
         &values,
-    )
+    )?;
+    settings::on_saved(&state, &plugin_id);
+    Ok(())
 }
 
 /// Clears every saved setting of `plugin_id` for the signed-in account, secret
@@ -1752,7 +1754,9 @@ pub fn plugin_settings_reset(
     let schema = settings_schema(&state, &plugin_id)?;
     state
         .settings
-        .reset(&plugin_id, &schema, signed_in_account(&state).as_deref())
+        .reset(&plugin_id, &schema, signed_in_account(&state).as_deref())?;
+    settings::on_saved(&state, &plugin_id);
+    Ok(())
 }
 
 /// Every provisional principal id this device has seen switch to a key-based id,

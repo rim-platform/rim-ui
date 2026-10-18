@@ -13,11 +13,12 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 use crate::plugin_host::manifest::SettingSchema;
 use crate::plugin_host::validation::setting_value_error;
+use crate::plugin_host::PluginHostState;
 use crate::secret_store::SecretVault;
 
 /// The prefix of every secret vault record that holds a secret setting.
@@ -91,6 +92,56 @@ impl serde::Serialize for SettingsError {
     }
 }
 
+/// Why the settings a plugin reads could not be put together.
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsReadError {
+    #[error("plugin not found: {0}")]
+    NotFound(String),
+    /// A saved secret could not be read, for example while the keyring is locked.
+    #[error("the plugin's secret settings are not available: {0}")]
+    SecretsLocked(String),
+    #[error("plugin settings failed: {0}")]
+    Io(String),
+}
+
+/// The settings the installed plugin `plugin_id` reads for `account`: each
+/// declared setting's saved value, or else its default, a secret's value in
+/// plain form; a setting with neither is left out. Without an account, only the
+/// defaults.
+///
+/// # Errors
+///
+/// Returns [`SettingsReadError::NotFound`] for a plugin that is not installed,
+/// [`SettingsReadError::SecretsLocked`] when a saved secret cannot be read, and
+/// [`SettingsReadError::Io`] when the values cannot be read.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn resolved_values(
+    state: &PluginHostState,
+    plugin_id: &str,
+    account: Option<&str>,
+) -> Result<Map<String, Value>, SettingsReadError> {
+    let schema = state
+        .manifests
+        .lock()
+        .map_err(|e| SettingsReadError::Io(e.to_string()))?
+        .get(plugin_id)
+        .map(|m| m.settings_schema.clone())
+        .ok_or_else(|| SettingsReadError::NotFound(plugin_id.to_string()))?;
+    state
+        .settings
+        .values(plugin_id, &schema, account)
+        .map_err(|e| match e {
+            SettingsError::SecretsLocked(reason) => SettingsReadError::SecretsLocked(reason),
+            SettingsError::NotFound(id) => SettingsReadError::NotFound(id),
+            other => SettingsReadError::Io(other.to_string()),
+        })
+}
+
+/// Runs after a save or a reset changed `plugin_id`'s settings for the
+/// signed-in account: the one place the host learns that the values a running
+/// plugin holds are out of date. It tells the plugin nothing.
+pub(crate) fn on_saved(_state: &PluginHostState, _plugin_id: &str) {}
+
 /// What the settings form shows: the saved non-secret values and which secret
 /// settings are set. A secret's value is never part of it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -110,6 +161,8 @@ pub struct SettingsFormState {
 pub struct PluginSettings {
     root: PathBuf,
     secrets: Arc<dyn SettingSecrets>,
+    /// Held across each read-modify-write, so two saves at once keep both changes.
+    writes: Mutex<()>,
 }
 
 impl PluginSettings {
@@ -119,6 +172,7 @@ impl PluginSettings {
         Self {
             root: app_data_dir.join("plugin_settings"),
             secrets,
+            writes: Mutex::new(()),
         }
     }
 
@@ -215,6 +269,7 @@ impl PluginSettings {
         changes: &Map<String, Value>,
     ) -> Result<(), SettingsError> {
         let account = account.ok_or(SettingsError::NotSignedIn)?;
+        let _writes = self.writes.lock().unwrap_or_else(|e| e.into_inner());
         let mut checked = Vec::with_capacity(changes.len());
         for (key, value) in changes {
             let invalid = |reason: &str| SettingsError::InvalidValue {
@@ -272,6 +327,7 @@ impl PluginSettings {
         account: Option<&str>,
     ) -> Result<(), SettingsError> {
         let account = account.ok_or(SettingsError::NotSignedIn)?;
+        let _writes = self.writes.lock().unwrap_or_else(|e| e.into_inner());
         if schema.iter().any(|s| s.is_secret) {
             self.secrets
                 .delete_prefixed(&format!("{SECRET_RECORD_PREFIX}:{plugin_id}:{account}:"))
@@ -289,7 +345,6 @@ impl PluginSettings {
     /// Returns [`SettingsError::SecretsLocked`] when a saved secret cannot be
     /// read, never leaving it out as if it were unset, and [`SettingsError::Io`]
     /// when the values cannot be read.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn values(
         &self,
         plugin_id: &str,
@@ -327,6 +382,7 @@ impl PluginSettings {
     /// [`SettingsError::SecretsLocked`] when the secrets cannot be deleted; the
     /// values are removed first either way.
     pub fn remove_plugin(&self, plugin_id: &str, has_secrets: bool) -> Result<(), SettingsError> {
+        let _writes = self.writes.lock().unwrap_or_else(|e| e.into_inner());
         let removed = match std::fs::remove_dir_all(self.root.join(plugin_id)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
@@ -771,6 +827,47 @@ mod tests {
         assert!(matches!(
             settings.remove_plugin(PLUGIN, true),
             Err(SettingsError::SecretsLocked(_))
+        ));
+    }
+
+    #[test]
+    fn resolved_values_read_the_installed_schema_and_name_a_locked_vault() {
+        let manifest: crate::plugin_host::manifest::PluginManifest =
+            serde_json::from_value(json!({
+                "manifest_version": 1,
+                "plugin_id": PLUGIN,
+                "display_name": "Pods",
+                "version": "1.0.0",
+                "description": "test",
+                "runtime_kind": "DesktopLocalProcess",
+                "entrypoint": "main",
+                "settings_schema": schema(),
+            }))
+            .unwrap();
+        let dir = TempDir::new().unwrap();
+        let secrets = Arc::new(MemorySecrets::default());
+        let mut state = PluginHostState::with_installed(vec![manifest]);
+        state.settings = PluginSettings::new(dir.path(), secrets.clone());
+        state
+            .settings
+            .save(PLUGIN, &schema(), A, &changes(json!({ "api_token": "t" })))
+            .unwrap();
+        on_saved(&state, PLUGIN);
+
+        let values = resolved_values(&state, PLUGIN, A).unwrap();
+        assert_eq!(values["api_token"], json!("t"));
+        assert_eq!(values["refresh_seconds"], json!(30));
+        assert!(!resolved_values(&state, PLUGIN, None)
+            .unwrap()
+            .contains_key("api_token"));
+        assert!(matches!(
+            resolved_values(&state, "dev.example.missing", A),
+            Err(SettingsReadError::NotFound(_))
+        ));
+        secrets.lock();
+        assert!(matches!(
+            resolved_values(&state, PLUGIN, A),
+            Err(SettingsReadError::SecretsLocked(_))
         ));
     }
 
