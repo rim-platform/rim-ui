@@ -311,6 +311,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- A plugin's row in Settings → Plugins no longer squeezes its name and description into a
+  narrow column: the name, version and state sit on one line, the kind, signature and source
+  are chips, and only **Update**, **Settings**, the switch and a **⋯** menu sit beside them.
+  **Permissions**, **Activity**, **Sign and publish…** and **Uninstall…** moved into that menu.
 - The version starts at 0.0.1, the first public release, which rim-server shares: Settings,
   About and plugins (`hostVersion`) report 0.0.1 instead of 0.1.0.
 - The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,

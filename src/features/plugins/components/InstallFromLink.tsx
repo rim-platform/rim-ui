@@ -93,6 +93,7 @@ export function InstallFromLink({ installed, disabled, onInstalled }: InstallFro
   return (
     <>
       <Button
+        className="inline-flex items-center"
         variant="secondary"
         size="sm"
         onClick={() => setOpen((v) => !v)}

@@ -10,10 +10,16 @@ import {
   PenLine,
   RefreshCw,
   SlidersHorizontal,
+  MoreHorizontal,
+  Shield,
+  Activity,
+  Box,
+  Link2,
 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginList } from "../api/usePluginList";
@@ -48,11 +54,19 @@ import {
   type PostInstallConsentRequest,
 } from "../types";
 
-const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
-  running: { color: "bg-rim-success", label: "Running" },
-  stopped: { color: "bg-rim-text-muted", label: "Stopped" },
-  crashed: { color: "bg-rim-danger", label: "Crashed" },
-  timeout: { color: "bg-rim-warm", label: "Timed out" },
+const healthDisplay: Record<PluginHealth, { color: string; pill: string; label: string }> = {
+  running: {
+    color: "bg-rim-success",
+    pill: "bg-rim-success/10 text-rim-success",
+    label: "Running",
+  },
+  stopped: {
+    color: "bg-rim-text-muted",
+    pill: "bg-rim-panel-soft text-rim-text-muted",
+    label: "Stopped",
+  },
+  crashed: { color: "bg-rim-danger", pill: "bg-rim-danger/10 text-rim-danger", label: "Crashed" },
+  timeout: { color: "bg-rim-warm", pill: "bg-rim-warm/10 text-rim-warm", label: "Timed out" },
 };
 
 /**
@@ -309,6 +323,7 @@ export function PluginSettingsPage() {
               aria-hidden
             />
             <Button
+              className="inline-flex items-center"
               variant="secondary"
               size="sm"
               onClick={handleFolderPick}
@@ -319,6 +334,7 @@ export function PluginSettingsPage() {
             </Button>
 
             <Button
+              className="inline-flex items-center"
               variant="secondary"
               size="sm"
               onClick={() => setGitUrlOpen((v) => !v)}
@@ -586,6 +602,9 @@ function PluginRow({
   const blocked = needsDesktop || (plugin.fingerprint_changed && !plugin.enabled);
   const [activityOpen, setActivityOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const name = plugin.display_name || plugin.plugin_id;
   const fingerprint = plugin.current_fingerprint ?? "";
   const warningDismissed = usePluginFingerprintDismissStore(
     (s) => s.dismissed[plugin.plugin_id] === fingerprint,
@@ -599,16 +618,86 @@ function PluginRow({
     dismissWarning(plugin.plugin_id, fingerprint);
   }
 
+  function closeMenu() {
+    setMenuPosition(null);
+  }
+
+  const menuItems: DropdownMenuItem[] = [
+    {
+      id: "permissions",
+      label: "Permissions",
+      icon: <Shield className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        closeMenu();
+        onPermissions(plugin);
+      },
+    },
+    {
+      id: "activity",
+      label: activityOpen ? "Hide activity" : "Activity",
+      icon: <Activity className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        closeMenu();
+        setActivityOpen((open) => !open);
+      },
+    },
+    ...(onSign
+      ? [
+          {
+            id: "sign",
+            label: "Sign and publish…",
+            icon: <PenLine className="h-3.5 w-3.5" />,
+            onSelect: () => {
+              closeMenu();
+              onSign(plugin);
+            },
+          },
+        ]
+      : []),
+    {
+      id: "uninstall",
+      label: "Uninstall…",
+      icon: <Trash2 className="h-3.5 w-3.5" />,
+      danger: true,
+      separatorBefore: true,
+      onSelect: () => {
+        closeMenu();
+        onUninstall(plugin);
+      },
+    },
+  ];
+
   return (
-    <div className="rounded-lg border border-rim-line bg-rim-void">
-      <div className="flex items-center gap-4 p-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rim-accent/10">
-          <Puzzle className="h-5 w-5 text-rim-accent" />
+    <div className="rounded-xl border border-rim-line bg-rim-panel">
+      <div className="flex items-start gap-3 p-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rim-accent/10">
+          <Puzzle className="h-[18px] w-[18px] text-rim-accent" />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold text-rim-text">{plugin.display_name}</span>
+            <span className="text-[11px] text-rim-text-faint">
+              v{plugin.version}
+              {plugin.author ? ` · ${plugin.author}` : ""}
+            </span>
+            {needsDesktop ? (
+              <span className="rounded-full bg-rim-warm/15 px-2 py-0.5 text-[11px] font-medium text-rim-warm">
+                Needs the desktop app
+              </span>
+            ) : (
+              healthState && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                    healthState.pill,
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", healthState.color)} />
+                  {healthState.label}
+                </span>
+              )
+            )}
             {plugin.fingerprint_changed &&
               (warningDismissed ? (
                 <button
@@ -627,48 +716,52 @@ function PluginRow({
                 </span>
               ))}
           </div>
-          <p className="line-clamp-2 text-xs text-rim-text-muted">{plugin.description}</p>
-          <p className="text-[11px] text-rim-text-faint">
-            {kindLabel(plugin)} · {trustBadge(plugin)}
-          </p>
-          <div className="flex items-center gap-3 text-[11px] text-rim-text-muted">
-            <span>
-              v{plugin.version}
-              {plugin.author ? ` by ${plugin.author}` : ""}
-            </span>
-            {needsDesktop ? (
-              <span className="text-rim-warm">Needs the desktop app</span>
-            ) : (
-              healthState && (
-                <span className="flex items-center gap-1">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", healthState.color)} />
-                  {healthState.label}
-                </span>
-              )
-            )}
+          {plugin.description && (
+            <p className="line-clamp-2 text-xs leading-relaxed text-rim-text-muted">
+              {plugin.description}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            aria-label={`View details for ${name}`}
+            className="self-start text-xs text-rim-accent hover:underline"
+          >
+            View details
+          </button>
+          <div className="flex flex-wrap gap-1.5">
+            {trustChips(plugin).map((chip) => (
+              <span
+                key={chip.text}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
+                  chip.warn
+                    ? "bg-rim-warm/10 text-rim-warm"
+                    : "bg-rim-panel-soft text-rim-text-muted",
+                )}
+              >
+                {chip.icon}
+                {chip.text}
+              </span>
+            ))}
           </div>
           {updateStatus && (
-            <p className={cn("mt-0.5 text-[11px]", noteTone[updateStatus.tone])} role="status">
+            <p className={cn("text-[11px]", noteTone[updateStatus.tone])} role="status">
               {updateStatus.text}
             </p>
           )}
           {plugin.enabled && plugin.last_error && (
-            <p className="mt-0.5 text-[11px] text-rim-danger" role="status">
+            <p className="text-[11px] text-rim-danger" role="status">
               {plugin.last_error}
             </p>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {onSign && (
-            <Button variant="ghost" size="sm" onClick={() => onSign(plugin)}>
-              <PenLine className="mr-1 h-3.5 w-3.5" />
-              Sign and publish…
-            </Button>
-          )}
+        <div className="flex shrink-0 items-center gap-1">
           {onUpdate && (
             <Button
-              variant="ghost"
+              className="inline-flex items-center"
+              variant="secondary"
               size="sm"
               onClick={onUpdate}
               disabled={updatePending}
@@ -678,43 +771,25 @@ function PluginRow({
               {updatePending ? "Updating..." : "Update"}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDetailsOpen(true)}
-            aria-label={`View details for ${plugin.display_name || plugin.plugin_id}`}
-          >
-            View details
-          </Button>
           {onSettings && (
             <Button
-              variant="ghost"
+              className="inline-flex items-center"
+              variant="secondary"
               size="sm"
               onClick={onSettings}
-              aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+              aria-label={`Settings for ${name}`}
             >
               <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
               Settings
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => onPermissions(plugin)}>
-            Permissions
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActivityOpen((open) => !open)}
-            aria-expanded={activityOpen}
-          >
-            Activity
-          </Button>
 
           <button
             type="button"
             onClick={() => onToggle(plugin)}
             disabled={blocked}
             className={cn(
-              "relative inline-flex h-5 w-9 items-center rounded-full transition",
+              "relative ml-1.5 inline-flex h-5 w-9 items-center rounded-full transition",
               blocked && "cursor-not-allowed opacity-40",
             )}
             style={{
@@ -729,15 +804,36 @@ function PluginRow({
             />
           </button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onUninstall(plugin)}
-            title="Uninstall"
-            aria-label="Uninstall plugin"
+          <button
+            ref={moreRef}
+            type="button"
+            aria-label={`More actions for ${name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuPosition !== null}
+            onClick={() => {
+              if (menuPosition) {
+                closeMenu();
+                return;
+              }
+              const rect = moreRef.current?.getBoundingClientRect();
+              if (rect) setMenuPosition({ x: rect.right - 200, y: rect.bottom + 4 });
+            }}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg text-rim-text-muted transition-colors hover:bg-white/5 hover:text-rim-text",
+              menuPosition && "bg-white/5 text-rim-text",
+            )}
           >
-            <Trash2 className="h-4 w-4 text-rim-danger" />
-          </Button>
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuPosition && (
+            <DropdownMenu
+              items={menuItems}
+              position={menuPosition}
+              onClose={closeMenu}
+              label={`More actions for ${name}`}
+              anchorRef={moreRef}
+            />
+          )}
         </div>
       </div>
 
@@ -759,6 +855,7 @@ function PluginRow({
             </div>
             <div className="flex shrink-0 gap-2">
               <Button
+                className="inline-flex items-center"
                 variant="secondary"
                 size="sm"
                 onClick={() => onTrustFingerprint(plugin.plugin_id)}
@@ -795,6 +892,44 @@ function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
   if (plugin.enabled) return "Disable plugin";
   if (plugin.fingerprint_changed) return "Trust the new version before enabling";
   return "Enable plugin";
+}
+
+/** One chip under a plugin's description. */
+interface TrustChip {
+  text: string;
+  icon?: React.ReactNode;
+  /** Marks a plugin nobody signed. */
+  warn?: boolean;
+}
+
+/**
+ * The chips under a plugin's description: its kind, then whether it is signed and where it
+ * came from, as {@link trustBadge} words them.
+ *
+ * @param plugin - The plugin of the row.
+ * @returns The chips, in order.
+ */
+function trustChips(plugin: PluginInfo): TrustChip[] {
+  const sandboxed = runtimeKind(plugin) === "WebSandboxed";
+  const kind: TrustChip = {
+    text: kindLabel(plugin),
+    icon: sandboxed ? <Box className="h-3 w-3" /> : <Monitor className="h-3 w-3" />,
+  };
+  const sourceIcon: Partial<Record<string, React.ReactNode>> = {
+    git: <GitBranch className="h-3 w-3" />,
+    link: <Link2 className="h-3 w-3" />,
+    local: <FolderOpen className="h-3 w-3" />,
+    registry: <ShieldCheck className="h-3 w-3" />,
+  };
+  const parts = trustBadge(plugin).split(" · ");
+  return [
+    kind,
+    ...parts.map((part, index) => ({
+      text: part.charAt(0).toUpperCase() + part.slice(1),
+      icon: index === parts.length - 1 ? sourceIcon[plugin.source?.kind ?? ""] : undefined,
+      warn: part === "Unsigned",
+    })),
+  ];
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────

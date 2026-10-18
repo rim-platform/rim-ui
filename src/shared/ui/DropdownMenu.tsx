@@ -12,6 +12,8 @@ interface DropdownMenuItem {
   danger?: boolean;
   /** Marks the item that stands for what is open now. */
   current?: boolean;
+  /** Draws a divider above the item, setting it apart from the ones before. */
+  separatorBefore?: boolean;
   onSelect: () => void;
 }
 
@@ -145,7 +147,14 @@ export function DropdownMenu({
           <div className="px-3 py-2 text-xs text-rim-text-muted">No actions available</div>
         )
       ) : (
-        items.map((item, index) => (
+        items.map((item, index) => [
+          item.separatorBefore && index > 0 && (
+            <div
+              key={`${item.id}-separator`}
+              role="separator"
+              className="mx-2 my-1 h-px bg-rim-line"
+            />
+          ),
           <button
             key={item.id}
             role="menuitem"
@@ -173,8 +182,8 @@ export function DropdownMenu({
                 <span className="min-w-0 truncate text-xs text-rim-text-muted">{item.detail}</span>
               )}
             </span>
-          </button>
-        ))
+          </button>,
+        ])
       )}
     </div>,
     document.body,

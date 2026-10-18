@@ -234,7 +234,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     ];
     renderPage();
 
-    expect(screen.getAllByRole("button", { name: "Permissions" })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /^More actions for / })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 
@@ -263,7 +263,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     listed = [makePlugin({ runtime_kind: "WebSandboxed" })];
     renderPage();
 
-    expect(screen.getByRole("button", { name: "Permissions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^More actions for / })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 });

@@ -165,8 +165,12 @@ Plugins names.
 
 ## Using a plugin
 
-- **Reading what it is.** A plugin's row in Settings → Plugins shows the first two lines of its
-  description. **View details** opens a dialog named after the plugin with the whole
+- **Reading what it is.** A plugin's row in Settings → Plugins shows its name, version, author
+  and state (Running, Stopped, Crashed or Timed out), the first two lines of its description,
+  and chips for its kind, its signature and where it came from. Beside them are **Update** (a
+  plugin from git), **Settings** (a plugin that declares settings), the switch, and **⋯**, a
+  menu with **Permissions**, **Activity**, **Sign and publish…** (where offered) and
+  **Uninstall…**. **View details** under the description opens a dialog named after the plugin with the whole
   description under "From the plugin author:", shown as the author wrote it, as plain text
   with no formatting or links; its id, version, author, kind, source (the git repository, the
   link with its SHA-256, the workspace registry, or a folder) and signature; each permission
@@ -217,8 +221,8 @@ Plugins names.
 
 ## Trust and permissions
 
-The **Plugin Permissions** dialog opens after every install and from **Permissions** on a
-plugin's row. It shows the plugin's name, version and author; its description under "From the
+The **Plugin Permissions** dialog opens after every install and from **Permissions** in a
+plugin's **⋯** menu. It shows the plugin's name, version and author; its description under "From the
 plugin author:", which is the author's claim, not the app's; and what the kind of plugin means:
 
 - Sandboxed: "Runs sandboxed in this app. It cannot read your files, run programs, or use your
@@ -243,7 +247,7 @@ grants the rest. The prompt names them like this:
 An encrypted chat permission needs its plain one: checking it checks the plain one, and
 unchecking the plain one unchecks it.
 
-**Activity** on a plugin's row shows what it holds and did:
+**Activity** in a plugin's **⋯** menu shows what it holds and did:
 
 - **Approved permissions**, each with **Revoke**. Revoking a permission stops the plugin, and
   revoking a plain chat permission takes its encrypted one with it.
@@ -259,7 +263,7 @@ again; the **Bundle changed** badge beside the name stays, and clicking it bring
 back. The web app hashes a plugin's bundle again at every start instead, and fetches it again
 from its link when it is missing or damaged.
 
-**Signed and unsigned.** The row and the panel header say where a plugin came from:
+**Signed and unsigned.** The row's chips and the panel header say where a plugin came from:
 
 - `Unsigned · installed from a link (<host>)`
 - `Unsigned · installed from git (<host>)`
@@ -278,7 +282,7 @@ it. If the publisher later recovers their key, the installed copy keeps running,
 that statement.
 
 **Signing and publishing.** On a desktop that holds the account's identity key (Settings →
-Security shows it), each row has **Sign and publish…**. It signs the plugin as installed. An
+Security shows it), each row's **⋯** menu has **Sign and publish…**. It signs the plugin as installed. An
 Owner or Moderator of the open workspace then picks Recommended or Required and chooses
 **Publish**; anyone can **Export…** a `.rimsig.json` to send to one of them, who adds it in
 Workspace settings → Plugins with "Add from files".
@@ -290,7 +294,7 @@ Workspace settings → Plugins with "Add from files".
 - **A plugin that did not start.** A sandboxed plugin whose start was cut short, because the app
   closed while starting it, is not started again, and Settings says so. Turning it off and on
   retries.
-- **Uninstall** with the bin icon on the row, then **Uninstall** in **Uninstall \<name\>?**. On
+- **Uninstall…** in the row's **⋯** menu, then **Uninstall** in **Uninstall \<name\>?**. On
   the desktop the plugin is removed from this device with the permissions granted to it, the
   data it stored and its settings for every account, secret ones included, and its folder
   leaves the plugins folder and is deleted. A folder the app did not install itself stays where
