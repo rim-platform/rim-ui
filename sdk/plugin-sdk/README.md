@@ -266,8 +266,9 @@ npx rim-plugin-bundle --check --entry src/main.ts .      # in CI
 
 The build names no absolute path and no time, so the same sources and the same SDK
 version give the same bytes on every machine; commit the lockfile so CI builds with the
-SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle`
-(`npx rim-plugin-bundle .`) can go on the release for **Install from link**.
+SDK the committed `main.mjs` was built with. A release is a tag; its `.rimbundle` comes
+from `npx rim-plugin-bundle .`, which packages the committed build without rebuilding it,
+and can go on the release for **Install from link**.
 
 The desktop takes a WebSandboxed plugin's checkout as its bundle, and refuses any file in
 it besides `rim-plugin.json`, the entrypoint and `panels/` (names starting with `.` are

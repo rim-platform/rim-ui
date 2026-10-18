@@ -39,7 +39,7 @@ function bundler(args: string[], cwd: string) {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
-describe("rim-plugin-bundle --check", () => {
+describe("rim-plugin-bundle", () => {
   it.each<RuntimeKind>(["WebSandboxed", "DesktopLocalProcess"])(
     "passes through a built %s folder by default and matches a build from source",
     (runtimeKind) => {
@@ -59,6 +59,33 @@ describe("rim-plugin-bundle --check", () => {
     30_000,
   );
 
+  it.each([
+    { description: "a node: import", code: 'import { readFileSync } from "node:fs";\n' },
+    { description: "a relative import", code: 'import "./helper.mjs";\n' },
+  ])("rejects a built web plugin containing $description", ({ code }) => {
+    const dir = pluginRepo("WebSandboxed");
+    writeFileSync(join(dir, "main.mjs"), code);
+
+    const result = bundler([dir], tmpdir());
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "still imports something: a web plugin must bundle into one module",
+    );
+  });
+
+  it("rejects a hashbang in a built web plugin without rewriting its entry", () => {
+    const dir = pluginRepo("WebSandboxed");
+    const source = '#!/usr/bin/env node\nconsole.log("hello");\n';
+    writeFileSync(join(dir, "main.mjs"), source);
+
+    const result = bundler([dir], tmpdir());
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("starts with a hashbang");
+    expect(readFileSync(join(dir, "main.mjs"), "utf8")).toBe(source);
+  });
+});
+
+describe("rim-plugin-bundle --check", () => {
   it.each<RuntimeKind>(["WebSandboxed", "DesktopLocalProcess"])(
     "passes on a %s folder built in place, from any working directory",
     (runtimeKind) => {

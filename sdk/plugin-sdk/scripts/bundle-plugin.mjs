@@ -8,9 +8,9 @@
 //
 // A plugin folder can also hold its own build, as a plugin repository does:
 // main.mjs beside a manifest whose entrypoint is main.mjs, built from the
-// source --entry names. --in-place writes that main.mjs; --check builds into a
-// temporary folder and exits 1, naming each file, when the folder's main.mjs or
-// panels/ differ from that build.
+// source --entry names. --in-place writes that main.mjs; the plain form packages
+// that committed file without rebuilding it. --check builds into a temporary
+// folder and exits 1, naming each file, when main.mjs or panels/ differ.
 //
 // Usage: rim-plugin-bundle [--entry <file>] <plugin-dir> [out-dir]
 //        rim-plugin-bundle --check | --in-place [--entry <file>] <plugin-dir>
@@ -140,6 +140,7 @@ async function buildInto(outDir, { useExistingBuild = false } = {}) {
 
   if (useExistingBuild) {
     copyFileSync(join(pluginDir, BUILT_ENTRY), outFile);
+    if (web) assertWebBundleIsSelfContained(outFile);
     if (!web) chmodSync(outFile, 0o755);
   } else if (web) {
     // A browser build: no Node APIs, the SDK's browser entry, and one module the
@@ -147,15 +148,7 @@ async function buildInto(outDir, { useExistingBuild = false } = {}) {
     await build(browserBuildOptions(entry, outFile, pluginDir));
     const code = withoutHashbang(readFileSync(outFile, "utf8"));
     writeFileSync(outFile, code);
-    if (
-      /^\s*(import|export)\b[^\n]*["']\s*;?\s*$/m.test(code) ||
-      /(?<![\w$.])import\s*\(/.test(code)
-    ) {
-      fail(`${outFile} still imports something: a web plugin must bundle into one module`);
-    }
-    if (/["'`]node:/.test(code)) {
-      fail(`${outFile} refers to a node: module, which a web plugin cannot use`);
-    }
+    assertWebBundleIsSelfContained(outFile);
   } else {
     // esbuild keeps an entry point's own #! line; add one only when it has none.
     const hasShebang = readFileSync(entry, "utf8").startsWith("#!");
@@ -180,6 +173,23 @@ async function buildInto(outDir, { useExistingBuild = false } = {}) {
   for (const path of panelFiles) {
     mkdirSync(dirname(join(outDir, path)), { recursive: true });
     writeFileSync(join(outDir, path), readFileSync(join(pluginDir, path)));
+  }
+}
+
+/** Reject built web entries that are not safe to load as one blob-backed module. */
+function assertWebBundleIsSelfContained(outFile) {
+  const code = readFileSync(outFile, "utf8");
+  if (code.startsWith("#!")) {
+    fail(`${outFile} starts with a hashbang, which a web plugin cannot use`);
+  }
+  if (
+    /^\s*(import|export)\b[^\n]*["']\s*;?\s*$/m.test(code) ||
+    /(?<![\w$.])import\s*\(/.test(code)
+  ) {
+    fail(`${outFile} still imports something: a web plugin must bundle into one module`);
+  }
+  if (/["'`]node:/.test(code)) {
+    fail(`${outFile} refers to a node: module, which a web plugin cannot use`);
   }
 }
 

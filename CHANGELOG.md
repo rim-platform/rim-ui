@@ -166,6 +166,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- `rim-plugin-bundle <dir>` packages a built plugin folder's committed `main.mjs` as it is;
+  `--entry` still builds from source.
 - The version starts at 0.0.1, the first public release, which rim-server shares: Settings,
   About and plugins (`hostVersion`) report 0.0.1 instead of 0.1.0.
 - The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,
