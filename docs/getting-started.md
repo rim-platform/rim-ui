@@ -97,9 +97,9 @@ Its badge counts unread messages before you open it. The rail shows once a works
 - **Join with an invite link.** Opened in a browser while you are signed in, the link says "You
   have been invited to join \<workspace\>"; **Join workspace** joins it. In the app,
   **Join with an invite code** on the welcome screen, or **Add workspace** (the **+** at the bottom
-  of the workspace rail) and then **Join Existing**, takes the invite code: the part of the link
-  that starts with `rim_inv_`, or a whole `rim-invite:1:…` link for a workspace on another server.
-  **Join** opens it.
+  of the workspace rail) and then **Join Existing**, takes the invite code: the whole invite link,
+  the part of it that starts with `rim_inv_`, or a whole `rim-invite:1:…` link for a workspace on
+  another server. **Join** opens it.
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
