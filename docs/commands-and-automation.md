@@ -23,13 +23,13 @@ three places:
 piece of text. Context is where you are when it runs: the open workspace, the open conversation,
 a selected message. A command whose workspace or conversation argument is empty takes it from the
 context; one given in its arguments, such as a keybind's preset arguments, wins. The palette,
-keybinds, the composer's `/` list and the AI agent send the open workspace, the open conversation
-and the thread open beside it; a message's context menu sends the message's conversation, its
-thread and the message instead. A server command that needs a conversation, such as marking it
-read or setting its notification level, therefore acts on the open one, and with none open it
-needs the conversation's id in its arguments. A plugin command that needs a conversation gets the
-open one; with none open, the palette leaves it out and its keybind says "Open a conversation
-first".
+keybinds, the composer's `/` list, a macro run and the AI agent send the open workspace, the open
+conversation and the thread open beside it; a message's context menu sends the message's
+conversation, its thread and the message instead. A server command that needs a conversation,
+such as marking it read or setting its notification level, therefore acts on the open one, and
+with none open it needs the conversation's id in its arguments. A plugin command that needs a
+conversation gets the open one; with none open, the palette leaves it out and its keybind says
+"Open a conversation first".
 
 **Sensitivity.** Every command has one of four tiers, and the server decides from it whether a
 run waits for your confirmation:
@@ -183,11 +183,12 @@ AI** turns a description into steps with the provider set in Settings → AI Age
 check the preview, then **Use these steps** opens them in the editor.
 
 A macro runs from the play button on its row ("Run macro"), or from the composer: send
-`/macro <name>` ("Run Macro"). It runs on the server, step by step, with the open workspace as
-its only context:
+`/macro <name>` ("Run Macro"). It runs on the server, step by step, in the open workspace, the
+open conversation and the thread open beside it, read when the run starts:
 
-- **Steps do not pipe.** Each step gets its own arguments; a step that needs a conversation names
-  it with `conversation_id`. A command that only runs in the app fails as a step.
+- **Steps do not pipe.** Each step gets its own arguments. A step that needs a conversation acts
+  on the open one, or on the one its `conversation_id` names, which wins; with none open it needs
+  `conversation_id`. A command that only runs in the app fails as a step.
 - **Confirmation.** A macro with a restricted step asks once, before any step runs, in
   `Run macro "<name>"`: "This macro includes commands marked as dangerous. They may delete data
   or make irreversible changes." A dangerous step below the restricted tier, such as kicking a
