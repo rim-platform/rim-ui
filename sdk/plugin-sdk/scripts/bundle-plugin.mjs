@@ -10,12 +10,14 @@
 // main.mjs beside a manifest whose entrypoint is main.mjs, built from the
 // source --entry names. --in-place writes that main.mjs; --check builds into a
 // temporary folder and exits 1, naming each file, when the folder's main.mjs or
-// panels/ differ from that build.
+// panels/ differ from that build. Without --entry, such a folder is bundled as
+// it is: its main.mjs is copied unchanged rather than built again.
 //
 // Usage: rim-plugin-bundle [--entry <file>] <plugin-dir> [out-dir]
 //        rim-plugin-bundle --check | --in-place [--entry <file>] <plugin-dir>
 // out-dir defaults to <plugin-dir>/dist/<plugin_id>. --entry is relative to
-// plugin-dir and defaults to the manifest's entrypoint.
+// plugin-dir and defaults to the manifest's entrypoint; naming it always builds
+// from that source.
 
 import { createHash } from "node:crypto";
 import {
@@ -97,7 +99,14 @@ for (const path of panelFiles) {
 if (mode === "bundle") {
   const outDir = resolve(outArg ?? join(pluginDir, "dist", manifest.plugin_id));
   refuseOutDir(outDir);
-  await buildInto(outDir);
+  const built =
+    entryArg === undefined &&
+    manifest.entrypoint === BUILT_ENTRY &&
+    existsSync(join(pluginDir, BUILT_ENTRY));
+  if (built) {
+    console.log(`using the built ${BUILT_ENTRY} as it is: --entry <file> builds from source`);
+    copyInto(outDir);
+  } else await buildInto(outDir);
   writeBundleFile(outDir);
 } else {
   const scratch = mkdtempSync(join(tmpdir(), "rim-plugin-bundle-"));
@@ -129,25 +138,14 @@ function refuseOutDir(outDir) {
 
 /** Build the plugin into `outDir`: its manifest, main.mjs and panel files. */
 async function buildInto(outDir) {
-  const outFile = join(outDir, BUILT_ENTRY);
-  rmSync(outDir, { recursive: true, force: true });
-  mkdirSync(outDir, { recursive: true });
+  const outFile = emptyOutDir(outDir);
 
   if (web) {
     // A browser build: no Node APIs, the SDK's browser entry, and one module the
     // frame shell can import from a blob: URL, so nothing left to import.
     await build(browserBuildOptions(entry, outFile, pluginDir));
-    const code = withoutHashbang(readFileSync(outFile, "utf8"));
-    writeFileSync(outFile, code);
-    if (
-      /^\s*(import|export)\b[^\n]*["']\s*;?\s*$/m.test(code) ||
-      /(?<![\w$.])import\s*\(/.test(code)
-    ) {
-      fail(`${outFile} still imports something: a web plugin must bundle into one module`);
-    }
-    if (/["'`]node:/.test(code)) {
-      fail(`${outFile} refers to a node: module, which a web plugin cannot use`);
-    }
+    writeFileSync(outFile, withoutHashbang(readFileSync(outFile, "utf8")));
+    refuseImports(outFile);
   } else {
     // esbuild keeps an entry point's own #! line; add one only when it has none.
     const hasShebang = readFileSync(entry, "utf8").startsWith("#!");
@@ -164,7 +162,41 @@ async function buildInto(outDir) {
     });
     chmodSync(outFile, 0o755);
   }
+  writeManifestAndPanels(outDir);
+}
 
+/** Copy the folder's own main.mjs into `outDir` unchanged, with the manifest and panel files. */
+function copyInto(outDir) {
+  const outFile = emptyOutDir(outDir);
+  writeFileSync(outFile, readFileSync(join(pluginDir, BUILT_ENTRY)));
+  if (web) refuseImports(outFile);
+  else chmodSync(outFile, 0o755);
+  writeManifestAndPanels(outDir);
+}
+
+/** Empty `outDir`, creating it if needed, and return the path of its main.mjs. */
+function emptyOutDir(outDir) {
+  rmSync(outDir, { recursive: true, force: true });
+  mkdirSync(outDir, { recursive: true });
+  return join(outDir, BUILT_ENTRY);
+}
+
+/** Fail when a web plugin's `file` imports another module or names a node: module. */
+function refuseImports(file) {
+  const code = readFileSync(file, "utf8");
+  if (
+    /^\s*(import|export)\b[^\n]*["']\s*;?\s*$/m.test(code) ||
+    /(?<![\w$.])import\s*\(/.test(code)
+  ) {
+    fail(`${file} still imports something: a web plugin must bundle into one module`);
+  }
+  if (/["'`]node:/.test(code)) {
+    fail(`${file} refers to a node: module, which a web plugin cannot use`);
+  }
+}
+
+/** Write the manifest, its entrypoint set to main.mjs, and the panel files into `outDir`. */
+function writeManifestAndPanels(outDir) {
   writeFileSync(
     join(outDir, "rim-plugin.json"),
     `${JSON.stringify({ ...manifest, entrypoint: BUILT_ENTRY }, null, 2)}\n`,
