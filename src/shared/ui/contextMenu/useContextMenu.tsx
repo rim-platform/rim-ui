@@ -80,6 +80,12 @@ export function isContextMenuKey(event: { key: string; shiftKey: boolean }): boo
 /** The context menu open anywhere in the app, so that opening one closes the other. */
 let active: { owner: object; close: () => void } | null = null;
 
+/**
+ * Touches a bound element already took, so that a target inside another bound element starts
+ * its own long press and the outer one does not.
+ */
+const claimedTouches = new WeakSet<Event>();
+
 interface OpenMenu {
   /** Counts the opens, so each one mounts a fresh menu with its own focus to return to. */
   serial: number;
@@ -215,6 +221,8 @@ export function useContextMenu(): ContextMenuController {
         if (openUnder(event.currentTarget, getItems, options)) event.preventDefault();
       },
       onTouchStart: (event) => {
+        if (claimedTouches.has(event.nativeEvent)) return;
+        claimedTouches.add(event.nativeEvent);
         cancelPress();
         const touch = event.touches[0];
         if (event.touches.length !== 1 || !touch) return;
