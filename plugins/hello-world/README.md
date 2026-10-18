@@ -1,7 +1,9 @@
 # Hello World Plugin
 
-Reference in-tree plugin for the RIM plugin host. Exercises the full
-Phase 1 spawn → broker → capability-gate cycle.
+Reference in-tree plugin for the RIM plugin host: the smallest working local
+process plugin, with one command and a panel that talks to the host through the
+raw postMessage bridge instead of the plugin SDK. It exercises the whole cycle
+of spawn, broker and capability gate.
 
 It speaks plugin protocol v1, frozen in
 [`protocol/plugin-protocol-v1.schema.json`](../../protocol/plugin-protocol-v1.schema.json).
@@ -66,21 +68,32 @@ toast.
 ### After clicking "Say Hello" in the panel
 
 The panel sends `rim.ui.notification.show` via `window.parent.postMessage`.
-In Phase 1 this is logged by the bridge (`pluginBridge.ts` logs at `debug`
-level).  The real toast notification is wired in Phase 2.
+The bridge (`pluginBridge.ts`) shows it only to a plugin approved for
+`ui.notify`, which this manifest does not declare, so it drops the message and
+logs a warning. To see it, open the Tauri devtools console and filter for
+`[RIM:PluginBridge]`:
 
-To see the log, open the Tauri devtools console and filter for
-`[RIM:PluginBridge]`.
+```
+[RIM:PluginBridge] dev.example.hello-world denied: requires ui.notify for rim.ui.notification.show
+```
+
+With `"ui.notify"` added to `capabilities` in `rim-plugin.json` before you
+copy the folder, enabling the plugin asks for that capability, and once it is
+approved the bridge shows the notification as a toast that names the plugin
+(and as a desktop notification while the window is in the background and
+notifications are allowed).
 
 ## Capability model
 
 The manifest declares no capabilities. A manifest may declare the built-in
-names `ui.panel` and `ui.notify`, and its own keys of the form `plugin.<plugin_id>.<verb>` with the verb in
-`[a-z0-9_.]` (validated at install time by `validation.rs`). `greet` needs
-none: it only answers the host.
+names `ui.panel`, `ui.notify`, `chat.read`, `chat.write`, `chat.read.encrypted`
+and `chat.write.encrypted` (each encrypted one only with its plain one), and its
+own keys of the form `plugin.<plugin_id>.<verb>` with the verb in `[a-z0-9_.]`
+(validated at install time by `validation.rs`). `greet` needs none: it only
+answers the host.
 
-The `ui.notify` capability gate is exercised by the panel's postMessage
-handler in `pluginBridge.ts` (front-end side only in Phase 1).
+The panel's notification exercises the `ui.notify` gate in the bridge's
+postMessage handler (`pluginBridge.ts`).
 
 ## Manual smoke-test recipe
 
@@ -107,7 +120,7 @@ Run this after building and starting `npm run tauri dev`:
 
 7. In the tool panel or main surface (if the plugin panel is rendered), click
    **Say Hello** and observe the browser devtools console for:
-   `[RIM:PluginBridge] dev.example.hello-world notification: Hello World`
+   `[RIM:PluginBridge] dev.example.hello-world denied: requires ui.notify for rim.ui.notification.show`
 
 8. Open the command palette, run **Hello: Greet**, and observe a success
    toast containing `Hello, world!`.
@@ -116,4 +129,5 @@ Run this after building and starting `npm run tauri dev`:
 
 10. Observe: `[plugin_host] plugin dev.example.hello-world stopped`
 
-All ten steps passing = Phase 1 proof-of-life confirmed.
+All ten steps passing confirm that the host starts the plugin, routes its
+command, gates its panel and stops it.

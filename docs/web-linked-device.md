@@ -1,12 +1,14 @@
 # The web app as a linked device
 
-The web app never holds an identity key. It gets a device key of its own by pasting a link code
-shown on the desktop app (Settings > Security > Link a device), and signs in with that key. It
-does not enroll, sign up with a key, recover, or link other devices: those need the identity key
-and stay in the desktop app. The contract is `../rim-server/docs/specs/device-linking-v1.md`
-("Web client", "Channel cryptography", "Client rules — New device", appendix A) and
-`../rim-server/docs/specs/key-identity-v1.md`; `device-linking-desktop.md` describes the desktop
-side.
+As a linked device, the web app holds no identity key. It gets a device key of its own by pasting
+a link code shown on the desktop app (Settings > Security > Link a device), and signs in with that
+key; linking other devices, revoking and rotating stay with the device that holds the identity
+key. The web app can also hold an identity of its own: it signs up with a key, enrolls a password
+account and recovers an account with its recovery kit, keeps the identity key as a non-extractable
+WebCrypto key in IndexedDB, and shows "Link a device" while it holds that key. The contract is
+`../rim-server/docs/specs/device-linking-v1.md` ("Web client", "Channel cryptography", "Client
+rules — New device", appendix A) and `../rim-server/docs/specs/key-identity-v1.md`;
+`device-linking-desktop.md` describes the desktop side.
 
 ## What lives where
 
@@ -30,25 +32,30 @@ side.
     `Offer` in Rust, `platform: "web"`), the strict answer reader, and the fingerprint over the
     exact offer bytes.
   - `keyStore.ts`: IndexedDB.
+  - `identityKeys.ts`, `oldDeviceLink.ts`, `recoveryKit.ts`: the identity in the browser
+    (enrollment, key-only signup, the recovery kit, recovery, rotation) and linking other devices
+    as the old device.
   - `browserKeyBackend.ts`: `browserKeyBackend`, the links in progress (in memory), the login
     `audience`, the default device name ("Firefox on Linux").
 - `src/core/runtime/ed25519.ts`: probes once per page whether the browser can generate a
   non-extractable Ed25519 key and has IndexedDB. `RuntimeProvider` exposes the answer as
   `deviceKeyStore` (`checking`, `browser`, `unsupported`) and turns `capabilities.deviceKeys` on
-  for the web when it is `browser`. `capabilities.identityKeys` (desktop only) gates enrollment,
-  key-only signup, recovery and the old device's linking.
-- On a relay in `pow` registration mode the sign-in page and `/join` say to create an account in
-  the desktop app or with an invite: a signup without a token there needs a key, which the web
-  app cannot make (`relay-client.md`, "Signing up on a public relay").
+  for the web when it is `browser`. `capabilities.identityKeys`, on the web also whenever
+  `deviceKeyStore` is `browser`, gates enrollment, key-only signup, recovery and the old device's
+  linking.
+- On a relay in `pow` registration mode a signup without a token needs a key: a browser that can
+  hold keys signs up with one, and the sign-in page and `/join` of one that cannot say to create an
+  account in the desktop app or with an invite (`relay-client.md`, "Signing up on a public relay").
 - Sign-in page: `DeviceKeySignIn` ("Sign in as … with this device", for each stored account) and
   `LinkThisDevice` ("Link this browser with its code"), both with the weaker-keys notice
-  (`BrowserKeyNotice`). A browser without Ed25519 or IndexedDB gets a line saying why it cannot be
-  linked. Recovery is not offered.
+  (`BrowserKeyNotice`), and `RecoverAccount` ("Lost your devices? Recover an account with its
+  recovery kit"). A browser without Ed25519 or IndexedDB gets a line saying why it cannot be
+  linked.
 
 ## Storage
 
-One IndexedDB database, `rim-key-identity`, store `deviceKeys`, one record per account on a
-server, keyed by `[endpoint, principalId]` (the endpoint trimmed, trailing `/` removed):
+One IndexedDB database, `rim-key-identity`. Its store `deviceKeys` holds one record per account
+on a server, keyed by `[endpoint, principalId]` (the endpoint trimmed, trailing `/` removed):
 
 | Field | Holds |
 |---|---|
@@ -56,8 +63,11 @@ server, keyed by `[endpoint, principalId]` (the endpoint trimmed, trailing `/` r
 | `deviceId`, `deviceName` | from the certificate the old device signed |
 | `confirmed` | the server has shown this principal on the signed-in account |
 | `userId`, `username` | the account it signs in to; unknown until the first sign-in |
+| `identity`, `pendingIdentity` | on the browser that created or recovered the identity: the identity key, non-extractable, and a rotation's new key until the server confirms it |
+| `recoveryEntropy`, `kitConfirmed` | the recovery kit's 16 entropy bytes until the person confirms they saved the kit, and whether they did |
 
-The public key is never stored separately: the server has it in the certificate. After a key is
+Its store `deviceLinks` holds the links this browser confirmed as the old device. The device
+key's public key is never stored separately: the server has it in the certificate. After a key is
 stored the app asks for persistent storage (`navigator.storage.persist()`), best effort, so the
 browser does not evict it under storage pressure.
 

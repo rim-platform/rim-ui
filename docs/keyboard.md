@@ -30,11 +30,14 @@ resolution produces, so it always matches what the keys do.
 
 A profile is the default binding set of a device plus the Vim switch. Three are built in:
 
-| Profile        | Vim mode | Bindings                                                         |
-| -------------- | -------- | ---------------------------------------------------------------- |
-| Minimal        | off      | The plain default set. A new device starts here.                 |
-| Vim            | on       | The plain default set.                                           |
-| Mouse-friendly | off      | The default set without reload, bookmark, bold, redo, word jumps |
+| Profile        | Vim mode | Bindings                                                                                                                         |
+| -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Minimal        | off      | The plain default set. A new device starts here.                                                                                 |
+| Vim            | on       | The plain default set.                                                                                                           |
+| Mouse-friendly | off      | The default set without `Ctrl+R`, `Ctrl+B`, `Ctrl+E`, `Ctrl+D`, `Ctrl+L`, `Ctrl+Shift+Z`, `Ctrl+ArrowLeft` and `Ctrl+ArrowRight` |
+
+Mouse-friendly leaves those keys to the browser and the text field: reload, bold, the search bar,
+bookmark, the address bar, redo and word jumps.
 
 Settings, Keyboard exports the active profile and imports one. The file:
 

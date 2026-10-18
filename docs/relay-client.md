@@ -334,9 +334,10 @@ starts with `powBits` zero bits (rim-server `docs/specs/server-to-server-v1.md`,
 The work is bound to that relay and to the new account's inception, so it cannot be reused for
 another account or another relay.
 
-- **Where the person signs up.** In `pow` mode the login page links to `/join` in the desktop app,
-  and that page offers only "Create account with a key" (a password signup takes a token there).
-  The web app cannot sign up with a key: it says to use the desktop app or an invite. An invite
+- **Where the person signs up.** In `pow` mode the login page links to `/join` wherever the app
+  can hold keys (the desktop app, and a browser with WebCrypto Ed25519 and IndexedDB), and that
+  page offers only "Create account with a key" (a password signup takes a token there). A
+  browser that cannot hold keys says to use the desktop app or an invite. An invite
   link's page is unchanged, and its token skips the proof.
 - **When.** `signupWithKey` (`key-identity/api/keyIdentity.ts`) reads this server's discovery
   document first (fetched directly and verified, `pow/proofOfWork.ts` `readRegistration`), and in

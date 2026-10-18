@@ -116,10 +116,10 @@ The app's identifier is `com.rim.rim-ui`; its folders are named after it.
 
 | What | Linux | macOS | Windows |
 |---|---|---|---|
-| App data: the secret vault `secrets.vault`, the encrypted message cache `message-cache/`, history archive settings `history-archive/`, plugin state `plugin_state.json` | `~/.local/share/com.rim.rim-ui/` | `~/Library/Application Support/com.rim.rim-ui/` | `%APPDATA%\com.rim.rim-ui\` |
+| App data: the secret vault `secrets.vault`, the encrypted message cache `message-cache/`, history archive settings `history-archive/`, plugin state `plugin_state.json`, data that plugins store `plugin_storage/<plugin_id>/` | `~/.local/share/com.rim.rim-ui/` | `~/Library/Application Support/com.rim.rim-ui/` | `%APPDATA%\com.rim.rim-ui\` |
 | The vault key, one entry in the OS credential store | Secret Service, service `com.rim.rim-ui`, user `vault-key-v1` | Keychain, service `com.rim.rim-ui`, account `vault-key-v1` | Credential Manager, Windows Credentials, `vault-key-v1.com.rim.rim-ui` |
 | Web engine storage and caches (settings kept per device, such as the chosen server) | `~/.local/share/com.rim.rim-ui/`, `~/.cache/com.rim.rim-ui/` | `~/Library/WebKit/com.rim.rim-ui/`, `~/Library/Caches/com.rim.rim-ui/` | `%LOCALAPPDATA%\com.rim.rim-ui\` |
-| Local process plugins | `~/.rim/plugins/` | `~/.rim/plugins/` | `%USERPROFILE%\.rim\plugins\` |
+| Installed plugins, local process and sandboxed, one folder `<plugin_id>/` each | `~/.rim/plugins/` | `~/.rim/plugins/` | `%USERPROFILE%\.rim\plugins\` |
 
 The vault and its key belong together: the vault does not open without the key, and the key is
 of no use without the vault. `secret-vault.md` describes both.

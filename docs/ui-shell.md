@@ -1,6 +1,7 @@
 # RIM Desktop UI Shell
 
-This document defines the intended desktop shell for the RIM UI client.
+This document defines the intended desktop shell for the RIM UI client; the shell as built, which
+differs from it in places, is described in [`getting-started.md`](getting-started.md).
 
 It is a design and implementation target for the Tauri app in this repository. It should help keep
 layout, interaction, and runtime decisions aligned with the product direction in `../rim-server`.

@@ -189,9 +189,10 @@ What this device holds the server to, whatever it answers later:
 - Keyword notifications for encrypted groups at the "mentions" level are matched on this
   device after decrypting, as a desktop notification without an inbox entry.
 
-New DMs and groups are created with `encrypted: true` when every member has a device set up
-for encryption (`PrincipalDevice.mlsActive`); existing ones are upgraded by an eligible member's
-desktop when it opens them and everyone is ready.
+New DMs and groups are created with `encrypted: true` when the creator has a device set up for
+encryption (`PrincipalDevice.mlsActive`); members who are not ready yet are invited and join when
+they accept with a ready device. Existing ones are upgraded by an eligible member's desktop when
+it opens them and everyone is ready.
 
 ## Plugins, the agent, pipelines and lenses
 
