@@ -1,5 +1,4 @@
 use crate::plugin_host::manifest::{ManifestError, PluginManifest};
-use crate::plugin_host::simple_manifest;
 use crate::plugin_host::validation::validate_plugin_manifest;
 use std::path::{Path, PathBuf};
 
@@ -36,49 +35,30 @@ pub fn discover_plugins(
         if !path.is_dir() {
             continue;
         }
+        // A folder without a manifest is not a plugin.
         let manifest_path = path.join(MANIFEST_FILE);
-        if manifest_path.exists() {
-            match PluginManifest::load(&manifest_path) {
-                Ok(manifest) => {
-                    if let Err(e) = validate_plugin_manifest(&manifest) {
-                        // Log and skip: a manifest written directly to disk after install
-                        // may have been tampered with, so it never reaches the caches.
-                        log::warn!(
-                            "[AUDIT] event=plugin_discovery_rejected plugin_id={} path={} reason={}",
-                            manifest.plugin_id,
-                            path.display(),
-                            e
-                        );
-                    } else {
-                        results.push(Ok(DiscoveredPlugin {
-                            manifest,
-                            plugin_dir: path,
-                        }));
-                    }
+        if !manifest_path.exists() {
+            continue;
+        }
+        match PluginManifest::load(&manifest_path) {
+            Ok(manifest) => {
+                if let Err(e) = validate_plugin_manifest(&manifest) {
+                    // Log and skip: a manifest written directly to disk after install
+                    // may have been tampered with, so it never reaches the caches.
+                    log::warn!(
+                        "[AUDIT] event=plugin_discovery_rejected plugin_id={} path={} reason={}",
+                        manifest.plugin_id,
+                        path.display(),
+                        e
+                    );
+                } else {
+                    results.push(Ok(DiscoveredPlugin {
+                        manifest,
+                        plugin_dir: path,
+                    }));
                 }
-                Err(e) => results.push(Err((path, e))),
             }
-        } else {
-            // Try simple mode entrypoint
-            match simple_manifest::load_simple_manifest(&path) {
-                Ok(Some(manifest)) => {
-                    if let Err(e) = validate_plugin_manifest(&manifest) {
-                        log::warn!(
-                            "[AUDIT] event=plugin_discovery_rejected plugin_id={} path={} reason={}",
-                            manifest.plugin_id,
-                            path.display(),
-                            e
-                        );
-                    } else {
-                        results.push(Ok(DiscoveredPlugin {
-                            manifest,
-                            plugin_dir: path,
-                        }));
-                    }
-                }
-                Ok(None) => {} // No manifest found, skip
-                Err(e) => results.push(Err((path, e))),
-            }
+            Err(e) => results.push(Err((path, e))),
         }
     }
 

@@ -164,29 +164,6 @@ It gates AI consent. When the hash differs from the recorded one and the manifes
 until the user consents again (`manifest changed — re-consent required for AI commands`). Any
 change counts, since the old command set cannot be read from a hash.
 
-## Simple mode
-
-A folder without `rim-plugin.json` may declare its manifest in comments at the top of `main.ts`,
-`main.js` or `main.py`, the first that exists. `simple_manifest.rs` reads the `#` and `//` lines
-up to the first other non-empty line:
-
-```text
-# rim-plugin: dev.example.my-tool
-# rim-name: My Tool
-# rim-version: 1.0.0
-# rim-command: do_thing | Do Thing | Does a thing
-```
-
-- `rim-plugin` and `rim-name` are required, `rim-version` defaults to `0.1.0`, and
-  `rim-description`, `rim-author` and a comma-separated `rim-capabilities` are optional.
-  `rim-command` repeats and is `id | title [| description]`. An empty value, an unknown `rim-` key
-  or a malformed `rim-command` fails with its line number.
-- The result is a `DesktopLocalProcess` manifest without panels, keybind suggestions, context
-  actions or settings, whose commands have every flag off.
-- Its entrypoint is `npx tsx main.ts`, `node main.js` or `python main.py`. The host runs an
-  entrypoint as a file path, so such a plugin installs but fails to start with
-  `entrypoint not found`. A plugin that has to run uses `rim-plugin.json`.
-
 ## Example
 
 The manifest of [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), a web

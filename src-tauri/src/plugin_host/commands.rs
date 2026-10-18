@@ -1014,8 +1014,7 @@ fn check_ai_consent(
 /// Installs a plugin from a local folder on disk.
 ///
 /// Mirrors the shape of [`plugin_install_from_git`] but copies rather than
-/// cloning.  The source folder must contain a `rim-plugin.json` (or a
-/// simple-mode entrypoint with a `# rim-plugin:` header).
+/// cloning.  The source folder must contain a `rim-plugin.json`.
 ///
 /// Steps executed (see [`local_install::install_from_local`] for full detail):
 /// 1. Path-traversal guard (per-segment + canonicalize prefix assertion).

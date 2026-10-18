@@ -19,7 +19,6 @@ pub mod process;
 pub mod protocol;
 pub mod registry;
 pub mod runtime;
-pub mod simple_manifest;
 pub mod state;
 pub mod storage;
 pub mod trash;
