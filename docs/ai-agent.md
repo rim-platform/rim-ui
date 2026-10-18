@@ -135,7 +135,7 @@ dialog:
   execute** for a Restricted one. A Restricted command first asks you to type its verb, the word
   after the dot in its id, as in `Type "delete" to confirm`. <kbd>Ctrl+Enter</kbd> confirms;
   <kbd>Esc</kbd>, the close button and **Cancel** cancel. A click outside the dialog does nothing.
-- **Expiry**: the server's confirmation is valid for five seconds. When it runs out, the dialog
+- **Expiry**: the server's confirmation is valid for 60 seconds. When it runs out, the dialog
   closes and counts as cancelled. If it lapses as you confirm, the dialog opens once more.
 
 A cancelled call reaches the agent as "Action cancelled by user." The agent never confirms
