@@ -10,7 +10,7 @@ import { useLensStore } from "../../lenses/state/useLensStore";
 import { LensBanner } from "../../lenses/components/LensBanner";
 import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
-import { MessageContextMenu } from "./MessageContextMenu";
+import { useMessageContextMenu } from "../hooks/useMessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
@@ -32,7 +32,7 @@ import { HiddenPresenceContext } from "./message-item/hiddenPresence";
 import { computeGroups } from "./timeline/computeGroups";
 import { useNewMessagesDivider } from "./timeline/useNewMessagesDivider";
 import { useMarkSeen } from "./timeline/useMarkSeen";
-import { useTimelineHandlers } from "./timeline/useTimelineHandlers";
+import { useTimelineHandlers, type TimelineMenuTarget } from "./timeline/useTimelineHandlers";
 import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
@@ -185,15 +185,20 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
-  const { handlers, editError, contextMenu, closeContextMenu, openActionsFor } =
-    useTimelineHandlers({
-      items,
-      workspaceId,
-      conversationId,
-      currentUserId,
-    });
-
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
+  const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
+  const messageMenu = useMessageContextMenu({ workspaceId, conversationId, onForward: forward });
+  const getMenuItems = (target: TimelineMenuTarget) =>
+    messageMenu.getItems({ ...target, message: itemsById.get(target.messageId) });
+
+  const { handlers, editError, contextMenu, openActionsFor } = useTimelineHandlers({
+    items,
+    workspaceId,
+    conversationId,
+    currentUserId,
+    getMenuItems,
+  });
+
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
   const handleDeleteMessage = useCallback(
     async (msg: { id: string }) => {
@@ -388,22 +393,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
           encryption={e2ee.encrypted ? e2ee : undefined}
         />
       )}
-      {contextMenu && workspaceId && (
-        <MessageContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          messageId={contextMenu.messageId}
-          messageText={contextMenu.messageText}
-          conversationId={conversationId}
-          workspaceId={workspaceId}
-          isOwnMessage={contextMenu.isOwnMessage}
-          isPinned={contextMenu.isPinned}
-          hasThread={contextMenu.hasThread}
-          message={items.find((m) => m.id === contextMenu.messageId)}
-          onClose={closeContextMenu}
-          onForward={(msgId, msgText) => setForwardMessage({ id: msgId, text: msgText })}
-        />
-      )}
+      {contextMenu}
+      {messageMenu.dialog}
       {forwardMessage && workspaceId && (
         <ForwardDialog
           open={!!forwardMessage}

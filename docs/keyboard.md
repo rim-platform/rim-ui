@@ -21,7 +21,9 @@ A keydown passes through, in order:
    text field, keys that type a character and the editing chords (word jumps, select all,
    clipboard, undo, redo) stay with the field.
 3. **The focused surface**: lists answer arrow keys, Home and End; dialogs close on Escape;
-   menus move with the arrows.
+   menus move with the arrows, Home and End, open a submenu with ArrowRight or Enter and close
+   it with ArrowLeft or Escape. The ContextMenu key or Shift+F10 opens the context menu of the
+   focused item, as a right click does (`ui-shell.md`, Context Menus).
 
 The keyboard shortcuts panel (`?` or `Ctrl+/`, or Settings, Keyboard) lists the bindings this
 resolution produces, so it always matches what the keys do.

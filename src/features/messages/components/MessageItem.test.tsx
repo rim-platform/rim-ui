@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 import { MessageItem } from "./MessageItem";
-import type { MessageItemMessage } from "./MessageItem";
+import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
 
 const defaultMessage = {
   id: "msg-1",
@@ -18,7 +18,7 @@ const defaultMessage = {
   isDeleted: false,
 };
 
-const defaultHandlers = {
+const defaultHandlers: MessageItemHandlers = {
   onOpenThread: vi.fn(),
   onToggleReaction: vi.fn(),
   onContextMenu: vi.fn(),
@@ -134,6 +134,36 @@ describe("MessageItem", () => {
     expect(row).toBeInTheDocument();
     fireEvent.contextMenu(row as Element);
     expect(onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("hands its touches to the context menu's long press, not for deleted messages", () => {
+    const onTouchStart = vi.fn();
+    const bindContextMenu = vi.fn(() => ({
+      onContextMenu: vi.fn(),
+      onKeyDown: vi.fn(),
+      onTouchStart,
+      onTouchMove: vi.fn(),
+      onTouchEnd: vi.fn(),
+      onTouchCancel: vi.fn(),
+    }));
+    const { container, rerender } = render(
+      <MessageItem {...props({ handlers: { bindContextMenu } })} />,
+    );
+    const row = container.querySelector("[data-message-id='msg-1']") as Element;
+    fireEvent.touchStart(row, { touches: [{ clientX: 1, clientY: 1 }] });
+    expect(bindContextMenu).toHaveBeenCalledWith("msg-1", "Hello world");
+    expect(onTouchStart).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MessageItem
+        {...props({
+          message: { ...defaultMessage, isDeleted: true },
+          handlers: { bindContextMenu },
+        })}
+      />,
+    );
+    fireEvent.touchStart(row, { touches: [{ clientX: 1, clientY: 1 }] });
+    expect(onTouchStart).toHaveBeenCalledTimes(1);
   });
 
   it("shows thread button for non-deleted messages without thread", () => {

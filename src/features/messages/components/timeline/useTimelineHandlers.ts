@@ -1,20 +1,16 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 import { useEditMessageMutation } from "../../api/useEditMessage";
 import { useToggleReactionMutation } from "../../api/useToggleReaction";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { toast } from "../../../../shared/toast";
+import type { DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
+import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
+import type { MessageMenuTarget } from "../../hooks/useMessageContextMenu";
 import type { MessageItemHandlers } from "../MessageItem";
 
-export interface TimelineContextMenu {
-  x: number;
-  y: number;
-  messageId: string;
-  messageText: string;
-  isOwnMessage: boolean;
-  isPinned: boolean;
-  hasThread: boolean;
-}
+/** What a timeline row knows of the message its context menu opens on. */
+export type TimelineMenuTarget = Omit<MessageMenuTarget, "message">;
 
 interface TimelineHandlerItem {
   id: string;
@@ -31,20 +27,23 @@ interface UseTimelineHandlersOptions {
   workspaceId: string | null;
   conversationId: string | null;
   currentUserId: string | undefined;
+  /** The context menu's items for a message, read when the menu opens. */
+  getMenuItems: (target: TimelineMenuTarget) => DropdownMenuItem[];
 }
 
 /**
  * The row handlers for the timeline, as one referentially stable object:
  * every function is useCallback'd on values that only change with the
  * conversation, so MessageItem's memo holds across parent re-renders. `items`
- * changes with every new message, so the context-menu handler reads it
- * through a ref instead of closing over it.
+ * and `getMenuItems` change with every render, so the context-menu handlers
+ * read them through refs instead of closing over them.
  */
 export function useTimelineHandlers({
   items,
   workspaceId,
   conversationId,
   currentUserId,
+  getMenuItems,
 }: UseTimelineHandlersOptions) {
   const openThread = useShellStore((s) => s.openThreadForMessage);
   const setEditingMessageId = useShellStore((s) => s.setEditingMessageId);
@@ -52,19 +51,19 @@ export function useTimelineHandlers({
   const editMessage = useEditMessageMutation();
   const editMessageAsync = editMessage.mutateAsync;
 
-  const [contextMenu, setContextMenu] = useState<TimelineContextMenu | null>(null);
+  const { menu, bind, openFromEvent, openUnder, openAt } = useContextMenu();
 
   const itemsRef = useRef(items);
+  const getMenuItemsRef = useRef(getMenuItems);
   useLayoutEffect(() => {
     itemsRef.current = items;
-  }, [items]);
+    getMenuItemsRef.current = getMenuItems;
+  }, [items, getMenuItems]);
 
-  const openMenuAt = useCallback(
-    (x: number, y: number, messageId: string, messageText: string) => {
+  const menuItemsFor = useCallback(
+    (messageId: string, messageText: string) => () => {
       const msg = itemsRef.current.find((m) => m.id === messageId);
-      setContextMenu({
-        x,
-        y,
+      return getMenuItemsRef.current({
         messageId,
         messageText,
         isOwnMessage: msg?.author?.id === currentUserId,
@@ -77,9 +76,14 @@ export function useTimelineHandlers({
 
   const handleContextMenu = useCallback(
     (event: React.MouseEvent, messageId: string, messageText: string) => {
-      openMenuAt(event.clientX, event.clientY, messageId, messageText);
+      openFromEvent(event, menuItemsFor(messageId, messageText));
     },
-    [openMenuAt],
+    [openFromEvent, menuItemsFor],
+  );
+
+  const bindContextMenu = useCallback(
+    (messageId: string, messageText: string) => bind(menuItemsFor(messageId, messageText)),
+    [bind, menuItemsFor],
   );
 
   /** Open a message's actions menu from the keyboard, under the message's row. */
@@ -90,10 +94,11 @@ export function useTimelineHandlers({
       const row = Array.from(document.querySelectorAll("[data-message-id]")).find(
         (element) => element.getAttribute("data-message-id") === messageId,
       );
-      const rect = row?.getBoundingClientRect();
-      openMenuAt(rect ? rect.left + 16 : 16, rect ? rect.bottom : 16, messageId, msg.text ?? "");
+      const getItems = menuItemsFor(messageId, msg.text ?? "");
+      if (row) openUnder(row, getItems);
+      else openAt({ x: 16, y: 16 }, getItems);
     },
-    [openMenuAt],
+    [openUnder, openAt, menuItemsFor],
   );
 
   const handleSaveEdit = useCallback(
@@ -150,6 +155,7 @@ export function useTimelineHandlers({
       onOpenThread: openThread,
       onToggleReaction: handleToggleReaction,
       onContextMenu: handleContextMenu,
+      bindContextMenu,
       onSaveEdit: handleSaveEdit,
       onCancelEdit: handleCancelEdit,
       onNavigateToForwardedSource: handleNavigateToForwardedSource,
@@ -159,6 +165,7 @@ export function useTimelineHandlers({
       openThread,
       handleToggleReaction,
       handleContextMenu,
+      bindContextMenu,
       handleSaveEdit,
       handleCancelEdit,
       handleNavigateToForwardedSource,
@@ -166,13 +173,11 @@ export function useTimelineHandlers({
     ],
   );
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
-
   return {
     handlers,
     editError: editMessage.isError,
-    contextMenu,
-    closeContextMenu,
+    /** The open context menu, to render once beside the list. */
+    contextMenu: menu,
     openActionsFor,
   };
 }
