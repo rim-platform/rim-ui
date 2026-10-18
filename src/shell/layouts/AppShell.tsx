@@ -64,6 +64,7 @@ import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { ProbationBanner } from "../../features/limits/components/ProbationBanner";
 import { AccountDeletionBanner } from "../../features/account-deletion/components/AccountDeletionBanner";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
+import { DmRequestsPage } from "../../features/relay/components/DmRequestsPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
 import { cn } from "../../shared/ui/cn";
@@ -260,7 +261,8 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-72 shrink-0 border-r border-rim-line bg-rim-panel transition-opacity duration-300",
+                    // One column that never grows past the slot, whatever the panel's header holds.
+                    "grid w-72 shrink-0 grid-cols-1 overflow-hidden border-r border-rim-line bg-rim-panel transition-opacity duration-300",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >
@@ -373,6 +375,17 @@ function WorkspaceShell() {
             <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
               <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
                 <AuditLogPage />
+              </SurfaceErrorBoundary>
+            </main>
+          )}
+
+          {mainSurface.kind === "dm-requests" && (
+            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+              <SurfaceErrorBoundary
+                surface="Message requests"
+                resetKeys={[mainSurface.workspaceId]}
+              >
+                <DmRequestsPage workspaceId={mainSurface.workspaceId} />
               </SurfaceErrorBoundary>
             </main>
           )}

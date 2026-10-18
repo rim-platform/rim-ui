@@ -7,12 +7,15 @@ import { createTestQueryClient } from "../../../test/utils";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
   ConversationTypeEnum,
+  DmRequestStatus,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useRelayStore } from "../../relay/state/useRelayStore";
+import { makeDmRequest } from "../../relay/__fixtures__/dmRequests";
 import {
   baseReadHandlers,
   callsTo,
@@ -95,6 +98,7 @@ describe("ConversationList — channels sidebar", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
+    useRelayStore.getState().reset();
   });
 
   it("reaches every conversation and the channel actions with Tab", async () => {
@@ -182,7 +186,7 @@ describe("ConversationList — channels sidebar", () => {
     ]);
   });
 
-  it("shows an open draft DM first among messages, selected, until a conversation is opened", async () => {
+  it("shows an open draft DM first among conversations, selected, until a conversation is opened", async () => {
     useShellStore.getState().openDraftDirect({ workspaceId: "ws-1", otherUserId: "u-bob" });
     serve();
     const user = userEvent.setup();
@@ -190,7 +194,9 @@ describe("ConversationList — channels sidebar", () => {
 
     const draftRow = (await screen.findByText("New message to Bob")).closest("li")!;
     expect(draftRow).toHaveAttribute("aria-selected", "true");
-    const messages = within(screen.getByText("Messages").parentElement!).getAllByRole("option");
+    const messages = within(screen.getByText("Conversations").parentElement!).getAllByRole(
+      "option",
+    );
     expect(messages[0]).toBe(draftRow);
     // The list loaded with nothing selected, and the draft kept it from opening the first one.
     await screen.findByText("Alice");
@@ -199,6 +205,21 @@ describe("ConversationList — channels sidebar", () => {
     await user.click(screen.getByText("Alice"));
     expect(useShellStore.getState().selectedConversationId).toBe("c-dm");
     expect(screen.queryByText("New message to Bob")).not.toBeInTheDocument();
+  });
+
+  it("opens its first conversation under a main-area plugin panel, and closes the panel when one is clicked", async () => {
+    useShellStore.setState({ selectedConversationId: null });
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+    serve();
+    const user = userEvent.setup();
+    renderList();
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+    expect(useShellStore.getState().activePluginPanel).not.toBeNull();
+
+    await user.click(await screen.findByText("secret"));
+    expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
   });
 
   it("asks for joined channels including archived ones", async () => {
@@ -289,9 +310,52 @@ describe("ConversationList — channels sidebar", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("c-secret");
     expect(callsTo(requestMock, "mutation JoinChannel")).toHaveLength(0);
   });
+
+  /** The relay on, answering `requests` as the pending ones, with `ws-1` a workspace here. */
+  function serveRequests(requests: unknown[]) {
+    useRelayStore
+      .getState()
+      .setStarted(
+        { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
+        { endpoint: "e", userId: "me", principalId: "rimp1_me", deviceId: "d1" },
+        [],
+      );
+    routeRequests(requestMock, {
+      ...baseReadHandlers,
+      "query Channels": () => page([general]),
+      "query DmRequests": () => ({ dmRequests: requests }),
+    });
+    const qc = renderList();
+    qc.setQueryData(queryKeys.myServers(), [{ id: "ws-1" }, { id: "direct-1" }]);
+    return qc;
+  }
+
+  it("heads its conversations with this workspace's requests, which open in the main area", async () => {
+    serveRequests([
+      makeDmRequest("r1", "rims1_relay", "ws-1"),
+      makeDmRequest("r2", "rims1_relay", "direct-1"),
+    ]);
+    const row = await screen.findByRole("button", { name: "Requests (1)" });
+    expect(within(screen.getByText("Conversations").parentElement!).getByRole("button")).toBe(row);
+    await userEvent.setup().click(row);
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "dm-requests",
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("shows no requests row while only requests from outside the workspace wait", async () => {
+    const qc = serveRequests([makeDmRequest("r2", "rims1_relay", "direct-1")]);
+    await screen.findByText("general");
+    await waitFor(() =>
+      expect(qc.getQueryData(queryKeys.dmRequests(DmRequestStatus.PENDING))).toHaveLength(1),
+    );
+    expect(screen.queryByRole("button", { name: /^Requests/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Conversations")).not.toBeInTheDocument();
+  });
 });
 
-describe("ConversationList — guest gate (Track 1.2)", () => {
+describe("ConversationList — guest gate", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useShellStore.getState().reset();

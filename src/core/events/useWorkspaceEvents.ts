@@ -52,15 +52,12 @@ const WORKSPACE_EVENTS_QUERY = `
 
 /**
  * Reconnect cache-invalidation strategy: events that occur *during* a WS
- * disconnect are currently lost (there's no resume-since-cursor yet), so on
- * reconnect we must assume anything workspace-scoped that flows through
- * `workspaceEvents` may be stale. We invalidate only the active workspace's
- * volatile server-state keys (`VOLATILE_WORKSPACE_KEY_ROOTS` in
- * `core/query/keys.ts`) rather than the whole
- * cache, and skip the very first connect (initial page load already fetches
- * everything fresh). Track B will add a resume-since-cursor to the
- * subscription so reconnects can replay only what was actually missed,
- * making this blanket-but-scoped invalidation unnecessary.
+ * disconnect are lost (the subscription has no resume-since-cursor), so on
+ * reconnect anything workspace-scoped that flows through `workspaceEvents`
+ * may be stale. Only the active workspace's volatile server-state keys
+ * (`VOLATILE_WORKSPACE_KEY_ROOTS` in `core/query/keys.ts`) are invalidated
+ * rather than the whole cache, and the very first connect is skipped (initial
+ * page load already fetches everything fresh).
  */
 export function useWorkspaceEvents(workspaceId: string | null) {
   const qc = useQueryClient();

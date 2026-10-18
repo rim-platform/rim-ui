@@ -14,6 +14,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
+import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { runtimeKind, type PluginCommandInfo, type PluginInfo } from "../../plugins/types";
 import { pluginServices } from "../../plugins/web/webPluginEnvironment";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
@@ -37,8 +38,8 @@ function clearRegistry(): void {
 // confirmationRequired is the server-issued challenge populated iff
 // status == CONFIRMATION_REQUIRED. Without these subfields selected, the
 // modal never opens for dangerous commands — interpretResult throws the
-// "challenge payload missing" branch and H1 closure is theoretical only.
-// This selection set must stay exhaustive; losing any of {token, argsHash,
+// "challenge payload missing" branch and no dangerous command can ever be
+// confirmed. This selection set must stay exhaustive; losing any of {token, argsHash,
 // expiresAt} breaks the in-band-proof flow.
 const EXECUTE_COMMAND_MUTATION = gql`
   mutation AgentExecuteCommand($input: ExecuteCommandInput!) {
@@ -187,7 +188,7 @@ function interpretResult(
     // render sensitivity tier + nl_description without a second lookup.
     // The tool is keyed by commandId (backend handlers register under
     // their commandId) — for hardcoded tools (e.g. get_current_context)
-    // we won't find a record and the modal falls back to defaults.
+    // there is no record and the modal falls back to defaults.
     const registered = getTool(commandId);
     throw new ConfirmationRequiredError({
       commandId,
@@ -217,7 +218,7 @@ function snakeToCamel(key: string): string {
 }
 
 /**
- * Handler for a `DESKTOP_LOCAL` command (Track 4.1). The server rejects desktop-local
+ * Handler for a `DESKTOP_LOCAL` command. The server rejects desktop-local
  * commands, so the agent runs them through the same local handlers the palette and keybinds
  * use. Tool input follows the server's snake_case argument names (`conversation_id`), while
  * the local handlers read camelCase (`conversationId`), so keys are converted here. These
@@ -353,8 +354,14 @@ function makePluginToolHandler(
   web = false,
 ): AiToolHandler {
   return async (input) => {
+    // The agent runs in the user's current context, which supplies any context ids the command
+    // requires; without them the plugin is not called.
+    const prepared = withContextArguments(command.required_context ?? [], input);
+    if (!prepared.ok) {
+      throw new Error(`Plugin command ${pluginId}/${command.id} cannot run: ${prepared.message}`);
+    }
     try {
-      const result = await runAiCommand(pluginId, command, input, web);
+      const result = await runAiCommand(pluginId, command, prepared.args, web);
       return payloadToString(result);
     } catch (err) {
       // The host refuses every dangerous command the agent starts: the agent
@@ -417,14 +424,13 @@ function injectPluginTools(plugins: ReadonlyArray<PluginInfo>): void {
 }
 
 export async function loadAgentTools(): Promise<MergeResult> {
-  // Snapshot the intended hardcoded set, then clear the registry so we can
-  // re-populate atomically. This makes loadAgentTools idempotent — calling
-  // it twice never leaves a dropped builtin handler shadowing a backend
-  // winner under the same name.
+  // Snapshot the intended hardcoded set, then clear the registry so it can
+  // be re-populated atomically. This makes loadAgentTools idempotent —
+  // calling it twice never leaves a dropped builtin handler shadowing a
+  // backend winner under the same name.
   //
-  // Post-#55 the hardcoded set is exactly one tool — `get_current_context`,
-  // the documented carve-out (see `getCurrentContext.ts` for rationale).
-  // Every other AI-callable command comes from the backend registry.
+  // The hardcoded set is exactly one tool, `get_current_context`. Every
+  // other AI-callable command comes from the backend registry.
   registerGetCurrentContextTool();
   const hardcodedSnapshot = getAllTools();
   clearRegistry();
@@ -435,7 +441,7 @@ export async function loadAgentTools(): Promise<MergeResult> {
     backendCommands = await fetchAiCommands();
   } catch (err) {
     // Network/server failure: fall back to hardcoded-only registry.
-    // Do NOT block agent boot — the user can still use builtin tools.
+    // Agent boot is not blocked — the user can still use builtin tools.
     fetchFailed = true;
 
     console.warn("[agent.loader] Failed to fetch backend AI tools, using hardcoded only", err);

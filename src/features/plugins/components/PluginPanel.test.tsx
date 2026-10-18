@@ -1,145 +1,113 @@
-import { describe, it, expect, vi } from "vitest";
-
-// The validatePluginUrl function is private, but we can test PluginPanel's
-// behavior with invalid URLs by rendering and checking for error messages.
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-
-vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({
-    capabilities: { pluginHost: true },
-  }),
-}));
-
-vi.mock("../runtime/pluginBridge", () => ({
-  createPluginBridge: vi.fn(() => ({
-    sendToPlugin: vi.fn(),
-    destroy: vi.fn(),
-  })),
-  followPanelState: vi.fn(() => ({ load: vi.fn(() => Promise.resolve()), stop: vi.fn() })),
-}));
-
-vi.mock("../runtime/pluginThemeBridge", () => ({
-  createThemeChangeMessage: vi.fn(() => ({
-    type: "theme.changed",
-    variables: {},
-  })),
-  onThemeChange: vi.fn(() => vi.fn()),
-}));
-
-vi.mock("../runtime/pluginFocusManager", () => ({
-  usePluginFocusManager: vi.fn(() => ({
-    focusIframe: vi.fn(),
-    onWrapperKeyDown: vi.fn(),
-  })),
-}));
-
+// A local-process plugin's panel: the desktop host reads its panel folder, the
+// files go to the frame shell, and the panel follows its plugin process's state.
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PluginPanel } from "./PluginPanel";
+
+const { invoke, runtime, followPanelState, follower } = vi.hoisted(() => {
+  const follower = { load: vi.fn(() => Promise.resolve()), stop: vi.fn() };
+  return {
+    invoke: vi.fn(),
+    runtime: { platform: "desktop", capabilities: { pluginHost: true } },
+    followPanelState: vi.fn(() => follower),
+    follower,
+  };
+});
+
+vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: invoke }));
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({ useRuntime: () => runtime }));
+vi.mock("../runtime/pluginBridge", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../runtime/pluginBridge")>()),
+  followPanelState,
+}));
+
+import { encodeBase64 } from "../web/bundle";
+import { LOCAL_PANEL_SHELL_URL, PluginPanel } from "./PluginPanel";
+import { fromFrame, mountedFrame, sentInits, spyOnFrame, startShell } from "./testing/frame";
+
+const encoder = new TextEncoder();
+
+function filesOnDisk(files: Record<string, string>) {
+  invoke.mockResolvedValue({
+    ok: true,
+    value: Object.entries(files).map(([path, text]) => ({
+      path,
+      base64: encodeBase64(encoder.encode(text)),
+    })),
+  });
+}
+
+/** The panel mounted, its frame loaded, the host's posts into it spied. */
+async function loadedPanel() {
+  const { container } = render(
+    <PluginPanel
+      pluginId="chat.rim.k8s-pods"
+      panelId="pods"
+      pluginName="Kubernetes pods"
+      approvedCapabilities={[]}
+      onClose={vi.fn()}
+    />,
+  );
+  const iframe = await mountedFrame(container);
+  if (!iframe) return { container, iframe: null, posted: null };
+  const posted = spyOnFrame(iframe);
+  startShell(iframe);
+  return { container, iframe, posted };
+}
+
+beforeEach(() => {
+  invoke.mockReset();
+  followPanelState.mockClear();
+  follower.load.mockClear();
+  runtime.capabilities.pluginHost = true;
+});
 
 describe("PluginPanel", () => {
-  const defaultProps = {
-    pluginId: "test-plugin",
-    panelId: "main",
-    approvedCapabilities: [] as const,
-    onClose: vi.fn(),
-  };
+  it("hands the panel folder's files, decoded, to the network-closed shell with no origin", async () => {
+    filesOnDisk({ "index.html": '<script src="app.js"></script>', "app.js": "start()" });
+    const { iframe, posted } = await loadedPanel();
 
-  it("renders an iframe for valid plugin/panel IDs", () => {
-    const { container } = render(<PluginPanel {...defaultProps} />);
-    const iframe = container.querySelector("iframe");
-    expect(iframe).toBeInTheDocument();
-    expect(iframe?.getAttribute("src")).toBe("rim-plugin://test-plugin/main/index.html");
+    expect(iframe?.getAttribute("src")).toBe(LOCAL_PANEL_SHELL_URL);
+
+    expect(invoke).toHaveBeenCalledWith("plugin_panel_files", {
+      pluginId: "chat.rim.k8s-pods",
+      panelId: "pods",
+    });
+    const [init] = sentInits(posted!);
+    expect(init.policy).toEqual({ origins: [] });
+    expect(init.files).toEqual([
+      { path: "index.html", type: "text/html", text: '<script src="app.js"></script>' },
+      { path: "app.js", type: "text/javascript", text: "start()" },
+    ]);
   });
 
-  it("sets sandbox attribute to allow-scripts only", () => {
-    const { container } = render(<PluginPanel {...defaultProps} />);
-    const iframe = container.querySelector("iframe");
-    expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
-  });
+  it("follows the state its plugin process keeps for this panel", async () => {
+    filesOnDisk({ "index.html": "" });
+    const { iframe } = await loadedPanel();
+    fromFrame(iframe!, { type: "rim.frame.ready", v: 1 });
 
-  it("shows error for path traversal in pluginId", () => {
-    render(<PluginPanel {...defaultProps} pluginId="../evil" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("shows error for path traversal in panelId", () => {
-    render(<PluginPanel {...defaultProps} panelId="../../etc/passwd" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("shows error for encoded traversal in pluginId", () => {
-    render(<PluginPanel {...defaultProps} pluginId="test%2e%2e" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("shows error for slashes in pluginId", () => {
-    render(<PluginPanel {...defaultProps} pluginId="evil/path" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("shows error for backslashes in pluginId", () => {
-    render(<PluginPanel {...defaultProps} pluginId="evil\\path" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("shows error for special characters in pluginId", () => {
-    render(<PluginPanel {...defaultProps} pluginId="evil plugin!" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("accepts pluginId with hyphens and underscores", () => {
-    const { container } = render(
-      <PluginPanel {...defaultProps} pluginId="my-plugin_v2" panelId="main_panel" />,
+    expect(followPanelState).toHaveBeenCalledWith(
+      "chat.rim.k8s-pods",
+      "pods",
+      expect.any(Function),
     );
-    const iframe = container.querySelector("iframe");
-    expect(iframe).toBeInTheDocument();
-    expect(iframe?.getAttribute("src")).toBe("rim-plugin://my-plugin_v2/main_panel/index.html");
+    expect(follower.load).toHaveBeenCalledTimes(1);
   });
 
-  // ── validatePluginUrl regex: dot support (Phase 2 fix) ──
-
-  it("accepts reverse-domain plugin ID with dots (dev.example.hello-world)", () => {
-    const { container } = render(
-      <PluginPanel {...defaultProps} pluginId="dev.example.hello-world" panelId="main" />,
-    );
-    const iframe = container.querySelector("iframe");
-    expect(iframe).toBeInTheDocument();
-    expect(iframe?.getAttribute("src")).toBe(
-      "rim-plugin://dev.example.hello-world/main/index.html",
-    );
+  it("says why the host could not read the panel's files", async () => {
+    invoke.mockResolvedValue({
+      ok: false,
+      error: { kind: "backend_error", message: "chat.rim.k8s-pods declares no panel pods" },
+    });
+    const { iframe } = await loadedPanel();
+    expect(iframe).toBeNull();
+    expect(screen.getByText("chat.rim.k8s-pods declares no panel pods")).toBeInTheDocument();
   });
 
-  it("rejects pluginId containing literal .. (traversal attempt)", () => {
-    render(<PluginPanel {...defaultProps} pluginId=".." />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("rejects pluginId containing ../ (traversal attempt)", () => {
-    render(<PluginPanel {...defaultProps} pluginId="../escape" />);
-    expect(screen.getByText("Invalid plugin panel URL.")).toBeInTheDocument();
-  });
-
-  it("accepts pluginId with a single leading dot segment (e.g. .hidden is unusual but not a traversal)", () => {
-    // Note: a single dot is not a traversal — the regex allows `.` but the `..` check
-    // fires first. `.hidden` as a plugin ID segment is unusual but not blocked.
-    // This test documents that the guard allows such a value (it passes safePattern but
-    // in practice reverse-domain plugin IDs never start with `.`).
-    const { container } = render(
-      <PluginPanel {...defaultProps} pluginId="dev.example.plugin" panelId="main" />,
-    );
-    const iframe = container.querySelector("iframe");
-    expect(iframe).toBeInTheDocument();
-  });
-
-  // Skipping: overriding vi.mock at test level requires vi.hoisted/dynamic import
-  // The pluginHost=false path is covered implicitly by the mock setup.
-
-  it("sets iframe title with plugin ID", () => {
-    const { container } = render(<PluginPanel {...defaultProps} />);
-    const iframe = container.querySelector("iframe");
-    expect(iframe?.getAttribute("title")).toBe("Plugin: test-plugin");
+  it("needs the desktop app", async () => {
+    runtime.capabilities.pluginHost = false;
+    const { iframe } = await loadedPanel();
+    expect(iframe).toBeNull();
+    expect(screen.getByText("Plugins require the desktop app.")).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

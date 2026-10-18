@@ -43,11 +43,11 @@ tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 # In-app updates and the relaunch that applies them. Kept on the same minor as their npm
 # packages and on lines that build against the tauri minor in use.
-tauri-plugin-updater = "~2.13.2"
+tauri-plugin-updater = "~2.14.0"
 tauri-plugin-process = "~2.4.0"
 # The app's log file in the OS log directory, with rotation; the webview's warnings and errors
 # reach it through the npm package of the same version.
-tauri-plugin-log = "=2.10.0"
+tauri-plugin-log = "=2.10.1"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 getrandom = "0.3"
 base64 = "0.22"

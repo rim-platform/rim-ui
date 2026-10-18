@@ -1,8 +1,9 @@
 import { create } from "zustand";
 
+import type { PluginPanelSlot } from "../../features/plugins/types";
 import type { DirectMember } from "../../features/relay/conversations/startDirect";
 
-export type ActivePanel = "inbox" | "plugins";
+export type ActivePanel = "inbox";
 
 export type DisplayDensity = "comfortable" | "compact" | "ultra-compact";
 
@@ -17,7 +18,12 @@ export type MainSurface =
   | { kind: "settings"; tab?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
-  | { kind: "audit-log" };
+  | { kind: "audit-log" }
+  /**
+   * The message requests of one workspace's conversations, or with `workspaceId: null`, those
+   * from outside every workspace.
+   */
+  | { kind: "dm-requests"; workspaceId: string | null };
 
 /**
  * A direct message not created yet: with a workspace member, or with someone in a relay's
@@ -29,7 +35,15 @@ export type DirectDraft =
 export type ActivePluginPanel = {
   pluginId: string;
   panelId: string;
+  /** Where the panel shows: a `main_area` panel covers the conversation. */
+  slot: PluginPanelSlot;
 } | null;
+
+/** Options for selecting a conversation. */
+export type SelectConversationOptions = {
+  /** Leaves a main-area plugin panel open: for selections the user did not make. */
+  keepPluginPanel?: boolean;
+};
 
 type ShellState = {
   activePanel: ActivePanel;
@@ -56,11 +70,17 @@ type ShellState = {
   setActivePanel: (panel: ActivePanel) => void;
   setMainSurface: (surface: MainSurface) => void;
   setActivePluginPanel: (panel: ActivePluginPanel) => void;
-  openPluginPanel: (pluginId: string, panelId: string) => void;
+  openPluginPanel: (pluginId: string, panelId: string, slot: PluginPanelSlot) => void;
   closePluginPanel: () => void;
-  /** Selects a conversation (or none) and drops any draft direct message. */
-  setSelectedConversationId: (id: string | null) => void;
-  /** Opens a draft direct message in place of the selected conversation. */
+  /**
+   * Selects a conversation (or none) and drops any draft direct message. Selecting one closes
+   * a main-area plugin panel so the conversation shows, unless `keepPluginPanel`.
+   */
+  setSelectedConversationId: (id: string | null, options?: SelectConversationOptions) => void;
+  /**
+   * Opens a draft direct message in place of the selected conversation, closing a main-area
+   * plugin panel.
+   */
   openDraftDirect: (draft: DirectDraft) => void;
   openThreadForMessage: (rootMessageId: string) => void;
   closeThread: () => void;
@@ -77,6 +97,11 @@ type ShellState = {
   setNavigationMode: (enabled: boolean) => void;
   reset: () => void;
 };
+
+/** Closes the active plugin panel when it covers the conversation; a tool-panel one stays. */
+function withoutMainAreaPanel(state: ShellState): Partial<ShellState> {
+  return state.activePluginPanel?.slot === "main_area" ? { activePluginPanel: null } : {};
+}
 
 export const useShellStore = create<ShellState>((set) => ({
   activePanel: "inbox",
@@ -102,30 +127,32 @@ export const useShellStore = create<ShellState>((set) => ({
   setActivePanel: (panel) => set({ activePanel: panel }),
   setMainSurface: (surface) => set({ mainSurface: surface }),
   setActivePluginPanel: (panel) => set({ activePluginPanel: panel }),
-  openPluginPanel: (pluginId, panelId) =>
+  openPluginPanel: (pluginId, panelId, slot) =>
     set({
       mainSurface: { kind: "conversation" },
-      activePluginPanel: { pluginId, panelId },
+      activePluginPanel: { pluginId, panelId, slot },
     }),
   closePluginPanel: () => set({ activePluginPanel: null }),
 
-  setSelectedConversationId: (id) =>
-    set({
+  setSelectedConversationId: (id, options) =>
+    set((state) => ({
       selectedConversationId: id,
       draftDirect: null,
       selectedRootMessageId: null,
       isThreadOpen: false,
       editingMessageId: null,
-    }),
+      ...(id !== null && !options?.keepPluginPanel ? withoutMainAreaPanel(state) : {}),
+    })),
 
   openDraftDirect: (draft) =>
-    set({
+    set((state) => ({
       selectedConversationId: null,
       draftDirect: draft,
       selectedRootMessageId: null,
       isThreadOpen: false,
       editingMessageId: null,
-    }),
+      ...withoutMainAreaPanel(state),
+    })),
 
   openThreadForMessage: (rootMessageId) =>
     set({ selectedRootMessageId: rootMessageId, isThreadOpen: true }),

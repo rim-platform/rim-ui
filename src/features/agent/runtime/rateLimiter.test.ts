@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// The module exports a singleton, so we re-import fresh each test via dynamic import tricks.
-// Instead, we test the class behavior by accessing the exported singleton and resetting it.
+// The module exports a singleton; each test resets it and exercises it directly.
 import { agentRateLimiter } from "./rateLimiter";
 
 describe("AgentRateLimiter", () => {
   beforeEach(() => {
-    // Reset internal state by accessing private fields via any-cast workaround.
-    // We use Object.assign to reset the limiter without needing `any`.
+    // Reset the private fields with Object.assign, which needs no `any` cast.
     Object.assign(agentRateLimiter, {
       runTimestamps: [],
       sessionCost: 0,

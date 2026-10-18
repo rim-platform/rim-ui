@@ -1,8 +1,7 @@
 //! The cache key: one random 256-bit key per installation, kept in the secret vault.
 //!
-//! Every account's cache database is encrypted with it (SQLCipher raw key). This is the
-//! Stage 2 cache key of the master plan; Stage 3 re-wraps it under the device key, so all
-//! key handling stays in this module and the rest of the cache only sees [`CacheKey`].
+//! Every account's cache database is encrypted with it (SQLCipher raw key). All key handling
+//! stays in this module; the rest of the cache only sees [`CacheKey`].
 
 use std::sync::Arc;
 

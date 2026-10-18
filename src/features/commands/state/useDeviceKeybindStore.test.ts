@@ -76,6 +76,7 @@ describe("useDeviceKeybindStore", () => {
 
   it("binds only plugin commands on the device", () => {
     expect(bindsOnDevice(REFRESH)).toBe(true);
+    expect(bindsOnDevice("workspace.open_plugin_panel.chat.rim.k8s-pods/pods")).toBe(true);
     expect(bindsOnDevice("workspace.open_settings")).toBe(false);
   });
 

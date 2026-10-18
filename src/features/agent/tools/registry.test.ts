@@ -63,7 +63,7 @@ describe("agent tool registry", () => {
     expect(tool!.sideEffect).toBe(true);
   });
 
-  it("registers tool with description option and getTool returns it (C2 §4)", () => {
+  it("registers tool with description option and getTool returns it", () => {
     registerTool(testDefinition, testHandler, {
       description:
         "Archive a channel. Members can still read it, but nobody can post until it is unarchived.",

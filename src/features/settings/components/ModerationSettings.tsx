@@ -23,10 +23,9 @@ interface ModerationSettingsProps {
 }
 
 /**
- * Settings → Workspace → Moderation (Owner/Moderator, Track 1.2): active bans with Unban, and
- * message reports with Resolve / Dismiss, including the verified content of reported encrypted
- * messages. The server answers `FORBIDDEN` to anyone else and
- * that message is shown here.
+ * Settings → Workspace → Moderation (Owner/Moderator): active bans with Unban, and message
+ * reports with Resolve / Dismiss, including the verified content of reported encrypted
+ * messages. The server answers `FORBIDDEN` to anyone else and that message is shown here.
  */
 export function ModerationSettings({ serverId }: ModerationSettingsProps) {
   const canModerate = useCanModerate(serverId ?? undefined);

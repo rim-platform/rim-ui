@@ -61,7 +61,7 @@ export function endpointHost(endpoint: string): string {
  * is always an absolute origin, and if the endpoint doesn't end in `/api`
  * (a misconfigured `VITE_GRAPHQL_ENDPOINT`, e.g. a bare origin or some other
  * path), falls back to just the origin rather than concatenating onto
- * whatever path happens to be configured — which previously produced
+ * whatever path happens to be configured, which would produce
  * malformed REST/WS URLs (extra or missing path segments). `getWsEndpoint`
  * builds on this so both derivations share one normalization path.
  */
@@ -71,9 +71,9 @@ export function getApiOrigin(): string {
   try {
     url = new URL(endpoint, window.location.origin);
   } catch {
-    // Malformed endpoint string that even a same-origin base can't parse —
-    // fall back to naive suffix-stripping so we don't throw; the result may
-    // still be wrong, but no worse than before this function existed.
+    // Malformed endpoint string that even a same-origin base can't parse:
+    // fall back to naive suffix-stripping rather than throw; the result may
+    // be wrong.
     return endpoint.replace(/\/api$/, "");
   }
   if (url.pathname.endsWith("/api")) {

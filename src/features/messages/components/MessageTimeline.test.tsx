@@ -76,6 +76,16 @@ vi.mock("./MessageContextMenu", () => ({
 }));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));
 
+// The open conversation and whether its other member has the viewer's DM as a pending request.
+const dmRequest = vi.hoisted(() => ({ pending: false, conversation: undefined as unknown }));
+vi.mock("../../conversations/api/useDmRequestPending", () => ({
+  useDmRequestPending: () => dmRequest.pending,
+}));
+vi.mock("../../conversations/api/useConversation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../conversations/api/useConversation")>()),
+  useConversation: () => ({ data: dmRequest.conversation }),
+}));
+
 // --- Render-counting MessageItem spy --------------------------------------
 // Wraps a counting component in the real memo comparator so a count only
 // increments when the real MessageItem would have re-rendered.
@@ -111,6 +121,8 @@ vi.mock("./MessageItem", async (importOriginal) => {
   };
 });
 
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import { MessageTimeline } from "./MessageTimeline";
 import { MARK_SEEN_DELAY_MS } from "./timeline/useMarkSeen";
 
@@ -326,6 +338,8 @@ afterEach(() => {
   cleanup();
   uninstallLayout();
   vi.clearAllMocks();
+  dmRequest.pending = false;
+  dmRequest.conversation = undefined;
 });
 
 describe("MessageTimeline handler stability", () => {
@@ -429,8 +443,9 @@ describe("MessageTimeline virtualization", () => {
     rerender(<MessageTimeline />);
     await settle();
 
-    // The previously-first message is exactly where it was on screen, because
-    // the scroll offset grew by the (still estimated) height of the new rows.
+    // The message that was first before the prepend is exactly where it was on
+    // screen, because the scroll offset grew by the (still estimated) height of
+    // the new rows.
     expect(rowViewportOffset("m-010")).toBe(before);
     expect(messageList().scrollTop).toBeGreaterThanOrEqual(10 * ROW);
 
@@ -684,5 +699,43 @@ describe("MessageTimeline keyboard", () => {
     } finally {
       useKeybindProfileStore.getState().setVimMode(false);
     }
+  });
+});
+
+describe("MessageTimeline — DM sent as a request", () => {
+  beforeEach(() => {
+    dmRequest.conversation = makeConversation({
+      id: "conv-1",
+      title: null,
+      conversationType: ConversationTypeEnum.DIRECT,
+      memberIds: ["me", "u-alice"],
+      memberCount: 2,
+    });
+  });
+
+  /** `count` messages the viewer sent. */
+  function sent(count: number) {
+    setMessages(range(0, count).map((m) => ({ ...m, authorId: "me" })));
+  }
+
+  it("says the DM went as a request, and once the held messages are used, that the rest waits", () => {
+    dmRequest.pending = true;
+    sent(1);
+    const { unmount } = render(<MessageTimeline />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sent as a request; u-alice has not accepted yet.",
+    );
+    expect(screen.queryByText(/The rest waits/)).not.toBeInTheDocument();
+    unmount();
+
+    sent(2);
+    render(<MessageTimeline />);
+    expect(screen.getByText("The rest waits for u-alice's acceptance.")).toBeInTheDocument();
+  });
+
+  it("says nothing once the request is accepted", () => {
+    sent(3);
+    render(<MessageTimeline />);
+    expect(screen.queryByText(/Sent as a request/)).not.toBeInTheDocument();
   });
 });

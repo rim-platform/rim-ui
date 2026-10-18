@@ -67,9 +67,8 @@ pub const CHAT_METHODS: &[&str] = &[
 /// reach to encrypted conversations).
 ///
 /// The other names in [`METHOD_CAPABILITY_MAP`] stay out: `local.process`,
-/// `network`, `fs.*` and `events.read` guard methods nothing implements. Add a
-/// name here when its methods are wired, so the approval prompt never asks for a
-/// permission that does nothing.
+/// `network`, `fs.*` and `events.read` guard methods nothing implements, and the
+/// approval prompt never asks for a permission that does nothing.
 pub const BUILTIN_CAPABILITIES: &[&str] = &[
     "ui.panel",
     "ui.notify",
@@ -103,8 +102,12 @@ impl CapabilityGate {
         &self.approved_capabilities
     }
 
-    /// Check whether a plugin is allowed to call the given method.
-    /// Returns Ok(()) if allowed, Err(required_capability) if denied.
+    /// Checks whether the plugin may call `method`. Always-allowed and unknown
+    /// methods pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns the name of the required capability when it was not approved.
     pub fn check(&self, method: &str) -> Result<(), String> {
         if ALWAYS_ALLOWED.contains(&method) {
             return Ok(());
@@ -125,7 +128,7 @@ impl CapabilityGate {
     }
 }
 
-/// Look up the capability required for a method. Returns None if always-allowed or unknown.
+/// Returns the capability `method` requires; `None` if it is always allowed or unknown.
 pub fn capability_for_method(method: &str) -> Option<&'static str> {
     if ALWAYS_ALLOWED.contains(&method) {
         return None;

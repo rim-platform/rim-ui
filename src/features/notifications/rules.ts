@@ -1,7 +1,6 @@
 /**
- * Client-side mirrors of the server's notification-settings validation (Track 1.3,
- * `rim-server/docs/messaging.md`). The server stays the authority; these only catch mistakes
- * before a round trip, with the same limits and wording.
+ * Client-side mirrors of the server's notification-settings validation. The server stays the
+ * authority; these only catch mistakes before a round trip, with the same limits and wording.
  */
 
 export const MAX_KEYWORDS = 20;

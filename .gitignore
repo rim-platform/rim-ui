@@ -27,7 +27,7 @@ schema.json
 *.sln
 *.sw?
 
-# Local/generated (added during C1 commit)
+# Local/generated
 coverage/
 .claude/
 .env

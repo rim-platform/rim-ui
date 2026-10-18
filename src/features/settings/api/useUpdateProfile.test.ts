@@ -3,9 +3,8 @@
  * the `updateMyProfile(input: UpdateMyProfileInput!)` GraphQL mutation.
  *
  * Why these tests exist:
- *   1. Lock in the input-object shape `{ input: { ... } }`. Last session the
- *      hook was migrated from flat args to the wrapped form; without a test
- *      the wrapping could silently regress.
+ *   1. Lock in the input-object shape `{ input: { ... } }` rather than flat
+ *      args, so the wrapping cannot silently regress.
  *   2. Confirm the returned `User` shape is surfaced unchanged through
  *      mutation `data` so callers can read `displayName`, `avatarUrl`, etc.
  *   3. Confirm partial input is honored — only the fields the caller passes
@@ -153,7 +152,7 @@ describe("useUpdateProfileMutation", () => {
     });
 
     expect(captured.value).not.toBeNull();
-    // `input` contains exactly the field the caller supplied. We do not
+    // `input` contains exactly the field the caller supplied. This does not
     // assert "no extra undefined keys" because GraphQL serialization may
     // omit undefineds anyway; instead, assert what was sent by deep equality.
     expect(captured.value!.variables).toEqual({

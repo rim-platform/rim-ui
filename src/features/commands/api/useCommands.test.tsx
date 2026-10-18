@@ -29,7 +29,7 @@ function timedOutError(until: string) {
   });
 }
 
-describe("useExecuteCommandMutation — TIMED_OUT (Track 1.2)", () => {
+describe("useExecuteCommandMutation — TIMED_OUT", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useTimeoutStore.setState({ byWorkspace: {} });

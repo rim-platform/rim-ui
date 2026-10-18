@@ -32,7 +32,7 @@ export interface ServerMember {
   statusText: string | null;
   bio: string | null;
   displayName: string | null;
-  /** End of the member's timeout while one is in force, else null (Track 1.2). */
+  /** End of the member's timeout while one is in force, else null. */
   timeoutUntil?: string | null;
   /** The member's key identity (`rimp1_…`) once enrolled; null for a password-only account. */
   principalId?: string | null;

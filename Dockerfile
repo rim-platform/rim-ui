@@ -8,7 +8,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-# .npmrc carries legacy-peer-deps (see its comment); without it npm ci fails on ERESOLVE.
+# .npmrc sets legacy-peer-deps; without it npm ci fails on ERESOLVE.
 COPY package.json package-lock.json* .npmrc ./
 RUN npm ci --ignore-scripts
 
@@ -57,16 +57,15 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     # X-XSS-Protection "1; mode=block" is deprecated — set to "0" and rely on
-    # CSP for XSS defense-in-depth instead (L2).
+    # CSP for XSS defense-in-depth instead.
     add_header X-XSS-Protection "0" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    # Content-Security-Policy (M2): XSS defense-in-depth for the web build.
+    # Content-Security-Policy: XSS defense-in-depth for the web build.
     # connect-src is pinned to the API origin derived from VITE_GRAPHQL_ENDPOINT
     # at docker build time — no wildcard localhost allowed in production.
     # style-src includes 'unsafe-inline' because Tailwind CSS v4 injects inline
-    # styles at build time; tightening to a nonce requires build-pipeline changes
-    # beyond this scope (flagged per spec M2 review note). 'wasm-unsafe-eval' lets the
-    # page compile the encrypted conversations' MLS module (WebAssembly), nothing else.
+    # styles at build time. 'wasm-unsafe-eval' lets the page compile the encrypted
+    # conversations' MLS module (WebAssembly), nothing else.
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
 
     # Gzip compression
@@ -95,11 +94,13 @@ server {
     # <meta>. Policies intersect, so this location sends that same baseline
     # (plus frame-ancestors) instead of the app's, whose script-src 'self' would
     # block the blob: scripts plugins run from. The app's default-src 'self'
-    # already lets its pages frame these files.
+    # already lets its pages frame these files. The frames have the opaque
+    # origin null and load shell.js as a CORS request, so any origin may read it.
     location /plugin-frame/ {
+        add_header Access-Control-Allow-Origin "*" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "no-referrer" always;
-        add_header Content-Security-Policy "default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self' rim-plugin://shell blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
     }
 
     # SPA fallback — all routes serve index.html

@@ -1,4 +1,4 @@
-//! Wire types of the server's `messageChanges` query (rim-server `docs/message-change-feed.md`).
+//! Wire types of the server's `messageChanges` query.
 //!
 //! The webview makes the HTTP call (it holds the session cookie); these types are what it
 //! hands to and gets from the cache. They serialize in GraphQL's camelCase, so a

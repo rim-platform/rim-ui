@@ -6,6 +6,7 @@ import { LensPicker } from "../../features/lenses/components/LensPicker";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
 import { useConversation } from "../../features/conversations/api/useConversation";
+import { useDmRequestPending } from "../../features/conversations/api/useDmRequestPending";
 import { ChannelIcon } from "../../features/conversations/components/ChannelIcon";
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
 import { directPeerId, isInvited, pendingMembersOf } from "../../features/conversations/utils";
@@ -83,13 +84,16 @@ function SelectedConversationHeader() {
 
   const dmAvatarUrl = dmOtherUserId ? memberLookup.resolve(dmOtherUserId).avatarUrl : undefined;
 
-  const presenceStatus = usePresenceStore((s) =>
+  const peerPresence = usePresenceStore((s) =>
     dmOtherUserId ? s.presenceMap[dmOtherUserId] : undefined,
   ) as PresenceStatus | undefined;
+  // Hidden while the other member has the viewer's DM as a request they have not accepted.
+  const requestPending = useDmRequestPending(workspaceId, conversationId);
+  const presenceStatus = requestPending ? undefined : peerPresence;
 
   const inviteOpen = useShellStore((s) => s.showInviteDialog);
   const setInviteOpen = useShellStore((s) => s.setShowInviteDialog);
-  // Guests cannot invite (Track 1.2); the server refuses anyway.
+  // Guests cannot invite; the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
 
   const topic = conversation?.topic ?? null;

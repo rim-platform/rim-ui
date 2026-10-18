@@ -28,7 +28,6 @@
  * **Password policy note:**
  * The form shows a hardcoded "8 character minimum" hint. The backend enforces
  * its own rules and surfaces field errors on rejection.
- * // TODO: sync with the server when `passwordPolicy` is added to server config.
  *
  * Props:
  * - `variant` — token type discriminator; controls header copy and mutation input.
@@ -57,8 +56,8 @@ import { BrandHeading } from "./BrandHeading";
 import { ServerChoice } from "./ServerChoice";
 
 /**
- * Email validation regex mirroring the backend's pragmatic email regex.
- * Spec §13b: `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`
+ * Email validation regex mirroring the backend's pragmatic email regex:
+ * `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`
  * Exported so tests can import the same constant rather than duplicating it.
  */
 export const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;

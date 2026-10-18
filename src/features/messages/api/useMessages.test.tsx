@@ -43,9 +43,9 @@ describe("useConversationMessages", () => {
     requestMock.mockReset();
   });
 
-  it("opens with no cursor and loads older history with AFTER + next (A-H1)", async () => {
-    // `messages` is a DESC endpoint: AFTER is "older". BEFORE walked toward newer messages
-    // and returned an empty page after the first one, dead-ending scroll-up.
+  it("opens with no cursor and loads older history with AFTER + next", async () => {
+    // `messages` is a DESC endpoint: AFTER is "older". BEFORE walks toward newer messages
+    // and returns an empty page after the first one, which dead-ends scroll-up.
     requestMock.mockResolvedValueOnce(page(true)).mockResolvedValueOnce(page(false));
 
     const { result } = renderHook(() => useConversationMessages("ws-1", "conv-1"), {

@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageCircle,
   MessagesSquare,
+  SmilePlus,
   Tag,
   X,
   type LucideIcon,
@@ -35,6 +36,7 @@ const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> =
   [NotificationReason.KEYWORD]: { label: "Keyword", icon: Tag },
   [NotificationReason.THREAD_REPLY]: { label: "Thread reply", icon: MessagesSquare },
   [NotificationReason.ALL]: { label: "New message", icon: Bell },
+  [NotificationReason.REACTION]: { label: "Reaction", icon: SmilePlus },
 };
 
 const SNIPPET_LENGTH = 140;
@@ -54,7 +56,7 @@ interface NotificationsPanelProps {
 }
 
 /**
- * The notification inbox in the tool panel (Track 1.3): newest first, unread entries dotted.
+ * The notification inbox in the tool panel: newest first, unread entries dotted.
  * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
  * can no longer read say so and can still be marked read.
  */

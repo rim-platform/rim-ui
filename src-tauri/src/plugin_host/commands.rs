@@ -6,13 +6,17 @@ use crate::plugin_host::git_install::{
 use crate::plugin_host::lifecycle::{self, LifecycleError};
 use crate::plugin_host::local_install::{self, LocalInstallError};
 use crate::plugin_host::manifest::{
-    CommandInfo, ContextAction, KeybindSuggestion, PanelDef, RuntimeKind,
+    CommandInfo, ContextAction, KeybindSuggestion, PanelDef, PluginManifest, RuntimeKind,
 };
+use crate::plugin_host::plugin_protocol;
 use crate::plugin_host::protocol::{Initiator, Principal, PrincipalMapping};
 use crate::plugin_host::registry;
 use crate::plugin_host::runtime;
-use crate::plugin_host::state::{InstallSource, PluginAudit, PluginRecord, PluginStatus};
+use crate::plugin_host::state::{
+    InstallSource, PluginAudit, PluginRecord, PluginStateStore, PluginStatus,
+};
 use crate::plugin_host::storage::StorageError;
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::validate_plugin_manifest_for_host;
 use crate::plugin_host::wire::JsonRpcError;
 use crate::plugin_host::PluginHostState;
@@ -23,30 +27,33 @@ use tauri::{Emitter, State};
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginInfo {
     pub plugin_id: String,
-    /// Mirror of the manifest's `plugin_id` field — identical to `plugin_id` for
-    /// well-formed plugins, exposed separately so the TS shape can reference it
-    /// without re-deriving it from the runtime record.
+    /// The manifest's `plugin_id`, identical to `plugin_id` for well-formed
+    /// plugins, exposed separately so the TS shape can reference it without
+    /// re-deriving it from the runtime record.
     pub manifest_id: String,
     pub display_name: String,
     pub version: String,
     pub description: String,
     pub author: Option<String>,
     pub status: PluginStatus,
-    /// Derived server-side — do NOT recompute in TypeScript.
+    /// Whether `status` is `Enabled`, derived here so the UI does not recompute it.
     pub enabled: bool,
     pub capabilities: Vec<String>,
     pub approved_capabilities: Vec<String>,
     pub approved_ai_commands: Vec<String>,
-    /// The subset of manifest commands that are flagged `ai_callable: true`.
-    /// Populated from the manifest at list-time so JS never needs to fish into
-    /// a nested manifest shape.
+    /// The ids of the manifest commands flagged `ai_callable: true`, taken from
+    /// the manifest at list time so the UI never reads a nested manifest shape.
     pub ai_callable_commands: Vec<String>,
-    /// True when the manifest changed since last consent — UI must prompt re-approval.
+    /// True when the manifest changed since the last consent; the UI must ask
+    /// for approval again.
     pub ai_consent_required: bool,
-    /// True when the bundle fingerprint on disk differs from the TOFU fingerprint
-    /// recorded at install time.  The UI must surface a warning and require the
-    /// user to explicitly trust the new version before spawning.
+    /// True when the bundle fingerprint on disk differs from the one recorded and
+    /// trusted at install. The UI must surface a warning and require the user to
+    /// explicitly trust the new version before spawning.
     pub fingerprint_changed: bool,
+    /// The bundle fingerprint computed from disk for this listing, when the
+    /// plugin has a pinned fingerprint and its files could be read.
+    pub current_fingerprint: Option<String>,
     pub context_actions: Vec<ContextAction>,
     /// Panel definitions from the manifest — used by the shell for slot layout.
     pub panels: Vec<PanelDef>,
@@ -85,19 +92,24 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
             .map(|m| lifecycle::check_ai_consent_required(&store, m).is_err())
             .unwrap_or(false);
 
-        // Recompute bundle fingerprint from disk if we have a pinned fingerprint stored.
-        // A mismatch means the bundle changed since install — surface FingerprintChanged.
+        // Recompute the bundle fingerprint from disk when one is pinned; a mismatch
+        // means the bundle changed since install.
+        let mut current_fingerprint = None;
         let fingerprint_changed = if !record.bundle_fingerprint.is_empty() {
             if let Some(plugin_dir) = dirs.get(id) {
                 match local_install::compute_bundle_fingerprint(plugin_dir) {
-                    Ok(current_fp) => current_fp != record.bundle_fingerprint,
-                    Err(_) => false, // IO error — don't surface spurious warnings
+                    Ok(current_fp) => {
+                        let changed = current_fp != record.bundle_fingerprint;
+                        current_fingerprint = Some(current_fp);
+                        changed
+                    }
+                    Err(_) => false, // IO error: no spurious warning
                 }
             } else {
                 record.fingerprint_changed
             }
         } else {
-            // No pinned fingerprint (e.g. installed before TOFU was added) — use stored flag.
+            // No pinned fingerprint: use the stored flag.
             record.fingerprint_changed
         };
 
@@ -122,6 +134,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .unwrap_or_default(),
             ai_consent_required,
             fingerprint_changed,
+            current_fingerprint,
             context_actions: manifest
                 .map(|m| m.qualified_context_actions())
                 .unwrap_or_default(),
@@ -213,8 +226,8 @@ pub fn plugin_enable(
     plugin_id: String,
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
-    // Retrieve the manifest before taking the store lock so we can pass it to
-    // runtime::start_plugin without holding both locks simultaneously.
+    // Take the manifest before the store lock so it can be passed to
+    // runtime::start_plugin without holding both locks at once.
     let manifest = {
         let manifests = state
             .manifests
@@ -226,9 +239,9 @@ pub fn plugin_enable(
             .clone()
     };
 
-    // Fingerprint check — recompute and compare against the TOFU fingerprint.
-    // If a mismatch is found, update the fingerprint_changed flag in the store and
-    // return a FingerprintChanged error so the frontend can surface the warning.
+    // Recompute the fingerprint and compare it with the one trusted at install.
+    // On a mismatch, set fingerprint_changed in the store and return
+    // FingerprintChanged so the UI can surface the warning.
     {
         let plugin_dir_opt = {
             let dirs = state
@@ -253,7 +266,7 @@ pub fn plugin_enable(
             if !stored_fingerprint.is_empty() {
                 match local_install::compute_bundle_fingerprint(&plugin_dir) {
                     Ok(current_fp) if current_fp != stored_fingerprint => {
-                        // Fingerprint mismatch — mark in store and return error so UI warns.
+                        // Mismatch: mark it in the store and fail so the UI warns.
                         let mut store = state.store.lock().map_err(|e| {
                             LifecycleError::Io(std::io::Error::other(e.to_string()))
                         })?;
@@ -270,9 +283,9 @@ pub fn plugin_enable(
                         );
                         return Err(LifecycleError::FingerprintChanged(plugin_id));
                     }
-                    Ok(_) => {} // fingerprint matches — proceed
+                    Ok(_) => {} // fingerprint matches
                     Err(e) => {
-                        // IO error during fingerprint check — log but do not block enable.
+                        // An IO error during the check is logged and does not block enabling.
                         log::warn!(
                             "[plugin_host] fingerprint check failed for {}: {}",
                             plugin_id,
@@ -293,13 +306,13 @@ pub fn plugin_enable(
         store.save(&state.state_path)?;
     }
 
-    // Spawn the plugin process and connect the broker loop.
-    // A non-fatal error here (e.g. entrypoint missing) is logged but does not
-    // roll back the Enabled status — the user can retry or uninstall.
+    // Spawn the plugin process and connect the broker loop. An error here (for
+    // example a missing entrypoint) is logged and does not roll back the Enabled
+    // status; the user can retry or uninstall.
     match runtime::start_plugin(&plugin_id, &manifest, &state) {
         Ok(()) => {}
         Err(runtime::RuntimeError::AlreadyRunning(_)) => {
-            // Idempotent — broker loop is already up (e.g. double-enable call).
+            // The broker loop is already up, for example after a double enable.
         }
         Err(e) => {
             log::warn!(
@@ -319,7 +332,7 @@ pub async fn plugin_disable(
     state: State<'_, PluginHostState>,
 ) -> Result<(), LifecycleError> {
     // Stop the broker loop before updating the lifecycle status so the process
-    // is gone by the time we persist the Disabled state.
+    // is gone by the time the Disabled state is persisted.
     runtime::stop_plugin(&plugin_id, &state)
         .await
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
@@ -343,26 +356,147 @@ pub async fn plugin_uninstall(
         .await
         .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
 
-    {
+    let recorded_dir = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .get(&plugin_id)
+        .cloned();
+    let folder = {
         let mut store = state
             .store
             .lock()
             .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-        lifecycle::uninstall(&mut store, &plugin_id)?;
+        let uninstalled = uninstall_stopped(
+            &mut store,
+            &plugin_id,
+            recorded_dir.as_deref(),
+            &crate::plugin_host::discovery::plugins_dir(),
+        );
+        // Saved either way: a plugin whose folder could not be moved stays, disabled.
         store.save(&state.state_path)?;
+        uninstalled?
+    };
+    if let PluginFolder::Trashed(trashed) = folder {
+        trash::delete_in_background(&plugin_id, trashed);
     }
 
-    // Also remove from manifests cache
-    let mut manifests = state
+    state
         .manifests
         .lock()
-        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
-    manifests.remove(&plugin_id);
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .remove(&plugin_id);
+    state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .remove(&plugin_id);
 
     if let Err(e) = state.storage.remove_plugin(&plugin_id) {
         log::warn!("[plugin_host] could not delete the storage of {plugin_id}: {e}");
     }
     Ok(())
+}
+
+/// What uninstalling a plugin did with its folder.
+#[derive(Debug, PartialEq, Eq)]
+enum PluginFolder {
+    /// The folder the app installed the plugin into was moved to the trash, to
+    /// this path, for [`trash::delete_in_background`] to delete.
+    Trashed(std::path::PathBuf),
+    /// A link stood in the folder's place; the link was removed, its target kept.
+    Unlinked,
+    /// There was no folder to delete.
+    Missing,
+    /// The folder stays: the app did not install it there.
+    Kept,
+}
+
+/// Uninstalls the stopped plugin `plugin_id`: disables it when enabled, moves the
+/// folder the app installed it into to the trash, then drops its record and
+/// audit. A folder that cannot be moved keeps the record, disabled, so the user
+/// can retry. Returns what happened to the folder.
+fn uninstall_stopped(
+    store: &mut PluginStateStore,
+    plugin_id: &str,
+    recorded_dir: Option<&std::path::Path>,
+    plugins_root: &std::path::Path,
+) -> Result<PluginFolder, LifecycleError> {
+    let record = store
+        .get(plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.into()))?;
+    if record.status == PluginStatus::Enabled {
+        lifecycle::disable(store, plugin_id)?;
+    }
+    let folder = trash_installed_folder(
+        plugin_id,
+        record.source.is_some(),
+        recorded_dir,
+        plugins_root,
+    )?;
+    lifecycle::uninstall(store, plugin_id)?;
+    Ok(folder)
+}
+
+/// Moves `<plugins_root>/<plugin_id>` to the trash when the app installed the
+/// plugin (`installed_by_app`), the id is a safe path segment and the folder is
+/// the one discovery recorded for it. A symlink there loses the link, never its
+/// target, and is not moved.
+fn trash_installed_folder(
+    plugin_id: &str,
+    installed_by_app: bool,
+    recorded_dir: Option<&std::path::Path>,
+    plugins_root: &std::path::Path,
+) -> std::io::Result<PluginFolder> {
+    if !installed_by_app {
+        log::info!(
+            "[plugin_host] uninstall keeps the folder of {plugin_id}: the app did not install it"
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    if !plugin_protocol::is_safe_segment(plugin_id) {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} reason=unsafe_id"
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    let dir = plugins_root.join(plugin_id);
+    let metadata = match std::fs::symlink_metadata(&dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(PluginFolder::Missing),
+        other => other?,
+    };
+    if recorded_dir != Some(dir.as_path()) {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} path={} \
+             reason=not_the_recorded_folder",
+            dir.display()
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    if metadata.file_type().is_symlink() {
+        trash::remove_link(&dir)?;
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_deleted plugin_id={plugin_id} path={} symlink=true",
+            dir.display()
+        );
+        return Ok(PluginFolder::Unlinked);
+    }
+    if !metadata.is_dir() {
+        log::warn!(
+            "[AUDIT] event=plugin_uninstall_folder_kept plugin_id={plugin_id} path={} \
+             reason=not_a_folder",
+            dir.display()
+        );
+        return Ok(PluginFolder::Kept);
+    }
+    let trashed = trash::move_to_trash(plugins_root, plugin_id)?;
+    log::warn!(
+        "[AUDIT] event=plugin_uninstall_folder_trashed plugin_id={plugin_id} path={} trash={}",
+        dir.display(),
+        trashed.display()
+    );
+    Ok(PluginFolder::Trashed(trashed))
 }
 
 #[tauri::command]
@@ -405,7 +539,7 @@ pub async fn plugin_revoke_capability(
     Ok(())
 }
 
-/// Revoke a capability, stopping the plugin first if it is running.
+/// Revokes a capability, stopping the plugin first if it is running.
 ///
 /// Revoking disables the plugin (`lifecycle::revoke_capability`). The process
 /// has to stop as well: its broker checks the plugin's own calls against the
@@ -426,7 +560,7 @@ pub(crate) async fn revoke_capability_and_stop(
     lifecycle::revoke_capability(&mut store, plugin_id, capability)
 }
 
-/// Install a plugin from a git repository.
+/// Installs a plugin from a git repository.
 ///
 /// `url`/`branch` are validated before git runs (`INVALID_GIT_URL` /
 /// `INVALID_GIT_BRANCH`). If the plugin needs dependency-install steps and
@@ -458,7 +592,7 @@ pub async fn plugin_install_from_git(
     )
     .await?;
 
-    // Register in manifests and plugin_dirs caches
+    // Register in the manifests and plugin_dirs caches.
     {
         let mut manifests = state
             .manifests
@@ -474,15 +608,15 @@ pub async fn plugin_install_from_git(
         dirs.insert(manifest.plugin_id.clone(), final_dir);
     }
 
-    // Auto-install in lifecycle (sets status to Installed)
+    // Record the install in the lifecycle (status Installed).
     {
         let mut store = state
             .store
             .lock()
             .map_err(|e| GitInstallError::Io(std::io::Error::other(e.to_string())))?;
         lifecycle::install(&mut store, &manifest).map_err(|e| match e {
-            // Surface InvalidManifest typed so JS can distinguish N1/F2 rejection
-            // from a generic lifecycle or IO failure.
+            // Keep InvalidManifest typed so the UI can tell a manifest that failed
+            // install validation from a generic lifecycle or IO failure.
             lifecycle::LifecycleError::InvalidManifest(v) => GitInstallError::InvalidManifest(v),
             other => GitInstallError::LifecycleFailure(other.to_string()),
         })?;
@@ -498,7 +632,7 @@ pub async fn plugin_install_from_git(
     Ok(result)
 }
 
-/// Update a git-installed plugin. Same consent contract as
+/// Updates a git-installed plugin, with the same consent contract as
 /// [`plugin_install_from_git`]: without `allow_post_install: true`, an update
 /// that needs npm/pip steps fails with `POST_INSTALL_CONSENT_REQUIRED` before
 /// the working tree is advanced.
@@ -547,7 +681,7 @@ pub async fn plugin_update(
     )
     .await?;
 
-    // Update manifests cache
+    // Update the manifests cache.
     {
         let mut manifests = state
             .manifests
@@ -587,7 +721,7 @@ pub fn plugin_relay_ui_event(
     data: serde_json::Value,
     state: State<'_, PluginHostState>,
 ) -> Result<(), String> {
-    // Verify plugin owns this panel
+    // The plugin must declare this panel.
     let manifests = state.manifests.lock().map_err(|e| e.to_string())?;
     if let Some(manifest) = manifests.get(&plugin_id) {
         let panel_ids: Vec<&str> = manifest.panels.iter().map(|p| p.id.as_str()).collect();
@@ -602,7 +736,7 @@ pub fn plugin_relay_ui_event(
     }
     drop(manifests);
 
-    // Queue the UI event for delivery to the plugin process
+    // Queue the UI event for delivery to the plugin process.
     let mut pending = state.pending_ui_events.lock().map_err(|e| e.to_string())?;
     pending.push(PendingUiEvent {
         plugin_id,
@@ -685,7 +819,7 @@ pub fn plugin_revoke_ai_consent(
     Ok(())
 }
 
-/// Run a plugin command from the palette, a keybind, a context menu or a panel.
+/// Runs a plugin command from the palette, a keybind, a context menu or a panel.
 ///
 /// The UI splits `plugin.<plugin_id>.<command>` ids naively; the host resolves
 /// the pair against installed manifests (see [`command_exec::resolve_command`]).
@@ -720,9 +854,9 @@ pub async fn plugin_execute_command(
     Ok(result.into())
 }
 
-/// Invoke a plugin AI command on behalf of the LLM agent.
+/// Invokes a plugin AI command on behalf of the LLM agent.
 ///
-/// This is the **server-side security boundary** — the JS-side consent filter in
+/// This is the **host-side security boundary** — the JS-side consent filter in
 /// `loader.ts` is a UX optimisation only. This command re-checks:
 /// 1. The command is in `approved_ai_commands` for this plugin.
 /// 2. The manifest has not drifted since consent was granted (`check_ai_consent_required`).
@@ -793,7 +927,7 @@ impl SignedInUser {
     }
 }
 
-/// Tell the plugin host who is signed in (`None` after sign-out).
+/// Tells the plugin host who is signed in (`None` after sign-out).
 ///
 /// The account id never leaves the host: plugins get the derived
 /// [`Principal`] in the handshake, in every `rim.command.execute`, and in a
@@ -826,7 +960,8 @@ pub async fn plugin_set_principal(
     Ok(())
 }
 
-/// AI consent gates for [`plugin_run_ai_command`].
+/// Checks the AI consent gates of [`plugin_run_ai_command`]: the manifest has
+/// not drifted since consent, and `command_id` is approved.
 fn check_ai_consent(
     state: &PluginHostState,
     plugin_id: &str,
@@ -865,7 +1000,7 @@ fn check_ai_consent(
     Ok(())
 }
 
-/// Install a plugin from a local folder on disk.
+/// Installs a plugin from a local folder on disk.
 ///
 /// Mirrors the shape of [`plugin_install_from_git`] but copies rather than
 /// cloning.  The source folder must contain a `rim-plugin.json` (or a
@@ -874,10 +1009,11 @@ fn check_ai_consent(
 /// Steps executed (see [`local_install::install_from_local`] for full detail):
 /// 1. Path-traversal guard (per-segment + canonicalize prefix assertion).
 /// 2. Manifest detection and structural validation.
-/// 3. N1 + F2 security validation.
+/// 3. Install validation: capability key shape, the install-ID leak check and
+///    the kind's rules.
 /// 4. Reserved-prefix check.
 /// 5. Collision check against already-installed plugin IDs.
-/// 6. TOFU bundle fingerprint computation.
+/// 6. Bundle fingerprint computation, trusted on first use.
 /// 7. Recursive copy into `~/.rim/plugins/<plugin_id>/`.
 /// 8. Lifecycle registration as `Installed` (user enables explicitly).
 ///
@@ -927,7 +1063,7 @@ pub async fn plugin_install_from_local(
         dirs.insert(manifest.plugin_id.clone(), final_dir);
     }
 
-    // Auto-install in lifecycle (sets status to Installed) and persist TOFU fingerprint.
+    // Record the install in the lifecycle (status Installed) with its fingerprint.
     {
         let mut store = state
             .store
@@ -938,7 +1074,7 @@ pub async fn plugin_install_from_local(
             other => LocalInstallError::LifecycleFailure(other.to_string()),
         })?;
 
-        // Update the record to include the TOFU bundle fingerprint.
+        // Store the bundle fingerprint trusted on first use.
         if let Some(record) = store.get(&manifest.plugin_id).cloned() {
             store.upsert(crate::plugin_host::state::PluginRecord {
                 bundle_fingerprint,
@@ -955,11 +1091,11 @@ pub async fn plugin_install_from_local(
     Ok(result)
 }
 
-/// Accept the new bundle fingerprint for a plugin whose fingerprint has changed.
+/// Accepts the new bundle fingerprint of a plugin whose fingerprint has changed.
 ///
 /// This is the "Trust new version" action in the UI.  It:
 /// 1. Recomputes the current on-disk fingerprint.
-/// 2. Persists it as the new TOFU baseline.
+/// 2. Persists it as the new trusted fingerprint.
 /// 3. Clears the `fingerprint_changed` flag.
 ///
 /// The plugin is NOT automatically enabled — the user must enable it separately.
@@ -1013,9 +1149,10 @@ pub fn plugin_trust_fingerprint(
     Ok(())
 }
 
-/// Install a `.rimbundle` the UI fetched (from a pasted link, or a registry
-/// entry it verified): check its hash, read it, validate its manifest for this
-/// host, then unpack it into the plugins directory and record its fingerprint.
+/// Installs a `.rimbundle` the UI fetched (from a pasted link, or a registry
+/// entry it verified): checks its hash, reads it, validates its manifest for
+/// this host, then unpacks it into the plugins directory and records its
+/// fingerprint.
 ///
 /// `bundle` is the file's bytes in standard base64 and `sha256` the hash the
 /// link or entry names; `manifest`, when given, is the signed manifest the
@@ -1131,7 +1268,7 @@ pub struct WebPluginFile {
     pub base64: String,
 }
 
-/// Read an installed `WebSandboxed` plugin's bundle files (the manifest, the
+/// Reads an installed `WebSandboxed` plugin's bundle files (the manifest, the
 /// entrypoint and `panels/`, nothing else of its folder) after checking its
 /// fingerprint against the one recorded at install, as enabling a process does,
 /// and the bundle rules.
@@ -1199,7 +1336,74 @@ pub fn plugin_web_files(
     })
 }
 
-/// Set or clear the marker the UI keeps while it starts a `WebSandboxed` plugin.
+/// Reads the files of an enabled `DesktopLocalProcess` plugin's panel, with
+/// paths relative to `panels/<panel_id>/`, for the frame shell to render.
+#[tauri::command]
+pub fn plugin_panel_files(
+    plugin_id: String,
+    panel_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<Vec<WebPluginFile>, String> {
+    let manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| format!("{plugin_id} is not installed"))?;
+    let status = state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&plugin_id)
+        .map(|record| record.status);
+    local_panel_files(
+        &manifest,
+        status,
+        &panel_id,
+        &crate::plugin_host::discovery::plugins_dir(),
+    )
+}
+
+/// The files of `manifest`'s panel `panel_id` under `plugins_root`, if the
+/// plugin is a local process, `status` says it is enabled, and it declares
+/// that panel.
+fn local_panel_files(
+    manifest: &PluginManifest,
+    status: Option<PluginStatus>,
+    panel_id: &str,
+    plugins_root: &std::path::Path,
+) -> Result<Vec<WebPluginFile>, String> {
+    let plugin_id = &manifest.plugin_id;
+    if manifest.runtime_kind != RuntimeKind::DesktopLocalProcess {
+        return Err(format!("{plugin_id} is not a local-process plugin"));
+    }
+    if status != Some(PluginStatus::Enabled) {
+        return Err(format!("{plugin_id} is not enabled"));
+    }
+    if !manifest.panels.iter().any(|p| p.id == panel_id) {
+        return Err(format!("{plugin_id} declares no panel {panel_id}"));
+    }
+    let files =
+        plugin_protocol::read_panel_files(plugins_root, plugin_id, panel_id).map_err(|e| {
+            if let plugin_protocol::PanelFilesError::Forbidden(path) = &e {
+                log::warn!(
+                    "[AUDIT] event=plugin_panel_files_forbidden plugin_id={plugin_id} \
+                     panel_id={panel_id} path={path}"
+                );
+            }
+            format!("cannot read panel {panel_id} of {plugin_id}: {e}")
+        })?;
+    Ok(files
+        .into_iter()
+        .map(|f| WebPluginFile {
+            path: f.path,
+            base64: STANDARD.encode(&f.bytes),
+        })
+        .collect())
+}
+
+/// Sets or clears the marker the UI keeps while it starts a `WebSandboxed` plugin.
 #[tauri::command]
 pub fn plugin_set_starting(
     plugin_id: String,
@@ -1311,7 +1515,7 @@ pub fn plugin_chat_respond(
     state.chat_relay.respond(request_id, reply)
 }
 
-/// Count `count` encrypted messages the message service gave `plugin_id` today.
+/// Counts `count` encrypted messages the message service gave `plugin_id` today.
 #[tauri::command]
 pub fn plugin_record_encrypted_reads(
     plugin_id: String,
@@ -1328,4 +1532,263 @@ pub fn plugin_record_encrypted_reads(
     store.record_encrypted_reads(&plugin_id, count, chrono::Utc::now());
     store.save(&state.state_path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// A plugin `dev.example.hello` of `kind` declaring the panel `main`, whose
+    /// folder holds `index.html`.
+    fn installed(kind: RuntimeKind) -> (PluginManifest, TempDir) {
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.hello",
+            "display_name": "Hello",
+            "version": "1.0.0",
+            "description": "test",
+            "author": null,
+            "runtime_kind": kind,
+            "entrypoint": "main",
+            "panels": [{ "id": "main", "title": "Main" }],
+        }))
+        .unwrap();
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("dev.example.hello/panels/main");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("index.html"), b"<p>hi</p>").unwrap();
+        (manifest, tmp)
+    }
+
+    const ENABLED: Option<PluginStatus> = Some(PluginStatus::Enabled);
+
+    #[test]
+    fn a_local_panel_reads_its_files_in_base64() {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        let files = local_panel_files(&manifest, ENABLED, "main", tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "index.html");
+        assert_eq!(files[0].base64, STANDARD.encode(b"<p>hi</p>"));
+    }
+
+    #[test]
+    fn only_declared_panels_of_enabled_local_plugins_are_read() {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        fs::create_dir_all(tmp.path().join("dev.example.hello/panels/other")).unwrap();
+        let undeclared = local_panel_files(&manifest, ENABLED, "other", tmp.path()).unwrap_err();
+        assert!(
+            undeclared.contains("declares no panel other"),
+            "{undeclared}"
+        );
+
+        for status in [
+            None,
+            Some(PluginStatus::Installed),
+            Some(PluginStatus::Disabled),
+            Some(PluginStatus::Error),
+        ] {
+            let error = local_panel_files(&manifest, status, "main", tmp.path()).unwrap_err();
+            assert!(error.contains("is not enabled"), "{status:?}: {error}");
+        }
+
+        let (web, tmp) = installed(RuntimeKind::WebSandboxed);
+        let error = local_panel_files(&web, ENABLED, "main", tmp.path()).unwrap_err();
+        assert!(error.contains("not a local-process plugin"), "{error}");
+    }
+
+    const HELLO: &str = "dev.example.hello";
+
+    /// The plugin of [`installed`] recorded in a store with `status` and
+    /// `source`, beside the plugins folder holding its files.
+    fn uninstallable(
+        status: PluginStatus,
+        source: Option<InstallSource>,
+    ) -> (PluginStateStore, TempDir) {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        let mut store = PluginStateStore::default();
+        lifecycle::install(&mut store, &manifest).unwrap();
+        let record = store.get(HELLO).unwrap().clone();
+        store.upsert(PluginRecord {
+            status,
+            source,
+            ..record
+        });
+        store.audit.insert(HELLO.into(), PluginAudit::default());
+        (store, tmp)
+    }
+
+    /// The trash entry `folder` names; panics on any other outcome.
+    fn trashed(folder: PluginFolder) -> std::path::PathBuf {
+        match folder {
+            PluginFolder::Trashed(path) => path,
+            other => panic!("expected the folder in the trash, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn uninstall_moves_the_folder_the_app_installed_to_the_trash_and_deletes_it_there() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        let trashed = trashed(folder);
+        assert!(fs::symlink_metadata(&dir).is_err());
+        assert_eq!(
+            trashed.parent(),
+            Some(tmp.path().join(trash::TRASH_DIR).as_path())
+        );
+        assert!(trashed.join("panels/main/index.html").exists());
+        assert!(store.get(HELLO).is_none());
+        assert!(!store.audit.contains_key(HELLO));
+
+        tauri::async_runtime::block_on(trash::delete_in_background(HELLO, trashed.clone()))
+            .unwrap();
+        assert!(fs::symlink_metadata(&trashed).is_err());
+    }
+
+    #[test]
+    fn uninstall_disables_an_enabled_plugin_first() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        trashed(folder);
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_keeps_a_folder_the_app_did_not_install() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, None);
+        let dir = tmp.path().join(HELLO);
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Kept);
+        assert!(dir.join("panels/main/index.html").exists());
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_keeps_a_folder_discovery_did_not_record_for_the_plugin() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let elsewhere = tmp.path().join("hello-copy");
+        for recorded in [None, Some(elsewhere.as_path())] {
+            let folder = trash_installed_folder(HELLO, true, recorded, tmp.path()).unwrap();
+            assert_eq!(folder, PluginFolder::Kept, "{recorded:?}");
+        }
+        assert!(tmp.path().join(HELLO).exists());
+        // The record still goes.
+        uninstall_stopped(&mut store, HELLO, None, tmp.path()).unwrap();
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn uninstall_without_a_folder_still_drops_the_record() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        fs::remove_dir_all(&dir).unwrap();
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Missing);
+        assert!(store.get(HELLO).is_none());
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_moved_keeps_the_record_disabled() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Enabled, Some(InstallSource::Local));
+        // A file where the trash should be: the folder has nowhere to go.
+        fs::write(tmp.path().join(trash::TRASH_DIR), b"").unwrap();
+        let dir = tmp.path().join(HELLO);
+        uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap_err();
+        assert!(dir.join("panels/main/index.html").exists());
+        assert_eq!(store.get(HELLO).unwrap().status, PluginStatus::Disabled);
+        assert!(store.audit.contains_key(HELLO));
+    }
+
+    #[test]
+    fn an_unsafe_plugin_id_deletes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("plugins");
+        fs::create_dir_all(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let recorded = root.join("../outside");
+        let folder = trash_installed_folder("../outside", true, Some(&recorded), &root).unwrap();
+        assert_eq!(folder, PluginFolder::Kept);
+        trash::move_to_trash(&root, "../outside").unwrap_err();
+        assert!(outside.exists());
+        assert!(!root.join(trash::TRASH_DIR).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_plugin_folder_loses_the_link_not_its_target() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let target = tmp.path().join("real-hello");
+        fs::rename(tmp.path().join(HELLO), &target).unwrap();
+        let dir = tmp.path().join(HELLO);
+        std::os::unix::fs::symlink(&target, &dir).unwrap();
+
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        assert_eq!(folder, PluginFolder::Unlinked);
+        assert!(fs::symlink_metadata(&dir).is_err());
+        assert!(target.join("panels/main/index.html").exists());
+        assert!(!tmp.path().join(trash::TRASH_DIR).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_plugin_folder_keeps_what_it_points_to() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("keep.txt"), b"keep").unwrap();
+        let dir = tmp.path().join(HELLO);
+        std::os::unix::fs::symlink(outside.path(), dir.join("escape")).unwrap();
+
+        let folder = uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap();
+        let trashed = trashed(folder);
+        tauri::async_runtime::block_on(trash::delete_in_background(HELLO, trashed.clone()))
+            .unwrap();
+        assert!(fs::symlink_metadata(&trashed).is_err());
+        assert!(outside.path().join("keep.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_sweep_clears_the_trash_but_not_what_its_links_point_to() {
+        let (mut store, tmp) = uninstallable(PluginStatus::Disabled, Some(InstallSource::Local));
+        let dir = tmp.path().join(HELLO);
+        let left = trashed(uninstall_stopped(&mut store, HELLO, Some(&dir), tmp.path()).unwrap());
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("keep.txt"), b"keep").unwrap();
+        let trash = tmp.path().join(trash::TRASH_DIR);
+        std::os::unix::fs::symlink(outside.path(), trash.join("escape")).unwrap();
+
+        trash::sweep(tmp.path());
+        assert!(fs::symlink_metadata(&left).is_err());
+        assert!(fs::read_dir(&trash).unwrap().next().is_none());
+        assert!(outside.path().join("keep.txt").exists());
+    }
+
+    #[test]
+    fn a_plugin_installs_again_after_its_uninstall() {
+        use crate::plugin_host::bundle::tests::hello_web_with_panel;
+        let read = bundle::read_bundle(&bundle::write_bundle(&hello_web_with_panel())).unwrap();
+        let plugin_id = read.manifest.plugin_id.clone();
+        let root = TempDir::new().unwrap();
+        let dir = bundle::unpack(&read, root.path(), false).unwrap();
+        let mut store = PluginStateStore::default();
+        lifecycle::install(&mut store, &read.manifest).unwrap();
+        let record = store.get(&plugin_id).unwrap().clone();
+        store.upsert(PluginRecord {
+            source: Some(InstallSource::Link {
+                url: "https://plugins.example.com/hello.rimbundle".into(),
+                sha256: "ab".into(),
+            }),
+            ..record
+        });
+        // Installing over it without replacing is refused while its folder is there.
+        assert!(bundle::unpack(&read, root.path(), false).is_err());
+
+        uninstall_stopped(&mut store, &plugin_id, Some(&dir), root.path()).unwrap();
+        assert_eq!(bundle::unpack(&read, root.path(), false).unwrap(), dir);
+        lifecycle::install(&mut store, &read.manifest).unwrap();
+    }
 }

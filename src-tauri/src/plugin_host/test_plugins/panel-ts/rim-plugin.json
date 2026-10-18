@@ -1,0 +1,29 @@
+{
+  "manifest_version": 1,
+  "plugin_id": "dev.example.panel-ts",
+  "display_name": "Panel Test",
+  "version": "0.1.0",
+  "description": "Test plugin for the host conformance tests: fills its panel on start and counts in it.",
+  "author": "RIM team",
+  "runtime_kind": "DesktopLocalProcess",
+  "entrypoint": "main.ts",
+  "capabilities": ["ui.panel"],
+  "commands": [
+    {
+      "id": "count",
+      "title": "Panel Test: Count",
+      "description": "Adds one to the count the panel shows.",
+      "keybind_capable": false,
+      "dangerous": false,
+      "required_context": [],
+      "required_capabilities": [],
+      "arguments": [],
+      "ai_callable": false,
+      "output_schema": null
+    }
+  ],
+  "keybind_suggestions": [],
+  "context_actions": [],
+  "panels": [{ "id": "main", "title": "Panel Test", "description": "A greeting and a count." }],
+  "settings_schema": []
+}

@@ -32,10 +32,6 @@ vi.mock("../../features/workspaces/components/WorkspaceMemberDirectory", () => (
   ),
 }));
 
-vi.mock("../../features/plugins/components/PluginToolPanel", () => ({
-  PluginToolPanel: () => <div data-testid="plugin-tool-panel">PluginToolPanel</div>,
-}));
-
 vi.mock("../../features/notifications/components/NotificationsPanel", () => ({
   NotificationsPanel: ({ workspaceId }: { workspaceId: string }) => (
     <div data-testid="notifications-panel">{workspaceId}</div>
@@ -77,34 +73,16 @@ describe("ToolPanel", () => {
     expect(screen.getByText("Conversations")).toBeInTheDocument();
   });
 
-  it("renders with 'Plugins' heading when plugins panel is active", () => {
-    useShellStore.setState({ activePanel: "plugins" });
-    render(<ToolPanel />);
-    expect(screen.getByText("Plugins")).toBeInTheDocument();
-  });
-
   it("shows ConversationList when inbox is active", () => {
     useShellStore.setState({ activePanel: "inbox" });
     render(<ToolPanel />);
     expect(screen.getByTestId("conversation-list")).toBeInTheDocument();
   });
 
-  it("shows PluginToolPanel when plugins is active", () => {
-    useShellStore.setState({ activePanel: "plugins" });
-    render(<ToolPanel />);
-    expect(screen.getByTestId("plugin-tool-panel")).toBeInTheDocument();
-  });
-
   it("shows new message button only in inbox panel", () => {
     useShellStore.setState({ activePanel: "inbox" });
     render(<ToolPanel />);
     expect(screen.getByLabelText("New message")).toBeInTheDocument();
-  });
-
-  it("does not show new message button in plugins panel", () => {
-    useShellStore.setState({ activePanel: "plugins" });
-    render(<ToolPanel />);
-    expect(screen.queryByLabelText("New message")).not.toBeInTheDocument();
   });
 
   it("shows the open conversation's members panel instead of the list when toggled", () => {

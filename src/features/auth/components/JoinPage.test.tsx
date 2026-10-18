@@ -109,7 +109,7 @@ vi.mock("./KeySignupForm");
 import { JoinPage } from "./JoinPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 
-describe("JoinPage — no-referrer meta tag (L3)", () => {
+describe("JoinPage — no-referrer meta tag", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;

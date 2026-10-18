@@ -248,9 +248,14 @@ Rust MLS crates, and `npm run skew:check` lists the operations an older server w
 
 - `plugins/hello-world`: the reference local process plugin, in Python with no dependencies.
 - `plugins/template-ts`: a starting point for a TypeScript plugin.
-- `plugins/k8s-pods`: lists a Kubernetes namespace's pods and restarts one after confirmation.
-- `plugins/github-prs`: a web plugin listing the open pull requests of public GitHub
-  repositories.
+
+Two plugins the project publishes live in repositories of their own, each with the built
+plugin at its root so the desktop installs it from its git URL:
+
+- [`plugin-k8s-pods`](https://github.com/rim-platform/plugin-k8s-pods): lists a Kubernetes
+  namespace's pods and restarts one after confirmation.
+- [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs): a web plugin
+  listing the open pull requests of public GitHub repositories.
 
 ## Documentation
 

@@ -34,10 +34,13 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// stuck connect should fail fast.
 const SIDECAR_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Shared `reqwest::Client` for streaming chat calls: one connection pool
-/// process-wide. Avoids re-doing TLS for every request the agent fires (it
-/// can fire dozens across a single multi-tool turn). 120s timeout suits
-/// slow first-token generation on Opus-class models with large contexts.
+/// Returns the shared `reqwest::Client` for streaming chat calls: one
+/// connection pool process-wide, so the requests of a multi-tool turn reuse
+/// TLS connections. Its timeout is [`REQUEST_TIMEOUT`].
+///
+/// # Panics
+///
+/// Panics when the client cannot be built.
 fn http_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -48,10 +51,13 @@ fn http_client() -> &'static Client {
     })
 }
 
-/// Separate pooled client for the short sidecar calls (validate / list
-/// models). Uses a tight 15s timeout so a hung provider doesn't keep the
-/// settings UI waiting. Rebuilding a `Client` per call (pre-#59) meant a
-/// fresh TLS handshake every time — wasteful and slow.
+/// Returns the separate pooled client for the short sidecar calls (validate,
+/// list models). Its timeout is [`SIDECAR_TIMEOUT`], so a hung provider does
+/// not keep the settings UI waiting.
+///
+/// # Panics
+///
+/// Panics when the client cannot be built.
 fn sidecar_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -62,8 +68,8 @@ fn sidecar_client() -> &'static Client {
     })
 }
 
-/// Provider tag — narrow enum lets us validate at IPC boundary instead of
-/// reaching into freeform strings inside the proxy.
+/// The AI provider a request goes to, validated at the IPC boundary rather
+/// than carried as a freeform string.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
@@ -80,24 +86,21 @@ impl Provider {
     }
 }
 
-/// Mirror of the TS `AiChatRequest` body shape, kept narrow on purpose.
-/// `messages` and `tools` are `serde_json::Value` rather than typed structs
-/// so we don't have to keep two copies of the provider wire schemas in
-/// sync — the JS side already speaks the provider's native shape.
+/// A chat request from the UI, the body shape of the TS `AiChatRequest`.
+/// `messages` and `tools` are `serde_json::Value` rather than typed structs:
+/// the JS side builds the provider's native shape and the proxy forwards it.
 ///
-/// No `api_key` field — the proxy reads the key from the secret vault.
-/// `deny_unknown_fields` forces atomic cutover: any caller still sending
-/// the old `api_key` field gets a deserialization error instead of silently
-/// hitting `KeyNotConfigured` (Pete's #8 must remove `api_key` from the
-/// JS call site before this endpoint works).
+/// There is no `api_key` field; the proxy reads the key from the secret vault.
+/// `deny_unknown_fields` makes a body that carries an `api_key` fail to
+/// deserialize instead of being accepted with the key ignored.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChatCompletionRequest {
     pub provider: Provider,
     pub model: String,
     /// Provider-native message array (Anthropic shape for `Provider::Anthropic`,
-    /// OpenAI shape for `Provider::Openai`). The JS providers already build
-    /// these, so we forward them verbatim — keeps schema knowledge in one place.
+    /// OpenAI shape for `Provider::Openai`), built by the JS providers and
+    /// forwarded verbatim.
     pub messages: serde_json::Value,
     #[serde(default)]
     pub tools: Option<serde_json::Value>,
@@ -107,10 +110,10 @@ pub struct ChatCompletionRequest {
     pub max_tokens: Option<u32>,
 }
 
-/// Outbound stream event — lossless wrapper around the SSE frames the
-/// providers emit. The TS provider reassembles tool_use blocks and emits
-/// the final `AiStreamChunk`s; we deliberately keep the proxy a pure
-/// passthrough for the SSE bytes so no business logic lives in two places.
+/// An event on the chat stream channel: a lossless wrapper around the
+/// server-sent event (SSE) frames the providers emit. The proxy passes them
+/// through; the TS provider reassembles tool_use blocks and emits the final
+/// `AiStreamChunk`s.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ChatStreamEvent {
@@ -144,8 +147,8 @@ pub enum ProxyError {
     Secrets(String),
 }
 
-/// Outcome of `agent_validate_credentials`. Distinguishes "provider said no"
-/// (Invalid) from "we never reached the provider" (NetworkError) so the UI
+/// Outcome of a credential check. Distinguishes "provider said no"
+/// (`Invalid`) from "the provider was never reached" (`NetworkError`) so the UI
 /// can tell the user whether to check the key or their connection.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -166,8 +169,12 @@ fn secret_name(provider: Provider) -> String {
     format!("provider:{}", provider.as_str())
 }
 
-/// Read the API key for a provider from the secret vault. A missing key is
-/// `ProxyError::KeyNotConfigured` so callers get an actionable error message.
+/// Reads the API key for a provider from the secret vault.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::KeyNotConfigured`] when no key is stored, and
+/// [`ProxyError::Secrets`] when the vault cannot be read.
 fn stored_key(vault: &SecretVault, provider: Provider) -> Result<Zeroizing<String>, ProxyError> {
     let stored = vault
         .read(&secret_name(provider))
@@ -184,11 +191,15 @@ fn stored_key(vault: &SecretVault, provider: Provider) -> Result<Zeroizing<Strin
     })
 }
 
-/// Store or replace the API key for a provider in the secret vault.
+/// Stores or replaces the API key for a provider in the secret vault.
 ///
 /// This and the other sync key commands run off the main thread (`async`): they read and
 /// write the vault file, and on Linux the vault key's first read can wait on the keyring's
 /// unlock prompt.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::Secrets`] when the vault cannot be written.
 #[tauri::command(async)]
 pub fn set_provider_key(
     vault: State<'_, Arc<SecretVault>>,
@@ -202,8 +213,12 @@ pub fn set_provider_key(
     Ok(())
 }
 
-/// Remove the API key for a provider from the secret vault. Idempotent — no
+/// Removes the API key for a provider from the secret vault. Idempotent: no
 /// error if the key was already absent.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::Secrets`] when the vault cannot be written.
 #[tauri::command(async)]
 pub fn clear_provider_key(
     vault: State<'_, Arc<SecretVault>>,
@@ -216,7 +231,11 @@ pub fn clear_provider_key(
     Ok(())
 }
 
-/// Check whether an API key is stored for a provider. Does NOT return the key.
+/// Checks whether an API key is stored for a provider. Does NOT return the key.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::Secrets`] when the vault cannot be read.
 #[tauri::command(async)]
 pub fn is_provider_key_configured(
     vault: State<'_, Arc<SecretVault>>,
@@ -228,11 +247,15 @@ pub fn is_provider_key_configured(
         .map_err(|e| ProxyError::Secrets(e.to_string()))
 }
 
-/// Tauri command: stream a chat completion. Errors that occur before the
-/// stream begins return as `Err(ProxyError)` over the invoke result; errors
-/// mid-stream are emitted as `ChatStreamEvent::Error` on the channel and
-/// terminate the stream. This matches the TS `AiStreamChunk` discipline
-/// (the consumer's loop ends on either kind: "error" or kind: "done").
+/// Streams a chat completion from the provider onto `on_event`, ending with
+/// `ChatStreamEvent::Done` or `ChatStreamEvent::Error`, as the TS consumer's
+/// loop expects.
+///
+/// # Errors
+///
+/// Returns a [`ProxyError`] when no key is stored, the request fails, the
+/// provider answers with an error status or the stream breaks. A failure after
+/// the key was read is also sent on the channel as `ChatStreamEvent::Error`.
 #[tauri::command]
 pub async fn agent_chat_completion(
     vault: State<'_, Arc<SecretVault>>,
@@ -254,10 +277,10 @@ pub async fn agent_chat_completion(
             Ok(())
         }
         Err(e) => {
-            // Surface the failure on the channel too so the TS consumer's
-            // for-await loop sees it without needing a separate try/catch
-            // around the invoke promise. We still return Err so the invoke
-            // promise rejects (TS consumers can pick whichever signal fits).
+            // Send the failure on the channel too, so the TS consumer's
+            // for-await loop sees it without a try/catch around the invoke
+            // promise; the Err still rejects that promise for consumers that
+            // use it.
             let _ = on_event.send(ChatStreamEvent::Error {
                 message: e.to_string(),
             });
@@ -266,9 +289,13 @@ pub async fn agent_chat_completion(
     }
 }
 
-/// Tauri command: lightweight credential check (used by the Settings panel
-/// "Test connection" button). Hits the provider's models endpoint — cheap
-/// and the same shape that's already tested green in the TS providers.
+/// Checks the stored key of `provider` against the provider's models endpoint,
+/// for the Settings panel's "Test connection" button.
+///
+/// # Errors
+///
+/// Returns a [`ProxyError`] when no key is stored or the vault cannot be read.
+/// A refused key or an unreachable provider is a [`ValidationOutcome`].
 #[tauri::command]
 pub async fn agent_validate_credentials(
     vault: State<'_, Arc<SecretVault>>,
@@ -279,14 +306,18 @@ pub async fn agent_validate_credentials(
     // api_key Zeroizing<String> is wiped when it drops here.
 }
 
-/// Tauri command: verify-then-store flow — validate a candidate key BEFORE
-/// writing it to the secret vault. This is the secure path for the "Verify &
-/// Save" button: the caller passes the key directly, we probe the provider,
-/// and only if `Valid` does the frontend call `set_provider_key`.
+/// Checks a candidate key against the provider before it is written to the
+/// secret vault, for the "Verify & Save" button: the UI calls
+/// `set_provider_key` only when the outcome is `Valid`.
 ///
 /// The key parameter is `Zeroizing<String>` so the raw bytes are wiped from
-/// the Rust heap as soon as the function returns, regardless of outcome.
-/// We never log it, never echo it back, never store it.
+/// the Rust heap as soon as the function returns, regardless of outcome. It is
+/// never logged, echoed back or stored.
+///
+/// # Errors
+///
+/// Never returns `Err`; a refused key or an unreachable provider is a
+/// [`ValidationOutcome`].
 #[tauri::command]
 pub async fn agent_validate_provided_key(
     provider: Provider,
@@ -296,9 +327,9 @@ pub async fn agent_validate_provided_key(
     // api_key Zeroizing<String> is wiped when it drops here.
 }
 
-/// Internal: hit the provider's cheapest authenticated endpoint and map the
-/// HTTP outcome to [`ValidationOutcome`]. Shared by both the stored-key
-/// and provided-key variants so the probe logic lives in exactly one place.
+/// Calls the provider's cheapest authenticated endpoint with `api_key` and maps
+/// the HTTP outcome to a [`ValidationOutcome`], for both the stored-key and the
+/// provided-key check.
 async fn validate_key_against_provider(
     provider: Provider,
     api_key: &Zeroizing<String>,
@@ -327,10 +358,14 @@ async fn validate_key_against_provider(
     }
 }
 
-/// Tauri command: list available models from the provider. Used by Agent
-/// Settings to populate the model dropdown dynamically — falls back to
-/// the TS-side static list if this fails (the TS provider already does
-/// this fallback).
+/// Lists the models the provider offers, for the model dropdown in Agent
+/// Settings, which falls back to its static list when this fails. Returns the
+/// provider's JSON response as is.
+///
+/// # Errors
+///
+/// Returns a [`ProxyError`] when no key is stored, the request fails, the
+/// provider answers with an error status or the body is not JSON.
 #[tauri::command]
 pub async fn agent_list_models(
     vault: State<'_, Arc<SecretVault>>,
@@ -372,10 +407,8 @@ async fn stream_anthropic(
     api_key: &Zeroizing<String>,
     on_event: &Channel<ChatStreamEvent>,
 ) -> Result<(), ProxyError> {
-    // We intentionally do NOT carry the
-    // "anthropic-dangerous-direct-browser-access" header — that header is
-    // the marker Anthropic added for the previous CORS-from-browser posture,
-    // and we are explicitly NOT in that posture now.
+    // No "anthropic-dangerous-direct-browser-access" header: that header marks
+    // requests made from a browser, and this request comes from the app.
     let mut body = serde_json::json!({
         "model": request.model,
         "messages": request.messages,
@@ -425,8 +458,9 @@ async fn stream_openai(
     if let Some(tools) = &request.tools {
         body["tools"] = tools.clone();
     }
-    // OpenAI uses `system` as a message-array role — the JS provider already
-    // injects it into `messages`, so `request.system_prompt` is unused here.
+    // OpenAI takes the system prompt as a `system` role in the message array,
+    // which the JS provider puts into `messages`, so `request.system_prompt` is
+    // unused here.
 
     let resp = client
         .post(OPENAI_CHAT_URL)
@@ -446,15 +480,18 @@ async fn stream_openai(
     forward_sse(resp, on_event, /* parse_event_lines */ false).await
 }
 
-/// Drain an SSE response body and forward each `data:` payload as a
-/// [`ChatStreamEvent::SseEvent`] on the channel. Buffer is split on `\n\n`
-/// (SSE event delimiter); within each event we collect the `data:` JSON
-/// and (for Anthropic) the optional `event:` type line.
+/// Drains an SSE response body and forwards each `data:` payload as a
+/// [`ChatStreamEvent::SseEvent`] on the channel. The buffer is split on `\n\n`
+/// (the SSE event delimiter); each event yields its `data:` JSON and, when
+/// `parse_event_lines` is set, its `event:` type line.
 ///
-/// This is a deliberately minimal SSE parser — we don't reassemble
-/// tool_use blocks, count tokens, or interpret event_type. The TS
-/// provider already does that and is unit-tested. Doing it twice is a
-/// drift-risk; the proxy stays a passthrough.
+/// The parser does not reassemble tool_use blocks, count tokens or interpret
+/// `event_type`; the TS provider does that.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::Stream`] when the body breaks off or an event's data
+/// is not JSON.
 async fn forward_sse(
     resp: reqwest::Response,
     on_event: &Channel<ChatStreamEvent>,
@@ -465,9 +502,8 @@ async fn forward_sse(
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| ProxyError::Stream(e.to_string()))?;
-        // Provider streams are guaranteed UTF-8; if a chunk splits a multi-byte
-        // codepoint we drop the trailing partial bytes back into the buffer
-        // on the NEXT iteration's split (the `\n\n` framing keeps us aligned).
+        // Each chunk is decoded on its own, lossily: a multi-byte codepoint
+        // split across two chunks becomes replacement characters.
         buffer.push_str(&String::from_utf8_lossy(&bytes));
 
         // SSE events are separated by a blank line. Split eagerly and keep
@@ -477,9 +513,9 @@ async fn forward_sse(
             buffer.drain(..idx + 2);
             if let Some(event) = parse_sse_event(&raw_event, parse_event_lines)? {
                 if on_event.send(event).is_err() {
-                    // Receiver gone (window closed, request cancelled). Stop
-                    // pulling from the provider — no point burning their
-                    // tokens for a stream nobody's reading.
+                    // The receiver is gone (window closed, request cancelled):
+                    // stop pulling from the provider rather than spend tokens
+                    // on a stream nobody reads.
                     return Ok(());
                 }
             }
@@ -489,9 +525,13 @@ async fn forward_sse(
     Ok(())
 }
 
-/// Parse one SSE event block (already stripped of its trailing `\n\n`).
+/// Parses one SSE event block, already stripped of its trailing `\n\n`.
 /// Returns `None` for keepalive comments, `[DONE]` markers, or events with
-/// no `data:` line. Returns `Some(SseEvent { ... })` for real payloads.
+/// no `data:` line, and `Some(SseEvent { ... })` for real payloads.
+///
+/// # Errors
+///
+/// Returns [`ProxyError::Stream`] when the joined `data:` lines are not JSON.
 fn parse_sse_event(
     block: &str,
     parse_event_lines: bool,
@@ -551,9 +591,8 @@ mod tests {
         let parsed = parse_sse_event(block, false).unwrap().unwrap();
         match parsed {
             ChatStreamEvent::SseEvent { event_type, data } => {
-                // `parse_event_lines = false` means we do NOT consume `event:`
-                // lines as event_type — even if the provider sent one
-                // (OpenAI doesn't, but defensive).
+                // With `parse_event_lines = false` an `event:` line is not read
+                // as event_type, even if the provider sent one.
                 assert_eq!(event_type, None);
                 assert_eq!(data["choices"][0]["delta"]["content"], "hi");
             }
@@ -575,20 +614,18 @@ mod tests {
 
     #[test]
     fn parse_sse_event_blank_block_is_none() {
-        // A spurious extra "\n\n" inside a stream produces an empty block.
-        // We treat it as a no-op rather than an error so a finicky provider
-        // doesn't kill the stream.
+        // A spurious extra "\n\n" inside a stream produces an empty block,
+        // which is a no-op rather than an error so it does not kill the stream.
         assert!(parse_sse_event("", false).unwrap().is_none());
     }
 
     #[test]
     fn parse_sse_event_multiline_data_is_joined_with_newlines() {
-        // Per the SSE spec, multiple data: lines in one event get joined
-        // with \n. Anthropic and OpenAI don't currently use this, but a
-        // future provider (or proxy mid-stream) might.
+        // Multiple data: lines in one event are joined with \n, as SSE
+        // defines.
         let block = "data: line1\ndata: line2";
-        // line1\nline2 isn't valid JSON, so this should error — that's the
-        // contract: we surface bad SSE rather than silently swallow it.
+        // line1\nline2 is not valid JSON, so the parser reports it rather than
+        // swallowing it.
         let err = parse_sse_event(block, false).unwrap_err();
         assert!(matches!(err, ProxyError::Stream(_)));
     }
@@ -602,9 +639,8 @@ mod tests {
 
     #[test]
     fn proxy_error_serialize_is_human_readable() {
-        // The TS side surfaces `ProxyError` strings to the user via toast.
-        // Lock the format so a future thiserror version doesn't silently
-        // change the wire string.
+        // The UI shows `ProxyError` strings to the user in a toast, so the wire
+        // string must carry the status and the body.
         let err = ProxyError::Provider {
             status: 401,
             body: "invalid_api_key".to_string(),
@@ -619,9 +655,9 @@ mod tests {
 
     #[test]
     fn provider_as_str_matches_serde_rename() {
-        // secret_name builds the secret's name from provider.as_str(). If this
-        // diverges from the serde rename, keys written under one name can't be
-        // read under another. Keep both in sync.
+        // secret_name builds the secret's name from provider.as_str(), which
+        // must match the serde rename so a key is read under the name it was
+        // written under.
         assert_eq!(Provider::Anthropic.as_str(), "anthropic");
         assert_eq!(Provider::Openai.as_str(), "openai");
     }
@@ -640,9 +676,8 @@ mod tests {
 
     #[test]
     fn api_key_is_zeroized_on_drop() {
-        // stored_key returns Zeroizing<String> — this bound ensures the key
-        // bytes are wiped when the returned value drops. If a future refactor
-        // changes the return type to plain String this test will fail to compile.
+        // Zeroizing<String>, the type stored_key returns, wipes the key bytes
+        // when it drops.
         fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
         assert_zeroize_on_drop::<Zeroizing<String>>();
     }
@@ -662,9 +697,8 @@ mod tests {
 
     #[test]
     fn agent_validate_provided_key_accepts_zeroizing_string() {
-        // Compile-time contract: the api_key parameter is Zeroizing<String>,
-        // which implements ZeroizeOnDrop. If a future refactor weakens this to
-        // a plain &str or String, this assertion will fail to compile.
+        // Zeroizing<String>, the type of the api_key parameter, implements
+        // ZeroizeOnDrop.
         fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
         assert_zeroize_on_drop::<Zeroizing<String>>();
     }
@@ -677,9 +711,8 @@ mod tests {
 
     #[test]
     fn validation_outcome_invalid_serializes_to_tagged_json() {
-        // WARN #4 contract: the frontend distinguishes these three cases
-        // via the `kind` discriminator. Lock the wire shape so a future
-        // serde attribute churn doesn't silently flip the tag name.
+        // The UI distinguishes the three outcomes by the `kind` tag, so the
+        // wire shape is fixed here.
         let s = serde_json::to_string(&ValidationOutcome::Invalid).unwrap();
         assert_eq!(s, r#"{"kind":"invalid"}"#);
     }
@@ -702,7 +735,7 @@ mod tests {
         let body = r#"{"provider":"anthropic","model":"x","messages":[],"api_key":"leak"}"#;
         assert!(
             serde_json::from_str::<ChatCompletionRequest>(body).is_err(),
-            "deny_unknown_fields must reject api_key — IPC cutover guarantee for #8"
+            "deny_unknown_fields must reject api_key: the key never crosses IPC"
         );
     }
 }

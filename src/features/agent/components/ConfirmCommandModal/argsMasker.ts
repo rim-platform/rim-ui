@@ -1,14 +1,14 @@
 /**
- * Frontend mirror of `rim_services::command::sensitivity::mask_for_display`
- * (see `rim-server/rim_services/src/command/sensitivity.rs:248`). MUST stay
- * in lockstep with the backend regex + vendor-prefix list — drift produces
- * the "value masked in UI but logged plain" failure mode.
+ * Frontend mirror of the backend's `mask_for_display` in
+ * `rim_services::command::sensitivity`. Must stay in lockstep with the
+ * backend regex + vendor-prefix list — drift produces the "value masked in
+ * UI but logged plain" failure mode.
  *
  * The backend redaction policy:
  *  - Recursive walk over JSON.
  *  - A value is redacted if its key matches `SENSITIVE_ARG_NAME_RE`,
- *    OR any ancestor key did (sticky propagation),
- *    OR its string value matches `value_looks_secret`.
+ *    or any ancestor key did (sticky propagation),
+ *    or its string value matches `value_looks_secret`.
  *  - Vendor prefixes detected: sk-, xoxb-, xoxp-, xoxa-, ghp_, gho_,
  *    ghu_, ghs_, ghr_, glpat-, ya29., AKIA, AIza.
  *  - JWT shape: `header.payload.signature` of base64url segments.

@@ -28,6 +28,10 @@ jobs:
       # package.json, package-lock.json, src-tauri/Cargo.toml and Cargo.lock carry one version.
       - name: Version Check
         run: npm run version:check
+      # No two tracked names in one folder differ only in case: Windows and macOS checkouts
+      # cannot tell them apart, and an extensionless import picks the wrong module there.
+      - name: Case Check
+        run: npm run case:check
       # Production dependencies only: the dev toolchain (codegen, test runner) never ships.
       - name: Dependency Audit
         run: npm audit --omit=dev --audit-level=high
@@ -121,7 +125,6 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [code_quality]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -142,7 +145,6 @@ jobs:
   docker_build:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [code_quality]
     steps:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx

@@ -1,16 +1,15 @@
 # Error boundaries
 
-RIM's shell has three tiers of React error boundary. Pick the right one when adding
+RIM's shell has two tiers of React error boundary. Pick the right one when adding
 a new surface, and always wire `resetKeys` correctly — a boundary without the right
 `resetKeys` can leave a pane permanently stuck in its fallback UI.
 
-## The three tiers
+## The two tiers
 
 | Tier | Component | Scope | File |
 |---|---|---|---|
 | App | `AppErrorBoundary` | Whole app, full-screen fallback | `src/app/AppErrorBoundary.tsx` |
 | Surface | `SurfaceErrorBoundary` | One pane inside `WorkspaceShell` | `src/shared/ui/SurfaceErrorBoundary.tsx` |
-| Plugin | `PluginErrorBoundary` | One plugin panel | `src/features/plugins/components/PluginErrorBoundary.tsx` |
 
 **`AppErrorBoundary`** sits at the app root. If it catches an error, the entire UI is
 gone — the user sees a full-screen "UI ERROR" page with Try Again / Reload App. This
@@ -25,12 +24,9 @@ subscription and `KeybindProvider`, which live above these boundaries in
 `WorkspaceShell` — stays mounted and functional. This is the default choice for any
 new top-level pane added to the shell.
 
-**`PluginErrorBoundary`** is different in kind: it's not a render-error boundary at
-all, it's a health-state UI driven by the plugin runtime's `PluginHealth` (running /
-crashed / timeout / slow-loading). It already renders its own restart/disable
-actions, so plugin panels (`PluginSlotContainer`) are **not** additionally wrapped in
-`SurfaceErrorBoundary` — doing so would produce a confusing double fallback if a
-plugin's own render also threw synchronously.
+Plugin panels (`PluginSlotContainer`) are not wrapped in `SurfaceErrorBoundary`: a plugin
+runs in its own process or sandboxed frame, and the plugin host reports its health (running,
+crashed, timed out) in Settings → Plugins, where it is disabled or re-enabled.
 
 ## When to use `SurfaceErrorBoundary`
 
@@ -41,7 +37,7 @@ panel. Do not wrap:
   `WorkspaceShell` itself, above any boundary, so a pane crash never tears down the
   WS subscription.
 - `KeybindProvider` — global keybind handling must survive a pane crash.
-- Plugin panels — they keep `PluginErrorBoundary`.
+- Plugin panels — the plugin host reports their health in Settings → Plugins.
 
 ## `resetKeys` — mandatory for any surface tied to navigable state
 

@@ -148,8 +148,8 @@ function MessageComposer(props: ComposerProps) {
   const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  // Track 1.2: a timed-out viewer reads but cannot write; slow mode spaces out members'
-  // messages (Owner/Moderator are exempt). The server enforces both.
+  // A timed-out viewer reads but cannot write; slow mode spaces out members' messages
+  // (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);
   const offline = useOfflineStore((s) => s.offline);
   const isModerator = useCanModerate(workspaceId);
@@ -348,11 +348,15 @@ function MessageComposer(props: ComposerProps) {
     }
   }
 
-  /** Opens the conversation a draft became, which drops the draft. */
+  /**
+   * Opens the conversation a draft became, which drops the draft. A plugin panel opened while
+   * the first message was sending stays open.
+   */
   function openStarted(target: DirectDraft, spaceId: string, id: string) {
     qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
-    if ("spaceId" in target) selectDirectConversation(spaceId, id);
-    else useShellStore.getState().setSelectedConversationId(id);
+    const options = { keepPluginPanel: true };
+    if ("spaceId" in target) selectDirectConversation(spaceId, id, options);
+    else useShellStore.getState().setSelectedConversationId(id, options);
   }
 
   /** Clears the composer once a message leaves: its text, files and saved draft. */

@@ -75,8 +75,8 @@ export type WorkspaceEvent =
       username: string;
     }
   /**
-   * A member was kicked or banned (Track 1.2). Delivered to the workspace (a guest only hears
-   * about themselves), including the removed user, whose subscription then ends.
+   * A member was kicked or banned. Delivered to the workspace (a guest only hears about
+   * themselves), including the removed user, whose subscription then ends.
    */
   | {
       type: "MemberLeft";
@@ -84,8 +84,8 @@ export type WorkspaceEvent =
       user_id: string;
     }
   /**
-   * A member's role changed (Track 1.2). `role` is the lowercase name: `owner`, `moderator`,
-   * `member` or `guest`. Same visibility as `MemberLeft`.
+   * A member's role changed. `role` is the lowercase name: `owner`, `moderator`, `member` or
+   * `guest`. Same visibility as `MemberLeft`.
    */
   | {
       type: "MemberRoleChanged";
@@ -160,10 +160,9 @@ export type WorkspaceEvent =
       mentioned_by: string;
     }
   /**
-   * The server decided the viewer should be told about a message (Track 1.3, verified against
-   * `rim-server/docs/messaging.md`). Delivered only to `user_id`. `quiet` is true inside the
-   * viewer's do-not-disturb window or pause: the notification is stored (inbox, digest) but the
-   * client must neither toast nor play a sound.
+   * The server decided the viewer should be told about a message. Delivered only to `user_id`.
+   * `quiet` is true inside the viewer's do-not-disturb window or pause: the notification is
+   * stored (inbox, digest) but the client must neither toast nor play a sound.
    */
   | {
       type: "NotificationDue";

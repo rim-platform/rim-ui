@@ -16,7 +16,7 @@ import {
   type Sealed,
 } from "./channel";
 
-// device-linking-v1.md, appendix A.
+// Known-answer vectors from device-linking-v1 appendix A.
 const LINK_ID = "AAECAwQFBgcICQoLDA0ODw";
 const SECRET = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8";
 const ENDPOINT = "http://localhost:8080/api";

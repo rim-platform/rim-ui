@@ -53,7 +53,7 @@ describe("ConfirmCommandModal — render gate", () => {
   });
 });
 
-describe("ConfirmCommandModal — subtitle copy source (C2 §4)", () => {
+describe("ConfirmCommandModal — subtitle copy source", () => {
   it("renders `description` as the subtitle when both description and nlDescription are present (precedence pin)", () => {
     render(<ConfirmCommandModal />);
     act(() => {
@@ -135,9 +135,9 @@ describe("ConfirmCommandModal — args block", () => {
   // in UI, logged plain" failure mode.
   //
   // Each probe uses a value-shape-only trigger: the arg key `credential`
-  // name-matches `SENSITIVE_ARG_NAME_RE`, so we use `detect` (a key that
-  // does NOT match the name regex). That forces redaction to fire on the
-  // VALUE shape alone. If a prefix is dropped from VENDOR_PREFIXES the
+  // name-matches `SENSITIVE_ARG_NAME_RE`, so the probes use `detect` (a key
+  // that does not match the name regex). That forces redaction to fire on
+  // the value shape alone. If a prefix is dropped from VENDOR_PREFIXES the
   // literal CANARY string leaks into the DOM and this assertion fails.
   //
   // Runs each probe in its own modal open so the args list never trips the
@@ -379,8 +379,8 @@ describe("ConfirmCommandModal — tier-4 type-to-confirm", () => {
     });
     expect(screen.getByTestId("confirm-button")).not.toBeDisabled();
 
-    // Bare Enter in the input must NOT submit. The only "go" gesture is
-    // ⌘/Ctrl+Enter at the panel level. Cf. spec §6.3 / §5.2.
+    // Bare Enter in the input must not submit. The only "go" gesture is
+    // ⌘/Ctrl+Enter at the panel level.
     act(() => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -538,8 +538,8 @@ describe("ConfirmCommandModal — accessibility", () => {
     // Wait one rAF tick for the focus useEffect to run.
     await new Promise((r) => requestAnimationFrame(() => r(undefined)));
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
-    // Tier-4 (RESTRICTED) shares this useEffect path — locked via wiring,
-    // not a separate assertion.
+    // RESTRICTED shares this useEffect path, so it has no separate
+    // assertion.
   });
 
   it("announces redacted values via aria-label on the value cell", () => {

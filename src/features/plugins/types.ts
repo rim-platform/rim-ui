@@ -40,8 +40,7 @@ export function isPluginCapability(v: unknown): v is PluginCapability {
 /**
  * Defensively parses an unknown value into `PluginCapability[]`.
  * Unknown strings are dropped and logged. In production console.warn is the
- * only signal — TODO(P6-W3-followup): route through toast/audit when a shared
- * drift-signal subsystem exists.
+ * only signal.
  */
 export function parsePluginCapabilities(value: unknown): PluginCapability[] {
   if (!Array.isArray(value)) {
@@ -105,6 +104,8 @@ export interface PluginCommandInfo {
   dangerous: boolean;
   ai_callable: boolean;
   arguments: PluginCommandArgument[];
+  /** Context kinds the command runs in (`conversation`, `message`, `workspace`). */
+  required_context?: string[];
   /** Capabilities the user must have approved before the command runs. */
   required_capabilities?: string[];
 }
@@ -172,6 +173,8 @@ export interface PluginInfo {
    * to trust the new version via `plugin_trust_fingerprint` before enabling.
    */
   fingerprint_changed: boolean;
+  /** The bundle fingerprint on disk; left out by the web app and by older hosts. */
+  current_fingerprint?: string | null;
   context_actions?: PluginContextAction[];
   /** Panel definitions from the manifest — used by the shell for slot layout. */
   panels?: PluginPanelDef[];
@@ -188,7 +191,7 @@ export interface PluginInfo {
   starting?: boolean;
   /** Why a web plugin stopped on its own, or was not started. */
   last_error?: string | null;
-  /** Left out by hosts before the audit. */
+  /** The plugin's grant history and encrypted reads; left out by hosts that keep no audit. */
   audit?: PluginAudit;
 }
 

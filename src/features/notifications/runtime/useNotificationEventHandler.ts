@@ -11,9 +11,9 @@ import { notificationBody, showMessageNotification } from "./desktopNotification
 import { resolveNotificationContent } from "./resolveNotificationContent";
 
 /**
- * Renders the notifications the server decided on (`NotificationDue`, Track 1.3). The server
- * applies levels, mutes, keywords and do-not-disturb; this only honours `quiet` and the
- * device-local toggles (enabled, sound, preview). Call once at app startup (AppShell).
+ * Renders the notifications the server decided on (`NotificationDue`). The server applies
+ * levels, mutes, keywords and do-not-disturb; this only honours `quiet` and the device-local
+ * toggles (enabled, sound, preview). Call once at app startup (AppShell).
  */
 export function useNotificationEventHandler(workspaceId: string | null) {
   const qc = useQueryClient();

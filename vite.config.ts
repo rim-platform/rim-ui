@@ -1,15 +1,32 @@
 import { readFileSync } from "node:fs";
+import type { ServerResponse } from "node:http";
 
-import { defineConfig } from "vite";
+import { defineConfig, type Connect, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
 const packageJson = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
+/**
+ * Lets any origin read the plugin frame shell: its frames have the opaque origin
+ * null and load shell.js as a CORS request.
+ */
+function pluginFrameCors(): Plugin {
+  const allow = (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
+    if (req.url?.startsWith("/plugin-frame/")) res.setHeader("Access-Control-Allow-Origin", "*");
+    next();
+  };
+  return {
+    name: "rim-plugin-frame-cors",
+    configureServer: (server) => void server.middlewares.use(allow),
+    configurePreviewServer: (server) => void server.middlewares.use(allow),
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pluginFrameCors()],
 
   // The app's version, which plugins get as `hostVersion`.
   define: { __APP_VERSION__: JSON.stringify(packageJson.version) },

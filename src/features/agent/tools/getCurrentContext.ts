@@ -2,11 +2,12 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { registerTool } from "./registry";
 
-// Documented carve-out — the ONE hardcoded AI tool that stays after the
-// Phase 4 deletion of `tools/builtins/`. Rationale per the Phase 4 migration
-// matrix (`rim-server/docs/design/phase4-tool-migration-matrix.md` row #4):
-// `get_current_context` reads FE runtime state (Zustand stores) that has no
-// backend analogue. A backend mirror would just echo `commandContext` back.
+/**
+ * Registers `get_current_context`, the one AI tool defined in the client
+ * rather than generated from a backend command. It reads client state (the
+ * workspace and shell stores) that has no backend counterpart; a backend
+ * command would only echo `commandContext` back.
+ */
 export function registerGetCurrentContextTool(): void {
   registerTool(
     {

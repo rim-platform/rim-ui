@@ -10,8 +10,7 @@ import { useMemberDirectoryStore } from "./useMemberDirectoryStore";
 import { useWorkspaceStore } from "./useWorkspaceStore";
 
 /**
- * Realtime handlers for workspace membership events (Track 1.2), called from
- * `useWorkspaceEvents`.
+ * Realtime handlers for workspace membership events, called from `useWorkspaceEvents`.
  */
 
 function currentUserId(qc: QueryClient): string | undefined {

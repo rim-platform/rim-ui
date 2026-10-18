@@ -14,11 +14,20 @@ import { fetchServerMembers, type ServerMember } from "../../workspaces/api/useS
 import { fetchPrincipalDevices, type DirectoryPrincipal } from "../api/e2eeApi";
 import type { DirectoryInput } from "../api/e2eeCommands";
 
-export function workspaceMembers(workspaceId: string): Promise<ServerMember[]> {
+/** How a member list is read: `fresh` fetches it now (and caches it) instead of a recent copy. */
+export interface MemberRead {
+  fresh?: boolean;
+}
+
+/** The workspace's members: a copy up to a minute old, or fetched now with `fresh`. */
+export function workspaceMembers(
+  workspaceId: string,
+  { fresh = false }: MemberRead = {},
+): Promise<ServerMember[]> {
   return queryClient.fetchQuery({
     queryKey: queryKeys.serverMembers(workspaceId),
     queryFn: () => fetchServerMembers(workspaceId),
-    staleTime: 60_000,
+    staleTime: fresh ? 0 : 60_000,
   });
 }
 
@@ -26,8 +35,9 @@ export function workspaceMembers(workspaceId: string): Promise<ServerMember[]> {
 export async function conversationMembers(
   workspaceId: string,
   memberIds: string[],
+  read: MemberRead = {},
 ): Promise<ServerMember[]> {
-  const members = await workspaceMembers(workspaceId);
+  const members = await workspaceMembers(workspaceId, read);
   const ids = new Set(memberIds);
   return members.filter((m) => ids.has(m.userId));
 }
@@ -101,6 +111,16 @@ export async function notReadyMembers(
     .filter((m) => !m.principalId || !isReady(byId.get(m.principalId)))
     .map((m) => m.displayName || m.username);
   return { names, directory };
+}
+
+/** What the composer says when `names` have no device that can receive encrypted messages. */
+export function notReadyMessage(names: string[]): string {
+  const who =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const verb = names.length === 1 ? "has" : "have";
+  return `${who} ${verb} no device set up for encryption yet`;
 }
 
 /** Key logs and device lists of `principalIds`, for checking leaves. */

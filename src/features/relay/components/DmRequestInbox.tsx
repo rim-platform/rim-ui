@@ -6,6 +6,7 @@ import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { leaveConversation } from "../../conversations/api/useChannelMembership";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { processWelcomes } from "../../e2ee/runtime/groups";
@@ -18,7 +19,7 @@ import {
   reportDmRequest,
   type DmRequestView,
 } from "../api/relayApi";
-import { usePendingDmRequests } from "../api/useDmRequests";
+import { usePendingDmRequestsIn } from "../api/useDmRequests";
 import { resolveIdentity } from "../contacts/identity";
 import { rememberRelays } from "../contacts/knownRelays";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -60,22 +61,30 @@ async function bindRequestSpace(request: DmRequestView): Promise<string | null> 
   return null;
 }
 
+interface DmRequestInboxProps {
+  /**
+   * The requests shown: those of one workspace's conversations, with `null` those from
+   * outside every workspace; all of them when left out.
+   */
+  workspaceId?: string | null;
+}
+
 /**
- * Message requests: DMs from people outside this person's contacts, held by the relay until
- * they decide. Each shows the name from the sender's verified card and the fingerprint of their
+ * Message requests: DMs the person's settings take as requests, held by the relay until they
+ * decide. Each shows the name from the sender's verified card and the fingerprint of their
  * principal id; the person may read the conversation first, then accept, ignore, block or
- * report. Requests from members of a shared workspace are accepted on their own.
+ * report. Requests a shared workspace lets through are accepted on their own.
  */
-export function DmRequestInbox() {
-  const requests = usePendingDmRequests();
-  if (!requests.data || requests.data.length === 0) return null;
+export function DmRequestInbox({ workspaceId }: DmRequestInboxProps) {
+  const requests = usePendingDmRequestsIn(workspaceId);
+  if (requests.length === 0) return null;
   return (
     <section className="mb-2 rounded-lg border border-rim-line" aria-label="Message requests">
       <h3 className="border-b border-rim-line px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
-        Message requests ({requests.data.length})
+        Message requests ({requests.length})
       </h3>
       <ul className="divide-y divide-rim-line">
-        {requests.data.map((request) => (
+        {requests.map((request) => (
           <DmRequestRow key={request.id} request={request} />
         ))}
       </ul>
@@ -101,6 +110,9 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
       await action();
       await qc.invalidateQueries({ queryKey: ["dmRequests"] });
       await qc.invalidateQueries({ queryKey: queryKeys.relayContacts });
+      // An accepted conversation joins its space's list.
+      const spaceId = request.heldItems[0]?.workspaceId;
+      if (spaceId) await qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
     } catch (err) {
       toast.error(graphqlErrorMessage(err, failure));
     } finally {
@@ -118,6 +130,7 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
     if (session) await processWelcomes(session).catch(() => []);
     requestCacheSync(spaceId, [request.conversationId]);
     selectDirectConversation(spaceId, request.conversationId);
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
   }
 
   async function block() {

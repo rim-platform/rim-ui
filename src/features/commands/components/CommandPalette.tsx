@@ -7,6 +7,7 @@ import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
+import { useRunnableHere } from "../../plugins/runtime/pluginContext";
 import {
   isCancelledResult,
   toastPluginCommandResult,
@@ -46,6 +47,7 @@ export function CommandPalette() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
+  const runnableHere = useRunnableHere();
   const registryItems = useRegistryPaletteItems();
   const keybinds = useEffectiveKeybinds();
   const executeCommandMutation = useExecuteCommandMutation();
@@ -68,10 +70,11 @@ export function CommandPalette() {
     return [
       ...base,
       ...local,
-      ...pluginCommands.filter((cmd) => cmd.visibleInPalette),
+      // A plugin command whose context is missing (no conversation open) is left out.
+      ...pluginCommands.filter((cmd) => cmd.visibleInPalette && runnableHere(cmd.requiredContext)),
       ...registryItems,
     ];
-  }, [commands, pluginCommands, registryItems]);
+  }, [commands, pluginCommands, registryItems, runnableHere]);
 
   const getCommandText = useCallback(
     (cmd: CommandDefinition) => [cmd.title, cmd.description, cmd.category],
@@ -247,7 +250,7 @@ export function CommandPalette() {
           .openInstall(command.registry.serverId, command.registry.pluginId);
         return;
       }
-      // If we have pipe segments, add this command to the chain and execute the whole pipe
+      // With pipe segments, add this command to the chain and execute the whole pipe
       if (pipeSegments.length > 0) {
         await executePipeChain(pipeSegments, command.id);
         return;

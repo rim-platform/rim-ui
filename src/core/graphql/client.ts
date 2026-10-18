@@ -6,7 +6,7 @@ import { asGraphqlResponse } from "./edgeRefusals";
 
 /**
  * Where requests for a space on another server go: the relay registers one once it knows
- * which spaces those are. Spaces this server hosts keep today's path.
+ * which spaces those are. Requests for spaces this server hosts go to it directly.
  */
 export interface SpaceRouter {
   /** The host server id of `spaceId`, or `null` when this server hosts it. */

@@ -1,6 +1,6 @@
 /**
  * AI Provider abstraction layer.
- * Each provider (Anthropic, OpenAI, Ollama) implements this interface.
+ * Each provider (Anthropic, OpenAI) implements this interface.
  */
 
 export interface AiModelDef {
@@ -51,12 +51,10 @@ export type AiStreamChunk =
   | { kind: "error"; message: string };
 
 /**
- * Result of `AiProvider.validateCredentials`. Post-#59 this replaces the
- * previous `Promise<boolean>` contract so the Settings UI can distinguish
- * "provider said the key is bad" (user must fix the key) from "we couldn't
- * reach the provider" (user must fix their network). Pre-fix both paths
- * collapsed to `false` and produced a misleading "Invalid API key" toast
- * on a DNS/TLS failure.
+ * Outcome of validating a provider API key. Tells "the provider rejected the
+ * key" (the user must fix the key) apart from "the provider could not be
+ * reached" (the user must fix their network), so a DNS or TLS failure is not
+ * reported as an invalid key.
  */
 export type ValidationOutcome =
   { kind: "valid" } | { kind: "invalid" } | { kind: "network_error"; message: string };
@@ -66,7 +64,6 @@ export interface AiProvider {
   /**
    * Stream a chat completion. The API key is read from the secret vault by the
    * Rust proxy on every request — the JS side never holds the key bytes.
-   * (Phase 5 / Option B, agent-settings-consolidation §3.)
    */
   chat(request: AiChatRequest): AsyncIterable<AiStreamChunk>;
 }

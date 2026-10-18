@@ -34,7 +34,6 @@ beforeEach(() => {
   queryClient.clear();
   useRelayStore.getState().reset();
   useShellStore.getState().reset();
-  useShellStore.getState().setActivePanel("plugins");
   useAuthStore.getState().setSession({ userId: "me" });
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
   queryClient.setQueryData(queryKeys.serverMembers("ws-1"), [

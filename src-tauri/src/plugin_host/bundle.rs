@@ -13,6 +13,7 @@
 use crate::plugin_host::discovery::MANIFEST_FILE;
 use crate::plugin_host::local_install::check_path_safe;
 use crate::plugin_host::manifest::{PluginManifest, RuntimeKind};
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::is_bundle_path;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -105,8 +106,13 @@ pub fn bundle_sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-/// Read a bundle file: structure, paths, manifest and the kind's file rules.
-/// Install validation of the manifest is the caller's.
+/// Reads a bundle file, checking its structure, paths, manifest and the kind's
+/// file rules. Install validation of the manifest is the caller's.
+///
+/// # Errors
+///
+/// Returns [`BundleError::TooLarge`] for an oversized file, and
+/// [`BundleError::Malformed`] or [`BundleError::Manifest`] when it breaks a rule.
 pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, BundleError> {
     if bytes.len() > MAX_BUNDLE_BYTES {
         return Err(BundleError::TooLarge(bytes.len()));
@@ -151,6 +157,11 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, BundleError> {
 /// files sorted by path with no duplicates, bundle paths, a manifest, its
 /// entrypoint, and for `WebSandboxed` nothing else outside `panels/` and an
 /// entrypoint with no `#!` line.
+///
+/// # Errors
+///
+/// Returns [`BundleError::Malformed`] or [`BundleError::Manifest`] naming the
+/// broken rule.
 pub fn check_files(files: Vec<BundleFile>) -> Result<Bundle, BundleError> {
     let malformed = |reason: String| Err(BundleError::Malformed(reason));
     if files.is_empty() || files.len() > MAX_BUNDLE_FILES {
@@ -212,7 +223,7 @@ pub fn check_files(files: Vec<BundleFile>) -> Result<Bundle, BundleError> {
     })
 }
 
-/// Write files as a bundle: sorted by path, UTF-8 files as `text` and others as
+/// Writes files as a bundle: sorted by path, UTF-8 files as `text` and others as
 /// `base64`, compact JSON.
 pub fn write_bundle(files: &[BundleFile]) -> Vec<u8> {
     let mut sorted: Vec<&BundleFile> = files.iter().collect();
@@ -241,6 +252,11 @@ pub fn write_bundle(files: &[BundleFile]) -> Vec<u8> {
 /// whose name starts with `.` (`.git`, `.DS_Store`) are skipped, as are
 /// symbolic links that leave `dir`; any other name that is not a bundle path
 /// is an error.
+///
+/// # Errors
+///
+/// Returns [`BundleError::Malformed`] for a name that is not a bundle path, and
+/// [`BundleError::Io`] when the folder cannot be read.
 pub fn collect_dir(dir: &Path) -> Result<Vec<BundleFile>, BundleError> {
     let root = dir.canonicalize()?;
     let mut files = Vec::new();
@@ -291,6 +307,10 @@ fn collect_into(root: &Path, dir: &Path, files: &mut Vec<BundleFile>) -> Result<
 /// `panels/`, read as [`collect_dir`] reads them, and every other file of the folder (sources,
 /// `package.json`, a README) is left out. For any other plugin it is every file
 /// [`collect_dir`] reads.
+///
+/// # Errors
+///
+/// Returns the errors of [`collect_dir`].
 pub fn collect_plugin_dir(dir: &Path) -> Result<Vec<BundleFile>, BundleError> {
     let root = dir.canonicalize()?;
     let Some(manifest_bytes) = read_inside(&root, MANIFEST_FILE)? else {
@@ -340,9 +360,14 @@ fn read_inside(root: &Path, path: &str) -> Result<Option<Vec<u8>>, BundleError> 
     Ok(Some(std::fs::read(&canonical)?))
 }
 
-/// Check a plugin folder against the bundle rules, as if it were bundled: what
+/// Checks a plugin folder against the bundle rules, as if it were bundled: what
 /// [`check_files`] checks over [`collect_plugin_dir`], and the size of the bundle it would
 /// make.
+///
+/// # Errors
+///
+/// Returns the [`BundleError`] of the first rule the folder breaks, or of
+/// reading it.
 pub fn check_dir(dir: &Path) -> Result<Bundle, BundleError> {
     let bundle = check_files(collect_plugin_dir(dir)?)?;
     let size = write_bundle(&bundle.files).len();
@@ -352,10 +377,17 @@ pub fn check_dir(dir: &Path) -> Result<Bundle, BundleError> {
     Ok(bundle)
 }
 
-/// Unpack `bundle` into `<plugins_root>/<plugin_id>/` through a staging
-/// directory: a `DesktopLocalProcess` entrypoint gets mode 0755 and every other
-/// file 0644. With `replace`, an existing directory for the plugin is swapped
-/// out; otherwise one is an error.
+/// Unpacks `bundle` into `<plugins_root>/<plugin_id>/` through a staging
+/// directory and returns that directory: a `DesktopLocalProcess` entrypoint gets
+/// mode 0755 and every other file 0644. With `replace`, an existing directory
+/// for the plugin is swapped out and deleted in the background; otherwise one is
+/// an error.
+///
+/// # Errors
+///
+/// Returns [`BundleError::Manifest`] when the plugin is installed and `replace`
+/// is false, [`BundleError::Malformed`] for an unsafe path, and
+/// [`BundleError::Io`] when writing or swapping in the files fails.
 pub fn unpack(bundle: &Bundle, plugins_root: &Path, replace: bool) -> Result<PathBuf, BundleError> {
     let plugin_id = &bundle.manifest.plugin_id;
     let final_dir = plugins_root.join(plugin_id);
@@ -372,14 +404,16 @@ pub fn unpack(bundle: &Bundle, plugins_root: &Path, replace: bool) -> Result<Pat
         let _ = std::fs::remove_dir_all(&staging);
         return Err(e);
     }
-    if final_dir.exists() {
-        std::fs::remove_dir_all(&final_dir)?;
+    match trash::swap_in(plugins_root, plugin_id, &staging) {
+        Ok(swap) => {
+            swap.keep();
+            Ok(final_dir)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            Err(e.into())
+        }
     }
-    if let Err(e) = std::fs::rename(&staging, &final_dir) {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err(e.into());
-    }
-    Ok(final_dir)
 }
 
 fn write_files(bundle: &Bundle, staging: &Path) -> Result<(), BundleError> {
@@ -639,6 +673,33 @@ port.onmessage = (event) => {
         assert!(leftovers.is_empty());
     }
 
+    #[test]
+    fn a_replacing_unpack_moves_the_old_copy_to_the_trash() {
+        let root = TempDir::new().unwrap();
+        let bundle = read_bundle(&write_bundle(&hello_web_with_panel())).unwrap();
+        let dir = unpack(&bundle, root.path(), false).unwrap();
+        std::fs::write(dir.join("panels/main/old.txt"), "old").unwrap();
+
+        assert_eq!(unpack(&bundle, root.path(), true).unwrap(), dir);
+        assert!(dir.join("panels/main/index.html").exists());
+        assert!(!dir.join("panels/main/old.txt").exists());
+        let mut names: Vec<_> = std::fs::read_dir(root.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, [trash::TRASH_DIR, "dev.example.hello-web"]);
+        // The old copy is in the trash, or already deleted from it.
+        for entry in std::fs::read_dir(root.path().join(trash::TRASH_DIR))
+            .unwrap()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            assert!(name.starts_with("dev.example.hello-web-"), "{name}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_desktop_entrypoint_is_executable() {
@@ -657,7 +718,7 @@ port.onmessage = (event) => {
         assert_eq!(mode("lib/util.mjs"), 0o644);
     }
 
-    /// Write `files` into `dir`, creating folders as needed.
+    /// Writes `files` into `dir`, creating folders as needed.
     pub(crate) fn write_into(dir: &Path, files: &[BundleFile]) {
         for f in files {
             let target = dir.join(&f.path);
@@ -673,7 +734,7 @@ port.onmessage = (event) => {
         files
     }
 
-    /// Write a plugin repository's layout into `dir`: the files of
+    /// Writes a plugin repository's layout into `dir`: the files of
     /// [`hello_web_with_panel`] and, beside them, what a repository also holds.
     pub(crate) fn write_git_layout(dir: &Path) {
         write_into(dir, &hello_web_with_panel());

@@ -1,5 +1,5 @@
-//! Signed statements of key identity (`rim-server/docs/specs/key-identity-v1.md`): building
-//! and signing the payloads this device sends, and replaying a key log the server returns.
+//! Signed statements of key identity: building and signing the payloads this device sends,
+//! and replaying a key log the server returns.
 //!
 //! This device writes statement version 2, where every key and signature names its algorithm
 //! (`ed25519:<base64url>`), and reads versions 1 and 2. This is the only module that knows
@@ -50,7 +50,7 @@ pub(crate) struct Statement {
 /// seeds; everything else holds a [`SecretKey`].
 pub(crate) type Seed = Zeroizing<[u8; 32]>;
 
-/// The one algorithm implemented today.
+/// The one algorithm implemented.
 const ED25519: &str = "ed25519";
 /// Tag of an Ed25519 key or signature, in statements and in stored secrets alike.
 const ED25519_TAG: &str = "ed25519:";
@@ -75,8 +75,8 @@ impl SecretKey {
         Self { seed }
     }
 
-    /// The raw seed, for writing a version 1 recovery kit in tests; this device no longer
-    /// writes one.
+    /// The raw seed, for writing a version 1 recovery kit in tests; outside tests this device
+    /// does not write one.
     #[cfg(test)]
     pub(crate) fn seed(&self) -> &[u8; 32] {
         &self.seed
@@ -1051,7 +1051,7 @@ mod tests {
     const DEVICE_ID: &str = "00000000-0000-0000-0000-000000000001";
     const AT: &str = "2026-10-09T00:00:00Z";
 
-    // Appendix A (version 1): written by older clients, still read.
+    // Appendix A (version 1), which this device reads but does not write.
     const V1_PRINCIPAL: &str = "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo";
     const V1_PREV: &str = "o1oFYkMXfjtQJnG6as5GURR0cnzeYNYv5Br-LaeI78I";
     const V1_INCEPTION: &str = r#"{"v":1,"type":"inception","seq":0,"identityKey":"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w","recoveryKey":"1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg","createdAt":"2026-10-09T00:00:00Z"}"#;

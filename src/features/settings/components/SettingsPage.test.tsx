@@ -101,6 +101,12 @@ vi.mock("./ModerationSettings", () => ({
 vi.mock("./WorkspaceOwnerSettings", () => ({
   WorkspaceOwnerSettings: () => null,
 }));
+vi.mock("../../dm-policy/components/WorkspaceDmPolicySettings", () => ({
+  WorkspaceDmPolicySettings: () => <div data-testid="workspace-dm-settings">Workspace DMs</div>,
+}));
+vi.mock("../../dm-policy/components/DmSettings", () => ({
+  DmSettings: () => <div data-testid="dm-settings">Who can message me</div>,
+}));
 
 vi.mock("../../updater/components/AboutUpdates", () => ({
   AboutVersion: () => <p>Version 9.9.9</p>,
@@ -166,6 +172,12 @@ describe("SettingsPage", () => {
         screen.getByRole("group", { name }),
       ),
     );
+    const messaging = screen.getByRole("group", { name: "Messaging" });
+    expect(
+      within(messaging)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Messages", "Direct messages", "Notifications", "History"]);
     const extensions = screen.getByRole("group", { name: "Extensions" });
     expect(
       within(extensions)
@@ -361,6 +373,7 @@ describe("SettingsPage", () => {
 
       await user.click(screen.getByRole("button", { name: "Workspace" }));
       expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+      expect(screen.getByTestId("workspace-dm-settings")).toBeInTheDocument();
     });
   });
 

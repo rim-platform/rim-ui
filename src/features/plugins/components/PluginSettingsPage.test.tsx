@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -35,8 +35,13 @@ vi.mock("../api/usePluginCapabilities", () => ({
 }));
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
-import { usePluginInstallFromLocal } from "../api/usePluginActions";
+import {
+  usePluginDisable,
+  usePluginInstallFromLocal,
+  usePluginUninstall,
+} from "../api/usePluginActions";
 import { usePluginList } from "../api/usePluginList";
+import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import { PluginSettingsPage, PluginDesktopOnlyCard } from "./PluginSettingsPage";
 import type { PluginInfo } from "../types";
 
@@ -59,6 +64,26 @@ function makePlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
     fingerprint_changed: false,
     ...overrides,
   };
+}
+
+type UninstallOptions = { onSuccess: () => void; onError: (err: { message: string }) => void };
+
+/** Mocks the uninstall mutation; returns its `mutate` spy. */
+function mockUninstall(
+  isPending = false,
+  impl: (id: string, options: UninstallOptions) => void = () => {},
+) {
+  const mutate = vi.fn(impl);
+  vi.mocked(usePluginUninstall).mockReturnValue({ mutate, isPending } as unknown as ReturnType<
+    typeof usePluginUninstall
+  >);
+  return mutate;
+}
+
+function listPlugins(plugins: PluginInfo[]) {
+  vi.mocked(usePluginList).mockReturnValue({ data: plugins, isLoading: false } as ReturnType<
+    typeof usePluginList
+  >);
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -145,6 +170,18 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     const local = screen.getByText("Kubernetes Pods").closest(".rounded-lg") as HTMLElement;
     expect(within(local).getAllByText("Needs the desktop app").length).toBeGreaterThan(0);
     expect(within(local).getByRole("button", { name: "Needs the desktop app" })).toBeDisabled();
+  });
+
+  it("says an uninstall removes the plugin's files from this browser, naming it by id without a name", () => {
+    listPlugins([makePlugin({ display_name: "", runtime_kind: "WebSandboxed" })]);
+    mockUninstall();
+    render(<PluginSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    const dialog = screen.getByRole("dialog", { name: "Uninstall dev.example.test?" });
+    expect(dialog).toHaveTextContent(
+      "removed from this browser for your account, with the permissions you granted it, the data it stored and its files",
+    );
   });
 });
 
@@ -250,6 +287,136 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     });
     expect(toggle).toBeDisabled();
   });
+
+  describe("dismissing the changed-bundle warning", () => {
+    beforeEach(() => {
+      usePluginFingerprintDismissStore.setState({ dismissed: {} });
+    });
+
+    function mockDisable() {
+      const mutate = vi.fn();
+      vi.mocked(usePluginDisable).mockReturnValue({ mutate } as unknown as ReturnType<
+        typeof usePluginDisable
+      >);
+      return mutate;
+    }
+
+    it("hides the banner until the fingerprint changes again", () => {
+      mockDisable();
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      const { rerender } = render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+      expect(screen.queryByText("Plugin bundle has changed")).not.toBeInTheDocument();
+      expect(screen.getByText("Bundle changed")).toBeInTheDocument();
+      expect(usePluginFingerprintDismissStore.getState().dismissed).toEqual({
+        "dev.example.test": "aaa",
+      });
+
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      rerender(<PluginSettingsPage />);
+      expect(screen.queryByText("Plugin bundle has changed")).not.toBeInTheDocument();
+
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "bbb" })]);
+      rerender(<PluginSettingsPage />);
+      expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+    });
+
+    it("shows a dismissed banner again from the Bundle changed badge", () => {
+      mockDisable();
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      fireEvent.click(screen.getByRole("button", { name: /bundle changed/i }));
+
+      expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /trust new version/i })).toBeInTheDocument();
+    });
+
+    it("stops a running plugin, and leaves a stopped one alone", () => {
+      const disable = mockDisable();
+      listPlugins([
+        makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa", enabled: true }),
+      ]);
+      const { unmount } = render(<PluginSettingsPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(disable).toHaveBeenCalledWith("dev.example.test");
+      unmount();
+
+      disable.mockClear();
+      usePluginFingerprintDismissStore.setState({ dismissed: {} });
+      listPlugins([makePlugin({ fingerprint_changed: true, current_fingerprint: "aaa" })]);
+      render(<PluginSettingsPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(disable).not.toHaveBeenCalled();
+    });
+  });
+
+  it("uninstalls a plugin only once the user confirms", async () => {
+    listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
+    const mutate = mockUninstall(false, (_id, options) => options.onSuccess());
+    render(<PluginSettingsPage />);
+    const trash = screen.getByRole("button", { name: "Uninstall plugin" });
+
+    fireEvent.click(trash);
+    const dialog = screen.getByRole("dialog", { name: "Uninstall Kubernetes Pods?" });
+    expect(dialog).toHaveTextContent(
+      "removed from this device, with the permissions you granted it and the data it stored. Its files are deleted from the plugins folder.",
+    );
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus(),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(trash);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+
+    fireEvent.click(trash);
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith("dev.example.test", expect.anything());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("says the folder of a plugin the app did not install stays", () => {
+    listPlugins([makePlugin({ source: null })]);
+    mockUninstall();
+    render(<PluginSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "The app did not install it, so its folder stays in the plugins folder.",
+    );
+  });
+
+  it("keeps the uninstall dialog open with the reason when the uninstall fails", () => {
+    listPlugins([makePlugin()]);
+    mockUninstall(false, (_id, options) =>
+      options.onError({ message: "io error: Permission denied" }),
+    );
+    render(<PluginSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent(
+      "io error: Permission denied",
+    );
+  });
+
+  it("disables the uninstall confirmation while the uninstall runs", () => {
+    listPlugins([makePlugin()]);
+    mockUninstall(true);
+    render(<PluginSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall plugin" }));
+    expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
+  });
+
   it("shows what an installed plugin does and asks for its permissions right away", () => {
     const k8s = makePlugin({
       plugin_id: "chat.rim.k8s-pods",

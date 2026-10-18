@@ -34,7 +34,7 @@ export function useMarkAsRead() {
     onMutate: (input) => {
       useUnreadStore.getState().markRead(input.conversationId);
     },
-    // Reading a conversation also marks its notifications read on the server (Track 1.3).
+    // Reading a conversation also marks its notifications read on the server.
     onSuccess: (_data, input) => {
       invalidateUnreadNotificationCount(qc, input.workspaceId);
     },

@@ -131,6 +131,36 @@ yourself.
 | `storage`             | A WebSandboxed plugin's small store, below.                  |
 | `chat`                | The person's messages, below.                                |
 
+### Context
+
+A command that acts on where the user is says so with `required_context` in
+`rim-plugin.json`, and the host adds the ids to `context.args` as strings:
+
+| `required_context` | The command runs                    | The host adds                                                       |
+| ------------------ | ----------------------------------- | ------------------------------------------------------------------- |
+| `"conversation"`   | while a conversation is open        | `conversation_id`, and `thread_id` while a thread is open beside it |
+| `"message"`        | on a message, from its context menu | `message_id`, `conversation_id`, and `thread_id` for a thread reply |
+| `"workspace"`      | in a workspace                      | `workspace_id`                                                      |
+
+```json
+{ "id": "ask", "title": "Polls: Ask", "description": "Posts a poll.", "required_context": ["conversation"] }
+```
+
+```ts
+run: async ({ args, host }) => {
+  const conversationId = args.conversation_id as string;
+  const threadId = args.thread_id as string | undefined;
+  await host.chat.postMessage(conversationId, "Lunch?", threadId ? { threadId } : {});
+},
+```
+
+Without the context the host never calls the plugin: the palette leaves the command out,
+and a keybind, a panel or the AI agent is told "Open a conversation first" (or "Select a
+message first"). The added ids replace any argument of the same name, and a manifest whose
+command requires a context and also declares an argument named like one of its ids fails to
+install. A command without `required_context` gets no ids, as before; `template-ts` and
+`hello-world` declare none.
+
 ### Panels (experimental)
 
 `host.panels.set(panelId, state)` replaces a panel's state and
@@ -263,6 +293,11 @@ build, so a repository's CI catches a `main.mjs` nobody rebuilt:
 npx rim-plugin-bundle --in-place --entry src/main.ts .   # after changing the source
 npx rim-plugin-bundle --check --entry src/main.ts .      # in CI
 ```
+
+[`plugin-k8s-pods`](https://github.com/rim-platform/plugin-k8s-pods) (a local process) and
+[`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs) (a web plugin) are
+two such repositories, with CI that runs `--check` and a release workflow that attaches the
+`.rimbundle`.
 
 The build names no absolute path and no time, so the same sources and the same SDK
 version give the same bytes on every machine; commit the lockfile so CI builds with the

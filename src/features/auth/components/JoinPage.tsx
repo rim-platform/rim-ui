@@ -15,16 +15,16 @@
  *
  * Post-signup navigation:
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
- * - Instance token (`serverId` absent): navigate to `/`. `AppShell` shows the
- *   empty-workspace state (user has no workspaces yet).
+ * - Instance token (`serverId` absent): navigate to `/`. `WorkspaceSelector` opens the
+ *   server's default workspace, or shows the empty-workspace state when the server names none.
  *
- * Security note (L3): A `<meta name="referrer" content="no-referrer">` tag is
+ * Security note: A `<meta name="referrer" content="no-referrer">` tag is
  * injected on mount and removed on unmount. The invite token is in the URL path;
  * suppressing the Referer header prevents it from leaking to third-party origins
  * (e.g. any CDN assets or analytics the browser might contact). Defense-in-depth
  * — the global `strict-origin-when-cross-origin` policy already sends only the
- * origin, not the full path, to cross-origin targets. We suppress even the origin
- * here as an additional precaution.
+ * origin, not the full path, to cross-origin targets; this page suppresses even
+ * the origin as an additional precaution.
  */
 
 import { useEffect } from "react";
@@ -94,9 +94,7 @@ export function JoinPage() {
  * Implemented as an exhaustive switch with a `never`-typed default arm:
  * if a new `InviteTokenType` enum member is added server-side and pulled
  * through codegen, this function will fail to type-check until the new
- * case is mapped explicitly. This is a deliberate replacement for the
- * previous `as InviteTokenType` cast at the call site, which silently
- * accepted any string the server returned.
+ * case is mapped explicitly.
  *
  * Note: `JoinForm`'s own `JoinFormVariant` is `InviteTokenType | "OPEN"`.
  * `OPEN` is intentionally not produced here — it is only used by the

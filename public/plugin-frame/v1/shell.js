@@ -1,5 +1,6 @@
 // The frame shell: the fixed page every web plugin frame and panel frame loads.
-// The host posts one `rim.frame.init` message with the plugin's verified files;
+// It announces itself to its parent with `rim.frame.hello`, and the host posts
+// one `rim.frame.init` message with the plugin's verified files;
 // the shell narrows the page's content security policy to the plugin's granted
 // origins before any plugin byte runs, then either imports the plugin's entry
 // module (a plugin frame, which also gets the host's MessagePort) or renders a
@@ -258,4 +259,7 @@
       fail(error && error.message ? error.message : error);
     }
   });
+
+  // Sent before any plugin byte runs, so it can only come from the shell.
+  window.parent.postMessage({ type: "rim.frame.hello", v: 1 }, "*");
 })();

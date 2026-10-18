@@ -3,6 +3,7 @@ use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install::{self, PostInstallStep};
 use crate::plugin_host::simple_manifest;
+use crate::plugin_host::trash;
 use crate::plugin_host::validation::{
     validate_plugin_manifest, validate_plugin_manifest_for_host, ValidationError,
 };
@@ -11,14 +12,14 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GitInstallError {
-    /// The repository URL failed validation (S-H2) — nothing was spawned.
+    /// The repository URL failed validation; nothing was spawned.
     #[error("invalid git URL: {0}")]
     InvalidUrl(String),
-    /// The branch failed validation (S-H2) — nothing was spawned.
+    /// The branch failed validation; nothing was spawned.
     #[error("invalid git branch: {0}")]
     InvalidBranch(String),
     /// The plugin needs dependency-install steps that execute author code;
-    /// the caller must retry with explicit consent (S-H3). Nothing was run and
+    /// the caller must retry with explicit consent. Nothing was run and
     /// (for install) nothing was kept on disk; (for update) the working tree
     /// was not advanced.
     #[error("plugin {plugin_id} needs post-install steps that run code from the plugin author; explicit consent is required")]
@@ -34,9 +35,9 @@ pub enum GitInstallError {
     Manifest(#[from] ManifestError),
     #[error("invalid manifest: {0}")]
     InvalidManifest(#[from] ValidationError),
-    /// Lifecycle rejection (e.g. already installed) during install_from_git.
-    /// Kept distinct from Io so the JS surface can distinguish "install refused"
-    /// from "disk error".
+    /// The lifecycle refused the install, for example because the plugin is
+    /// already installed. Distinct from `Io` so the UI can tell "install
+    /// refused" from "disk error".
     #[error("lifecycle error: {0}")]
     LifecycleFailure(String),
     #[error("plugin already exists: {0}")]
@@ -54,8 +55,8 @@ impl Serialize for GitInstallError {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(None)?;
         match self {
-            // Preserve inner typed ValidationError so JS can branch on the
-            // specific N1/F2 violation without string-parsing.
+            // Keep the inner typed ValidationError so the UI can branch on the
+            // specific rule the manifest broke without parsing the message.
             Self::InvalidManifest(inner) => {
                 map.serialize_entry("kind", "INVALID_MANIFEST")?;
                 map.serialize_entry("data", inner)?;
@@ -113,11 +114,19 @@ fn staging_dir() -> PathBuf {
         .join("staging")
 }
 
-/// Clone a git repo to the staging directory.
+/// Clones a git repository into the staging directory and returns the clone's
+/// path.
 ///
 /// `url` and `branch` are validated before git is spawned; the argv puts `--`
 /// before the positionals and the child runs with the hardened git env
 /// (see [`git_source`]).
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::InvalidUrl`] or [`GitInstallError::InvalidBranch`]
+/// when validation fails, [`GitInstallError::CloneFailed`] when git cannot be
+/// spawned or exits with failure, and [`GitInstallError::Io`] when the staging
+/// directory cannot be prepared.
 pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitInstallError> {
     git_source::validate_git_url(url).map_err(GitInstallError::InvalidUrl)?;
     if let Some(b) = branch {
@@ -152,8 +161,13 @@ pub async fn git_clone(url: &str, branch: Option<&str>) -> Result<PathBuf, GitIn
     Ok(clone_dir)
 }
 
-/// Detect and load a manifest from a cloned directory.
-/// Tries rim-plugin.json first, then simple mode.
+/// Detects and loads the manifest of a cloned directory, trying
+/// `rim-plugin.json` first and then simple mode.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::Manifest`] when a manifest is found but invalid,
+/// and [`GitInstallError::NoManifest`] when there is none.
 pub fn detect_manifest(clone_dir: &Path) -> Result<PluginManifest, GitInstallError> {
     let json_manifest = clone_dir.join(MANIFEST_FILE);
     if json_manifest.exists() {
@@ -168,7 +182,13 @@ pub fn detect_manifest(clone_dir: &Path) -> Result<PluginManifest, GitInstallErr
     Err(GitInstallError::NoManifest)
 }
 
-/// Move a cloned plugin from staging to the final plugins directory.
+/// Moves a cloned plugin from staging into the plugins directory and returns
+/// its final path.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::AlreadyExists`] when the plugin's directory
+/// exists, and [`GitInstallError::Io`] when the move fails.
 pub fn finalize_install(clone_dir: &Path, plugin_id: &str) -> Result<PathBuf, GitInstallError> {
     let final_dir = plugins_dir().join(plugin_id);
 
@@ -204,9 +224,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-/// A web plugin is installed built: its checkout holds the bundle files (the
-/// manifest, the entrypoint and `panels/`) by the bundle rules, and nothing of it
-/// ever runs on this computer. Other files of the checkout are left alone.
+/// Checks that a web plugin's checkout holds its built bundle files (the
+/// manifest, the entrypoint and `panels/`) by the bundle rules. Nothing of a web
+/// plugin ever runs on this computer; other files of the checkout are left alone.
 fn check_web_checkout(dir: &Path) -> Result<(), GitInstallError> {
     crate::plugin_host::bundle::check_dir(dir)
         .map(|_| ())
@@ -217,13 +237,21 @@ fn check_web_checkout(dir: &Path) -> Result<(), GitInstallError> {
         })
 }
 
-/// Full git install flow:
-/// validate URL → clone → detect manifest → validate → consent gate → move → post-install.
+/// Installs a plugin from a git repository: validate URL → clone → detect
+/// manifest → validate → consent gate → move → post-install.
 ///
 /// Post-install steps (npm/pip) run only when `allow_post_install` is true.
-/// When they would be needed and consent is absent, the staging clone is
-/// deleted and `PostInstallConsentRequired` is returned before anything is
-/// moved into the plugins directory or executed.
+/// `existing_plugin_ids` are refused as collisions and `forbidden_origins` are
+/// passed to manifest validation. Returns the manifest, the installed directory
+/// and the summary the UI shows.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::PostInstallConsentRequired`] when steps would be
+/// needed and consent is absent; the staging clone is deleted before anything
+/// is moved into the plugins directory or executed. Returns the other
+/// variants when cloning, manifest detection, validation, the move or a
+/// post-install step fails.
 pub async fn install_from_git(
     url: &str,
     branch: Option<&str>,
@@ -255,8 +283,8 @@ pub async fn install_from_git(
         )));
     }
 
-    // N1 + F2 validation: capability key shape + AI-surface install-ID leak check.
-    // Must run BEFORE persisting to disk so a malformed manifest never reaches the registry.
+    // Capability key shape and the AI-surface install-ID leak check. Runs before
+    // anything is persisted so a malformed manifest never reaches the registry.
     if let Err(e) = validate_plugin_manifest_for_host(&manifest, forbidden_origins) {
         log::warn!(
             "[AUDIT] event=plugin_install_rejected plugin_id={} reason={}",
@@ -275,7 +303,7 @@ pub async fn install_from_git(
         }
     }
 
-    // S-H3 consent gate — decided on the staged files, before anything is
+    // Post-install consent gate, decided on the staged files before anything is
     // moved into the plugins directory or executed.
     let planned_dir = plugins_dir().join(&manifest.plugin_id);
     let steps = if web {
@@ -308,7 +336,7 @@ pub async fn install_from_git(
     .await
     {
         // Clean up on post-install failure
-        let _ = std::fs::remove_dir_all(&final_dir);
+        let _ = trash::delete_later(&plugins_dir(), &manifest.plugin_id);
         return Err(e);
     }
 
@@ -323,7 +351,7 @@ pub async fn install_from_git(
     Ok((manifest, final_dir, result))
 }
 
-/// Run one hardened git command in `dir`, mapping failure to `PullFailed`.
+/// Runs one hardened git command in `dir`, mapping failure to `PullFailed`.
 async fn run_git_in(
     dir: &Path,
     args: Vec<std::ffi::OsString>,
@@ -341,12 +369,20 @@ async fn run_git_in(
     Ok(output)
 }
 
-/// Update a plugin: fetch upstream → consent gate on the fetched tree →
-/// fast-forward → re-parse manifest → detect capability changes → post-install.
+/// Updates a git-installed plugin: fetch upstream → consent gate on the fetched
+/// tree → fast-forward → re-parse manifest → detect capability changes →
+/// post-install. Returns the new manifest and the summary the UI shows.
 ///
 /// The consent gate runs on the *fetched* upstream tree before the working
 /// tree is advanced, so declining consent leaves the installed plugin exactly
 /// as it was.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::PostInstallConsentRequired`] when steps would be
+/// needed and consent is absent, [`GitInstallError::PullFailed`] when a git
+/// command fails, and the manifest or validation variants when the new copy is
+/// refused, in which case it is rolled back.
 pub async fn update_plugin(
     plugin_dir: &Path,
     old_manifest: &PluginManifest,
@@ -356,8 +392,9 @@ pub async fn update_plugin(
     apply_fetched_update(plugin_dir, old_manifest, allow_post_install).await
 }
 
-/// The top-level files of the fetched upstream tree that imply post-install
-/// steps: `package.json` only when it gives npm something to install.
+/// Lists the top-level files of the fetched upstream tree that imply
+/// post-install steps, keeping `package.json` only when it gives npm something
+/// to install.
 async fn upstream_trigger_files(plugin_dir: &Path) -> Result<Vec<String>, GitInstallError> {
     let listing = run_git_in(plugin_dir, git_source::ls_upstream_tree_args()).await?;
     let mut names: Vec<String> = String::from_utf8_lossy(&listing.stdout)
@@ -380,7 +417,7 @@ async fn upstream_trigger_files(plugin_dir: &Path) -> Result<Vec<String>, GitIns
     Ok(names)
 }
 
-/// The update after the fetch: the consent gate on the fetched tree, the
+/// Applies an already fetched update: the consent gate on the fetched tree, the
 /// fast-forward, and the checks of the new copy. A new copy the checks refuse
 /// is rolled back to the commit the plugin was at.
 async fn apply_fetched_update(
@@ -465,8 +502,8 @@ async fn apply_fetched_update(
     Ok((new_manifest, result))
 }
 
-/// The manifest of an updated working tree, after the checks a fresh install
-/// makes: N1 + F2 validation and, for a web plugin, the bundle rules.
+/// Returns the manifest of an updated working tree after the checks a fresh
+/// install makes: install validation and, for a web plugin, the bundle rules.
 fn check_updated_copy(plugin_dir: &Path) -> Result<PluginManifest, GitInstallError> {
     let new_manifest = detect_manifest(plugin_dir)?;
     if let Err(e) = validate_plugin_manifest(&new_manifest) {
@@ -507,7 +544,7 @@ mod tests {
         (tmp, origin, clone)
     }
 
-    /// Commit `change` in `origin` and fetch it into `clone`.
+    /// Commits `change` in `origin` and fetches it into `clone`.
     fn push_upstream(origin: &Path, clone: &Path, change: impl Fn(&Path)) {
         change(origin);
         git(origin, &["add", "--all"]);
@@ -675,16 +712,16 @@ mod tests {
         let existing = plugins.join("dev.example.test");
         std::fs::create_dir_all(&existing).unwrap();
 
-        // We can't easily test finalize_install because it uses the global plugins_dir,
-        // but we verify the collision check in install_from_git via existing_plugin_ids.
+        // finalize_install writes to the global plugins_dir, so it is not called
+        // here; install_from_git checks collisions through existing_plugin_ids.
     }
 
-    // ── Phase 1 regression: update path is actually gated ──
+    // ── the update path runs install validation ──
 
     #[test]
     fn detect_manifest_with_invalid_capability_fails_validation() {
         let tmp = tempfile::TempDir::new().unwrap();
-        // Write a manifest with a capability that fails N1 (wrong prefix)
+        // A manifest with a capability key in a reserved namespace.
         let manifest = serde_json::json!({
             "manifest_version": 1,
             "plugin_id": "dev.example.test",
@@ -697,8 +734,8 @@ mod tests {
         });
         std::fs::write(tmp.path().join(MANIFEST_FILE), manifest.to_string()).unwrap();
 
-        // detect_manifest loads the raw manifest (weak structural validate only),
-        // then validate_plugin_manifest runs N1+F2 — this proves the gate fires.
+        // detect_manifest only checks the manifest's structure; the capability
+        // key is refused by validate_plugin_manifest.
         let m = detect_manifest(tmp.path()).unwrap();
         let err = validate_plugin_manifest(&m).unwrap_err();
         assert!(

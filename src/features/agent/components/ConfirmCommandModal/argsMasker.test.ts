@@ -143,11 +143,11 @@ describe("maskForDisplay", () => {
   });
 });
 
-// Parity guard — mirrors the canonical list in
-// `rim-server/rim_services/src/command/sensitivity.rs:159` (VENDOR_PREFIXES).
-// If this test fails, either the backend list changed without updating the
-// frontend or vice versa. Drift = "masked in UI, logged plain".
-// Cross-repo gate: a PR that touches either list must touch the other.
+// Parity guard — mirrors the backend's VENDOR_PREFIXES list in
+// `rim_services::command::sensitivity`. If this test fails, either the
+// backend list changed without updating the frontend or vice versa.
+// Drift = "masked in UI, logged plain". A change to either list must change
+// the other.
 describe("VENDOR_PREFIXES parity with backend", () => {
   const EXPECTED_BACKEND_PREFIXES = [
     "sk-",
@@ -168,7 +168,7 @@ describe("VENDOR_PREFIXES parity with backend", () => {
   it("frontend masks every backend-listed prefix", () => {
     for (const prefix of EXPECTED_BACKEND_PREFIXES) {
       // Pad to ensure the prefix dominates the detection, not the entropy
-      // fallback. A bare prefix should already trigger Layer-1 vendor match.
+      // fallback. A bare prefix should already trigger the vendor-prefix match.
       const sample = `${prefix}abcdef0123456789ghijklmnop`;
       expect(valueLooksSecret(sample)).toBe(true);
     }

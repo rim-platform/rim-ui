@@ -57,9 +57,8 @@ describe("createOpenAiProvider", () => {
 
   it("chat invokes agent_chat_completion with provider=openai, snake_case body — no api_key field", async () => {
     // Contract: ChatCompletionRequest on the Rust side uses
-    // #[serde(deny_unknown_fields)] and has NO api_key field. The key is
-    // read from the OS keyring by the proxy inline (deny_unknown_fields
-    // regression test in agent_proxy.rs:749 locks this in).
+    // #[serde(deny_unknown_fields)] and has no api_key field. The key is
+    // read from the OS keyring by the proxy inline.
     mockChatCompletion([{ kind: "done" }]);
 
     const provider = createOpenAiProvider();
@@ -79,10 +78,10 @@ describe("createOpenAiProvider", () => {
     const req = (args as { request: Record<string, unknown> }).request;
     expect(req.provider).toBe("openai");
     expect(req.model).toBe("gpt-5.4");
-    // api_key MUST NOT be present — deny_unknown_fields rejects it.
+    // api_key must not be present — deny_unknown_fields rejects it.
     expect(req).not.toHaveProperty("api_key");
     expect(req.max_tokens).toBe(4096);
-    // System prompt is folded into messages, NOT a separate field for OpenAI
+    // System prompt is folded into messages, not a separate field for OpenAI
     const msgs = req.messages as { role: string; content?: string }[];
     expect(msgs[0]).toEqual({ role: "system", content: "Be helpful" });
   });

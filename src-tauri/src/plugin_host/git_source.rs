@@ -1,5 +1,5 @@
 //! Validation and argv construction for every `git` invocation made by the
-//! plugin host (S-H2).
+//! plugin host.
 //!
 //! The install URL and branch come straight from the renderer, so they are
 //! untrusted. Before anything is spawned:
@@ -20,8 +20,8 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-/// Transports git may use for plugin installs/updates. `git://` is deliberately
-/// excluded: it is unauthenticated and unencrypted.
+/// Transports git may use for plugin installs/updates. `git://` is excluded:
+/// it is unauthenticated and unencrypted.
 pub const GIT_ALLOWED_PROTOCOLS: &str = "https:ssh";
 
 /// Environment applied to every git child process.
@@ -35,9 +35,12 @@ const MAX_BRANCH_LEN: usize = 255;
 
 const ACCEPTED_FORMS: &str = "only https://, ssh:// or git@host:owner/repo URLs are accepted";
 
-/// Validate a plugin repository URL. Returns a human-readable reason on
-/// rejection (it never echoes the URL back, so control characters cannot leak
-/// into the UI or logs).
+/// Validates a plugin repository URL.
+///
+/// # Errors
+///
+/// Returns a human-readable reason when the URL is refused. The reason never
+/// echoes the URL back, so control characters cannot leak into the UI or logs.
 pub fn validate_git_url(url: &str) -> Result<(), String> {
     if url.is_empty() {
         return Err("URL is empty".into());
@@ -72,7 +75,7 @@ pub fn validate_git_url(url: &str) -> Result<(), String> {
     validate_scp_like(url)
 }
 
-/// `[user[:password]@]host[:port]/path` after the scheme.
+/// Validates the `[user[:password]@]host[:port]/path` part after the scheme.
 fn validate_hierarchical(rest: &str) -> Result<(), String> {
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -104,7 +107,7 @@ fn validate_hierarchical(rest: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// scp-like `user@host:owner/repo(.git)`.
+/// Validates an scp-like `user@host:owner/repo(.git)` URL.
 fn validate_scp_like(url: &str) -> Result<(), String> {
     let (user, rest) = url
         .split_once('@')
@@ -149,7 +152,11 @@ fn validate_host(host: &str) -> Result<(), String> {
     }
 }
 
-/// Validate a branch (or tag) name passed to `git clone --branch`.
+/// Validates a branch (or tag) name passed to `git clone --branch`.
+///
+/// # Errors
+///
+/// Returns a human-readable reason when the name is refused.
 pub fn validate_git_branch(branch: &str) -> Result<(), String> {
     if branch.is_empty() {
         return Err("branch is empty".into());

@@ -8,13 +8,14 @@
  * time (`serialize`).
  */
 
-import { graphqlErrorCode, VALIDATION } from "../../../core/graphql/errors";
+import { graphqlErrorCode, graphqlErrorMessage, VALIDATION } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { trackConversation } from "../../messages/api/messageCache";
 import { syncNow } from "../../messages/runtime/messageCacheSync";
+import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import {
   ackWelcomes,
   CIPHER_SUITE,
@@ -39,7 +40,7 @@ import {
 } from "../api/e2eeCommands";
 import { useE2eeStore } from "../state/useE2eeStore";
 import { forgetAbsence } from "./feedInputs";
-import { conversationMembers, directoryFor, notReadyMembers } from "./members";
+import { conversationMembers, directoryFor, notReadyMembers, type MemberRead } from "./members";
 import { directPair, pinConversation } from "./pins";
 import { serialize } from "./serialize";
 import type { E2eeSession } from "./session";
@@ -48,6 +49,8 @@ import type { E2eeSession } from "./session";
 export const STALE_EPOCH = "STALE_EPOCH";
 /** A message needs a Commit first (pending removals, or no group yet). */
 export const MLS_COMMIT_REQUIRED = "MLS_COMMIT_REQUIRED";
+/** The server's refusal of a first Commit that leaves a member without a device in the group. */
+export const MEMBER_WITHOUT_DEVICE = "every member needs at least one device in the group";
 
 /** A device waits this long for a re-add before it starts a new incarnation itself. */
 const RECOVERY_AFTER_MS = 10 * 60_000;
@@ -204,8 +207,11 @@ export async function verifyLeaves(
   fresh = false,
 ): Promise<GroupView> {
   const info = await fetchConversationGroup(workspaceId, conversationId);
-  const members = await conversationMembers(workspaceId, info.memberIds);
-  const principals = members.flatMap((m) => (m.principalId ? [m.principalId] : []));
+  const memberPrincipals = (read?: MemberRead) =>
+    conversationMembers(workspaceId, info.memberIds, read).then((members) =>
+      members.flatMap((m) => (m.principalId ? [m.principalId] : [])),
+    );
+  let principals = await memberPrincipals();
   const groupPrincipals = info.mlsGroup?.devices.map((d) => d.principalId) ?? [];
   const verify = (fetched: string[]) =>
     directoryFor(principals, fetched).then((directory) =>
@@ -215,6 +221,8 @@ export async function verifyLeaves(
   let outcome = await verify(fresh ? [...principals, ...groupPrincipals] : []);
   if (outcome.missing.length > 0) outcome = await verify(outcome.missing);
   if (outcome.unverified.length > 0) {
+    // The member list is fetched again too: a member who just joined is not in an older copy.
+    principals = await memberPrincipals({ fresh: true });
     outcome = await verify(outcome.unverified.map((u) => u.principalId));
   }
   const group = await refreshGroup(session, workspaceId, conversationId);
@@ -228,7 +236,17 @@ export async function verifyLeaves(
 
 // ─── Commits ────────────────────────────────────────────────────────────────
 
-type SubmitResult = "accepted" | "stale" | "noAnswer" | "refused";
+/** How the server answered a Commit; `membersMissing` is a first Commit leaving a member out. */
+type SubmitResult = "accepted" | "stale" | "noAnswer" | "refused" | "membersMissing";
+
+/** Whether `err` refuses a first Commit because a member has no device in the group. */
+function leavesMemberOut(commit: OutgoingCommit, err: unknown): boolean {
+  return (
+    commit.epoch === 0 &&
+    graphqlErrorCode(err) === VALIDATION &&
+    graphqlErrorMessage(err, "") === MEMBER_WITHOUT_DEVICE
+  );
+}
 
 async function submit(
   workspaceId: string,
@@ -251,7 +269,7 @@ async function submit(
     if (code === STALE_EPOCH) return "stale";
     if (code === undefined) return "noAnswer";
     logger.warn("[RIM:e2ee] the server refused a Commit:", err);
-    return "refused";
+    return leavesMemberOut(commit, err) ? "membersMissing" : "refused";
   }
 }
 
@@ -281,6 +299,7 @@ async function settle(
       return true;
     case "stale":
     case "refused":
+    case "membersMissing":
       await e2eeCommands.settleCommit(account, principalId, workspaceId, conversationId, false);
       return false;
     case "noAnswer": {
@@ -418,7 +437,7 @@ export async function commitPendingLocked(
       invalidateTimeline(workspaceId, conversationId);
       return true;
     }
-    if (result === "refused") return false;
+    if (result === "refused" || result === "membersMissing") return false;
   }
   return false;
 }
@@ -455,7 +474,7 @@ async function honorableReadds(
     (r) => r.deviceId.toLowerCase() !== session.deviceId.toLowerCase(),
   );
   if (requests.length === 0) return [];
-  const members = await conversationMembers(workspaceId, info.memberIds);
+  const members = await conversationMembers(workspaceId, info.memberIds, { fresh: true });
   const directory = await directoryFor(
     members.flatMap((m) => (m.principalId ? [m.principalId] : [])),
     requests.map((r) => r.principalId),
@@ -484,20 +503,70 @@ export function createGroup(
   conversationId: string,
   which: "first" | "next" = "first",
 ): Promise<boolean> {
-  return withConversation(conversationId, () =>
-    createGroupLocked(session, workspaceId, conversationId, which),
-  );
+  return withConversation(conversationId, async () => {
+    const { created } = await createGroupLocked(session, workspaceId, conversationId, which);
+    return created;
+  });
 }
 
+/** Whether the group was created, and who kept it from being created. */
+export interface GroupCreation {
+  created: boolean;
+  /** Members the server wants in the group who have no device set up for encryption. */
+  notReady: string[];
+}
+
+/**
+ * {@link createGroup} for a caller that already holds the conversation, naming the members the
+ * first Commit could not include. A Commit the server refuses for leaving a member out is built
+ * once more from freshly fetched members and devices; when that one is refused for the same
+ * reason, the members who are not ready are named.
+ */
 export async function createGroupLocked(
   session: E2eeSession,
   workspaceId: string,
   conversationId: string,
   which: "first" | "next" = "first",
-): Promise<boolean> {
+): Promise<GroupCreation> {
+  let attempt = await createGroupOnce(session, workspaceId, conversationId, which);
+  if (attempt.result !== "membersMissing") return { created: attempt.created, notReady: [] };
+  logger.warn("[RIM:e2ee] the first Commit left a member out; building it again");
+  await forgetMembers(workspaceId, attempt.members);
+  attempt = await createGroupOnce(session, workspaceId, conversationId, which);
+  if (attempt.result !== "membersMissing") return { created: attempt.created, notReady: [] };
+  const others = attempt.members.filter((m) => m.userId !== session.userId);
+  const { names } = await notReadyMembers(others);
+  return { created: false, notReady: names };
+}
+
+/** Drop the cached member list and the cached identities of `members` from other relays. */
+async function forgetMembers(workspaceId: string, members: ServerMember[]) {
+  await queryClient.invalidateQueries({
+    queryKey: queryKeys.serverMembers(workspaceId),
+    refetchType: "none",
+  });
+  for (const member of members) {
+    if (!member.principalId) continue;
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.remoteIdentity(member.principalId),
+      refetchType: "none",
+    });
+  }
+}
+
+/** One try at creating the group: the server's answer and the members it was built from. */
+async function createGroupOnce(
+  session: E2eeSession,
+  workspaceId: string,
+  conversationId: string,
+  which: "first" | "next",
+): Promise<{ created: boolean; result: SubmitResult | null; members: ServerMember[] }> {
   const info = await fetchConversationGroup(workspaceId, conversationId);
-  if (which === "first" && info.mlsGroup) return false;
+  if (which === "first" && info.mlsGroup) return { created: false, result: null, members: [] };
   const incarnation = (info.mlsGroup?.incarnation ?? 0) + 1;
+  // Fetched now, not read from a copy: a member missing from the group fails its first Commit.
+  // The pin and the direct pair below read the list just cached.
+  const members = await conversationMembers(workspaceId, info.memberIds, { fresh: true });
   // A direct message holds its two principals: pinned, or (before it is encrypted) the two the
   // server lists.
   const local = await pinConversation(session, workspaceId, info);
@@ -506,7 +575,7 @@ export async function createGroupLocked(
     (info.conversationType === ConversationTypeEnum.DIRECT
       ? ((await directPair(session, workspaceId, info)) ?? [])
       : null);
-  const targets = (await groupTargets(session, workspaceId, info)).filter(
+  const targets = (await groupTargets(session, info, members)).filter(
     (d) => !allowed || allowed.includes(d.principalId),
   );
   const claimed = await claimKeyPackages(workspaceId, conversationId, targets);
@@ -530,13 +599,13 @@ export async function createGroupLocked(
     // Another device created it first: its Welcome brings this device in.
     await processWelcomes(session);
   }
-  return created;
+  return { created, result, members };
 }
 
 async function groupTargets(
   session: E2eeSession,
-  workspaceId: string,
   info: ConversationGroupInfo,
+  members: ServerMember[],
 ): Promise<DeviceRefView[]> {
   const me = session.deviceId.toLowerCase();
   if (info.mlsGroup) {
@@ -547,7 +616,6 @@ async function groupTargets(
     );
     return dedupe(devices.map(({ principalId, deviceId }) => ({ principalId, deviceId })));
   }
-  const members = await conversationMembers(workspaceId, info.memberIds);
   const principals = members.flatMap((m) => (m.principalId ? [m.principalId] : []));
   const directory = await directoryFor(principals, principals);
   return directory.principals.flatMap((p) =>

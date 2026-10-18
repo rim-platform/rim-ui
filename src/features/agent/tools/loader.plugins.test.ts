@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: vi.fn(() => Promise.resolve({ commands: [] })) },
@@ -21,6 +21,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { fetchPluginList } from "../../plugins/api/usePluginList";
 import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { loadAgentTools, pluginToolName } from "./loader";
 import { getAllTools, getTool, unregisterTool } from "./registry";
 
@@ -67,6 +69,9 @@ function k8sPods(overrides: Partial<PluginInfo> = {}): PluginInfo {
     ...overrides,
   };
 }
+
+/** FILTER as a command that runs in the open conversation. */
+const FILTER_HERE: PluginCommandInfo = { ...FILTER, required_context: ["conversation"] };
 
 const FILTER_TOOL = "plugin__chat_rim_k8s-pods__filter";
 const RESTART_TOOL = "plugin__chat_rim_k8s-pods__restart_pod";
@@ -143,5 +148,39 @@ describe("plugin commands as agent tools", () => {
     await expect(getTool(FILTER_TOOL)!.handler({})).rejects.toThrow(
       "Plugin command chat.rim.k8s-pods/filter failed: not running",
     );
+  });
+
+  describe("in a context", () => {
+    beforeEach(() => {
+      vi.mocked(fetchPluginList).mockResolvedValue([k8sPods({ commands: [FILTER_HERE, RESTART] })]);
+      useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    });
+
+    afterEach(() => {
+      useShellStore.getState().reset();
+      useWorkspaceStore.setState({ workspaceId: null });
+    });
+
+    it("gives a command the conversation the user has open", async () => {
+      useShellStore.setState({ selectedConversationId: "conv-1" });
+      vi.mocked(invoke).mockResolvedValue({ ok: true });
+      await loadAgentTools();
+
+      await getTool(FILTER_TOOL)!.handler({ namespace: "shop" });
+      expect(invoke).toHaveBeenCalledWith("plugin_run_ai_command", {
+        pluginId: "chat.rim.k8s-pods",
+        commandId: "filter",
+        input: { namespace: "shop", conversation_id: "conv-1" },
+      });
+    });
+
+    it("refuses without calling the plugin when no conversation is open", async () => {
+      await loadAgentTools();
+
+      await expect(getTool(FILTER_TOOL)!.handler({ namespace: "shop" })).rejects.toThrow(
+        "Plugin command chat.rim.k8s-pods/filter cannot run: Open a conversation first",
+      );
+      expect(invoke).not.toHaveBeenCalled();
+    });
   });
 });

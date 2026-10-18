@@ -1,13 +1,13 @@
 /**
- * The desktop app's encrypted local message cache (master plan Stage 2, PR 9).
+ * The desktop app's encrypted local message cache.
  *
  * Storage lives on the Tauri side (`src-tauri/src/message_cache`): an SQLCipher database per
  * account, keyed in the secret vault. This module is its typed surface plus the one HTTP call it
- * needs, the server's `messageChanges` feed (rim-server `docs/message-change-feed.md`), which
- * runs here because the webview holds the session cookie.
+ * needs, the server's `messageChanges` feed, which runs here because the webview holds the
+ * session cookie.
  *
  * Everything is best-effort: in the web app, or if the cache fails, callers get `null` and
- * carry on with the server as before. The web app keeps the encrypted conversations it follows
+ * carry on with the server. The web app keeps the encrypted conversations it follows
  * in its own encrypted store (`features/e2ee/web/`): calls made with its account go there.
  */
 
@@ -323,7 +323,7 @@ export function cachedPageToMessagesPage(page: CachedTimelinePage): MessagesPage
   };
 }
 
-// ─── Local search (PR 10) ───────────────────────────────────────────────────
+// ─── Local search ───────────────────────────────────────────────────────────
 
 /**
  * A search of the cached messages, operators already parsed (see `localSearch.ts`). Every

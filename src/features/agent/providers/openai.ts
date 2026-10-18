@@ -71,7 +71,7 @@ function toOpenAiMessages(
     if (typeof m.content === "string") {
       result.push({ role: m.role === "system" ? "user" : m.role, content: m.content });
     } else {
-      // Anthropic sends assistant messages with mixed text + tool_use blocks.
+      // Agent assistant messages mix text and tool_use blocks.
       // OpenAI expects a single assistant message with both content and tool_calls.
       if (m.role === "assistant") {
         let textContent = "";
@@ -134,8 +134,7 @@ function toOpenAiTools(tools: AiToolDefinition[], toolNames: ToolNameMap) {
 /**
  * Wire shape exposed by `agent_proxy::ChatStreamEvent` (snake_case, tag = "kind").
  * The proxy is a dumb passthrough for SSE — `data` is the parsed JSON of the
- * provider's `data:` line; the per-event switch below is the same logic that
- * used to run inline against a fetch+ReadableStream.
+ * provider's `data:` line, handled by the per-event switch in `chat`.
  */
 type ChatStreamEvent =
   | { kind: "sse_event"; event_type: string | null; data: Record<string, unknown> }
@@ -146,8 +145,7 @@ type ChatStreamEvent =
  * Construct an OpenAI provider that dispatches `chat()` calls to the
  * Tauri `agent_chat_completion` command. The API key is read directly from
  * the secret vault by the Rust proxy on every request — the JS side never
- * holds or transmits the key bytes (Phase 5 / Option B). See
- * `anthropic.ts::createAnthropicProvider` for the full rationale.
+ * holds or transmits the key bytes.
  */
 export function createOpenAiProvider(): AiProvider {
   return {
@@ -155,7 +153,7 @@ export function createOpenAiProvider(): AiProvider {
 
     async *chat(request: AiChatRequest): AsyncIterable<AiStreamChunk> {
       // The Rust proxy reads the API key from the secret vault on every request.
-      // Do NOT send api_key — ChatCompletionRequest uses deny_unknown_fields.
+      // No api_key is sent: ChatCompletionRequest uses deny_unknown_fields.
       // Command ids contain dots, which the API refuses in function names;
       // tool calls come back under the API name and are translated back below.
       const toolNames = buildRequestToolNameMap(request.tools, request.messages);

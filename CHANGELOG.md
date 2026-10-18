@@ -23,6 +23,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The first encrypted message to someone who set up encryption moments earlier goes out instead
+  of failing with "Failed to send the encrypted message" until a minute later. When someone in
+  the conversation really has no device set up yet, the composer says "<name> has no device set
+  up for encryption yet".
 - **Install from git URL** installs a web plugin from a repository that keeps its sources
   beside the built plugin: the desktop takes `rim-plugin.json`, the entrypoint and `panels/`
   from the checkout and ignores the rest. A local-process plugin whose `package.json` lists
@@ -61,6 +65,27 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **Who can message me** in Settings → Direct messages: choose whether people outside your
+  workspaces can send you a request or nobody can, and for each workspace whether its members'
+  DMs arrive directly or as requests. When your server's operator or one of your workspaces
+  closes DMs from outside, the setting says who did. Contacts, and a workspace's owner and
+  moderators, always reach you directly.
+- A workspace owner sets in Settings → Workspace → Direct messages whether people outside can
+  message its members (no floor, at least a request, or closed) and whether members' DMs to each
+  other arrive directly or as requests. Moderators see these settings read-only, and About
+  shows the DM settings of your server's operator.
+- Message requests are split by where they come from: a workspace's requests sit under
+  "Requests" at the top of its Conversations, and requests from outside your workspaces at the
+  top of Direct messages, so a stranger's message never looks like a colleague's. The bell
+  still counts them all. A DM you sent that waits for acceptance says so, and says when the
+  rest of your messages wait for it; the other person's presence and typing stay hidden until
+  they accept.
+- A plugin command can act on the conversation you are in: one that declares
+  `required_context: ["conversation"]` in `rim-plugin.json` gets `conversation_id` and, with a
+  thread open, `thread_id` in its `args`, and `["message"]` gets the message it was run on. Such
+  a command only shows in the palette while a conversation is open, and a keybind or the AI
+  agent says "Open a conversation first" instead of running it. A manifest that also declares
+  an argument of one of those names no longer installs.
 - The plugin SDK is published to npm as `@rim-platform/plugin-sdk`, starting at 0.1.0, with a
   version of its own. It ships JavaScript and type declarations, so a plugin runs with
   `node main.ts` against the installed SDK without bundling first.
@@ -202,5 +227,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   banner and is tried again after 30 seconds, doubling up to five minutes, rather than every few
   seconds. A subscription refused with `TOO_MANY_SUBSCRIPTIONS` raises one notice that some live
   updates are off and is not retried.
+- The Kubernetes Pods and GitHub Pull Requests plugins live in repositories of their own,
+  [`plugin-k8s-pods`](https://github.com/rim-platform/plugin-k8s-pods) and
+  [`plugin-github-prs`](https://github.com/rim-platform/plugin-github-prs), and are no longer
+  in `plugins/`. Each holds the built plugin at its root for Install from git URL and attaches
+  a `.rimbundle` to its releases; GitHub Pull Requests now starts with rim-ui and rim-server
+  in its list.
 
 [Unreleased]: https://github.com/rim-platform/rim-ui/commits/master

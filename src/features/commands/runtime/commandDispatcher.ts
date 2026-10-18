@@ -8,8 +8,10 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
+import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
-import type { PluginCommandResult } from "../../plugins/types";
+import { findOpenPluginPanelTarget, isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
+import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plugins/types";
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
@@ -186,7 +188,13 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   },
   "workspace.close_panel": () => {
     const shell = useShellStore.getState();
-    if (shell.isThreadOpen) {
+    // A main-area plugin panel covers the conversation, and the thread beside it.
+    if (
+      shell.mainSurface.kind === "conversation" &&
+      shell.activePluginPanel?.slot === "main_area"
+    ) {
+      shell.closePluginPanel();
+    } else if (shell.isThreadOpen) {
       shell.closeThread();
     } else if (shell.mainSurface.kind !== "conversation") {
       shell.setMainSurface({ kind: "conversation" });
@@ -198,7 +206,6 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   },
   "workspace.cycle_recent_activity": () => {
     // Cycle to the next conversation in the list (wrapping), same as next_channel.
-    // A dedicated recent-activity stack can be added later when the backend tracks it.
     const ids = getCachedConversationIds();
     if (ids.length === 0) return;
     const current = useShellStore.getState().selectedConversationId;
@@ -207,12 +214,12 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
     useShellStore.getState().setSelectedConversationId(next);
   },
   "chat.create_channel": () => {
-    // Ensure we're on the conversation surface, then open the channel dialog
+    // Switch to the conversation surface, then open the channel dialog
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewChannelDialog(true);
   },
   "chat.create_group": () => {
-    // Ensure we're on the conversation surface, then open the new message picker
+    // Switch to the conversation surface, then open the new message picker
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewMessagePicker(true);
   },
@@ -226,7 +233,7 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
     logger.debug("[RIM] copy_message_text: handled at context menu level");
   },
   "chat.open_thread": (args) => {
-    // The context menu opens threads itself; the agent (Track 4.1) passes the root message id.
+    // The context menu opens threads itself; the agent passes the root message id.
     if (typeof args?.rootMessageId === "string") {
       useShellStore.getState().openThreadForMessage(args.rootMessageId);
     } else {
@@ -272,9 +279,9 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
 };
 
 /**
- * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent (Track 4.1). The
- * server refuses to execute desktop-local commands, so agent tool calls for them land here
- * instead of `executeCommand`. Returns `false` when no local handler exists. Only meant for
+ * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent. The server refuses
+ * to execute desktop-local commands, so agent tool calls for them land here instead of
+ * `executeCommand`. Returns `false` when no local handler exists. Only meant for
  * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
  * dialog for a human, which is not what an agent call should do.
  */
@@ -307,13 +314,26 @@ export async function dispatchCommand(
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 
+  if (isOpenPluginPanelCommand(command.id)) {
+    return openPluginPanelCommand(command);
+  }
+
   // Plugin commands (identified by composite ID like "plugin.my-plugin.command")
   const pluginCmd = parsePluginCommandId(command.id);
   if (pluginCmd) {
+    // A command that requires a context gets its ids as arguments, and never runs without it.
+    const requiredContext = [
+      ...command.requiredContext,
+      ...(findPluginCommand(command.id)?.required_context ?? []),
+    ];
+    const prepared = withContextArguments(requiredContext, context?.args, context?.commandContext);
+    if (!prepared.ok) {
+      return { status: "ERROR", message: prepared.message, payload: null, followUpCommands: [] };
+    }
     return dispatchPluginCommand(
       pluginCmd.pluginId,
       pluginCmd.command,
-      context?.args,
+      prepared.args,
       context?.confirmedDangerous,
       context?.callerPluginId,
     );
@@ -350,6 +370,24 @@ export async function dispatchCommand(
     },
   );
   return commandResultOf(outcome);
+}
+
+/** Opens the plugin panel an open-panel command names, when its plugin is running. */
+function openPluginPanelCommand(command: CommandDefinition): CommandResult {
+  const plugins = queryClient.getQueryData<PluginInfo[]>(queryKeys.plugins());
+  const target = findOpenPluginPanelTarget(plugins, command.id);
+  if (!target) {
+    return {
+      status: "ERROR",
+      message: "The plugin with this panel is not running",
+      payload: null,
+      followUpCommands: [],
+    };
+  }
+  useShellStore
+    .getState()
+    .openPluginPanel(target.pluginId, target.panel.id, panelSlot(target.panel));
+  return { status: "SUCCESS", message: "", payload: null, followUpCommands: [] };
 }
 
 /**

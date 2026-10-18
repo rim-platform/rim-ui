@@ -132,9 +132,12 @@ and merges the PR. Subagents implement and run the gates; they never spawn revie
 
 Review covers: React 19 patterns, TypeScript strict compliance, component separation of concerns, GraphQL query/schema alignment, import consistency, copy-paste detection.
 
-Comments say what the item is and what it does, briefly: no history, no spec section numbers,
-no references to docs, plans, stages or PR numbers. Commit messages: a plain imperative first
-line (≤ 72 chars) and a body that says why; no trailers (no `Co-Authored-By`).
+Comments say what the item is and does, what it accepts and what it returns: TSDoc with a summary
+sentence and `@param`/`@returns` where they add something, rustdoc with `# Errors` and `# Panics`.
+No history, no pointers to docs, specs or plans, no plan, ticket, PR or finding ids, no personas,
+no TODOs, no "we" voice; a test may name the spec appendix its vectors come from.
+`src/test/commentLint.test.ts` enforces this in `npm test`. Commit messages: a plain imperative
+first line (≤ 72 chars) and a body that says why; no trailers (no `Co-Authored-By`).
 
 ## Product and Trust Guidance
 

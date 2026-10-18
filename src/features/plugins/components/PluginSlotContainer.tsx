@@ -24,6 +24,8 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
     [plugin.approved_capabilities],
   );
   const web = runtimeKind(plugin) === "WebSandboxed";
+  // A new frame for another panel, never the old one navigated.
+  const frameKey = `${plugin.plugin_id}/${panel.id}`;
   return (
     <div className="flex h-full flex-col">
       {/* Header: the host's chrome names the plugin and how far to trust it, so a
@@ -51,6 +53,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
       <div className="min-h-0 flex-1">
         {web ? (
           <WebPluginPanel
+            key={frameKey}
             pluginId={plugin.plugin_id}
             panelId={panel.id}
             pluginName={plugin.display_name}
@@ -59,6 +62,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
           />
         ) : (
           <PluginPanel
+            key={frameKey}
             pluginId={plugin.plugin_id}
             panelId={panel.id}
             pluginName={plugin.display_name}

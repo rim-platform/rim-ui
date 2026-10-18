@@ -84,6 +84,17 @@ afterEach(() => {
   document.documentElement.removeAttribute("lang");
 });
 
+describe("frame shell: start", () => {
+  it("announces itself to its parent, once, before any init", () => {
+    const shell = startShell();
+    expect(shell.parent.postMessage.mock.calls).toEqual([[{ type: "rim.frame.hello", v: 1 }, "*"]]);
+    shell.deliver({ type: "rim.frame.init", v: 1, kind: "unknown" });
+    expect(
+      shell.parent.postMessage.mock.calls.filter(([m]) => m.type === "rim.frame.hello"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("frame shell: plugin frames", () => {
   const manifest = JSON.stringify({ plugin_id: "dev.example.p", entrypoint: "main.mjs" });
   const init = (origins: string[]) => ({

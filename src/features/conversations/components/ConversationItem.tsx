@@ -45,8 +45,8 @@ export const ConversationItem = memo(function ConversationItem({
 }) {
   const active = conv.id === selectedId;
   const focused = globalIndex === focusedIndex;
-  // Conversations that notify about nothing (level NONE or a mute in effect, Track 1.3) are
-  // dimmed, and their unread count no longer calls for attention.
+  // Conversations that notify about nothing (level NONE or a mute in effect) are dimmed, and
+  // their unread count does not call for attention.
   const dimmed = isMuted || conv.effectiveNotificationLevel === NotificationLevel.NONE;
   const emphasizeUnread = unreadCount > 0 && !active && !dimmed;
 

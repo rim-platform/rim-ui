@@ -28,6 +28,10 @@ pub fn discover_plugins(
     };
 
     for entry in entries.flatten() {
+        // No plugin id starts with '.': these are the trash and install staging.
+        if entry.file_name().as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -37,8 +41,8 @@ pub fn discover_plugins(
             match PluginManifest::load(&manifest_path) {
                 Ok(manifest) => {
                     if let Err(e) = validate_plugin_manifest(&manifest) {
-                        // Demote to warn — a manifest written directly to disk after install
-                        // could have been tampered. Do NOT insert into caches.
+                        // Log and skip: a manifest written directly to disk after install
+                        // may have been tampered with, so it never reaches the caches.
                         log::warn!(
                             "[AUDIT] event=plugin_discovery_rejected plugin_id={} path={} reason={}",
                             manifest.plugin_id,
@@ -130,12 +134,27 @@ mod tests {
     }
 
     #[test]
+    fn skips_dot_entries_and_what_is_inside_them() {
+        let tmp = TempDir::new().unwrap();
+        let trash = tmp.path().join(".trash");
+        let trashed = trash.join("dev.example.hello-0190");
+        std::fs::create_dir_all(&trashed).unwrap();
+        write_manifest(&trash, "dev.example.trash");
+        write_manifest(&trashed, "dev.example.hello");
+        let hidden = tmp.path().join(".dev.example.hidden");
+        std::fs::create_dir_all(&hidden).unwrap();
+        write_manifest(&hidden, "dev.example.hidden");
+
+        assert!(discover_plugins(tmp.path()).is_empty());
+    }
+
+    #[test]
     fn missing_plugins_dir() {
         let results = discover_plugins(Path::new("/tmp/nonexistent_rim_plugins_dir"));
         assert!(results.is_empty());
     }
 
-    // ── Phase 1 regression: boot-time discovery is gated ──
+    // ── boot-time discovery runs install validation ──
 
     #[test]
     fn discovery_rejects_tampered_manifest_with_invalid_capability() {
@@ -143,9 +162,8 @@ mod tests {
         let plugin_dir = tmp.path().join("dev.example.tampered");
         std::fs::create_dir_all(&plugin_dir).unwrap();
 
-        // Write a manifest with a bad capability (N1 violation) — simulates a plugin
-        // whose rim-plugin.json was written directly to disk post-install with a
-        // crafted capability key.
+        // A manifest with a capability key in a reserved namespace, as if its
+        // rim-plugin.json had been written directly to disk after install.
         let manifest = serde_json::json!({
             "manifest_version": 1,
             "plugin_id": "dev.example.tampered",
@@ -165,7 +183,7 @@ mod tests {
 
         let results = discover_plugins(tmp.path());
 
-        // Only the valid plugin is returned — tampered one is silently demoted.
+        // Only the valid plugin is returned; the tampered one is logged and skipped.
         assert_eq!(
             results.len(),
             1,

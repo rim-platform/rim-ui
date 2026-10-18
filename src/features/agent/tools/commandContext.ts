@@ -8,15 +8,14 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
  * no workspace is selected — backend treats omitted context as "agent in
  * unknown surface" and skips the audit-log enrichment.
  *
- * Mapping (Phase 4):
+ * Mapping:
  *   workspaceId      ← useWorkspaceStore.workspaceId
  *   conversationId   ← useShellStore.selectedConversationId
  *   threadId         ← useShellStore.selectedRootMessageId  (only when isThreadOpen)
  *   focusedSurface   ← useShellStore.focusedSurface         (free-form string)
  *
- * `selectedMessageId(s)`, `selectedText`, and `activePanel` have no clean
- * shell-store source today; they remain unset until the relevant
- * surfaces (message picker, selection model, panel router) expose them.
+ * `selectedMessageId(s)`, `selectedText`, and `activePanel` stay unset:
+ * the shell store has no source for them.
  */
 export function getCurrentCommandContext(): CommandContextInput | null {
   const workspaceId = useWorkspaceStore.getState().workspaceId;

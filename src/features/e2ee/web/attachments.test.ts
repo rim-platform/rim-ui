@@ -4,7 +4,7 @@ import { fromHex, hex } from "../../../test/ed25519";
 import { b64, unb64 } from "../../key-identity/browser/bytes";
 import { attachmentKeyAndNonce, decryptFile, encryptFile } from "./attachments";
 
-// e2ee-mls-v1 appendix A.3.
+// Known-answer vectors from e2ee-mls-v1 appendix A.3.
 const SECRET = Uint8Array.from({ length: 32 }, (_, i) => 0xa0 + i);
 const PLAINTEXT = new TextEncoder().encode("hello, attachment\n");
 const BLOB = "096d52fa9b833e37ef33d387fc5ecab34eabb410807b85e90c862a44614c7c9cb163";

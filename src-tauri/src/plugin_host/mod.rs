@@ -22,6 +22,7 @@ pub mod runtime;
 pub mod simple_manifest;
 pub mod state;
 pub mod storage;
+pub mod trash;
 pub mod validation;
 pub mod wire;
 
@@ -44,7 +45,8 @@ pub struct PluginHostState {
     /// Request handles for plugins whose handshake succeeded, keyed by plugin_id.
     /// Arc so the broker task can deregister its own handle when the plugin exits.
     pub clients: Arc<Mutex<HashMap<String, broker::PluginClient>>>,
-    /// Arc so the broker loop tasks can hold a shared reference after `start_plugin` returns.
+    /// Panel state per plugin and panel. Arc so the broker loop tasks can hold a
+    /// shared reference after `start_plugin` returns.
     pub panel_relay: Arc<PanelRelay>,
     pub pending_ui_events: Mutex<Vec<PendingUiEvent>>,
     /// The signed-in user as plugins see it; the UI sets it on sign-in and sign-out.
@@ -76,6 +78,11 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
     let mut manifests = HashMap::new();
     let mut plugin_dirs = HashMap::new();
     let plugins_dir = discovery::plugins_dir();
+    // Copies an unfinished update set aside go back before discovery; then
+    // what is left in the trash goes in the background.
+    trash::recover_replaced(&plugins_dir);
+    let swept = plugins_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || trash::sweep(&swept));
     for result in discovery::discover_plugins(&plugins_dir) {
         match result {
             Ok(discovered) => {
@@ -145,7 +152,7 @@ pub fn init(app_data_dir: &std::path::Path) -> PluginHostState {
 /// updates one of its panels.
 pub const PANEL_STATE_EVENT: &str = "plugin-panel-state";
 
-/// Push what the plugin host does to the UI: every panel state change as
+/// Pushes what the plugin host does to the UI: every panel state change as
 /// [`PANEL_STATE_EVENT`], so an open panel shows a plugin's updates as they
 /// happen, plugins starting and stopping as [`host_events::PLUGIN_EVENT`], and
 /// local-process plugins' chat calls as [`chat_relay::PLUGIN_CHAT_EVENT`].

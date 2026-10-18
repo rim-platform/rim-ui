@@ -27,8 +27,8 @@ function makeProvider(id: string, name: string): AiProvider {
 
 describe("provider registry", () => {
   beforeEach(() => {
-    // Clear existing providers by re-registering known ones isn't ideal,
-    // but the registry doesn't expose a clear function. We test incrementally.
+    // The registry has no clear function, so each test only checks the
+    // providers it registers itself.
   });
 
   it("registers and retrieves a provider", () => {

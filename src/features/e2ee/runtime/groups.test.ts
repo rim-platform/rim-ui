@@ -34,15 +34,28 @@ vi.mock("../api/e2eeCommands", () => ({
 }));
 vi.mock("../../messages/api/messageCache", () => ({ trackConversation: vi.fn() }));
 vi.mock("../../messages/runtime/messageCacheSync", () => ({ syncNow: vi.fn() }));
-vi.mock("./members", () => ({
-  conversationMembers: vi.fn(async () => [{ userId: "u-a", principalId: "rimp1_a" }]),
+const serverMembers = vi.hoisted(() => ({ fetchServerMembers: vi.fn() }));
+vi.mock("../../workspaces/api/useServerMembers", () => serverMembers);
+vi.mock("./members", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./members")>()),
   directoryFor: vi.fn(async (members: string[]) => ({ members, principals: [] })),
   notReadyMembers: vi.fn(async () => ({ names: [], directory: [] })),
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { E2eeCommandError } from "../api/e2eeCommands";
 import { useE2eeStore } from "../state/useE2eeStore";
-import { commitPendingChanges, createGroup, processWelcomes, refreshKeyPackages } from "./groups";
+import {
+  commitPendingChanges,
+  createGroup,
+  createGroupLocked,
+  MEMBER_WITHOUT_DEVICE,
+  processWelcomes,
+  refreshKeyPackages,
+  verifyLeaves,
+} from "./groups";
+import { directoryFor, notReadyMembers } from "./members";
 
 const session = {
   account: { endpoint: "http://x/api", userId: "u-me" },
@@ -65,11 +78,31 @@ function serverGroup(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function graphqlError(code: string) {
-  return Object.assign(new Error(code), {
-    response: { errors: [{ message: code, extensions: { code } }] },
+function graphqlError(code: string, message = code) {
+  return Object.assign(new Error(message), {
+    response: { errors: [{ message, extensions: { code } }] },
   });
 }
+
+const alice = { userId: "u-a", username: "alice", principalId: "rimp1_a" };
+const bob = { userId: "u-b", username: "bob", principalId: "rimp1_b" };
+
+/** A directory where every principal asked about has one device set up for encryption. */
+function readyDirectory(members: string[], principals: string[]) {
+  return Promise.resolve({
+    members,
+    principals: principals.map((principalId) => ({
+      principalId,
+      keyLog: [],
+      devices: [{ deviceId: `dev-${principalId}`, mlsActive: true, revokedAt: null } as never],
+    })),
+  });
+}
+
+beforeEach(() => {
+  queryClient.clear();
+  serverMembers.fetchServerMembers.mockResolvedValue([alice]);
+});
 
 const outgoing = {
   incarnation: 1,
@@ -382,6 +415,96 @@ describe("createGroup", () => {
     expect(await createGroup(session, "ws", "c")).toBe(false);
     expect(commands.settleCommit.mock.calls[0][4]).toBe(false);
     expect(api.fetchWelcomes).toHaveBeenCalled();
+  });
+
+  describe("with a member who joined after the member list was cached", () => {
+    beforeEach(() => {
+      queryClient.setQueryData(queryKeys.serverMembers("ws"), [alice]);
+      serverMembers.fetchServerMembers.mockResolvedValue([alice, bob]);
+      vi.mocked(directoryFor).mockImplementation(readyDirectory);
+      api.fetchConversationGroup.mockResolvedValue({
+        memberIds: ["u-me", "u-a", "u-b"],
+        mlsGroup: null,
+      });
+      api.claimKeyPackages.mockResolvedValue([]);
+      commands.createGroup.mockResolvedValue({ ...outgoing, epoch: 0 });
+    });
+
+    it("builds the first group from the member list fetched now, and caches it", async () => {
+      expect(await createGroup(session, "ws", "c")).toBe(true);
+      expect(api.claimKeyPackages).toHaveBeenCalledWith("ws", "c", [
+        { principalId: "rimp1_a", deviceId: "dev-rimp1_a" },
+        { principalId: "rimp1_b", deviceId: "dev-rimp1_b" },
+      ]);
+      expect(queryClient.getQueryData(queryKeys.serverMembers("ws"))).toEqual([alice, bob]);
+    });
+
+    it("builds the first Commit once more when the server says it leaves a member out", async () => {
+      api.submitCommit
+        .mockRejectedValueOnce(graphqlError("VALIDATION", MEMBER_WITHOUT_DEVICE))
+        .mockResolvedValueOnce(undefined);
+
+      expect(await createGroup(session, "ws", "c")).toBe(true);
+      expect(api.submitCommit).toHaveBeenCalledTimes(2);
+      expect(serverMembers.fetchServerMembers).toHaveBeenCalledTimes(2);
+      expect(commands.settleCommit.mock.calls.map((call) => call[4])).toEqual([false, true]);
+    });
+
+    it.each([
+      ["another validation error", graphqlError("VALIDATION", "a group holds at most 2 devices")],
+      ["another code", graphqlError("FORBIDDEN", MEMBER_WITHOUT_DEVICE)],
+    ])("does not build it again after %s", async (_reason, refusal) => {
+      api.submitCommit.mockRejectedValueOnce(refusal);
+
+      expect(await createGroupLocked(session, "ws", "c")).toEqual({
+        created: false,
+        notReady: [],
+      });
+      expect(api.submitCommit).toHaveBeenCalledTimes(1);
+      expect(notReadyMembers).not.toHaveBeenCalled();
+    });
+
+    it("names the other members who are not ready when the second Commit is refused too", async () => {
+      serverMembers.fetchServerMembers.mockResolvedValue([
+        { userId: "u-me", username: "me", principalId: "rimp1_me" },
+        alice,
+        bob,
+      ]);
+      api.submitCommit.mockRejectedValue(graphqlError("VALIDATION", MEMBER_WITHOUT_DEVICE));
+      vi.mocked(notReadyMembers).mockResolvedValueOnce({ names: ["bob"], directory: [] });
+
+      expect(await createGroupLocked(session, "ws", "c")).toEqual({
+        created: false,
+        notReady: ["bob"],
+      });
+      expect(api.submitCommit).toHaveBeenCalledTimes(2);
+      expect(notReadyMembers).toHaveBeenCalledWith([alice, bob]);
+    });
+  });
+});
+
+describe("verifyLeaves", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("checks a leaf that fails once more against a member list fetched again", async () => {
+    queryClient.setQueryData(queryKeys.serverMembers("ws"), [alice]);
+    serverMembers.fetchServerMembers.mockResolvedValue([alice, bob]);
+    api.fetchConversationGroup.mockResolvedValue({
+      memberIds: ["u-me", "u-a", "u-b"],
+      mlsGroup: serverGroup(),
+    });
+    commands.status.mockResolvedValue([{ conversationId: "c" }]);
+    commands.verify
+      .mockResolvedValueOnce({
+        missing: [],
+        unverified: [{ principalId: "rimp1_b", deviceId: "d" }],
+      })
+      .mockResolvedValueOnce({ missing: [], unverified: [] });
+
+    await verifyLeaves(session, "ws", "c");
+
+    expect(vi.mocked(directoryFor).mock.calls[1]).toEqual([["rimp1_a", "rimp1_b"], ["rimp1_b"]]);
+    expect(commands.commit).not.toHaveBeenCalled();
   });
 });
 

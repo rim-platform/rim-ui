@@ -78,6 +78,27 @@ describe("usePluginCommands", () => {
     expect(commands[0]).toMatchObject({ visibleInPalette: false, keybindCapable: false });
   });
 
+  it("carries each command's required context, to its context actions too", () => {
+    const commands = commandsOf([
+      plugin({
+        commands: [command("restart_pod", { required_context: ["message"] }), command("refresh")],
+        context_actions: [
+          {
+            id: "restart",
+            title: "Restart this pod",
+            command_id: "plugin.chat.rim.k8s-pods.restart_pod",
+            context_types: ["message"],
+          },
+        ],
+      }),
+    ]);
+    expect(commands.map((c) => [c.title, c.requiredContext])).toEqual([
+      ["restart_pod", ["message"]],
+      ["refresh", []],
+      ["Restart this pod", ["message"]],
+    ]);
+  });
+
   it("leaves out a disabled plugin's commands", () => {
     expect(commandsOf([plugin({ enabled: false })])).toEqual([]);
   });
@@ -103,6 +124,47 @@ describe("usePluginCommands", () => {
       dangerous: true,
       contextTypes: ["message"],
     });
+  });
+});
+
+describe("usePluginCommands — open panel commands", () => {
+  const panels = [
+    { id: "pods", title: "Pods", slot: "main_area" as const },
+    { id: "notes", title: "Notes" },
+  ];
+
+  it("adds an Open command per panel of a running plugin, for the palette and keybinds", () => {
+    const commands = commandsOf([plugin({ health: "running", commands: [], panels })]);
+    expect(commands.map((c) => [c.id, c.title, c.category])).toEqual([
+      ["workspace.open_plugin_panel.chat.rim.k8s-pods/pods", "Open Pods", "Kubernetes Pods"],
+      ["workspace.open_plugin_panel.chat.rim.k8s-pods/notes", "Open Notes", "Kubernetes Pods"],
+    ]);
+    expect(commands[0]).toMatchObject({
+      sourceKind: "PLUGIN",
+      executionTarget: "DESKTOP_LOCAL",
+      visibleInPalette: true,
+      visibleInContextMenus: false,
+      keybindCapable: true,
+      dangerous: false,
+    });
+  });
+
+  it("lists them after the plugin's manifest commands", () => {
+    const commands = commandsOf([plugin({ health: "running", panels })]);
+    expect(commands.map((c) => c.title)).toEqual([
+      "Refresh pods",
+      "Restart pod",
+      "Open Pods",
+      "Open Notes",
+    ]);
+  });
+
+  it("adds none for a plugin that is not running or not enabled", () => {
+    expect(commandsOf([plugin({ health: "stopped", commands: [], panels })])).toEqual([]);
+    expect(commandsOf([plugin({ health: "crashed", commands: [], panels })])).toEqual([]);
+    expect(
+      commandsOf([plugin({ enabled: false, health: "running", commands: [], panels })]),
+    ).toEqual([]);
   });
 });
 

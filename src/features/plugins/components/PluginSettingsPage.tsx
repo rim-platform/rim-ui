@@ -26,10 +26,12 @@ import { InstallFromLink } from "./InstallFromLink";
 import { PluginAuditPanel } from "./PluginAuditPanel";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
+import { UninstallPluginDialog } from "./UninstallPluginDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
 import { RegistryNotes } from "../registry/components/RegistryNotes";
 import { SignAndPublishDialog } from "../registry/components/SignAndPublishDialog";
 import { usePluginSigning } from "../registry/signing";
+import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import {
   parsePostInstallConsent,
   runtimeKind,
@@ -58,14 +60,12 @@ const healthDisplay: Record<PluginHealth, { color: string; label: string }> = {
  * - Empty state with onboarding copy when no plugins are installed
  *
  * Note: folder-picker uses `<input type="file" webkitdirectory>` because
- * `@tauri-apps/plugin-dialog` is not yet a declared dependency.  The Tauri webview
+ * `@tauri-apps/plugin-dialog` is not a declared dependency.  The Tauri webview
  * exposes the full filesystem path via `file.path` (Tauri-injected property) when
  * running in the desktop shell.  On web the picker is disabled.
- * Adding `@tauri-apps/plugin-dialog` would give a nicer native OS
- * folder picker — current approach is functional but less polished.
  */
 export function PluginSettingsPage() {
-  const { capabilities } = useRuntime();
+  const { platform, capabilities } = useRuntime();
   const { data: plugins, isLoading } = usePluginList();
   const enable = usePluginEnable();
   const disable = usePluginDisable();
@@ -75,6 +75,9 @@ export function PluginSettingsPage() {
   const trustFingerprint = usePluginTrustFingerprint();
   const signing = usePluginSigning();
   const [signTarget, setSignTarget] = useState<PluginInfo | null>(null);
+  // The plugin whose uninstall waits for the user's confirmation.
+  const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
 
   const [permissionsTarget, setPermissionsTarget] = useState<PluginInfo | null>(null);
   // A plugin just installed: its permission prompt opens once it is in the list,
@@ -106,8 +109,8 @@ export function PluginSettingsPage() {
       if (!files || files.length === 0) return;
 
       // In Tauri the webview injects a `path` property on File objects that
-      // exposes the absolute filesystem path.  We extract the directory from
-      // the first file's path.
+      // exposes the absolute filesystem path.  The directory comes from the
+      // first file's path.
       const firstFile = files[0] as File & { path?: string };
       if (firstFile.path) {
         // Derive the folder path by stripping the filename.
@@ -188,7 +191,7 @@ export function PluginSettingsPage() {
           // FingerprintChanged errors bubble from plugin_enable — refresh the list
           // so the UI shows the updated fingerprint_changed flag.
           if ("message" in err && err.message?.includes("fingerprint")) {
-            // TanStack Query will not invalidate automatically on error, so we do nothing
+            // TanStack Query will not invalidate automatically on error, so nothing happens
             // here — the plugin list will show the updated flag on next list refresh.
           }
         },
@@ -196,8 +199,19 @@ export function PluginSettingsPage() {
     }
   }
 
-  function handleUninstall(pluginId: string) {
-    uninstall.mutate(pluginId);
+  function handleUninstall(plugin: PluginInfo) {
+    setUninstallError(null);
+    setUninstallTarget(plugin);
+  }
+
+  function confirmUninstall(pluginId: string) {
+    setUninstallError(null);
+    uninstall.mutate(pluginId, {
+      onSuccess: () => setUninstallTarget(null),
+      onError: (err) => {
+        setUninstallError("message" in err ? err.message : "Uninstall failed");
+      },
+    });
   }
 
   function handleTrustFingerprint(pluginId: string) {
@@ -311,6 +325,7 @@ export function PluginSettingsPage() {
                 onUninstall={handleUninstall}
                 onPermissions={setPermissionsTarget}
                 onTrustFingerprint={handleTrustFingerprint}
+                onDisable={(pluginId) => disable.mutate(pluginId)}
                 onSign={desktop && signing.canSign ? setSignTarget : undefined}
                 trustPending={
                   trustFingerprint.isPending && trustFingerprint.variables === plugin.plugin_id
@@ -327,6 +342,17 @@ export function PluginSettingsPage() {
           isPending={installFromGit.isPending}
           onConfirm={() => runGitInstall(consentRequest.url, true)}
           onCancel={() => setConsentRequest(null)}
+        />
+      )}
+
+      {uninstallTarget && (
+        <UninstallPluginDialog
+          plugin={uninstallTarget}
+          web={platform === "web"}
+          isPending={uninstall.isPending}
+          error={uninstallError}
+          onConfirm={() => confirmUninstall(uninstallTarget.plugin_id)}
+          onCancel={() => setUninstallTarget(null)}
         />
       )}
 
@@ -359,9 +385,10 @@ interface PluginRowProps {
   /** A local-process plugin seen on the web, which cannot run it. */
   needsDesktop?: boolean;
   onToggle: (plugin: PluginInfo) => void;
-  onUninstall: (pluginId: string) => void;
+  onUninstall: (plugin: PluginInfo) => void;
   onPermissions: (plugin: PluginInfo) => void;
   onTrustFingerprint: (pluginId: string) => void;
+  onDisable: (pluginId: string) => void;
   /** Present when this device can sign plugins with the account's identity key. */
   onSign?: (plugin: PluginInfo) => void;
   trustPending: boolean;
@@ -374,8 +401,10 @@ interface PluginRowProps {
  * permissions button, uninstall button.
  *
  * When `plugin.fingerprint_changed` is true, a `FingerprintChanged` warning
- * banner is shown with "Trust new version" and "Disable until reviewed" actions.
- * The enable toggle is disabled until the user resolves the fingerprint warning.
+ * banner is shown with "Trust new version" and "Dismiss" actions. Dismiss stops
+ * a running plugin and hides the banner on this device until the fingerprint
+ * changes again; the "Bundle changed" badge then shows it again. The enable
+ * toggle is disabled until the user trusts the new version.
  */
 function PluginRow({
   plugin,
@@ -384,12 +413,25 @@ function PluginRow({
   onUninstall,
   onPermissions,
   onTrustFingerprint,
+  onDisable,
   onSign,
   trustPending,
 }: PluginRowProps) {
   const healthState = plugin.health ? healthDisplay[plugin.health] : null;
   const blocked = plugin.fingerprint_changed || needsDesktop;
   const [activityOpen, setActivityOpen] = useState(false);
+  const fingerprint = plugin.current_fingerprint ?? "";
+  const warningDismissed = usePluginFingerprintDismissStore(
+    (s) => s.dismissed[plugin.plugin_id] === fingerprint,
+  );
+  const dismissWarning = usePluginFingerprintDismissStore((s) => s.dismiss);
+  const restoreWarning = usePluginFingerprintDismissStore((s) => s.restore);
+
+  function handleDismissWarning() {
+    // A changed bundle must not keep running once the warning is out of sight.
+    if (plugin.enabled) onDisable(plugin.plugin_id);
+    dismissWarning(plugin.plugin_id, fingerprint);
+  }
 
   return (
     <div className="rounded-lg border border-rim-line bg-rim-void">
@@ -401,12 +443,23 @@ function PluginRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
-            {plugin.fingerprint_changed && (
-              <span className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
-                <AlertTriangle className="h-3 w-3" />
-                Bundle changed
-              </span>
-            )}
+            {plugin.fingerprint_changed &&
+              (warningDismissed ? (
+                <button
+                  type="button"
+                  onClick={() => restoreWarning(plugin.plugin_id)}
+                  title="Show the changed-bundle warning"
+                  className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm hover:bg-rim-warm/25"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  Bundle changed
+                </button>
+              ) : (
+                <span className="flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
+                  <AlertTriangle className="h-3 w-3" />
+                  Bundle changed
+                </span>
+              ))}
           </div>
           <p className="text-xs text-rim-text-muted">{plugin.description}</p>
           <p className="text-[11px] text-rim-text-faint">
@@ -477,7 +530,7 @@ function PluginRow({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onUninstall(plugin.plugin_id)}
+            onClick={() => onUninstall(plugin)}
             title="Uninstall"
             aria-label="Uninstall plugin"
           >
@@ -489,7 +542,7 @@ function PluginRow({
       {activityOpen && <PluginAuditPanel plugin={plugin} />}
 
       {/* Fingerprint-changed warning banner */}
-      {plugin.fingerprint_changed && (
+      {plugin.fingerprint_changed && !warningDismissed && (
         <div className="border-t border-rim-warm/20 bg-rim-warm/5 px-4 py-3">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
@@ -513,12 +566,7 @@ function PluginRow({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  // "Disable until reviewed" — if enabled, disable; if already disabled, no-op.
-                  if (plugin.enabled) {
-                    // Disable is allowed even when fingerprint changed — it's the safe direction.
-                  }
-                }}
+                onClick={handleDismissWarning}
                 title="Dismiss without trusting — plugin stays disabled"
               >
                 Dismiss
@@ -542,9 +590,8 @@ function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
 /**
  * Empty state shown when no plugins are installed.
  *
- * Explains the sideload-only model for v1 and points the user to the install
- * affordances above.  Marketplace is deferred — copy says "coming soon" to
- * set expectations without blocking the install flow.
+ * Points the user to the install affordances above; on the desktop the copy
+ * also says a marketplace is coming soon.
  */
 function PluginEmptyState({ desktop }: { desktop: boolean }) {
   return (

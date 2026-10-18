@@ -1,6 +1,6 @@
 /**
- * Byte helpers of the browser key backend: strict unpadded base64url (RFC 4648 §5), RFC 4648
- * base32 and UTF-8, written to refuse exactly what the Tauri side's decoders refuse.
+ * Byte helpers of the browser key backend: strict unpadded base64url, RFC 4648 base32 and
+ * UTF-8, written to refuse exactly what the Tauri side's decoders refuse.
  */
 
 const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";

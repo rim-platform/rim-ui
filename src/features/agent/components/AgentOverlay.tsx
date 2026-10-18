@@ -20,8 +20,8 @@ import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import type { ServerFeatureView } from "../../updater/hooks/useServerFeature";
 import { AI_COMMANDS_OFF_MESSAGE } from "../aiCommandsOff";
 
-// Register tools once per workspace (dual-mode: hardcoded builtins + backend AI surface,
-// backend-wins). The backend AI surface is per workspace (Track 0.4: feature-gated commands
+// Register tools once per workspace (hardcoded builtins + backend AI surface, the backend
+// winning a name clash). The backend AI surface is per workspace (feature-gated commands
 // are only offered where the feature is on), so switching workspace reloads the registry.
 let toolsRegisteredFor: string | null | undefined;
 let toolsLoading: Promise<void> | null = null;
@@ -193,9 +193,8 @@ export function AgentOverlay() {
 
     void (async () => {
       // Presence-check the secret vault before spinning up runAgent. The keyring
-      // is the single source of truth for provider keys
-      // (agent-settings-consolidation decision §3). We do NOT hold any key
-      // bytes here — the Rust proxy reads from the keyring inline per-request.
+      // is the single source of truth for provider keys. No key bytes are held
+      // here — the Rust proxy reads from the keyring inline per-request.
       const hasKey = await invoke<boolean>("is_provider_key_configured", {
         provider: settings.providerId,
       });

@@ -39,10 +39,16 @@ pub fn handshake_params(
     Ok(serde_json::to_value(&params).map_err(WireError::Json)?)
 }
 
-/// Validate the `result` of a `rim.handshake` response.
+/// Validates the `result` of a `rim.handshake` response from `plugin_id`.
 ///
 /// The plugin picks the version: any entry of [`SUPPORTED_VERSIONS`] is accepted,
-/// so a host that later speaks v1 and v2 keeps serving v1 plugins.
+/// so a host that speaks several versions keeps serving plugins of each.
+///
+/// # Errors
+///
+/// Returns a [`HandshakeError`] when the result does not parse, the plugin
+/// rejected the handshake, or it names an unsupported protocol version or
+/// another plugin id.
 pub fn validate_handshake_result(
     result: serde_json::Value,
     plugin_id: &str,
