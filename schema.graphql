@@ -2847,6 +2847,16 @@ type Query {
 	floors are taken in, with where a refusing floor comes from.
 	"""
 	myDmSettings: MyDmSettings!
+	"""
+	The caller's user command with this id (`user.<key>`), enabled or not, with its steps
+	in the order they run. Null when the caller has no user command with that id: a
+	built-in id, another user's command and an unknown one all answer null.
+	"""
+	userCommand(id: String!): UserCommand
+	"""
+	The caller's user commands, enabled or not, with their steps, sorted by id.
+	"""
+	userCommands: [UserCommand!]!
 }
 
 type ReactionGroup {
@@ -3786,6 +3796,34 @@ type User {
 	everyone else.
 	"""
 	instanceOperator: Boolean!
+}
+
+"""
+A user command as its owner saved it, in the shape `updateUserCommand` takes.
+"""
+type UserCommand {
+	"""
+	The command id, `user.<key>`, the same as the listed `Command.id`.
+	"""
+	id: String!
+	title: String!
+	description: String!
+	"""
+	The steps in the order they run.
+	"""
+	steps: [UserCommandStep!]!
+	"""
+	`false` while the command is disabled; a disabled command is not listed by `commands`.
+	"""
+	isEnabled: Boolean!
+}
+
+"""
+One step of a user command: the command it runs and the arguments it passes.
+"""
+type UserCommandStep {
+	commandId: String!
+	args: JSON
 }
 
 input UserCommandStepInput {

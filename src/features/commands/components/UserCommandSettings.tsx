@@ -6,13 +6,225 @@ import {
   useCreateUserCommandMutation,
   useUpdateUserCommandMutation,
   useDeleteUserCommandMutation,
+  useUserCommand,
+  useUserCommandSteps,
+  type SavedUserCommand,
 } from "../api/useUserCommands";
-import type { UserCommandStepInput } from "../types";
+import type { CommandDefinition, UserCommandStepInput } from "../types";
 
+/**
+ * The steps of a user command being created or edited: a command picker per step, with
+ * arrows to reorder, a bin to remove and **+ Add step**. A step's saved arguments are shown
+ * under it and kept while its command stays the same.
+ *
+ * @param steps - The steps in the order they run.
+ * @param onChange - Receives the whole new list after each change.
+ * @param availableCommands - The commands a step can run.
+ */
+function StepList({
+  steps,
+  onChange,
+  availableCommands,
+}: {
+  steps: UserCommandStepInput[];
+  onChange: (steps: UserCommandStepInput[]) => void;
+  availableCommands: CommandDefinition[];
+}) {
+  function updateStep(index: number, commandId: string) {
+    const updated = [...steps];
+    // Arguments belong to the command they were saved for, so a new command starts without.
+    updated[index] = { commandId };
+    onChange(updated);
+  }
+
+  function moveStep(index: number, direction: "up" | "down") {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= steps.length) return;
+    const updated = [...steps];
+    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    onChange(updated);
+  }
+
+  return (
+    <div>
+      <label className="block text-[11px] text-rim-text-muted mb-1">Steps ({steps.length})</label>
+      <div className="space-y-1">
+        {steps.map((step, index) => {
+          const listed = availableCommands.some((c) => c.id === step.commandId);
+          return (
+            <div key={index}>
+              <div className="flex items-center gap-1">
+                <span className="w-4 shrink-0 text-[10px] text-rim-text-muted">{index + 1}.</span>
+                <select
+                  value={step.commandId}
+                  onChange={(e) => updateStep(index, e.target.value)}
+                  aria-label={`Step ${index + 1} command`}
+                  className="min-w-0 flex-1 truncate rounded border border-rim-line bg-rim-panel px-1.5 py-0.5 text-[11px] text-rim-text outline-none focus:border-rim-accent"
+                >
+                  <option value="">Select...</option>
+                  {/* A saved step whose command is not offered here still shows its id. */}
+                  {step.commandId && !listed && (
+                    <option value={step.commandId}>{step.commandId}</option>
+                  )}
+                  {availableCommands.map((cmd) => (
+                    <option key={cmd.id} value={cmd.id}>
+                      {cmd.title}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex shrink-0 items-center">
+                  <button
+                    onClick={() => moveStep(index, "up")}
+                    disabled={index === 0}
+                    className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => moveStep(index, "down")}
+                    disabled={index === steps.length - 1}
+                    className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => onChange(steps.filter((_, i) => i !== index))}
+                    className="p-0.5 text-rim-text-muted hover:text-rim-danger"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              {step.args !== undefined && (
+                <p className="ml-5 truncate font-mono text-[10px] text-rim-text-muted">
+                  Arguments: {JSON.stringify(step.args)}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        onClick={() => onChange([...steps, { commandId: "" }])}
+        className="mt-1 text-[11px] text-rim-accent hover:text-rim-accent/80"
+      >
+        + Add step
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Converts a saved step to the input shape `updateUserCommand` takes, leaving out empty
+ * arguments.
+ *
+ * @param step - A step as the `userCommand` query returns it.
+ * @returns The same command id and arguments as a step input.
+ */
+function toStepInput(step: SavedUserCommand["steps"][number]): UserCommandStepInput {
+  return step.args == null
+    ? { commandId: step.commandId }
+    : { commandId: step.commandId, args: step.args as Record<string, unknown> };
+}
+
+/**
+ * The edit form of one user command, filled with its saved title, description and steps.
+ * **Save** replaces the saved command and stays off until the title is set and a step is
+ * chosen.
+ *
+ * @param saved - The command as the `userCommand` query returned it.
+ * @param availableCommands - The commands a step can run.
+ * @param onClose - Called on **Cancel** and after a successful save.
+ */
+function UserCommandEditor({
+  saved,
+  availableCommands,
+  onClose,
+}: {
+  saved: SavedUserCommand;
+  availableCommands: CommandDefinition[];
+  onClose: () => void;
+}) {
+  const updateMutation = useUpdateUserCommandMutation();
+  const [title, setTitle] = useState(saved.title);
+  const [description, setDescription] = useState(saved.description);
+  const [steps, setSteps] = useState<UserCommandStepInput[]>(() => saved.steps.map(toStepInput));
+
+  // The server refuses a user command without a step, so a step row left on "Select..." does
+  // not count towards one.
+  const chosenSteps = steps.filter((s) => s.commandId);
+
+  function handleSave() {
+    if (!title || chosenSteps.length === 0) return;
+    updateMutation.mutate(
+      {
+        commandId: saved.id,
+        title,
+        description: description || title,
+        steps: chosenSteps,
+        isEnabled: saved.isEnabled,
+      },
+      { onSuccess: onClose },
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-rim-accent/30 bg-rim-void p-3 space-y-2">
+      <div>
+        <label className="block text-[11px] text-rim-text-muted mb-1">Title</label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Command title"
+          className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
+        />
+      </div>
+      <div>
+        <label className="block text-[11px] text-rim-text-muted mb-1">Description</label>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What this command does..."
+          className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
+        />
+      </div>
+      <StepList steps={steps} onChange={setSteps} availableCommands={availableCommands} />
+      {chosenSteps.length === 0 && (
+        <p className="text-[11px] text-rim-text-muted">Choose at least one step to save.</p>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={!title || chosenSteps.length === 0 || updateMutation.isPending}
+          className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+        >
+          {updateMutation.isPending ? "Saving..." : "Save"}
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded px-2 py-1 text-xs text-rim-text-muted hover:text-rim-text"
+        >
+          Cancel
+        </button>
+      </div>
+      {updateMutation.isError && (
+        <p className="text-[11px] text-rim-danger">{(updateMutation.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Settings → Commands: creates the signed-in account's user commands, lists them with their
+ * step counts, and edits or deletes one. The pencil loads the saved command into the edit
+ * form; a command that is gone closes the editor with a notice.
+ */
 export function UserCommandSettings() {
   const { data: commands } = useCommands("PALETTE");
+  const { data: stepSummaries } = useUserCommandSteps();
   const createMutation = useCreateUserCommandMutation();
-  const updateMutation = useUpdateUserCommandMutation();
   const deleteMutation = useDeleteUserCommandMutation();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -22,37 +234,19 @@ export function UserCommandSettings() {
   const [steps, setSteps] = useState<UserCommandStepInput[]>([]);
 
   const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editSteps, setEditSteps] = useState<UserCommandStepInput[]>([]);
+  const [goneNotice, setGoneNotice] = useState<string | null>(null);
+  const savedQuery = useUserCommand(editingCommandId);
 
   const userCommands = commands?.filter((cmd) => cmd.sourceKind === "USER") ?? [];
   const availableCommands = commands?.filter((cmd) => cmd.executionTarget === "BACKEND") ?? [];
-  // The server refuses a user command without a step, so a step row left on "Select..." does
-  // not count towards one.
   const chosenSteps = steps.filter((s) => s.commandId);
-  const chosenEditSteps = editSteps.filter((s) => s.commandId);
+  const stepCounts = new Map(stepSummaries?.map((c) => [c.id, c.steps.length]));
 
-  function addStep() {
-    setSteps([...steps, { commandId: "" }]);
-  }
-
-  function updateStep(index: number, commandId: string) {
-    const updated = [...steps];
-    updated[index] = { commandId };
-    setSteps(updated);
-  }
-
-  function removeStep(index: number) {
-    setSteps(steps.filter((_, i) => i !== index));
-  }
-
-  function moveStep(index: number, direction: "up" | "down") {
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= steps.length) return;
-    const updated = [...steps];
-    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
-    setSteps(updated);
+  // The account has no user command with the id being edited: close the editor and say why.
+  if (editingCommandId !== null && savedQuery.data === null) {
+    const title = userCommands.find((c) => c.id === editingCommandId)?.title ?? editingCommandId;
+    setEditingCommandId(null);
+    setGoneNotice(`"${title}" no longer exists for this account, so it cannot be edited.`);
   }
 
   function handleCreate() {
@@ -81,57 +275,9 @@ export function UserCommandSettings() {
     deleteMutation.mutate({ commandId });
   }
 
-  function startEditingCommand(cmd: { id: string; title: string; description: string }) {
-    setEditingCommandId(cmd.id);
-    setEditTitle(cmd.title);
-    setEditDescription(cmd.description);
-    // The commands query carries no steps, so the form starts with none to choose again.
-    setEditSteps([]);
-  }
-
-  function cancelEditingCommand() {
-    setEditingCommandId(null);
-    setEditTitle("");
-    setEditDescription("");
-    setEditSteps([]);
-  }
-
-  function addEditStep() {
-    setEditSteps([...editSteps, { commandId: "" }]);
-  }
-
-  function updateEditStep(index: number, commandId: string) {
-    const updated = [...editSteps];
-    updated[index] = { commandId };
-    setEditSteps(updated);
-  }
-
-  function removeEditStep(index: number) {
-    setEditSteps(editSteps.filter((_, i) => i !== index));
-  }
-
-  function moveEditStep(index: number, direction: "up" | "down") {
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= editSteps.length) return;
-    const updated = [...editSteps];
-    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
-    setEditSteps(updated);
-  }
-
-  function handleSaveEdit() {
-    if (!editingCommandId || !editTitle || chosenEditSteps.length === 0) return;
-    updateMutation.mutate(
-      {
-        commandId: editingCommandId,
-        title: editTitle,
-        description: editDescription || editTitle,
-        steps: chosenEditSteps,
-        isEnabled: true,
-      },
-      {
-        onSuccess: () => cancelEditingCommand(),
-      },
-    );
+  function startEditingCommand(commandId: string) {
+    setGoneNotice(null);
+    setEditingCommandId(commandId);
   }
 
   return (
@@ -182,59 +328,7 @@ export function UserCommandSettings() {
             />
           </div>
 
-          {/* Steps */}
-          <div>
-            <label className="block text-[11px] text-rim-text-muted mb-1">
-              Steps ({steps.length})
-            </label>
-            <div className="space-y-1">
-              {steps.map((step, index) => (
-                <div key={index} className="flex items-center gap-1">
-                  <span className="w-4 shrink-0 text-[10px] text-rim-text-muted">{index + 1}.</span>
-                  <select
-                    value={step.commandId}
-                    onChange={(e) => updateStep(index, e.target.value)}
-                    className="min-w-0 flex-1 truncate rounded border border-rim-line bg-rim-panel px-1.5 py-0.5 text-[11px] text-rim-text outline-none focus:border-rim-accent"
-                  >
-                    <option value="">Select...</option>
-                    {availableCommands.map((cmd) => (
-                      <option key={cmd.id} value={cmd.id}>
-                        {cmd.title}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="flex shrink-0 items-center">
-                    <button
-                      onClick={() => moveStep(index, "up")}
-                      disabled={index === 0}
-                      className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
-                    >
-                      <ChevronUp className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={() => moveStep(index, "down")}
-                      disabled={index === steps.length - 1}
-                      className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
-                    >
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={() => removeStep(index)}
-                      className="p-0.5 text-rim-text-muted hover:text-rim-danger"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={addStep}
-              className="mt-1 text-[11px] text-rim-accent hover:text-rim-accent/80"
-            >
-              + Add step
-            </button>
-          </div>
+          <StepList steps={steps} onChange={setSteps} availableCommands={availableCommands} />
 
           <div className="flex gap-2 pt-1">
             <button
@@ -260,6 +354,12 @@ export function UserCommandSettings() {
         </div>
       )}
 
+      {goneNotice && (
+        <p role="status" className="mb-2 text-[11px] text-rim-danger">
+          {goneNotice}
+        </p>
+      )}
+
       {/* Existing user commands */}
       <div className="space-y-1">
         {userCommands.length === 0 && (
@@ -269,117 +369,39 @@ export function UserCommandSettings() {
         )}
         {userCommands.map((cmd) => {
           if (editingCommandId === cmd.id) {
+            if (savedQuery.data) {
+              return (
+                <UserCommandEditor
+                  key={cmd.id}
+                  saved={savedQuery.data}
+                  availableCommands={availableCommands}
+                  onClose={() => setEditingCommandId(null)}
+                />
+              );
+            }
             return (
               <div
                 key={cmd.id}
-                className="rounded-md border border-rim-accent/30 bg-rim-void p-3 space-y-2"
+                className="flex items-center gap-2 rounded-md border border-rim-accent/30 bg-rim-void px-3 py-2 text-xs"
               >
-                <div>
-                  <label className="block text-[11px] text-rim-text-muted mb-1">Title</label>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder="Command title"
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-rim-text-muted mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    placeholder="What this command does..."
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-rim-text-muted mb-1">
-                    Steps ({editSteps.length})
-                  </label>
-                  <div className="space-y-1">
-                    {editSteps.map((step, index) => (
-                      <div key={index} className="flex items-center gap-1">
-                        <span className="w-4 shrink-0 text-[10px] text-rim-text-muted">
-                          {index + 1}.
-                        </span>
-                        <select
-                          value={step.commandId}
-                          onChange={(e) => updateEditStep(index, e.target.value)}
-                          className="min-w-0 flex-1 truncate rounded border border-rim-line bg-rim-panel px-1.5 py-0.5 text-[11px] text-rim-text outline-none focus:border-rim-accent"
-                        >
-                          <option value="">Select...</option>
-                          {availableCommands.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.title}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="flex shrink-0 items-center">
-                          <button
-                            onClick={() => moveEditStep(index, "up")}
-                            disabled={index === 0}
-                            className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
-                          >
-                            <ChevronUp className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={() => moveEditStep(index, "down")}
-                            disabled={index === editSteps.length - 1}
-                            className="p-0.5 text-rim-text-muted hover:text-rim-text disabled:opacity-30"
-                          >
-                            <ChevronDown className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={() => removeEditStep(index)}
-                            className="p-0.5 text-rim-text-muted hover:text-rim-danger"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    onClick={addEditStep}
-                    className="mt-1 text-[11px] text-rim-accent hover:text-rim-accent/80"
-                  >
-                    + Add step
-                  </button>
-                  {chosenEditSteps.length === 0 && (
-                    <p className="mt-1 text-[11px] text-rim-text-muted">
-                      The saved steps cannot be loaded here. Add the steps again to save: they
-                      replace the saved ones.
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={handleSaveEdit}
-                    disabled={
-                      !editTitle || chosenEditSteps.length === 0 || updateMutation.isPending
-                    }
-                    className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
-                  >
-                    {updateMutation.isPending ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    onClick={cancelEditingCommand}
-                    className="rounded px-2 py-1 text-xs text-rim-text-muted hover:text-rim-text"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {updateMutation.isError && (
-                  <p className="text-[11px] text-rim-danger">
-                    {(updateMutation.error as Error).message}
-                  </p>
-                )}
+                <p
+                  className={`min-w-0 flex-1 ${savedQuery.isError ? "text-rim-danger" : "text-rim-text-muted"}`}
+                >
+                  {savedQuery.isError
+                    ? `The saved command could not be loaded: ${(savedQuery.error as Error).message}`
+                    : "Loading the saved steps..."}
+                </p>
+                <button
+                  onClick={() => setEditingCommandId(null)}
+                  className="shrink-0 rounded px-2 py-1 text-rim-text-muted hover:text-rim-text"
+                >
+                  Cancel
+                </button>
               </div>
             );
           }
 
+          const stepCount = stepCounts.get(cmd.id);
           return (
             <div
               key={cmd.id}
@@ -387,10 +409,18 @@ export function UserCommandSettings() {
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{cmd.title}</div>
-                <div className="truncate font-mono text-[10px] text-rim-text-muted">{cmd.id}</div>
+                <div className="truncate font-mono text-[10px] text-rim-text-muted">
+                  {cmd.id}
+                  {stepCount !== undefined && (
+                    <span className="font-sans">
+                      {" "}
+                      · {stepCount} {stepCount === 1 ? "step" : "steps"}
+                    </span>
+                  )}
+                </div>
               </div>
               <button
-                onClick={() => startEditingCommand(cmd)}
+                onClick={() => startEditingCommand(cmd.id)}
                 className="shrink-0 text-rim-text-muted hover:text-rim-text"
                 title="Edit"
                 aria-label="Edit command"

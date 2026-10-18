@@ -23,6 +23,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- **Upgrade:** run a rim-server with the `userCommand` and `userCommands` queries. Editing a
+  user command in Settings → Commands loads its saved title, description and steps, with each
+  step's arguments, instead of asking for the steps again, and the list shows how many steps
+  each command has.
 - When the agent asks to run a command after reading messages or other tool output in the same
   run, the confirmation dialog warns "This action was suggested while the agent was reading
   external content" and asks you to type the command's verb before a Mutating command runs.
