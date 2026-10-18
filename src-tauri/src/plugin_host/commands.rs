@@ -643,65 +643,212 @@ pub async fn plugin_install_from_git(
     Ok(result)
 }
 
-/// Updates a git-installed plugin, with the same consent contract as
-/// [`plugin_install_from_git`]: without `allow_post_install: true`, an update
-/// that needs npm/pip steps fails with `POST_INSTALL_CONSENT_REQUIRED` before
-/// the working tree is advanced.
+/// Updates a plugin installed from a git URL from its repository: fetches
+/// upstream, fast-forwards the checkout and checks the new copy as an install
+/// would, with `forbidden_origins` refused as network origins. The consent
+/// contract is that of [`plugin_install_from_git`]: without
+/// `allow_post_install: true`, an update that needs npm/pip steps fails with
+/// `POST_INSTALL_CONSENT_REQUIRED` before the checkout is advanced.
+///
+/// A running local process is stopped while its files change and started
+/// again afterwards if the plugin is still on, on the new copy or, when the
+/// update failed, on the old one. Approvals the new manifest no longer asks
+/// for are dropped, a capability it adds waits for the user's approval, and a
+/// pinned bundle fingerprint is pinned again on the new files.
+///
+/// # Errors
+///
+/// - `GitInstallError::NotUpdatable` — the plugin was not installed from a git
+///   URL, or its folder is not a git checkout; nothing ran.
+/// - The errors of [`git_install::update_plugin`], which leave the old copy.
+/// - `GitInstallError::Io` — the plugin is unknown, or its record could not be
+///   saved.
 #[tauri::command]
 pub async fn plugin_update(
     plugin_id: String,
     allow_post_install: Option<bool>,
+    forbidden_origins: Option<Vec<String>>,
     state: State<'_, PluginHostState>,
 ) -> Result<PluginUpdateResult, GitInstallError> {
-    let (plugin_dir, old_manifest) = {
-        let dirs = state
-            .plugin_dirs
-            .lock()
-            .map_err(|e| GitInstallError::Io(std::io::Error::other(e.to_string())))?;
-        let dir = dirs
-            .get(&plugin_id)
-            .ok_or_else(|| {
-                GitInstallError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("plugin dir not found: {plugin_id}"),
-                ))
-            })?
-            .clone();
-
-        let manifests = state
-            .manifests
-            .lock()
-            .map_err(|e| GitInstallError::Io(std::io::Error::other(e.to_string())))?;
-        let manifest = manifests
-            .get(&plugin_id)
-            .ok_or_else(|| {
-                GitInstallError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("manifest not found: {plugin_id}"),
-                ))
-            })?
-            .clone();
-
-        (dir, manifest)
+    let io = |e: String| GitInstallError::Io(std::io::Error::other(e));
+    let not_found = |what: &str| {
+        GitInstallError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{what} not found: {plugin_id}"),
+        ))
     };
+    let plugin_dir = state
+        .plugin_dirs
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| not_found("plugin dir"))?;
+    let old_manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| not_found("manifest"))?;
+    let record = state
+        .store
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| not_found("plugin record"))?;
+    check_updatable(&record, &plugin_dir)?;
 
-    let (new_manifest, result) = git_install::update_plugin(
+    let process = old_manifest.runtime_kind == RuntimeKind::DesktopLocalProcess
+        && record.status == PluginStatus::Enabled;
+    if process {
+        runtime::stop_plugin(&plugin_id, &state)
+            .await
+            .map_err(|e| io(e.to_string()))?;
+    }
+
+    let outcome = match git_install::update_plugin(
         &plugin_dir,
         &old_manifest,
         allow_post_install.unwrap_or(false),
+        &forbidden_origins.unwrap_or_default(),
     )
-    .await?;
-
-    // Update the manifests cache.
+    .await
     {
-        let mut manifests = state
-            .manifests
+        Ok((new_manifest, result)) => {
+            record_update(&state, &new_manifest, &plugin_dir).map(|()| (new_manifest, result))
+        }
+        Err(e) => Err(e),
+    };
+
+    if process {
+        let manifest = match &outcome {
+            Ok((new_manifest, _)) => new_manifest,
+            Err(_) => &old_manifest,
+        };
+        let still_on = state
+            .store
             .lock()
-            .map_err(|e| GitInstallError::Io(std::io::Error::other(e.to_string())))?;
-        manifests.insert(plugin_id.clone(), new_manifest);
+            .map(|store| {
+                store
+                    .get(&plugin_id)
+                    .is_some_and(|r| r.status == PluginStatus::Enabled)
+            })
+            .unwrap_or(false);
+        if still_on {
+            match runtime::start_plugin(&plugin_id, manifest, &state) {
+                Ok(()) | Err(runtime::RuntimeError::AlreadyRunning(_)) => {}
+                Err(e) => {
+                    log::warn!("[plugin_host] could not start {plugin_id} after its update: {e}")
+                }
+            }
+        }
     }
 
+    let (_, result) = outcome?;
+    log::warn!(
+        "[AUDIT] event=plugin_git_updated plugin_id={plugin_id} from={} to={} updated={}",
+        result.old_version,
+        result.new_version,
+        result.updated
+    );
     Ok(result)
+}
+
+/// Checks that a plugin can be updated from its repository: its record names
+/// a git source and its folder is a git checkout, so git never runs in a
+/// folder that belongs to anything else.
+///
+/// # Errors
+///
+/// Returns `GitInstallError::NotUpdatable` saying how such a plugin is updated
+/// instead.
+fn check_updatable(
+    record: &PluginRecord,
+    plugin_dir: &std::path::Path,
+) -> Result<(), GitInstallError> {
+    let refuse = |reason: &str| Err(GitInstallError::NotUpdatable(reason.to_string()));
+    match &record.source {
+        Some(InstallSource::Git { .. }) => {}
+        Some(InstallSource::Link { .. }) => {
+            return refuse(
+                "this plugin was installed from a link pinned to one bundle; install the new version's link to update it",
+            )
+        }
+        Some(InstallSource::Registry { .. }) => {
+            return refuse("this plugin comes from the workspace registry, which updates it")
+        }
+        Some(InstallSource::Local) | None => {
+            return refuse(
+                "this plugin was not installed from a git URL, so it has no repository to update from; install the new version instead",
+            )
+        }
+    }
+    if !plugin_dir.join(".git").is_dir() {
+        return refuse(
+            "this plugin's folder is no longer a git checkout; install it again from its git URL",
+        );
+    }
+    Ok(())
+}
+
+/// Records an updated copy of a plugin: caches `manifest`, keeps only the
+/// approvals it still asks for and, when a bundle fingerprint was pinned,
+/// pins the fingerprint of the files in `plugin_dir`.
+///
+/// # Errors
+///
+/// Returns `GitInstallError::Io` when a lock is poisoned, the fingerprint
+/// cannot be computed or the store cannot be saved.
+fn record_update(
+    state: &PluginHostState,
+    manifest: &PluginManifest,
+    plugin_dir: &std::path::Path,
+) -> Result<(), GitInstallError> {
+    let io = |e: String| GitInstallError::Io(std::io::Error::other(e));
+    state
+        .manifests
+        .lock()
+        .map_err(|e| io(e.to_string()))?
+        .insert(manifest.plugin_id.clone(), manifest.clone());
+    let mut store = state.store.lock().map_err(|e| io(e.to_string()))?;
+    apply_update_to_store(&mut store, manifest, plugin_dir)?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// The record changes of [`record_update`], applied to `store`.
+///
+/// # Errors
+///
+/// Returns `GitInstallError::Io` when the plugin has no record or the
+/// fingerprint of `plugin_dir` cannot be computed.
+fn apply_update_to_store(
+    store: &mut PluginStateStore,
+    manifest: &PluginManifest,
+    plugin_dir: &std::path::Path,
+) -> Result<(), GitInstallError> {
+    let record = store.get(&manifest.plugin_id).cloned().ok_or_else(|| {
+        GitInstallError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("plugin record not found: {}", manifest.plugin_id),
+        ))
+    })?;
+    let (approved_capabilities, approved_ai_commands, _) = registry::carried(&record, manifest);
+    let bundle_fingerprint = if record.bundle_fingerprint.is_empty() {
+        String::new()
+    } else {
+        local_install::compute_bundle_fingerprint(plugin_dir)?
+    };
+    store.upsert(PluginRecord {
+        approved_capabilities,
+        approved_ai_commands,
+        bundle_fingerprint,
+        fingerprint_changed: false,
+        ..record
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -1656,6 +1803,99 @@ mod tests {
         });
         store.audit.insert(HELLO.into(), PluginAudit::default());
         (store, tmp)
+    }
+
+    /// A record of `HELLO` installed from `source`, with `approved` capabilities
+    /// and `fingerprint` pinned.
+    fn recorded(
+        source: Option<InstallSource>,
+        approved: &[&str],
+        fingerprint: &str,
+    ) -> PluginRecord {
+        let (manifest, _tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        let mut store = PluginStateStore::default();
+        lifecycle::install(&mut store, &manifest).unwrap();
+        PluginRecord {
+            source,
+            approved_capabilities: approved.iter().map(|c| c.to_string()).collect(),
+            bundle_fingerprint: fingerprint.into(),
+            ..store.get(HELLO).unwrap().clone()
+        }
+    }
+
+    fn git_source() -> Option<InstallSource> {
+        Some(InstallSource::Git {
+            url: "https://github.com/acme/hello".into(),
+        })
+    }
+
+    #[test]
+    fn only_a_git_install_with_its_checkout_can_update() {
+        let tmp = TempDir::new().unwrap();
+        let refusal = |source: Option<InstallSource>| {
+            check_updatable(&recorded(source, &[], ""), tmp.path())
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(refusal(Some(InstallSource::Link {
+            url: "https://example.com/p.rimbundle".into(),
+            sha256: "ab".repeat(32),
+        }))
+        .contains("install the new version's link"));
+        assert!(refusal(Some(InstallSource::Registry {
+            endpoint: "https://rim.example/api".into(),
+            server_id: "s".into(),
+            plugin_id: HELLO.into(),
+            statement_sha256: "cd".repeat(32),
+            publisher_principal_id: "rimp1_x".into(),
+        }))
+        .contains("workspace registry"));
+        assert!(refusal(Some(InstallSource::Local)).contains("not installed from a git URL"));
+        assert!(refusal(None).contains("not installed from a git URL"));
+        assert!(refusal(git_source()).contains("no longer a git checkout"));
+
+        fs::create_dir(tmp.path().join(".git")).unwrap();
+        assert!(check_updatable(&recorded(git_source(), &[], ""), tmp.path()).is_ok());
+    }
+
+    /// The manifest of [`installed`] asking for `capabilities`.
+    fn asking(capabilities: &[&str]) -> PluginManifest {
+        let (manifest, _tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        PluginManifest {
+            capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
+            ..manifest
+        }
+    }
+
+    #[test]
+    fn an_update_keeps_the_approvals_still_asked_for_and_leaves_new_ones_to_the_user() {
+        let tmp = TempDir::new().unwrap();
+        let mut store = PluginStateStore::default();
+        store.upsert(recorded(git_source(), &["chat.read", "chat.write"], ""));
+        apply_update_to_store(&mut store, &asking(&["chat.read", "ui.notify"]), tmp.path())
+            .unwrap();
+        let record = store.get(HELLO).unwrap();
+        assert_eq!(record.approved_capabilities, vec!["chat.read".to_string()]);
+        assert!(record.bundle_fingerprint.is_empty());
+        assert_eq!(record.source, git_source());
+    }
+
+    #[test]
+    fn an_update_pins_the_new_files_when_a_fingerprint_was_pinned() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("main"), b"v2").unwrap();
+        let mut store = PluginStateStore::default();
+        store.upsert(PluginRecord {
+            fingerprint_changed: true,
+            ..recorded(git_source(), &[], "old")
+        });
+        apply_update_to_store(&mut store, &asking(&[]), tmp.path()).unwrap();
+        let record = store.get(HELLO).unwrap();
+        assert_eq!(
+            record.bundle_fingerprint,
+            local_install::compute_bundle_fingerprint(tmp.path()).unwrap()
+        );
+        assert!(!record.fingerprint_changed);
     }
 
     /// The trash entry `folder` names; panics on any other outcome.

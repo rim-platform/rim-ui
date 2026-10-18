@@ -215,6 +215,20 @@ export interface PluginInstallResult {
   install_path: string;
 }
 
+/** Mirror of the Rust `PluginUpdateResult` returned by `plugin_update`. */
+export interface PluginUpdateResult {
+  plugin_id: string;
+  /** Whether the checkout moved to a new commit; `false` means it was already up to date. */
+  updated: boolean;
+  old_version: string;
+  new_version: string;
+  capabilities_changed: boolean;
+  /** Capabilities the new manifest asks for that the old one did not; they wait for approval. */
+  added_capabilities: string[];
+  /** Capabilities the new manifest dropped; their approvals are gone. */
+  removed_capabilities: string[];
+}
+
 /**
  * One dependency-install command the host would run after installing or
  * updating a git plugin. Mirror of the Rust `PostInstallStep` struct.

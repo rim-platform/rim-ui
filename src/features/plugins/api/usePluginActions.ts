@@ -6,13 +6,14 @@ import type { AppPlatform } from "../../../core/runtime/runtime";
 import { reloadCommands } from "../../commands/api/useCommands";
 import { safeInvoke, type PluginIpcError } from "./ipc";
 import { safeInvoke as coreSafeInvoke } from "../../../core/tauri/safeInvoke";
-import type { PluginInstallResult } from "../types";
+import type { PluginInstallResult, PluginUpdateResult } from "../types";
 import { browserPluginStore } from "../web/browserPluginStore";
 import { readBundle, type Bundle } from "../web/bundle";
 import { fetchLinkBytes, parseBundleLink, type BundleLink } from "../web/bundleLink";
 import { checkInstall } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { rimOrigins } from "../web/pluginServices";
 import { pluginServices } from "../web/webPluginEnvironment";
+import { webPluginHost } from "../web/webPluginHost";
 
 export function usePluginEnable() {
   const qc = useQueryClient();
@@ -139,6 +140,58 @@ export function usePluginInstallFromGit() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.plugins() });
       reloadCommands();
+    },
+  });
+}
+
+/** Variables for {@link usePluginUpdate}. */
+export interface PluginUpdateVariables {
+  pluginId: string;
+  /**
+   * Consent to run the dependency-install steps of the new version. Only set
+   * this to `true` after the user confirmed the exact steps returned in a
+   * `POST_INSTALL_CONSENT_REQUIRED` error.
+   */
+  allowPostInstall?: boolean;
+}
+
+/**
+ * Update a plugin installed from a git URL from its repository, on the desktop.
+ *
+ * Calls `plugin_update`, which fetches the repository, fast-forwards the
+ * plugin's checkout and checks the new copy as an install would. Once it
+ * returns, the plugin list and commands reload before the caller's callbacks
+ * run, so the list already holds the new manifest, and a running sandboxed
+ * plugin restarts on its new files.
+ *
+ * Error contract (thrown as `PluginIpcError`, `kind: "backend_error"`):
+ * - `POST_INSTALL_CONSENT_REQUIRED`: nothing changed; `data` lists the exact
+ *   npm/pip steps. Ask the user, then retry with `allowPostInstall: true`.
+ * - Anything else carries the reason in `message`, such as a plugin that was
+ *   not installed from git; the old copy stays.
+ *
+ * @returns TanStack mutation: `mutate({ pluginId, allowPostInstall? })`.
+ */
+export function usePluginUpdate() {
+  const qc = useQueryClient();
+
+  return useMutation<PluginUpdateResult, PluginIpcError, PluginUpdateVariables>({
+    mutationFn: async ({ pluginId, allowPostInstall }) => {
+      const result = await coreSafeInvoke<PluginUpdateResult>("plugin_update", {
+        pluginId,
+        allowPostInstall: allowPostInstall === true,
+        forbiddenOrigins: rimOrigins(),
+      });
+      if (!result.ok) throw result.error;
+      return result.value;
+    },
+    onSuccess: async (result) => {
+      reloadCommands();
+      await qc.invalidateQueries({ queryKey: queryKeys.plugins() });
+      // A sandboxed plugin's frame keeps the files it loaded; stopping it starts it again on the new ones.
+      if (result.updated && webPluginHost.knows(result.plugin_id)) {
+        await webPluginHost.stop(result.plugin_id);
+      }
     },
   });
 }

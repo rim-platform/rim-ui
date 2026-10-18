@@ -119,6 +119,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **Update** on the row of a plugin installed from a git URL in Settings → Plugins (desktop)
+  fetches its repository and moves it to the newest commit, then says "Updated to v<version>",
+  "Already up to date" or why it failed. Install steps ask for consent first, a running plugin
+  restarts on the new files, approvals carry over for the permissions it still asks for, and a
+  new permission opens the permission prompt. A plugin installed from a link says that it is
+  updated by installing the new version's link.
 - **Who can message me** in Settings → Direct messages: choose whether people outside your
   workspaces can send you a request or nobody can, and for each workspace whether its members'
   DMs arrive directly or as requests. When your server's operator or one of your workspaces
