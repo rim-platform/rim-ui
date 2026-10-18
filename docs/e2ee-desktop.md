@@ -224,7 +224,7 @@ device, and only when the person allowed it.
 
 ## Reporting an encrypted message
 
-"Report Message" on an encrypted message sends `reportEncryptedMessage` with what the cache row
+"Report message…" on an encrypted message sends `reportEncryptedMessage` with what the cache row
 keeps in `payload.e2ee`: the exact content bytes (`content`, base64url of its UTF-8), the
 franking key, the server's receipt and its key id, the sender's user and device ids, and
 `sentAtUs`. The server recomputes the commitment and the receipt; a match stores the content

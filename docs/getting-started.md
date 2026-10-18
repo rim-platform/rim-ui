@@ -129,8 +129,8 @@ people to add, and **Create** opens the channel. **Browse channels**, the compas
 **Channels.** A public channel is readable by every member of the workspace. The tool panel lists
 the channels you joined; one you have not joined shows **Join channel** above its timeline.
 
-**Threads.** Replies live in threads. Hover a message and choose **Open thread**, choose **Open
-Thread** in its context menu (right-click), or select it and press <kbd>r</kbd> or <kbd>t</kbd>.
+**Threads.** Replies live in threads. Hover a message and choose **Open thread**, choose **Reply
+in thread** in its context menu (right-click), or select it and press <kbd>r</kbd> or <kbd>t</kbd>.
 The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
 the thread.
 

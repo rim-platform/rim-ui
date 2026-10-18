@@ -30,6 +30,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   removing them from it; Owners and Moderators also get Change role, Time out, Kick and Ban
   there. The rows' **⋮** button opens the same menu, and timeouts now offer 10 minutes, 1 hour,
   1 day and 1 week.
+- Context menus on messages in the thread panel, pinned messages, search results, attachments,
+  links and link previews, notifications and plugin panel headers. A message's menu adds quick
+  reactions, Copy selection and Reply in thread, and its labels read in sentence case.
 
 ### Changed
 
