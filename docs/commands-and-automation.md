@@ -123,8 +123,10 @@ into Navigation, Chat, Panels, Agent, Plugins and Other, with "Search keybinds..
   command and the context, then **Save**.
 - On a binding of your own, the pencil changes its command or context, clicking the keys records
   new ones, the switch turns it off, and the bin deletes it after "Delete keybind?".
-- The default rows cannot be edited or deleted here. A binding of yours on the same keys and
-  context takes their place; a profile can free a key altogether.
+- The default rows carry the **Default** tag and cannot be edited, turned off or deleted here.
+  A binding of yours on the same keys and context takes their place: **Override** opens the add
+  form with the default's keys, command and context filled in, ready to change and save. A
+  profile can free a key altogether.
 - A second binding of yours on the same keys and context is refused with "keybind already exists
   for this scope/context/keystroke". You can have up to 200.
 - Bindings to plugin commands, to "Open \<panel\>" commands and to the app's own commands, such

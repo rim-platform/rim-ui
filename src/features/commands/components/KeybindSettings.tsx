@@ -212,6 +212,19 @@ export function KeybindSettings() {
     setNewContext("GLOBAL");
   }
 
+  /**
+   * Opens the add form prefilled with a default binding's keys, command and context, so saving
+   * it makes a binding of the user's own that takes the default's place.
+   *
+   * @param kb - The default row being overridden.
+   */
+  function startOverride(kb: ResolvedKeybind) {
+    setNewKeystroke(kb.keystroke);
+    setNewCommandId(kb.commandId);
+    setNewContext(kb.context);
+    setShowCreate(true);
+  }
+
   function handleCreate() {
     if (!newKeystroke || !newCommandId) return;
     if (bindsOnDevice(newCommandId)) {
@@ -409,7 +422,7 @@ export function KeybindSettings() {
               {createMutation.isPending ? "Saving..." : "Save"}
             </button>
             <button
-              onClick={() => setShowCreate(false)}
+              onClick={resetCreateForm}
               className="rounded px-2 py-1 text-xs text-rim-text-muted hover:text-rim-text"
             >
               Cancel
@@ -541,6 +554,40 @@ export function KeybindSettings() {
                     );
                   }
 
+                  // The server makes up a default row's id on every resolve, so a default
+                  // cannot be updated: it is shown read-only, with an override instead.
+                  if (kb.source === "DEFAULT") {
+                    const title = commandTitleMap.get(kb.commandId) ?? kb.commandId;
+                    return (
+                      <div
+                        key={kb.id}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-rim-text"
+                      >
+                        <kbd className="shrink-0 rounded border border-rim-line bg-rim-void px-1.5 py-0.5 font-mono text-[11px]">
+                          {kb.keystroke}
+                        </kbd>
+                        <span className="flex-1 truncate">{title}</span>
+                        <span
+                          className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
+                          title="A default binding. A binding of yours on the same keys and context takes its place."
+                        >
+                          Default
+                        </span>
+                        <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
+                          {kb.context}
+                        </span>
+                        <button
+                          onClick={() => startOverride(kb)}
+                          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-rim-accent transition hover:bg-rim-accent/10"
+                          title="Make a binding of your own on these keys"
+                          aria-label={`Override ${kb.keystroke} ${title}`}
+                        >
+                          Override
+                        </button>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={kb.id}
@@ -593,16 +640,14 @@ export function KeybindSettings() {
                       <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
                         {kb.context}
                       </span>
-                      {kb.source !== "DEFAULT" && (
-                        <button
-                          onClick={() => startEditing(kb)}
-                          className="shrink-0 text-rim-text-muted hover:text-rim-text"
-                          title="Edit"
-                          aria-label="Edit keybind"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => startEditing(kb)}
+                        className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                        title="Edit"
+                        aria-label="Edit keybind"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         onClick={() => handleToggle(kb)}
                         className="shrink-0 text-rim-text-muted hover:text-rim-text"
@@ -615,16 +660,14 @@ export function KeybindSettings() {
                           <ToggleLeft className="h-4 w-4" />
                         )}
                       </button>
-                      {kb.source !== "DEFAULT" && (
-                        <button
-                          onClick={() => handleDelete(kb.id)}
-                          className="shrink-0 text-rim-text-muted hover:text-rim-danger"
-                          title="Delete"
-                          aria-label="Delete keybind"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleDelete(kb.id)}
+                        className="shrink-0 text-rim-text-muted hover:text-rim-danger"
+                        title="Delete"
+                        aria-label="Delete keybind"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   );
                 })}

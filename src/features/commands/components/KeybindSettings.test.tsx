@@ -20,6 +20,7 @@ vi.mock("../../plugins/api/usePluginKeybinds", () => ({
 }));
 
 const createKeybind = vi.fn();
+const updateKeybind = vi.fn();
 
 vi.mock("../api/useKeybindSettings", () => ({
   useCreateKeybindMutation: vi.fn(() => ({
@@ -27,7 +28,7 @@ vi.mock("../api/useKeybindSettings", () => ({
     isPending: false,
     isError: false,
   })),
-  useUpdateKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateKeybindMutation: vi.fn(() => ({ mutate: updateKeybind, isPending: false })),
   useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn() })),
 }));
 
@@ -179,6 +180,80 @@ describe("KeybindSettings", () => {
 
     expect(screen.getByText("Ctrl+K")).toBeInTheDocument();
     expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
+  });
+
+  describe("default rows", () => {
+    beforeEach(() => {
+      useDeviceKeybindStore.setState({ keybinds: [] });
+      vi.mocked(useCommands).mockReturnValue({
+        data: [makeCommand()],
+        isLoading: false,
+      } as ReturnType<typeof useCommands>);
+    });
+
+    function rowOf(title: string): HTMLElement {
+      return screen.getByText(title).closest("div") as HTMLElement;
+    }
+
+    it("shows a default row with no switch, no key editor, no edit and no delete", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [makeKeybind()],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+      const row = rowOf("Open Command Palette");
+
+      expect(within(row).getByText("Default")).toBeInTheDocument();
+      expect(within(row).queryByRole("button", { name: /keybind$/ })).not.toBeInTheDocument();
+      expect(within(row).getByText("Ctrl+K")).not.toHaveAttribute("role");
+
+      fireEvent.click(within(row).getByText("Ctrl+K"));
+      expect(within(row).queryByText("Press a key...")).not.toBeInTheDocument();
+      expect(updateKeybind).not.toHaveBeenCalled();
+    });
+
+    it("keeps the switch, the key editor, edit and delete on a binding of the user's", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [makeKeybind({ source: "USER" })],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+      const row = rowOf("Open Command Palette");
+
+      expect(within(row).queryByText("Default")).not.toBeInTheDocument();
+      expect(within(row).getByRole("button", { name: "Edit keybind" })).toBeInTheDocument();
+      expect(within(row).getByRole("button", { name: "Delete keybind" })).toBeInTheDocument();
+      fireEvent.click(within(row).getByRole("button", { name: "Disable keybind" }));
+      expect(updateKeybind).toHaveBeenCalledWith(
+        expect.objectContaining({ keybindId: "kb-1", isEnabled: false }),
+      );
+    });
+
+    it("overrides a default through the add form, prefilled with its keys, command and context", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [makeKeybind({ context: "COMPOSER" })],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Override Ctrl+K Open Command Palette" }));
+
+      expect(screen.getByLabelText("Keystroke")).toHaveValue("Ctrl+K");
+      expect(screen.getAllByLabelText("Command")[0]).toHaveValue("workspace.open_command_palette");
+      expect(screen.getAllByLabelText("Context")[0]).toHaveValue("COMPOSER");
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(createKeybind).toHaveBeenCalledWith(
+        {
+          scope: "USER",
+          keystroke: "Ctrl+K",
+          commandId: "workspace.open_command_palette",
+          context: "COMPOSER",
+        },
+        expect.anything(),
+      );
+      expect(updateKeybind).not.toHaveBeenCalled();
+    });
   });
 
   describe("plugin commands", () => {
