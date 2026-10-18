@@ -5,6 +5,10 @@ const approve = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginCapabilities", () => ({
   useApproveCapabilities: vi.fn(() => ({ mutate: approve, isPending: false })),
 }));
+const enable = vi.hoisted(() => vi.fn());
+vi.mock("../api/usePluginActions", () => ({
+  usePluginEnable: vi.fn(() => ({ mutate: enable, isPending: false })),
+}));
 
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import type { PluginInfo } from "../types";
@@ -115,5 +119,68 @@ describe("PluginCapabilityPrompt chat lines", () => {
     expect(new Set(approve.mock.calls[0][0].capabilities)).toEqual(
       new Set(["chat.write", "chat.write.encrypted"]),
     );
+  });
+});
+
+describe("PluginCapabilityPrompt after an install", () => {
+  type Callbacks = { onSuccess?: () => void; onError?: (err: { message: string }) => void };
+  const succeed = (_vars: unknown, options: Callbacks) => options.onSuccess?.();
+
+  it("turns the plugin on once its permissions are approved", () => {
+    approve.mockReset().mockImplementation(succeed);
+    enable.mockReset().mockImplementation(succeed);
+    const onClose = vi.fn();
+    render(<PluginCapabilityPrompt open onClose={onClose} plugin={plugin({})} startOnApprove />);
+    expect(
+      screen.getByText(
+        "The plugin starts once you approve. Cancel leaves it installed and turned off.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
+    expect(enable).toHaveBeenCalledWith("chat.rim.github-prs", expect.anything());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the dialog open with the reason when the plugin does not start", () => {
+    approve.mockReset().mockImplementation(succeed);
+    enable
+      .mockReset()
+      .mockImplementation((_id: string, options: Callbacks) =>
+        options.onError?.({ message: "the plugin exited" }),
+      );
+    const onClose = vi.fn();
+    render(<PluginCapabilityPrompt open onClose={onClose} plugin={plugin({})} startOnApprove />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The permissions are saved, but the plugin did not start: the plugin exited. Turn it on in Settings → Plugins.",
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Approve and turn on" })).toBeNull();
+    // The footer's Close, beside the dialog's own close control.
+    fireEvent.click(screen.getByText("Close", { selector: "button" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("only approves when opened later, or for a plugin already on", () => {
+    approve.mockReset().mockImplementation(succeed);
+    enable.mockReset();
+    const { unmount } = render(
+      <PluginCapabilityPrompt open onClose={() => {}} plugin={plugin({})} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    unmount();
+    render(
+      <PluginCapabilityPrompt
+        open
+        onClose={() => {}}
+        plugin={plugin({ enabled: true })}
+        startOnApprove
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(approve).toHaveBeenCalledTimes(2);
+    expect(enable).not.toHaveBeenCalled();
   });
 });

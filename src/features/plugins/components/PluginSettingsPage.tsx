@@ -491,6 +491,7 @@ export function PluginSettingsPage() {
             setUpdatedId(null);
           }}
           plugin={promptTarget}
+          startOnApprove={promptTarget === installedPlugin && permissionsTarget === null}
         />
       )}
     </div>

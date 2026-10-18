@@ -97,8 +97,10 @@ and the error names what failed:
   capability `<key>`, which the manifest's capabilities do not declare".
 
 Every install ends in the **Plugin Permissions** dialog, described under
-[Trust and permissions](#trust-and-permissions). Then turn the plugin on with the switch on its
-row.
+[Trust and permissions](#trust-and-permissions). After an install its button reads **Approve and
+turn on**: approving grants the checked permissions and starts the plugin. **Cancel** leaves it
+installed and turned off, to turn on later with the switch on its row. If the plugin does not
+start, the dialog says why and its permissions stay saved.
 
 ### Workspace registry
 
@@ -232,7 +234,8 @@ plugin author:", which is the author's claim, not the app's; and what the kind o
   it only if you trust its author."
 
 Each permission has a checkbox, checked at first. Unchecking one denies it, and **Approve**
-grants the rest. The prompt names them like this:
+grants the rest; right after an install the button is **Approve and turn on**, which also starts
+the plugin. The prompt names them like this:
 
 | Capability | What the prompt says |
 |---|---|

@@ -104,7 +104,7 @@ npm run bundle
 ```
 
 **Desktop.** `npm run tauri dev`, then Settings → Plugins → Install from local folder and
-pick `dist/chat.rim.github-prs` of that clone. Approve both permissions, enable it, and
+pick `dist/chat.rim.github-prs` of that clone. Approve both permissions with **Approve and turn on**, and
 open **Pull requests** from the side rail's Plugins menu, or with **Open Pull requests** in the
 command palette.
 
