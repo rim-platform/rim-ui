@@ -69,7 +69,8 @@ After signup the app opens one of these:
 - **The server's default workspace**, when its operator named one. Every new account joins it as
   a Member and is in its public channels from the start.
 - **Welcome to RIM** otherwise: "You don't belong to any workspaces yet.", with
-  **+ Create workspace** and "Or ask a teammate to invite you."
+  **+ Create workspace**, **Join with an invite code**, and "No invite yet? Ask a workspace's
+  Owner for an invite link."
 
 A server can hold a new account back for a while. A bar then says "New account: you can create
 workspaces and message strangers after \<time\>."
@@ -82,10 +83,11 @@ Its badge counts unread messages before you open it. The rail shows once a works
 ## Join or create a workspace
 
 - **Join with an invite link.** Opened in a browser while you are signed in, the link says "You
-  have been invited to join \<workspace\>"; **Join workspace** joins it. In the app, **Add
-  workspace** (the **+** at the bottom of the workspace rail), then **Join Existing**, takes the
-  invite code: the part of the link that starts with `rim_inv_`, or a whole `rim-invite:1:…` link
-  for a workspace on another server. **Join** opens it.
+  have been invited to join \<workspace\>"; **Join workspace** joins it. In the app,
+  **Join with an invite code** on the welcome screen, or **Add workspace** (the **+** at the bottom
+  of the workspace rail) and then **Join Existing**, takes the invite code: the part of the link
+  that starts with `rim_inv_`, or a whole `rim-invite:1:…` link for a workspace on another server.
+  **Join** opens it.
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
