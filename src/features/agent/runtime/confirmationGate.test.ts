@@ -240,7 +240,7 @@ describe("runWithConfirmation", () => {
     unsubscribe();
   });
 
-  it("carries `description` from the challenge into the ConfirmationRequest handed to modal.open (C2 §4)", async () => {
+  it("carries `description` from the challenge into the ConfirmationRequest handed to modal.open", async () => {
     const challenge = {
       commandId: "chat.archive_channel",
       toolName: "chat.archive_channel",

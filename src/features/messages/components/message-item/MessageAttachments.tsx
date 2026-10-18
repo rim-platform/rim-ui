@@ -25,7 +25,7 @@ export const MessageAttachments = memo(function MessageAttachments({
   const deleteAttachment = useDeleteAttachmentMutation();
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
 
-  // Track when we first observed each attachment as uploading for client-side timeout
+  // When each attachment was first seen uploading, for the client-side timeout
   const uploadTimestamps = useRef<Map<string, number>>(new Map());
   const [timedOutIds, setTimedOutIds] = useState<Set<string>>(new Set());
 

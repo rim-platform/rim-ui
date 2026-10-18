@@ -51,8 +51,8 @@ describe("useServerConfig", () => {
   });
 
   it("returns undefined registrationMode while loading", () => {
-    // No mock handler registered — query will hang (never resolves in the test)
-    // We check the initial state before any response arrives.
+    // No mock handler is registered, so the query never resolves in the test and
+    // this checks the initial state before any response arrives.
     const { result } = renderHook(() => useServerConfig(), {
       wrapper: TestProviders,
     });
@@ -69,8 +69,8 @@ describe("useServerConfig", () => {
       wrapper: TestProviders,
     });
 
-    // Just asserting no unhandled rejection — we don't wait for error here
-    // because retry:false is not set on this query and the test would be slow.
+    // Asserts only that nothing rejects unhandled: the test does not wait for the
+    // error because retry:false is not set on this query and the test would be slow.
     // The important invariant is that isPending starts true without a throw.
     expect(() => result.current).not.toThrow();
   });

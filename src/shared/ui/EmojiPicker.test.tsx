@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
-// Mock emoji-mart so the test exercises our wrapper (positioning, portal,
+// Mock emoji-mart so the test exercises the wrapper (positioning, portal,
 // escape/click-outside handlers, prop forwarding) without depending on the
 // library's web-component / shadow-DOM internals — those are not reachable
 // through @testing-library queries.
@@ -44,7 +44,7 @@ vi.mock("@emoji-mart/data", () => ({ default: {} }));
 import { EmojiPicker } from "./EmojiPicker";
 
 // Helper: render EmojiPicker and wait for the React.lazy() Suspense boundary
-// to resolve (emoji-mart is dynamically imported, so we poll until mounted).
+// to resolve (emoji-mart is dynamically imported, so this polls until mounted).
 async function renderPicker(props: Parameters<typeof EmojiPicker>[0]) {
   render(<EmojiPicker {...props} />);
   // findByTestId retries until the lazy chunk resolves and Suspense commits

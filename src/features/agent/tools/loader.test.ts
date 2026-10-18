@@ -193,7 +193,7 @@ describe("makeBackendToolHandler", () => {
     });
   });
 
-  it("threads the registered `description` into the ConfirmationRequiredError challenge (C2 §4)", async () => {
+  it("threads the registered `description` into the ConfirmationRequiredError challenge", async () => {
     unregisterTool("chat.archive_channel");
     registerTool(
       {
@@ -488,7 +488,7 @@ describe("loadAgentTools — workspace context", () => {
   });
 });
 
-describe("Track 4.1: desktop-local agent tools run in the client", () => {
+describe("desktop-local agent tools run in the client", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -742,7 +742,7 @@ describe("end-to-end: agent → backend → result loop", () => {
 
 /* ----------------------------------------------- no-parallel-registry guard */
 
-describe("no parallel registry (Phase 4 close)", () => {
+describe("no parallel registry", () => {
   // Glob of the `tools/builtins/` directory, which must not exist. Vite's
   // `import.meta.glob` returns an empty object when the pattern matches zero
   // files. If any file appears under `./builtins/*`, this test fails: the

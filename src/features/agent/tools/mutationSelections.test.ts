@@ -50,7 +50,7 @@ function stageResponse(body: unknown): { getBody: () => string } {
 }
 
 describe("EXECUTE_COMMAND_MUTATION selection set", () => {
-  it("requests confirmationRequired { token, argsHash, expiresAt } — H1 regression", async () => {
+  it("requests confirmationRequired { token, argsHash, expiresAt }", async () => {
     // Stage a SUCCESS response; the test asserts on the request body, not
     // on the response handling (that's loader.test.ts's job).
     const { getBody } = stageResponse({

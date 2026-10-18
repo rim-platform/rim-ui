@@ -273,7 +273,7 @@ export function SettingsPage() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   // Resolve the requested tab from the surface, defaulting to "profile".
-  // We validate that the requested tab actually exists in our tab list so a
+  // The requested tab must exist in the tab list, so a
   // stale or typo'd value doesn't silently show an empty panel.
   const resolveTab = (surface: typeof mainSurface): SettingsTab => {
     if (surface.kind === "settings" && surface.tab) {
@@ -314,7 +314,7 @@ export function SettingsPage() {
 
   // When the caller navigates to settings again (e.g. "Manage plugins" while
   // settings is already open), the surface updates but the component stays
-  // mounted, so we need to sync.
+  // mounted, so the tab is synced here.
   useEffect(() => {
     if (mainSurface.kind === "settings") {
       setActiveTab(resolveTab(mainSurface));

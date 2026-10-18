@@ -20,7 +20,7 @@ export const MessageEditForm = memo(function MessageEditForm({
   const [sourceText, setSourceText] = useState(initialText);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Reset when the source text changes underneath us (e.g. a remote edit).
+  // Reset when the source text changes while editing (e.g. a remote edit).
   if (sourceText !== initialText) {
     setSourceText(initialText);
     setEditText(initialText);

@@ -31,8 +31,8 @@ interface SurfaceErrorBoundaryState {
  * Unlike the full-screen {@link https://react.dev/reference/react/Component AppErrorBoundary},
  * this renders a compact in-pane fallback so a crash in one surface doesn't
  * take down the rest of `WorkspaceShell` (the WS subscription, other panes,
- * `KeybindProvider`, etc. stay mounted). See `docs/error-boundaries.md` for
- * the full App → Surface → Plugin boundary hierarchy.
+ * `KeybindProvider`, etc. stay mounted). It sits between the app boundary and
+ * the plugin boundaries.
  *
  * Always pass `resetKeys` scoped to the surface's identity (e.g. the active
  * conversation id) — without it, a crashed pane stays crashed even after the

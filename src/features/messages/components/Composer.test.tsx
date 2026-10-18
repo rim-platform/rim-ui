@@ -184,7 +184,7 @@ describe("Composer — membership and archive gate", () => {
   });
 });
 
-describe("Composer — slow mode and timeouts (Track 1.2)", () => {
+describe("Composer — slow mode and timeouts", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.error).mockReset();

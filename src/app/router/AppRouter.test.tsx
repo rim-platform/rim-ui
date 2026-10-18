@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-// Stub out all route components so we can test routing in isolation.
+// Stubs every route component, so the tests exercise routing in isolation.
 vi.mock("../../shell/layouts/AppShell", () => ({
   AppShell: () => <div data-testid="app-shell" />,
 }));

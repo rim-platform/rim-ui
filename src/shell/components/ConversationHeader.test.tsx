@@ -199,7 +199,7 @@ describe("ConversationHeader — DM sent as a request", () => {
   });
 });
 
-describe("ConversationHeader — guest gate (Track 1.2)", () => {
+describe("ConversationHeader — guest gate", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });

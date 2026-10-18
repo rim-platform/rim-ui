@@ -10,7 +10,7 @@
  *
  * The mocking style mirrors `JoinPage.test.tsx` — `vi.mock` for the
  * `useJoinServerByInviteMutation` hook, `useWorkspaceStore`, and
- * `useNavigate`. We intentionally do NOT cover the `default` arm: it is
+ * `useNavigate`. The `default` arm is not covered: it is
  * unreachable under correct typing, and adding a runtime test for it would
  * require casting through `never`, defeating the compile-time guarantee
  * that is the whole point of the switch.

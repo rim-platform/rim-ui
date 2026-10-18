@@ -76,8 +76,8 @@ export function useReplyToMessageMutation() {
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
 
       // Refetch threadByRoot so ThreadPanel picks up the newly created thread.
-      // We await this because useThreadMessages depends on threadId from this query —
-      // if we only invalidate, the threadMessages query may not exist yet (it's disabled
+      // Awaited because useThreadMessages depends on threadId from this query —
+      // with only an invalidation, the threadMessages query may not exist yet (it's disabled
       // when threadId is undefined) and the invalidation below would be a no-op.
       await qc.refetchQueries({
         queryKey: queryKeys.threadByRoot(vars.serverId, vars.conversationId, vars.rootMessageId),

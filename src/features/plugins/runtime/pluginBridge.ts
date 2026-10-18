@@ -90,7 +90,7 @@ export function createPluginBridge(config: BridgeConfig) {
     // Strict origin validation — sandboxed iframes without allow-same-origin report origin "null"
     if (event.origin !== EXPECTED_ORIGIN) return;
 
-    // Verify source is our iframe (lookup plugin_id from event.source, NOT message payload)
+    // Verify source is the plugin's iframe (plugin_id comes from event.source, NOT the payload)
     if (event.source !== iframe.contentWindow) return;
 
     if (!withinLimit()) return;
@@ -196,7 +196,7 @@ export function createPluginBridge(config: BridgeConfig) {
   window.addEventListener("message", handleMessage);
 
   function sendToPlugin(message: HostToPluginMessage) {
-    // Sandboxed iframes have origin "null", so we must use "*" for postMessage.
+    // Sandboxed iframes have origin "null", so postMessage must target "*".
     // Inbound messages are validated by origin check in the message event handler.
     iframe.contentWindow?.postMessage(message, "*");
   }

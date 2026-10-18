@@ -735,7 +735,7 @@ mod tests {
         let body = r#"{"provider":"anthropic","model":"x","messages":[],"api_key":"leak"}"#;
         assert!(
             serde_json::from_str::<ChatCompletionRequest>(body).is_err(),
-            "deny_unknown_fields must reject api_key — IPC cutover guarantee for #8"
+            "deny_unknown_fields must reject api_key: the key never crosses IPC"
         );
     }
 }
