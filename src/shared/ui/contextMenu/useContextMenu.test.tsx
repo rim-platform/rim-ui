@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import type { DropdownMenuItem } from "../DropdownMenu";
+import { Z } from "../zIndex";
 import { LONG_PRESS_MS, useContextMenu } from "./useContextMenu";
 
 function Row({ name, getItems }: { name: string; getItems: () => DropdownMenuItem[] }) {
@@ -51,6 +52,12 @@ describe("useContextMenu", () => {
     expect(menu.style.left).toBe("40px");
     expect(menu.style.top).toBe("50px");
     expect(screen.getByRole("menuitem", { name: "Mark read" })).toBeInTheDocument();
+  });
+
+  it("draws above dialogs, on the popover layer", () => {
+    render(<Row name="general" getItems={() => itemsNamed("Mark read")} />);
+    rightClick(screen.getByTestId("general"));
+    expect(screen.getByRole("menu", { name: "general" }).style.zIndex).toBe(String(Z.POPOVER));
   });
 
   it("opens nothing and leaves the browser's menu when there are no items", () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DropdownMenu, type DropdownMenuItem } from "../DropdownMenu";
+import { Z } from "../zIndex";
 
 /** Builds a menu's items when it opens, so they reflect the state at that moment. */
 type ContextMenuItems = () => DropdownMenuItem[];
@@ -255,6 +256,7 @@ export function useContextMenu(): ContextMenuController {
       label={open.label}
       onClose={close}
       closeOnSelect
+      zIndex={Z.POPOVER}
     />
   ) : null;
 

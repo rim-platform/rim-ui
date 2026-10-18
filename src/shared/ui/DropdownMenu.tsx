@@ -63,6 +63,8 @@ interface DropdownMenuProps {
    * off, the action closes it itself. Actions in a submenu always close the whole menu.
    */
   closeOnSelect?: boolean;
+  /** The layer the menu draws on; a context menu passes `Z.POPOVER` to draw above dialogs. */
+  zIndex?: number;
 }
 
 export type { DropdownMenuItem, DropdownMenuProps };
@@ -115,6 +117,8 @@ interface MenuPanelProps {
   onBack?: () => void;
   /** Whether this is the top level, which shows the header or a note when there are no items. */
   root: boolean;
+  /** The layer of the top-level panel; a submenu sits inside it. */
+  zIndex?: number;
 }
 
 /** One level of a menu: its rows, their keyboard handling, and the submenu open beside it. */
@@ -130,6 +134,7 @@ function MenuPanel({
   onClose,
   onBack,
   root,
+  zIndex = Z.DROPDOWN,
 }: MenuPanelProps) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [submenu, setSubmenu] = useState<OpenSubmenu | null>(null);
@@ -236,7 +241,7 @@ function MenuPanel({
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => e.preventDefault()}
       className="fixed min-w-[180px] rounded-lg border border-rim-line bg-rim-panel py-1 shadow-xl outline-none"
-      style={{ top: position.y, left: position.x, zIndex: Z.DROPDOWN }}
+      style={{ top: position.y, left: position.x, zIndex }}
     >
       {root && header}
       {items.length === 0 ? (
@@ -347,6 +352,7 @@ export function DropdownMenu({
   header,
   anchorRef,
   closeOnSelect = false,
+  zIndex,
 }: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -395,6 +401,7 @@ export function DropdownMenu({
       closeOnSelect={closeOnSelect}
       onClose={onClose}
       root
+      zIndex={zIndex}
     />,
     document.body,
   );

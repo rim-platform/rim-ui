@@ -3,10 +3,10 @@
  * Use these constants instead of magic numbers.
  *
  * Layer order (lowest to highest):
- * - DROPDOWN: context menus, dropdowns
+ * - DROPDOWN: dropdowns
  * - OVERLAY_BACKDROP: dim backdrop behind modals
  * - OVERLAY_CONTENT: modal/dialog panels, command palette
- * - POPOVER: emoji pickers, tooltips, suggestions
+ * - POPOVER: context menus, emoji pickers, tooltips, suggestions
  * - TOAST: notifications (future)
  */
 export const Z = {
