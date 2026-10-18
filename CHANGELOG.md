@@ -23,6 +23,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- When the agent asks to run a command after reading messages or other tool output in the same
+  run, the confirmation dialog warns "This action was suggested while the agent was reading
+  external content" and asks you to type the command's verb before a Mutating command runs.
 - **Install from link** on the desktop installs a bundle from a GitHub release asset, or any
   other `https://` host that does not allow cross-origin requests: the desktop app fetches
   the link itself. The web app still needs a host that sends `Access-Control-Allow-Origin`,

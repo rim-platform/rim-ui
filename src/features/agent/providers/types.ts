@@ -50,15 +50,6 @@ export type AiStreamChunk =
   | { kind: "done"; usage: { inputTokens: number; outputTokens: number } }
   | { kind: "error"; message: string };
 
-/**
- * Outcome of validating a provider API key. Tells "the provider rejected the
- * key" (the user must fix the key) apart from "the provider could not be
- * reached" (the user must fix their network), so a DNS or TLS failure is not
- * reported as an invalid key.
- */
-export type ValidationOutcome =
-  { kind: "valid" } | { kind: "invalid" } | { kind: "network_error"; message: string };
-
 export interface AiProvider {
   readonly config: AiProviderConfig;
   /**

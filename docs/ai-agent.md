@@ -128,13 +128,20 @@ dialog:
 - **Destination**: when the command names another conversation than the open one, "Destination
   differs from active conversation" with "Will post in conversation" and the first eight
   characters of its id.
+- **Warning**: when the agent proposed the command after a tool call of the same run returned
+  something, "This action was suggested while the agent was reading external content. **Verify it
+  matches your intent.**" Anything a tool returns counts: messages, search results, a plugin's
+  output, a cancellation or a skipped call, since any of it can carry instructions someone planted
+  for the agent. A call the agent makes straight from your prompt, before any tool returned,
+  shows no warning, and each new prompt starts afresh.
 - **Arguments**: up to ten, values cut at 200 characters, then "+\<n\> more arguments". A value
   that looks like a secret, or sits under a name such as password, token, key or secret, shows as
   `[REDACTED]`.
 - **Buttons**: **Cancel**, and **Run anyway** for a Mutating command or **I understand —
   execute** for a Restricted one. A Restricted command first asks you to type its verb, the word
-  after the dot in its id, as in `Type "delete" to confirm`. <kbd>Ctrl+Enter</kbd> confirms;
-  <kbd>Esc</kbd>, the close button and **Cancel** cancel. A click outside the dialog does nothing.
+  after the dot in its id, as in `Type "delete" to confirm`; so does a Mutating command under the
+  warning. <kbd>Ctrl+Enter</kbd> confirms; <kbd>Esc</kbd>, the close button and **Cancel**
+  cancel. A click outside the dialog does nothing.
 - **Expiry**: the server's confirmation is valid for 60 seconds. When it runs out, the dialog
   closes and counts as cancelled. If it lapses as you confirm, the dialog opens once more.
 
