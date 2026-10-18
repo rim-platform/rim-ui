@@ -165,6 +165,13 @@ Plugins names.
 
 ## Using a plugin
 
+- **Reading what it is.** A plugin's row in Settings → Plugins shows the first two lines of its
+  description. **View details** opens a dialog named after the plugin with the whole
+  description under "From the plugin author:", shown as the author wrote it, as plain text
+  with no formatting or links; its id, version, author, kind, source (the git repository, the
+  link with its SHA-256, the workspace registry, or a folder) and signature; each permission
+  it asks for, marked Granted or Not granted; the sites `network.fetch` may reach; and its
+  commands with their descriptions, a dangerous one marked Dangerous.
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
   shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
   with the app. On the web, plugins are turned on per account in that browser: signing out

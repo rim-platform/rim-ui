@@ -127,6 +127,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **View details** on a plugin's row in Settings → Plugins opens a dialog with its whole
+  description, under "From the plugin author:" and shown as plain text, its id, version,
+  author, kind, source and signature, each permission it asks for and whether it is granted,
+  the sites it may reach and its commands. The row shows the first two lines of the
+  description.
 - **Update** on the row of a plugin installed from a git URL in Settings → Plugins (desktop)
   fetches its repository and moves it to the newest commit, then says "Updated to v<version>",
   "Already up to date" or why it failed. Install steps ask for consent first, a running plugin

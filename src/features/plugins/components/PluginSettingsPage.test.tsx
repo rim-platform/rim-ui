@@ -479,6 +479,116 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     ).toBeInTheDocument();
     expect(within(dialog).getByText("Render UI Panels")).toBeInTheDocument();
   });
+
+  describe("View details", () => {
+    const longDescription =
+      "Lists the pods of the cluster your kubeconfig points at.\nYour cluster credentials never leave this device.";
+
+    function k8sPlugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
+      return makePlugin({
+        plugin_id: "chat.rim.k8s-pods",
+        display_name: "Kubernetes Pods",
+        version: "0.3.1",
+        author: "RIM",
+        description: longDescription,
+        runtime_kind: "DesktopLocalProcess",
+        source: { kind: "git", url: "https://github.com/rim-platform/plugin-k8s-pods" },
+        capabilities: ["ui.panel", "network.fetch"],
+        approved_capabilities: ["ui.panel"],
+        network_origins: ["https://k8s.example.com:6443"],
+        commands: [
+          {
+            id: "restart_pod",
+            qualified_id: "plugin.chat.rim.k8s-pods.restart_pod",
+            title: "Restart pod",
+            description: "Deletes the pod so its controller starts a new one.",
+            keybind_capable: false,
+            dangerous: true,
+            ai_callable: false,
+            arguments: [],
+          },
+        ],
+        ...overrides,
+      });
+    }
+
+    function openDetails() {
+      fireEvent.click(screen.getByRole("button", { name: "View details for Kubernetes Pods" }));
+      return screen.getByRole("dialog", { name: "Kubernetes Pods" });
+    }
+
+    it("clamps the description on the row to two lines", () => {
+      listPlugins([k8sPlugin()]);
+      render(<PluginSettingsPage />);
+
+      const description = screen.getByText(/Lists the pods of the cluster/);
+      expect(description).toHaveClass("line-clamp-2");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("shows the whole description and what the plugin is, asks for and runs", () => {
+      listPlugins([k8sPlugin()]);
+      render(<PluginSettingsPage />);
+      const dialog = openDetails();
+
+      expect(within(dialog).getByText("From the plugin author:")).toBeInTheDocument();
+      const quote = dialog.querySelector("blockquote") as HTMLElement;
+      expect(quote.textContent).toBe(longDescription);
+      expect(quote).toHaveClass("whitespace-pre-line");
+
+      expect(within(dialog).getByText("chat.rim.k8s-pods")).toBeInTheDocument();
+      expect(within(dialog).getByText("0.3.1")).toBeInTheDocument();
+      expect(within(dialog).getByText("RIM")).toBeInTheDocument();
+      expect(within(dialog).getByText("Runs on this computer")).toBeInTheDocument();
+      expect(
+        within(dialog).getByText("Git repository https://github.com/rim-platform/plugin-k8s-pods"),
+      ).toBeInTheDocument();
+
+      const panel = within(dialog).getByText("ui.panel").closest("li") as HTMLElement;
+      expect(panel).toHaveTextContent("Granted");
+      const fetch = within(dialog).getByText("network.fetch").closest("li") as HTMLElement;
+      expect(fetch).toHaveTextContent("Not granted");
+      expect(within(dialog).getByText("https://k8s.example.com:6443")).toBeInTheDocument();
+
+      const command = within(dialog).getByText("Restart pod").closest("li") as HTMLElement;
+      expect(command).toHaveTextContent("Dangerous");
+      expect(command).toHaveTextContent("Deletes the pod so its controller starts a new one.");
+    });
+
+    it("shows the description as text, not as HTML or markdown", () => {
+      listPlugins([
+        k8sPlugin({ description: "<b>bold</b> and **stars** and [a](https://x.test)" }),
+      ]);
+      render(<PluginSettingsPage />);
+      const dialog = openDetails();
+
+      const quote = dialog.querySelector("blockquote") as HTMLElement;
+      expect(quote.textContent).toBe("<b>bold</b> and **stars** and [a](https://x.test)");
+      expect(quote.querySelector("b, strong, a")).toBeNull();
+    });
+
+    it("says when there is no description, permission or command", () => {
+      listPlugins([k8sPlugin({ description: "", capabilities: [], commands: [] })]);
+      render(<PluginSettingsPage />);
+      const dialog = openDetails();
+
+      expect(within(dialog).getByText("The plugin has no description.")).toBeInTheDocument();
+      expect(within(dialog).getByText("The plugin asks for no permissions.")).toBeInTheDocument();
+      expect(within(dialog).getByText("The plugin has no commands.")).toBeInTheDocument();
+    });
+
+    it("closes with the close button and with Escape", () => {
+      listPlugins([k8sPlugin()]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(within(openDetails()).getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      openDetails();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
 });
 
 describe("PluginDesktopOnlyCard", () => {

@@ -27,6 +27,7 @@ import {
 import { InstallFromLink } from "./InstallFromLink";
 import { PluginAuditPanel } from "./PluginAuditPanel";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
+import { PluginDetailsDialog } from "./PluginDetailsDialog";
 import { PostInstallConsentDialog } from "./PostInstallConsentDialog";
 import { UninstallPluginDialog } from "./UninstallPluginDialog";
 import { kindLabel, trustBadge } from "./pluginTrust";
@@ -517,9 +518,10 @@ interface PluginRowProps {
 /**
  * Single row in the installed-plugins list.
  *
- * Shows: name, version, author, health indicator, enable/disable toggle,
- * update button for a plugin installed from git, permissions button,
- * uninstall button, and a line for the outcome of the last update.
+ * Shows: name, the first two lines of the description, version, author,
+ * health indicator, enable/disable toggle, update button for a plugin
+ * installed from git, details button, permissions button, uninstall button,
+ * and a line for the outcome of the last update.
  *
  * When `plugin.fingerprint_changed` is true, a `FingerprintChanged` warning
  * banner is shown with "Trust new version" and "Dismiss" actions. Dismiss stops
@@ -546,6 +548,7 @@ function PluginRow({
   // A changed bundle blocks only enabling; turning the plugin off stays possible.
   const blocked = needsDesktop || (plugin.fingerprint_changed && !plugin.enabled);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const fingerprint = plugin.current_fingerprint ?? "";
   const warningDismissed = usePluginFingerprintDismissStore(
     (s) => s.dismissed[plugin.plugin_id] === fingerprint,
@@ -587,7 +590,7 @@ function PluginRow({
                 </span>
               ))}
           </div>
-          <p className="text-xs text-rim-text-muted">{plugin.description}</p>
+          <p className="line-clamp-2 text-xs text-rim-text-muted">{plugin.description}</p>
           <p className="text-[11px] text-rim-text-faint">
             {kindLabel(plugin)} · {trustBadge(plugin)}
           </p>
@@ -638,6 +641,14 @@ function PluginRow({
               {updatePending ? "Updating..." : "Update"}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDetailsOpen(true)}
+            aria-label={`View details for ${plugin.display_name || plugin.plugin_id}`}
+          >
+            View details
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => onPermissions(plugin)}>
             Permissions
           </Button>
@@ -683,6 +694,8 @@ function PluginRow({
       </div>
 
       {activityOpen && <PluginAuditPanel plugin={plugin} />}
+
+      {detailsOpen && <PluginDetailsDialog plugin={plugin} onClose={() => setDetailsOpen(false)} />}
 
       {/* Fingerprint-changed warning banner */}
       {plugin.fingerprint_changed && !warningDismissed && (
