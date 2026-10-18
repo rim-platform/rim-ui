@@ -37,6 +37,7 @@ import { useTypingEventHandler } from "../../features/messages/state/useTypingEv
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
+import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
 import { panelSlot } from "../../features/plugins/types";
 import { SurfaceErrorBoundary } from "../../shared/ui/SurfaceErrorBoundary";
@@ -437,6 +438,7 @@ function WorkspaceShell() {
           <AgentOverlay />
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
+          <PluginSettingsDialogHost />
           <RegistryHost />
           <QuickAccessAssigner />
           <ToastContainer />

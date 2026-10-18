@@ -8,6 +8,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { usePluginSettingsDialogStore } from "../../plugins/state/usePluginSettingsDialogStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommandStore } from "../state/useCommandStore";
@@ -171,6 +172,36 @@ describe("plugin panel commands", () => {
       message: "The plugin with this panel is not running",
     });
     expect(useShellStore.getState().activePluginPanel).toBeNull();
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+});
+
+describe("plugin settings commands", () => {
+  const command: CommandDefinition = {
+    id: "workspace.open_plugin_settings.chat.rim.k8s-pods",
+    title: "Plugin settings: Kubernetes Pods",
+    description: "",
+    category: "Kubernetes Pods",
+    sourceKind: "PLUGIN",
+    executionTarget: "DESKTOP_LOCAL",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+  };
+
+  beforeEach(() => useShellStore.getState().reset());
+
+  it("opens the plugin's settings form without asking the server or the plugin", async () => {
+    const executeBackend = vi.fn();
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result?.status).toBe("SUCCESS");
+    // Over the current view, which stays as it was.
+    expect(usePluginSettingsDialogStore.getState().pluginId).toBe("chat.rim.k8s-pods");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    usePluginSettingsDialogStore.getState().close();
     expect(executeBackend).not.toHaveBeenCalled();
   });
 });

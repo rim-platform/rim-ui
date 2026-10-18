@@ -311,6 +311,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Changed
 
+- The side rail's **Plugins** menu lists only the panels of the running plugins, then **Manage
+  plugins…**; the per-plugin Settings rows left it. A plugin's settings now open from a settings
+  button in the header of its panel, from **Plugin settings: \<plugin\>** in the command
+  palette, which a keybind can run, and from its row in Settings → Plugins as before. From the
+  panel, the palette or a panel's `rim.settings.open`, the form opens over what is on screen, so
+  closing it leaves you in the plugin instead of in Settings.
 - A plugin is turned on when you install it: the Plugin Permissions dialog that ends every
   install, from a folder, git, a link or the workspace registry, now has **Approve and turn on**,
   which grants the permissions and starts the plugin. **Cancel** leaves it installed and off, as

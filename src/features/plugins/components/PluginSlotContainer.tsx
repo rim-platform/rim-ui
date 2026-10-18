@@ -1,8 +1,10 @@
 import { useMemo } from "react";
-import { X, Puzzle } from "lucide-react";
+import { X, Puzzle, SlidersHorizontal } from "lucide-react";
 
 import { PluginPanel } from "./PluginPanel";
 import { kindLabel, trustBadge } from "./pluginTrust";
+import { hasSettings } from "../pluginSettings";
+import { openPluginSettings } from "../pluginSettingsLink";
 import { WebPluginPanel } from "../web/WebPluginPanel";
 import {
   parsePluginCapabilities,
@@ -38,15 +40,28 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
             {plugin.display_name} · {kindLabel(plugin)} · {trustBadge(plugin)}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close plugin panel"
-          aria-label="Close plugin panel"
-          className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {hasSettings(plugin.settings_schema) && (
+            <button
+              type="button"
+              onClick={() => openPluginSettings(plugin.plugin_id)}
+              title="Plugin settings"
+              aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+              className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close plugin panel"
+            aria-label="Close plugin panel"
+            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Plugin iframe */}

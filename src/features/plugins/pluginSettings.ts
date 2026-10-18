@@ -2,7 +2,7 @@
 // store and the form: the error a refused save carries and the merge of saved
 // values with the schema's defaults.
 
-import type { PluginInfo, PluginSetting } from "./types";
+import type { PluginSetting } from "./types";
 
 /** A save of a plugin's settings that the host refused. */
 export class PluginSettingsError extends Error {
@@ -19,21 +19,6 @@ export class PluginSettingsError extends Error {
 /** Whether `schema` declares any setting, so the plugin has a settings form. */
 export function hasSettings(schema: readonly PluginSetting[] | undefined): boolean {
   return (schema?.length ?? 0) > 0;
-}
-
-/** An enabled plugin that declares settings, as a menu lists it. */
-export interface PluginWithSettings {
-  pluginId: string;
-  pluginName: string;
-}
-
-/** The enabled plugins that declare settings, in plugin list order. */
-export function enabledPluginsWithSettings(
-  plugins: readonly PluginInfo[] | undefined,
-): PluginWithSettings[] {
-  return (plugins ?? [])
-    .filter((plugin) => plugin.enabled && hasSettings(plugin.settings_schema))
-    .map((plugin) => ({ pluginId: plugin.plugin_id, pluginName: plugin.display_name }));
 }
 
 /**

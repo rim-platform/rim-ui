@@ -37,7 +37,6 @@ vi.mock("./PluginSettingsDialog", () => ({
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginList } from "../api/usePluginList";
-import { openPluginSettings } from "../pluginSettingsLink";
 import type { PluginInfo } from "../types";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 
@@ -99,12 +98,11 @@ describe("PluginSettingsPage settings", () => {
     render(<PluginSettingsPage />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    act(() => openPluginSettings("dev.example.pods"));
-    expect(useShellStore.getState().mainSurface).toEqual({
-      kind: "settings",
-      tab: "plugins",
-      plugin: "dev.example.pods",
-    });
+    act(() =>
+      useShellStore
+        .getState()
+        .setMainSurface({ kind: "settings", tab: "plugins", plugin: "dev.example.pods" }),
+    );
     expect(screen.getByRole("dialog", { name: "settings of dev.example.pods" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
@@ -118,7 +116,11 @@ describe("PluginSettingsPage settings", () => {
     });
     render(<PluginSettingsPage />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    act(() => openPluginSettings("dev.example.missing"));
+    act(() =>
+      useShellStore
+        .getState()
+        .setMainSurface({ kind: "settings", tab: "plugins", plugin: "dev.example.missing" }),
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

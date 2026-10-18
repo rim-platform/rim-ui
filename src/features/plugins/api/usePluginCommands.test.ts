@@ -168,6 +168,43 @@ describe("usePluginCommands — open panel commands", () => {
   });
 });
 
+describe("usePluginCommands plugin settings", () => {
+  const setting = {
+    key: "context",
+    title: "Context",
+    description: "",
+    value_type: "string" as const,
+    is_secret: false,
+  };
+
+  it("adds a settings command per enabled plugin that declares settings, last", () => {
+    const commands = commandsOf([
+      plugin({ settings_schema: [setting] }),
+      plugin({ plugin_id: "dev.example.plain", display_name: "Plain", commands: [] }),
+      plugin({
+        plugin_id: "dev.example.off",
+        display_name: "Off",
+        enabled: false,
+        commands: [],
+        settings_schema: [setting],
+      }),
+    ]);
+    expect(commands.map((c) => c.title)).toEqual([
+      "Refresh pods",
+      "Restart pod",
+      "Plugin settings: Kubernetes Pods",
+    ]);
+    expect(commands[2]).toMatchObject({
+      id: "workspace.open_plugin_settings.chat.rim.k8s-pods",
+      category: "Kubernetes Pods",
+      executionTarget: "DESKTOP_LOCAL",
+      visibleInPalette: true,
+      keybindCapable: true,
+      dangerous: false,
+    });
+  });
+});
+
 describe("parsePluginCommandId", () => {
   it("parses a valid plugin command ID", () => {
     const result = parsePluginCommandId("plugin.my-plugin.do_something");
