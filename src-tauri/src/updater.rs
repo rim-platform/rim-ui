@@ -46,15 +46,20 @@ impl UpdaterConfig {
         Ok(Some(Self { endpoints, pubkey }))
     }
 
-    /// The configuration compiled into this binary; a malformed file is logged and read as not
-    /// configured, so the app still starts.
-    pub(crate) fn bundled() -> Option<Self> {
-        match Self::parse(BUNDLED) {
-            Ok(config) => config,
-            Err(e) => {
-                log::warn!("[updater] updates disabled: {e}");
-                None
-            }
+    /// The configuration compiled into this binary. A malformed file reads as not configured, so
+    /// the app still starts, and comes with the warning to log once the logger is installed.
+    pub(crate) fn bundled() -> (Option<Self>, Option<DeferredWarning>) {
+        Self::read(BUNDLED)
+    }
+
+    /// Reads `raw` as `parse` does, turning an error into a deferred warning and no configuration.
+    fn read(raw: &str) -> (Option<Self>, Option<DeferredWarning>) {
+        match Self::parse(raw) {
+            Ok(config) => (config, None),
+            Err(e) => (
+                None,
+                Some(DeferredWarning(format!("[updater] updates disabled: {e}"))),
+            ),
         }
     }
 
@@ -64,6 +69,18 @@ impl UpdaterConfig {
             "endpoints": self.endpoints.iter().map(Url::as_str).collect::<Vec<_>>(),
             "pubkey": self.pubkey,
         })
+    }
+}
+
+/// A start-up warning held until the log plugin's logger is installed: the updater configuration
+/// is read before the log plugin is added to the builder, when a log call would be dropped.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DeferredWarning(String);
+
+impl DeferredWarning {
+    /// Logs the warning; called from the setup hook, which runs after plugins are initialized.
+    pub(crate) fn emit(self) {
+        log::warn!("{}", self.0);
     }
 }
 
@@ -149,6 +166,75 @@ mod tests {
             serde_json::from_value(config.plugin_config()).unwrap();
         assert_eq!(plugin.pubkey, "KEY");
         assert_eq!(plugin.endpoints, config.endpoints);
+    }
+
+    /// The log records written from the current thread, installing the capturing logger on first
+    /// use.
+    fn captured_on_this_thread() -> Vec<(log::Level, String)> {
+        use std::sync::{Mutex, OnceLock};
+        use std::thread::ThreadId;
+
+        /// A logger keeping each record with the thread that wrote it, so tests running in
+        /// parallel only see their own records.
+        struct ThreadLogger(Mutex<Vec<(ThreadId, log::Level, String)>>);
+
+        impl log::Log for ThreadLogger {
+            fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+                true
+            }
+            fn log(&self, record: &log::Record<'_>) {
+                self.0.lock().unwrap().push((
+                    std::thread::current().id(),
+                    record.level(),
+                    record.args().to_string(),
+                ));
+            }
+            fn flush(&self) {}
+        }
+
+        static LOGGER: OnceLock<&'static ThreadLogger> = OnceLock::new();
+        let logger = LOGGER.get_or_init(|| {
+            let logger: &'static ThreadLogger =
+                Box::leak(Box::new(ThreadLogger(Mutex::new(Vec::new()))));
+            log::set_logger(logger).expect("no other logger is installed in unit tests");
+            log::set_max_level(log::LevelFilter::Trace);
+            logger
+        });
+        let me = std::thread::current().id();
+        logger
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(thread, _, _)| *thread == me)
+            .map(|(_, level, message)| (*level, message.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn an_unusable_file_defers_its_warning_until_emitted() {
+        let expected =
+            "[updater] updates disabled: updater.json: a public key needs at least one endpoint";
+        assert!(captured_on_this_thread().is_empty());
+        let (config, warning) = UpdaterConfig::read(r#"{"endpoints": [], "pubkey": "KEY"}"#);
+        assert_eq!(config, None);
+        assert_eq!(warning, Some(DeferredWarning(expected.to_string())));
+        assert!(captured_on_this_thread().is_empty());
+
+        warning.unwrap().emit();
+        assert_eq!(
+            captured_on_this_thread(),
+            vec![(log::Level::Warn, expected.to_string())]
+        );
+    }
+
+    #[test]
+    fn a_usable_or_absent_configuration_has_no_warning() {
+        assert_eq!(UpdaterConfig::read(BUNDLED), (None, None));
+        let raw = r#"{"endpoints": ["https://updates.example/latest.json"], "pubkey": "KEY"}"#;
+        let (config, warning) = UpdaterConfig::read(raw);
+        assert!(config.is_some());
+        assert_eq!(warning, None);
     }
 
     #[test]
