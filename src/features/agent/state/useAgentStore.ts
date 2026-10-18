@@ -39,10 +39,6 @@ interface AgentState {
   // Settings (persisted via zustand persist)
   settings: AgentSettings;
 
-  // API key status (the key itself is not stored in zustand)
-  hasApiKey: boolean;
-  loadApiKeyStatus: "idle" | "loading" | "loaded";
-
   // Actions
   open: (prompt?: string) => void;
   close: () => void;
@@ -56,8 +52,6 @@ interface AgentState {
   setUsage: (usage: { inputTokens: number; outputTokens: number }) => void;
   reset: () => void;
   updateSettings: (patch: Partial<AgentSettings>) => void;
-  setHasApiKey: (has: boolean) => void;
-  setLoadApiKeyStatus: (status: "idle" | "loading" | "loaded") => void;
 }
 
 function generateId(): string {
@@ -102,9 +96,6 @@ export const useAgentStore = create<AgentState>()(
         modelId: oldSettings.modelId ?? "claude-sonnet-5-5",
         systemPrompt: oldSettings.systemPrompt ?? "",
       },
-
-      hasApiKey: false,
-      loadApiKeyStatus: "idle",
 
       open: (prompt) => {
         const state = get();
@@ -226,9 +217,6 @@ export const useAgentStore = create<AgentState>()(
           settings: { ...state.settings, ...patch },
         }));
       },
-
-      setHasApiKey: (has) => set({ hasApiKey: has }),
-      setLoadApiKeyStatus: (status) => set({ loadApiKeyStatus: status }),
     }),
     {
       name: "rim-agent-store",

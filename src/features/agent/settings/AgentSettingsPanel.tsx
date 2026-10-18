@@ -185,8 +185,6 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
  *   - Transient key/verify state is local (never stored in zustand).
  *   - `settings.providerId`, `settings.modelId`, `settings.systemPrompt`
  *     live in `useAgentStore` (zustand, persisted to localStorage).
- *   - `hasApiKey` in the store is updated on mount, on successful save, and
- *     on delete.
  */
 export function AgentSettingsPanel() {
   const { capabilities } = useRuntime();
@@ -242,7 +240,6 @@ export function AgentSettingsPanel() {
     void tauriIsProviderKeyConfigured(settings.providerId).then((configured) => {
       if (cancelled) return;
       setKeyConfigured(configured);
-      useAgentStore.getState().setHasApiKey(configured);
       // Reset transient state on provider switch
       setKeyInput("");
       setVerifyState({ kind: "idle" });
@@ -285,7 +282,6 @@ export function AgentSettingsPanel() {
         setVerifyState({ kind: "verified" });
         setKeyConfigured(true);
         setKeyInput("");
-        useAgentStore.getState().setHasApiKey(true);
         toast.success(`${currentMeta.name} key verified and saved.`);
         void loadModels(currentMeta.id);
       } else if (outcome.kind === "invalid") {
@@ -313,7 +309,6 @@ export function AgentSettingsPanel() {
       setKeyConfigured(false);
       setKeyInput("");
       setVerifyState({ kind: "idle" });
-      useAgentStore.getState().setHasApiKey(false);
       toast.success(`${currentMeta.name} key removed.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

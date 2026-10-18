@@ -191,7 +191,9 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
         return;
       }
 
-      // Process tool calls
+      // A call proposed after the first round follows at least one tool_result of this run,
+      // whether a real result, a rejection or a skip, so it may carry injected instructions.
+      const followsToolResult = toolRounds > 0;
       toolRounds++;
       if (toolRounds > MAX_TOOL_ROUNDS) {
         store.appendText("\n\n(Reached maximum tool call limit)");
@@ -258,6 +260,7 @@ export async function runAgent(options: AgentRunOptions): Promise<void> {
           // need confirmation is decided by the backend alone.
           const result = await runWithConfirmation(() => tool.handler(tc.input), {
             sensitivity: tool.sensitivity,
+            sameTurnAfterToolResult: followsToolResult,
           });
 
           if (tool.sideEffect) {

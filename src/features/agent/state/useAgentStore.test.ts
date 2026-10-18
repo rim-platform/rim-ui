@@ -16,8 +16,6 @@ describe("useAgentStore", () => {
         modelId: "claude-sonnet-5-5",
         systemPrompt: "",
       },
-      hasApiKey: false,
-      loadApiKeyStatus: "idle",
     });
   });
 
@@ -128,13 +126,6 @@ describe("useAgentStore", () => {
     const settings = useAgentStore.getState().settings;
     expect(settings.modelId).toBe("new-model");
     expect(settings.providerId).toBe("anthropic");
-  });
-
-  it("sets API key status", () => {
-    useAgentStore.getState().setHasApiKey(true);
-    expect(useAgentStore.getState().hasApiKey).toBe(true);
-    useAgentStore.getState().setLoadApiKeyStatus("loaded");
-    expect(useAgentStore.getState().loadApiKeyStatus).toBe("loaded");
   });
 
   it("appendText creates new assistant message when none exists", () => {
