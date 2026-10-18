@@ -481,8 +481,8 @@ async fn stream_openai(
 }
 
 /// Drains an SSE response body and forwards each `data:` payload as a
-/// [`ChatStreamEvent::SseEvent`] on the channel. The buffer is split on `\n\n`
-/// (the SSE event delimiter); each event yields its `data:` JSON and, when
+/// [`ChatStreamEvent::SseEvent`] on the channel. [`SseDecoder`] turns the body
+/// chunks into event blocks; each block yields its `data:` JSON and, when
 /// `parse_event_lines` is set, its `event:` type line.
 ///
 /// The parser does not reassemble tool_use blocks, count tokens or interpret
@@ -498,19 +498,11 @@ async fn forward_sse(
     parse_event_lines: bool,
 ) -> Result<(), ProxyError> {
     let mut stream = resp.bytes_stream();
-    let mut buffer = String::new();
+    let mut decoder = SseDecoder::default();
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| ProxyError::Stream(e.to_string()))?;
-        // Each chunk is decoded on its own, lossily: a multi-byte codepoint
-        // split across two chunks becomes replacement characters.
-        buffer.push_str(&String::from_utf8_lossy(&bytes));
-
-        // SSE events are separated by a blank line. Split eagerly and keep
-        // the trailing partial event for the next iteration.
-        while let Some(idx) = buffer.find("\n\n") {
-            let raw_event = buffer[..idx].to_string();
-            buffer.drain(..idx + 2);
+        for raw_event in decoder.push(&bytes) {
             if let Some(event) = parse_sse_event(&raw_event, parse_event_lines)? {
                 if on_event.send(event).is_err() {
                     // The receiver is gone (window closed, request cancelled):
@@ -522,7 +514,84 @@ async fn forward_sse(
         }
     }
 
+    let tail = decoder.finish();
+    if !tail.is_empty() {
+        log::debug!(
+            "SSE stream ended inside an event; {} bytes not dispatched",
+            tail.len()
+        );
+    }
     Ok(())
+}
+
+/// Incremental decoder from SSE body chunks to event blocks.
+///
+/// Chunk boundaries fall anywhere, including inside a multi-byte UTF-8 code
+/// point and inside the `\n\n` event delimiter. The decoder keeps the bytes of
+/// an incomplete code point until the next chunk completes it, and keeps the
+/// text of an incomplete event until its delimiter arrives.
+#[derive(Debug, Default)]
+struct SseDecoder {
+    /// Trailing bytes of the last chunk that start a code point the chunk did
+    /// not finish; at most three bytes.
+    pending: Vec<u8>,
+    /// Decoded text after the last complete event.
+    text: String,
+}
+
+impl SseDecoder {
+    /// Appends a body chunk and returns the event blocks it completes, in
+    /// order, each stripped of its trailing `\n\n`.
+    ///
+    /// A byte sequence that is invalid UTF-8 (not merely cut off by the chunk
+    /// end) becomes one U+FFFD replacement character per invalid sequence, as
+    /// [`String::from_utf8_lossy`] decodes it.
+    fn push(&mut self, chunk: &[u8]) -> Vec<String> {
+        self.pending.extend_from_slice(chunk);
+        loop {
+            match std::str::from_utf8(&self.pending) {
+                Ok(valid) => {
+                    self.text.push_str(valid);
+                    self.pending.clear();
+                    break;
+                }
+                Err(e) => {
+                    let valid_up_to = e.valid_up_to();
+                    self.text
+                        .push_str(&String::from_utf8_lossy(&self.pending[..valid_up_to]));
+                    match e.error_len() {
+                        Some(invalid_len) => {
+                            self.text.push(char::REPLACEMENT_CHARACTER);
+                            self.pending.drain(..valid_up_to + invalid_len);
+                        }
+                        None => {
+                            self.pending.drain(..valid_up_to);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut events = Vec::new();
+        while let Some(idx) = self.text.find("\n\n") {
+            events.push(self.text[..idx].to_string());
+            self.text.drain(..idx + 2);
+        }
+        events
+    }
+
+    /// Ends the stream and returns the text of the event it was inside, empty
+    /// when the stream ended on an event boundary. An incomplete code point
+    /// left at the end is decoded lossily into one U+FFFD. The returned text
+    /// is not an event: SSE discards an event the stream ends before
+    /// terminating.
+    fn finish(mut self) -> String {
+        if !self.pending.is_empty() {
+            self.text.push_str(&String::from_utf8_lossy(&self.pending));
+        }
+        self.text
+    }
 }
 
 /// Parses one SSE event block, already stripped of its trailing `\n\n`.
@@ -637,6 +706,100 @@ mod tests {
         assert!(matches!(err, ProxyError::Stream(_)));
     }
 
+    /// Feeds `chunks` to a fresh [`SseDecoder`] and returns the event blocks
+    /// they complete, in order, and the text `finish` returns.
+    fn decode_chunks(chunks: &[&[u8]]) -> (Vec<String>, String) {
+        let mut decoder = SseDecoder::default();
+        let mut events = Vec::new();
+        for chunk in chunks {
+            events.extend(decoder.push(chunk));
+        }
+        (events, decoder.finish())
+    }
+
+    /// The `text` of the Anthropic text delta in `block`.
+    fn delta_text(block: &str) -> String {
+        match parse_sse_event(block, true).unwrap().unwrap() {
+            ChatStreamEvent::SseEvent { data, .. } => {
+                data["delta"]["text"].as_str().unwrap().to_string()
+            }
+            _ => panic!("expected SseEvent"),
+        }
+    }
+
+    #[test]
+    fn sse_decoder_joins_code_point_split_across_chunks() {
+        let body =
+            "event: content_block_delta\ndata: {\"delta\":{\"text\":\"h\u{e9}llo \u{1f600}\"}}\n\n";
+        let bytes = body.as_bytes();
+        let e_acute = body.find('\u{e9}').unwrap();
+        let emoji = body.find('\u{1f600}').unwrap();
+        // Cut after the first byte of the two-byte 'é' and after the second
+        // byte of the four-byte emoji.
+        let (events, tail) = decode_chunks(&[
+            &bytes[..e_acute + 1],
+            &bytes[e_acute + 1..emoji + 2],
+            &bytes[emoji + 2..],
+        ]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(delta_text(&events[0]), "h\u{e9}llo \u{1f600}");
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn sse_decoder_joins_code_point_split_into_single_bytes() {
+        let body = "data: {\"delta\":{\"text\":\"\u{1f600}\"}}\n\n";
+        let chunks: Vec<&[u8]> = body.as_bytes().chunks(1).collect();
+        let (events, tail) = decode_chunks(&chunks);
+        assert_eq!(events.len(), 1);
+        assert_eq!(delta_text(&events[0]), "\u{1f600}");
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn sse_decoder_finds_delimiter_split_across_chunks() {
+        let (events, tail) = decode_chunks(&[
+            b"data: {\"delta\":{\"text\":\"a\"}}\n",
+            b"\ndata: {\"delta\":{\"text\":\"b\"}}\n",
+            b"\n",
+        ]);
+        assert_eq!(events.len(), 2);
+        assert_eq!(delta_text(&events[0]), "a");
+        assert_eq!(delta_text(&events[1]), "b");
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn sse_decoder_returns_every_event_a_chunk_completes() {
+        let (events, tail) = decode_chunks(&[b"data: 1\n\ndata: 2\n\ndata: 3"]);
+        assert_eq!(events, ["data: 1", "data: 2"]);
+        assert_eq!(tail, "data: 3");
+    }
+
+    #[test]
+    fn sse_decoder_ends_mid_code_point_with_one_replacement_character() {
+        let emoji = "\u{1f600}".as_bytes();
+        let (events, tail) = decode_chunks(&[
+            b"data: {\"delta\":{\"text\":\"ok\"}}\n\n",
+            b"data: {\"delta\":{\"text\":\"",
+            &emoji[..3],
+        ]);
+        // The complete event before the cut is forwarded intact; the cut-off
+        // event is returned as text, not as an event.
+        assert_eq!(events.len(), 1);
+        assert_eq!(delta_text(&events[0]), "ok");
+        assert_eq!(tail, "data: {\"delta\":{\"text\":\"\u{fffd}");
+    }
+
+    #[test]
+    fn sse_decoder_replaces_invalid_bytes_and_keeps_decoding() {
+        // 0xFF is never valid UTF-8; 0xC3 followed by an ASCII byte is an
+        // invalid sequence of length one. Both decode as from_utf8_lossy does.
+        let (events, tail) = decode_chunks(&[b"data: a\xffb\xc3c\n\n"]);
+        assert_eq!(events, ["data: a\u{fffd}b\u{fffd}c"]);
+        assert_eq!(tail, "");
+    }
+
     #[test]
     fn proxy_error_serialize_is_human_readable() {
         // The UI shows `ProxyError` strings to the user in a toast, so the wire
@@ -675,11 +838,16 @@ mod tests {
     }
 
     #[test]
-    fn api_key_is_zeroized_on_drop() {
-        // Zeroizing<String>, the type stored_key returns, wipes the key bytes
-        // when it drops.
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-        assert_zeroize_on_drop::<Zeroizing<String>>();
+    fn stored_key_returns_a_key_that_is_zeroized_on_drop() {
+        // Compiles only while the key type stored_key returns wipes its bytes
+        // when it drops; a plain String return type fails the bound.
+        fn assert_returns_zeroize_on_drop<F, K>(_: F)
+        where
+            F: Fn(&SecretVault, Provider) -> Result<K, ProxyError>,
+            K: zeroize::ZeroizeOnDrop,
+        {
+        }
+        assert_returns_zeroize_on_drop(stored_key);
     }
 
     #[test]
@@ -696,11 +864,24 @@ mod tests {
     }
 
     #[test]
-    fn agent_validate_provided_key_accepts_zeroizing_string() {
-        // Zeroizing<String>, the type of the api_key parameter, implements
-        // ZeroizeOnDrop.
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-        assert_zeroize_on_drop::<Zeroizing<String>>();
+    fn api_key_parameters_are_zeroized_on_drop() {
+        // Compiles only while the api_key parameter of each command that takes
+        // a key from the webview wipes its bytes when it drops; a plain String
+        // parameter fails the bound.
+        fn assert_validate_key_param<F, K, R>(_: F)
+        where
+            F: Fn(Provider, K) -> R,
+            K: zeroize::ZeroizeOnDrop,
+        {
+        }
+        fn assert_set_key_param<F, K, R>(_: F)
+        where
+            F: for<'a> Fn(State<'a, Arc<SecretVault>>, Provider, K) -> R,
+            K: zeroize::ZeroizeOnDrop,
+        {
+        }
+        assert_validate_key_param(agent_validate_provided_key);
+        assert_set_key_param(set_provider_key);
     }
 
     #[test]
