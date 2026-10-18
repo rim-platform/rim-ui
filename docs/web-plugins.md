@@ -19,6 +19,7 @@ The same bundle runs in the web app and in the desktop app. The contract is
 | Installs | desktop: the Rust `PluginStateStore` and `~/.rim/plugins/<id>/`, through `pluginServices.ts`; web: IndexedDB `rim-plugins` (`browserPluginStore.ts`) |
 | `rim.storage.*` | desktop: `src-tauri/src/plugin_host/storage.rs` (app data directory); web: the `storage` store of `rim-plugins` |
 | Settings the user saves | desktop: `src-tauri/src/plugin_host/settings.rs`, non-secret values in the app data directory and secret ones in the secret vault, for both kinds of plugin; web: the `settings` store of `rim-plugins`, which keeps no secret settings; the form is `components/PluginSettingsDialog.tsx` |
+| `rim.settings.get`, `rim.settings.changed` | the session in `pluginSession.ts`, reading through `HostServices.pluginSettings`: on the desktop the `plugin_web_settings` command (`src-tauri/src/plugin_host/commands.rs`), secrets included; on the web `resolvedPluginSettings` in `browserPluginStore.ts`. A save or reset calls `onPluginSettingsSaved`, which tells the running session |
 | `rim.chat.*`, the client message service | `src/features/plugins/chat/`, shared with local processes, which the Rust broker relays to it; see `docs/plugin-chat-methods.md` |
 | Grant history and encrypted reads | desktop: the `audit` of the Rust `PluginStateStore`; web: the install record's `audit`; shown by `components/PluginAuditPanel.tsx` |
 | Starting and stopping frames | `useWebPluginRuntime.ts`, mounted in `AppShell`; principals in `api/usePluginPrincipalSync.ts` |
@@ -44,9 +45,10 @@ desktop); everything else goes to the Rust host as before.
    granted origins, or `'none'`), defines `rimPluginPort` and `rimPluginManifest`, and
    imports the entry from a `blob:` URL. A failed import comes back as `rim.frame.error`.
 4. The host sends `rim.handshake` (10 seconds, counted from the init), then commands,
-   heartbeats (every 30 s, none while the page is hidden, two misses remove the frame) and
-   principal notices. Stopping sends `rim.shutdown`, answers the plugin for one more
-   second, then removes the frame.
+   heartbeats (every 30 s, none while the page is hidden, two misses remove the frame),
+   principal notices, and the plugin's settings after each save and each principal change.
+   Stopping sends `rim.shutdown`, answers the plugin for one more second, then removes the
+   frame.
 
 A panel frame loads the same shell with `kind: "panel"` and the files under
 `panels/<id>/`; the shell renders `index.html`, then posts `rim.frame.ready` so the host
@@ -160,6 +162,7 @@ real browser shows them.
 | `rim.log` | none | 120 lines a minute |
 | `rim.ui.update_panel` | `ui.panel` | Routed, not frozen |
 | `rim.storage.get`, `rim.storage.set` | none | Routed, not frozen; 120 calls a minute |
+| `rim.settings.get`, and `rim.settings.changed` from the host | none | Frozen in v1. The plugin's own settings, for the port's plugin whatever the params say: saved values over defaults, the defaults only with nobody signed in. On the desktop a secret setting's value comes in plain form, and a vault that cannot be read answers `INTERNAL_ERROR` with `data.reason: "secretsLocked"` and sends no change; the web app keeps no secret settings, so they have no value there. One read at a time per plugin, so no older set follows a newer one |
 | `rim.chat.list_messages`, `get_message`, `search_messages` | `chat.read` (+ `chat.read.encrypted` in encrypted DMs and groups) | Routed, not frozen; `docs/plugin-chat-methods.md`. Reads come from the browser's encrypted store once it is set up as a linked device (`e2ee-web.md`, "Plugins"); otherwise `INTERNAL_ERROR` with `data.reason: "noCache"` |
 | `rim.chat.post_message` | `chat.write` (+ `chat.write.encrypted`) | Routed, not frozen; encrypted conversations only from a browser set up as a linked device (`e2ee-web.md`), otherwise `noEncryption` |
 | `rim.events.subscribe`, `rim.process.*`, `rim.fs.*`, `rim.network.*` | `events.read`, `local.process`, `fs.*`, `network` | `CAPABILITY_DENIED`: no web plugin can hold them |

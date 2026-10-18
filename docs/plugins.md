@@ -181,7 +181,11 @@ Plugins names.
   secret field says only "Configured" once saved, with **Replace** and **Clear**; the value is
   never shown again. In the web app a secret field says it is only available in the desktop
   app. Values are kept for your account on this device and never synced; emptying a field
-  clears its saved value, so the plugin falls back to the setting's default.
+  clears its saved value, so the plugin falls back to the setting's default. A running plugin
+  gets the new values as soon as you save or reset them, and the values of whoever signs in
+  next. It receives a secret setting's value too, in plain form, as it needs it to use the
+  token; other plugins never do. A plugin's panel can open this form, for example from a
+  "Configure" button, but never sees the values.
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
   shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
   with the app. On the web, plugins are turned on per account in that browser: signing out
