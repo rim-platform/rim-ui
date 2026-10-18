@@ -164,6 +164,9 @@ The desktop's timeline states and notices (`e2ee-desktop.md`, "What the person s
 - "Encrypted conversations are open in another tab of this browser. Close it to read them here.";
 - next to the browser's key actions: "Encrypted conversations in this browser are only as safe
   as this browser profile."
+- in **Set up encryption for this account** and Settings > Security: "Encrypted messages are kept
+  only in this browser: your other devices cannot load them from here, and clearing this site's
+  data deletes them. For a copy that lasts, use the desktop app with its history archive set up."
 
 The history archive is the desktop's: the web app offers no "Restore from history archive".
 

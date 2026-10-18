@@ -33,12 +33,16 @@ const api = vi.hoisted(() => ({
   profileCardRelays: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ value: true }));
+const runtime = vi.hoisted(() => ({ platform: "desktop" as "desktop" | "web" }));
 const deviceKeysChanged = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/keyIdentity", () => api);
 vi.mock("../../e2ee/runtime/session", () => ({ deviceKeysChanged }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
+  useRuntime: () => ({
+    platform: runtime.platform,
+    capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value },
+  }),
 }));
 vi.mock("../../workspaces/api/useCurrentUser", () => ({
   useCurrentUser: () => ({
@@ -107,6 +111,7 @@ function renderSettings(caps?: Partial<ServerLimits>) {
 describe("KeyIdentitySettings", () => {
   beforeEach(() => {
     desktop.value = true;
+    runtime.platform = "desktop";
     Object.values(api).forEach((fn) => fn.mockReset());
     deviceKeysChanged.mockReset();
     api.profileCardRelays.mockReturnValue(["http://localhost:8080"]);
@@ -388,5 +393,26 @@ describe("KeyIdentitySettings", () => {
 
     expect(await screen.findByText(/set up from the desktop app/i)).toBeInTheDocument();
     expect(api.reconcileDeviceKeys).not.toHaveBeenCalled();
+  });
+
+  it("says in the web app that encrypted history stays in this browser", async () => {
+    runtime.platform = "web";
+    api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
+    renderSettings();
+
+    expect(
+      await screen.findByText(/encrypted messages are kept only in this browser/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/desktop app with its history archive set up/i)).toBeInTheDocument();
+  });
+
+  it("does not show the browser history notice in the desktop app", async () => {
+    api.fetchMyKeyIdentity.mockResolvedValue(notEnrolled);
+    renderSettings();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    expect(screen.queryByText(/kept only in this browser/i)).toBeNull();
   });
 });

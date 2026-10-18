@@ -61,7 +61,9 @@ which adds and removes devices, and its device key, which signs in. The desktop 
 its secret vault, an encrypted file whose key is in the operating system's credential store
 ([Where the app keeps its data](install.md#where-the-app-keeps-its-data)). A browser keeps them
 in this site's IndexedDB storage, as keys that cannot be exported: clearing the site's data
-deletes them, and a private window may not keep them.
+deletes them, and a private window may not keep them. The encrypted messages a browser reads stay
+in that browser too, as **Set up encryption for this account** and Settings > Security say there;
+the desktop app's history archive keeps a copy that lasts.
 
 **Password accounts.** Servers take key signups only unless their operator allows passwords. On one
 that does, **Create account with a password** under the key form asks for a username, an email, a

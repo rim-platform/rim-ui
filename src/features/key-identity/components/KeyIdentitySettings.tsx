@@ -25,6 +25,7 @@ import {
   syncKeyLog,
   type MyKeyIdentity,
 } from "../api/keyIdentity";
+import { BrowserHistoryNotice } from "./BrowserHistoryNotice";
 import { CardRelays } from "./CardRelays";
 import { IdentityKeyBackup } from "./IdentityKeyBackup";
 import { EnrollKeyIdentity, type Me } from "./EnrollKeyIdentity";
@@ -67,6 +68,7 @@ export function KeyIdentitySettings() {
           permanent account id that stays the same when keys change, and a recovery kit gets it back
           if every device is lost.
         </p>
+        <BrowserHistoryNotice className="mt-2" />
       </div>
 
       {identity.error ? (
