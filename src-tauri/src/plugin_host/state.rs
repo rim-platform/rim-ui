@@ -23,8 +23,9 @@ pub struct PluginRecord {
     #[serde(default)]
     pub manifest_hash: String,
     /// SHA-256 hex of the entire bundle contents (all files, sorted deterministically)
-    /// recorded and trusted at install. At enable time this is recomputed
-    /// and compared; a mismatch surfaces a `FingerprintChanged` warning before spawning.
+    /// recorded and trusted at install. At enable time and at app start this is
+    /// recomputed and compared; a mismatch surfaces a `FingerprintChanged` warning
+    /// and the plugin is not spawned.
     #[serde(default)]
     pub bundle_fingerprint: String,
     /// Set to true when the bundle fingerprint has changed since the last pinned install.

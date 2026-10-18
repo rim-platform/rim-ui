@@ -22,7 +22,7 @@
 //! (`rel_path_as_bytes || content_bytes`) into a single SHA-256 hasher.  The
 //! resulting hex digest is the *bundle fingerprint*.  It is stored in
 //! [`crate::plugin_host::state::PluginRecord::bundle_fingerprint`] and recomputed
-//! at enable time to detect tampering or silent updates.
+//! at enable time and at app start to detect tampering or silent updates.
 
 use crate::plugin_host::bundle::{self, BundleError};
 use crate::plugin_host::git_install::{detect_manifest, GitInstallError, PluginInstallResult};
