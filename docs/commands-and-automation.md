@@ -123,8 +123,10 @@ into Navigation, Chat, Panels, Agent, Plugins and Other, with "Search keybinds..
   command and the context, then **Save**.
 - On a binding of your own, the pencil changes its command or context, clicking the keys records
   new ones, the switch turns it off, and the bin deletes it after "Delete keybind?".
-- The default rows cannot be edited or deleted here. A binding of yours on the same keys and
-  context takes their place; a profile can free a key altogether.
+- The default rows carry the **Default** tag and cannot be edited, turned off or deleted here.
+  A binding of yours on the same keys and context takes their place: **Override** opens the add
+  form with the default's keys, command and context filled in, ready to change and save. A
+  profile can free a key altogether.
 - A second binding of yours on the same keys and context is refused with "keybind already exists
   for this scope/context/keystroke". You can have up to 200.
 - Bindings to plugin commands, to "Open \<panel\>" commands and to the app's own commands, such
@@ -166,14 +168,17 @@ command**, asks for a **Command ID** (saved as `user.<id>`), a **Title**, a **De
 the **Steps**: **+ Add step** picks a command the server runs, and the arrows reorder. **Create**
 saves it. Its steps take no arguments here, so each one uses the context. A user command can be
 bound when all its steps can, is dangerous when one step is, and can include other user
-commands, eight levels deep at most. Editing one, with the pencil, asks for its steps again.
+commands, eight levels deep at most. Editing one, with the pencil, asks for its steps again,
+since the saved ones cannot be loaded back into the form: **Save** stays off until a step is
+chosen, and the new steps replace the old.
 
 **Macros** carry arguments for each step. Settings → Macros, **New Macro**, opens "Create
 Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
 "Search commands...", and an arguments field that takes JSON, such as
-`{"conversation_id": "…", "text": "…"}`. **Save** stores it. On the desktop, **Build with AI**
-turns a description into steps with the provider set in Settings → AI Agent: **Generate**, check
-the preview, then **Use these steps** opens them in the editor.
+`{"conversation_id": "…", "text": "…"}`. The search leaves out commands that only run in the app,
+and a step typed as one is marked as failing. **Save** stores it. On the desktop, **Build with
+AI** turns a description into steps with the provider set in Settings → AI Agent: **Generate**,
+check the preview, then **Use these steps** opens them in the editor.
 
 A macro runs from the play button on its row ("Run macro"), or from the composer: send
 `/macro <name>` ("Run Macro"). It runs on the server, step by step, with the open workspace as
@@ -226,7 +231,9 @@ its creator, an Owner or a Moderator can change, toggle or delete it.
 
 **What runs.** Nobody is there to confirm, so the server skips any action that would need a
 confirmation: every mutating, restricted or dangerous command, which includes posting a message,
-reacting and writing workspace state. Safe and sensitive server commands run. A pipeline reacts
+reacting and writing workspace state. Safe and sensitive server commands run. The editor's
+command search offers only these, and says why above the actions; an action set to a command the
+pipeline would skip, or to one that only runs in the app, is marked. A pipeline reacts
 only to events its creator may see: a message in a private channel its creator is not in fires
 nothing. On every firing, its creator, with the workspace open, sees "Pipeline "\<name\>"
 fired", with the number of actions that ran; skipped actions are not counted.
@@ -250,10 +257,10 @@ and a pipeline can react when it changes. Plugins have no access to it. An entry
 of two scopes: the workspace's, which every member reads and writes, or your own, which only you
 see.
 
-Settings → State shows it, outside Direct messages. **Server** and **User** switch between the
-workspace's scope and yours, and "Filter by prefix..." narrows the list. **New entry** asks for a
-**Key**, a **Value (JSON)** and a **TTL (minutes, optional)**, then **Create**; each entry can be
-edited and deleted, and shows when it expires.
+Settings → State shows it, outside Direct messages. **Workspace** and **User** switch between
+the workspace's scope and yours, and "Filter by prefix..." narrows the list. **New entry** asks
+for a **Key**, a **Value (JSON)** and a **TTL (minutes, optional)**, then **Create**; each entry
+can be edited and deleted, and shows when it expires.
 
 - A key starts with a lowercase letter, uses `a-z`, `0-9`, `.`, `_`, `:` and `-`, and ends with
   a letter or digit. Keys starting with `system.` belong to the server.

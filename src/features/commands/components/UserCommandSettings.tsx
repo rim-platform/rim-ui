@@ -28,6 +28,10 @@ export function UserCommandSettings() {
 
   const userCommands = commands?.filter((cmd) => cmd.sourceKind === "USER") ?? [];
   const availableCommands = commands?.filter((cmd) => cmd.executionTarget === "BACKEND") ?? [];
+  // The server refuses a user command without a step, so a step row left on "Select..." does
+  // not count towards one.
+  const chosenSteps = steps.filter((s) => s.commandId);
+  const chosenEditSteps = editSteps.filter((s) => s.commandId);
 
   function addStep() {
     setSteps([...steps, { commandId: "" }]);
@@ -52,14 +56,14 @@ export function UserCommandSettings() {
   }
 
   function handleCreate() {
-    if (!newId || !newTitle || steps.length === 0) return;
+    if (!newId || !newTitle || chosenSteps.length === 0) return;
     const commandId = newId.startsWith("user.") ? newId : `user.${newId}`;
     createMutation.mutate(
       {
         commandId,
         title: newTitle,
         description: newDescription || newTitle,
-        steps: steps.filter((s) => s.commandId),
+        steps: chosenSteps,
       },
       {
         onSuccess: () => {
@@ -81,7 +85,7 @@ export function UserCommandSettings() {
     setEditingCommandId(cmd.id);
     setEditTitle(cmd.title);
     setEditDescription(cmd.description);
-    // Steps are not returned from the query; start with empty and let user re-specify
+    // The commands query carries no steps, so the form starts with none to choose again.
     setEditSteps([]);
   }
 
@@ -115,13 +119,13 @@ export function UserCommandSettings() {
   }
 
   function handleSaveEdit() {
-    if (!editingCommandId || !editTitle) return;
+    if (!editingCommandId || !editTitle || chosenEditSteps.length === 0) return;
     updateMutation.mutate(
       {
         commandId: editingCommandId,
         title: editTitle,
         description: editDescription || editTitle,
-        steps: editSteps.filter((s) => s.commandId),
+        steps: chosenEditSteps,
         isEnabled: true,
       },
       {
@@ -235,7 +239,7 @@ export function UserCommandSettings() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleCreate}
-              disabled={!newId || !newTitle || steps.length === 0 || createMutation.isPending}
+              disabled={!newId || !newTitle || chosenSteps.length === 0 || createMutation.isPending}
               className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Creating..." : "Create"}
@@ -343,11 +347,19 @@ export function UserCommandSettings() {
                   >
                     + Add step
                   </button>
+                  {chosenEditSteps.length === 0 && (
+                    <p className="mt-1 text-[11px] text-rim-text-muted">
+                      The saved steps cannot be loaded here. Add the steps again to save: they
+                      replace the saved ones.
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={handleSaveEdit}
-                    disabled={!editTitle || updateMutation.isPending}
+                    disabled={
+                      !editTitle || chosenEditSteps.length === 0 || updateMutation.isPending
+                    }
                     className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
                   >
                     {updateMutation.isPending ? "Saving..." : "Save"}

@@ -38,6 +38,12 @@ const DEFAULT_LIST_LIMIT = 100;
 /** Key format: starts with a-z, body a-z0-9_./:-, ends with a-z0-9, max MAX_KEY_LENGTH chars total. */
 const KEY_REGEX = new RegExp(`^[a-z][a-z0-9_.:-]{0,${MAX_KEY_LENGTH - 2}}[a-z0-9]$`);
 
+/** The name each scope goes by in the page's copy; the `SERVER` scope is the workspace's. */
+const SCOPE_LABELS: Record<WorkspaceStateScopeGql, string> = {
+  [WorkspaceStateScopeGql.SERVER]: "Workspace",
+  [WorkspaceStateScopeGql.USER]: "User",
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -477,7 +483,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
         <h2 className="text-base font-semibold text-rim-text">Workspace State</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
           Key-value store for workspace configuration, feature flags, and runtime state. Keys are
-          scoped to the server or individual users. Values are JSON with optional TTL.
+          scoped to the workspace or to one user. Values are JSON with optional TTL.
         </p>
       </div>
 
@@ -495,7 +501,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             }`}
           >
             <Database className="h-3.5 w-3.5" />
-            Server
+            {SCOPE_LABELS[WorkspaceStateScopeGql.SERVER]}
           </button>
           <button
             type="button"
@@ -507,7 +513,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             }`}
           >
             <User className="h-3.5 w-3.5" />
-            User
+            {SCOPE_LABELS[WorkspaceStateScopeGql.USER]}
           </button>
         </div>
 
@@ -564,8 +570,8 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
           <Database className="mx-auto h-8 w-8 text-rim-text-faint" />
           <p className="mt-2 text-sm text-rim-text-muted">
             {prefix
-              ? `No entries matching "${prefix}" in ${scope.toLowerCase()} scope.`
-              : `No ${scope.toLowerCase()}-scoped entries yet.`}
+              ? `No entries matching "${prefix}" in ${SCOPE_LABELS[scope].toLowerCase()} scope.`
+              : `No ${SCOPE_LABELS[scope].toLowerCase()}-scoped entries yet.`}
           </p>
           <button
             type="button"
