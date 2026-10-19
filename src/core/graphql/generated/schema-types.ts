@@ -521,6 +521,10 @@ export type CreateCustomEmojiInput = {
 };
 
 export type CreateInviteInput = {
+  /**
+   * When the invite stops admitting anyone: in the future and at most 30 days from now
+   * (`VALIDATION` otherwise). Seven days from now when omitted.
+   */
   expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   maxUses?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -1703,6 +1707,13 @@ export type Mutation = {
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
   /**
+   * Revoke a workspace invite: from now on it admits nobody, and members who joined with it
+   * stay. Owner of the invite's workspace only (`FORBIDDEN` for its other members);
+   * `NOT_FOUND` for an unknown invite or one of a workspace the caller is not in. Revoking a
+   * revoked invite returns it unchanged.
+   */
+  revokeInvite: WorkspaceInvite;
+  /**
    * Append a rotation to the key log. A rotation signed by the recovery key works without a
    * session, revokes every device and session, and enrolls the device given with it.
    */
@@ -2298,6 +2309,11 @@ export type MutationResolveReportArgs = {
 
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
+};
+
+
+export type MutationRevokeInviteArgs = {
+  inviteId: Scalars['ID']['input'];
 };
 
 
@@ -2993,6 +3009,13 @@ export type Query = {
   userCommand?: Maybe<UserCommand>;
   /** The caller's user commands, enabled or not, with their steps, sorted by id. */
   userCommands: Array<UserCommand>;
+  /**
+   * The workspace's invites, newest first (`createdAt DESC, id DESC`), revoked, expired and
+   * used-up ones included. `AFTER` pages go to older invites. Defaults: `dir` `AFTER`,
+   * `limit` 50 (clamped to 1..=100). Owner only: anyone else gets `FORBIDDEN`. An invite's
+   * token is never listed.
+   */
+  workspaceInvites: WorkspaceInvitePage;
   /** The workspace's plugin registry, ordered by plugin id. Any member, guests included. */
   workspacePlugins: Array<WorkspacePlugin>;
   /**
@@ -3279,6 +3302,14 @@ export type QueryUnreadCountsArgs = {
 
 export type QueryUserCommandArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type QueryWorkspaceInvitesArgs = {
+  cursor?: InputMaybe<WorkspaceInviteCursorInput>;
+  dir?: InputMaybe<PageDir>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -3895,6 +3926,12 @@ export type Subscription = {
   /**
    * Subscribe to all real-time events for a workspace.
    * Returns events as JSON strings — the client parses the `type` field to determine the event kind.
+   *
+   * The subscriber's membership is checked when the subscription starts. Afterwards their
+   * guest status follows their `MemberRoleChanged` events, and the stream ends after their
+   * `MemberLeft`. When the subscriber falls behind and events are dropped, their membership
+   * and role are loaded again before any further event is delivered; the stream ends when
+   * that load fails, including when they are no longer a member.
    */
   workspaceEvents: Scalars['String']['output'];
 };
@@ -4139,6 +4176,49 @@ export type WorkspaceDmSetting = {
 };
 
 /**
+ * A workspace invite as its workspace's owner sees it. The token is shown once, by
+ * `createInvite`, and never again.
+ */
+export type WorkspaceInvite = {
+  createdAt: Scalars['DateTime']['output'];
+  /** The member who created the invite (null if the account no longer exists). */
+  createdBy?: Maybe<User>;
+  createdById: Scalars['ID']['output'];
+  /** Null for an invite stored without an expiry, which does not expire. */
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  maxUses: Scalars['Int']['output'];
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** The role a person joining with the invite gets. */
+  role: ServerMemberRoleGql;
+  serverId: Scalars['ID']['output'];
+  /** The invite's state when it was read. */
+  state: WorkspaceInviteState;
+  useCount: Scalars['Int']['output'];
+};
+
+export type WorkspaceInviteCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  inviteId: Scalars['ID']['input'];
+};
+
+export type WorkspaceInviteCursorOutput = {
+  createdAt: Scalars['DateTime']['output'];
+  inviteId: Scalars['ID']['output'];
+};
+
+/**
+ * Workspace invites ordered `createdAt DESC, id DESC` (newest first), with the standard cursor
+ * semantics: `AFTER` pages go to older invites.
+ */
+export type WorkspaceInvitePage = {
+  items: Array<WorkspaceInvite>;
+  next?: Maybe<WorkspaceInviteCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<WorkspaceInviteCursorOutput>;
+};
+
+/**
  * Minimal workspace info included in a workspace-invite preview. The workspace name and the
  * inviter's and owner's display names are shown to anyone holding the invite link.
  */
@@ -4149,6 +4229,24 @@ export type WorkspaceInvitePreviewGql = {
   serverId: Scalars['ID']['output'];
   serverName: Scalars['String']['output'];
 };
+
+/**
+ * Whether a workspace invite still admits anyone. A revocation wins over an expiry, and an
+ * expiry over the uses running out.
+ */
+export enum WorkspaceInviteState {
+  /** Unrevoked, unexpired and with uses left. */
+  ACTIVE = 'ACTIVE',
+  /** Past `expiresAt`. */
+  EXPIRED = 'EXPIRED',
+  /**
+   * Revoked by an owner (`revokeInvite`), or by the instance when its creator was blocked
+   * or deleted.
+   */
+  REVOKED = 'REVOKED',
+  /** `useCount` reached `maxUses`. */
+  USED_UP = 'USED_UP'
+}
 
 export type WorkspacePlugin = {
   approvedAt: Scalars['DateTime']['output'];

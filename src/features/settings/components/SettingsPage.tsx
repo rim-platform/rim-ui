@@ -59,6 +59,11 @@ const ModerationSettings = lazy(() =>
     default: m.ModerationSettings,
   })),
 );
+const WorkspaceInvites = lazy(() =>
+  import("./WorkspaceInvites").then((m) => ({
+    default: m.WorkspaceInvites,
+  })),
+);
 const WorkspacePluginSettings = lazy(() =>
   import("../../plugins/registry/components/WorkspacePluginSettings").then((m) => ({
     default: m.WorkspacePluginSettings,
@@ -400,6 +405,7 @@ export function SettingsPage() {
               {shownTab === "workspace" && (
                 <div className="space-y-10">
                   <ModerationSettings serverId={workspaceId} />
+                  <WorkspaceInvites serverId={workspaceId} />
                   <WorkspaceDmPolicySettings serverId={workspaceId} />
                   <WorkspacePluginSettings serverId={workspaceId} />
                   <WorkspaceOwnerSettings serverId={workspaceId} />

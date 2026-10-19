@@ -581,6 +581,10 @@ input CreateCustomEmojiInput {
 
 input CreateInviteInput {
 	serverId: ID!
+	"""
+	When the invite stops admitting anyone: in the future and at most 30 days from now
+	(`VALIDATION` otherwise). Seven days from now when omitted.
+	"""
 	expiresAt: DateTime
 	maxUses: Int
 	"""
@@ -2280,6 +2284,13 @@ type Mutation {
 	workspace's default. `NOT_FOUND` unless the caller is a member.
 	"""
 	setMyWorkspaceDmSetting(workspaceId: ID!, members: DmMembers!): MyDmSettings!
+	"""
+	Revoke a workspace invite: from now on it admits nobody, and members who joined with it
+	stay. Owner of the invite's workspace only (`FORBIDDEN` for its other members);
+	`NOT_FOUND` for an unknown invite or one of a workspace the caller is not in. Revoking a
+	revoked invite returns it unchanged.
+	"""
+	revokeInvite(inviteId: ID!): WorkspaceInvite!
 }
 
 input MuteConversationInput {
@@ -2857,6 +2868,13 @@ type Query {
 	The caller's user commands, enabled or not, with their steps, sorted by id.
 	"""
 	userCommands: [UserCommand!]!
+	"""
+	The workspace's invites, newest first (`createdAt DESC, id DESC`), revoked, expired and
+	used-up ones included. `AFTER` pages go to older invites. Defaults: `dir` `AFTER`,
+	`limit` 50 (clamped to 1..=100). Owner only: anyone else gets `FORBIDDEN`. An invite's
+	token is never listed.
+	"""
+	workspaceInvites(serverId: ID!, dir: PageDir, cursor: WorkspaceInviteCursorInput, limit: Int): WorkspaceInvitePage!
 }
 
 type ReactionGroup {
@@ -3590,6 +3608,12 @@ type Subscription {
 	"""
 	Subscribe to all real-time events for a workspace.
 	Returns events as JSON strings — the client parses the `type` field to determine the event kind.
+	
+	The subscriber's membership is checked when the subscription starts. Afterwards their
+	guest status follows their `MemberRoleChanged` events, and the stream ends after their
+	`MemberLeft`. When the subscriber falls behind and events are dropped, their membership
+	and role are loaded again before any further event is delivered; the stream ends when
+	that load fails, including when they are no longer a member.
 	"""
 	workspaceEvents(workspaceId: ID!): String!
 	"""
@@ -3868,6 +3892,57 @@ type WorkspaceDmSetting {
 }
 
 """
+A workspace invite as its workspace's owner sees it. The token is shown once, by
+`createInvite`, and never again.
+"""
+type WorkspaceInvite {
+	id: ID!
+	serverId: ID!
+	"""
+	The role a person joining with the invite gets.
+	"""
+	role: ServerMemberRoleGql!
+	useCount: Int!
+	maxUses: Int!
+	"""
+	Null for an invite stored without an expiry, which does not expire.
+	"""
+	expiresAt: DateTime
+	createdAt: DateTime!
+	createdById: ID!
+	revokedAt: DateTime
+	"""
+	The invite's state when it was read.
+	"""
+	state: WorkspaceInviteState!
+	"""
+	The member who created the invite (null if the account no longer exists).
+	"""
+	createdBy: User
+}
+
+input WorkspaceInviteCursorInput {
+	createdAt: DateTime!
+	inviteId: ID!
+}
+
+type WorkspaceInviteCursorOutput {
+	createdAt: DateTime!
+	inviteId: ID!
+}
+
+"""
+Workspace invites ordered `createdAt DESC, id DESC` (newest first), with the standard cursor
+semantics: `AFTER` pages go to older invites.
+"""
+type WorkspaceInvitePage {
+	items: [WorkspaceInvite!]!
+	next: WorkspaceInviteCursorOutput
+	prev: WorkspaceInviteCursorOutput
+	pageInfo: PageInfo!
+}
+
+"""
 Minimal workspace info included in a workspace-invite preview. The workspace name and the
 inviter's and owner's display names are shown to anyone holding the invite link.
 """
@@ -3879,6 +3954,30 @@ type WorkspaceInvitePreviewGql {
 	The workspace owner's display name, else username; null when the workspace has no owner.
 	"""
 	ownerDisplayName: String
+}
+
+"""
+Whether a workspace invite still admits anyone. A revocation wins over an expiry, and an
+expiry over the uses running out.
+"""
+enum WorkspaceInviteState {
+	"""
+	Unrevoked, unexpired and with uses left.
+	"""
+	ACTIVE
+	"""
+	Past `expiresAt`.
+	"""
+	EXPIRED
+	"""
+	`useCount` reached `maxUses`.
+	"""
+	USED_UP
+	"""
+	Revoked by an owner (`revokeInvite`), or by the instance when its creator was blocked
+	or deleted.
+	"""
+	REVOKED
 }
 
 type WorkspacePlugin {

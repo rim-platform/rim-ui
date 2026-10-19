@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { getWebBaseUrl } from "../../../core/graphql/config";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { DEFAULT_INVITE_USES, useCreateInviteMutation } from "../api/useInviteMutations";
+import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
+import {
+  DEFAULT_INVITE_EXPIRY_DAYS,
+  DEFAULT_INVITE_USES,
+  INVITE_EXPIRY_DAYS,
+  useCreateInviteMutation,
+  type InviteExpiryDays,
+} from "../api/useInviteMutations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
@@ -40,26 +46,36 @@ interface InviteDialogProps {
 /** Basic client-side email format check — mirrors the pattern used for signup's email field. */
 const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
+/** Where a refused `createInvite` is explained: on the expiry or email field, else the banner. */
+type InviteErrorField = { field: "expiry" | "email"; message: string } | null;
+
 /**
- * Maps a `createInvite` GraphQL error to a field-level message.
+ * Maps a `createInvite` `VALIDATION` error to the field it concerns. The server names
+ * `expires_at` when the expiry is not in the future or more than 30 days out, which with the
+ * offered lifetimes means this device's clock is off. Any other `VALIDATION` is put on the
+ * email field when an address was sent, as that is the remaining user input. Returns `null`
+ * for an instance cap or any other error, which the limit note or the generic banner shows.
  *
- * The only user-supplied, validatable field on `CreateInviteInput` is
- * `recipientEmail` (Track B3) — `serverId`/`maxUses` aren't user input here —
- * so a backend `VALIDATION` error on this mutation means the email address was
- * rejected server-side (e.g. passed client validation but failed a stricter
- * server check), unless it names one of the instance's caps. Returns `null` for
- * any other error shape, which falls back to the generic error banner.
+ * @param err The mutation's error.
+ * @param sentEmail Whether the request carried a recipient address.
  */
-function mapCreateInviteError(err: unknown): string | null {
-  if (isLimitRefusal(err)) return null;
-  if (err && typeof err === "object") {
-    const e = err as { response?: { errors?: Array<{ extensions?: { code?: string } }> } };
-    const code = e.response?.errors?.[0]?.extensions?.code;
-    if (code === "VALIDATION") {
-      return "That doesn't look like a valid email address.";
-    }
+function mapCreateInviteError(err: unknown, sentEmail: boolean): InviteErrorField {
+  if (isLimitRefusal(err) || graphqlErrorCode(err) !== "VALIDATION") return null;
+  if (graphqlErrorMessage(err, "").includes("expires_at")) {
+    return {
+      field: "expiry",
+      message:
+        "The server refused this expiry: invites expire within 30 days. Check this device's clock and try again.",
+    };
+  }
+  if (sentEmail) {
+    return { field: "email", message: "That doesn't look like a valid email address." };
   }
   return null;
+}
+
+function expiryLabel(days: InviteExpiryDays): string {
+  return days === 1 ? "1 day" : `${days} days`;
 }
 
 export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialogProps) {
@@ -71,6 +87,9 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
   const [recipientEmail, setRecipientEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [role, setRole] = useState<InviteRole>(ServerMemberRoleGql.MEMBER);
+  const [expiresInDays, setExpiresInDays] = useState<InviteExpiryDays>(DEFAULT_INVITE_EXPIRY_DAYS);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
+  const expirySelectId = useId();
   const email = useServerFeature("email");
   const limits = useServerInfo().limits;
   const usesCap = limits?.inviteMaxUses;
@@ -95,10 +114,12 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
       return;
     }
     setEmailError(null);
+    setExpiryError(null);
     createInvite.mutate(
       {
         serverId: workspaceId,
         role,
+        ...(expiresInDays !== DEFAULT_INVITE_EXPIRY_DAYS ? { expiresInDays } : {}),
         ...(trimmed ? { recipientEmail: trimmed } : {}),
         ...(maxUses !== undefined ? { maxUses } : {}),
       },
@@ -109,8 +130,9 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
           setCopied(false);
         },
         onError: (err) => {
-          const mapped = mapCreateInviteError(err);
-          if (mapped) setEmailError(mapped);
+          const mapped = mapCreateInviteError(err, Boolean(trimmed));
+          if (mapped?.field === "expiry") setExpiryError(mapped.message);
+          if (mapped?.field === "email") setEmailError(mapped.message);
         },
       },
     );
@@ -134,13 +156,16 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
     setRecipientEmail("");
     setEmailError(null);
     setRole(ServerMemberRoleGql.MEMBER);
+    setExpiresInDays(DEFAULT_INVITE_EXPIRY_DAYS);
+    setExpiryError(null);
     createInvite.reset();
     onClose();
   }
 
-  // A field-level email error or the daily cap already explains the failure; don't also
-  // show the generic banner for the same error.
-  const showGenericError = createInvite.error && !emailError && !(refusedDaily && dailyLimit);
+  // A field-level error or the daily cap already explains the failure; don't also show the
+  // generic banner for the same error.
+  const showGenericError =
+    createInvite.error && !emailError && !expiryError && !(refusedDaily && dailyLimit);
 
   return (
     <Dialog open={open} onClose={handleClose} title="Invite member">
@@ -148,8 +173,8 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
         {!inviteLink ? (
           <>
             <p className="text-sm text-rim-text-muted">
-              Generate a one-time invite link to share with someone you want to add to this
-              workspace.
+              Generate an invite link to share with the people you want to add to this workspace. It
+              admits up to {DEFAULT_INVITE_USES} people.
             </p>
             <div>
               <p className="mb-1 text-xs font-medium text-rim-text">Joins as</p>
@@ -173,6 +198,36 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
                   </button>
                 ))}
               </div>
+            </div>
+            <div>
+              <label
+                htmlFor={expirySelectId}
+                className="mb-1 block text-xs font-medium text-rim-text"
+              >
+                Expires after
+              </label>
+              <select
+                id={expirySelectId}
+                value={expiresInDays}
+                onChange={(e) => {
+                  setExpiresInDays(Number(e.target.value) as InviteExpiryDays);
+                  setExpiryError(null);
+                }}
+                className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none focus:border-rim-accent"
+              >
+                {INVITE_EXPIRY_DAYS.map((days) => (
+                  <option key={days} value={days}>
+                    {expiryLabel(days)}
+                  </option>
+                ))}
+              </select>
+              {expiryError ? (
+                <p className="mt-1 text-xs text-rim-danger">{expiryError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-rim-text-muted">
+                  Every invite expires, at the latest 30 days after it is created.
+                </p>
+              )}
             </div>
             {email.enabled ? (
               <div>
@@ -230,7 +285,8 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
         ) : (
           <>
             <p className="text-sm text-rim-text-muted">
-              Share this link with the person you want to invite:
+              Share this link with the person you want to invite. It expires in{" "}
+              {expiryLabel(expiresInDays)}.
             </p>
             <div className="flex items-center gap-2 rounded-lg border border-rim-line bg-rim-void px-3 py-2.5">
               <span className="min-w-0 flex-1 truncate text-sm text-rim-text">{inviteLink}</span>
