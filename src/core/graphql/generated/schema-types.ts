@@ -1448,6 +1448,8 @@ export type MlsReaddRequest = {
 
 export type MlsWelcome = {
   conversationId: Scalars['ID']['output'];
+  /** When the Welcome was stored; with `id`, the cursor of the next page. */
+  createdAt: Scalars['DateTime']['output'];
   /** The epoch the device joins at. */
   epoch: Scalars['Int']['output'];
   expiresAt: Scalars['DateTime']['output'];
@@ -1455,6 +1457,12 @@ export type MlsWelcome = {
   incarnation: Scalars['Int']['output'];
   message: Scalars['String']['output'];
   serverId: Scalars['ID']['output'];
+};
+
+/** Where a page of pending Welcomes starts: after the Welcome with this `createdAt` and `id`. */
+export type MlsWelcomeCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  welcomeId: Scalars['ID']['input'];
 };
 
 export type Mutation = {
@@ -2917,7 +2925,10 @@ export type Query = {
   myMacros: Array<MacroDef>;
   /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
-  /** The session device's unacknowledged Welcomes, oldest first. */
+  /**
+   * The session device's unacknowledged Welcomes, oldest first, after `after` (exclusive;
+   * from the oldest when null). `limit` is 1 to 100, 100 by default.
+   */
   myMlsWelcomes: Array<MlsWelcome>;
   /** The viewer's notification settings in the workspace (defaults until first saved). */
   myNotificationSettings: NotificationSettings;
@@ -3178,6 +3189,12 @@ export type QueryMutedConversationsArgs = {
 
 export type QueryMyMacrosArgs = {
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMyMlsWelcomesArgs = {
+  after?: InputMaybe<MlsWelcomeCursorInput>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 

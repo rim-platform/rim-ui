@@ -1762,6 +1762,18 @@ type MlsWelcome {
 	epoch: Int!
 	message: String!
 	expiresAt: DateTime!
+	"""
+	When the Welcome was stored; with `id`, the cursor of the next page.
+	"""
+	createdAt: DateTime!
+}
+
+"""
+Where a page of pending Welcomes starts: after the Welcome with this `createdAt` and `id`.
+"""
+input MlsWelcomeCursorInput {
+	createdAt: DateTime!
+	welcomeId: ID!
 }
 
 type Mutation {
@@ -2774,9 +2786,10 @@ type Query {
 	"""
 	myMlsKeyPackageStatus: [MlsKeyPackageStatus!]!
 	"""
-	The session device's unacknowledged Welcomes, oldest first.
+	The session device's unacknowledged Welcomes, oldest first, after `after` (exclusive;
+	from the oldest when null). `limit` is 1 to 100, 100 by default.
 	"""
-	myMlsWelcomes: [MlsWelcome!]!
+	myMlsWelcomes(after: MlsWelcomeCursorInput, limit: Int): [MlsWelcome!]!
 	"""
 	Accepted Commits of an incarnation after `afterEpoch` (exclusive; from 0 when null),
 	oldest first. `limit` is 1 to 100, 50 by default.

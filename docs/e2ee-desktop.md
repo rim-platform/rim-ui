@@ -107,6 +107,26 @@ device. Also scheduled per conversation: creating a group nobody created within 
 weekly self-update (a day's spread after it falls due), a new incarnation when a re-add waits
 over 10 minutes or the group runs another suite.
 
+A pending add the claim leaves out (no key package, or a device whose pending Welcomes leave no
+room for one more) waits for a later round; nothing is committed when it was the only change. A
+Commit refused because an added device ran out of room since the claim (`VALIDATION`, `… has
+too many pending Welcomes`) is dropped and built again, within the 3 attempts a Commit gets, and
+the next claim leaves that device out; a first Commit is built once more, as when it leaves a
+member out.
+
+## Welcomes
+
+On start, every 12 hours, on `MlsWelcomeAvailable` for this device, and when a conversation
+stops for lack of group state, the webview reads `myMlsWelcomes` from this relay and then from
+each host of a space on another relay, 100 at a time and at most 3 pages per server (past the
+256 a device may hold). Each page is joined (join, catch up with the Commits since), then
+acknowledged whatever became of each Welcome (`ackMlsWelcomes`, at most 100 per call), then the
+leaves of the conversations it joined are checked. The next page starts after the last Welcome
+read (`after`), so a page whose acknowledgement did not take is not read twice in one pass; a
+page shorter than 100 ends it. A Welcome left over is read again on the next pass, where it is
+refused as a replay and acknowledged. This relay's failures end the pass; another host that
+does not answer is skipped until next time.
+
 A leaf that does not verify (after one refetch) stops sending in the conversation, shows
 "Unverified device present", and is removed at once if the server agrees.
 

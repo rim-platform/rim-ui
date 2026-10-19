@@ -51,6 +51,13 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- **Upgrade:** run a rim-server that pages `myMlsWelcomes` (the `after` and `limit` arguments
+  and `MlsWelcome.createdAt`); against an older server this device can no longer join
+  encrypted conversations. A device with more than 100 waiting invitations to encrypted
+  conversations joins them all at once (up to 300 per server in one pass) instead of 100 at a
+  time, and a conversation with a member whose device holds too many waiting invitations no
+  longer commits an empty change each time it checks its members: that device is added once
+  it has room again.
 - **Upgrade:** run a rim-server with the `userCommand` and `userCommands` queries. Editing a
   user command in Settings → Commands loads its saved title, description and steps, with each
   step's arguments, instead of asking for the steps again, and the list shows how many steps

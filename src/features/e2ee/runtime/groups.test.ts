@@ -7,10 +7,12 @@ const api = vi.hoisted(() => ({
   fetchCommits: vi.fn(),
   fetchConversationGroup: vi.fn(),
   fetchKeyPackageStatus: vi.fn(),
-  fetchWelcomes: vi.fn(),
+  fetchWelcomePage: vi.fn(),
   requestReadd: vi.fn(),
   submitCommit: vi.fn(),
   uploadKeyPackages: vi.fn(),
+  WELCOME_PAGE_SIZE: 100,
+  welcomeSources: vi.fn((): (string | null)[] => [null]),
 }));
 const commands = vi.hoisted(() => ({
   status: vi.fn(),
@@ -52,6 +54,7 @@ import {
   createGroupLocked,
   MEMBER_WITHOUT_DEVICE,
   processWelcomes,
+  TOO_MANY_PENDING_WELCOMES,
   refreshKeyPackages,
   verifyLeaves,
 } from "./groups";
@@ -247,6 +250,71 @@ describe("commitPendingChanges", () => {
     expect(commands.settleCommit).not.toHaveBeenCalled();
   });
 
+  describe("when an added device has no room for one more Welcome", () => {
+    const full = () =>
+      graphqlError("VALIDATION", `device dev-a of rimp1_a ${TOO_MANY_PENDING_WELCOMES}`);
+    const devA = { principalId: "rimp1_a", deviceId: "dev-a", keyPackage: "kp", userId: "u-a" };
+
+    beforeEach(() => {
+      api.fetchConversationGroup.mockResolvedValue({
+        memberIds: ["u-me", "u-a"],
+        mlsGroup: serverGroup({
+          pendingAdds: [
+            { principalId: "rimp1_a", deviceId: "dev-a", userId: "u-a", hasKeyPackage: true },
+          ],
+        }),
+      });
+    });
+
+    it("drops the Commit and commits nothing once the claim leaves the device out", async () => {
+      api.claimKeyPackages.mockResolvedValueOnce([devA]).mockResolvedValueOnce([]);
+      api.submitCommit.mockRejectedValueOnce(full());
+
+      expect(await commitPendingChanges(session, "ws", "c")).toBe(false);
+      expect(commands.settleCommit).toHaveBeenCalledTimes(1);
+      expect(commands.settleCommit.mock.calls[0][4]).toBe(false);
+      expect(api.claimKeyPackages).toHaveBeenCalledTimes(2);
+      expect(commands.commit).toHaveBeenCalledTimes(1);
+      expect(api.submitCommit).toHaveBeenCalledTimes(1);
+    });
+
+    it("commits the other pending changes without the device", async () => {
+      api.fetchConversationGroup.mockResolvedValue({
+        memberIds: ["u-me", "u-a"],
+        mlsGroup: serverGroup({
+          pendingAdds: [
+            { principalId: "rimp1_a", deviceId: "dev-a", userId: "u-a", hasKeyPackage: true },
+          ],
+          pendingRemoves: [
+            { principalId: "rimp1_x", deviceId: "dev-x", userId: "u-x", addedEpoch: 1 },
+          ],
+        }),
+      });
+      api.claimKeyPackages.mockResolvedValueOnce([devA]).mockResolvedValueOnce([]);
+      api.submitCommit.mockRejectedValueOnce(full()).mockResolvedValueOnce(undefined);
+
+      expect(await commitPendingChanges(session, "ws", "c")).toBe(true);
+      expect(commands.commit.mock.calls[1][3]).toEqual([]);
+      expect(commands.commit.mock.calls[1][4]).toEqual([
+        { principalId: "rimp1_x", deviceId: "dev-x" },
+      ]);
+      expect(commands.settleCommit.mock.calls.map((call) => call[4])).toEqual([false, true]);
+    });
+
+    it("gives up after 3 refused Commits", async () => {
+      api.claimKeyPackages.mockResolvedValue([devA]);
+      api.submitCommit.mockRejectedValue(full());
+
+      expect(await commitPendingChanges(session, "ws", "c")).toBe(false);
+      expect(api.submitCommit).toHaveBeenCalledTimes(3);
+      expect(commands.settleCommit.mock.calls.map((call) => call[4])).toEqual([
+        false,
+        false,
+        false,
+      ]);
+    });
+  });
+
   it("does nothing while this device is behind the server's epoch", async () => {
     commands.status.mockResolvedValue([
       { conversationId: "c", hasGroup: true, incarnation: 1, epoch: 3 },
@@ -334,7 +402,7 @@ describe("a direct message under a misbehaving server", () => {
   });
 
   it("finding 6: a stale or replayed Welcome is acknowledged without asking for a re-add", async () => {
-    api.fetchWelcomes.mockResolvedValue([
+    api.fetchWelcomePage.mockResolvedValue([
       { id: "w1", serverId: "ws", conversationId: "c1", incarnation: 1, epoch: 1, message: "a" },
       { id: "w2", serverId: "ws", conversationId: "c2", incarnation: 1, epoch: 1, message: "b" },
     ]);
@@ -356,7 +424,7 @@ describe("a direct message under a misbehaving server", () => {
     expect(await processWelcomes(session)).toEqual([]);
     expect(commands.readdRequest).not.toHaveBeenCalled();
     expect(api.requestReadd).not.toHaveBeenCalled();
-    expect(api.ackWelcomes).toHaveBeenCalledWith(["w1", "w2"]);
+    expect(api.ackWelcomes).toHaveBeenCalledWith(null, ["w1", "w2"]);
   });
 });
 
@@ -410,11 +478,11 @@ describe("createGroup", () => {
     api.claimKeyPackages.mockResolvedValue([]);
     commands.createGroup.mockResolvedValue({ ...outgoing, epoch: 0 });
     api.submitCommit.mockRejectedValue(graphqlError("STALE_EPOCH"));
-    api.fetchWelcomes.mockResolvedValue([]);
+    api.fetchWelcomePage.mockResolvedValue([]);
 
     expect(await createGroup(session, "ws", "c")).toBe(false);
     expect(commands.settleCommit.mock.calls[0][4]).toBe(false);
-    expect(api.fetchWelcomes).toHaveBeenCalled();
+    expect(api.fetchWelcomePage).toHaveBeenCalledWith(null, null);
   });
 
   describe("with a member who joined after the member list was cached", () => {
@@ -461,6 +529,31 @@ describe("createGroup", () => {
         notReady: [],
       });
       expect(api.submitCommit).toHaveBeenCalledTimes(1);
+      expect(notReadyMembers).not.toHaveBeenCalled();
+    });
+
+    it("builds the first Commit once more when an added device has no room for the Welcome", async () => {
+      api.submitCommit
+        .mockRejectedValueOnce(
+          graphqlError("VALIDATION", `device d of p ${TOO_MANY_PENDING_WELCOMES}`),
+        )
+        .mockResolvedValueOnce(undefined);
+
+      expect(await createGroup(session, "ws", "c")).toBe(true);
+      expect(api.submitCommit).toHaveBeenCalledTimes(2);
+      expect(commands.settleCommit.mock.calls.map((call) => call[4])).toEqual([false, true]);
+    });
+
+    it("stops after the second Commit is refused for a full device too", async () => {
+      api.submitCommit.mockRejectedValue(
+        graphqlError("VALIDATION", `device d of p ${TOO_MANY_PENDING_WELCOMES}`),
+      );
+
+      expect(await createGroupLocked(session, "ws", "c")).toEqual({
+        created: false,
+        notReady: [],
+      });
+      expect(api.submitCommit).toHaveBeenCalledTimes(2);
       expect(notReadyMembers).not.toHaveBeenCalled();
     });
 
@@ -512,7 +605,7 @@ describe("processWelcomes", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("joins, catches up, then acknowledges; a Welcome it cannot open asks for a re-add", async () => {
-    api.fetchWelcomes.mockResolvedValue([
+    api.fetchWelcomePage.mockResolvedValue([
       { id: "w1", serverId: "ws", conversationId: "c1", incarnation: 1, epoch: 1, message: "a" },
       { id: "w2", serverId: "ws", conversationId: "c2", incarnation: 1, epoch: 5, message: "b" },
     ]);
@@ -532,7 +625,89 @@ describe("processWelcomes", () => {
     expect(api.requestReadd.mock.invocationCallOrder[0]).toBeLessThan(
       commands.keyPackages.mock.invocationCallOrder[0],
     );
-    expect(api.ackWelcomes).toHaveBeenCalledWith(["w1", "w2"]);
+    expect(api.ackWelcomes).toHaveBeenCalledWith(null, ["w1", "w2"]);
+  });
+
+  describe("a page at a time", () => {
+    const stale = () =>
+      Object.assign(new E2eeCommandError("E2EE_STALE_WELCOME", "replayed"), {
+        code: "E2EE_STALE_WELCOME",
+      });
+    const welcome = (n: number) => ({
+      id: `w${n}`,
+      serverId: "ws",
+      conversationId: `c${n}`,
+      incarnation: 1,
+      epoch: 1,
+      message: "m",
+      createdAt: `2026-10-20T00:00:00.${String(n).padStart(3, "0")}Z`,
+    });
+    const range = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, i) => welcome(from + i));
+
+    beforeEach(() => {
+      commands.join.mockRejectedValue(stale());
+      commands.status.mockResolvedValue([]);
+    });
+
+    it("reads past each full page and acknowledges each page on its own", async () => {
+      api.fetchWelcomePage
+        .mockResolvedValueOnce(range(0, 100))
+        .mockResolvedValueOnce(range(100, 200))
+        .mockResolvedValueOnce(range(200, 250));
+
+      expect(await processWelcomes(session)).toEqual([]);
+      expect(api.fetchWelcomePage.mock.calls).toEqual([
+        [null, null],
+        [null, welcome(99)],
+        [null, welcome(199)],
+      ]);
+      expect(api.ackWelcomes.mock.calls).toEqual([
+        [null, range(0, 100).map((w) => w.id)],
+        [null, range(100, 200).map((w) => w.id)],
+        [null, range(200, 250).map((w) => w.id)],
+      ]);
+      expect(commands.join).toHaveBeenCalledTimes(250);
+    });
+
+    it("reads at most 3 pages from a server in one pass", async () => {
+      let next = 0;
+      api.fetchWelcomePage.mockImplementation(async () => {
+        next += 100;
+        return range(next - 100, next);
+      });
+
+      await processWelcomes(session);
+      expect(api.fetchWelcomePage).toHaveBeenCalledTimes(3);
+      expect(api.ackWelcomes).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops reading a server whose acknowledgement fails", async () => {
+      api.fetchWelcomePage.mockResolvedValue(range(0, 100));
+      api.ackWelcomes.mockRejectedValueOnce(new Error("network down"));
+
+      await expect(processWelcomes(session)).rejects.toThrow("network down");
+      expect(api.fetchWelcomePage).toHaveBeenCalledTimes(1);
+    });
+
+    it("reads each other host after this relay, and skips one that does not answer", async () => {
+      api.welcomeSources.mockReturnValueOnce([null, "host-b", "host-c"]);
+      api.fetchWelcomePage.mockImplementation(async (host: string | null) => {
+        if (host === "host-b") throw new Error("unreachable");
+        return host === null ? [welcome(1)] : [welcome(2)];
+      });
+
+      await processWelcomes(session);
+      expect(api.fetchWelcomePage.mock.calls.map((call) => call[0])).toEqual([
+        null,
+        "host-b",
+        "host-c",
+      ]);
+      expect(api.ackWelcomes.mock.calls).toEqual([
+        [null, ["w1"]],
+        ["host-c", ["w2"]],
+      ]);
+    });
   });
 });
 
