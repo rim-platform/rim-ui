@@ -67,7 +67,7 @@ export type ServerCommit = Pick<
 >;
 export type ServerWelcome = Pick<
   MlsWelcome,
-  "id" | "serverId" | "conversationId" | "incarnation" | "epoch" | "message"
+  "id" | "serverId" | "conversationId" | "incarnation" | "epoch" | "message" | "createdAt"
 >;
 export type ClaimedPackage = Pick<
   ClaimedKeyPackage,
@@ -150,44 +150,41 @@ export async function fetchCommits(
   }
 }
 
-/** The server each fetched Welcome came from: `null` for this relay, else the host's id. */
-const welcomeHosts = new Map<string, string | null>();
+/** The most Welcomes one `myMlsWelcomes` page holds and one `ackMlsWelcomes` call takes. */
+export const WELCOME_PAGE_SIZE = 100;
 
 /**
- * Welcomes waiting for this device: on this relay, and on each host of a space on another
- * server this account uses (a DM homed on another relay). A host that does not answer is
- * asked again next time.
+ * The servers Welcomes for this device may wait on: this relay (`null`), then each host of a
+ * space on another server this account uses (a DM homed on another relay).
  */
-export async function fetchWelcomes(): Promise<ServerWelcome[]> {
-  const res = await graphqlClient.request<{ myMlsWelcomes: ServerWelcome[] }>(MY_WELCOMES_QUERY);
-  const remote = await Promise.all(
-    remoteHosts().map(async (host) => {
-      try {
-        const answer = await hostClient(host).request<{ myMlsWelcomes: ServerWelcome[] }>(
-          MY_WELCOMES_QUERY,
-        );
-        return answer.myMlsWelcomes.map((welcome) => ({ welcome, host }));
-      } catch {
-        return [];
-      }
-    }),
-  );
-  const all = [...res.myMlsWelcomes.map((welcome) => ({ welcome, host: null })), ...remote.flat()];
-  for (const { welcome, host } of all) welcomeHosts.set(welcome.id, host);
-  return all.map(({ welcome }) => welcome);
+export function welcomeSources(): (string | null)[] {
+  return [null, ...remoteHosts()];
 }
 
-/** Acknowledge Welcomes, each on the server it came from. */
-export async function ackWelcomes(ids: string[]): Promise<void> {
-  const byHost = new Map<string | null, string[]>();
-  for (const id of ids) {
-    const host = welcomeHosts.get(id) ?? null;
-    byHost.set(host, [...(byHost.get(host) ?? []), id]);
-    welcomeHosts.delete(id);
-  }
-  for (const [host, hostIds] of byHost) {
-    const client = host ? hostClient(host) : graphqlClient;
-    await client.request(ACK_WELCOMES_MUTATION, { ids: hostIds });
+/**
+ * One page of the Welcomes waiting for this device on `host` (`null` for this relay), oldest
+ * first.
+ *
+ * @param after - The last Welcome of the previous page, or `null` for the first page.
+ * @returns At most {@link WELCOME_PAGE_SIZE} Welcomes; a shorter page is the last.
+ */
+export async function fetchWelcomePage(
+  host: string | null,
+  after: Pick<ServerWelcome, "id" | "createdAt"> | null,
+): Promise<ServerWelcome[]> {
+  const client = host ? hostClient(host) : graphqlClient;
+  const res = await client.request<{ myMlsWelcomes: ServerWelcome[] }>(MY_WELCOMES_QUERY, {
+    after: after ? { createdAt: after.createdAt, welcomeId: after.id } : null,
+    limit: WELCOME_PAGE_SIZE,
+  });
+  return res.myMlsWelcomes;
+}
+
+/** Acknowledge Welcomes on `host` (`null` for this relay), at most 100 per call. */
+export async function ackWelcomes(host: string | null, ids: string[]): Promise<void> {
+  const client = host ? hostClient(host) : graphqlClient;
+  for (let i = 0; i < ids.length; i += WELCOME_PAGE_SIZE) {
+    await client.request(ACK_WELCOMES_MUTATION, { ids: ids.slice(i, i + WELCOME_PAGE_SIZE) });
   }
 }
 

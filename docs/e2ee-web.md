@@ -136,6 +136,9 @@ The webview runtime is the desktop's, unchanged in what it does:
   ranking: `web/groupState.ts` and `web/directory.ts` port `group.rs` and `directory.rs`; key
   logs are replayed and certificates checked with WebCrypto (`key-identity/browser`), the leaves
   by the module.
+- **Welcomes**: the same webview runtime as the desktop's (`runtime/groups.ts`): read 100 at a
+  time from this relay and each other host, at most 3 pages per server per pass, each page
+  acknowledged on its own (`e2ee-desktop.md`, "Welcomes").
 - **Sending**: the plaintext row is stored under the chosen UUID v7 before the envelope leaves;
   `STALE_EPOCH` re-encrypts the same content and franking key in the new epoch.
 - **Attachments**: AES-256-GCM with HKDF-SHA256 in WebCrypto (appendix A.3, tested byte for

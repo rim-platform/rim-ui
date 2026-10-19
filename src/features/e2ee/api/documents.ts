@@ -132,14 +132,15 @@ export const MLS_COMMITS_QUERY = gql`
 `;
 
 export const MY_WELCOMES_QUERY = gql`
-  query MyMlsWelcomes {
-    myMlsWelcomes {
+  query MyMlsWelcomes($after: MlsWelcomeCursorInput, $limit: Int) {
+    myMlsWelcomes(after: $after, limit: $limit) {
       id
       serverId
       conversationId
       incarnation
       epoch
       message
+      createdAt
     }
   }
 `;

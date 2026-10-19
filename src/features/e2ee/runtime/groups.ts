@@ -23,13 +23,16 @@ import {
   fetchCommits,
   fetchConversationGroup,
   fetchKeyPackageStatus,
-  fetchWelcomes,
+  fetchWelcomePage,
   requestReadd,
   submitCommit,
   uploadKeyPackages,
+  WELCOME_PAGE_SIZE,
+  welcomeSources,
   type ClaimedPackage,
   type ConversationGroupInfo,
   type ServerGroup,
+  type ServerWelcome,
 } from "../api/e2eeApi";
 import {
   E2eeCommandError,
@@ -51,6 +54,8 @@ export const STALE_EPOCH = "STALE_EPOCH";
 export const MLS_COMMIT_REQUIRED = "MLS_COMMIT_REQUIRED";
 /** The server's refusal of a first Commit that leaves a member without a device in the group. */
 export const MEMBER_WITHOUT_DEVICE = "every member needs at least one device in the group";
+/** The end of the server's refusal of a Commit whose Welcome an added device has no room for. */
+export const TOO_MANY_PENDING_WELCOMES = "has too many pending Welcomes";
 
 /** A device waits this long for a re-add before it starts a new incarnation itself. */
 const RECOVERY_AFTER_MS = 10 * 60_000;
@@ -144,53 +149,101 @@ async function holdsWorkingGroup(
   );
 }
 
+/** Pages of Welcomes read from one server in one pass: 300, past the 256 a device may hold. */
+const WELCOME_PAGES = 3;
+
 /**
- * Join every conversation a Welcome waits for: join, catch up with the Commits since, check
- * the leaves, then acknowledge. A Welcome this device cannot open leads to a re-add request,
- * unless the device already holds working state of that incarnation (a replayed Welcome).
+ * Join every conversation a Welcome waits for, on this relay and then on each other host: join,
+ * catch up with the Commits since, acknowledge, check the leaves. A Welcome this device cannot
+ * open leads to a re-add request, unless the device already holds working state of that
+ * incarnation (a replayed Welcome). This relay's failures reject; a host that does not answer is
+ * asked again next time.
+ *
+ * @returns The conversations joined.
  */
 export async function processWelcomes(session: E2eeSession): Promise<string[]> {
-  const welcomes = await fetchWelcomes();
   const joined: string[] = [];
-  const done: string[] = [];
-  for (const welcome of welcomes) {
-    const { serverId, conversationId } = welcome;
+  for (const host of welcomeSources()) {
     try {
-      await withConversation(conversationId, async () => {
-        await e2eeCommands.join(
-          session.account,
-          serverId,
-          conversationId,
-          welcome.incarnation,
-          welcome.message,
-        );
-      });
-      forgetAbsence(conversationId);
-      await catchUp(session, serverId, conversationId);
-      joined.push(conversationId);
+      await processHostWelcomes(session, host, joined);
     } catch (err) {
-      const stale =
-        (err instanceof E2eeCommandError && STALE_WELCOME_CODES.has(err.code)) ||
-        (await holdsWorkingGroup(session, serverId, conversationId, welcome.incarnation));
-      if (stale) {
-        logger.warn("[RIM:e2ee] ignoring a Welcome older than this device's state:", err);
-      } else {
-        logger.warn("[RIM:e2ee] a Welcome could not be opened; asking to be re-added:", err);
-        await askToBeReadded(session, serverId, conversationId, welcome.incarnation).catch(
-          (e: unknown) => logger.warn("[RIM:e2ee] re-add request failed:", e),
-        );
-      }
+      if (host === null) throw err;
+      logger.warn(`[RIM:e2ee] Welcomes on ${host} could not be processed:`, err);
     }
-    done.push(welcome.id);
-  }
-  await ackWelcomes(done);
-  for (const welcome of welcomes) {
-    if (!joined.includes(welcome.conversationId)) continue;
-    await verifyLeaves(session, welcome.serverId, welcome.conversationId).catch((e: unknown) =>
-      logger.warn("[RIM:e2ee] leaf check failed:", e),
-    );
   }
   return joined;
+}
+
+/**
+ * The Welcomes on one server (`null` for this relay), a page at a time and at most
+ * {@link WELCOME_PAGES} pages. Every Welcome of a page is acknowledged, whatever became of it,
+ * before the leaves of the conversations it joined are checked. A page after the first starts
+ * after the last Welcome read, so a page is never read twice in one pass, even when its
+ * acknowledgement did not take; a page shorter than {@link WELCOME_PAGE_SIZE} is the last.
+ *
+ * @param joined - Receives the conversations joined.
+ */
+async function processHostWelcomes(session: E2eeSession, host: string | null, joined: string[]) {
+  let after: ServerWelcome | null = null;
+  for (let page = 0; page < WELCOME_PAGES; page += 1) {
+    const welcomes = await fetchWelcomePage(host, after);
+    const opened: ServerWelcome[] = [];
+    for (const welcome of welcomes) {
+      if (await joinFromWelcome(session, welcome)) opened.push(welcome);
+    }
+    joined.push(...opened.map((w) => w.conversationId));
+    await ackWelcomes(
+      host,
+      welcomes.map((w) => w.id),
+    );
+    const checked = new Set<string>();
+    for (const { serverId, conversationId } of opened) {
+      if (checked.has(conversationId)) continue;
+      checked.add(conversationId);
+      await verifyLeaves(session, serverId, conversationId).catch((e: unknown) =>
+        logger.warn("[RIM:e2ee] leaf check failed:", e),
+      );
+    }
+    if (welcomes.length < WELCOME_PAGE_SIZE) return;
+    after = welcomes[welcomes.length - 1];
+  }
+}
+
+/**
+ * Join the conversation of one Welcome and catch up with the Commits since. A Welcome that does
+ * not open asks for a re-add unless it is stale or a replay.
+ *
+ * @returns Whether the conversation was joined.
+ */
+async function joinFromWelcome(session: E2eeSession, welcome: ServerWelcome): Promise<boolean> {
+  const { serverId, conversationId } = welcome;
+  try {
+    await withConversation(conversationId, async () => {
+      await e2eeCommands.join(
+        session.account,
+        serverId,
+        conversationId,
+        welcome.incarnation,
+        welcome.message,
+      );
+    });
+    forgetAbsence(conversationId);
+    await catchUp(session, serverId, conversationId);
+    return true;
+  } catch (err) {
+    const stale =
+      (err instanceof E2eeCommandError && STALE_WELCOME_CODES.has(err.code)) ||
+      (await holdsWorkingGroup(session, serverId, conversationId, welcome.incarnation));
+    if (stale) {
+      logger.warn("[RIM:e2ee] ignoring a Welcome older than this device's state:", err);
+    } else {
+      logger.warn("[RIM:e2ee] a Welcome could not be opened; asking to be re-added:", err);
+      await askToBeReadded(session, serverId, conversationId, welcome.incarnation).catch(
+        (e: unknown) => logger.warn("[RIM:e2ee] re-add request failed:", e),
+      );
+    }
+    return false;
+  }
 }
 
 // ─── Leaves ─────────────────────────────────────────────────────────────────
@@ -236,8 +289,12 @@ export async function verifyLeaves(
 
 // ─── Commits ────────────────────────────────────────────────────────────────
 
-/** How the server answered a Commit; `membersMissing` is a first Commit leaving a member out. */
-type SubmitResult = "accepted" | "stale" | "noAnswer" | "refused" | "membersMissing";
+/**
+ * How the server answered a Commit; `membersMissing` is a first Commit leaving a member out,
+ * `welcomesFull` a Commit adding a device that has no room for one more Welcome.
+ */
+type SubmitResult =
+  "accepted" | "stale" | "noAnswer" | "refused" | "membersMissing" | "welcomesFull";
 
 /** Whether `err` refuses a first Commit because a member has no device in the group. */
 function leavesMemberOut(commit: OutgoingCommit, err: unknown): boolean {
@@ -245,6 +302,14 @@ function leavesMemberOut(commit: OutgoingCommit, err: unknown): boolean {
     commit.epoch === 0 &&
     graphqlErrorCode(err) === VALIDATION &&
     graphqlErrorMessage(err, "") === MEMBER_WITHOUT_DEVICE
+  );
+}
+
+/** Whether `err` refuses a Commit because an added device holds too many pending Welcomes. */
+function addsFullDevice(err: unknown): boolean {
+  return (
+    graphqlErrorCode(err) === VALIDATION &&
+    graphqlErrorMessage(err, "").endsWith(TOO_MANY_PENDING_WELCOMES)
   );
 }
 
@@ -269,7 +334,8 @@ async function submit(
     if (code === STALE_EPOCH) return "stale";
     if (code === undefined) return "noAnswer";
     logger.warn("[RIM:e2ee] the server refused a Commit:", err);
-    return leavesMemberOut(commit, err) ? "membersMissing" : "refused";
+    if (leavesMemberOut(commit, err)) return "membersMissing";
+    return addsFullDevice(err) ? "welcomesFull" : "refused";
   }
 }
 
@@ -300,6 +366,7 @@ async function settle(
     case "stale":
     case "refused":
     case "membersMissing":
+    case "welcomesFull":
       await e2eeCommands.settleCommit(account, principalId, workspaceId, conversationId, false);
       return false;
     case "noAnswer": {
@@ -373,8 +440,11 @@ interface CommitOptions {
 
 /**
  * Commit every pending change of the conversation's group at once, after catching up: pending
- * adds (with freshly claimed key packages), pending removes, honorable re-add requests.
- * Retries when another device's Commit wins the epoch. Returns whether a Commit went through.
+ * adds (with freshly claimed key packages), pending removes, honorable re-add requests. A pending
+ * add the claim leaves out (no key package, or no room for one more Welcome) waits for a later
+ * round, and nothing is committed when nothing else is left. Retries, at most 3 times in all,
+ * when another device's Commit wins the epoch or an added device ran out of room for Welcomes
+ * since the claim. Returns whether a Commit went through.
  */
 export function commitPendingChanges(
   session: E2eeSession,
@@ -420,6 +490,9 @@ export async function commitPendingLocked(
 
     const claimed = await claimWithReadds(workspaceId, conversationId, adds, readds);
     const readdsClaimed = readds.filter((r) => claimed.some((c) => sameDevice(c, r)));
+    if (claimed.length + removes.length + extra.length === 0 && !options.selfUpdate) {
+      return false;
+    }
     const commit = await e2eeCommands.commit(
       session.account,
       workspaceId,
@@ -518,9 +591,10 @@ export interface GroupCreation {
 
 /**
  * {@link createGroup} for a caller that already holds the conversation, naming the members the
- * first Commit could not include. A Commit the server refuses for leaving a member out is built
- * once more from freshly fetched members and devices; when that one is refused for the same
- * reason, the members who are not ready are named.
+ * first Commit could not include. A Commit the server refuses for leaving a member out, or for
+ * adding a device with no room for one more Welcome (which the next claim leaves out), is built
+ * once more from freshly fetched members and devices; when that one is refused for leaving a
+ * member out, the members who are not ready are named.
  */
 export async function createGroupLocked(
   session: E2eeSession,
@@ -529,9 +603,14 @@ export async function createGroupLocked(
   which: "first" | "next" = "first",
 ): Promise<GroupCreation> {
   let attempt = await createGroupOnce(session, workspaceId, conversationId, which);
-  if (attempt.result !== "membersMissing") return { created: attempt.created, notReady: [] };
-  logger.warn("[RIM:e2ee] the first Commit left a member out; building it again");
-  await forgetMembers(workspaceId, attempt.members);
+  if (attempt.result === "membersMissing") {
+    logger.warn("[RIM:e2ee] the first Commit left a member out; building it again");
+    await forgetMembers(workspaceId, attempt.members);
+  } else if (attempt.result === "welcomesFull") {
+    logger.warn("[RIM:e2ee] an added device has no room for the Welcome; building it again");
+  } else {
+    return { created: attempt.created, notReady: [] };
+  }
   attempt = await createGroupOnce(session, workspaceId, conversationId, which);
   if (attempt.result !== "membersMissing") return { created: attempt.created, notReady: [] };
   const others = attempt.members.filter((m) => m.userId !== session.userId);
