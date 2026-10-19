@@ -85,7 +85,7 @@ ed25519-dalek = "3"
 bip39 = { version = "2.2", default-features = false, features = ["zeroize"] }
 # Device linking (src/key_identity/device_link.rs): AES-256-GCM seals the offer and the answer,
 # as WebCrypto can on the web client (no ChaCha20 there).
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 # End-to-end encryption (crates/rim_mls): MLS groups for DMs and private groups.
 rim_mls = { path = "crates/rim_mls" }
 
