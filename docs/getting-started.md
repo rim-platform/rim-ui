@@ -116,7 +116,13 @@ Every workspace member has one role:
 - **Guest**: sees and writes only in the conversations someone adds them to.
 
 The Owner invites people with **Invite member** in a conversation's header: choose **Member** or
-**Guest** under **Joins as**, then **Generate invite link**, and send the link.
+**Guest** under **Joins as**, how long the link lasts under **Expires after** (1 day, 7 days, the
+default, or 30 days; no invite lasts longer), then **Generate invite link**, and send the link.
+Settings → Workspace → **Invites** lists every invite of the workspace to its Owner, newest
+first: its role, how many of its uses are taken, when it expires and who created it, marked
+Active, Expired, Used up or Revoked. **Revoke** on an active invite, after its confirmation,
+stops the link admitting anyone; people who already joined with it stay. **Create invite** there
+opens the same dialog.
 
 **Creating a channel.** **New channel** (the **+** beside Channels in the tool panel, or
 <kbd>Ctrl+Shift+C</kbd>) asks for a **Channel name**. The **Private** switch says "Only invited

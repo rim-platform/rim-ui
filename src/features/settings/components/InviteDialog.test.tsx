@@ -4,8 +4,8 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useToastStore } from "../../../shared/toast";
 
-vi.mock("../api/useInviteMutations", () => ({
-  DEFAULT_INVITE_USES: 10,
+vi.mock("../api/useInviteMutations", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/useInviteMutations")>()),
   useCreateInviteMutation: vi.fn(),
 }));
 
@@ -191,6 +191,93 @@ describe("InviteDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
 
     expect(screen.getByText("That doesn't look like a valid email address.")).toBeInTheDocument();
+  });
+
+  it("offers 1, 7 and 30 days, defaults to 7 and leaves that default to the server", () => {
+    const mutate = vi.fn((_input, options) => {
+      options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
+    });
+    mockCreateInvite({ mutate });
+    renderDialog();
+
+    const select = screen.getByLabelText("Expires after");
+    expect(select).toHaveValue("7");
+    expect(Array.from((select as HTMLSelectElement).options).map((o) => o.textContent)).toEqual([
+      "1 day",
+      "7 days",
+      "30 days",
+    ]);
+    expect(screen.queryByText(/never/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+    expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
+    expect(screen.getByText(/It expires in 7 days\./)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["1", 1, "1 day"],
+    ["30", 30, "30 days"],
+  ])("sends a picked expiry of %s days", (value, days, label) => {
+    const mutate = vi.fn((_input, options) => {
+      options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
+    });
+    mockCreateInvite({ mutate });
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText("Expires after"), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { serverId: "ws-1", role: "MEMBER", expiresInDays: days },
+      expect.anything(),
+    );
+    expect(screen.getByText(new RegExp(`It expires in ${label}\\.`))).toBeInTheDocument();
+  });
+
+  it("puts a server VALIDATION about the expiry on the expiry field, not the email field", () => {
+    const refusal = {
+      response: {
+        errors: [
+          {
+            message: "expires_at may not be more than 30 days from now",
+            extensions: { code: "VALIDATION" },
+          },
+        ],
+      },
+    };
+    const mutate = vi.fn((_input, options) => options?.onError?.(refusal));
+    mockCreateInvite({ mutate, error: refusal });
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText(/email invite/i), {
+      target: { value: "teammate@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Expires after"), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(screen.getByText(/The server refused this expiry/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("That doesn't look like a valid email address."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/expires_at may not be/)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Expires after"), { target: { value: "7" } });
+    expect(screen.queryByText(/The server refused this expiry/)).not.toBeInTheDocument();
+  });
+
+  it("shows another VALIDATION in the banner when no email was sent", () => {
+    const refusal = {
+      response: {
+        errors: [{ message: "max_uses must be > 0", extensions: { code: "VALIDATION" } }],
+      },
+    };
+    const mutate = vi.fn((_input, options) => options?.onError?.(refusal));
+    mockCreateInvite({ mutate, error: refusal });
+    renderDialog({ email: ServerFeatureState.DISABLED });
+
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(screen.getByText("max_uses must be > 0")).toBeInTheDocument();
   });
 
   it("shows an error toast (and doesn't throw) when copying the link fails", async () => {

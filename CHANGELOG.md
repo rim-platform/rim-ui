@@ -37,6 +37,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   sidebar section heading, a workspace on the rail or a message request opens a menu of its
   actions. A conversation's menu is the same as the "…" menu in its header, whose Notifications
   entry is now a submenu, and adds Mark as read, Invite people, Edit topic and Assign keybind.
+- **Upgrade:** run a rim-server with the `workspaceInvites` query and the `revokeInvite`
+  mutation. Settings → Workspace → **Invites** lists a workspace's invites to its Owner, newest
+  first, with each one's role, uses, expiry, creator and state (Active, Expired, Used up or
+  Revoked), and **Revoke** ends an active one after a confirmation. The invite dialog asks how
+  long a new link lasts: 1 day, 7 days (the default) or 30 days, the most a server allows.
 
 ### Changed
 

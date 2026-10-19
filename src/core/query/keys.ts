@@ -22,6 +22,8 @@ export const queryKeys = {
   // invalidates it too.
   messageReport: (serverId?: string, reportId?: string) =>
     ["messageReports", serverId, "report", reportId] as const,
+  // A workspace's invites as its owner lists them, newest first.
+  workspaceInvites: (serverId?: string) => ["workspaceInvites", serverId] as const,
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,
