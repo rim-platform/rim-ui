@@ -416,6 +416,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Security
 
+- A server's discovery document is accepted only when its server-to-server endpoint is the
+  origin it was fetched from or a path under it. Before, a longer host that merely started the
+  same passed, so another server's document replayed at `https://host.exam` could be pinned
+  there under the identity of `https://host.example`.
 - A desktop plugin whose files changed while the app was closed no longer starts at launch. It
   waits for **Trust new version**, which starts it if it is switched on.
 - Installing a plugin refuses capability names other than the built-in ones, and
