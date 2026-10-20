@@ -8,7 +8,6 @@
  * members on this relay alone, today's rule holds: encrypted when everyone is ready.
  */
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
@@ -18,6 +17,7 @@ import { createGroup } from "../../e2ee/runtime/groups";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import { isWebAccount } from "../../e2ee/web/webAccount";
 import { resolveIdentity } from "../contacts/identity";
+import { serverOrigin } from "../state/serverOrigin";
 import { useRelayStore } from "../state/useRelayStore";
 
 /** Someone to start a conversation with. */
@@ -44,6 +44,7 @@ export class NotReadyError extends Error {
 
 interface Resolved {
   member: DirectMember;
+  /** Their card's relays and the member's own; empty when neither names one. */
   relayUrls: string[];
   ready: boolean;
 }
@@ -52,7 +53,7 @@ async function resolveMember(member: DirectMember): Promise<Resolved> {
   const { identity, card } = await resolveIdentity(member.principalId, member.relayUrls);
   const relayUrls = [...new Set([...(card?.relays ?? []), ...member.relayUrls])];
   const ready = identity.devices.some((d) => d.mlsActive && !d.revocation);
-  return { member, relayUrls: relayUrls.length > 0 ? relayUrls : [getApiOrigin()], ready };
+  return { member, relayUrls, ready };
 }
 
 /** What the person is asked to wait for: who is not ready, and whether this device is not. */
@@ -86,9 +87,12 @@ export async function startDirectConversation(
 ): Promise<StartedDirect> {
   const info = useRelayStore.getState().info;
   if (!info) throw new Error("This server does not relay messages.");
-  const resolved = await Promise.all(members.map(resolveMember));
+  const here = await serverOrigin();
+  const resolved = (await Promise.all(members.map(resolveMember))).map((r) =>
+    r.relayUrls.length > 0 ? r : { ...r, relayUrls: [here] },
+  );
   const session = await e2eeSession();
-  const elsewhere = resolved.some((r) => !r.relayUrls.includes(getApiOrigin()));
+  const elsewhere = resolved.some((r) => !r.relayUrls.includes(here));
   const missing = notReadyNames(resolved, Boolean(session));
   if (elsewhere && missing.length > 0) throw new NotReadyError(missing);
   const encrypted = missing.length === 0;

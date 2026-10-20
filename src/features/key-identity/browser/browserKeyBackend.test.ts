@@ -7,6 +7,11 @@ const requestMock = vi.fn();
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
+// The server is known by another origin than the page it serves.
+vi.mock("../../relay/state/serverOrigin", () => ({
+  serverOrigin: async () => "https://relay.example",
+  serverEndpoint: async () => "https://relay.example/api",
+}));
 
 import { fromHex, keyFromSeed } from "../../../test/ed25519";
 import { DeviceLinkState } from "../../../core/graphql/generated/schema-types";
@@ -328,6 +333,16 @@ describe("the web app as a linked device", () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  it("takes a code naming the endpoint the server is known by, and keeps the keys for the page's", async () => {
+    oldDevice();
+    await expect(
+      linkNewDevice(CODE.replace(ENDPOINT, "https://relay.example/api"), "Firefox on Linux", {
+        sleep,
+      }),
+    ).resolves.toBe("user-1");
+    expect(await stored()).not.toBeNull();
+  });
+
   it("refuses to link over keys this browser already holds for the account", async () => {
     oldDevice();
     await link();
@@ -593,6 +608,7 @@ describe("the web app creating an identity", () => {
     expect(storedWhileEnrolling?.identity?.publicKey).toBe(head.identityKey);
     const published = await verifiedCard(card, head);
     expect(published.devices).toEqual([await certifiedDevice(input.device, head)]);
+    expect(published.relays).toEqual(["https://relay.example"]);
     // Saved before sending: no kit secret is kept.
     expect(storedWhileEnrolling).toMatchObject({ kitConfirmed: true });
     expect(storedWhileEnrolling?.recoveryEntropy).toBeUndefined();
@@ -987,7 +1003,8 @@ describe("the web app as the old device of a link", () => {
 
     const started = await startLinkingDevice(identity);
     expect(started).toMatchObject({ linkId: LINK_ID, principalId });
-    expect(parseLinkCode(started.code).endpoint).toBe(ENDPOINT);
+    // The code names the server as other devices know it, not the page's origin.
+    expect(parseLinkCode(started.code).endpoint).toBe("https://relay.example/api");
     link.code = started.code;
     const { offer, plaintext, sealed } = await offerFrom(started.code);
     link.offer = sealed;

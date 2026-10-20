@@ -16,6 +16,13 @@ const api = vi.hoisted(() => ({
 const identity = vi.hoisted(() => ({ fetchVerifiedIdentity: vi.fn() }));
 vi.mock("../api/relayApi", () => api);
 vi.mock("../contacts/identity", () => identity);
+const own = vi.hoisted(() => ({
+  view: { origin: "http://localhost:8080" as string | null, failed: false },
+}));
+vi.mock("../state/serverOrigin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/serverOrigin")>()),
+  useServerOrigin: () => own.view,
+}));
 
 import { ContactsSettings } from "./ContactsSettings";
 
@@ -34,6 +41,7 @@ function startRelay() {
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
+  own.view = { origin: "http://localhost:8080", failed: false };
   useRelayStore.getState().reset();
   useContactStore.setState({ aliases: {} });
   Object.values(api).forEach((fn) => fn.mockReset());
@@ -52,6 +60,30 @@ describe("ContactsSettings", () => {
     renderWithProviders(<ContactsSettings />);
     expect(screen.getByText(`rim-contact:1:${ME}:http://localhost:8080`)).toBeInTheDocument();
     expect(screen.getByLabelText("Contact QR code")).toBeInTheDocument();
+    expect(await screen.findByText("No contacts yet.")).toBeInTheDocument();
+  });
+
+  it("names this server in the link by the origin it is known by", async () => {
+    own.view = { origin: "https://relay.example", failed: false };
+    startRelay();
+    api.fetchContacts.mockResolvedValue([]);
+    renderWithProviders(<ContactsSettings />);
+    expect(screen.getByText(`rim-contact:1:${ME}:https://relay.example`)).toBeInTheDocument();
+    expect(await screen.findByText("No contacts yet.")).toBeInTheDocument();
+  });
+
+  it("shows no link while this server's origin is read, and says when it cannot be", async () => {
+    own.view = { origin: null, failed: false };
+    startRelay();
+    api.fetchContacts.mockResolvedValue([]);
+    const { rerender } = renderWithProviders(<ContactsSettings />);
+    expect(screen.getByText(/reading this server's address/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Contact QR code")).not.toBeInTheDocument();
+
+    own.view = { origin: null, failed: true };
+    rerender(<ContactsSettings />);
+    expect(screen.getByText(/your contact link cannot be shown/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Contact QR code")).not.toBeInTheDocument();
     expect(await screen.findByText("No contacts yet.")).toBeInTheDocument();
   });
 

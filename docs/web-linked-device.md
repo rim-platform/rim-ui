@@ -108,7 +108,11 @@ a `web` offer. Revoke a browser you no longer use from the desktop's device list
   values of small order (the 8 small-order encodings, sign bit ignored), non-canonical key
   encodings (`y` at or above the field prime) and scalars at or above the group order, which is at
   least as strict as the desktop's `verify_strict`.
-- The web app takes a pasted code only (no camera), and only for its own GraphQL endpoint.
+- The web app takes a pasted code only (no camera), and only for its own server: its own GraphQL
+  endpoint, or the endpoint its server is known by when the web app is served on a domain of its
+  own (the identity origin's `/api`, `relay-client.md`, "This server's address"). A code the web
+  app issues names that endpoint too, so a desktop app configured with the server's own address
+  takes it; the page's own endpoint is named when the identity origin cannot be read.
 - Mobile browsers (`platform: "mobile"`) keep their reduced capabilities and are not linked.
 
 ## Trying it against a desktop old device

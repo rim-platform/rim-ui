@@ -20,6 +20,7 @@ import {
   type StartedDeviceLink,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
+import { serverEndpoint } from "../../relay/state/serverOrigin";
 import {
   keyBackend,
   type LinkAnswer,
@@ -343,7 +344,8 @@ export async function linkNewDevice(
   const backend = keyBackend();
   let sent: SentOffer;
   try {
-    sent = await backend.linkOffer(getGraphqlEndpoint(), code, deviceName);
+    const knownAs = await serverEndpoint().catch(() => undefined);
+    sent = await backend.linkOffer(getGraphqlEndpoint(), code, deviceName, knownAs);
   } catch (err) {
     throw new DeviceLinkError("refused", messageOf(err, DEVICE_LINK_MESSAGES.failed));
   }
@@ -411,11 +413,10 @@ export async function startLinkingDevice(identity: MyKeyIdentity): Promise<Start
     throw sessionFailure(err) ?? err;
   }
   try {
-    const { code } = await keyBackend().linkBegin(
-      identity.principalId,
-      getGraphqlEndpoint(),
-      started.linkId,
-    );
+    // The code names the server as other devices know it; the page's own endpoint when that
+    // cannot be read.
+    const endpoint = await serverEndpoint().catch(() => getGraphqlEndpoint());
+    const { code } = await keyBackend().linkBegin(identity.principalId, endpoint, started.linkId);
     return { ...started, code, principalId: identity.principalId };
   } catch (err) {
     await cancelOnServer(started.linkId);

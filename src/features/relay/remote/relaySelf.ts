@@ -1,12 +1,11 @@
 /**
  * This app's relay as a delegation names it: its server id and the hash of its current key,
  * read from its own discovery document (fetched directly, checked like any server's and
- * pinned).
+ * pinned under the origin the relay is known by).
  */
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import { keyHash } from "../crypto/serverStatements";
-import { directTransport } from "../direct/directTransport";
+import { readOwnDiscovery } from "../state/serverOrigin";
 import { pinDiscovery } from "../state/serverPins";
 import { useRelayStore } from "../state/useRelayStore";
 
@@ -29,8 +28,7 @@ export async function relaySelf(now: number = Date.now()): Promise<RelaySelf> {
   if (cached && cached.value.serverId === info.serverId && now - cached.at < TTL_MS) {
     return cached.value;
   }
-  const origin = getApiOrigin();
-  const document = await directTransport().discovery(origin);
+  const { origin, document } = await readOwnDiscovery();
   const pin = await pinDiscovery(document, origin, info.serverId, now);
   const value = { serverId: pin.serverId, keyHash: await keyHash(pin.keys[pin.keys.length - 1]) };
   cached = { value, at: now };

@@ -1,16 +1,16 @@
-import { endpointHost, getGraphqlEndpoint } from "../../../core/graphql/config";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { isKnownServerFeature, serverFeatureLabel } from "../../../core/serverFeatures";
 import { cn } from "../../../shared/ui/cn";
+import { useServerHost } from "../../relay/state/serverOrigin";
 import { NEWER_SERVER_API_MESSAGE, useServerInfo } from "../hooks/useServerInfo";
 
 /**
- * The connected server, by its host, with its release and API versions under the client's;
+ * The connected server, by the host it is known by, with its release and API versions under the client's;
  * nothing while it loads.
  */
 export function AboutServerVersion() {
   const { info, unreachable } = useServerInfo();
-  const host = endpointHost(getGraphqlEndpoint());
+  const host = useServerHost();
   if (unreachable) {
     return <p className="text-xs text-rim-text-faint">Server {host} unreachable</p>;
   }
