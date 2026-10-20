@@ -47,6 +47,12 @@ export interface ServerConfig {
   registrationMode: RegistrationMode | undefined;
 }
 
+/** Ask the server how it takes new accounts. */
+export async function fetchRegistrationMode(): Promise<RegistrationMode> {
+  const res = await graphqlClient.request<RegistrationModeResponse>(REGISTRATION_MODE_QUERY);
+  return res.registrationMode;
+}
+
 /**
  * Fetches the deployment-wide server configuration.
  *
@@ -57,10 +63,9 @@ export interface ServerConfig {
 export function useServerConfig() {
   return useQuery({
     queryKey: queryKeys.serverConfig(),
-    queryFn: async (): Promise<ServerConfig> => {
-      const res = await graphqlClient.request<RegistrationModeResponse>(REGISTRATION_MODE_QUERY);
-      return { registrationMode: res.registrationMode };
-    },
+    queryFn: async (): Promise<ServerConfig> => ({
+      registrationMode: await fetchRegistrationMode(),
+    }),
     staleTime: 5 * 60 * 1000, // 5 minutes — server policy changes rarely
   });
 }

@@ -1,35 +1,53 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { Button } from "../../../shared/ui/Button";
 import { relayProblem } from "../../relay/contacts/contactLink";
+import { useServerOrigin } from "../../relay/state/serverOrigin";
 import { profileCardRelays, publishProfileCard, type MyKeyIdentity } from "../api/keyIdentity";
 
 const inputClass =
   "w-full rounded-md border border-rim-line bg-rim-void px-3 py-1.5 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent/40";
 
-/**
- * The relays the profile card lists, preferred first: where people on other servers reach
- * this account. This server stays on the list; the card is signed and published again when
- * the list changes.
- */
-export function CardRelays({
-  identity,
-  displayName,
-  onPublished,
-}: {
+interface CardRelaysProps {
   identity: MyKeyIdentity;
   displayName: string;
   onPublished: () => void;
-}) {
-  const published = profileCardRelays(identity);
+}
+
+/**
+ * The relays the profile card lists, preferred first: where people on other servers reach
+ * this account. This server, by the origin it is known by, stays on the list; the card is
+ * signed and published again when the list changes. Until that origin is read the list waits,
+ * and says so when it cannot be read.
+ */
+export function CardRelays(props: CardRelaysProps) {
+  const { origin, failed } = useServerOrigin();
+  if (origin === null) {
+    return failed ? (
+      <p role="alert" className="text-xs text-rim-danger">
+        Could not read this server&apos;s address, so the relays your card lists cannot be changed
+        now.
+      </p>
+    ) : (
+      <p className="text-xs text-rim-text-faint">Reading this server&apos;s address...</p>
+    );
+  }
+  return <RelayList {...props} here={origin} />;
+}
+
+function RelayList({
+  identity,
+  displayName,
+  onPublished,
+  here,
+}: CardRelaysProps & { here: string }) {
+  const published = profileCardRelays(here, identity);
   const [relays, setRelays] = useState<string[]>(published);
   const [draft, setDraft] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const here = getApiOrigin();
   const changed = JSON.stringify(relays) !== JSON.stringify(published);
 
   function move(index: number, by: -1 | 1) {

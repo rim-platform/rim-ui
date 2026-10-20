@@ -12,7 +12,7 @@
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { getApiOrigin, getGraphqlEndpoint } from "../../../core/graphql/config";
+import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import {
   FORBIDDEN,
   graphqlErrorCode,
@@ -32,12 +32,15 @@ import type {
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { signInRequest } from "../../auth/api/signInRequest";
+import { fetchRegistrationMode } from "../../auth/api/useServerConfig";
+import { RegistrationMode } from "../../auth/types";
 import { MAX_CARD_RELAYS } from "../../relay/contacts/contactLink";
 import {
   readRegistration,
   solveProofOfWork,
   type RelayRegistration,
 } from "../../relay/pow/proofOfWork";
+import { serverOrigin } from "../../relay/state/serverOrigin";
 import {
   keyBackend,
   type EnrollmentDraft,
@@ -463,6 +466,22 @@ export class KeyChallengeFailed extends Error {
   }
 }
 
+/**
+ * The server's discovery document could not be read, and the server may ask for a proof-of-work
+ * that only that document describes, so the signup was not sent. `reason` is what failed.
+ */
+export class RegistrationUnreadable extends Error {
+  readonly reason: unknown;
+
+  constructor(reason: unknown) {
+    super(
+      "Could not read how this server takes new accounts, so the account was not created. Try again in a moment.",
+    );
+    this.name = "RegistrationUnreadable";
+    this.reason = reason;
+  }
+}
+
 /** Signups sent to the server and not answered yet; their keys are never given up meanwhile. */
 let signupsInFlight = 0;
 
@@ -486,9 +505,24 @@ export function proofOfWorkRefused(err: unknown): boolean {
 }
 
 /**
+ * Whether a server whose discovery document could not be read takes a signup without a token
+ * and without a proof-of-work: it says it is open or invite-only.
+ */
+async function takesSignupWithoutProof(): Promise<boolean> {
+  try {
+    const mode = await fetchRegistrationMode();
+    return mode === RegistrationMode.OPEN || mode === RegistrationMode.INVITE_ONLY;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The proof-of-work this server asks of a signup with no token, over the draft's inception:
- * `undefined` when its verified discovery document names another registration mode, or cannot
- * be read (the server then says what it wants). A retry with the same draft reuses the nonce.
+ * `undefined` when its verified discovery document names another registration mode. When the
+ * document cannot be read, a server that says it is open or invite-only gets the signup without
+ * one; any other throws `RegistrationUnreadable` rather than send a signup it would refuse. A
+ * retry with the same draft reuses the nonce.
  */
 async function proofOfWorkFor(
   draft: EnrollmentDraft,
@@ -498,10 +532,11 @@ async function proofOfWorkFor(
   if (hasToken(fields)) return undefined;
   let registration: RelayRegistration;
   try {
-    registration = await readRegistration(getApiOrigin());
+    registration = await readRegistration();
   } catch (err) {
     logger.warn("[RIM:keys] reading this server's registration mode failed:", err);
-    return undefined;
+    if (await takesSignupWithoutProof()) return undefined;
+    throw new RegistrationUnreadable(err);
   }
   if (registration.mode !== "pow" || registration.powBits === null) return undefined;
   const boundTo = `${registration.serverId}|${registration.powBits}`;
@@ -778,18 +813,25 @@ export function publishedRelays(identity: MyKeyIdentity): string[] {
 /**
  * Where this account can be reached, preferred first: the published card's relays, with this
  * server put first when the card does not list it (a new card lists this server alone).
+ *
+ * @param here - The origin this server is known by (`serverOrigin`).
+ * @param identity - The account's key identity; without it the list is this server alone.
  */
-export function profileCardRelays(identity?: MyKeyIdentity): string[] {
-  const here = getApiOrigin();
+export function profileCardRelays(here: string, identity?: MyKeyIdentity): string[] {
   const listed = identity ? publishedRelays(identity) : [];
   return listed.includes(here) ? listed : [here, ...listed].slice(0, MAX_CARD_RELAYS);
 }
 
 /**
  * Whether the published card is missing or no longer says what it should: the display name,
- * the relays (this server must be one), the active devices, or the identity key that signed it.
+ * the relays (this server, known by `here`, must be one), the active devices, or the identity
+ * key that signed it.
  */
-export function profileCardIsStale(identity: MyKeyIdentity, displayName: string): boolean {
+export function profileCardIsStale(
+  identity: MyKeyIdentity,
+  displayName: string,
+  here: string,
+): boolean {
   const card = identity.profileCard;
   if (!card) return true;
   let payload: {
@@ -811,7 +853,7 @@ export function profileCardIsStale(identity: MyKeyIdentity, displayName: string)
   return (
     payload.displayName !== displayName.trim() ||
     payload.keySeq !== identity.keySeq ||
-    JSON.stringify(payload.relays) !== JSON.stringify(profileCardRelays(identity)) ||
+    JSON.stringify(payload.relays) !== JSON.stringify(profileCardRelays(here, identity)) ||
     JSON.stringify(active) !== JSON.stringify(listed)
   );
 }
@@ -836,13 +878,16 @@ export function signProfileCard(
 /**
  * Sign and publish a new profile card: display name, relays (`relays`, or the card's current
  * ones with this server among them), the active devices.
+ *
+ * @throws When this server's identity origin cannot be read and `relays` is not given.
  */
 export async function publishProfileCard(
   identity: MyKeyIdentity,
   displayName: string,
-  relays: string[] = profileCardRelays(identity),
+  relays?: string[],
 ): Promise<void> {
-  const card = await signProfileCard(identity, displayName, relays);
+  const listed = relays ?? profileCardRelays(await serverOrigin(), identity);
+  const card = await signProfileCard(identity, displayName, listed);
   await graphqlClient.request(PUBLISH_CARD_MUTATION, { card });
 }
 

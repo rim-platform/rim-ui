@@ -23,6 +23,7 @@ import {
   discardKeySignup,
   KeyChallengeFailed,
   proofOfWorkRefused,
+  RegistrationUnreadable,
   signupWithKey,
   type EnrollmentDraft,
   type KeySignupFields,
@@ -83,6 +84,9 @@ function signupError(err: unknown): SignupError {
       message: graphqlErrorMessage(err, "The server did not accept the proof-of-work."),
       retry: true,
     };
+  }
+  if (err instanceof RegistrationUnreadable) {
+    return { field: "general", message: err.message, retry: true };
   }
   if (err instanceof KeyChallengeFailed) {
     return graphqlErrorCode(err.reason) === RATE_LIMITED

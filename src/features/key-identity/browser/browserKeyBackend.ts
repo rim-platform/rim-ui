@@ -216,10 +216,11 @@ export const browserKeyBackend: KeyBackend = {
   linkPending,
   linkResume,
 
-  async linkOffer(endpoint, text, name): Promise<SentOffer> {
+  async linkOffer(endpoint, text, name, knownAs): Promise<SentOffer> {
     const code = parseLinkCode(text);
     const here = storedEndpoint(absoluteEndpoint(endpoint));
-    if (storedEndpoint(code.endpoint) !== here) {
+    const named = storedEndpoint(code.endpoint);
+    if (named !== here && (!knownAs || named !== storedEndpoint(absoluteEndpoint(knownAs)))) {
       throw new Error(`this code is for another server (${code.endpoint}); this app uses ${here}`);
     }
     const deviceKey = (await crypto.subtle.generateKey({ name: "Ed25519" }, false, [

@@ -1,6 +1,5 @@
 import { useId, useState } from "react";
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import {
   CONFLICT,
   FORBIDDEN,
@@ -10,6 +9,7 @@ import {
 } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
+import { useServerHost } from "../../relay/state/serverOrigin";
 import {
   deletionDateText,
   useAccountDeletionStatus,
@@ -25,16 +25,6 @@ interface AccountDeletionSectionProps {
   onOpenWorkspaceSettings: () => void;
 }
 
-/** The host this client's account lives on, as people read it. */
-function serverHost(): string {
-  const origin = getApiOrigin();
-  try {
-    return new URL(origin).host;
-  } catch {
-    return origin;
-  }
-}
-
 /**
  * Settings → Account → Delete account: what deleting the account does, the username typed back,
  * then the date the server schedules it for, with a Cancel while it is pending. Hidden on a
@@ -47,6 +37,7 @@ export function AccountDeletionSection({
 }: AccountDeletionSectionProps) {
   const { supported, scheduledFor } = useAccountDeletionStatus();
   const [remote, setRemote] = useState(false);
+  const host = useServerHost();
   if (!supported) return null;
 
   return (
@@ -56,14 +47,15 @@ export function AccountDeletionSection({
       </h3>
       {remote ? (
         <p data-testid="account-deletion-remote" className="text-sm text-rim-text-muted">
-          Your account is held by another server, not by {serverHost()}. Manage your account at your
-          relay: delete it there.
+          Your account is held by another server, not by {host}. Manage your account at your relay:
+          delete it there.
         </p>
       ) : scheduledFor ? (
         <PendingDeletion scheduledFor={scheduledFor} />
       ) : (
         <RequestDeletion
           username={username}
+          host={host}
           onRemote={() => setRemote(true)}
           onOpenWorkspaceSettings={onOpenWorkspaceSettings}
         />
@@ -106,10 +98,12 @@ function PendingDeletion({ scheduledFor }: { scheduledFor: string }) {
 
 function RequestDeletion({
   username,
+  host,
   onRemote,
   onOpenWorkspaceSettings,
 }: {
   username: string;
+  host: string;
   onRemote: () => void;
   onOpenWorkspaceSettings: () => void;
 }) {
@@ -141,7 +135,7 @@ function RequestDeletion({
 
   return (
     <div className="space-y-3 rounded-lg border border-rim-danger/30 bg-rim-danger/5 p-4">
-      <p className="text-sm text-rim-text">Deletes your account on {serverHost()}.</p>
+      <p className="text-sm text-rim-text">Deletes your account on {host}.</p>
       <ul className="list-disc space-y-1 pl-5 text-xs text-rim-text-muted">
         <li>
           After a grace period the server sets, your account is deleted for good: its sessions,

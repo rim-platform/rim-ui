@@ -51,6 +51,14 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The web app served on a domain of its own, apart from its server's (such as
+  `chat.example` for a server at `relay.example`), names the server by the origin its signed
+  discovery document declares: profile cards, contact links, delegations, relay switches and new
+  DMs list the server's own address, About and Delete account show its host, and a device-link
+  code from the browser works in a desktop app set to the server's address, and the other way
+  round. A key signup without an invite on a server that asks for a proof-of-work works there,
+  and when the server's registration cannot be read the form says so instead of sending a
+  signup the server would refuse.
 - **Upgrade:** run a rim-server that pages `myMlsWelcomes` (the `after` and `limit` arguments
   and `MlsWelcome.createdAt`); against an older server this device can no longer join
   encrypted conversations. A device with more than 100 waiting invitations to encrypted

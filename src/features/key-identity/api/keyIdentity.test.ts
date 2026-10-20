@@ -42,6 +42,7 @@ import {
   profileCardRelays,
   reconcileDeviceKeys,
   recoverAccount,
+  RegistrationUnreadable,
   resumeWithDeviceKey,
   signInWithDeviceKey,
   signupWithKey,
@@ -51,6 +52,8 @@ import {
 } from "./keyIdentity";
 
 const ENDPOINT = "http://localhost:8080/api";
+/** The origin this server is known by. */
+const HERE = "http://localhost:8080";
 const PRINCIPAL = "rimp1_nz1POml8JmCMcFDECrtu60ibohPKnywhcExmOPMvTUo";
 const STATEMENT = { payload: "{}", signature: "sig" };
 const ACCOUNT = { userId: "user-1", username: "ada", displayName: "Ada" };
@@ -762,22 +765,53 @@ describe("signupWithKey on a relay in pow registration mode", () => {
   });
 
   it.each([
-    ["in open mode", { relay_verify_discovery: discovery({ mode: "open", powBits: null }) }],
+    ["in open mode", {}, discovery({ mode: "open", powBits: null })],
     [
-      "when the discovery document cannot be read",
-      { relay_verify_discovery: new Error("server discovery: malformed") },
+      "when the discovery document cannot be read and the server says it is open",
+      { RegistrationMode: { registrationMode: "OPEN" } },
+      new Error("server discovery: malformed"),
     ],
-  ])("sends no proof %s", async (_case, answers) => {
-    backend(server(), {
-      relay_direct_discovery: "document",
-      ...answers,
-      key_identity_sign_signup: statements,
-      key_identity_sign_profile_card: STATEMENT,
-    });
+    [
+      "when the discovery document cannot be read and the server says it is invite-only",
+      { RegistrationMode: { registrationMode: "INVITE_ONLY" } },
+      new Error("server discovery: malformed"),
+    ],
+  ])("sends no proof %s", async (_case, mode, verified) => {
+    backend(
+      { ...server(), ...mode },
+      {
+        relay_direct_discovery: "document",
+        relay_verify_discovery: verified,
+        key_identity_sign_signup: statements,
+        key_identity_sign_profile_card: STATEMENT,
+      },
+    );
     await signupWithKey(draft, { username: "ada" });
     expect(commands()).not.toContain("relay_solve_pow");
     expect(sentInput()).not.toHaveProperty("proofOfWork");
   });
+
+  it.each([
+    ["asks for a proof-of-work", { RegistrationMode: { registrationMode: "POW" } }],
+    ["cannot say how it takes accounts", {}],
+  ])(
+    "sends nothing when the discovery document cannot be read and the server %s",
+    async (_case, mode) => {
+      backend(
+        { ...server(), ...mode },
+        {
+          relay_direct_discovery: "document",
+          relay_verify_discovery: new Error("server discovery: malformed"),
+          key_identity_sign_signup: statements,
+        },
+      );
+      await expect(signupWithKey(draft, { username: "ada" })).rejects.toBeInstanceOf(
+        RegistrationUnreadable,
+      );
+      expect(commands()).not.toContain("key_identity_sign_signup");
+      expect(sentInput()).toBeUndefined();
+    },
+  );
 
   it("reuses the nonce on a retry, and searches again after the server refused it", async () => {
     let solved = 0;
@@ -1022,12 +1056,16 @@ describe("helpers", () => {
       relays: ["http://localhost:8080"],
       devices: [{ deviceId: "d-1" }],
     };
-    expect(profileCardIsStale(identity(card, [device]), "Ada")).toBe(false);
-    expect(profileCardIsStale(identity(null, [device]), "Ada")).toBe(true);
-    expect(profileCardIsStale(identity(card, [device]), "Ada L.")).toBe(true);
-    expect(profileCardIsStale(identity({ ...card, keySeq: 1 }, [device]), "Ada")).toBe(true);
+    expect(profileCardIsStale(identity(card, [device]), "Ada", HERE)).toBe(false);
+    expect(profileCardIsStale(identity(null, [device]), "Ada", HERE)).toBe(true);
+    expect(profileCardIsStale(identity(card, [device]), "Ada L.", HERE)).toBe(true);
+    expect(profileCardIsStale(identity({ ...card, keySeq: 1 }, [device]), "Ada", HERE)).toBe(true);
     expect(
-      profileCardIsStale(identity(card, [{ ...device, revokedAt: "2026-10-09T01:00:00Z" }]), "Ada"),
+      profileCardIsStale(
+        identity(card, [{ ...device, revokedAt: "2026-10-09T01:00:00Z" }]),
+        "Ada",
+        HERE,
+      ),
     ).toBe(true);
   });
 
@@ -1049,14 +1087,17 @@ describe("helpers", () => {
       devices: [{ deviceId: "d-1" }],
     });
     const chosen = identity(card(["https://relay.example", "http://localhost:8080"]), [device]);
-    expect(profileCardRelays(chosen)).toEqual(["https://relay.example", "http://localhost:8080"]);
-    expect(profileCardIsStale(chosen, "Ada")).toBe(false);
+    expect(profileCardRelays(HERE, chosen)).toEqual([
+      "https://relay.example",
+      "http://localhost:8080",
+    ]);
+    expect(profileCardIsStale(chosen, "Ada", HERE)).toBe(false);
     const elsewhere = identity(card(["https://relay.example"]), [device]);
-    expect(profileCardRelays(elsewhere)).toEqual([
+    expect(profileCardRelays(HERE, elsewhere)).toEqual([
       "http://localhost:8080",
       "https://relay.example",
     ]);
-    expect(profileCardIsStale(elsewhere, "Ada")).toBe(true);
-    expect(profileCardRelays(identity(null, [device]))).toEqual(["http://localhost:8080"]);
+    expect(profileCardIsStale(elsewhere, "Ada", HERE)).toBe(true);
+    expect(profileCardRelays(HERE, identity(null, [device]))).toEqual(["http://localhost:8080"]);
   });
 });

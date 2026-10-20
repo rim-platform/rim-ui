@@ -46,7 +46,7 @@ export function RelaySwitchPanel({
 
   if (!relayOn || !identity.principalId) return null;
 
-  function start() {
+  async function start() {
     setError(null);
     const target = origin.trim().replace(/\/+$/, "");
     if (!validOrigin(target)) {
@@ -54,7 +54,7 @@ export function RelaySwitchPanel({
       return;
     }
     try {
-      const fresh = beginSwitch({
+      const fresh = await beginSwitch({
         newOrigin: target,
         username: username.trim() || user?.username || "",
         oldGoesAway: goesAway,
@@ -102,7 +102,7 @@ export function RelaySwitchPanel({
             />
             This relay is going away: continue its direct messages on the new one
           </label>
-          <Button size="sm" onClick={start} disabled={!origin.trim()}>
+          <Button size="sm" onClick={() => void start()} disabled={!origin.trim()}>
             Switch relays
           </Button>
         </div>

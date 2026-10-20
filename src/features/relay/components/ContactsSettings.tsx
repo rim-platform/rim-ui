@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { Button } from "../../../shared/ui/Button";
 import {
@@ -14,6 +13,7 @@ import type { ContactView } from "../api/relayApi";
 import { formatContactLink, parseContactLink, type ContactLink } from "../contacts/contactLink";
 import { canScanCodes } from "../contacts/qrScanner";
 import { useContactStore } from "../contacts/useContactStore";
+import { useServerOrigin } from "../state/serverOrigin";
 import { useRelayStore } from "../state/useRelayStore";
 import { PrincipalFingerprint } from "./PrincipalFingerprint";
 import { ScanContactCode } from "./ScanContactCode";
@@ -53,36 +53,55 @@ export function ContactsSettings() {
   );
 }
 
+/**
+ * This account's contact link, naming this server by the origin it is known by; while that
+ * origin is read the link waits, and says so when it cannot be read.
+ */
 function OwnContactLink({ principalId }: { principalId: string }) {
-  const [copied, setCopied] = useState(false);
-  const link = formatContactLink({ principalId, relayUrl: getApiOrigin() });
+  const { origin, failed } = useServerOrigin();
   return (
     <section className="space-y-3 rounded-lg border border-rim-line bg-rim-panel p-4">
       <p className="text-sm font-medium text-rim-text">Your contact link</p>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="rounded-md bg-white p-2">
-          <QRCodeSVG value={link} level="M" size={148} aria-label="Contact QR code" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-2">
-          <code className="block select-all break-all font-mono text-xs text-rim-text">{link}</code>
-          <p className="text-xs text-rim-text-muted">
-            Fingerprint: <PrincipalFingerprint principalId={principalId} />
-          </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() =>
-              void navigator.clipboard
-                ?.writeText(link)
-                .then(() => setCopied(true))
-                .catch(() => setCopied(false))
-            }
-          >
-            {copied ? "Copied" : "Copy link"}
-          </Button>
-        </div>
-      </div>
+      {origin !== null ? (
+        <ContactLinkCode principalId={principalId} relayUrl={origin} />
+      ) : failed ? (
+        <p role="alert" className="text-xs text-rim-danger">
+          Could not read this server&apos;s address, so your contact link cannot be shown now.
+        </p>
+      ) : (
+        <p className="text-xs text-rim-text-faint">Reading this server&apos;s address...</p>
+      )}
     </section>
+  );
+}
+
+function ContactLinkCode({ principalId, relayUrl }: { principalId: string; relayUrl: string }) {
+  const [copied, setCopied] = useState(false);
+  const link = formatContactLink({ principalId, relayUrl });
+  return (
+    <div className="flex flex-wrap items-start gap-4">
+      <div className="rounded-md bg-white p-2">
+        <QRCodeSVG value={link} level="M" size={148} aria-label="Contact QR code" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-2">
+        <code className="block select-all break-all font-mono text-xs text-rim-text">{link}</code>
+        <p className="text-xs text-rim-text-muted">
+          Fingerprint: <PrincipalFingerprint principalId={principalId} />
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(link)
+              .then(() => setCopied(true))
+              .catch(() => setCopied(false))
+          }
+        >
+          {copied ? "Copied" : "Copy link"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

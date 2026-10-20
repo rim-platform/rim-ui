@@ -84,9 +84,10 @@ export function getApiOrigin(): string {
 
 /**
  * The base URL of the RIM web app, for links that leave the app such as invite links. The web
- * app returns the page's own origin. The desktop app returns {@link getApiOrigin}, the server
- * it talks to: a deployment serves the web app on the same origin as the API, and the server
- * builds its own emailed links on that base.
+ * app returns the page's own origin, where it is served. The desktop app returns
+ * {@link getApiOrigin}, the server it talks to: a deployment serves the web app there or sends
+ * those paths on to the domain that serves it, and the server builds its own emailed links on
+ * that base.
  */
 export function getWebBaseUrl(): string {
   return isDesktop() ? getApiOrigin() : window.location.origin;

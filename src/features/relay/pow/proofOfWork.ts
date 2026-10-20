@@ -8,9 +8,8 @@
 import { isTauri } from "@tauri-apps/api/core";
 
 import { keyCommand } from "../../key-identity/api/keyBackend";
-import { relayCrypto } from "../crypto/relayCrypto";
 import type { ServerRegistration } from "../crypto/serverStatements";
-import { directTransport } from "../direct/directTransport";
+import { readOwnDiscovery } from "../state/serverOrigin";
 import type { PowAnswer, PowJob } from "./powSearch";
 
 export type { PowJob } from "./powSearch";
@@ -28,10 +27,13 @@ export interface RelayRegistration extends ServerRegistration {
   serverId: string;
 }
 
-/** Fetch and verify the discovery document at `origin` and read its registration. */
-export async function readRegistration(origin: string): Promise<RelayRegistration> {
-  const document = await directTransport().discovery(origin);
-  const verified = await relayCrypto().verifyDiscovery(document, origin);
+/**
+ * Fetch and verify this app's server's discovery document and read its registration.
+ *
+ * @throws When the document cannot be fetched or does not verify.
+ */
+export async function readRegistration(): Promise<RelayRegistration> {
+  const { verified } = await readOwnDiscovery();
   return { serverId: verified.head.serverId, ...verified.descriptor.registration };
 }
 
