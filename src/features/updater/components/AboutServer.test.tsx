@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 
@@ -10,6 +10,11 @@ import { NEWER_SERVER_API_MESSAGE } from "../hooks/useServerInfo";
 import { AboutServerApiBanner, AboutServerFeatures, AboutServerVersion } from "./AboutServer";
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { withServerInfo } from "../../../test/serverInfo";
+import powVectors from "../../../../protocol/pow-vectors.json";
+import relayVectors from "../../../../protocol/relay-vectors.json";
+import { resetServerOrigin } from "../../relay/state/serverOrigin";
+
+afterEach(() => resetServerOrigin());
 
 function serveInfo(version: string, apiVersion: number) {
   server.use(mockGraphQLQuery("ServerInfo", { serverInfo: { version, apiVersion } }));
@@ -33,6 +38,26 @@ describe("About server rows", () => {
       await screen.findByText(`Server localhost:8080, version 0.3.0, API ${CLIENT_API_VERSION}`),
     ).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("names the server by the host its discovery document declares", async () => {
+    serveInfo("0.3.0", CLIENT_API_VERSION);
+    server.use(
+      http.get("*/.well-known/rim-server", () =>
+        HttpResponse.text(
+          JSON.stringify({
+            rim: "server-discovery",
+            keyLog: [relayVectors.relay.inception],
+            descriptor: powVectors.powDescriptor,
+          }),
+        ),
+      ),
+    );
+    renderWithProviders(<About />);
+
+    expect(
+      await screen.findByText(`Server relay.example, version 0.3.0, API ${CLIENT_API_VERSION}`),
+    ).toBeInTheDocument();
   });
 
   it("shows nothing while the server's version loads", () => {

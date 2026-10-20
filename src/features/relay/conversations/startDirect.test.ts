@@ -9,6 +9,8 @@ vi.mock("../../conversations/api/useCreateConversation", () => create);
 vi.mock("../../e2ee/runtime/groups", () => groups);
 vi.mock("../../e2ee/runtime/session", () => session);
 vi.mock("../../e2ee/web/webAccount", () => ({ isWebAccount: () => false }));
+const own = vi.hoisted(() => ({ origin: "http://localhost:8080" }));
+vi.mock("../state/serverOrigin", () => ({ serverOrigin: async () => own.origin }));
 
 import { useRelayStore } from "../state/useRelayStore";
 import { directMemberReady, NotReadyError, startDirectConversation } from "./startDirect";
@@ -25,6 +27,7 @@ function person(relays: string[], ready: boolean) {
 }
 
 beforeEach(() => {
+  own.origin = HERE;
   Object.values({ ...identity, ...create, ...groups, ...session }).forEach((fn) => fn.mockReset());
   groups.createGroup.mockResolvedValue(true);
   useRelayStore.getState().reset();
@@ -81,6 +84,28 @@ describe("startDirectConversation", () => {
     });
     expect(groups.createGroup).not.toHaveBeenCalled();
     expect(result).toMatchObject({ encrypted: false, group: null });
+  });
+
+  it("knows members on this relay by the origin it is known by, not the page's", async () => {
+    own.origin = "https://relay.example";
+    identity.resolveIdentity.mockResolvedValueOnce(person(["https://relay.example"], false));
+    identity.resolveIdentity.mockResolvedValueOnce({
+      identity: { devices: [{ deviceId: "d", mlsActive: false, revocation: null }] },
+      card: null,
+    });
+    session.e2eeSession.mockResolvedValue(null);
+    create.createConversation.mockResolvedValue({ id: "c4", encryptedAt: null });
+    await startDirectConversation([
+      { principalId: "rimp1_a", relayUrls: [], name: "A" },
+      { principalId: "rimp1_b", relayUrls: [], name: "B" },
+    ]);
+    expect(create.createConversation).toHaveBeenCalledWith({
+      serverId: "direct-1",
+      remoteMembers: [
+        { principalId: "rimp1_a", relayUrls: ["https://relay.example"] },
+        { principalId: "rimp1_b", relayUrls: ["https://relay.example"] },
+      ],
+    });
   });
 
   it("says whether a member has a device that can receive encrypted messages", async () => {

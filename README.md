@@ -98,7 +98,10 @@ npm run dev
 `VITE_GRAPHQL_ENDPOINT` sets the server, at build time, for both builds (`.env.example`). For a
 deployment, `Dockerfile` builds the web app into an nginx image; `rim-server`'s
 `deploy/compose.yml` builds it from a checkout of this repository and serves it on the server's
-domain with the endpoint `/api`.
+domain with the endpoint `/api`. A deployment can also serve it on a domain of its own that
+passes `/api`, `/api/ws` and `/.well-known/rim-server` to the server; the web app then names the
+server by the origin its discovery document declares (`docs/relay-client.md`, "This server's
+address").
 
 ### Linux build dependencies
 

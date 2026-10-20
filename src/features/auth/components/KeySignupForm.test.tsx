@@ -30,7 +30,11 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ platform: "web" }),
 }));
 
-import { KeyChallengeFailed, type KeySignupOptions } from "../../key-identity/api/keyIdentity";
+import {
+  KeyChallengeFailed,
+  RegistrationUnreadable,
+  type KeySignupOptions,
+} from "../../key-identity/api/keyIdentity";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
@@ -277,6 +281,25 @@ describe("KeySignupForm", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("proofOfWork does not have the required leading zero bits");
+    await user.click(within(alert).getByRole("button", { name: /try again/i }));
+
+    expect(api.signupWithKey).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
+  });
+
+  it("says when the server's registration could not be read and offers to try again", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey
+      .mockRejectedValueOnce(new RegistrationUnreadable(new Error("offline")))
+      .mockResolvedValueOnce({ userId: "u-ada", serverId: null });
+    const { onSuccess } = renderForm({});
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/could not read how this server takes new accounts/i);
+    expect(alert).toHaveTextContent(/the account was not created/i);
     await user.click(within(alert).getByRole("button", { name: /try again/i }));
 
     expect(api.signupWithKey).toHaveBeenCalledTimes(2);

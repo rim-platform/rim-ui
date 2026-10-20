@@ -12,8 +12,10 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
 }));
 
 import vectors from "../../../../protocol/pow-vectors.json";
+import { getApiOrigin } from "../../../core/graphql/config";
 import relayVectors from "../../../../protocol/relay-vectors.json";
 import { setDirectTransport, type DirectTransport } from "../direct/directTransport";
+import { resetServerOrigin } from "../state/serverOrigin";
 import { answerPowJob, type PowJob } from "./powSearch";
 import { PowCancelled, readRegistration, solveProofOfWork } from "./proofOfWork";
 
@@ -50,6 +52,7 @@ afterEach(() => {
   platform.tauri = false;
   invokeMock.mockReset();
   setDirectTransport(null);
+  resetServerOrigin();
 });
 
 describe("solveProofOfWork in the web app", () => {
@@ -134,7 +137,7 @@ describe("solveProofOfWork on the desktop", () => {
 });
 
 describe("readRegistration", () => {
-  it("reads the relay's id and difficulty from its verified discovery document", async () => {
+  it("reads the server's id and difficulty from its own verified discovery document", async () => {
     const document = JSON.stringify({
       rim: "server-discovery",
       keyLog: [relayVectors.relay.inception],
@@ -143,21 +146,20 @@ describe("readRegistration", () => {
     const transport = { discovery: vi.fn().mockResolvedValue(document) };
     setDirectTransport(transport as unknown as DirectTransport);
 
-    await expect(readRegistration("https://relay.example")).resolves.toEqual({
+    await expect(readRegistration()).resolves.toEqual({
       serverId: relayVectors.relay.serverId,
       mode: "pow",
       powBits: 16,
     });
-    expect(transport.discovery).toHaveBeenCalledWith("https://relay.example");
+    expect(transport.discovery).toHaveBeenCalledWith(getApiOrigin());
   });
 
-  it("refuses a document for another origin", async () => {
-    const document = JSON.stringify({
-      rim: "server-discovery",
-      keyLog: [relayVectors.relay.inception],
-      descriptor: vectors.powDescriptor,
-    });
-    setDirectTransport({ discovery: async () => document } as unknown as DirectTransport);
-    await expect(readRegistration("https://elsewhere.example")).rejects.toThrow(/another origin/);
+  it("fails when the document cannot be fetched", async () => {
+    setDirectTransport({
+      discovery: async () => {
+        throw new Error("the discovery document answered 502");
+      },
+    } as unknown as DirectTransport);
+    await expect(readRegistration()).rejects.toThrow(/502/);
   });
 });

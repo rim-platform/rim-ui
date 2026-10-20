@@ -12,6 +12,7 @@ import { followRevocation } from "../../relay/remote/useRevocationStore";
 import { RelaySpacesSettings } from "../../relay/components/RelaySpacesSettings";
 import { RelaySwitchPanel } from "../../relay/components/RelaySwitchPanel";
 import { useRelaySwitchStore } from "../../relay/remote/relaySwitchLive";
+import { useServerOrigin } from "../../relay/state/serverOrigin";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
@@ -149,7 +150,12 @@ function KeyIdentityOverview({
   // Keep the profile card in step with the name, the devices and the identity key; a relay
   // switch publishes its own cards.
   const switching = useRelaySwitchStore((s) => s.running || (s.state?.step ?? 0) >= 5);
-  const cardStale = holdsIdentityKey && !switching && profileCardIsStale(identity, me.displayName);
+  const ownOrigin = useServerOrigin().origin;
+  const cardStale =
+    holdsIdentityKey &&
+    !switching &&
+    ownOrigin !== null &&
+    profileCardIsStale(identity, me.displayName, ownOrigin);
   const cardAttempt = useRef<string | null>(null);
   useEffect(() => {
     if (!cardStale) return;

@@ -7,7 +7,7 @@
 import { create } from "zustand";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { getApiOrigin, getGraphqlEndpoint, setRelayEndpoint } from "../../../core/graphql/config";
+import { getGraphqlEndpoint, setRelayEndpoint } from "../../../core/graphql/config";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { keyBackend } from "../../key-identity/api/keyBackend";
@@ -44,6 +44,7 @@ import {
   type SpaceRecord,
 } from "../state/relayDb";
 import { solveProofOfWork } from "../pow/proofOfWork";
+import { serverOrigin } from "../state/serverOrigin";
 import { pinDiscovery } from "../state/serverPins";
 import { accountKey, remoteWorkspaces } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
@@ -280,18 +281,22 @@ export function liveDeps(displayName: string): SwitchDeps {
   };
 }
 
-/** Start a switch to the relay at `newOrigin`. */
-export function beginSwitch(fields: {
+/**
+ * Start a switch to the relay at `newOrigin`, from this relay by the origin it is known by.
+ *
+ * @throws When this server does not run as a relay or its origin cannot be read.
+ */
+export async function beginSwitch(fields: {
   newOrigin: string;
   username: string;
   oldGoesAway: boolean;
-}): SwitchState {
+}): Promise<SwitchState> {
   const { info } = useRelayStore.getState();
   const account = signedInAccount();
   if (!info) throw new Error("This server does not run as a relay.");
   return {
     principalId: account.principalId,
-    oldOrigin: getApiOrigin(),
+    oldOrigin: await serverOrigin(),
     oldServerId: info.serverId,
     oldDirectSpaceId: info.directSpaceId,
     newOrigin: fields.newOrigin.replace(/\/+$/, ""),

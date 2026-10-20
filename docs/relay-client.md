@@ -19,7 +19,7 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/features/relay/crypto/relayCrypto.ts` | The same work per platform: the Tauri `relay_*` commands and `key_identity_sign_device_request` on the desktop, WebCrypto and the browser's device key in the web app |
 | `src-tauri/src/relay/` | The desktop's checks of server statements (`server.rs`) and their commands |
 | `src-tauri/src/key_identity/statement.rs` | `device_request`: the payload in the spec's field order, signed by the device key; `verified_card` |
-| `src/features/relay/state/` | `relayDb.ts` (IndexedDB `rim-relay`), `serverPins.ts`, `spaces.ts` (which space lives on which host), `useRelayStore.ts` |
+| `src/features/relay/state/` | `relayDb.ts` (IndexedDB `rim-relay`), `serverPins.ts`, `spaces.ts` (which space lives on which host), `useRelayStore.ts`, `serverOrigin.ts` (the origin this app's server is known by) |
 | `src/features/relay/transport/` | `remoteFetch.ts` (signed requests, verified answers), `requestSeq.ts`, `relayHealth.ts` |
 | `src/features/relay/stream/` | `relayStream.ts` (the queue on the WebSocket), `sequencer.ts`, `streamRules.ts` |
 | `src/features/relay/contacts/` | Contact links, fingerprints, verified identities, aliases, relays seen in invites |
@@ -36,6 +36,48 @@ account without a principal id (no key sign-in yet), runs exactly as before.
 | `src/core/graphql/config.ts` | `setRelayEndpoint`: the relay the desktop moved to after a switch |
 | `protocol/relay-vectors.json` | Known answers both platforms reproduce, including the delegation and the revocation acknowledgement and their conformance cases |
 | `protocol/pow-vectors.json` | Proof-of-work known answers both platforms find, and a relay descriptor in `pow` mode |
+
+## This server's address
+
+The app sends its requests to its **transport origin** (`getApiOrigin`): on the desktop the
+configured server, in the web app the server the page came from (`/api` on the page's origin).
+Other servers and people know the server by its **identity origin**, which the cards, links and
+pins name. The two differ when a deployment serves the web app on a domain of its own while the
+server keeps its name: the web app at `https://chat.example`, the server at
+`https://relay.example`, the first passing `/api`, `/api/ws` and `/.well-known/rim-server` to the
+second.
+
+`state/serverOrigin.ts` reads the identity origin. The desktop takes its configured server and
+fetches nothing. The web app fetches the discovery document from the transport origin, without
+following redirects, so only the page's own server can answer it. It takes the origin that the
+descriptor's `endpoints.s2s` is at (with `/s2s/v1` taken off), or the transport origin when
+server-to-server traffic is off, and verifies the document against that origin as it verifies
+any server's: the log replays, the descriptor verifies under the head key, and its
+server-to-server endpoint lives at the origin. The answer is kept for the page. When both are the
+same origin, as with one domain for the web app and the server, nothing changes.
+
+The identity origin is what these use:
+
+- the relays a profile card lists, and whether a published card is stale (`profileCardRelays`,
+  `profileCardIsStale`); a card is neither checked nor published until the origin is known;
+- the contact link and its QR code (Settings > Contacts);
+- "this server" in the card's relay list (Settings > Security);
+- the relay's own pin and key hash for delegations (`remote/relaySelf.ts`);
+- the old relay of a relay switch (`beginSwitch`);
+- the relay a member without relays is given, and whether a member is on this relay, when a DM
+  starts (`conversations/startDirect.ts`);
+- the signup's registration mode and proof-of-work (`pow/proofOfWork.ts` `readRegistration`);
+- the endpoint a device-link code names, as the identity origin's `/api` when it is not the
+  page's, and a code naming that endpoint is taken as well as the page's own
+  (`serverEndpoint`, `web-linked-device.md`);
+- the host shown in About and in Delete account.
+
+What the app sends stays on the transport origin: GraphQL, the WebSocket, uploads, attachments,
+plugin bundles, `/api/remote/…`. So does the login proof's `audience`, the page's host, which the
+server must list in `RIM_KEY_LOGIN_AUDIENCES` when it is not the server's own. Links that open
+the web app (an invite from **Invite people**) use the page's origin, where the web app is.
+When the identity origin cannot be read, the contact link and the card's relay list say so
+instead of showing the page's origin, and the host shown falls back to the page's.
 
 ## Server pins
 
@@ -340,10 +382,14 @@ another account or another relay.
   browser that cannot hold keys says to use the desktop app or an invite. An invite
   link's page is unchanged, and its token skips the proof.
 - **When.** `signupWithKey` (`key-identity/api/keyIdentity.ts`) reads this server's discovery
-  document first (fetched directly and verified, `pow/proofOfWork.ts` `readRegistration`), and in
-  `pow` mode searches over the draft's inception payload (the draft carries it, the same bytes the
-  signed key log starts with) before it asks for the login challenge, which expires in two
-  minutes. A document that cannot be read means no proof; the server then says what it wants.
+  document first (fetched from the transport origin and verified against the identity origin,
+  "This server's address" above; `pow/proofOfWork.ts` `readRegistration`), and in `pow` mode
+  searches over the draft's inception payload (the draft carries it, the same bytes the signed key
+  log starts with) before it asks for the login challenge, which expires in two minutes. When the
+  document cannot be read, the app asks `registrationMode`: a server that answers `OPEN` or
+  `INVITE_ONLY` gets the signup without a proof; otherwise nothing is signed or sent and the form
+  says "Could not read how this server takes new accounts, so the account was not created", with
+  "Try again".
   The nonce is kept per draft, so a retry after another refusal sends it again; a refusal of the
   proof itself (`VALIDATION` or `FORBIDDEN` naming it) drops it and the next try searches again.
   A relay switch to a relay in `pow` mode does the same with the account's inception.

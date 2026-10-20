@@ -278,8 +278,16 @@ export interface KeyBackend {
 
   // ─── Device linking, new device ───────────────────────────────────────────
 
-  /** Read a pasted code for `endpoint`, make this device's key in memory, seal the offer. */
-  linkOffer(endpoint: string, code: string, deviceName: string): Promise<SentOffer>;
+  /**
+   * Read a pasted code for `endpoint`, make this device's key in memory, seal the offer. A code
+   * naming `knownAs`, the endpoint the same server is known by elsewhere, is taken too.
+   */
+  linkOffer(
+    endpoint: string,
+    code: string,
+    deviceName: string,
+    knownAs?: string,
+  ): Promise<SentOffer>;
   /** Open the answer; returns the account whose key log must verify its certificate. */
   linkOpenAnswer(linkId: string, answer: SealedMessageInput): Promise<{ principalId: string }>;
   /** Verify the certificate against the account's key log and store this device's key. */

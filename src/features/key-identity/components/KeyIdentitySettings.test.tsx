@@ -37,6 +37,13 @@ const runtime = vi.hoisted(() => ({ platform: "desktop" as "desktop" | "web" }))
 const deviceKeysChanged = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/keyIdentity", () => api);
+const own = vi.hoisted(() => ({
+  view: { origin: "http://localhost:8080" as string | null, failed: false },
+}));
+vi.mock("../../relay/state/serverOrigin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../relay/state/serverOrigin")>()),
+  useServerOrigin: () => own.view,
+}));
 vi.mock("../../e2ee/runtime/session", () => ({ deviceKeysChanged }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
@@ -112,6 +119,7 @@ describe("KeyIdentitySettings", () => {
   beforeEach(() => {
     desktop.value = true;
     runtime.platform = "desktop";
+    own.view = { origin: "http://localhost:8080", failed: false };
     Object.values(api).forEach((fn) => fn.mockReset());
     deviceKeysChanged.mockReset();
     api.profileCardRelays.mockReturnValue(["http://localhost:8080"]);
@@ -366,6 +374,25 @@ describe("KeyIdentitySettings", () => {
 
     await waitFor(() => expect(api.publishProfileCard).toHaveBeenCalledWith(enrolled, "Alice"));
     expect(api.publishProfileCard).toHaveBeenCalledTimes(1);
+    expect(api.profileCardIsStale).toHaveBeenCalledWith(enrolled, "Alice", "http://localhost:8080");
+  });
+
+  it("publishes no card while this server's origin is unknown", async () => {
+    own.view = { origin: null, failed: true };
+    api.fetchMyKeyIdentity.mockResolvedValue(enrolled);
+    api.syncKeyLog.mockResolvedValue({
+      principalId: "rimp1_alice",
+      seq: 0,
+      holdsIdentityKey: true,
+    });
+    api.settleDeviceKeys.mockResolvedValue({ deviceId: "d-this" });
+    api.profileCardIsStale.mockReturnValue(true);
+    renderSettings();
+
+    expect(await screen.findByText(/holds the account's identity key/i)).toBeInTheDocument();
+    expect(screen.getByText(/could not read this server's address/i)).toBeInTheDocument();
+    expect(api.profileCardIsStale).not.toHaveBeenCalled();
+    expect(api.publishProfileCard).not.toHaveBeenCalled();
   });
 
   it("offers no device management without the identity key", async () => {

@@ -7,6 +7,16 @@ const requestMock = vi.fn();
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
+// The server is known by another origin than the page it serves, unless a test makes that
+// origin unreadable.
+const own = vi.hoisted(() => ({ readable: true }));
+vi.mock("../../relay/state/serverOrigin", () => ({
+  serverOrigin: async () => "https://relay.example",
+  serverEndpoint: async () => {
+    if (!own.readable) throw new Error("the discovery document answered 502");
+    return "https://relay.example/api";
+  },
+}));
 
 import { fromHex, keyFromSeed } from "../../../test/ed25519";
 import { DeviceLinkState } from "../../../core/graphql/generated/schema-types";
@@ -214,6 +224,7 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   requestMock.mockReset();
   sleep.mockClear();
+  own.readable = true;
 });
 
 describe("the web app as a linked device", () => {
@@ -326,6 +337,31 @@ describe("the web app as a linked device", () => {
     ).catch((e: unknown) => e);
     expect((err as Error).message).toContain("this code is for another server");
     expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("takes a code naming the endpoint the server is known by, and keeps the keys for the page's", async () => {
+    oldDevice();
+    await expect(
+      linkNewDevice(CODE.replace(ENDPOINT, "https://relay.example/api"), "Firefox on Linux", {
+        sleep,
+      }),
+    ).resolves.toBe("user-1");
+    expect(await stored()).not.toBeNull();
+  });
+
+  it("takes only its own endpoint's codes while the server's origin cannot be read", async () => {
+    own.readable = false;
+    oldDevice();
+    const err = await linkNewDevice(
+      CODE.replace(ENDPOINT, "https://relay.example/api"),
+      "Firefox on Linux",
+      { sleep },
+    ).catch((e: unknown) => e);
+    expect((err as Error).message).toContain("this code is for another server");
+    expect(requestMock).not.toHaveBeenCalled();
+
+    oldDevice();
+    await expect(link()).resolves.toBe("user-1");
   });
 
   it("refuses to link over keys this browser already holds for the account", async () => {
@@ -593,6 +629,7 @@ describe("the web app creating an identity", () => {
     expect(storedWhileEnrolling?.identity?.publicKey).toBe(head.identityKey);
     const published = await verifiedCard(card, head);
     expect(published.devices).toEqual([await certifiedDevice(input.device, head)]);
+    expect(published.relays).toEqual(["https://relay.example"]);
     // Saved before sending: no kit secret is kept.
     expect(storedWhileEnrolling).toMatchObject({ kitConfirmed: true });
     expect(storedWhileEnrolling?.recoveryEntropy).toBeUndefined();
@@ -959,6 +996,16 @@ describe("the web app as the old device of a link", () => {
     return { offer, plaintext, sealed: await seal(parseLinkCode(code), "offer", plaintext) };
   }
 
+  it("names the page's endpoint in the code while the server's origin cannot be read", async () => {
+    own.readable = false;
+    const { principalId, keyLog, certificate } = await holder();
+    serve({ StartDeviceLink: { startDeviceLink: { linkId: LINK_ID, expiresAt: AT } } });
+    const started = await startLinkingDevice(identityOf(keyLog, [certificate]));
+    expect(started.principalId).toBe(principalId);
+    expect(parseLinkCode(started.code).endpoint).toBe(ENDPOINT);
+    await browserKeyBackend.linkEnd(LINK_ID);
+  });
+
   it("links a new device: certificate, pending record before addDeviceKey, answer, card", async () => {
     const { principalId, keyLog, certificate } = await holder();
     const identity = identityOf(keyLog, [certificate]);
@@ -987,7 +1034,8 @@ describe("the web app as the old device of a link", () => {
 
     const started = await startLinkingDevice(identity);
     expect(started).toMatchObject({ linkId: LINK_ID, principalId });
-    expect(parseLinkCode(started.code).endpoint).toBe(ENDPOINT);
+    // The code names the server as other devices know it, not the page's origin.
+    expect(parseLinkCode(started.code).endpoint).toBe("https://relay.example/api");
     link.code = started.code;
     const { offer, plaintext, sealed } = await offerFrom(started.code);
     link.offer = sealed;

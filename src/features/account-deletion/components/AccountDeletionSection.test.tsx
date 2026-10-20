@@ -3,7 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
-import { getApiOrigin } from "../../../core/graphql/config";
 import { DELETION_UNSUPPORTED, deletionQueryClient } from "../../../test/accountDeletion";
 import {
   callsTo,
@@ -19,6 +18,8 @@ vi.mock("../../../core/graphql/client", () => ({
     request: (...args: unknown[]) => requestMock(...args),
   },
 }));
+// The server is known by another host than the page it serves.
+vi.mock("../../relay/state/serverOrigin", () => ({ useServerHost: () => "relay.example" }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
@@ -58,9 +59,7 @@ describe("AccountDeletionSection", () => {
     const user = userEvent.setup();
     renderSection();
 
-    expect(
-      screen.getByText(`Deletes your account on ${new URL(getApiOrigin()).host}.`),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Deletes your account on relay.example.")).toBeInTheDocument();
     expect(screen.getByText(/After a grace period the server sets/)).toBeInTheDocument();
     expect(screen.getByText(/key identity cannot be used/)).toBeInTheDocument();
     expect(screen.getByText(/must be handed over or deleted first/)).toBeInTheDocument();
@@ -119,7 +118,7 @@ describe("AccountDeletionSection", () => {
 
     const notice = await screen.findByTestId("account-deletion-remote");
     expect(notice).toHaveTextContent("Manage your account at your relay");
-    expect(notice).toHaveTextContent(new URL(getApiOrigin()).host);
+    expect(notice).toHaveTextContent("relay.example");
     expect(screen.queryByRole("button", { name: "Delete account" })).not.toBeInTheDocument();
   });
 
