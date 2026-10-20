@@ -150,6 +150,9 @@ describe("server key log", () => {
     await expect(verifyDiscovery(document, "https://elsewhere.example")).rejects.toThrow(
       /another origin/,
     );
+    for (const prefix of ["https://host.exam", "https://host.example.evil"]) {
+      await expect(verifyDiscovery(document, prefix)).rejects.toThrow(/another origin/);
+    }
     await expect(verifyDiscovery("{}", "https://host.example")).rejects.toThrow(/malformed/);
   });
 });
