@@ -358,6 +358,15 @@ function statementOf(value: unknown): Statement | null {
 }
 
 /**
+ * Whether `url` is `origin` itself or a path under it: a prefix of the host, such as
+ * `https://host.exam` for `https://host.example/s2s/v1`, does not count.
+ */
+function atOrigin(url: string, origin: string): boolean {
+  const base = origin.replace(/\/+$/, "");
+  return url === base || url.startsWith(`${base}/`);
+}
+
+/**
  * Read and verify a discovery document (`GET /.well-known/rim-server`) fetched for `origin`:
  * the log replays, the descriptor verifies under its head, and the server-to-server endpoint
  * lives at that origin.
@@ -376,7 +385,7 @@ export async function verifyDiscovery(
   const head = await replayServerLog(statements);
   const verified = await verifyDescriptor(head, descriptor);
   const s2s = verified.endpoints.s2s;
-  if (s2s !== null && !s2s.startsWith(origin.replace(/\/+$/, ""))) {
+  if (s2s !== null && !atOrigin(s2s, origin)) {
     throw refused("server discovery", "its endpoints are at another origin");
   }
   return { log: statements, head, descriptor: verified };

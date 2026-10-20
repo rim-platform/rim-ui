@@ -328,7 +328,8 @@ pub(crate) struct VerifiedDiscovery {
 }
 
 /// Read and verify a discovery document fetched for `origin`: the log replays, the descriptor
-/// verifies under its head, and the server-to-server endpoint lives at that origin.
+/// verifies under its head, and the server-to-server endpoint lives at that origin (the origin
+/// itself or a path under it, never a longer host that starts the same).
 pub(crate) fn verify_discovery(document: &str, origin: &str) -> Result<VerifiedDiscovery> {
     let document: DiscoveryDocument =
         serde_json::from_str(document).map_err(|_| refused("server discovery", "malformed"))?;
@@ -338,7 +339,10 @@ pub(crate) fn verify_discovery(document: &str, origin: &str) -> Result<VerifiedD
     let head = replay_server_log(&document.key_log)?;
     let descriptor = verify_descriptor(&head, &document.descriptor)?;
     if let Some(s2s) = &descriptor.endpoints.s2s {
-        if !s2s.starts_with(origin.trim_end_matches('/')) {
+        let at_origin = s2s
+            .strip_prefix(origin.trim_end_matches('/'))
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'));
+        if !at_origin {
             return Err(refused(
                 "server discovery",
                 "its endpoints are at another origin",
@@ -672,6 +676,9 @@ mod tests {
         let verified = verify_discovery(&document, "https://host.example").unwrap();
         assert_eq!(verified.head.server_id, text(&v["host"]["serverId"]));
         assert!(verify_discovery(&document, "https://elsewhere.example").is_err());
+        for prefix in ["https://host.exam", "https://host.example.evil"] {
+            assert!(verify_discovery(&document, prefix).is_err(), "{prefix}");
+        }
     }
 
     #[test]
