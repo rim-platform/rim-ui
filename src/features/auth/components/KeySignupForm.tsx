@@ -23,6 +23,7 @@ import {
   discardKeySignup,
   KeyChallengeFailed,
   proofOfWorkRefused,
+  RegistrationClosed,
   RegistrationUnreadable,
   signupWithKey,
   type EnrollmentDraft,
@@ -34,8 +35,11 @@ import { SaveRecoveryKit } from "../../key-identity/components/SaveRecoveryKit";
 import { useKeyStorageConsent } from "../../key-identity/components/useKeyStorageConsent";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { useSignupTerms } from "../api/useSignupTerms";
+import { useSignupMinimumAge } from "../api/useMinimumAge";
+import { isRegistrationFull, REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
 import { checkDisplayName } from "../displayName";
 import { JoinField } from "./JoinField";
+import { MinimumAgeConfirmation } from "./MinimumAgeConfirmation";
 import { TermsAcceptance } from "./TermsAcceptance";
 
 /** The token fields of `signupWithKey`: one for an invite link, none in open mode. */
@@ -87,6 +91,9 @@ function signupError(err: unknown): SignupError {
   }
   if (err instanceof RegistrationUnreadable) {
     return { field: "general", message: err.message, retry: true };
+  }
+  if (err instanceof RegistrationClosed || isRegistrationFull(err)) {
+    return general(REGISTRATION_FULL_MESSAGE);
   }
   if (err instanceof KeyChallengeFailed) {
     return graphqlErrorCode(err.reason) === RATE_LIMITED
@@ -168,8 +175,9 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
  * elsewhere the person saves the kit before the account is created. Before any key is made the
  * browser is asked to keep this site's data, and a refusal needs the person's go-ahead. On a
  * relay that asks for a proof-of-work instead of an invite, this device finds it first, which
- * the person can cancel. A server with terms of service has the person accept
- * them before the keys are made. After a refusal they can try again with the same keys,
+ * the person can cancel; a relay whose discovery document says it is full is not asked. A server
+ * with terms of service, or a minimum age, has the person accept them, or confirm it, before the
+ * keys are made. After a refusal they can try again with the same keys,
  * so a saved kit stays valid, or discard the keys. Only where this app can hold an identity
  * key.
  */
@@ -200,6 +208,7 @@ export function KeySignupForm({
   const [created, setCreated] = useState<KeySignupResult | null>(null);
   const createdRef = useRef(false);
   const terms = useSignupTerms();
+  const age = useSignupMinimumAge();
   // The draft to give up on if the page closes before the account is created.
   const pending = useRef<EnrollmentDraft | null>(null);
   // Stops the proof-of-work under way.
@@ -273,6 +282,7 @@ export function KeySignupForm({
             ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
             ...tokens,
             ...terms.fields,
+            ...age.fields,
           },
           {
             onProofOfWork: (bits) => setProving({ bits, startedAt: Date.now() }),
@@ -285,6 +295,7 @@ export function KeySignupForm({
       // Cancelled by the person: nothing to tell them, and Create account starts again.
       if (err instanceof PowCancelled) return;
       if (terms.noteFailure(err)) return;
+      if (age.noteFailure(err)) return;
       if (onFailure?.(err)) return;
       // The draft stays: trying again uses the same keys, so the saved kit stays valid.
       const mapped = signupError(err);
@@ -346,6 +357,7 @@ export function KeySignupForm({
   const canSubmit =
     ready &&
     terms.satisfied &&
+    age.satisfied &&
     (draft
       ? (kitAfter || saved) && username.trim().length > 0
       : username.trim().length > 0 && deviceName.trim().length > 0);
@@ -408,6 +420,7 @@ export function KeySignupForm({
         <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />
       )}
       <TermsAcceptance terms={terms} disabled={busy} />
+      <MinimumAgeConfirmation age={age} disabled={busy} />
       {proving && (
         <ProofOfWorkStatus proving={proving} onCancel={() => stopProof.current?.abort()} />
       )}

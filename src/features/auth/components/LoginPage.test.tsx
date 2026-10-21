@@ -268,6 +268,25 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
+  it("says the server is full instead of offering Create account", () => {
+    renderPage({}, { registrationFull: true });
+    expect(screen.getByText("This server is full")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
+    expect(screen.getByText("Log in")).toBeInTheDocument();
+  });
+
+  it("shows the server's abuse contact, and none without one", () => {
+    const { unmount } = renderPage({}, { abuseContact: "abuse@acme.example" });
+    expect(screen.getByRole("link", { name: "abuse@acme.example" })).toHaveAttribute(
+      "href",
+      "mailto:abuse@acme.example",
+    );
+    unmount();
+
+    renderPage({}, { abuseContact: null });
+    expect(screen.queryByText(/Report abuse/)).not.toBeInTheDocument();
+  });
+
   it("says the address is blocked when the server refused it", () => {
     useEdgeStore.setState({ blocked: true });
     try {

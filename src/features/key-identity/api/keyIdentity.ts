@@ -482,6 +482,17 @@ export class RegistrationUnreadable extends Error {
   }
 }
 
+/**
+ * The server's discovery document says it is full, so no proof-of-work was searched for and the
+ * signup was not sent.
+ */
+export class RegistrationClosed extends Error {
+  constructor() {
+    super("This server is full and takes no new accounts.");
+    this.name = "RegistrationClosed";
+  }
+}
+
 /** Signups sent to the server and not answered yet; their keys are never given up meanwhile. */
 let signupsInFlight = 0;
 
@@ -519,7 +530,8 @@ async function takesSignupWithoutProof(): Promise<boolean> {
 
 /**
  * The proof-of-work this server asks of a signup with no token, over the draft's inception:
- * `undefined` when its verified discovery document names another registration mode. When the
+ * `undefined` when its verified discovery document names another registration mode, and
+ * `RegistrationClosed` thrown when the document says the server is full. When the
  * document cannot be read, a server that says it is open or invite-only gets the signup without
  * one; any other throws `RegistrationUnreadable` rather than send a signup it would refuse. A
  * retry with the same draft reuses the nonce.
@@ -538,6 +550,7 @@ async function proofOfWorkFor(
     if (await takesSignupWithoutProof()) return undefined;
     throw new RegistrationUnreadable(err);
   }
+  if (registration.full) throw new RegistrationClosed();
   if (registration.mode !== "pow" || registration.powBits === null) return undefined;
   const boundTo = `${registration.serverId}|${registration.powBits}`;
   const known = proofs.get(draft.draftId);

@@ -9,7 +9,7 @@ import { isTauri } from "@tauri-apps/api/core";
 
 import { keyCommand } from "../../key-identity/api/keyBackend";
 import type { ServerRegistration } from "../crypto/serverStatements";
-import { readOwnDiscovery } from "../state/serverOrigin";
+import { discoveryRegistrationFull, readOwnDiscovery } from "../state/serverOrigin";
 import type { PowAnswer, PowJob } from "./powSearch";
 
 export type { PowJob } from "./powSearch";
@@ -22,9 +22,13 @@ export class PowCancelled extends Error {
   }
 }
 
-/** A server's id and how it takes new accounts, from its verified discovery document. */
+/**
+ * A server's id and how it takes new accounts, from its verified discovery document, and
+ * whether the document says it is full (unsigned and advisory).
+ */
 export interface RelayRegistration extends ServerRegistration {
   serverId: string;
+  full: boolean;
 }
 
 /**
@@ -33,8 +37,12 @@ export interface RelayRegistration extends ServerRegistration {
  * @throws When the document cannot be fetched or does not verify.
  */
 export async function readRegistration(): Promise<RelayRegistration> {
-  const { verified } = await readOwnDiscovery();
-  return { serverId: verified.head.serverId, ...verified.descriptor.registration };
+  const { document, verified } = await readOwnDiscovery();
+  return {
+    serverId: verified.head.serverId,
+    ...verified.descriptor.registration,
+    full: discoveryRegistrationFull(document),
+  };
 }
 
 async function solveOnDesktop(job: PowJob, signal?: AbortSignal): Promise<string> {

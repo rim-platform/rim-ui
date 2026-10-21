@@ -187,6 +187,61 @@ describe("useServerInfo", () => {
     expect(older.result.current.info?.dmInbound).toBeUndefined();
   });
 
+  it("reads the account cap and safety settings, and a server older than them without", async () => {
+    const operations: (string | undefined)[] = [];
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        operations.push(body.operationName);
+        return HttpResponse.json({
+          data: {
+            serverInfo: {
+              version: "0.9.0",
+              apiVersion: 1,
+              features: [],
+              registrationFull: true,
+              abuseContact: "abuse@acme.example",
+              minimumAge: 16,
+            },
+          },
+        });
+      }),
+    );
+    const current = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+    await waitFor(() => expect(current.result.current.info).toBeDefined());
+    expect(current.result.current.info).toMatchObject({
+      registrationFull: true,
+      abuseContact: "abuse@acme.example",
+      minimumAge: 16,
+    });
+    expect(operations).toEqual(["ServerInfo"]);
+    current.unmount();
+
+    operations.length = 0;
+    server.use(
+      http.post("*/api", async ({ request }) => {
+        const body = (await request.json()) as { operationName?: string };
+        operations.push(body.operationName);
+        if (body.operationName === "ServerInfo") {
+          return HttpResponse.json({
+            errors: [{ message: 'Unknown field "registrationFull" on type "ServerInfo"' }],
+          });
+        }
+        return HttpResponse.json({
+          data: {
+            serverInfo: { version: "0.8.5", apiVersion: 1, features: [], dmInbound: "ANYONE" },
+          },
+        });
+      }),
+    );
+    const older = renderHook(() => useServerInfo(), { wrapper: TestProviders });
+    await waitFor(() => expect(older.result.current.info).toBeDefined());
+    expect(operations).toEqual(["ServerInfo", "ServerInfoWithDm"]);
+    expect(older.result.current.info?.dmInbound).toBe("ANYONE");
+    expect(older.result.current.info?.registrationFull).toBeUndefined();
+    expect(older.result.current.info?.minimumAge).toBeUndefined();
+  });
+
   it("reads a server older than the signup policy as taking password signups, with its limits", async () => {
     const limits = fakeLimits({ workspacesPerUser: 5 });
     server.use(

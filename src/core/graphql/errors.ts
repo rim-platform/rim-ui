@@ -98,6 +98,9 @@ export const UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE";
 /** A feature the server does not run; extension `feature` names it. */
 export const FEATURE_DISABLED = "FEATURE_DISABLED";
 
+/** The server holds as many accounts as it accepts and takes no new one. */
+export const REGISTRATION_FULL = "REGISTRATION_FULL";
+
 /**
  * The feature a failed request was refused for: a `FEATURE_DISABLED` GraphQL error's `feature`
  * extension, or a `FeatureDisabledError` from a REST route. `undefined` for anything else.
