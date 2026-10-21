@@ -20,6 +20,7 @@ describe("server feature names", () => {
   it("words a switched-off and a not-set-up feature", () => {
     expect(featureOffMessage("email")).toBe("Email is switched off on this server");
     expect(featureOffMessage("attachments")).toBe("Attachments are switched off on this server");
+    expect(featureOffMessage("avatars")).toBe("Profile pictures are switched off on this server");
     expect(featureUnavailableMessage("email")).toBe("Email is not set up on this server");
   });
 });

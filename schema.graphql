@@ -1893,6 +1893,8 @@ type Mutation {
 	# Errors
 	
 	- `UNAUTHENTICATED` — no session.
+	- `FEATURE_DISABLED` — `avatarUrl` given while the instance has the `avatars` feature
+	off.
 	- `FORBIDDEN` — `displayName` from a member whose relay is another server; their
 	display name comes from their profile card.
 	- `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
@@ -3291,8 +3293,8 @@ One optional feature and whether it works here.
 type ServerFeatureInfo {
 	"""
 	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-	`email`, `custom_emoji`, `workspace_plugins` or `ai_commands`. A client ignores a name
-	it does not know.
+	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands` or `avatars`. A client
+	ignores a name it does not know.
 	"""
 	key: String!
 	state: ServerFeatureState!
@@ -3473,6 +3475,9 @@ type ServerMember {
 	userId: ID!
 	username: String!
 	displayName: String
+	"""
+	The profile picture's URL; null while the instance has the `avatars` feature off.
+	"""
 	avatarUrl: String
 	statusText: String
 	bio: String
@@ -3842,6 +3847,9 @@ type User {
 	id: ID!
 	username: String!
 	displayName: String
+	"""
+	The profile picture's URL; null while the instance has the `avatars` feature off.
+	"""
 	avatarUrl: String
 	statusText: String
 	bio: String

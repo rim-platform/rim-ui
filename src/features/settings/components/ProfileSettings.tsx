@@ -1,9 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2 } from "lucide-react";
 
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useUpdateProfileMutation, uploadAvatar } from "../api/useUpdateProfile";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { reportFeatureDisabled } from "../../../core/query/queryClient";
+import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
+import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { refreshServerMedia, useServerMediaUrl } from "../../../shared/media/serverMedia";
 import { cn } from "../../../shared/ui/cn";
 
@@ -37,9 +41,21 @@ function resizeImageToBlob(file: File, size: number): Promise<Blob> {
   });
 }
 
+/** The profile picture at `src`, or `initial` while there is none. */
+function AvatarFace({ src, initial }: { src: string | null; initial: string }) {
+  return src ? (
+    <img src={src} alt="Avatar" className="h-full w-full object-cover" />
+  ) : (
+    <span className="text-2xl font-medium text-rim-text-muted">{initial}</span>
+  );
+}
+
 export function ProfileSettings() {
   const { data: user, isPending: userLoading } = useCurrentUser();
   const updateProfile = useUpdateProfileMutation();
+  const qc = useQueryClient();
+  // Without profile pictures on the server, the avatar shows the initial and uploads nothing.
+  const avatars = useServerFeature("avatars");
 
   const [displayName, setDisplayName] = useState("");
   const [statusText, setStatusText] = useState("");
@@ -93,6 +109,11 @@ export function ProfileSettings() {
         // Update profile with new avatar URL
         await updateProfile.mutateAsync({ avatarUrl: url });
       } catch (err) {
+        // Profile pictures went off: every avatar reads as none, so the preview drops too.
+        if (reportFeatureDisabled(err, qc)) {
+          setAvatarPreview(null);
+          return;
+        }
         setAvatarError(err instanceof Error ? err.message : "Avatar upload failed.");
       } finally {
         setAvatarUploading(false);
@@ -100,7 +121,7 @@ export function ProfileSettings() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [updateProfile],
+    [updateProfile, qc],
   );
 
   const handleSave = useCallback(async () => {
@@ -120,46 +141,52 @@ export function ProfileSettings() {
     return <p className="text-sm text-rim-text-muted">Loading profile...</p>;
   }
 
+  const initial =
+    user?.displayName?.charAt(0).toUpperCase() ?? user?.username?.charAt(0).toUpperCase() ?? "?";
+
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold text-rim-text">Profile</h2>
 
       {/* Avatar */}
       <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={handleAvatarClick}
-          className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft transition hover:brightness-110"
-          title="Change avatar"
-        >
-          {avatarSrc ? (
-            <img src={avatarSrc} alt="Avatar" className="h-full w-full object-cover" />
-          ) : (
-            <span className="text-2xl font-medium text-rim-text-muted">
-              {user?.displayName?.charAt(0).toUpperCase() ??
-                user?.username?.charAt(0).toUpperCase() ??
-                "?"}
-            </span>
-          )}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
-            {avatarUploading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-white" />
-            ) : (
-              <Camera className="h-5 w-5 text-white" />
-            )}
-          </div>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleAvatarChange}
-        />
-        <div className="text-sm text-rim-text-muted">
-          Click to upload avatar. Max 2MB, images only.
-          {avatarError && <p className="mt-1 text-rim-danger">{avatarError}</p>}
-        </div>
+        {avatars.enabled ? (
+          <>
+            <button
+              type="button"
+              onClick={handleAvatarClick}
+              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft transition hover:brightness-110"
+              title="Change avatar"
+            >
+              <AvatarFace src={avatarSrc} initial={initial} />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                {avatarUploading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-white" />
+                ) : (
+                  <Camera className="h-5 w-5 text-white" />
+                )}
+              </div>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
+            <div className="text-sm text-rim-text-muted">
+              Click to upload avatar. Max 2MB, images only.
+              {avatarError && <p className="mt-1 text-rim-danger">{avatarError}</p>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft">
+              <AvatarFace src={avatarSrc} initial={initial} />
+            </div>
+            <FeatureOffNotice feature="avatars" view={avatars} />
+          </>
+        )}
       </div>
 
       {/* Display name */}

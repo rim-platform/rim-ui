@@ -117,6 +117,7 @@ describe("AboutServerFeatures", () => {
       "Custom emojiOn",
       "Workspace pluginsOn",
       "AI commandsOn",
+      "Profile picturesOn",
     ]);
   });
 
