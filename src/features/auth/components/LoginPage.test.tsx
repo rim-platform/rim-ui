@@ -63,15 +63,28 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { identityKeys: desktop.value } }),
 }));
 
-// Device key sign-in and device linking have their own tests; here it renders nothing, as in the web app.
+// Device key sign-in, device linking and recovery have their own tests; here each renders a
+// stand-in button when `keyOptions.value` is set, and nothing otherwise, as in the web app.
+const keyOptions = vi.hoisted(() => ({ value: false }));
 vi.mock("../../key-identity/components/DeviceKeySignIn", () => ({
-  DeviceKeySignIn: () => null,
-  RecoverAccount: () => null,
+  DeviceKeySignIn: () =>
+    keyOptions.value ? <button type="button">Device key sign-in</button> : null,
+  RecoverAccount: () =>
+    keyOptions.value ? <button type="button">Recover an account</button> : null,
 }));
 vi.mock("../../key-identity/components/LinkThisDevice", () => ({
-  LinkThisDevice: () => null,
+  LinkThisDevice: () => (keyOptions.value ? <button type="button">Link this device</button> : null),
 }));
 
+// Server info comes from each test's query client; one without it stays loading.
+vi.mock("../../updater/api/serverInfoApi", async () => {
+  const actual = await vi.importActual<typeof import("../../updater/api/serverInfoApi")>(
+    "../../updater/api/serverInfoApi",
+  );
+  return { ...actual, fetchServerInfo: () => new Promise(() => {}) };
+});
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LoginPage } from "./LoginPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
@@ -87,6 +100,7 @@ describe("LoginPage", () => {
     vi.clearAllMocks();
     desktop.value = false;
     sessionEnded.value = false;
+    keyOptions.value = false;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "INVITE_ONLY" },
       isPending: false,
@@ -301,6 +315,71 @@ describe("LoginPage", () => {
   it("shows no blocked state otherwise", () => {
     renderPage();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("leads with the key ways to sign in and folds the password form on a key-only server", async () => {
+    keyOptions.value = true;
+    const user = userEvent.setup();
+    renderPage({}, { signupRequiresKeys: true });
+
+    const keys = screen.getByRole("region", { name: "Sign in with a key" });
+    expect(keys).toContainElement(screen.getByRole("button", { name: "Device key sign-in" }));
+    expect(keys).toContainElement(screen.getByRole("button", { name: "Link this device" }));
+    expect(keys).toContainElement(screen.getByRole("button", { name: "Recover an account" }));
+    expect(screen.getByPlaceholderText("password")).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: "Sign in with a password (older accounts)" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const form = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(form).toContainElement(screen.getByPlaceholderText("password"));
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByPlaceholderText("owner")).toBeVisible();
+    expect(screen.getByPlaceholderText("password")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toBeVisible();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByPlaceholderText("password")).not.toBeVisible();
+  });
+
+  it("leaves the key card empty on a key-only server where no key way renders", () => {
+    renderPage({}, { signupRequiresKeys: true });
+    expect(screen.getByLabelText("Sign in with a key")).toBeEmptyDOMElement();
+    expect(
+      screen.getByRole("button", { name: "Sign in with a password (older accounts)" }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["takes passwords", false],
+    ["has not said yet", undefined],
+  ])("shows the password form first when the server %s", (_, signupRequiresKeys) => {
+    keyOptions.value = true;
+    if (signupRequiresKeys === undefined) {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <MemoryRouter initialEntries={["/login"]}>
+          <LoginPage />
+        </MemoryRouter>,
+        {
+          wrapper: ({ children }) => (
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+          ),
+        },
+      );
+    } else {
+      renderPage({}, { signupRequiresKeys });
+    }
+    expect(screen.getByPlaceholderText("password")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Log in" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Sign in with a key" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sign in with a password (older accounts)" }),
+    ).not.toBeInTheDocument();
   });
 
   it("says the session ended when the server ended it, and nothing otherwise", () => {

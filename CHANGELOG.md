@@ -64,6 +64,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The desktop app no longer shows the webview's own right-click menu (reload, inspect) where
   the app has no menu of its own; text fields, the composer and selected text keep the cut,
   copy and paste menu. A message's context menu also opens with a touch held for half a second.
+- On a server that signs up with keys only, the sign-in page leads with the key ways to sign
+  in (this device, linking with a code, a recovery kit) and folds the password form behind
+  "Sign in with a password (older accounts)", for accounts made before the server went key-only.
 
 ### Fixed
 
