@@ -6,17 +6,43 @@
 
 const MENTION_TOKEN = /<@([^>]*)>/g;
 
-/** The body with `@username` mentions as `<@principalId>` tokens, for members that have one. */
-export function toPrincipalMentions(
+/**
+ * The body with each `@<name>` of `mentions` (name to user id) as the token `tokenOf` gives
+ * that user, longest name first, so `@kuba:example.org` is not read as `@kuba`. A name followed
+ * by more of a name or a domain (`@kuba_2`, `@kuba:example.org` for `kuba`) is left alone.
+ *
+ * @param mentions - The text after `@` that names each user: a username or a handle.
+ * @param tokenOf - The token for a user, or `null` to leave their mentions as they are.
+ */
+export function replaceMentions(
   body: string,
-  mentions: Map<string, string>,
-  principalOf: (userId: string) => string | null | undefined,
+  mentions: ReadonlyMap<string, string>,
+  tokenOf: (userId: string) => string | null,
 ): string {
   let out = body;
-  for (const [username, userId] of mentions) {
-    const principal = principalOf(userId);
-    if (principal) out = out.split(`@${username}`).join(`<@${principal}>`);
+  const names = [...mentions.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const token = tokenOf(mentions.get(name) as string);
+    if (token === null) continue;
+    const pattern = new RegExp(`@${escapeRegExp(name)}(?![A-Za-z0-9_-]|[.:][A-Za-z0-9])`, "g");
+    out = out.replace(pattern, () => token);
   }
+  return out;
+}
+
+/**
+ * The body with `@username` and `@username:domain` mentions as `<@principalId>` tokens, for
+ * members that have one.
+ */
+export function toPrincipalMentions(
+  body: string,
+  mentions: ReadonlyMap<string, string>,
+  principalOf: (userId: string) => string | null | undefined,
+): string {
+  const out = replaceMentions(body, mentions, (userId) => {
+    const principal = principalOf(userId);
+    return principal ? `<@${principal}>` : null;
+  });
   // Mentions the composer already wrote as user tokens.
   return out.replace(MENTION_TOKEN, (token, id: string) => {
     const principal = principalOf(id);

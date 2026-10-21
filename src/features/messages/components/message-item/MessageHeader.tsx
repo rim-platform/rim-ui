@@ -32,6 +32,7 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
     <UserHoverCard
       userId={authorId}
       username={author.username ?? author.name}
+      handle={author.handle}
       displayName={author.name}
       avatarUrl={author.avatarUrl}
       statusText={author.statusText}

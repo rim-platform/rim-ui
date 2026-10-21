@@ -4,10 +4,16 @@ import { Copy, MessageCircle, Pencil } from "lucide-react";
 import { Avatar, type PresenceStatus } from "./Avatar";
 import { toast } from "../toast";
 import { formatRelativeDate } from "../utils/formatDate";
+import { viewHandle, type HandleView } from "../utils/handles";
 
 export interface UserCardContentProps {
   userId: string;
   username: string;
+  /**
+   * How the person's handle reads and what Copy puts on the clipboard; without it, `@username`
+   * unless the username is a server's internal name for a person from elsewhere.
+   */
+  handle?: HandleView | null;
   displayName?: string | null;
   avatarUrl?: string | null;
   statusText?: string | null;
@@ -23,6 +29,7 @@ export interface UserCardContentProps {
 export function UserCardContent({
   userId,
   username,
+  handle,
   displayName,
   avatarUrl,
   statusText,
@@ -34,11 +41,14 @@ export function UserCardContent({
   onSendDm,
 }: UserCardContentProps) {
   const resolvedDisplayName = displayName ?? username;
+  const shownHandle = handle === undefined ? viewHandle(username, null, null) : handle;
+  const copied = shownHandle?.copied;
 
   const handleCopyUsername = useCallback(() => {
-    navigator.clipboard.writeText(`@${username}`);
-    toast.success(`Copied @${username}`);
-  }, [username]);
+    if (!copied) return;
+    navigator.clipboard.writeText(copied);
+    toast.success(`Copied ${copied}`);
+  }, [copied]);
 
   return (
     <>
@@ -53,7 +63,11 @@ export function UserCardContent({
         />
         <div className="min-w-0 flex-1 pt-1">
           <p className="text-base font-semibold text-rim-text truncate">{resolvedDisplayName}</p>
-          <p className="text-sm text-rim-text-muted truncate">@{username}</p>
+          {shownHandle && (
+            <p className="text-sm text-rim-text-muted truncate" title={shownHandle.copied}>
+              {shownHandle.shown}
+            </p>
+          )}
         </div>
       </div>
 
@@ -104,14 +118,16 @@ export function UserCardContent({
                   Send DM
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleCopyUsername}
-                className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted transition hover:text-rim-text"
-              >
-                <Copy className="h-3 w-3" />
-                Copy @{username}
-              </button>
+              {shownHandle && (
+                <button
+                  type="button"
+                  onClick={handleCopyUsername}
+                  className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted transition hover:text-rim-text"
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy {shownHandle.shown}
+                </button>
+              )}
             </>
           )}
         </div>

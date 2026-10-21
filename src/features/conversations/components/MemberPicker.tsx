@@ -58,7 +58,7 @@ export function MemberPicker({
         const resolved = memberLookup.resolve(m.userId);
         return {
           userId: m.userId,
-          username: m.username,
+          handle: resolved.handleView?.shown ?? "",
           displayName: resolved.displayName,
           avatarUrl: resolved.avatarUrl ?? null,
         };
@@ -67,7 +67,7 @@ export function MemberPicker({
   }, [members, me?.id, memberLookup, excludeUserIds]);
 
   const getText = useCallback(
-    (member: { displayName: string; username: string }) => [member.displayName, member.username],
+    (member: { displayName: string; handle: string }) => [member.displayName, member.handle],
     [],
   );
 
@@ -231,7 +231,7 @@ export function MemberPicker({
                 <Check className="ml-auto h-4 w-4 shrink-0 text-rim-accent" />
               ) : (
                 <span className="ml-auto max-w-[120px] truncate text-xs text-rim-text-faint">
-                  {member.username}
+                  {member.handle}
                 </span>
               )}
             </button>

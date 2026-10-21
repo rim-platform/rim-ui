@@ -71,4 +71,33 @@ describe("UserCardContent", () => {
     fireEvent.click(screen.getByText(/Copy @testuser/));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("@testuser");
   });
+
+  it("shows the handle as it reads and copies it whole", () => {
+    render(
+      <UserCardContent
+        {...defaultProps}
+        handle={{ shown: "@ada:elsewhere.example", copied: "@ada:elsewhere.example" }}
+      />,
+    );
+    expect(screen.getByText("@ada:elsewhere.example")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Copy @ada:elsewhere.example/));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("@ada:elsewhere.example");
+  });
+
+  it("copies a local person's whole handle while showing @username", () => {
+    render(
+      <UserCardContent
+        {...defaultProps}
+        handle={{ shown: "@kuba", copied: "@kuba:rim.example" }}
+      />,
+    );
+    fireEvent.click(screen.getByText("Copy @kuba"));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("@kuba:rim.example");
+  });
+
+  it("shows no r_ name and offers no copy for a person whose handle is not known", () => {
+    render(<UserCardContent userId="user-2" username="r_abcdef" displayName="Ada" />);
+    expect(screen.queryByText(/r_abcdef/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Copy/)).not.toBeInTheDocument();
+  });
 });

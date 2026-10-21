@@ -2,12 +2,15 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import type { PresenceStatus } from "./Avatar";
+import type { HandleView } from "../utils/handles";
 import { UserCardContent } from "./UserCardContent";
 import { Z } from "./zIndex";
 
 interface UserHoverCardPortalProps {
   userId: string;
   username: string;
+  /** How the person's handle reads; see `UserCardContent`. */
+  handle?: HandleView | null;
   displayName?: string | null;
   avatarUrl?: string | null;
   statusText?: string | null;
@@ -28,6 +31,7 @@ interface UserHoverCardPortalProps {
 export function UserHoverCardPortal({
   userId,
   username,
+  handle,
   displayName,
   avatarUrl,
   statusText,
@@ -105,6 +109,7 @@ export function UserHoverCardPortal({
       <UserCardContent
         userId={userId}
         username={username}
+        handle={handle}
         displayName={displayName}
         avatarUrl={avatarUrl}
         statusText={statusText}

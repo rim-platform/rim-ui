@@ -77,6 +77,8 @@ interface ThreadMessageAuthor {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  /** `@<username>:<domain>`; null when the server does not know it. */
+  handle?: string | null;
 }
 
 interface ThreadMessageLinkPreview {

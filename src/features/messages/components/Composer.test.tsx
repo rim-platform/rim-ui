@@ -15,6 +15,7 @@ import { toast } from "../../../shared/toast/useToastStore";
 import { timedOutMessage } from "../../../core/graphql/errors";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useTimeoutStore } from "../../workspaces/state/useTimeoutStore";
+import { useKnownHandles } from "../../workspaces/state/useKnownHandles";
 import { useSlowModeStore } from "../state/useSlowModeStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import type { ConversationSummary } from "../../conversations/types";
@@ -562,5 +563,61 @@ describe("Composer — typing indicator", () => {
 
     answer({ sendMessage: { id: "m-1" } });
     await waitFor(() => expect(markTypingSent).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("Composer — mentions by handle", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    useKnownHandles.setState({ byUser: { "u-alice": "@alice:elsewhere.example" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+    useKnownHandles.setState({ byUser: {} });
+  });
+
+  function sentText(): string | undefined {
+    const vars = callsTo(requestMock, "mutation SendMessage")[0] as
+      { input?: { text?: string } } | undefined;
+    return vars?.input?.text;
+  }
+
+  it("turns a member's whole handle typed out into a mention, and a bare name it starts with not", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "m-1" } }),
+    });
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query ServerMembers").length).toBeGreaterThan(0),
+    );
+    fireEvent.change(textbox, {
+      target: { value: "hi @alice:elsewhere.example and @alice:elsewhere.example.org" },
+    });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(sentText()).toBeDefined());
+    expect(sentText()).toBe("hi <@u-alice> and @alice:elsewhere.example.org");
+  });
+
+  it("offers a member by their handle and inserts it", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "m-1" } }),
+    });
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query ServerMembers").length).toBeGreaterThan(0),
+    );
+    fireEvent.change(textbox, { target: { value: "@alice:else", selectionStart: 11 } });
+
+    const row = await screen.findByRole("button", { name: /Alice/ });
+    expect(row).toHaveTextContent("@alice:elsewhere.example");
+    fireEvent.click(row);
+    expect(textbox).toHaveValue("@alice:elsewhere.example ");
   });
 });

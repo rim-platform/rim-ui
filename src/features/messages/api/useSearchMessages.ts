@@ -41,6 +41,7 @@ const SEARCH_MESSAGES_QUERY = gql`
           username
           displayName
           avatarUrl
+          handle
         }
         text
         sentAt
@@ -68,6 +69,8 @@ export interface SearchMessageAuthor {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  /** `@<username>:<domain>`; null when the server does not know it. */
+  handle?: string | null;
 }
 
 export interface SearchMessageItem {

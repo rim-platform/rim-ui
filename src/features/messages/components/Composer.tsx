@@ -17,6 +17,7 @@ import { useDraftStore } from "../state/useDraftStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useConversation } from "../../conversations/api/useConversation";
 import { JoinChannelBar } from "../../conversations/components/JoinChannelBar";
 import { ArchivedConversationBar } from "../../conversations/components/ArchivedConversationBar";
@@ -51,7 +52,7 @@ import { FilePreviewBar } from "./FilePreviewBar";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { SendBlock } from "../../e2ee/hooks/useE2eeConversation";
 import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
-import { toPrincipalMentions } from "../../e2ee/utils/content";
+import { replaceMentions, toPrincipalMentions } from "../../e2ee/utils/content";
 import {
   startDirectMessage,
   type StartedDirectMessage,
@@ -132,7 +133,7 @@ function MessageComposer(props: ComposerProps) {
   const startingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Maps @username -> userId for converting mentions on submit
+  // Maps the text after `@` of each picked mention (username or handle) to its user id
   const mentionMapRef = useRef<Map<string, string>>(new Map());
   const qc = useQueryClient();
   const send = useSendMessageMutation();
@@ -144,6 +145,30 @@ function MessageComposer(props: ComposerProps) {
   const executeCommand = useExecuteCommandMutation();
   const { handleKeystroke, markSent } = useTypingIndicator(workspaceId, conversationId);
   const { data: serverMembers } = useServerMembers(workspaceId);
+  const memberLookup = useMemberLookup(workspaceId);
+  // Members as the mention list offers them: by the handle that reads, never an `r_…` name.
+  const mentionMembers = useMemo(
+    () =>
+      serverMembers?.map((m) => {
+        const info = memberLookup.resolve(m.userId);
+        return {
+          userId: m.userId,
+          mention: info.handleView?.shown.slice(1) ?? null,
+          handle: info.handleView?.copied.slice(1) ?? null,
+          displayName: m.displayName,
+          avatarUrl: m.avatarUrl,
+        };
+      }),
+    [serverMembers, memberLookup],
+  );
+
+  /** The picked mentions, and every member's whole handle typed out, to user ids. */
+  function mentionsToSend(): Map<string, string> {
+    const mentions = new Map<string, string>();
+    for (const m of mentionMembers ?? []) if (m.handle) mentions.set(m.handle, m.userId);
+    for (const [name, userId] of mentionMapRef.current) mentions.set(name, userId);
+    return mentions;
+  }
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -379,10 +404,7 @@ function MessageComposer(props: ComposerProps) {
   /** Send in plaintext, then attach any files. Returns whether the message went out. */
   async function submitPlain(unsentText: string, trimmed: string, target: string) {
     let processed = trimmed ? replaceShortcodes(trimmed) : "";
-    // Replace @username with <@userId> using the mention map
-    for (const [username, userId] of mentionMapRef.current) {
-      processed = processed.split(`@${username}`).join(`<@${userId}>`);
-    }
+    processed = replaceMentions(processed, mentionsToSend(), (userId) => `<@${userId}>`);
     if (refuseOverByteCap(processed)) return false;
     const filesToUpload = pendingFiles.map((pf) => pf.file);
     clearSent();
@@ -458,7 +480,7 @@ function MessageComposer(props: ComposerProps) {
     const members = serverMembers ?? [];
     const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
     const text = trimmed ? replaceShortcodes(trimmed) : "";
-    const body = toPrincipalMentions(text, mentionMapRef.current, principalOf);
+    const body = toPrincipalMentions(text, mentionsToSend(), principalOf);
     if (refuseOverByteCap(body)) return false;
     const files = pendingFiles.map((pf) => pf.file);
     clearSent();
@@ -591,7 +613,7 @@ function MessageComposer(props: ComposerProps) {
           canSubmit={!offline && !!(text.trim() || pendingFiles.length > 0)}
           textareaRef={textareaRef}
           mentionMapRef={mentionMapRef}
-          serverMembers={serverMembers}
+          serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
         />
       </fieldset>

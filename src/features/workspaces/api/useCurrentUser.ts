@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { handleDomain } from "../../../shared/utils/handles";
 import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
 
 const ME_QUERY = gql`
@@ -15,6 +16,7 @@ const ME_QUERY = gql`
       statusText
       bio
       principalId
+      handle
     }
   }
 `;
@@ -28,6 +30,8 @@ interface User {
   bio: string | null;
   /** The key identity id (`rimp1_…`) once the account enrolled a key, else null. */
   principalId: string | null;
+  /** `@<username>:<domain>`; null when the server declares no handle domain. */
+  handle?: string | null;
 }
 
 interface MeResponse {
@@ -46,4 +50,12 @@ export function useCurrentUser() {
         return res.me;
       }),
   });
+}
+
+/**
+ * The handle domain of the signed-in account's server, read from its own handle: people whose
+ * handle has this domain are shown as `@username`. `null` while it is not known.
+ */
+export function useOwnHandleDomain(): string | null {
+  return handleDomain(useCurrentUser().data?.handle);
 }

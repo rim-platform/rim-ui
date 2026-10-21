@@ -13,6 +13,8 @@ export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean 
     (a.name === b.name &&
       a.avatarUrl === b.avatarUrl &&
       a.username === b.username &&
+      a.handle?.shown === b.handle?.shown &&
+      a.handle?.copied === b.handle?.copied &&
       a.statusText === b.statusText &&
       a.role === b.role &&
       a.joinedAt === b.joinedAt &&

@@ -9,6 +9,7 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { useServerMembers, type ServerMember } from "../../workspaces/api/useServerMembers";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import {
   useDeleteWorkspaceMutation,
   useTransferOwnershipMutation,
@@ -46,8 +47,10 @@ export function WorkspaceOwnerSettings({ serverId }: WorkspaceOwnerSettingsProps
   );
 }
 
-function memberName(member: ServerMember): string {
-  return member.displayName || member.username;
+/** A member's name, with their handle when one reads: `Name (@handle)`. */
+function memberName(member: ServerMember, handle?: string): string {
+  const name = member.displayName || (handle ?? member.username);
+  return handle && handle !== name ? `${name} (${handle})` : name;
 }
 
 function TransferOwnership({
@@ -59,6 +62,7 @@ function TransferOwnership({
 }) {
   const myId = useAuthStore((s) => s.session?.userId);
   const { data: members } = useServerMembers(serverId);
+  const memberLookup = useMemberLookup(serverId);
   const transfer = useTransferOwnershipMutation();
   const selectId = useId();
   const [pickedId, setPickedId] = useState("");
@@ -97,7 +101,7 @@ function TransferOwnership({
               <option value="">Pick a member</option>
               {candidates.map((m) => (
                 <option key={m.userId} value={m.userId}>
-                  {memberName(m)} (@{m.username})
+                  {memberName(m, memberLookup.resolve(m.userId).handleView?.shown)}
                 </option>
               ))}
             </select>

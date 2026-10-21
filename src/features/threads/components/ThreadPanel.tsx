@@ -27,6 +27,9 @@ import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { toast } from "../../../shared/toast";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
+import { useOwnHandleDomain } from "../../workspaces/api/useCurrentUser";
+import { rememberHandles } from "../../workspaces/state/useKnownHandles";
+import { personName, viewHandle } from "../../../shared/utils/handles";
 
 /** A message the thread panel shows: the root or a reply. */
 type ThreadPanelMessage = { id: string; author?: { id: string } | null };
@@ -165,6 +168,11 @@ export function ThreadPanel() {
     });
   }, [threadMessages?.items, encrypted, userOf]);
   const replyCount = items.length;
+  const ownDomain = useOwnHandleDomain();
+  useEffect(
+    () => rememberHandles([rootMessage?.author, ...items.map((m) => m.author)]),
+    [rootMessage, items],
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -334,10 +342,7 @@ export function ThreadPanel() {
       {/* Root message */}
       {rootMessage &&
         (() => {
-          const name =
-            rootMessage.author?.displayName ||
-            rootMessage.author?.username ||
-            rootMessage.authorId.slice(0, 8);
+          const name = personName(rootMessage.author, rootMessage.authorId, ownDomain);
           return (
             <div className="border-b border-rim-line px-4 py-3">
               <MessageItem
@@ -346,6 +351,12 @@ export function ThreadPanel() {
                   author: {
                     name,
                     avatarUrl: rootMessage.author?.avatarUrl,
+                    username: rootMessage.author?.username,
+                    handle: viewHandle(
+                      rootMessage.author?.username,
+                      rootMessage.author?.handle,
+                      ownDomain,
+                    ),
                     isCurrentUser: rootMessage.author?.id === currentUserId,
                   },
                 }}
@@ -367,8 +378,7 @@ export function ThreadPanel() {
           </p>
         ) : (
           items.map((msg) => {
-            const name =
-              msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+            const name = personName(msg.author, msg.authorId, ownDomain);
             return (
               <MessageItem
                 key={msg.id}
@@ -377,6 +387,8 @@ export function ThreadPanel() {
                   author: {
                     name,
                     avatarUrl: msg.author?.avatarUrl,
+                    username: msg.author?.username,
+                    handle: viewHandle(msg.author?.username, msg.author?.handle, ownDomain),
                     isCurrentUser: msg.author?.id === currentUserId,
                   },
                 }}

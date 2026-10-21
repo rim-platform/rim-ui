@@ -121,7 +121,7 @@ export function useUserContextMenu({
     const info = memberLookup.resolve(userId);
     const member = members?.find((m) => m.userId === userId);
     const name = target.displayName ?? info.displayName;
-    const username = info.username;
+    const handle = info.handleView;
     const items: DropdownMenuItem[] = [
       {
         id: "view-profile",
@@ -148,13 +148,13 @@ export function useUserContextMenu({
       });
     }
 
-    if (username) {
+    if (handle) {
       items.push({
         id: "copy-username",
         label: "Copy @username",
         onSelect: () => {
-          void navigator.clipboard.writeText(`@${username}`);
-          toast.success(`Copied @${username}`);
+          void navigator.clipboard.writeText(handle.copied);
+          toast.success(`Copied ${handle.copied}`);
         },
       });
     }
