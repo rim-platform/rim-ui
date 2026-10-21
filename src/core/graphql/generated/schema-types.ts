@@ -2999,7 +2999,8 @@ export type Query = {
   serverBans: Array<ServerBan>;
   /**
    * The server's release version, API version, features, audit retention, instance notice,
-   * terms URL, limits and DM settings. Readable without a session.
+   * terms URL, limits, DM settings, abuse contact, minimum age and default workspace. Readable
+   * without a session.
    */
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
@@ -3691,6 +3692,11 @@ export enum ServerFeatureState {
 
 /** The running server build, the API version it speaks and the optional features it runs. */
 export type ServerInfo = {
+  /**
+   * Where to report abuse on this server: an email address or an https URL; null when the
+   * operator names none (`RIM_ABUSE_CONTACT`).
+   */
+  abuseContact?: Maybe<Scalars['String']['output']>;
   /** The major version of this GraphQL API. */
   apiVersion: Scalars['Int']['output'];
   /**
@@ -3700,7 +3706,8 @@ export type ServerInfo = {
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
   /**
    * The workspace every new account joins as a Member, so a client can open it after a
-   * signup; null when the server names none (`RIM_DEFAULT_WORKSPACE`).
+   * signup: the one `RIM_DEFAULT_WORKSPACE` names, or the one an owner claimed from the
+   * definition file; null when there is none.
    */
   defaultWorkspace?: Maybe<Scalars['ID']['output']>;
   /**
@@ -3722,6 +3729,19 @@ export type ServerInfo = {
   /** The instance-wide caps, so a client can show "5 of 5" before it tries. */
   limits: ServerLimits;
   /**
+   * The age every signup confirms the person has reached, self-declared; null when the
+   * server asks for none (`RIM_MINIMUM_AGE`). A signup sends it back as
+   * `confirmedMinimumAge`.
+   */
+  minimumAge?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Whether the instance holds as many local accounts as `limits.accounts` allows, so every
+   * signup answers `REGISTRATION_FULL`; false when there is no cap. The answer may be up to half
+   * a minute old. A client says the server is full before anyone tries, and points
+   * to another server or to running one.
+   */
+  registrationFull: Scalars['Boolean']['output'];
+  /**
    * Whether new accounts sign up with a key only: `signupWithInvite` is refused with
    * `FORBIDDEN` and `signupWithKey` is the signup. Password sign-in of existing accounts
    * works either way.
@@ -3741,6 +3761,11 @@ export type ServerInfo = {
  * requests always have one. Creating one more past a cap answers `VALIDATION` naming it.
  */
 export type ServerLimits = {
+  /**
+   * Local accounts the instance holds, those waiting out a deletion grace period included;
+   * at it every signup answers `REGISTRATION_FULL` and `serverInfo.registrationFull` is true.
+   */
+  accounts?: Maybe<Scalars['Int']['output']>;
   /** Channels of one workspace, public and private. */
   channelsPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Devices on one account: the stricter of the instance cap and the relay quota. */
@@ -3846,6 +3871,12 @@ export type SignupWithInviteInput = {
    */
   acceptedTermsUrl?: InputMaybe<Scalars['String']['input']>;
   /**
+   * The minimum age the person confirmed reaching: `serverInfo.minimumAge`, sent back
+   * unchanged once they confirm it. Required when the server has a minimum age
+   * (`VALIDATION` when missing or different); ignored when it has none.
+   */
+  confirmedMinimumAge?: InputMaybe<Scalars['Int']['input']>;
+  /**
    * Optional display name (1–80 chars when present). Falls back to `username`
    * when absent or blank after trim.
    */
@@ -3885,6 +3916,8 @@ export type SignupWithInvitePayloadGql = {
 export type SignupWithKeyInput = {
   /** The terms of service the person accepted, as for `signupWithInvite`. */
   acceptedTermsUrl?: InputMaybe<Scalars['String']['input']>;
+  /** The minimum age the person confirmed reaching, as for `signupWithInvite`. */
+  confirmedMinimumAge?: InputMaybe<Scalars['Int']['input']>;
   /** Certificate of the device signing up; the new session belongs to it. */
   device: SignedStatementInput;
   /**
@@ -4124,6 +4157,14 @@ export type User = {
    */
   deletionScheduledFor?: Maybe<Scalars['DateTime']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
+  /**
+   * The person's handle, `@<username>:<domain>`: a local account's username at this server's
+   * handle domain, or a person from another server's username at their home server and that
+   * server's handle domain. Null when it is not known (a person from another server whose
+   * home server did not say, or whose handle domain does not point back at it) and for a
+   * deleted account.
+   */
+  handle?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   /**
    * Whether the account is an instance operator, who may run the instance moderation queue

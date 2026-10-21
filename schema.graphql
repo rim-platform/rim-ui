@@ -2842,7 +2842,8 @@ type Query {
 	deviceRevocationStatus(deviceId: ID!): [RevocationFanout!]!
 	"""
 	The server's release version, API version, features, audit retention, instance notice,
-	terms URL, limits and DM settings. Readable without a session.
+	terms URL, limits, DM settings, abuse contact, minimum age and default workspace. Readable
+	without a session.
 	"""
 	serverInfo: ServerInfo!
 	"""
@@ -3375,9 +3376,28 @@ type ServerInfo {
 	dmPartners: [String!]!
 	"""
 	The workspace every new account joins as a Member, so a client can open it after a
-	signup; null when the server names none (`RIM_DEFAULT_WORKSPACE`).
+	signup: the one `RIM_DEFAULT_WORKSPACE` names, or the one an owner claimed from the
+	definition file; null when there is none.
 	"""
 	defaultWorkspace: ID
+	"""
+	Whether the instance holds as many local accounts as `limits.accounts` allows, so every
+	signup answers `REGISTRATION_FULL`; false when there is no cap. The answer may be up to half
+	a minute old. A client says the server is full before anyone tries, and points
+	to another server or to running one.
+	"""
+	registrationFull: Boolean!
+	"""
+	Where to report abuse on this server: an email address or an https URL; null when the
+	operator names none (`RIM_ABUSE_CONTACT`).
+	"""
+	abuseContact: String
+	"""
+	The age every signup confirms the person has reached, self-declared; null when the
+	server asks for none (`RIM_MINIMUM_AGE`). A signup sends it back as
+	`confirmedMinimumAge`.
+	"""
+	minimumAge: Int
 }
 
 """
@@ -3441,6 +3461,11 @@ type ServerLimits {
 	one more answers `VALIDATION`.
 	"""
 	pendingInvitesPerUser: Int
+	"""
+	Local accounts the instance holds, those waiting out a deletion grace period included;
+	at it every signup answers `REGISTRATION_FULL` and `serverInfo.registrationFull` is true.
+	"""
+	accounts: Int
 }
 
 type ServerMember {
@@ -3529,6 +3554,12 @@ input SignupWithInviteInput {
 	when it has none.
 	"""
 	acceptedTermsUrl: String
+	"""
+	The minimum age the person confirmed reaching: `serverInfo.minimumAge`, sent back
+	unchanged once they confirm it. Required when the server has a minimum age
+	(`VALIDATION` when missing or different); ignored when it has none.
+	"""
+	confirmedMinimumAge: Int
 }
 
 """
@@ -3583,6 +3614,10 @@ input SignupWithKeyInput {
 	The terms of service the person accepted, as for `signupWithInvite`.
 	"""
 	acceptedTermsUrl: String
+	"""
+	The minimum age the person confirmed reaching, as for `signupWithInvite`.
+	"""
+	confirmedMinimumAge: Int
 }
 
 type StartedDeviceLink {
@@ -3833,6 +3868,14 @@ type User {
 	everyone else.
 	"""
 	instanceOperator: Boolean!
+	"""
+	The person's handle, `@<username>:<domain>`: a local account's username at this server's
+	handle domain, or a person from another server's username at their home server and that
+	server's handle domain. Null when it is not known (a person from another server whose
+	home server did not say, or whose handle domain does not point back at it) and for a
+	deleted account.
+	"""
+	handle: String
 }
 
 """
