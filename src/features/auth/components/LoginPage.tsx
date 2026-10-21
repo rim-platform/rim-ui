@@ -27,11 +27,17 @@
  * computer, or this browser, holds a key for; below it, "Link this device" with a code from
  * another device and, where this app can hold an identity key, recovery with a recovery kit.
  *
+ * **Key-only server:** where `serverInfo.signupRequiresKeys` is `true`, new accounts have no
+ * password, so the key ways to sign in come first, in a card of their own that is hidden when
+ * none of them renders anything, and the password form folds behind a "Sign in with a password
+ * (older accounts)" disclosure button. While server info loads, fails or says `false`, the page
+ * is laid out as above.
+ *
  * **Server:** the operator's abuse contact when it names one and, on the desktop, the server it
  * signs in to and a way to move to another one.
  */
 
-import { useEffect } from "react";
+import { useEffect, useId, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
@@ -72,6 +78,8 @@ export function LoginPage() {
   const full = serverInfo.info?.registrationFull === true;
   const blocked = useEdgeStore((s) => s.blocked);
   const sessionEnded = useAuthStore((s) => s.sessionEnded);
+  const passwordFormId = useId();
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   // If already authenticated, send directly to the intended destination.
   useEffect(() => {
@@ -142,15 +150,49 @@ export function LoginPage() {
           </p>
         )}
 
-        <DeviceKeySignIn onSuccess={handleLoginSuccess} />
+        {keysRequired ? (
+          <>
+            <section
+              aria-label="Sign in with a key"
+              className="space-y-4 rounded-xl border border-rim-line bg-rim-panel p-6 empty:hidden"
+            >
+              <DeviceKeySignIn onSuccess={handleLoginSuccess} />
+              <LinkThisDevice onSuccess={handleLoginSuccess} />
+              <RecoverAccount onSuccess={handleLoginSuccess} />
+            </section>
 
-        <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          <LoginForm onSuccess={handleLoginSuccess} />
-        </div>
+            <div>
+              <button
+                type="button"
+                aria-expanded={showPasswordForm}
+                aria-controls={passwordFormId}
+                onClick={() => setShowPasswordForm((open) => !open)}
+                className="block w-full text-center text-sm text-rim-text-muted transition hover:text-rim-text"
+              >
+                Sign in with a password (older accounts)
+              </button>
+              <div
+                id={passwordFormId}
+                hidden={!showPasswordForm}
+                className="mt-3 rounded-xl border border-rim-line bg-rim-panel p-6"
+              >
+                <LoginForm onSuccess={handleLoginSuccess} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <DeviceKeySignIn onSuccess={handleLoginSuccess} />
 
-        <LinkThisDevice onSuccess={handleLoginSuccess} />
+            <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+              <LoginForm onSuccess={handleLoginSuccess} />
+            </div>
 
-        <RecoverAccount onSuccess={handleLoginSuccess} />
+            <LinkThisDevice onSuccess={handleLoginSuccess} />
+
+            <RecoverAccount onSuccess={handleLoginSuccess} />
+          </>
+        )}
 
         {full ? (
           <RegistrationFullNotice />
