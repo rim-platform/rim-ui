@@ -82,6 +82,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   `registration` beside the descriptor, and both apps verify a descriptor that declares a
   `handleDomain` or an `abuseContact`; until now such a server could not be pinned, signed up on
   with a key, or used as a relay.
+- The new-message picker in Direct messages offers the people in your workspaces as well as
+  your contacts, each person once, so an account with no contacts yet can start a DM there as
+  it can from a member's profile card.
 - The web app served on a domain of its own, apart from its server's (such as
   `chat.example` for a server at `relay.example`), names the server by the origin its signed
   discovery document declares: profile cards, contact links, delegations, relay switches and new

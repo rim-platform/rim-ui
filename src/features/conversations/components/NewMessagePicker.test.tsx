@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { queryClient } from "../../../core/query/queryClient";
@@ -57,6 +57,7 @@ vi.mock("./MemberPicker", () => ({
 }));
 
 import { NewMessagePicker } from "./NewMessagePicker";
+import { openDirectWithMember } from "../state/openDirect";
 
 const bob = { principalId: "rimp1_bob", relayUrls: ["https://relay-b.example"], name: "Bob" };
 
@@ -91,6 +92,27 @@ function serveReads(inbox = emptyInbox, extra: Parameters<typeof routeRequests>[
       serverMembers: [{ userId: "u-bob", username: "bob", principalId: "rimp1_bob" }],
     }),
     ...extra,
+  });
+}
+
+const me = { userId: "me", username: "me", displayName: "Me", principalId: "rimp1_me" };
+const alice = {
+  userId: "u-alice",
+  username: "alice",
+  displayName: "Alice",
+  principalId: "rimp1_alice",
+};
+
+/** The viewer's workspaces, the direct space among them, and each one's members. */
+function serveWorkspaces(members: Record<string, object[]>) {
+  serveReads(emptyInbox, {
+    "query MyServers": () => ({
+      myServers: [
+        { id: "direct-1", name: "Direct", owner: null },
+        ...Object.keys(members).map((id) => ({ id, name: id, owner: null })),
+      ],
+    }),
+    "query ServerMembers": ({ serverId }) => ({ serverMembers: members[serverId as string] ?? [] }),
   });
 }
 
@@ -210,6 +232,97 @@ describe("NewMessagePicker", () => {
     await user.keyboard("{Control>}{Enter}{/Control}");
     expect(await screen.findByText(/cannot receive encrypted messages/)).toBeInTheDocument();
     expect(start.startDirectConversation.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it("offers the people in the viewer's workspaces, never the viewer, with no contacts", async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    relayApi.fetchContacts.mockResolvedValue([]);
+    serveWorkspaces({
+      "ws-1": [me, alice, { userId: "u-carol", username: "carol", displayName: "Carol" }],
+    });
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    const people = await screen.findByRole("list", { name: "People in your workspaces" });
+    expect(
+      within(people)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Alicealice"]);
+    expect(screen.queryByRole("list", { name: "Contacts" })).not.toBeInTheDocument();
+    expect(callsTo(requestMock, "query ServerMembers")).toEqual([{ serverId: "ws-1" }]);
+
+    await user.type(screen.getByRole("textbox", { name: "Search people" }), "zed");
+    expect(await screen.findByText(/No contacts or workspace members match/)).toBeInTheDocument();
+    await user.clear(screen.getByRole("textbox", { name: "Search people" }));
+    await user.type(screen.getByRole("textbox", { name: "Search people" }), "ALI");
+    expect(screen.getByRole("option", { name: /^Alice/ })).toBeInTheDocument();
+  });
+
+  it("offers a person who is a contact and in workspaces once, as a contact", async () => {
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    contactBob();
+    serveWorkspaces({
+      "ws-1": [
+        me,
+        { userId: "u-bob", username: "bob", displayName: "Bob", principalId: "rimp1_bob" },
+        alice,
+      ],
+      "ws-2": [alice, { userId: "u-bob2", username: "bobby", principalId: "rimp1_bob" }],
+    });
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    const contacts = await screen.findByRole("list", { name: "Contacts" });
+    expect(await within(contacts).findByRole("option", { name: "Bob" })).toBeInTheDocument();
+    const people = await screen.findByRole("list", { name: "People in your workspaces" });
+    expect(
+      within(people)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Alicealice"]);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+  });
+
+  it("offers the people in the viewer's workspaces on other servers", async () => {
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    relayApi.fetchContacts.mockResolvedValue([]);
+    const carol = { userId: "u-carol", username: "carol", principalId: "rimp1_carol" };
+    serveReads(emptyInbox, {
+      "query MyServers": () => ({ myServers: [{ id: "ws-1", name: "ws-1", owner: null }] }),
+      "query ServerMembers": ({ serverId }) => ({
+        serverMembers: serverId === "ws-far" ? [carol] : [me],
+      }),
+    });
+    useRelayStore.getState().addSpace({
+      account: "me",
+      spaceId: "ws-far",
+      hostServerId: "rims1_far",
+      kind: "workspace",
+    });
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    expect(await screen.findByRole("option", { name: /^carol/ })).toBeInTheDocument();
+  });
+
+  it("opens the same DM for a workspace person as their hover card does", async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    relayApi.fetchContacts.mockResolvedValue([]);
+    serveWorkspaces({ "ws-1": [me, alice] });
+    const onClose = vi.fn();
+    renderWithProviders(<NewMessagePicker open onClose={onClose} onCreated={vi.fn()} />);
+    await user.click(await screen.findByRole("option", { name: /^Alice/ }));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    const fromPicker = useShellStore.getState().draftDirect;
+    expect(fromPicker).toEqual({
+      spaceId: "direct-1",
+      member: { principalId: "rimp1_alice", relayUrls: [], name: "Alice" },
+    });
+    expect(start.startDirectConversation).not.toHaveBeenCalled();
+
+    useShellStore.getState().setSelectedConversationId(null);
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    queryClient.setQueryData(queryKeys.serverMembers("ws-1"), [me, alice]);
+    await openDirectWithMember("u-alice");
+    expect(useShellStore.getState().draftDirect).toEqual(fromPicker);
   });
 
   it("tells a new account on probation in the direct space when it can message strangers", async () => {
