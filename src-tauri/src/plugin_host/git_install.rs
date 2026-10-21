@@ -1,7 +1,9 @@
+use crate::plugin_host::capability::NETWORK_FETCH;
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::git_source;
 use crate::plugin_host::manifest::{ManifestError, PluginManifest, RuntimeKind};
 use crate::plugin_host::post_install::{self, PostInstallStep};
+use crate::plugin_host::registry;
 use crate::plugin_host::trash;
 use crate::plugin_host::validation::{validate_plugin_manifest_for_host, ValidationError};
 use serde::Serialize;
@@ -109,6 +111,8 @@ pub struct PluginUpdateResult {
     pub old_version: String,
     pub new_version: String,
     pub capabilities_changed: bool,
+    /// Capabilities the new copy asks for that the old one did not, and
+    /// `network.fetch` when the new copy lists other sites.
     pub added_capabilities: Vec<String>,
     pub removed_capabilities: Vec<String>,
 }
@@ -478,10 +482,17 @@ async fn apply_fetched_update(
         .map(|s| s.as_str())
         .collect();
 
-    let added: Vec<String> = new_caps
+    let mut added: Vec<String> = new_caps
         .difference(&old_caps)
         .map(|s| s.to_string())
         .collect();
+    // Other sites need a new approval: the record drops `network.fetch` for them.
+    if old_caps.contains(NETWORK_FETCH)
+        && new_caps.contains(NETWORK_FETCH)
+        && registry::origins_changed(Some(old_manifest), &new_manifest)
+    {
+        added.push(NETWORK_FETCH.to_string());
+    }
     let removed: Vec<String> = old_caps
         .difference(&new_caps)
         .map(|s| s.to_string())
@@ -679,6 +690,49 @@ mod tests {
             .to_string();
         assert!(err.contains("RIM's own origin"), "{err}");
         assert_eq!(git(&clone, &["rev-parse", "HEAD"]), before);
+    }
+
+    /// Makes the manifest in `dir` ask for `network.fetch` to `origins`.
+    fn fetch_from(dir: &Path, origins: &[&str]) {
+        let path = dir.join(MANIFEST_FILE);
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut caps = manifest["capabilities"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if !caps.iter().any(|c| c == NETWORK_FETCH) {
+            caps.push(NETWORK_FETCH.into());
+        }
+        manifest["capabilities"] = caps.into();
+        manifest["network_origins"] = serde_json::json!(origins);
+        std::fs::write(path, manifest.to_string()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_update_to_other_sites_reports_network_fetch_as_added() {
+        let (_tmp, origin, clone) = origin_and_clone(|dir| {
+            write_git_layout(dir);
+            fetch_from(dir, &["https://api.github.com"]);
+        });
+        let old = detect_manifest(&clone).unwrap();
+        push_upstream(&origin, &clone, |dir| {
+            fetch_from(dir, &["https://evil.example"])
+        });
+        let (new, result) = apply_fetched_update(&clone, &old, false, &[])
+            .await
+            .expect("the update applies");
+        assert_eq!(result.added_capabilities, vec![NETWORK_FETCH]);
+        assert!(result.capabilities_changed);
+
+        push_upstream(&origin, &clone, |dir| {
+            std::fs::write(dir.join("README.md"), "same sites\n").unwrap();
+        });
+        let (_, result) = apply_fetched_update(&clone, &new, false, &[])
+            .await
+            .expect("the update applies");
+        assert!(result.added_capabilities.is_empty());
+        assert!(!result.capabilities_changed);
     }
 
     #[tokio::test]

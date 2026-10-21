@@ -8,20 +8,22 @@
 // again from its link and must hash the same.
 
 import { EMPTY_AUDIT, withEncryptedReads, withGrant } from "../audit";
-import type {
-  PluginAudit,
-  PluginCommandInfo,
-  PluginContextAction,
-  PluginInfo,
-  PluginInstallResult,
-  PluginInstallSource,
-  PluginSettingsFormState,
+import {
+  sameNetworkOrigins,
+  type PluginAudit,
+  type PluginCommandInfo,
+  type PluginContextAction,
+  type PluginInfo,
+  type PluginInstallResult,
+  type PluginInstallSource,
+  type PluginSettingsFormState,
 } from "../types";
 import { mergeSettings, PluginSettingsError } from "../pluginSettings";
 import { readBundle, sha256Hex, type BundleFile } from "./bundle";
 import { fetchBundle, serverBundleUrl } from "./bundleLink";
 import {
   checkInstall,
+  NETWORK_FETCH,
   parseManifestText,
   settingValueError,
   type ManifestSetting,
@@ -195,6 +197,15 @@ function contextActions(manifest: PluginManifest): PluginContextAction[] {
   }));
 }
 
+/** The `network_origins` of a stored manifest text, or `null` when it no longer parses. */
+function storedOrigins(manifestText: string): string[] | null {
+  try {
+    return parseManifestText(manifestText).network_origins ?? [];
+  } catch {
+    return null;
+  }
+}
+
 export function toPluginInfo(record: InstallRecord): PluginInfo {
   const manifest = parseManifestText(record.manifestText);
   return {
@@ -351,6 +362,9 @@ export class BrowserPluginStore implements PluginServices {
     const existing = await read<InstallRecord>(INSTALLS, [account, manifest.plugin_id]);
     if (existing && !replace) throw new AlreadyInstalledError(manifest.plugin_id);
     const kept = keepApprovals && existing ? existing : null;
+    const keptOrigins = kept ? storedOrigins(kept.manifestText) : null;
+    const sitesKept =
+      keptOrigins !== null && sameNetworkOrigins(keptOrigins, manifest.network_origins);
     const aiCommands = manifest.commands.filter((c) => c.ai_callable).map((c) => c.id);
     const record: InstallRecord = {
       v: 1,
@@ -361,8 +375,8 @@ export class BrowserPluginStore implements PluginServices {
       bundleSize: bytes.length,
       source,
       status: kept?.status ?? "installed",
-      approvedCapabilities: (kept?.approvedCapabilities ?? []).filter((c) =>
-        manifest.capabilities.includes(c),
+      approvedCapabilities: (kept?.approvedCapabilities ?? []).filter(
+        (c) => manifest.capabilities.includes(c) && (c !== NETWORK_FETCH || sitesKept),
       ),
       approvedAiCommands: (kept?.approvedAiCommands ?? []).filter((c) => aiCommands.includes(c)),
       starting: false,

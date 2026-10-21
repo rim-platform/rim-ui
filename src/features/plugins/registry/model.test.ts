@@ -195,4 +195,26 @@ describe("update rules", () => {
     const consented = installedHello({ approved_ai_commands: ["summarize"] });
     expect(planUpdate(consented, check).automatic).toBe(true);
   });
+
+  it("waits when an approved network.fetch would reach other sites", () => {
+    const fetching = (origins: string[]) =>
+      verified({
+        manifest: HELLO_WEB_MANIFEST.replace(
+          '"entrypoint"',
+          `"capabilities":["network.fetch"],"network_origins":${JSON.stringify(origins)},"entrypoint"`,
+        ),
+      });
+    const plugin = installedHello({
+      capabilities: ["network.fetch"],
+      approved_capabilities: ["network.fetch"],
+      network_origins: ["https://api.github.com"],
+    });
+    expect(planUpdate(plugin, fetching(["https://evil.example"]))).toMatchObject({
+      automatic: false,
+      sitesChanged: true,
+    });
+    expect(planUpdate(plugin, fetching(["https://api.github.com"])).automatic).toBe(true);
+    const unapproved = installedHello({ capabilities: ["network.fetch"] });
+    expect(planUpdate(unapproved, fetching(["https://evil.example"])).sitesChanged).toBe(false);
+  });
 });

@@ -42,8 +42,14 @@ desktop); everything else goes to the Rust host as before.
    `MessageChannel`. A second `load` means the plugin navigated its frame: the frame is
    removed and not started again.
 3. The shell appends a second `<meta>` policy (`connect-src` and `img-src` limited to the
-   granted origins, or `'none'`), defines `rimPluginPort` and `rimPluginManifest`, and
-   imports the entry from a `blob:` URL. A failed import comes back as `rim.frame.error`.
+   granted origins, or `'none'`), locks `RTCPeerConnection`, `webkitRTCPeerConnection`,
+   `RTCSessionDescription`, `RTCIceCandidate` and `RTCDataChannel` to `undefined` (a peer
+   connection reaches STUN and TURN servers past `connect-src`; nested frames get opaque
+   origins of their own and workers have no peer connection, so no other copy is in reach),
+   defines `rimPluginPort` and `rimPluginManifest`, and imports the entry from a `blob:` URL.
+   A panel frame gets the same policy and lock before its scripts run. A failed import comes
+   back as `rim.frame.error`. DNS prefetch and a navigation of the frame stay open as one-way
+   channels: whatever a plugin is shown can reach its author.
 4. The host sends `rim.handshake` (10 seconds, counted from the init), then commands,
    heartbeats (every 30 s, none while the page is hidden, two misses remove the frame),
    principal notices, and the plugin's settings after each save and each principal change.

@@ -15,8 +15,10 @@ each in a few words:
 
 - **Sandboxed** (`WebSandboxed`) runs in a sandboxed frame of the app, in the web app and the
   desktop app alike. It cannot read files, run programs or use the RIM session. It reaches RIM
-  only through the permissions it was granted, and the network only at the sites its manifest
-  lists, once allowed.
+  only through the permissions it was granted, and exchanges data only with the sites its
+  manifest lists, once allowed. It has no WebRTC. What it is shown can still leak out in small
+  ways, such as a DNS lookup or a request that navigates its frame (which stops the plugin), so
+  install a plugin that reads your messages only if you trust its author with them.
 - **Runs on this computer** (`DesktopLocalProcess`) is a program the desktop app starts. It runs
   as the user, with the user's access to files, the network and local credentials such as a
   kubeconfig. Its permissions govern what the app does for it, not what the program can do on
@@ -33,9 +35,9 @@ A plugin contributes some of these:
 - keybind suggestions the user can assign.
 
 Without the matching permission the app does not show a plugin's panel, read or post messages
-for it, or show its notifications, and a sandboxed plugin cannot reach any site. A command the
-plugin marks dangerous runs only after the user confirms that run: the AI agent can never
-confirm one, and a plugin's panel cannot confirm one for its own plugin.
+for it, or show its notifications, and a sandboxed plugin cannot exchange data with any site. A
+command the plugin marks dangerous runs only after the user confirms that run: the AI agent can
+never confirm one, and a plugin's panel cannot confirm one for its own plugin.
 
 ## The official plugins
 
@@ -132,11 +134,12 @@ off.
 
 On workspace open, and whenever the registry changes, each plugin installed from it is compared
 with its entry. A new version installs on its own, with the notice "Updated \<name\> to
-\<version\>", when it keeps the kind and the publisher, asks for no new permission and adds no
-new command the AI agent can run; the approvals carry over. Anything else waits behind
-**Update \<name\>?**, which lists what is new: another publisher, another kind, new permissions,
-new commands the AI agent can run, or install steps. **Review update** opens the install
-dialog; **Later** keeps the installed version running. A failed update keeps the old copy.
+\<version\>", when it keeps the kind and the publisher, asks for no new permission, adds no
+new command the AI agent can run and, with `network.fetch` approved, lists the same sites; the
+approvals carry over. Anything else waits behind **Update \<name\>?**, which lists what is new:
+another publisher, another kind, new permissions, new commands the AI agent can run, other
+sites, or install steps. **Review update** opens the install dialog; **Later** keeps the
+installed version running. A failed update keeps the old copy.
 
 When an entry leaves the registry, its plugin is stopped and **\<name\> was removed** offers
 **Remove**, which uninstalls it and deletes its data, or **Keep**, which leaves it installed,
@@ -154,9 +157,10 @@ Plugins names.
   **Cancel** changes nothing. The row then says "Updated to v\<version\>", "Already up to date
   (v\<version\>)", or why the update failed. A running plugin restarts on the new files.
   Approvals carry over for the permissions the new version still asks for and are dropped for
-  those it no longer does; a new permission opens the **Plugin Permissions** dialog, and the
-  plugin cannot use it until it is approved. A plugin with commands the AI agent can run asks
-  for that consent again in Settings → Plugin AI.
+  those it no longer does, and `network.fetch` is dropped too when the new version lists other
+  sites; a new permission, or `network.fetch` for other sites, opens the **Plugin Permissions**
+  dialog, and the plugin cannot use it until it is approved. A plugin with commands the AI
+  agent can run asks for that consent again in Settings → Plugin AI.
 - **From a link.** A link names one bundle by its hash, so it cannot change, and the row says
   "Installed from a link pinned to one bundle: install the new version's link to update it."
   Installing that link opens **Replace \<name\>?**, described under [Installing](#installing).
@@ -233,7 +237,9 @@ plugin's **⋯** menu. It shows the plugin's name, version and author; its descr
 plugin author:", which is the author's claim, not the app's; and what the kind of plugin means:
 
 - Sandboxed: "Runs sandboxed in this app. It cannot read your files, run programs, or use your
-  RIM session. It reaches RIM only through the permissions below."
+  RIM session. It reaches RIM only through the permissions below. Without network access it
+  cannot exchange data with other sites, but what you show it could still leak out in small
+  ways, such as a DNS lookup."
 - Runs on this computer: "Runs as a program on this computer with your account's access. It is
   not sandboxed: it can read your files and use the network whatever you approve below. Install
   it only if you trust its author."

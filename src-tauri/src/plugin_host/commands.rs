@@ -812,8 +812,9 @@ fn check_updatable(
 }
 
 /// Records an updated copy of a plugin: caches `manifest`, keeps only the
-/// approvals it still asks for and, when a bundle fingerprint was pinned,
-/// pins the fingerprint of the files in `plugin_dir`.
+/// approvals it still asks for (`network.fetch` only while its sites stay the
+/// same) and, when a bundle fingerprint was pinned, pins the fingerprint of the
+/// files in `plugin_dir`.
 ///
 /// # Errors
 ///
@@ -825,18 +826,19 @@ fn record_update(
     plugin_dir: &std::path::Path,
 ) -> Result<(), GitInstallError> {
     let io = |e: String| GitInstallError::Io(std::io::Error::other(e));
-    state
+    let old_manifest = state
         .manifests
         .lock()
         .map_err(|e| io(e.to_string()))?
         .insert(manifest.plugin_id.clone(), manifest.clone());
     let mut store = state.store.lock().map_err(|e| io(e.to_string()))?;
-    apply_update_to_store(&mut store, manifest, plugin_dir)?;
+    apply_update_to_store(&mut store, old_manifest.as_ref(), manifest, plugin_dir)?;
     store.save(&state.state_path)?;
     Ok(())
 }
 
-/// The record changes of [`record_update`], applied to `store`.
+/// The record changes of [`record_update`], applied to `store`, with
+/// `old_manifest` the copy being replaced when it is known.
 ///
 /// # Errors
 ///
@@ -844,6 +846,7 @@ fn record_update(
 /// fingerprint of `plugin_dir` cannot be computed.
 fn apply_update_to_store(
     store: &mut PluginStateStore,
+    old_manifest: Option<&PluginManifest>,
     manifest: &PluginManifest,
     plugin_dir: &std::path::Path,
 ) -> Result<(), GitInstallError> {
@@ -853,7 +856,8 @@ fn apply_update_to_store(
             format!("plugin record not found: {}", manifest.plugin_id),
         ))
     })?;
-    let (approved_capabilities, approved_ai_commands, _) = registry::carried(&record, manifest);
+    let (approved_capabilities, approved_ai_commands, _) =
+        registry::carried(&record, old_manifest, manifest);
     let bundle_fingerprint = if record.bundle_fingerprint.is_empty() {
         String::new()
     } else {
@@ -2168,12 +2172,51 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut store = PluginStateStore::default();
         store.upsert(recorded(git_source(), &["chat.read", "chat.write"], ""));
-        apply_update_to_store(&mut store, &asking(&["chat.read", "ui.notify"]), tmp.path())
-            .unwrap();
+        apply_update_to_store(
+            &mut store,
+            Some(&asking(&["chat.read", "chat.write"])),
+            &asking(&["chat.read", "ui.notify"]),
+            tmp.path(),
+        )
+        .unwrap();
         let record = store.get(HELLO).unwrap();
         assert_eq!(record.approved_capabilities, vec!["chat.read".to_string()]);
         assert!(record.bundle_fingerprint.is_empty());
         assert_eq!(record.source, git_source());
+    }
+
+    /// The manifest of [`installed`] asking for `network.fetch` to `origins`.
+    fn fetching(origins: &[&str]) -> PluginManifest {
+        PluginManifest {
+            network_origins: Some(origins.iter().map(|o| o.to_string()).collect()),
+            ..asking(&["network.fetch"])
+        }
+    }
+
+    #[test]
+    fn an_update_keeps_network_fetch_only_while_its_sites_stay_the_same() {
+        let tmp = TempDir::new().unwrap();
+        let approved_after = |old: Option<&PluginManifest>, new: &PluginManifest| {
+            let mut store = PluginStateStore::default();
+            store.upsert(recorded(git_source(), &["network.fetch"], ""));
+            apply_update_to_store(&mut store, old, new, tmp.path()).unwrap();
+            store.get(HELLO).unwrap().approved_capabilities.clone()
+        };
+        let github = fetching(&[
+            "https://api.github.com",
+            "https://avatars.githubusercontent.com",
+        ]);
+        let reordered = fetching(&[
+            "https://avatars.githubusercontent.com",
+            "https://api.github.com",
+        ]);
+        assert_eq!(
+            approved_after(Some(&github), &reordered),
+            vec!["network.fetch".to_string()]
+        );
+        assert!(approved_after(Some(&github), &fetching(&["https://evil.example"])).is_empty());
+        assert!(approved_after(Some(&github), &fetching(&["https://api.github.com"])).is_empty());
+        assert!(approved_after(None, &github).is_empty());
     }
 
     #[test]
@@ -2185,7 +2228,7 @@ mod tests {
             fingerprint_changed: true,
             ..recorded(git_source(), &[], "old")
         });
-        apply_update_to_store(&mut store, &asking(&[]), tmp.path()).unwrap();
+        apply_update_to_store(&mut store, Some(&asking(&[])), &asking(&[]), tmp.path()).unwrap();
         let record = store.get(HELLO).unwrap();
         assert_eq!(
             record.bundle_fingerprint,

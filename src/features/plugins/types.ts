@@ -226,6 +226,23 @@ export function runtimeKind(plugin: Pick<PluginInfo, "runtime_kind">): PluginRun
 }
 
 /**
+ * Whether two lists of `network_origins` name the same sites, in any order. An approval of
+ * `network.fetch` carries over to a replacing copy only when they do.
+ *
+ * @param a - One copy's origins; missing means none.
+ * @param b - The other copy's origins; missing means none.
+ * @returns `true` when both name the same origins.
+ */
+export function sameNetworkOrigins(
+  a: readonly string[] | null | undefined,
+  b: readonly string[] | null | undefined,
+): boolean {
+  const left = new Set(a ?? []);
+  const right = new Set(b ?? []);
+  return left.size === right.size && [...left].every((origin) => right.has(origin));
+}
+
+/**
  * Returned by `plugin_install_from_local` and `plugin_install_from_git` on success.
  * Mirror of the Rust `PluginInstallResult` struct.
  */
@@ -245,7 +262,10 @@ export interface PluginUpdateResult {
   old_version: string;
   new_version: string;
   capabilities_changed: boolean;
-  /** Capabilities the new manifest asks for that the old one did not; they wait for approval. */
+  /**
+   * Capabilities the new manifest asks for that the old one did not, and `network.fetch` when
+   * it lists other sites; they wait for approval.
+   */
   added_capabilities: string[];
   /** Capabilities the new manifest dropped; their approvals are gone. */
   removed_capabilities: string[];

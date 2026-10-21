@@ -4,7 +4,7 @@ import { parseNetworkOrigin, siteOf } from "../../../../sdk/plugin-sdk/src/manif
 /** What kind of plugin this is, in the app's words, above the permissions it asks for. */
 export const KIND_CONSENT_TEXT: Record<PluginRuntimeKind, string> = {
   WebSandboxed:
-    "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below.",
+    "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it could still leak out in small ways, such as a DNS lookup.",
   DesktopLocalProcess:
     "Runs as a program on this computer with your account's access. It is not sandboxed: it can read your files and use the network whatever you approve below. Install it only if you trust its author.",
 };
