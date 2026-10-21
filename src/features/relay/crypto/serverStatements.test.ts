@@ -105,6 +105,62 @@ describe("server key log", () => {
     }
   });
 
+  /** The host descriptor with `handleDomain` and `abuseContact` where a server writes them. */
+  async function hostDescriptorWith(
+    handleDomain: string | null,
+    abuseContact: string | null,
+    extra = "",
+  ): Promise<Statement> {
+    let payload = host.descriptor.payload;
+    if (handleDomain !== null) {
+      payload = payload.replace(
+        ',"issuedAt":',
+        `,"handleDomain":${JSON.stringify(handleDomain)}${extra},"issuedAt":`,
+      );
+    }
+    if (abuseContact !== null) {
+      payload = `${payload.slice(0, -1)},"abuseContact":${JSON.stringify(abuseContact)}}`;
+    }
+    const hostKey = await keyFromSeed(vectors.host.seed);
+    return sign(hostKey.privateKey, RELAY_CONTEXT.descriptor, payload);
+  }
+
+  it("reads a descriptor's handle domain and abuse contact, and one without them", async () => {
+    const head = await replayServerLog([host.inception]);
+    const plain = await verifyDescriptor(head, host.descriptor);
+    expect(plain.handleDomain).toBeNull();
+    expect(plain.abuseContact).toBeNull();
+    const both = await hostDescriptorWith("rim-platform.org", "abuse@host.example");
+    expect(both.payload).toContain('"handleDomain":"rim-platform.org","issuedAt":');
+    expect(both.payload.endsWith(',"abuseContact":"abuse@host.example"}')).toBe(true);
+    const verified = await verifyDescriptor(head, both);
+    expect(verified.handleDomain).toBe("rim-platform.org");
+    expect(verified.abuseContact).toBe("abuse@host.example");
+    const url = await hostDescriptorWith(null, "https://host.example/report");
+    expect((await verifyDescriptor(head, url)).abuseContact).toBe("https://host.example/report");
+  });
+
+  it("refuses a malformed handle domain or abuse contact, and an unknown field", async () => {
+    const head = await replayServerLog([host.inception]);
+    const cases: [string | null, string | null, string][] = [
+      ["Rim-Platform.org", null, ""],
+      ["rim-platform.org.", null, ""],
+      ["", null, ""],
+      ["rim_platform.org", null, ""],
+      ["-rim.org", null, ""],
+      [null, "", ""],
+      [null, "   ", ""],
+      [null, "a".repeat(513), ""],
+      ["rim-platform.org", null, ',"handle":"x"'],
+    ];
+    for (const [domain, contact, extra] of cases) {
+      const descriptor = await hostDescriptorWith(domain, contact, extra);
+      await expect(verifyDescriptor(head, descriptor), descriptor.payload).rejects.toThrow(
+        /malformed/,
+      );
+    }
+  });
+
   it("refuses a tampered entry, an unknown field and a version 1 entry", async () => {
     const tampered = { ...host.inception, payload: host.inception.payload.replace("09T", "08T") };
     await expect(replayServerLog([tampered])).rejects.toThrow(/signature/);
@@ -154,6 +210,18 @@ describe("server key log", () => {
       await expect(verifyDiscovery(document, prefix)).rejects.toThrow(/another origin/);
     }
     await expect(verifyDiscovery("{}", "https://host.example")).rejects.toThrow(/malformed/);
+  });
+
+  it("verifies a discovery document beside its unsigned features and registration", async () => {
+    const document = JSON.stringify({
+      rim: "server-discovery",
+      keyLog: [host.inception],
+      descriptor: host.descriptor,
+      features: { attachments: { state: "enabled" } },
+      registration: { full: true },
+    });
+    const verified = await verifyDiscovery(document, "https://host.example");
+    expect(verified.head.serverId).toBe(host.serverId);
   });
 });
 

@@ -6,6 +6,7 @@
  * person (`statements.ts`): unknown fields are refused and keys name their algorithm.
  */
 
+import { isHandleDomain } from "../../../shared/utils/handles";
 import { b64, concat, sha256, unb64, utf8 } from "../../key-identity/browser/bytes";
 import {
   canonicalKey,
@@ -237,6 +238,9 @@ export interface ServerRegistration {
 /** Highest proof-of-work difficulty a descriptor may ask for. */
 const MAX_POW_BITS = 40;
 
+/** Longest descriptor `abuseContact`, in bytes. */
+const MAX_ABUSE_CONTACT_BYTES = 512;
+
 /** A verified server descriptor: where the server answers and what it runs. */
 export interface ServerDescriptor {
   serverId: string;
@@ -245,6 +249,10 @@ export interface ServerDescriptor {
   roles: ("host" | "relay")[];
   endpoints: { graphql: string; websocket: string; s2s: string | null };
   registration: ServerRegistration;
+  /** The domain of the server's handles; `null` when it declares none. */
+  handleDomain: string | null;
+  /** Where to report abuse on the server, an email address or an https URL; `null` if unset. */
+  abuseContact: string | null;
 }
 
 const DESCRIPTOR_FIELDS = [
@@ -259,8 +267,28 @@ const DESCRIPTOR_FIELDS = [
   "mlsCipherSuites",
   "limits",
   "registration",
+  "handleDomain",
   "issuedAt",
+  "abuseContact",
 ];
+
+/**
+ * An optional text field of a descriptor: `null` when absent or null, `undefined` when it is
+ * not text or breaks `valid`.
+ */
+function optionalText(
+  fields: Fields,
+  name: string,
+  valid: (value: string) => boolean,
+): string | null | undefined {
+  const value = fields[name];
+  if (value === undefined || value === null) return null;
+  return typeof value === "string" && valid(value) ? value : undefined;
+}
+
+function validAbuseContact(value: string): boolean {
+  return value.trim().length > 0 && utf8(value).length <= MAX_ABUSE_CONTACT_BYTES;
+}
 
 function readRoles(value: unknown): ("host" | "relay")[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
@@ -306,6 +334,8 @@ export async function verifyDescriptor(
   const websocket = endpoints ? text(endpoints, "websocket") : null;
   const s2s = endpoints?.s2s === null ? null : endpoints ? text(endpoints, "s2s") : null;
   const registration = fields ? readRegistration(fields.registration) : null;
+  const handleDomain = fields ? optionalText(fields, "handleDomain", isHandleDomain) : undefined;
+  const abuseContact = fields ? optionalText(fields, "abuseContact", validAbuseContact) : undefined;
   if (
     !fields ||
     !endpoints ||
@@ -320,6 +350,8 @@ export async function verifyDescriptor(
     websocket === null ||
     (s2s === null && endpoints.s2s !== null) ||
     !registration ||
+    handleDomain === undefined ||
+    abuseContact === undefined ||
     timestamp(fields, "issuedAt") === null
   ) {
     throw refused("server descriptor", "malformed");
@@ -339,6 +371,8 @@ export async function verifyDescriptor(
     roles,
     endpoints: { graphql, websocket, s2s },
     registration,
+    handleDomain,
+    abuseContact,
   };
 }
 
