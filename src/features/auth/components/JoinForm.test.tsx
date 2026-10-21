@@ -15,6 +15,8 @@
  * And the desktop's "Create account with a key", which hands the page's token to
  * `KeySignupForm` (tested on its own).
  *
+ * And the server's minimum age, abuse contact and account cap.
+ *
  * And invite links on an open server, which takes no token at signup: the signup sends none and
  * a workspace invite is joined once the account exists; invite-only and pow servers still get
  * the token.
@@ -73,6 +75,9 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resol
 import { JoinForm } from "./JoinForm";
 import { InviteTokenType, RegistrationMode } from "../types";
 import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
+import { MINIMUM_AGE_REFUSED_MESSAGE } from "../api/useMinimumAge";
+import { REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
+import { SELF_HOSTING_URL } from "./RegistrationFullNotice";
 
 // The web app, unless a test says otherwise.
 beforeEach(() => {
@@ -757,6 +762,134 @@ describe("JoinForm — instance notice and terms of service", () => {
       mockSignupMutate.mockClear();
       unmount();
     }
+  });
+});
+
+describe("JoinForm — minimum age, abuse contact and a full server", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    signupState.error = null;
+  });
+
+  function renderWithServer(details: FakeServerDetails) {
+    server.details = details;
+    return renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm variant={InviteTokenType.INSTANCE} token="tok" onSuccess={vi.fn()} />
+      </MemoryRouter>,
+      details,
+    );
+  }
+
+  async function fillValid(user: ReturnType<typeof userEvent.setup>) {
+    await fillValidBase(user);
+    await user.type(screen.getByPlaceholderText("you@example.com"), "ada@example.com");
+  }
+
+  const submitButton = () => screen.getByRole("button", { name: "Create account" });
+  const ageBox = () => screen.getByRole("checkbox", { name: "I am at least 16" });
+
+  it("asks for the minimum age beside the terms, then sends it back", async () => {
+    const terms = "https://acme.example/api/terms?v=Zx9-a_b";
+    const user = userEvent.setup();
+    renderWithServer({ termsUrl: terms, minimumAge: 16 });
+    await fillValid(user);
+    // Terms the server serves itself are linked with their version, and sent back unchanged.
+    expect(screen.getByRole("link", { name: terms })).toHaveAttribute("href", terms);
+    await user.click(screen.getByRole("checkbox", { name: "I accept the terms of use" }));
+
+    expect(submitButton()).toBeDisabled();
+    await user.click(ageBox());
+    await user.click(submitButton());
+
+    expect(mockSignupMutate.mock.calls[0][0]).toMatchObject({
+      acceptedTermsUrl: terms,
+      confirmedMinimumAge: 16,
+    });
+  });
+
+  it("shows a refusal over the minimum age at the checkbox, unticks it and rereads the server", async () => {
+    const refusal = {
+      response: {
+        errors: [
+          {
+            message:
+              "the minimum age must be confirmed: send the server's minimum age as the confirmed minimum age once the person confirms reaching it",
+            extensions: { code: "VALIDATION" },
+          },
+        ],
+      },
+    };
+    mockSignupMutate.mockImplementation(
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => {
+        signupState.error = refusal;
+        opts.onError(refusal);
+      },
+    );
+    const user = userEvent.setup();
+    renderWithServer({ minimumAge: 16 });
+    await fillValid(user);
+    await user.click(ageBox());
+    await user.click(submitButton());
+
+    expect(screen.getByRole("alert")).toHaveTextContent(MINIMUM_AGE_REFUSED_MESSAGE);
+    expect(ageBox()).not.toBeChecked();
+    expect(ageBox()).toHaveAccessibleDescription(MINIMUM_AGE_REFUSED_MESSAGE);
+    expect(screen.queryByText(/minimum age must be confirmed/)).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchServerInfo).toHaveBeenCalledOnce());
+  });
+
+  it("asks for no age and sends none on a server without one", async () => {
+    const user = userEvent.setup();
+    renderWithServer({ minimumAge: null });
+    await fillValid(user);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await user.click(submitButton());
+    expect(mockSignupMutate.mock.calls[0][0]).not.toHaveProperty("confirmedMinimumAge");
+  });
+
+  it("shows the abuse contact: an email address as mailto, an https URL as itself", () => {
+    const { unmount } = renderWithServer({ abuseContact: "abuse@acme.example" });
+    expect(screen.getByRole("link", { name: "abuse@acme.example" })).toHaveAttribute(
+      "href",
+      "mailto:abuse@acme.example",
+    );
+    unmount();
+
+    renderWithServer({ abuseContact: "https://acme.example/report" });
+    expect(screen.getByRole("link", { name: "https://acme.example/report" })).toHaveAttribute(
+      "href",
+      "https://acme.example/report",
+    );
+  });
+
+  it("says the server is full instead of offering a signup", () => {
+    renderWithServer({ registrationFull: true });
+    expect(screen.getByRole("status")).toHaveTextContent("This server is full");
+    expect(screen.getByRole("link", { name: "How to run a server" })).toHaveAttribute(
+      "href",
+      SELF_HOSTING_URL,
+    );
+    expect(screen.queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+  });
+
+  it("says the server is full when it refuses the signup as full", async () => {
+    const refusal = {
+      response: {
+        errors: [{ message: "this server is full", extensions: { code: "REGISTRATION_FULL" } }],
+      },
+    };
+    mockSignupMutate.mockImplementation(
+      (_input: unknown, opts: { onError: (err: unknown) => void }) => {
+        signupState.error = refusal;
+        opts.onError(refusal);
+      },
+    );
+    const user = userEvent.setup();
+    renderWithServer({ registrationFull: false });
+    await fillValid(user);
+    await user.click(submitButton());
+    expect(screen.getByText(REGISTRATION_FULL_MESSAGE)).toBeInTheDocument();
   });
 });
 

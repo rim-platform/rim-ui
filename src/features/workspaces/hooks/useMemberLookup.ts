@@ -1,13 +1,24 @@
 import { useMemo } from "react";
 
 import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  handleDomain,
+  personName,
+  viewHandle,
+  type HandleView,
+} from "../../../shared/utils/handles";
 import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
+import { useKnownHandles } from "../state/useKnownHandles";
 
 type MemberInfo = {
   displayName: string;
   username?: string;
+  /** `@<username>:<domain>` once a server answered it for this person. */
+  handle?: string | null;
+  /** How the handle reads to the viewer, and what Copy puts on the clipboard. */
+  handleView: HandleView | null;
   role?: ServerMemberRoleGql;
   timeoutUntil?: string | null;
   isCurrentUser: boolean;
@@ -22,14 +33,19 @@ export function useMemberLookup(serverId?: string) {
   const { data: members } = useServerMembers(serverId ?? undefined);
   // A name the person gave a contact wins over the name the member published.
   const aliases = useContactStore((s) => s.aliases);
+  const handles = useKnownHandles((s) => s.byUser);
 
   return useMemo(() => {
     const map = new Map<string, MemberInfo>();
+    /** The viewer's own handle domain: handles with it are shown as `@username`. */
+    const ownDomain = handleDomain(me?.handle);
 
     if (me) {
       map.set(me.id, {
         displayName: me.displayName || me.username,
         username: me.username,
+        handle: me.handle ?? handles[me.id] ?? null,
+        handleView: null,
         isCurrentUser: true,
         avatarUrl: me.avatarUrl,
         statusText: me.statusText,
@@ -41,8 +57,14 @@ export function useMemberLookup(serverId?: string) {
       for (const member of members) {
         if (!map.has(member.userId)) {
           map.set(member.userId, {
-            displayName: member.displayName || member.username || member.userId.slice(0, 8),
+            displayName: personName(
+              { ...member, handle: handles[member.userId] },
+              member.userId,
+              ownDomain,
+            ),
             username: member.username,
+            handle: handles[member.userId] ?? null,
+            handleView: null,
             role: member.memberRole,
             timeoutUntil: member.timeoutUntil ?? null,
             isCurrentUser: false,
@@ -81,15 +103,22 @@ export function useMemberLookup(serverId?: string) {
       if (alias && info && !info.isCurrentUser) info.displayName = alias;
     }
 
+    for (const info of map.values()) {
+      info.handleView = viewHandle(info.username, info.handle, ownDomain);
+    }
+
     function resolve(userId: string): MemberInfo {
+      const handle = handles[userId] ?? null;
       return (
         map.get(userId) ?? {
           displayName: userId.slice(0, 8),
+          handle,
+          handleView: viewHandle(null, handle, ownDomain),
           isCurrentUser: false,
         }
       );
     }
 
-    return { resolve, map };
-  }, [me, members, aliases]);
+    return { resolve, map, ownDomain };
+  }, [me, members, aliases, handles]);
 }

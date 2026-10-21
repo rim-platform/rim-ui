@@ -37,6 +37,7 @@ export const MESSAGE_FIELDS = gql`
       displayName
       avatarUrl
       principalId
+      handle
     }
     text
     hasAttachments

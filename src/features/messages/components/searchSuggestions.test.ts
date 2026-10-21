@@ -90,6 +90,24 @@ describe("computeSuggestions", () => {
     expect(byUsername.map((r) => r.insert)).toEqual(["from:@carol"]);
   });
 
+  it("inserts a member's whole handle where it reads, and leaves out r_ names without one", () => {
+    const members = [
+      { ...member("kuba", "Kuba"), handle: { shown: "@kuba", copied: "@kuba:rim.example" } },
+      {
+        ...member("r_abcdef", "Ada"),
+        handle: { shown: "@ada:elsewhere.example", copied: "@ada:elsewhere.example" },
+      },
+      { ...member("r_ghijkl", null), handle: null },
+    ];
+    const rows = computeSuggestions(token("from:"), members, directory);
+    expect(rows.map((r) => [r.label, r.detail, r.insert])).toEqual([
+      ["Ada", "@ada:elsewhere.example", "from:@ada:elsewhere.example"],
+      ["Kuba", "@kuba", "from:@kuba:rim.example"],
+    ]);
+    const byDomain = computeSuggestions(token("from:@ada:else"), members, directory);
+    expect(byDomain.map((r) => r.id)).toEqual(["u-r_abcdef"]);
+  });
+
   it("orders members by match position, then by name, at most eight", () => {
     const members = [
       member("aaron", "Aaron Bobson"),

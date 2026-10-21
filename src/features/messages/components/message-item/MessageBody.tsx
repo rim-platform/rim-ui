@@ -94,6 +94,7 @@ export const MessageText = memo(function MessageText({
       <UserHoverCardPortal
         userId={mentionCard.userId}
         username={member?.username ?? memberDisplayName}
+        handle={member?.handleView}
         displayName={memberDisplayName}
         avatarUrl={member?.avatarUrl}
         statusText={member?.statusText}

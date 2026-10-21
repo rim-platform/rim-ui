@@ -21,6 +21,7 @@ export function ProfileCard({
     <UserHoverCardPortal
       userId={userId}
       username={info.username ?? info.displayName}
+      handle={info.handleView}
       displayName={info.displayName}
       avatarUrl={info.avatarUrl}
       statusText={info.statusText}

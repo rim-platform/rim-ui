@@ -26,6 +26,10 @@ vi.mock("../../workspaces/api/useServerMembers", async () => {
   return { useServerMembers: () => ({ data: workspaceMembers }) };
 });
 
+vi.mock("../../workspaces/api/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: undefined }),
+}));
+
 vi.mock("../runtime/messageCacheSync", () => ({
   requestCacheSync: (...args: unknown[]) => requestCacheSyncMock(...args),
 }));

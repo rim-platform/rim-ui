@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   matchingKeyword,
   mentionedPrincipals,
+  replaceMentions,
   toPrincipalMentions,
   toUserMentions,
 } from "./content";
@@ -22,6 +23,31 @@ describe("mentions", () => {
     expect(toUserMentions(body, (p) => (p === ALICE ? "u-alice" : undefined))).toBe(
       "hi <@u-alice> and <@u-alice>, not <@u-nobody>",
     );
+  });
+});
+
+describe("replaceMentions", () => {
+  const token = (userId: string) => `<@${userId}>`;
+
+  it("reads a handle before the bare username it starts with", () => {
+    const mentions = new Map([
+      ["kuba", "u-local"],
+      ["kuba:elsewhere.example", "u-remote"],
+    ]);
+    expect(replaceMentions("@kuba and @kuba:elsewhere.example", mentions, token)).toBe(
+      "<@u-local> and <@u-remote>",
+    );
+  });
+
+  it("leaves a name followed by more of a name or a domain alone", () => {
+    const mentions = new Map([["kuba", "u-local"]]);
+    expect(
+      replaceMentions("@kuba_2 @kuba:other.example @kuba. @kuba: hi @kuba's", mentions, token),
+    ).toBe("@kuba_2 @kuba:other.example <@u-local>. <@u-local>: hi <@u-local>'s");
+  });
+
+  it("leaves a user whose token is null as typed", () => {
+    expect(replaceMentions("@ada", new Map([["ada", "u-ada"]]), () => null)).toBe("@ada");
   });
 });
 

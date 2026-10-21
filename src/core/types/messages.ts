@@ -25,6 +25,8 @@ export interface MessageAuthor {
   displayName: string | null;
   avatarUrl: string | null;
   principalId?: string | null;
+  /** `@<username>:<domain>`; null when the server does not know it. */
+  handle?: string | null;
 }
 
 export interface ForwardedFrom {

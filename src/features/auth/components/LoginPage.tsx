@@ -13,6 +13,8 @@
  * - A server that takes key signups only (`serverInfo.signupRequiresKeys`) in `OPEN` or
  *   `INVITE_ONLY` mode, in a browser that cannot create keys: copy that points to the desktop
  *   app instead of the link.
+ * - A server that is full (`serverInfo.registrationFull`): "This server is full" with a pointer
+ *   to running a server, instead of the link.
  *
  * **Session redirect:** if a session is already restored via
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
@@ -25,7 +27,8 @@
  * computer, or this browser, holds a key for; below it, "Link this device" with a code from
  * another device and, where this app can hold an identity key, recovery with a recovery kit.
  *
- * **Server:** on the desktop, the server it signs in to and a way to move to another one.
+ * **Server:** the operator's abuse contact when it names one and, on the desktop, the server it
+ * signs in to and a way to move to another one.
  */
 
 import { useEffect } from "react";
@@ -48,6 +51,8 @@ import { DeviceKeySignIn, RecoverAccount } from "../../key-identity/components/D
 import { LinkThisDevice } from "../../key-identity/components/LinkThisDevice";
 import { BrandHeading } from "./BrandHeading";
 import { ServerChoice } from "./ServerChoice";
+import { AbuseContact } from "./AbuseContact";
+import { RegistrationFullNotice } from "./RegistrationFullNotice";
 
 /**
  * Top-level component for the `/login` route.
@@ -62,7 +67,9 @@ export function LoginPage() {
   const setSession = useAuthStore((s) => s.setSession);
   const { data: serverConfig } = useServerConfig();
   const { capabilities, deviceKeyStore } = useRuntime();
-  const keysRequired = useServerInfo().signupRequiresKeys === true;
+  const serverInfo = useServerInfo();
+  const keysRequired = serverInfo.signupRequiresKeys === true;
+  const full = serverInfo.info?.registrationFull === true;
   const blocked = useEdgeStore((s) => s.blocked);
   const sessionEnded = useAuthStore((s) => s.sessionEnded);
 
@@ -145,7 +152,9 @@ export function LoginPage() {
 
         <RecoverAccount onSuccess={handleLoginSuccess} />
 
-        {canCreate ? (
+        {full ? (
+          <RegistrationFullNotice />
+        ) : canCreate ? (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />
@@ -178,6 +187,8 @@ export function LoginPage() {
             No account? Ask your workspace admin for an invite.
           </p>
         )}
+
+        <AbuseContact />
 
         <ServerChoice />
       </div>

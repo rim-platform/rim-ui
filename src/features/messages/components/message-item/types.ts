@@ -1,6 +1,7 @@
 import type { MessageAttachment, MessageE2ee } from "../../../../core/types/messages";
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 import type { PresenceStatus } from "../../../../shared/ui/Avatar";
+import type { HandleView } from "../../../../shared/utils/handles";
 import type { LinkPreview } from "../LinkPreviewCard";
 import type { ContextMenuBindings } from "../../../../shared/ui/contextMenu/useContextMenu";
 
@@ -51,6 +52,8 @@ export interface MessageItemMessage {
 export interface ResolvedMember {
   displayName: string;
   username?: string;
+  /** How the member's handle reads to the viewer. */
+  handleView?: HandleView | null;
   isCurrentUser: boolean;
   avatarUrl?: string | null;
   statusText?: string | null;
@@ -66,6 +69,8 @@ export interface MessageAuthorView {
   name: string;
   avatarUrl?: string | null;
   username?: string;
+  /** How the author's handle reads; derived from `username` when absent. */
+  handle?: HandleView | null;
   statusText?: string | null;
   role?: string;
   joinedAt?: string;

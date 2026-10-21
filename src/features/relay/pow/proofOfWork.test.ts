@@ -150,8 +150,23 @@ describe("readRegistration", () => {
       serverId: relayVectors.relay.serverId,
       mode: "pow",
       powBits: 16,
+      full: false,
     });
     expect(transport.discovery).toHaveBeenCalledWith(getApiOrigin());
+  });
+
+  it("reads whether the document says the server is full", async () => {
+    const document = JSON.stringify({
+      rim: "server-discovery",
+      keyLog: [relayVectors.relay.inception],
+      descriptor: vectors.powDescriptor,
+      registration: { full: true },
+    });
+    setDirectTransport({
+      discovery: vi.fn().mockResolvedValue(document),
+    } as unknown as DirectTransport);
+
+    await expect(readRegistration()).resolves.toMatchObject({ mode: "pow", full: true });
   });
 
   it("fails when the document cannot be fetched", async () => {

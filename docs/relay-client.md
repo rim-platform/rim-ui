@@ -87,6 +87,17 @@ discovery document through the relay; the app replays the log, checks that its i
 to the expected server id, verifies the descriptor under the head key and that its server-to-server
 endpoint is at that origin, and stores the log (`servers`).
 
+Both verifiers (`serverStatements.ts` in the browser, `src-tauri/src/relay/server.rs` on the
+desktop) read the descriptor as strictly as its signature: a field they do not know refuses it.
+They know the two optional fields a server signs when its operator sets them, and check them as
+rim-server's `rim_s2s` does: `handleDomain` (before `issuedAt`), the domain of the server's
+handles, a lowercase DNS name of at most 253 bytes with labels of 1 to 63 letters, digits and
+hyphens, no leading or trailing hyphen and no trailing dot; and `abuseContact` (last), where to
+report abuse, 1 to 512 bytes and not only whitespace. A descriptor without them verifies as
+before; both come back as `handleDomain` and `abuseContact`, `null` when absent. The discovery
+document's unsigned fields beside the descriptor (`features`, `registration`) do not refuse it:
+neither verifier reads them, and `registration.full` is read apart (below).
+
 A later fetch must extend the pin. An equal log refreshes the descriptor version; a prefix keeps
 the pin; an extension is taken, and after a `signer: server` rotation the key before the head
 still verifies for 24 hours from when this app took it (never after a `signer: recovery` one,
@@ -393,6 +404,14 @@ another account or another relay.
   The nonce is kept per draft, so a retry after another refusal sends it again; a refusal of the
   proof itself (`VALIDATION` or `FORBIDDEN` naming it) drops it and the next try searches again.
   A relay switch to a relay in `pow` mode does the same with the account's inception.
+- **A full server.** A server at its account cap (`RIM_LIMIT_ACCOUNTS`) says
+  `registration: { full: true }` in its discovery document, unsigned and advisory, and
+  `serverInfo.registrationFull`. `readRegistration` reads `full` from the document as fetched
+  (`discoveryRegistrationFull`), and `signupWithKey` then throws `RegistrationClosed` before any
+  proof-of-work is searched for or anything is signed; the form says "This server is full". The
+  sign-in and signup pages and the desktop's server choice read `serverInfo.registrationFull`
+  and say the same before anyone starts, and a signup the server refuses with
+  `REGISTRATION_FULL` says it too.
 - **The search.** Both platforms find the smallest counter that meets the difficulty, as an 8-byte
   big-endian nonce, so they send the same nonce; `protocol/pow-vectors.json` holds known answers
   both reproduce (the server's own vector among them). The desktop runs it on every core

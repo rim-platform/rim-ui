@@ -14,6 +14,7 @@ vi.mock("../api/useServerMembers", () => ({
 import { useMemberLookup } from "./useMemberLookup";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
+import { useKnownHandles } from "../state/useKnownHandles";
 
 describe("useMemberLookup", () => {
   beforeEach(() => {
@@ -190,5 +191,56 @@ describe("useMemberLookup", () => {
     expect(result.current.map.size).toBe(2);
     expect(result.current.map.has("user-1")).toBe(true);
     expect(result.current.map.has("user-2")).toBe(true);
+  });
+
+  it("reads handles against the viewer's own domain and never names anyone by an r_ name", () => {
+    useKnownHandles.setState({
+      byUser: { "u-bob": "@bob:home.example", "u-ada": "@ada:elsewhere.example" },
+    });
+    vi.mocked(useCurrentUser).mockReturnValue({
+      data: {
+        id: "me-id",
+        username: "kuba",
+        displayName: "Kuba",
+        avatarUrl: null,
+        statusText: null,
+        bio: null,
+        principalId: null,
+        handle: "@kuba:home.example",
+      },
+    } as ReturnType<typeof useCurrentUser>);
+    const member = (userId: string, username: string, displayName: string | null) => ({
+      userId,
+      username,
+      displayName,
+      memberRole: ServerMemberRoleGql.MEMBER,
+      joinedAt: "2026-01-01T00:00:00Z",
+      avatarUrl: null,
+      statusText: null,
+      bio: null,
+    });
+    vi.mocked(useServerMembers).mockReturnValue({
+      data: [
+        member("u-bob", "bob", null),
+        member("u-ada", "r_aaaaaa", null),
+        member("u-zed", "r_zzzzzz", null),
+      ],
+    } as ReturnType<typeof useServerMembers>);
+
+    try {
+      const { result } = renderHook(() => useMemberLookup("ws-1"));
+      expect(result.current.ownDomain).toBe("home.example");
+      expect(result.current.resolve("me-id").handleView).toEqual({
+        shown: "@kuba",
+        copied: "@kuba:home.example",
+      });
+      expect(result.current.resolve("u-bob").handleView?.shown).toBe("@bob");
+      expect(result.current.resolve("u-ada").displayName).toBe("ada:elsewhere.example");
+      expect(result.current.resolve("u-ada").handleView?.shown).toBe("@ada:elsewhere.example");
+      expect(result.current.resolve("u-zed").displayName).toBe("u-zed");
+      expect(result.current.resolve("u-zed").handleView).toBeNull();
+    } finally {
+      useKnownHandles.setState({ byUser: {} });
+    }
   });
 });

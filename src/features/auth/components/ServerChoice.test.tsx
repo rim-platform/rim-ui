@@ -104,6 +104,23 @@ describe("ServerChoice", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(NEWER_SERVER_API_MESSAGE);
   });
 
+  it("says a full server is full before anyone signs up there, and still moves to it", async () => {
+    fetchServerInfoAt.mockResolvedValue(fakeServerInfo({}, { registrationFull: true }));
+    const user = await openWith("rim.example.org");
+
+    const notices = await screen.findAllByRole("status");
+    expect(notices.at(-1)).toHaveTextContent("This server is full");
+    await user.click(screen.getByRole("button", { name: "Use this server" }));
+    expect(switchServer).toHaveBeenCalledWith("https://rim.example.org/api");
+  });
+
+  it("says nothing about a server with room", async () => {
+    fetchServerInfoAt.mockResolvedValue(fakeServerInfo({}, { registrationFull: false }));
+    await openWith("rim.example.org");
+    await screen.findByRole("button", { name: "Use this server" });
+    expect(screen.queryByText("This server is full")).not.toBeInTheDocument();
+  });
+
   it("checks again after the address changes", async () => {
     fetchServerInfoAt.mockResolvedValue(fakeServerInfo());
     const user = await openWith("rim.example.org");

@@ -42,6 +42,7 @@ import {
   profileCardRelays,
   reconcileDeviceKeys,
   recoverAccount,
+  RegistrationClosed,
   RegistrationUnreadable,
   resumeWithDeviceKey,
   signInWithDeviceKey,
@@ -748,6 +749,24 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       requestMock.mock.invocationCallOrder[0],
     );
     expect(sentInput()).toMatchObject({ username: "ada", proofOfWork: NONCE });
+  });
+
+  it("sends nothing and searches no proof when the discovery document says the server is full", async () => {
+    backend(server(), {
+      relay_direct_discovery: JSON.stringify({ registration: { full: true } }),
+      relay_verify_discovery: discovery({ mode: "pow", powBits: 20 }),
+      relay_solve_pow: NONCE,
+      key_identity_sign_signup: statements,
+    });
+    const onProofOfWork = vi.fn();
+
+    await expect(signupWithKey(draft, { username: "ada" }, { onProofOfWork })).rejects.toThrow(
+      RegistrationClosed,
+    );
+
+    expect(onProofOfWork).not.toHaveBeenCalled();
+    expect(commands()).not.toContain("relay_solve_pow");
+    expect(sentInput()).toBeUndefined();
   });
 
   it.each([

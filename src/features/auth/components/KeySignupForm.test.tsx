@@ -32,11 +32,14 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
 
 import {
   KeyChallengeFailed,
+  RegistrationClosed,
   RegistrationUnreadable,
   type KeySignupOptions,
 } from "../../key-identity/api/keyIdentity";
 import { PowCancelled } from "../../relay/pow/proofOfWork";
 import { TERMS_REFUSED_MESSAGE } from "../api/useSignupTerms";
+import { MINIMUM_AGE_REFUSED_MESSAGE } from "../api/useMinimumAge";
+import { REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer".split(
@@ -632,6 +635,73 @@ describe("KeySignupForm", () => {
       await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
       expect(api.signupWithKey.mock.calls[0][1]).not.toHaveProperty("acceptedTermsUrl");
+    });
+  });
+
+  describe("minimum age and a full server", () => {
+    const ageBox = () => screen.getByRole("checkbox", { name: "I am at least 16" });
+    const kitBox = () => screen.getByRole("checkbox", { name: /saved my recovery kit/i });
+
+    async function reachCreate(user: ReturnType<typeof userEvent.setup>) {
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+    }
+
+    it("keeps Create keys disabled until the age is confirmed, then sends it", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+      renderForm(undefined, undefined, { minimumAge: 16 });
+      await reachCreate(user);
+
+      expect(screen.getByRole("button", { name: /create keys/i })).toBeDisabled();
+      await user.click(ageBox());
+      await user.click(screen.getByRole("button", { name: /create keys/i }));
+      await screen.findByLabelText("Recovery phrase");
+      await user.click(kitBox());
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.signupWithKey).toHaveBeenCalledWith(
+        draft,
+        { username: "ada", instanceInviteToken: "inst-tok", confirmedMinimumAge: 16 },
+        expect.anything(),
+      );
+    });
+
+    it("shows a refusal over the age at the checkbox, unticks it and rereads the server", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockRejectedValue(
+        serverError(
+          "VALIDATION",
+          "the minimum age must be confirmed: send the server's minimum age as the confirmed minimum age once the person confirms reaching it",
+        ),
+      );
+      const { invalidate } = renderForm(undefined, undefined, { minimumAge: 16 });
+      await reachCreate(user);
+      await user.click(ageBox());
+      await user.click(screen.getByRole("button", { name: /create keys/i }));
+      await screen.findByLabelText("Recovery phrase");
+      await user.click(kitBox());
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(await screen.findByText(MINIMUM_AGE_REFUSED_MESSAGE)).toBeInTheDocument();
+      expect(ageBox()).not.toBeChecked();
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.serverInfo });
+      expect(screen.getByLabelText("Recovery phrase")).toBeInTheDocument();
+    });
+
+    it.each([
+      ["the server's refusal", () => serverError("REGISTRATION_FULL", "this server is full")],
+      ["the discovery document", () => new RegistrationClosed()],
+    ])("says the server is full when %s says so", async (_what, error) => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockRejectedValueOnce(error());
+      renderForm();
+      await reachKit(user);
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(await screen.findByText(REGISTRATION_FULL_MESSAGE)).toBeInTheDocument();
     });
   });
 });

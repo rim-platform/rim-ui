@@ -46,7 +46,8 @@ pub(crate) struct LocalSearchQuery {
     pub text: String,
     /// The scope chip or an `in:` operator.
     pub conversation_id: Option<String>,
-    /// `from:`: a user id, or a username with or without `@` (case-insensitive).
+    /// `from:`: a user id, or a username or handle (`name:domain`) with or without `@`
+    /// (case-insensitive).
     pub from: Option<String>,
     /// `before:` / `after:` as RFC 3339 instants: sent strictly before / at or after.
     pub before: Option<String>,
@@ -148,7 +149,8 @@ impl CacheStore {
                           AND s.conversation_id = m.conversation_id)
             AND (?2 IS NULL OR m.conversation_id = ?2)
             AND (?3 IS NULL OR m.author_id = ?3
-                 OR lower(json_extract(m.payload, '$.author.username')) = lower(?3))
+                 OR lower(json_extract(m.payload, '$.author.username')) = lower(?3)
+                 OR lower(json_extract(m.payload, '$.author.handle')) = lower('@' || ?3))
             AND (?4 IS NULL OR m.sent_at_us < ?4)
             AND (?5 IS NULL OR m.sent_at_us >= ?5)
             AND (?6 = 0 OR m.text LIKE '%http://%' OR m.text LIKE '%https://%')

@@ -37,6 +37,22 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   sidebar section heading, a workspace on the rail or a message request opens a menu of its
   actions. A conversation's menu is the same as the "…" menu in its header, whose Notifications
   entry is now a submenu, and adds Mark as read, Invite people, Edit topic and Assign keybind.
+- **Upgrade:** run a rim-server with `User.handle` (handles), `serverInfo.registrationFull`,
+  `abuseContact` and `minimumAge`; the app asks for a person's handle with every message, so an
+  older server refuses the timeline. People are shown by their handle, `@username:domain`:
+  people of your own server as `@username`, people from other servers with their domain, and
+  never by the internal `r_…` name a server keeps for them. **Copy @username** copies the whole
+  handle, a mention or a search's `from:` takes a whole handle as well as a username, and the
+  `from:` suggestions insert it.
+- The sign-in and signup pages show where to report abuse when the server names it, as a link
+  for an https address and as an email address otherwise. A server with a minimum age has both
+  signups, with a key or a password, ask "I am at least N" beside the terms; the account is not
+  created without it, and a refusal because the server's age changed unticks the box and says so.
+- A server that holds as many accounts as it takes says "This server is full", with a link to
+  running your own server, on the sign-in page, instead of the signup forms, and when the
+  desktop app checks it under **Use another server**; a key signup reads it from the server's
+  discovery document before any proof-of-work, and a signup the server refuses as full says the
+  same.
 - **Upgrade:** run a rim-server with the `workspaceInvites` query and the `revokeInvite`
   mutation. Settings → Workspace → **Invites** lists a workspace's invites to its Owner, newest
   first, with each one's role, uses, expiry, creator and state (Active, Expired, Used up or
@@ -51,6 +67,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The desktop app reads a server's discovery document that carries its unsigned `features` or
+  `registration` beside the descriptor, and both apps verify a descriptor that declares a
+  `handleDomain` or an `abuseContact`; until now such a server could not be pinned, signed up on
+  with a key, or used as a relay.
 - The web app served on a domain of its own, apart from its server's (such as
   `chat.example` for a server at `relay.example`), names the server by the origin its signed
   discovery document declares: profile cards, contact links, delegations, relay switches and new

@@ -93,6 +93,22 @@ export function declaredOrigin(document: string): string | null {
 }
 
 /**
+ * Whether a discovery document says its server is full: its unsigned, advisory
+ * `registration.full`.
+ *
+ * @param document - A discovery document as fetched.
+ * @returns `true` only when the document says so; a missing or malformed field reads as not full.
+ */
+export function discoveryRegistrationFull(document: string): boolean {
+  const registration = fields(document)?.registration;
+  return (
+    !!registration &&
+    typeof registration === "object" &&
+    (registration as Record<string, unknown>).full === true
+  );
+}
+
+/**
  * Fetch this app's server's discovery document from the transport origin and verify it: on the
  * desktop against that origin, in the web app against the origin the document declares (the
  * transport origin when it declares none). Remembers the identity origin it read.

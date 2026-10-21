@@ -11,6 +11,7 @@ import {
 import { NEWER_SERVER_API_MESSAGE } from "../../updater/hooks/useServerInfo";
 import { parseServerAddress, switchServer } from "../api/serverAddress";
 import { JoinField } from "./JoinField";
+import { RegistrationFullNotice } from "./RegistrationFullNotice";
 
 type Probe =
   | { status: "idle" }
@@ -23,7 +24,9 @@ const LINK_BUTTON =
 
 /**
  * The server the desktop app signs in to, with a way to check and move to another one and
- * back to the default; nothing on the web, whose app its server serves.
+ * back to the default; nothing on the web, whose app its server serves. A checked server that
+ * says it is full is shown as such, before anyone tries to sign up there; its existing accounts
+ * can still sign in.
  */
 export function ServerChoice() {
   const { platform } = useRuntime();
@@ -126,6 +129,10 @@ function ServerChoicePanel() {
                 <p className="text-xs text-rim-warm">{NEWER_SERVER_API_MESSAGE}</p>
               )}
             </div>
+          )}
+
+          {probe.status === "found" && probe.info.registrationFull === true && (
+            <RegistrationFullNotice />
           )}
 
           <div className="flex justify-end gap-2">

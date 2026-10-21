@@ -14,8 +14,12 @@
  * `joinServerByInvite` once the account exists, and an instance invite is not needed. A failure
  * of that join says the account is ready and lets the person go on without the workspace.
  *
- * The server's instance notice shows at the top. When the server has terms of service, both
- * signups ask for "I accept the terms of use" and send the terms URL back as `acceptedTermsUrl`.
+ * The server's instance notice shows at the top, its abuse contact at the bottom. When the server
+ * has terms of service, both signups ask for "I accept the terms of use" and send the terms URL
+ * back as `acceptedTermsUrl`; when it has a minimum age, both ask for "I am at least N" and send
+ * N back as `confirmedMinimumAge`. A server that says it is full (`serverInfo.registrationFull`)
+ * gets "This server is full" instead of either signup, and a signup it refuses as full
+ * (`REGISTRATION_FULL`) says the same.
  *
  * Where this app can hold an identity key it offers "Create account with a key"
  * (`KeySignupForm`) first: an account with no password and no email, signed in by a key kept on
@@ -58,6 +62,8 @@ import {
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { isTermsRefusal, useSignupTerms } from "../api/useSignupTerms";
+import { isMinimumAgeRefusal, useSignupMinimumAge } from "../api/useMinimumAge";
+import { isRegistrationFull, REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
 import { useSignupWithInviteMutation } from "../api/useSignupWithInviteMutation";
 import { useInviteCode } from "../api/useInviteCode";
 import { useJoinServerMutation } from "../../workspaces/api/useJoinServer";
@@ -72,6 +78,9 @@ import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
 import { TermsAcceptance } from "./TermsAcceptance";
 import { BrandHeading } from "./BrandHeading";
 import { ServerChoice } from "./ServerChoice";
+import { AbuseContact } from "./AbuseContact";
+import { MinimumAgeConfirmation } from "./MinimumAgeConfirmation";
+import { RegistrationFullNotice } from "./RegistrationFullNotice";
 
 /**
  * Email validation regex mirroring the backend's pragmatic email regex:
@@ -204,7 +213,8 @@ export function JoinForm({
   onSuccess,
 }: JoinFormProps) {
   const { capabilities, deviceKeyStore } = useRuntime();
-  const { signupRequiresKeys } = useServerInfo();
+  const { signupRequiresKeys, info } = useServerInfo();
+  const full = info?.registrationFull === true;
   const offer = signupOffer(
     capabilities.identityKeys,
     deviceKeyStore === "checking",
@@ -225,6 +235,7 @@ export function JoinForm({
   const [formError, setFormError] = useState<string | null>(null);
   const signup = useSignupWithInviteMutation();
   const terms = useSignupTerms();
+  const age = useSignupMinimumAge();
   const byCode = variant === "CODE";
   const invite = useInviteCode(registrationMode);
   const join = useJoinServerMutation();
@@ -317,6 +328,7 @@ export function JoinForm({
    *   (NOT sent as `""`). Falls back to `username` server-side.
    * - Token fields: from `tokenFields`, or the invite code field for `CODE`.
    * - `acceptedTermsUrl`: the server's terms URL once accepted, absent without terms.
+   * - `confirmedMinimumAge`: the server's minimum age once confirmed, absent without one.
    */
   function buildInput() {
     const trimmedDisplayName = displayName.trim();
@@ -327,6 +339,7 @@ export function JoinForm({
       ...(trimmedDisplayName.length > 0 ? { displayName: trimmedDisplayName } : {}),
       ...signupTokens,
       ...terms.fields,
+      ...age.fields,
     };
   }
 
@@ -349,9 +362,12 @@ export function JoinForm({
       },
       onError: (err) => {
         if (terms.noteFailure(err)) return;
+        if (age.noteFailure(err)) return;
         if (inviteRefused(err)) return;
         const mapped = mapSignupError(err);
-        if (mapped?.field === "email") {
+        if (isRegistrationFull(err)) {
+          setFormError(REGISTRATION_FULL_MESSAGE);
+        } else if (mapped?.field === "email") {
           setEmailError(mapped.message);
         } else {
           setFormError(graphqlErrorMessage(err, "Registration failed. Try again."));
@@ -365,6 +381,7 @@ export function JoinForm({
     email.trim().length > 0 &&
     password.trim().length >= 8 &&
     terms.satisfied &&
+    age.satisfied &&
     inviteReady;
 
   return (
@@ -407,6 +424,8 @@ export function JoinForm({
                 Your account is ready. Joining {invitedWorkspace}...
               </p>
             )
+          ) : full ? (
+            <RegistrationFullNotice />
           ) : offer === "no-keys" ? (
             <NoKeysHere />
           ) : offer === "checking" ? (
@@ -475,7 +494,12 @@ export function JoinForm({
                 error={displayNameError}
               />
               <TermsAcceptance terms={terms} disabled={signup.isPending} />
-              {(formError || (signup.error && !isTermsRefusal(signup.error) && !errorAtField)) &&
+              <MinimumAgeConfirmation age={age} disabled={signup.isPending} />
+              {(formError ||
+                (signup.error &&
+                  !isTermsRefusal(signup.error) &&
+                  !isMinimumAgeRefusal(signup.error) &&
+                  !errorAtField)) &&
                 !emailError && (
                   <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
                     {formError ?? graphqlErrorMessage(signup.error, "Registration failed.")}
@@ -492,7 +516,7 @@ export function JoinForm({
           )}
         </div>
 
-        {!joining && offer === "key-or-password" && method === "key" && (
+        {!joining && !full && offer === "key-or-password" && method === "key" && (
           <div className="space-y-1 text-center text-xs text-rim-text-faint">
             <button
               type="button"
@@ -505,7 +529,7 @@ export function JoinForm({
             <p>A password account can add a key later in Settings &gt; Security.</p>
           </div>
         )}
-        {!joining && offer === "key-or-password" && method === "password" && (
+        {!joining && !full && offer === "key-or-password" && method === "password" && (
           <div className="space-y-3 text-center">
             <div className="flex items-center gap-3 text-xs text-rim-text-faint">
               <span className="flex-1 border-t border-rim-line" />
@@ -521,6 +545,8 @@ export function JoinForm({
             </button>
           </div>
         )}
+
+        <AbuseContact />
 
         <ServerChoice />
       </div>

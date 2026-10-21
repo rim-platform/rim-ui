@@ -15,6 +15,7 @@ import {
   workspaceMembers,
 } from "../../conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../conversations/types";
+import { useKnownHandles } from "../state/useKnownHandles";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 
 const requestMock = vi.fn();
@@ -342,6 +343,34 @@ describe("useUserContextMenu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy @username" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("@alice");
     expect(toast.success).toHaveBeenCalledWith("Copied @alice");
+  });
+
+  it("copies the whole handle once a server answered it", async () => {
+    useKnownHandles.setState({ byUser: { "u-alice": "@alice:elsewhere.example" } });
+    try {
+      serve(MEMBER);
+      await renderPerson(MEMBER);
+      openMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy @username" }));
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("@alice:elsewhere.example");
+    } finally {
+      useKnownHandles.setState({ byUser: {} });
+    }
+  });
+
+  it("offers no copy for a person from elsewhere whose handle is not known", async () => {
+    routeRequests(requestMock, {
+      "query Me": () => ({ me: currentUser }),
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "u-alice" ? { ...m, username: "r_abcdef", displayName: null } : m,
+        ),
+      }),
+      "query Server(": () => ({ server: { id: "ws-1", name: "Acme", viewerRole: MEMBER } }),
+      "query Contacts": () => ({ contacts: [] }),
+    });
+    await renderPerson(MEMBER);
+    expect(openMenu()).toEqual(["View profile", "Send message"]);
   });
 
   it("shows the profile card until Escape", async () => {

@@ -231,7 +231,13 @@ fn message_json(
         "threadId": thread_id,
         "rootThreadId": null,
         "authorId": "user-1",
-        "author": { "id": "user-1", "username": "ada", "displayName": "Ada", "avatarUrl": null },
+        "author": {
+            "id": "user-1",
+            "username": "ada",
+            "displayName": "Ada",
+            "avatarUrl": null,
+            "handle": "@ada:example.org"
+        },
         "text": text,
         "hasAttachments": !deleted,
         "parentMessageId": null,
@@ -953,6 +959,11 @@ fn search_is_scoped_to_the_workspace_and_its_filters() {
     );
     assert_eq!(query(&|q| q.from = Some("user-1".into())).len(), 3);
     assert!(query(&|q| q.from = Some("@bob".into())).is_empty());
+    assert_eq!(
+        query(&|q| q.from = Some("@Ada:Example.org".into())).len(),
+        3
+    );
+    assert!(query(&|q| q.from = Some("@ada:elsewhere.org".into())).is_empty());
     assert_eq!(
         query(&|q| q.before = Some("2026-10-08T10:00:01Z".into())),
         vec!["m3", "m1"]

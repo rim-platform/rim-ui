@@ -20,7 +20,9 @@ import {
 } from "../api/localSearch";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { useServerMembers, type ServerMember } from "../../workspaces/api/useServerMembers";
+import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { personName } from "../../../shared/utils/handles";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
 import { useInboxConversations } from "../../conversations/api/useInboxConversations";
@@ -50,8 +52,6 @@ const SEARCH_OPERATORS: { operator: string; example: string; meaning: string }[]
 
 const PREFETCH_THRESHOLD = 5;
 
-const NO_MEMBERS: ServerMember[] = [];
-
 export function SearchOverlay() {
   const isOpen = useSearchOverlayStore((s) => s.isOpen);
   const query = useSearchOverlayStore((s) => s.query);
@@ -70,6 +70,17 @@ export function SearchOverlay() {
   const { data: joinedData } = useJoinedChannels(workspaceId ?? undefined);
   const { data: inboxData } = useInboxConversations(workspaceId ?? undefined);
   const { data: membersData } = useServerMembers(workspaceId ?? undefined);
+  const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const searchMembers = useMemo(
+    () =>
+      (membersData ?? []).map((m) => ({
+        userId: m.userId,
+        username: m.username,
+        displayName: m.displayName,
+        handle: memberLookup.resolve(m.userId).handleView,
+      })),
+    [membersData, memberLookup],
+  );
   // The conversations the user can see now: titles for local hits, `in:#name` for local
   // search, and the visibility check before a local hit joins the server's results.
   const directory = useMemo(
@@ -124,12 +135,7 @@ export function SearchOverlay() {
   const [dismissedAt, setDismissedAt] = useState<string | null>(null);
   // Where the caret goes once an inserted suggestion has rendered.
   const pendingCaret = useRef<number | null>(null);
-  const { token, suggestions } = useOperatorSuggestions(
-    query,
-    caret,
-    membersData ?? NO_MEMBERS,
-    directory,
-  );
+  const { token, suggestions } = useOperatorSuggestions(query, caret, searchMembers, directory);
   const tokenAt = token ? `${token.start}:${query}` : null;
   const suggestionsOpen =
     inputFocused && !tipsOpen && suggestions.length > 0 && dismissedAt !== tokenAt;
@@ -474,8 +480,7 @@ export function SearchOverlay() {
           {showResults && (
             <>
               {flatResults.map((msg, idx) => {
-                const authorName =
-                  msg.author?.displayName || msg.author?.username || msg.authorId.slice(0, 8);
+                const authorName = personName(msg.author, msg.authorId, memberLookup.ownDomain);
                 const type = msg.conversationType;
                 const prefix = type === "CHANNEL" ? "# " : type === "DIRECT" ? "@ " : "";
                 const convLabel = msg.conversationTitle

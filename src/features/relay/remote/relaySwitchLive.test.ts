@@ -133,4 +133,22 @@ describe("switching to a relay in pow registration mode", () => {
     expect(solveProofOfWork).not.toHaveBeenCalled();
     expect(signupInput()).not.toHaveProperty("proofOfWork");
   });
+
+  it("searches no proof and sends no signup to a relay whose discovery document says it is full", async () => {
+    const document = JSON.stringify({
+      rim: "server-discovery",
+      keyLog: [vectors.relay.inception],
+      descriptor: powVectors.powDescriptor,
+      registration: { full: true },
+    });
+    setDirectTransport({ discovery: async () => document } as unknown as DirectTransport);
+    answerSignup();
+    const deps = liveDeps("Ada");
+
+    const checked = await deps.checkNew(RELAY_ORIGIN);
+    await expect(deps.enterNew(checked.serverId, "ada")).rejects.toThrow(/full/);
+
+    expect(solveProofOfWork).not.toHaveBeenCalled();
+    expect(signupInput()).toBeUndefined();
+  });
 });

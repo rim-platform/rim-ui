@@ -23,6 +23,10 @@ const SERVER_PREFIX: &str = "rims1_";
 const VERSION: u8 = 2;
 const KIB: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 256;
+/// Longest descriptor `abuseContact`, in bytes.
+const MAX_ABUSE_CONTACT_BYTES: usize = 512;
+/// Longest handle domain, as for a DNS name.
+const MAX_HANDLE_DOMAIN_LEN: usize = 253;
 
 type Result<T> = std::result::Result<T, KeyIdentityError>;
 
@@ -215,8 +219,33 @@ struct DescriptorEntry {
     #[allow(dead_code)]
     limits: serde_json::Value,
     registration: Registration,
+    #[serde(default)]
+    handle_domain: Option<String>,
     #[allow(dead_code)]
     issued_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    abuse_contact: Option<String>,
+}
+
+/// Whether `domain` is a handle domain: a lowercase DNS name of at most 253 bytes whose labels
+/// are 1 to 63 ASCII letters, digits and hyphens, neither starting nor ending with a hyphen.
+fn is_handle_domain(domain: &str) -> bool {
+    !domain.is_empty()
+        && domain.len() <= MAX_HANDLE_DOMAIN_LEN
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+}
+
+/// Whether `contact` is a descriptor `abuseContact`: 1 to 512 bytes, not only whitespace.
+fn is_abuse_contact(contact: &str) -> bool {
+    !contact.trim().is_empty() && contact.len() <= MAX_ABUSE_CONTACT_BYTES
 }
 
 /// How a server takes new accounts.
@@ -258,6 +287,10 @@ pub(crate) struct ServerDescriptor {
     pub(crate) roles: Vec<String>,
     pub(crate) endpoints: Endpoints,
     pub(crate) registration: Registration,
+    /// The domain of the server's handles; `None` when it declares none.
+    pub(crate) handle_domain: Option<String>,
+    /// Where to report abuse on the server: an email address or an https URL.
+    pub(crate) abuse_contact: Option<String>,
 }
 
 fn roles_in_order(roles: &[String]) -> bool {
@@ -288,6 +321,14 @@ pub(crate) fn verify_descriptor(
         || !(1..=i32::MAX as u32).contains(&entry.version)
         || !roles_in_order(&entry.roles)
         || !entry.registration.valid()
+        || entry
+            .handle_domain
+            .as_deref()
+            .is_some_and(|d| !is_handle_domain(d))
+        || entry
+            .abuse_contact
+            .as_deref()
+            .is_some_and(|c| !is_abuse_contact(c))
     {
         return Err(refused("server descriptor", "malformed"));
     }
@@ -307,11 +348,15 @@ pub(crate) fn verify_descriptor(
         roles: entry.roles,
         endpoints: entry.endpoints,
         registration: entry.registration,
+        handle_domain: entry.handle_domain,
+        abuse_contact: entry.abuse_contact,
     })
 }
 
+/// A discovery document. Fields beside the key log and the descriptor (`features`,
+/// `registration`) are unsigned and advisory, so they are not read here and do not refuse it.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct DiscoveryDocument {
     rim: String,
     key_log: Vec<Statement>,
@@ -662,6 +707,93 @@ mod tests {
             let refused = verify_descriptor(&relay, &changed).unwrap_err();
             assert!(refused.to_string().contains("malformed"), "{to}: {refused}");
         }
+    }
+
+    /// The host vector's descriptor with `handleDomain` and `abuseContact` spliced in where a
+    /// server writes them, signed by the host key.
+    fn host_descriptor_with(handle_domain: Option<&str>, abuse_contact: Option<&str>) -> Statement {
+        let v = vectors();
+        let mut payload = text(&v["host"]["descriptor"]["payload"]).to_string();
+        if let Some(domain) = handle_domain {
+            payload = payload.replace(
+                r#","issuedAt":"#,
+                &format!(
+                    r#","handleDomain":{},"issuedAt":"#,
+                    serde_json::json!(domain)
+                ),
+            );
+        }
+        if let Some(contact) = abuse_contact {
+            payload.pop();
+            payload.push_str(&format!(
+                r#","abuseContact":{}}}"#,
+                serde_json::json!(contact)
+            ));
+        }
+        SecretKey::from_seed(Zeroizing::new([40u8; 32])).sign(context::DESCRIPTOR, payload)
+    }
+
+    #[test]
+    fn a_descriptor_may_declare_its_handle_domain_and_abuse_contact() {
+        let v = vectors();
+        let head = replay_server_log(&[statement(&v["host"]["inception"])]).unwrap();
+        let plain = verify_descriptor(&head, &host_descriptor_with(None, None)).unwrap();
+        assert_eq!(plain.handle_domain, None);
+        assert_eq!(plain.abuse_contact, None);
+        let both = host_descriptor_with(Some("rim-platform.org"), Some("abuse@host.example"));
+        assert!(both
+            .payload
+            .contains(r#""handleDomain":"rim-platform.org","issuedAt":"#));
+        let verified = verify_descriptor(&head, &both).unwrap();
+        assert_eq!(verified.handle_domain.as_deref(), Some("rim-platform.org"));
+        assert_eq!(
+            verified.abuse_contact.as_deref(),
+            Some("abuse@host.example")
+        );
+        let url = host_descriptor_with(None, Some("https://host.example/report"));
+        assert!(verify_descriptor(&head, &url).is_ok());
+
+        let long = "a".repeat(MAX_ABUSE_CONTACT_BYTES + 1);
+        for (domain, contact) in [
+            (Some("Rim-Platform.org"), None),
+            (Some("rim-platform.org."), None),
+            (Some(""), None),
+            (Some("rim_platform.org"), None),
+            (Some("-rim.org"), None),
+            (None, Some("")),
+            (None, Some("  ")),
+            (None, Some(long.as_str())),
+        ] {
+            let refused =
+                verify_descriptor(&head, &host_descriptor_with(domain, contact)).unwrap_err();
+            assert!(
+                refused.to_string().contains("malformed"),
+                "{domain:?} {contact:?}: {refused}"
+            );
+        }
+        let mut unknown = host_descriptor_with(None, None).payload;
+        unknown = unknown.replace(r#","issuedAt":"#, r#","handle":"x","issuedAt":"#);
+        let unknown =
+            SecretKey::from_seed(Zeroizing::new([40u8; 32])).sign(context::DESCRIPTOR, unknown);
+        assert!(verify_descriptor(&head, &unknown).is_err());
+    }
+
+    #[test]
+    fn discovery_reads_past_the_unsigned_features_and_registration() {
+        let v = vectors();
+        let document = serde_json::json!({
+            "rim": "server-discovery",
+            "keyLog": [v["host"]["inception"]],
+            "descriptor": host_descriptor_with(Some("host.example"), Some("abuse@host.example")),
+            "features": { "attachments": { "state": "enabled" } },
+            "registration": { "full": true },
+        })
+        .to_string();
+        let verified = verify_discovery(&document, "https://host.example").unwrap();
+        assert_eq!(
+            verified.descriptor.handle_domain.as_deref(),
+            Some("host.example")
+        );
     }
 
     #[test]

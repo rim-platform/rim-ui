@@ -44,7 +44,7 @@ import {
   type SpaceRecord,
 } from "../state/relayDb";
 import { solveProofOfWork } from "../pow/proofOfWork";
-import { serverOrigin } from "../state/serverOrigin";
+import { discoveryRegistrationFull, serverOrigin } from "../state/serverOrigin";
 import { pinDiscovery } from "../state/serverPins";
 import { accountKey, remoteWorkspaces } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
@@ -122,8 +122,9 @@ export function liveDeps(displayName: string): SwitchDeps {
   const account = signedInAccount();
   const crypto = relayCrypto();
   const transport = directTransport();
-  // How each relay checked in this run takes new accounts, from its verified descriptor.
-  const registrations = new Map<string, ServerRegistration>();
+  // How each relay checked in this run takes new accounts, from its verified descriptor, and
+  // whether its discovery document says it is full.
+  const registrations = new Map<string, ServerRegistration & { full: boolean }>();
 
   async function challenge(serverId: string): Promise<Statement> {
     const answer = await directRequest<{
@@ -142,7 +143,10 @@ export function liveDeps(displayName: string): SwitchDeps {
       const document = await transport.discovery(origin);
       const verified = await crypto.verifyDiscovery(document, origin);
       const pin = await pinDiscovery(document, origin, verified.head.serverId);
-      registrations.set(pin.serverId, verified.descriptor.registration);
+      registrations.set(pin.serverId, {
+        ...verified.descriptor.registration,
+        full: discoveryRegistrationFull(document),
+      });
       return {
         serverId: pin.serverId,
         keyHash: await keyHash(pin.keys[pin.keys.length - 1]),
@@ -170,6 +174,9 @@ export function liveDeps(displayName: string): SwitchDeps {
       const keyLog = keyLogStatements(identity);
       // A relay in pow mode takes the signup with a proof-of-work over the log's inception.
       const registration = registrations.get(serverId);
+      if (registration?.full) {
+        throw new Error("The new relay is full and takes no new accounts. Choose another relay.");
+      }
       const proofOfWork =
         registration?.mode === "pow" && registration.powBits !== null && keyLog[0]
           ? await solveProofOfWork({

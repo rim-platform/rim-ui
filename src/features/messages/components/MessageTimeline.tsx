@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useMessageNavigation } from "../hooks/useMessageNavigation";
@@ -6,6 +6,8 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { rememberHandles } from "../../workspaces/state/useKnownHandles";
+import { viewHandle } from "../../../shared/utils/handles";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { LensBanner } from "../../lenses/components/LensBanner";
@@ -131,6 +133,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     [pendingPeerId, items, currentUserId],
   );
   const { isLensActive, activeLens } = timeline;
+  useEffect(() => rememberHandles(items.map((m) => m.author)), [items]);
   const groups = useMemo(() => computeGroups(items), [items]);
   const itemsById = useMemo(() => new Map(items.map((m) => [m.id, m])), [items]);
   const mentionNameOf = useCallback(
@@ -363,6 +366,11 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                           name: authorNameOf(msg, member),
                           avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
                           username: member.username ?? msg.author?.username,
+                          handle: viewHandle(
+                            msg.author?.username ?? member.username,
+                            msg.author?.handle ?? member.handle,
+                            memberLookup.ownDomain,
+                          ),
                           statusText: member.statusText,
                           role: member.role,
                           joinedAt: member.joinedAt,

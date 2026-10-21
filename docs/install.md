@@ -224,7 +224,8 @@ off, and Settings > About says updates are not configured.
 A self-hosted server works with the same app. On the sign-in page, under the form, the app names
 the server it uses. Choose **Use another server**, enter the server's address, such as
 `https://rim.example.org`, and choose **Check server**. The app asks that server for its version
-and shows it; **Use this server** then moves the app to it and reloads.
+and shows it, and says "This server is full" when it takes no new accounts (its accounts still
+sign in); **Use this server** then moves the app to it and reloads.
 
 - The address must use `https://`. Plain `http://` is accepted only for `localhost` and
   `127.0.0.1`, for a server on the same computer.

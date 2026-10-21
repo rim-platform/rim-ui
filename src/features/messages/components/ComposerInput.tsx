@@ -21,9 +21,13 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { CommandDefinition } from "../../commands/types";
 
+/** A member the mention list offers. */
 interface MentionSuggestion {
   userId: string;
-  username: string;
+  /** The text a mention inserts after `@`: the handle as it reads, `null` when none reads. */
+  mention: string | null;
+  /** The member's whole handle without `@`, when known. */
+  handle: string | null;
   displayName: string | null;
   avatarUrl: string | null;
 }
@@ -39,6 +43,9 @@ interface CommandSuggestion {
 }
 
 const MAX_COMMAND_SUGGESTIONS = 8;
+
+/** The `@` mention being typed before the caret: a username, or a handle with its domain. */
+const MENTION_QUERY = /(?:^|\s)@([a-zA-Z0-9_-]*(?::[a-zA-Z0-9.-]*)?)$/;
 
 /** Discriminated union for the unified slash/command suggestion list */
 type SlashItem =
@@ -56,14 +63,7 @@ interface ComposerInputProps {
   canSubmit: boolean;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   mentionMapRef: React.RefObject<Map<string, string>>;
-  serverMembers:
-    | Array<{
-        userId: string;
-        username: string;
-        displayName: string | null;
-        avatarUrl: string | null;
-      }>
-    | undefined;
+  serverMembers: MentionSuggestion[] | undefined;
   /** Opens the file picker; without it the composer shows no attach button. */
   onFilePickerOpen?: () => void;
 }
@@ -128,7 +128,7 @@ export function ComposerInput({
   // Extract partial @mention query from cursor position
   const getPartialMention = useCallback((value: string, cursorPos: number): string | null => {
     const before = value.slice(0, cursorPos);
-    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+    const match = before.match(MENTION_QUERY);
     if (match) return match[1];
     return null;
   }, []);
@@ -143,17 +143,13 @@ export function ComposerInput({
       const lower = query.toLowerCase();
       const filtered = serverMembers
         .filter((m) => {
-          const name = (m.displayName ?? m.username ?? "").toLowerCase();
-          const uname = (m.username ?? "").toLowerCase();
-          return name.includes(lower) || uname.includes(lower);
+          if (lower.includes(":")) return (m.handle ?? "").startsWith(lower);
+          const name = (m.displayName ?? "").toLowerCase();
+          const mention = (m.mention ?? "").toLowerCase();
+          return name.includes(lower) || mention.includes(lower);
         })
-        .slice(0, 8)
-        .map((m) => ({
-          userId: m.userId,
-          username: m.username,
-          displayName: m.displayName,
-          avatarUrl: m.avatarUrl,
-        }));
+        .filter((m) => m.mention !== null || m.displayName)
+        .slice(0, 8);
       setMentionSuggestions(filtered);
       setSelectedMention(0);
     },
@@ -294,21 +290,22 @@ export function ComposerInput({
     textareaRef.current?.focus();
   }
 
-  function applyMention(member: { userId: string; username: string; displayName: string | null }) {
+  function applyMention(member: MentionSuggestion) {
     const cursorPos = textareaRef.current?.selectionStart ?? text.length;
     const before = text.slice(0, cursorPos);
     const after = text.slice(cursorPos);
-    const match = before.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+    const match = before.match(MENTION_QUERY);
+    const name = member.mention ?? member.displayName ?? "";
     if (match) {
       const atStart =
         before.length -
         match[0].length +
         (match[0].startsWith(" ") || match[0].startsWith("\n") ? 1 : 0);
-      const newBefore = before.slice(0, atStart) + `@${member.username} `;
+      const newBefore = before.slice(0, atStart) + `@${name} `;
       const newText = newBefore + after;
       onTextChange(newText);
-      // Store username -> userId mapping for submit-time replacement
-      mentionMapRef.current.set(member.username, member.userId);
+      // The inserted name becomes the member's mention token when the message is sent
+      mentionMapRef.current.set(name, member.userId);
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = newBefore.length;
@@ -621,12 +618,12 @@ export function ComposerInput({
               >
                 <Avatar
                   url={m.avatarUrl}
-                  name={m.displayName ?? m.username}
+                  name={m.displayName ?? m.mention ?? ""}
                   userId={m.userId}
                   size="sm"
                 />
-                <span className="font-medium">{m.displayName ?? m.username}</span>
-                <span className="text-rim-text-faint">@{m.username}</span>
+                <span className="font-medium">{m.displayName ?? m.mention}</span>
+                {m.mention && <span className="text-rim-text-faint">@{m.mention}</span>}
               </button>
             ))}
           </div>,

@@ -1,7 +1,16 @@
 import { useMemo } from "react";
 
+import { viewHandle, type HandleView } from "../../../shared/utils/handles";
 import type { ConversationDirectory } from "../api/localSearch";
-import type { ServerMember } from "../../workspaces/api/useServerMembers";
+
+/** A workspace member as `from:` offers them. */
+export interface SearchMember {
+  userId: string;
+  username: string;
+  displayName: string | null;
+  /** How their handle reads; derived from `username` when absent. */
+  handle?: HandleView | null;
+}
 
 /** The search operators the server understands. */
 export type OperatorKey = "from" | "in" | "has" | "before" | "after";
@@ -116,30 +125,37 @@ function today(now: Date): string {
 /**
  * The suggestions for `token`.
  *
- * `from:` lists members by display name or username and inserts `from:@<username>`; `in:` lists
+ * `from:` lists members by display name or handle and inserts their whole handle when it is
+ * known, else `from:@<username>`; a member with neither (a person from another server whose
+ * handle is not known) is not listed. `in:` lists
  * the channels in `directory` and inserts `in:#<title>`, or `in:<id>` for a title with a space,
  * which a whitespace-separated query cannot carry; `has:` lists its values; `before:` and
  * `after:` with no value offer today's date as a `YYYY-MM-DD` example.
  */
 export function computeSuggestions(
   token: ActiveToken,
-  members: readonly ServerMember[],
+  members: readonly SearchMember[],
   directory: ConversationDirectory,
   now: Date = new Date(),
 ): Suggestion[] {
   switch (token.key) {
-    case "from":
+    case "from": {
+      const listed = members.flatMap((m) => {
+        const handle = m.handle === undefined ? viewHandle(m.username, null, null) : m.handle;
+        return handle ? [{ member: m, handle }] : [];
+      });
       return rank(
-        members,
+        listed,
         token.prefix,
-        (m) => [m.username, m.displayName],
-        (m) => m.displayName || m.username,
-      ).map((m) => ({
-        id: m.userId,
-        label: m.displayName || m.username,
-        detail: `@${m.username}`,
-        insert: `from:@${m.username}`,
+        ({ member, handle }) => [handle.shown.slice(1), member.displayName],
+        ({ member, handle }) => member.displayName || handle.shown.slice(1),
+      ).map(({ member, handle }) => ({
+        id: member.userId,
+        label: member.displayName || handle.shown.slice(1),
+        detail: handle.shown,
+        insert: `from:${handle.copied}`,
       }));
+    }
     case "in": {
       const channels: { id: string; title: string }[] = [];
       for (const [id, entry] of directory.byId) {
@@ -201,7 +217,7 @@ export function applySuggestion(
 export function useOperatorSuggestions(
   query: string,
   caret: number,
-  members: readonly ServerMember[],
+  members: readonly SearchMember[],
   directory: ConversationDirectory,
 ): { token: ActiveToken | null; suggestions: Suggestion[] } {
   return useMemo(() => {
