@@ -438,6 +438,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Removed
 
+- The decision records left `docs/`, which now holds only pages on how the client works today;
+  git history keeps the records.
 - Simple mode: a plugin folder or repository without `rim-plugin.json` no longer installs from
   comment headers in `main.ts`, `main.js` or `main.py`, which never started. Install says every
   plugin needs `rim-plugin.json` at its root.

@@ -84,7 +84,3 @@ The plugin SDK is released on its own, with the tag `plugin-sdk-v<version>`
 
 `updater.md` says what the release needs configured (the updater key, its variables and
 secrets) and how to roll an update back.
-
-## Records
-
-- `decisions/`: sealed decision records (`decisions/README.md` indexes them).

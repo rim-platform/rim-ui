@@ -3,8 +3,10 @@
 `src-tauri/crates/rim_mls` is the end-to-end encryption engine of encrypted DMs and groups: MLS
 (RFC 9420) through OpenMLS, behind RIM's own types. It is the only code that names OpenMLS types;
 the app passes conversation ids, device ids, message content and `MLSMessage` bytes in and out.
-The contract it implements is rim-server `docs/specs/e2ee-mls-v1.md`; the library choice is
-`docs/decisions/mls-library-2026-10-09.md` there.
+The contract it implements is rim-server `docs/specs/e2ee-mls-v1.md`. The library is OpenMLS,
+with `openmls_libcrux_crypto` as the crypto provider (`openmls_rust_crypto` is the second provider
+the tests compare it with), and every group uses the cipher suite
+`MLS_128_MLKEM768X25519_AES128GCM_SHA256_Ed25519` (`0x004F`).
 
 ## Versions
 
