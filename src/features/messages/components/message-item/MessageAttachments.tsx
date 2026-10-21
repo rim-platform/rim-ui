@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { AlertCircle, Download, FileIcon, Loader2, Trash2 } from "lucide-react";
 
 import { getApiOrigin } from "../../../../core/graphql/config";
+import { loadsAsBlob, useServerMedia } from "../../../../shared/media/serverMedia";
 import { toast } from "../../../../shared/toast/useToastStore";
 import { cn } from "../../../../shared/ui/cn";
 import type { DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
@@ -10,8 +11,10 @@ import { followLink } from "../../../../shared/ui/contextMenu/menuActions";
 import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
 import { useDeleteAttachmentMutation } from "../../api/useAttachments";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
+import { AUTO_MEDIA_BYTES, DownloadedMedia } from "./DownloadedMedia";
 import { InlineMedia } from "./InlineMedia";
 import { mediaKindOf } from "./mediaKind";
+import type { MediaKind } from "./mediaKind";
 import type { MessageAttachment } from "../../../../core/types/messages";
 
 const UPLOAD_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -143,9 +146,13 @@ export const MessageAttachments = memo(function MessageAttachments({
 
         if (mediaKind && canDownload) {
           return (
-            <div key={att.id} className="w-fit max-w-full">
-              <InlineMedia kind={mediaKind} src={downloadUrl} filename={att.filename} />
-            </div>
+            <AttachmentMedia
+              key={att.id}
+              kind={mediaKind}
+              url={downloadUrl}
+              filename={att.filename}
+              sizeBytes={att.sizeBytes}
+            />
           );
         }
 
@@ -209,6 +216,44 @@ export const MessageAttachments = memo(function MessageAttachments({
     </div>
   );
 });
+
+/**
+ * An uploaded image or video shown inline. The web app loads it from its download URL; the
+ * desktop app downloads it first, without asking up to {@link AUTO_MEDIA_BYTES} and on a click
+ * above.
+ */
+function AttachmentMedia({
+  kind,
+  url,
+  filename,
+  sizeBytes,
+}: {
+  kind: MediaKind;
+  url: string;
+  filename: string;
+  sizeBytes: number;
+}) {
+  const [requested, setRequested] = useState(sizeBytes <= AUTO_MEDIA_BYTES);
+  const media = useServerMedia(url, requested);
+  if (!loadsAsBlob(url)) {
+    return (
+      <div className="w-fit max-w-full">
+        <InlineMedia kind={kind} src={url} filename={filename} />
+      </div>
+    );
+  }
+  return (
+    <DownloadedMedia
+      kind={kind}
+      filename={filename}
+      sizeBytes={sizeBytes}
+      src={media.src}
+      requested={requested}
+      failed={media.failed}
+      onRequest={() => setRequested(true)}
+    />
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
