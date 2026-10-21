@@ -31,13 +31,21 @@ account back if you lose it.
   server invite, or the server's reason when it refuses the code, such as an expired one. An
   invite to a workspace on another server (`rim-invite:1:…`) is joined after the account exists,
   with **Join with an invite code**.
-- **Username**: 3 to 32 characters, letters, digits, `_` and `-`, free on this server. It cannot
-  start with `r_` or `deleted-`.
+- **Username**: 3 to 32 characters, lowercase letters, digits, `_` and `-`, free on this server.
+  Capitals are folded to lowercase, so `Kuba` signs up as `kuba`. It cannot start with `r_` or
+  `deleted-`. With the server's domain it makes your handle (below).
 - **Display name (optional)**: at most 80 characters. Left blank, your username is shown.
 - **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
   browser, a name such as "Firefox on Linux". It names this device in your device list.
 - **I accept the terms of use**, with a link to the server's terms, only when the server has
   terms. The account is not created without it.
+- **I am at least N**, only when the server asks for a minimum age: you confirm you are at least
+  that old. Nothing else is checked, and no ID is asked for. The account is not created without
+  it; if the server raised its age meanwhile, the box unticks and says so.
+
+A server that holds as many accounts as it takes says "This server is full" instead of the form,
+with a link to how to run your own server; sign up on another one, or run one. When the server
+names where to report abuse, the sign-in and signup pages show it at the bottom.
 
 Then choose **Create account**. In a browser the app first asks the browser to keep this site's
 data; if the browser refuses, the app says your keys could be cleared with it and goes on only
@@ -165,7 +173,14 @@ not accepted yet." above their composer. rim-server's
 under a message adds or removes yours.
 
 **Mentions.** Type `@` and the start of a name, then pick the person from the list. They get a
-notification when they can read the conversation.
+notification when they can read the conversation. Typing someone's whole handle, such as
+`@ada:example.org`, mentions them too once the app knows it.
+
+**Handles.** Everyone has a handle, `@username:domain`: their username at their server and that
+server's domain, such as `@kuba:rim-platform.org`. People of your own server are shown as
+`@username`, people from other servers with their domain. **Copy @username** copies the whole
+handle, which names the person on any server. The app learns the handle of someone from another
+server from their messages; until then their card shows no handle, only their name.
 
 **The composer.** "Write a message..." takes Markdown. <kbd>Enter</kbd> sends and
 <kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
@@ -223,7 +238,8 @@ The keys that matter on the first day, as a new device has them:
 
 On a Mac, <kbd>Cmd</kbd> works wherever <kbd>Ctrl</kbd> is written. The command palette ("Type a
 command...") lists every command you can run here, built in, from a plugin or your own, with its
-keybind. Search takes filters such as `from:@user`, `in:#channel`, `has:link` and
+keybind. Search takes filters such as `from:@user` (or a whole handle, `from:@user:domain`),
+`in:#channel`, `has:link` and
 `before:2026-01-01`. The shortcuts panel lists the bindings as they stand; Settings > Keybinds and
 Settings > Keyboard change them, and [Keyboard](keyboard.md) explains profiles and the Vim layer.
 

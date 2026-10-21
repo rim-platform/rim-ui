@@ -47,7 +47,8 @@ the same SQLCipher database, so it is encrypted like the rest; there is no sidec
   `src/features/messages/api/localSearch.ts`) and returns hits newest first with the timeline's
   `(sentAt, id)` cursor, a `-bm25` rank, and a snippet that is HTML-escaped apart from its
   `<mark>` tags. Free text is never FTS5 syntax: each word becomes a quoted prefix term (`depl`
-  finds `deploy`), `"quoted words"` a phrase, all of them required.
+  finds `deploy`), `"quoted words"` a phrase, all of them required. `from:` matches the author's
+  user id, username or handle (`from:@ada:example.org`), with or without `@` and in any case.
 - Search covers one workspace of the signed-in account's own database, live messages only.
 
 How the search overlay uses it is in `docs/search-ui.md`.

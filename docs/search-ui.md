@@ -107,6 +107,11 @@ grammar). Discoverability is handled two ways:
 
 - The search input's placeholder hints at the syntax directly:
   `Search — try from:@user, in:#channel, has:link, before:2026-01-01`.
+- Typing an operator's value suggests values (`searchSuggestions.ts`). `from:` lists members
+  by display name or handle and inserts the member's whole handle when the app knows it
+  (`from:@ada:example.org`, which the server resolves here or elsewhere), else
+  `from:@<username>`; a person from another server whose handle is not known yet is not listed,
+  so no internal `r_…` name is ever offered.
 - An info (`?`-style) icon button in the input row toggles a static "Search
   operators" legend popover listing each operator with a one-line example. It has no
   state beyond open/closed, and `Esc` closes it before falling through to clearing
