@@ -925,4 +925,29 @@ describe("browser plugin storage", () => {
     expect(updated.audit).toEqual(info.audit);
     await store.uninstall(id);
   });
+  it("keeps network.fetch through an update only while the plugin lists the same sites", async () => {
+    vi.useRealTimers();
+    const store = await storeWith("rimp0_storage-sites");
+    const id = "dev.example.scripted";
+    const install = async (origins: string[], replace: boolean) => {
+      const manifest = webManifest({
+        capabilities: ["ui.notify", "network.fetch"],
+        network_origins: origins,
+      });
+      const bytes = writeBundle([file("rim-plugin.json", manifest), file("main.mjs", "")]);
+      const sha256 = await sha256Hex(bytes);
+      const source = { kind: "link" as const, url: "https://example.com/n.rimbundle", sha256 };
+      await store.installBundle({ bytes, sha256, source, replace, keepApprovals: replace });
+      const [info] = await store.list();
+      return info.approved_capabilities;
+    };
+
+    await install(["https://api.github.com", "https://avatars.githubusercontent.com"], false);
+    await store.approveCapabilities(id, ["ui.notify", "network.fetch"]);
+    expect(
+      await install(["https://avatars.githubusercontent.com", "https://api.github.com"], true),
+    ).toEqual(["ui.notify", "network.fetch"]);
+    expect(await install(["https://evil.example"], true)).toEqual(["ui.notify"]);
+    await store.uninstall(id);
+  });
 });

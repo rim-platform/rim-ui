@@ -3,8 +3,14 @@
 // on its own.
 
 import { WorkspacePluginStatus } from "../../../core/graphql/generated/schema-types";
+import { NETWORK_FETCH } from "../../../../sdk/plugin-sdk/src/manifestRules";
 import { limitView, type LimitView } from "../../limits/limits";
-import { runtimeKind, type PluginInfo, type PluginInstallSource } from "../types";
+import {
+  runtimeKind,
+  sameNetworkOrigins,
+  type PluginInfo,
+  type PluginInstallSource,
+} from "../types";
 import type { EntryCheck, VerifiedEntry } from "./verify";
 
 const PRINCIPAL_PREFIX = "rimp1_";
@@ -150,13 +156,16 @@ export interface UpdatePlan {
   newCapabilities: string[];
   /** AI-callable commands neither in the installed copy nor consented to. */
   newAiCommands: string[];
+  /** `network.fetch` is approved and the entry lists other sites, so it is asked for again. */
+  sitesChanged: boolean;
 }
 
 /**
  * Plan the update of `plugin` to `check`. It installs at once when it keeps the runtime kind
  * and the publisher, asks for no capability the person was not already asked for or approved,
- * and adds no AI-callable command beyond those already there or consented. Post-install steps
- * are the host's to find: a git update that needs one waits for consent there.
+ * adds no AI-callable command beyond those already there or consented, and keeps the sites an
+ * approved `network.fetch` reaches. Post-install steps are the host's to find: a git update
+ * that needs one waits for consent there.
  */
 export function planUpdate(plugin: PluginInfo, check: VerifiedEntry): UpdatePlan {
   const source = registrySource(plugin);
@@ -168,15 +177,21 @@ export function planUpdate(plugin: PluginInfo, check: VerifiedEntry): UpdatePlan
   const newAiCommands = check.manifest.commands
     .filter((c) => c.ai_callable && !known.has(c.id))
     .map((c) => c.id);
+  const sitesChanged =
+    plugin.approved_capabilities.includes(NETWORK_FETCH) &&
+    check.manifest.capabilities.includes(NETWORK_FETCH) &&
+    !sameNetworkOrigins(plugin.network_origins, check.manifest.network_origins);
   return {
     automatic:
       !publisherChanged &&
       !kindChanged &&
       newCapabilities.length === 0 &&
-      newAiCommands.length === 0,
+      newAiCommands.length === 0 &&
+      !sitesChanged,
     publisherChanged,
     kindChanged,
     newCapabilities,
     newAiCommands,
+    sitesChanged,
   };
 }

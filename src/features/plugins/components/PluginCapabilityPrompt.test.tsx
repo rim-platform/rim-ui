@@ -42,7 +42,7 @@ describe("PluginCapabilityPrompt consent text", () => {
     );
     expect(
       screen.getByText(
-        "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below.",
+        "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it could still leak out in small ways, such as a DNS lookup.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Runs as a program on this computer/)).toBeNull();

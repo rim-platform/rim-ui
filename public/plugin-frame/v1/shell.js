@@ -2,7 +2,8 @@
 // It announces itself to its parent with `rim.frame.hello`, and the host posts
 // one `rim.frame.init` message with the plugin's verified files;
 // the shell narrows the page's content security policy to the plugin's granted
-// origins before any plugin byte runs, then either imports the plugin's entry
+// origins and removes WebRTC, which that policy does not cover, before any plugin
+// byte runs, then either imports the plugin's entry
 // module (a plugin frame, which also gets the host's MessagePort) or renders a
 // panel (a panel frame).
 (function () {
@@ -11,6 +12,13 @@
   var ORIGIN = /^(https|wss):\/\/[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[1-9][0-9]{0,4})?$/;
   var SCHEME = /^[a-z][a-z0-9+.-]*:/i;
   var JS_TYPES = ["", "text/javascript", "application/javascript", "module"];
+  var WEBRTC = [
+    "RTCPeerConnection",
+    "webkitRTCPeerConnection",
+    "RTCSessionDescription",
+    "RTCIceCandidate",
+    "RTCDataChannel",
+  ];
   var MEDIA_TYPES = {
     html: "text/html",
     js: "text/javascript",
@@ -80,6 +88,16 @@
       configurable: false,
       enumerable: false,
     });
+  }
+
+  /**
+   * Lock every WebRTC constructor to `undefined`: a peer connection gathers its
+   * candidates from any STUN or TURN server, past `connect-src`. Nested frames
+   * get opaque origins of their own and workers have no peer connection, so the
+   * page has no other copy to reach for.
+   */
+  function closeWebRtc() {
+    for (var i = 0; i < WEBRTC.length; i++) lockGlobal(WEBRTC[i], undefined);
   }
 
   function startPlugin(init, port) {
@@ -252,6 +270,7 @@
     started = true;
     try {
       applyPolicy(init.policy);
+      closeWebRtc();
       if (init.kind === "plugin") startPlugin(init, event.ports && event.ports[0]);
       else if (init.kind === "panel") renderPanel(init);
       else throw new Error("unknown frame kind");

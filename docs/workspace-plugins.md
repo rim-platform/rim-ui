@@ -93,10 +93,11 @@ each entry's status, replaces its statement from files, and removes it.
 - On workspace open and on `WorkspacePluginChanged`, each registry install is compared with
   its entry. A verified new statement installs at once when it keeps the runtime kind and the
   publisher, asks for no capability the installed copy did not ask for or the person did not
-  approve, and adds no AI-callable command beyond those already there or consented; the
-  person sees "Updated Hello Web to 0.2.0" and keeps their approvals. Anything else, or a git
-  update that needs post-install steps, waits behind a prompt that shows what is new. A
-  failed update keeps the old copy.
+  approve, adds no AI-callable command beyond those already there or consented, and, with
+  `network.fetch` approved, lists the same `network_origins` in any order; the person sees
+  "Updated Hello Web to 0.2.0" and keeps their approvals. Anything else, or a git update that
+  needs post-install steps, waits behind a prompt that shows what is new. A failed update keeps
+  the old copy.
 - When an entry disappears, its plugin is stopped and turned off first, then the person
   chooses "Remove" (uninstall and delete its storage) or "Keep" (a local install with no
   registry source and no updates).

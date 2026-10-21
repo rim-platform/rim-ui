@@ -74,6 +74,14 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- A sandboxed plugin has no WebRTC: `RTCPeerConnection` and the other WebRTC constructors are
+  `undefined` in its frame and its panels, so it can no longer send what it reads to a STUN or
+  TURN server of its choosing without `network.fetch`. The permission prompt now says that what
+  a plugin is shown could still leak out in small ways, such as a DNS lookup.
+- An update that lists other sites in `network_origins` no longer keeps `network.fetch`
+  approved: a git update opens the permission prompt naming the new sites, a workspace registry
+  update waits behind **Update \<name\>?**, and the plugin has no network until it is approved
+  again.
 - The desktop app shows profile pictures uploaded to the server, in the profile settings and
   wherever a person appears, and images and videos attached to messages; until now they showed
   as a broken image. Attachments above 5 MB wait for a click before they download, as encrypted

@@ -1,6 +1,7 @@
 // The frame shell (public/plugin-frame/v1/shell.js) in jsdom: it narrows the
-// policy before any plugin byte runs, takes only the parent's first init, and
-// renders a panel with its relative URLs pointing at the panel's own files.
+// policy and removes WebRTC before any plugin byte runs, takes only the parent's
+// first init, and renders a panel with its relative URLs pointing at the panel's
+// own files.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,12 +16,40 @@ interface Harness {
   parent: { postMessage: ReturnType<typeof vi.fn> };
   frameGlobal: Record<string, unknown>;
   windowEvents: string[];
-  blobs: { type: string; metaCount: number; blob: Blob }[];
+  blobs: { type: string; metaCount: number; webRtc: boolean; blob: Blob }[];
   deliver: (data: unknown, from?: unknown, ports?: unknown[]) => void;
 }
 
-/** Run a fresh copy of the shell against jsdom's document, with its own window and globals. */
-function startShell(): Harness {
+/** The WebRTC constructors a browser defines, standing in for the real ones. */
+const WEBRTC_NAMES = [
+  "RTCPeerConnection",
+  "webkitRTCPeerConnection",
+  "RTCSessionDescription",
+  "RTCIceCandidate",
+  "RTCDataChannel",
+];
+
+/** Globals with every WebRTC constructor defined the way a browser defines them. */
+function withWebRtc(): Record<string, unknown> {
+  const frameGlobal: Record<string, unknown> = {};
+  for (const name of WEBRTC_NAMES) {
+    Object.defineProperty(frameGlobal, name, {
+      value: function WebRtc() {},
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+  return frameGlobal;
+}
+
+/**
+ * Run a fresh copy of the shell against jsdom's document, with its own window and globals.
+ *
+ * @param frameGlobal - The globals the shell starts with.
+ * @returns The harness around the running shell.
+ */
+function startShell(frameGlobal: Record<string, unknown> = {}): Harness {
   const listeners: ((event: unknown) => void)[] = [];
   const parent = { postMessage: vi.fn() };
   const windowEvents: string[] = [];
@@ -33,7 +62,6 @@ function startShell(): Harness {
       return true;
     },
   };
-  const frameGlobal: Record<string, unknown> = {};
   const blobs: Harness["blobs"] = [];
   const fakeUrl = {
     createObjectURL: (blob: Blob) => {
@@ -41,6 +69,7 @@ function startShell(): Harness {
         type: blob.type,
         metaCount: document.head.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')
           .length,
+        webRtc: WEBRTC_NAMES.some((name) => frameGlobal[name] !== undefined),
         blob,
       });
       return `blob:test/${blobs.length}`;
@@ -129,6 +158,24 @@ describe("frame shell: plugin frames", () => {
       expect.objectContaining({ type: "rim.frame.error", v: 1 }),
       "*",
     );
+  });
+
+  it("removes WebRTC for good before it imports the entry", () => {
+    const frameGlobal = withWebRtc();
+    const shell = startShell(frameGlobal);
+    expect(typeof frameGlobal.RTCPeerConnection).toBe("function");
+    shell.deliver(init(["https://api.github.com"]), shell.parent, [{ postMessage: vi.fn() }]);
+    expect(shell.blobs).toMatchObject([{ type: "text/javascript", webRtc: false }]);
+    for (const name of WEBRTC_NAMES) {
+      expect(Object.getOwnPropertyDescriptor(frameGlobal, name)).toEqual({
+        value: undefined,
+        writable: false,
+        configurable: false,
+        enumerable: false,
+      });
+      expect(Reflect.set(frameGlobal, name, function Again() {})).toBe(false);
+      expect(Reflect.deleteProperty(frameGlobal, name)).toBe(false);
+    }
   });
 
   it("closes the network without network.fetch", () => {
@@ -237,6 +284,17 @@ describe("frame shell: panel frames", () => {
     expect(shell.windowEvents).toEqual(["load"]);
     expect(shell.parent.postMessage).toHaveBeenCalledWith({ type: "rim.frame.ready", v: 1 }, "*");
     document.removeEventListener("DOMContentLoaded", contentLoaded);
+  });
+
+  it("removes WebRTC before the panel's scripts are in the page", () => {
+    const frameGlobal = withWebRtc();
+    const shell = startShell(frameGlobal);
+    shell.deliver(panelInit);
+    expect(shell.blobs.length).toBeGreaterThan(0);
+    expect(shell.blobs.every((b) => !b.webRtc)).toBe(true);
+    expect(WEBRTC_NAMES.map((name) => frameGlobal[name])).toEqual(
+      WEBRTC_NAMES.map(() => undefined),
+    );
   });
 
   it("reports a panel without index.html", () => {

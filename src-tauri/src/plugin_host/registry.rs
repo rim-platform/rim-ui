@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::key_identity::plugin_manifest::PluginSource;
 use crate::plugin_host::bundle::{self, BundleError, MAX_BUNDLE_BYTES, MAX_BUNDLE_FILES};
+use crate::plugin_host::capability::NETWORK_FETCH;
 use crate::plugin_host::discovery::{plugins_dir, MANIFEST_FILE};
 use crate::plugin_host::git_install::{GitInstallError, PluginInstallResult};
 use crate::plugin_host::git_source;
@@ -490,15 +491,29 @@ async fn check_checkout(
     Ok(())
 }
 
+/// Whether `new` lists other `network_origins` than `old`, in any order; an unknown `old`
+/// counts as other.
+pub(crate) fn origins_changed(old: Option<&PluginManifest>, new: &PluginManifest) -> bool {
+    let set = |m: &PluginManifest| -> std::collections::BTreeSet<String> {
+        m.network_origins.iter().flatten().cloned().collect()
+    };
+    old.is_none_or(|old| set(old) != set(new))
+}
+
 /// Approvals that carry over to a replacing copy: those it still asks for, and its state.
+/// `network.fetch` carries over only while `old_manifest`, the copy being replaced, listed
+/// the same sites as `manifest`.
 pub(crate) fn carried(
     old: &PluginRecord,
+    old_manifest: Option<&PluginManifest>,
     manifest: &PluginManifest,
 ) -> (Vec<String>, Vec<String>, bool) {
+    let sites_changed = origins_changed(old_manifest, manifest);
     let capabilities = old
         .approved_capabilities
         .iter()
         .filter(|c| manifest.capabilities.contains(c))
+        .filter(|c| !(sites_changed && c.as_str() == NETWORK_FETCH))
         .cloned()
         .collect();
     let ai_ids = manifest.ai_callable_command_ids();
@@ -521,7 +536,7 @@ pub(crate) fn record_install(
     fingerprint: String,
     previous: Option<&PluginRecord>,
 ) -> Result<(), RegistryError> {
-    state
+    let old_manifest = state
         .manifests
         .lock()
         .map_err(locked)?
@@ -540,7 +555,7 @@ pub(crate) fn record_install(
             .cloned()
             .ok_or_else(|| invalid("install was not recorded"))?;
         let (capabilities, ai, enabled) = previous
-            .map(|old| carried(old, manifest))
+            .map(|old| carried(old, old_manifest.as_ref(), manifest))
             .unwrap_or_default();
         store.upsert(PluginRecord {
             approved_capabilities: capabilities,
@@ -888,9 +903,42 @@ pub(crate) mod tests {
             source: None,
             starting: false,
         };
-        let (capabilities, ai, enabled) = carried(&old, &manifest);
+        let (capabilities, ai, enabled) = carried(&old, Some(&manifest), &manifest);
         assert_eq!(capabilities, vec!["chat.read"]);
         assert_eq!(ai, vec!["list"]);
         assert!(enabled);
+    }
+
+    #[test]
+    fn a_replacing_copy_that_lists_other_sites_loses_network_fetch() {
+        let manifest = |origins: &str| -> PluginManifest {
+            serde_json::from_str(&format!(
+                r#"{{"manifest_version":1,"plugin_id":"dev.example.prs","display_name":"PRs","version":"0.2.0","description":"d","runtime_kind":"WebSandboxed","entrypoint":"main.mjs","capabilities":["ui.panel","network.fetch"],"network_origins":{origins}}}"#
+            ))
+            .unwrap()
+        };
+        let old = PluginRecord {
+            plugin_id: "dev.example.prs".into(),
+            status: PluginStatus::Installed,
+            approved_capabilities: vec!["ui.panel".into(), "network.fetch".into()],
+            approved_ai_commands: vec![],
+            manifest_hash: String::new(),
+            bundle_fingerprint: String::new(),
+            fingerprint_changed: false,
+            last_error: None,
+            source: None,
+            starting: false,
+        };
+        let github = manifest(r#"["https://api.github.com"]"#);
+        let evil = manifest(r#"["https://evil.example"]"#);
+        let none = manifest("null");
+        assert_eq!(
+            carried(&old, Some(&github), &github).0,
+            vec!["ui.panel", "network.fetch"]
+        );
+        assert_eq!(carried(&old, Some(&github), &evil).0, vec!["ui.panel"]);
+        assert_eq!(carried(&old, Some(&github), &none).0, vec!["ui.panel"]);
+        assert_eq!(carried(&old, None, &github).0, vec!["ui.panel"]);
+        assert!(!origins_changed(Some(&none), &manifest("[]")));
     }
 }

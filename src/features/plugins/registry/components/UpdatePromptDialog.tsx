@@ -2,7 +2,7 @@ import { AlertTriangle } from "lucide-react";
 
 import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
-import { KIND_CONSENT_TEXT } from "../../components/consentText";
+import { KIND_CONSENT_TEXT, listedSites } from "../../components/consentText";
 import type { UpdatePrompt } from "../state";
 
 interface UpdatePromptDialogProps {
@@ -36,10 +36,17 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
           {plan.newAiCommands.length > 0 && (
             <li>New commands the AI agent can run: {plan.newAiCommands.join(", ")}</li>
           )}
+          {plan.sitesChanged && (
+            <li>
+              Connects to other sites:{" "}
+              {listedSites(check.manifest.network_origins ?? []).join(", ")}
+            </li>
+          )}
           {!plan.publisherChanged &&
             !plan.kindChanged &&
             plan.newCapabilities.length === 0 &&
-            plan.newAiCommands.length === 0 && <li>It runs steps after installing.</li>}
+            plan.newAiCommands.length === 0 &&
+            !plan.sitesChanged && <li>It runs steps after installing.</li>}
         </ul>
         <p>Until you update, the installed version keeps running.</p>
         <div className="flex justify-end gap-2 pt-1">
