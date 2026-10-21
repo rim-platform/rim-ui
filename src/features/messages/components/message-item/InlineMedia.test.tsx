@@ -16,6 +16,13 @@ import { MessageAttachments } from "./MessageAttachments";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import type { MessageAttachment } from "../../../../core/types/messages";
 import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
+/**
+ * A successful download as `fetch` answers it. A plain object: Node 22's `Response` cannot read
+ * a body made from jsdom's `Blob`.
+ */
+function okResponse(): Response {
+  return { ok: true, status: 200, blob: async () => new Blob(["png"]) } as unknown as Response;
+}
 
 function attachment(overrides: Partial<MessageAttachment> = {}): MessageAttachment {
   return {
@@ -152,6 +159,66 @@ describe("MessageAttachments embeds", () => {
       />,
     );
     expect(screen.getByRole("link", { name: /notes\.pdf/ })).toBeInTheDocument();
+  });
+});
+
+describe("MessageAttachments in the desktop app", () => {
+  const fetchMock = vi.fn(async () => okResponse());
+
+  function setDesktop(desktop: boolean) {
+    const win = window as { __TAURI_INTERNALS__?: unknown };
+    if (desktop) win.__TAURI_INTERNALS__ = {};
+    else delete win.__TAURI_INTERNALS__;
+  }
+
+  afterEach(() => {
+    setDesktop(false);
+    vi.unstubAllGlobals();
+    fetchMock.mockClear();
+  });
+
+  it("downloads an image with the session and shows it as an object URL", async () => {
+    setDesktop(true);
+    vi.stubGlobal("fetch", fetchMock);
+    URL.createObjectURL = vi.fn(() => "blob:tauri://localhost/photo");
+    render(<MessageAttachments attachments={[attachment({ id: "desk-1" })]} hasText={false} />);
+    await waitFor(() =>
+      expect(screen.getByAltText("photo.png")).toHaveAttribute(
+        "src",
+        "blob:tauri://localhost/photo",
+      ),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/attachments\/desk-1\/download$/),
+      { credentials: "include" },
+    );
+  });
+
+  it("waits for a click before downloading a large video", async () => {
+    setDesktop(true);
+    vi.stubGlobal("fetch", fetchMock);
+    URL.createObjectURL = vi.fn(() => "blob:tauri://localhost/clip");
+    const { container } = render(
+      <MessageAttachments
+        attachments={[
+          attachment({
+            id: "desk-2",
+            filename: "clip.mp4",
+            contentType: "video/mp4",
+            sizeBytes: 20 * 1024 * 1024,
+          }),
+        ]}
+        hasText
+      />,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Show clip\.mp4/ }));
+    await waitFor(() =>
+      expect(container.querySelector("video")).toHaveAttribute(
+        "src",
+        "blob:tauri://localhost/clip",
+      ),
+    );
   });
 });
 

@@ -4,6 +4,7 @@ import { Camera, Loader2 } from "lucide-react";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useUpdateProfileMutation, uploadAvatar } from "../api/useUpdateProfile";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { refreshServerMedia, useServerMediaUrl } from "../../../shared/media/serverMedia";
 import { cn } from "../../../shared/ui/cn";
 
 function resizeImageToBlob(file: File, size: number): Promise<Blob> {
@@ -47,6 +48,7 @@ export function ProfileSettings() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const avatarSrc = useServerMediaUrl(avatarPreview);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +86,8 @@ export function ProfileSettings() {
       try {
         const resized = await resizeImageToBlob(file, 256);
         const url = await uploadAvatar(resized);
+        // The server keeps one avatar path per user, so a copy downloaded earlier is stale.
+        refreshServerMedia(url);
         setAvatarPreview(url);
 
         // Update profile with new avatar URL
@@ -128,8 +132,8 @@ export function ProfileSettings() {
           className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft transition hover:brightness-110"
           title="Change avatar"
         >
-          {avatarPreview ? (
-            <img src={avatarPreview} alt="Avatar" className="h-full w-full object-cover" />
+          {avatarSrc ? (
+            <img src={avatarSrc} alt="Avatar" className="h-full w-full object-cover" />
           ) : (
             <span className="text-2xl font-medium text-rim-text-muted">
               {user?.displayName?.charAt(0).toUpperCase() ??

@@ -1,3 +1,6 @@
+import { useState } from "react";
+
+import { useServerMediaUrl } from "../media/serverMedia";
 import { cn } from "./cn";
 
 // Background colors of initials avatars, picked by a hash of the user id. Plain
@@ -61,11 +64,19 @@ export interface AvatarProps {
 export function Avatar({ url, name, userId, size = "md", presenceStatus, className }: AvatarProps) {
   const sizeClass = SIZE_MAP[size];
   const initial = name.charAt(0).toUpperCase() || "?";
+  const src = useServerMediaUrl(url);
+  // The image that failed to load, which falls back to the initial until the URL changes.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)}>
-      {url ? (
-        <img src={url} alt={name} className={cn("rounded-full object-cover", sizeClass)} />
+      {src && src !== failedSrc ? (
+        <img
+          src={src}
+          alt={name}
+          onError={() => setFailedSrc(src)}
+          className={cn("rounded-full object-cover", sizeClass)}
+        />
       ) : (
         <span
           className={cn(

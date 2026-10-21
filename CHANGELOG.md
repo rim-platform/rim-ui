@@ -70,6 +70,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The desktop app shows profile pictures uploaded to the server, in the profile settings and
+  wherever a person appears, and images and videos attached to messages; until now they showed
+  as a broken image. Attachments above 5 MB wait for a click before they download, as encrypted
+  ones do. In both apps a profile picture that cannot be loaded shows the person's initial.
 - The web app built with a relative endpoint such as `VITE_GRAPHQL_ENDPOINT=/api`, as the
   released web image is, reaches the server it is served by: until now every request failed
   before it was sent, so sign-in failed and the login page could not tell whether the server

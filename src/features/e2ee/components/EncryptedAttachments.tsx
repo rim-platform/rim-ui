@@ -1,21 +1,21 @@
 import { memo, useEffect, useState } from "react";
-import { Download, FileIcon, Film, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Download, FileIcon, Loader2 } from "lucide-react";
 
 import type { MessageAttachment } from "../../../core/types/messages";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { encryptedStoreAccount } from "../../messages/api/messageCache";
-import { InlineMedia } from "../../messages/components/message-item/InlineMedia";
+import {
+  AUTO_MEDIA_BYTES,
+  DownloadedMedia,
+} from "../../messages/components/message-item/DownloadedMedia";
 import { mediaKindOf } from "../../messages/components/message-item/mediaKind";
 import type { MediaKind } from "../../messages/components/message-item/mediaKind";
 import { useMessageDisplaySettingsStore } from "../../messages/state/useMessageDisplaySettingsStore";
 import { fetchMessageAttachments } from "../api/e2eeApi";
 import { decryptAttachment } from "../api/e2eeCommands";
 import { downloadBlob } from "../runtime/send";
-
-/** Images and videos up to this size are decrypted and shown without asking (no thumbnails). */
-const AUTO_MEDIA_BYTES = 5 * 1024 * 1024;
 
 interface EncryptedAttachmentsProps {
   messageId: string;
@@ -93,35 +93,16 @@ function EncryptedMedia({
     // The attachment is identified by its hash; the props object changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, attachment.blobSha256, attachment.id]);
-  if (url) {
-    return (
-      <div className="w-fit max-w-full">
-        <InlineMedia kind={kind} src={url} filename={attachment.filename} />
-      </div>
-    );
-  }
-  if (!requested) {
-    return (
-      <button
-        type="button"
-        onClick={() => setRequested(true)}
-        className="flex w-fit items-center gap-2 rounded-lg border border-rim-line bg-rim-panel-soft px-3 py-2 text-xs text-rim-text hover:border-rim-accent/40"
-      >
-        {kind === "video" ? (
-          <Film className="h-4 w-4 text-rim-text-muted" aria-hidden />
-        ) : (
-          <ImageIcon className="h-4 w-4 text-rim-text-muted" aria-hidden />
-        )}
-        <span className="max-w-60 truncate">{`Show ${attachment.filename}`}</span>
-        <span className="text-rim-text-faint">{Math.ceil(attachment.sizeBytes / 1024)} KB</span>
-      </button>
-    );
-  }
   return (
-    <span className="flex items-center gap-2 text-xs text-rim-text-muted">
-      {failed ? null : <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
-      {failed ? `${attachment.filename} could not be opened` : attachment.filename}
-    </span>
+    <DownloadedMedia
+      kind={kind}
+      filename={attachment.filename}
+      sizeBytes={attachment.sizeBytes}
+      src={url}
+      requested={requested}
+      failed={failed}
+      onRequest={() => setRequested(true)}
+    />
   );
 }
 
