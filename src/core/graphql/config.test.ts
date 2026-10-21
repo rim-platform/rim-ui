@@ -21,6 +21,28 @@ describe("getGraphqlEndpoint", () => {
   it("endpoint starts with http", () => {
     expect(getGraphqlEndpoint()).toMatch(/^https?:\/\//);
   });
+
+  describe("with a configured endpoint", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("resolves a relative endpoint against the page's address", () => {
+      // jsdom's default test origin is http://localhost:3000.
+      vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "/api");
+      expect(getGraphqlEndpoint()).toBe("http://localhost:3000/api");
+    });
+
+    it("keeps an absolute endpoint as configured", () => {
+      vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "https://API.example.com:443/rim/api");
+      expect(getGraphqlEndpoint()).toBe("https://API.example.com:443/rim/api");
+    });
+
+    it("returns an endpoint that does not parse unchanged", () => {
+      vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "http://[::1");
+      expect(getGraphqlEndpoint()).toBe("http://[::1");
+    });
+  });
 });
 
 describe("getApiOrigin", () => {

@@ -36,9 +36,20 @@ export function usesMovedRelay(): boolean {
   return movedEndpoint() !== null;
 }
 
-/** The GraphQL HTTP endpoint: the relay the desktop moved to, else env or the localhost default. */
+/**
+ * The GraphQL HTTP endpoint: the relay the desktop moved to, else env or the localhost default.
+ * A relative endpoint such as `/api` resolves against the page's address, so the result is
+ * absolute; an absolute one, or one that does not parse, is returned as configured.
+ */
 export function getGraphqlEndpoint(): string {
-  return movedEndpoint() ?? (import.meta.env.VITE_GRAPHQL_ENDPOINT || DEFAULT_GRAPHQL_ENDPOINT);
+  const endpoint =
+    movedEndpoint() ?? (import.meta.env.VITE_GRAPHQL_ENDPOINT || DEFAULT_GRAPHQL_ENDPOINT);
+  if (typeof window === "undefined" || /^[a-z][a-z\d+.-]*:/i.test(endpoint)) return endpoint;
+  try {
+    return new URL(endpoint, window.location.href).toString();
+  } catch {
+    return endpoint;
+  }
 }
 
 /** The host of a GraphQL endpoint, or the endpoint itself when it does not parse. */
