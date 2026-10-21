@@ -1898,7 +1898,9 @@ type Mutation {
 	- `FORBIDDEN` — `displayName` from a member whose relay is another server; their
 	display name comes from their profile card.
 	- `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
-	`bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
+	`bio` > 2000 chars, or `avatarUrl` neither empty nor the URL of one of the caller's own
+	uploaded avatars (`/api/files/avatars/<caller id>/avatar.<png|jpeg|gif|webp>`, as
+	`POST /api/files/avatar` answers it).
 	- `NOT_FOUND` — caller's user row missing (should not happen in practice).
 	- `INTERNAL` — repository failure.
 	
@@ -1947,13 +1949,14 @@ type Mutation {
 	"""
 	setSlowMode(serverId: ID!, conversationId: ID!, seconds: Int!): Conversation!
 	"""
-	Report a message to the workspace moderators. Any member who can read it, once per
-	message (`CONFLICT` on a second report). Audited (`chat.report_message`).
+	Report a message to the workspace moderators, or in the direct space to the instance
+	operators. Any member who can read it, once per message (`CONFLICT` on a second
+	report). Audited (`chat.report_message`).
 	"""
 	reportMessage(serverId: ID!, conversationId: ID!, messageId: ID!, reason: String!): MessageReport!
 	"""
-	Close an open report as resolved or dismissed (Owner/Moderator). Audited
-	(`admin.resolve_report`).
+	Close an open report as resolved or dismissed (Owner/Moderator; for the direct space,
+	an instance operator). Audited (`admin.resolve_report`).
 	"""
 	resolveReport(serverId: ID!, reportId: ID!, outcome: ReportOutcome!): MessageReport!
 	"""
@@ -2735,14 +2738,14 @@ type Query {
 	serverBans(serverId: ID!): [ServerBan!]!
 	"""
 	Message reports of the workspace (all statuses when `status` is omitted), ordered
-	`createdAt ASC, id ASC`. Owner/Moderator only. The message body is included only when
-	the moderator can read the conversation.
+	`createdAt ASC, id ASC`. Owner/Moderator only; for the direct space, instance operators
+	only. The message body is included only when the moderator can read the conversation.
 	"""
 	messageReports(serverId: ID!, status: MessageReportStatus, dir: PageDir!, cursor: MessageReportCursorInput, limit: Int!): MessageReportPage!
 	"""
-	One report of the workspace. Owner/Moderator only. For a verified report of an
-	encrypted message it includes `frankedContent`, and records that the moderator viewed
-	it (`e2ee.report_viewed`).
+	One report of the workspace. Owner/Moderator only; for the direct space, instance
+	operators only. For a verified report of an encrypted message it includes
+	`frankedContent`, and records that the moderator viewed it (`e2ee.report_viewed`).
 	"""
 	messageReport(serverId: ID!, reportId: ID!): MessageReport!
 	"""
@@ -2849,14 +2852,22 @@ type Query {
 	"""
 	serverInfo: ServerInfo!
 	"""
-	Abuse reports filed with this server, oldest first. Instance operators only; anyone
-	else gets `FORBIDDEN`.
+	Abuse reports filed with this server, oldest first, a page at a time. Instance
+	operators only; anyone else gets `FORBIDDEN`.
 	"""
 	instanceReports(
 		"""
 		Only the reports not yet resolved.
 		"""
-		openOnly: Boolean! = true
+		openOnly: Boolean! = true,
+		"""
+		Start after this report: the last one of the previous page.
+		"""
+		after: ID,
+		"""
+		The most reports to return, 1 to 500.
+		"""
+		limit: Int! = 100
 	): [InstanceAbuseReport!]!
 	"""
 	The principals this server refuses, newest first. Instance operators only; anyone
@@ -3778,6 +3789,9 @@ Patch fields on the authenticated user's profile.
 Each field is independently optional. Omitting a field leaves the existing
 value unchanged. Sending an explicit empty string clears the field
 (after trim + control-char strip).
+
+`avatarUrl` is empty or the `url` that `POST /api/files/avatar` answered the caller.
+Setting it deletes the caller's other stored avatar files; clearing it deletes all of them.
 """
 input UpdateMyProfileInput {
 	displayName: String

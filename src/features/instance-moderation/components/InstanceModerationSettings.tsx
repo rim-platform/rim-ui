@@ -11,12 +11,15 @@ import {
 } from "../api/instanceModeration";
 import { IpBlocksSection } from "./IpBlocksSection";
 import { PrincipalBlocksSection, type BlockDraft } from "./PrincipalBlocksSection";
+import { useLocalDirectSpaceId } from "../../relay/runtime/useDirectSpaceRuntime";
+import { MessageReportsList } from "../../settings/components/ModerationSettings";
 import { ReportsSection } from "./ReportsSection";
 import { ERROR_BOX } from "./styles";
 
 /**
- * Settings → Instance → Moderation: the server's abuse reports, blocked principals and IP deny
- * list, for instance operators. Anyone else, and an operator the server refuses with
+ * Settings → Instance → Moderation: the server's abuse reports, the reports of messages in its
+ * DMs and groups (its direct space, which has no moderators), blocked principals and the IP
+ * deny list, for instance operators. Anyone else, and an operator the server refuses with
  * `FORBIDDEN`, sees that the page is for operators only.
  */
 export function InstanceModerationSettings() {
@@ -57,6 +60,7 @@ function ModerationQueue() {
   const reports = useInstanceReports(openOnly);
   const principalBlocks = useInstancePrincipalBlocks();
   const ipBlocks = useInstanceIpBlocks();
+  const directSpaceId = useLocalDirectSpaceId();
 
   if ([reports.error, principalBlocks.error, ipBlocks.error].some(isOperatorRefusal)) {
     return <OperatorsOnly />;
@@ -69,8 +73,9 @@ function ModerationQueue() {
           Instance moderation
         </h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Abuse reports, blocked principals and blocked addresses for this whole server. Every
-          action here is recorded in the server&apos;s audit log.
+          Abuse reports, reported messages in direct messages and groups, blocked principals and
+          blocked addresses for this whole server. Every action here is recorded in the
+          server&apos;s audit log.
         </p>
       </div>
       <ReportsSection
@@ -81,6 +86,9 @@ function ModerationQueue() {
           setDraft((current) => ({ principalId, seq: current.seq + 1 }))
         }
       />
+      {directSpaceId && (
+        <MessageReportsList serverId={directSpaceId} title="Reported direct messages" />
+      )}
       <PrincipalBlocksSection blocks={principalBlocks} draft={draft} />
       <IpBlocksSection blocks={ipBlocks} />
     </section>

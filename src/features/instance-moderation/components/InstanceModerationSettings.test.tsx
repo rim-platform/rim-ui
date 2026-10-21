@@ -32,6 +32,7 @@ vi.mock("../../../shared/toast", () => ({
 
 import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { InstanceModerationSettings } from "./InstanceModerationSettings";
 
 const MODERATION_ROOTS = [
@@ -131,6 +132,67 @@ describe("InstanceModerationSettings", () => {
     expect(r2).toHaveTextContent("reported by the abuse address");
     expect(within(r2).queryByRole("button", { name: /Block principal/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId("instance-report-r3")).not.toBeInTheDocument();
+  });
+
+  it("lists the reports of DMs and groups in the direct space and resolves one", async () => {
+    useRelayStore.setState({
+      info: { serverId: "rims1_relay", roles: ["relay"], directSpaceId: "direct-1" },
+    });
+    try {
+      serve({
+        "query MessageReports": () => ({
+          messageReports: {
+            items: [
+              {
+                id: "dm-r1",
+                conversationId: "dm-1",
+                messageId: "m-1",
+                reporterUserId: "u-alice",
+                reason: "threats in a DM",
+                status: "OPEN",
+                resolvedAt: null,
+                createdAt: "2026-10-03T10:00:00Z",
+                messageReadable: false,
+                messageText: null,
+                messageAuthorId: "u-mallory",
+                messageSentAt: null,
+                frankingVerifiedAt: null,
+                frankedSenderDeviceId: null,
+                frankedContentExpiresAt: null,
+              },
+            ],
+            next: null,
+            pageInfo: { hasNext: false, hasPrev: false },
+          },
+        }),
+        "mutation ResolveReport": (vars) => ({
+          resolveReport: { id: vars.reportId, status: vars.outcome },
+        }),
+      });
+      renderPage();
+      const row = await screen.findByTestId("report-row-dm-r1");
+      expect(screen.getByText("Reported direct messages")).toBeInTheDocument();
+      expect(callsTo(requestMock, "query MessageReports")[0]).toMatchObject({
+        serverId: "direct-1",
+      });
+      expect(row).toHaveTextContent("threats in a DM");
+      fireEvent.click(within(row).getByRole("button", { name: "Resolve" }));
+      await waitFor(() =>
+        expect(callsTo(requestMock, "mutation ResolveReport")).toEqual([
+          { serverId: "direct-1", reportId: "dm-r1", outcome: "RESOLVED" },
+        ]),
+      );
+    } finally {
+      useRelayStore.setState({ info: null });
+    }
+  });
+
+  it("asks for no direct-space reports before relayInfo answers", async () => {
+    serve();
+    renderPage();
+    await screen.findByTestId("instance-report-r1");
+    expect(screen.queryByText("Reported direct messages")).not.toBeInTheDocument();
+    expect(callsTo(requestMock, "query MessageReports")).toHaveLength(0);
   });
 
   it("shows resolved reports, without Resolve, when asked", async () => {

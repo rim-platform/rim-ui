@@ -43,7 +43,7 @@ export function ModerationSettings({ serverId }: ModerationSettingsProps) {
         </p>
       </div>
       <BansList serverId={serverId} />
-      <ReportsList serverId={serverId} />
+      <MessageReportsList serverId={serverId} />
     </section>
   );
 }
@@ -132,7 +132,17 @@ const STATUS_LABEL: Record<MessageReportStatus, string> = {
   [MessageReportStatus.DISMISSED]: "Dismissed",
 };
 
-function ReportsList({ serverId }: { serverId: string }) {
+/**
+ * The message reports of `serverId`, newest first, filtered by status, with Resolve, Dismiss
+ * and the verified content of reported encrypted messages. Titled `title`.
+ */
+export function MessageReportsList({
+  serverId,
+  title = "Reports",
+}: {
+  serverId: string;
+  title?: string;
+}) {
   const [filter, setFilter] = useState<MessageReportStatus | "ALL">(MessageReportStatus.OPEN);
   const status = filter === "ALL" ? null : filter;
   const { data, isPending, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } =
@@ -142,7 +152,7 @@ function ReportsList({ serverId }: { serverId: string }) {
   return (
     <div className="rounded-lg border border-rim-line bg-rim-panel p-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-rim-text">Reports</h3>
+        <h3 className="text-sm font-medium text-rim-text">{title}</h3>
         <label className="flex items-center gap-2 text-xs text-rim-text-muted">
           Status
           <select

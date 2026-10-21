@@ -1670,8 +1670,9 @@ export type Mutation = {
    */
   reportEncryptedMessage: Scalars['Boolean']['output'];
   /**
-   * Report a message to the workspace moderators. Any member who can read it, once per
-   * message (`CONFLICT` on a second report). Audited (`chat.report_message`).
+   * Report a message to the workspace moderators, or in the direct space to the instance
+   * operators. Any member who can read it, once per message (`CONFLICT` on a second
+   * report). Audited (`chat.report_message`).
    */
   reportMessage: MessageReport;
   /**
@@ -1708,8 +1709,8 @@ export type Mutation = {
   requestPasswordReset: Scalars['Boolean']['output'];
   resetPassword: Scalars['Boolean']['output'];
   /**
-   * Close an open report as resolved or dismissed (Owner/Moderator). Audited
-   * (`admin.resolve_report`).
+   * Close an open report as resolved or dismissed (Owner/Moderator; for the direct space,
+   * an instance operator). Audited (`admin.resolve_report`).
    */
   resolveReport: MessageReport;
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
@@ -1863,7 +1864,9 @@ export type Mutation = {
    * - `FORBIDDEN` — `displayName` from a member whose relay is another server; their
    * display name comes from their profile card.
    * - `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
-   * `bio` > 2000 chars, or `avatarUrl` not under `/api/files/`.
+   * `bio` > 2000 chars, or `avatarUrl` neither empty nor the URL of one of the caller's own
+   * uploaded avatars (`/api/files/avatars/<caller id>/avatar.<png|jpeg|gif|webp>`, as
+   * `POST /api/files/avatar` answers it).
    * - `NOT_FOUND` — caller's user row missing (should not happen in practice).
    * - `INTERNAL` — repository failure.
    *
@@ -2871,8 +2874,8 @@ export type Query = {
    */
   instancePrincipalBlocks: Array<InstancePrincipalBlock>;
   /**
-   * Abuse reports filed with this server, oldest first. Instance operators only; anyone
-   * else gets `FORBIDDEN`.
+   * Abuse reports filed with this server, oldest first, a page at a time. Instance
+   * operators only; anyone else gets `FORBIDDEN`.
    */
   instanceReports: Array<InstanceAbuseReport>;
   /**
@@ -2897,15 +2900,15 @@ export type Query = {
    */
   messageChanges: Array<ConversationMessageChanges>;
   /**
-   * One report of the workspace. Owner/Moderator only. For a verified report of an
-   * encrypted message it includes `frankedContent`, and records that the moderator viewed
-   * it (`e2ee.report_viewed`).
+   * One report of the workspace. Owner/Moderator only; for the direct space, instance
+   * operators only. For a verified report of an encrypted message it includes
+   * `frankedContent`, and records that the moderator viewed it (`e2ee.report_viewed`).
    */
   messageReport: MessageReport;
   /**
    * Message reports of the workspace (all statuses when `status` is omitted), ordered
-   * `createdAt ASC, id ASC`. Owner/Moderator only. The message body is included only when
-   * the moderator can read the conversation.
+   * `createdAt ASC, id ASC`. Owner/Moderator only; for the direct space, instance operators
+   * only. The message body is included only when the moderator can read the conversation.
    */
   messageReports: MessageReportPage;
   messages: MessagePage;
@@ -3118,6 +3121,8 @@ export type QueryInboxConversationsArgs = {
 
 
 export type QueryInstanceReportsArgs = {
+  after?: InputMaybe<Scalars['ID']['input']>;
+  limit?: Scalars['Int']['input'];
   openOnly?: Scalars['Boolean']['input'];
 };
 
@@ -4094,6 +4099,9 @@ export type UpdateMacroInput = {
  * Each field is independently optional. Omitting a field leaves the existing
  * value unchanged. Sending an explicit empty string clears the field
  * (after trim + control-char strip).
+ *
+ * `avatarUrl` is empty or the `url` that `POST /api/files/avatar` answered the caller.
+ * Setting it deletes the caller's other stored avatar files; clearing it deletes all of them.
  */
 export type UpdateMyProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
