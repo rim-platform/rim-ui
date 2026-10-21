@@ -5,7 +5,13 @@
 
 /** A feature key the client knows; the server may list others, which the client ignores. */
 export type ServerFeatureKey =
-  "attachments" | "link_previews" | "email" | "custom_emoji" | "workspace_plugins" | "ai_commands";
+  | "attachments"
+  | "link_previews"
+  | "email"
+  | "custom_emoji"
+  | "workspace_plugins"
+  | "ai_commands"
+  | "avatars";
 
 /** Each known feature's name, in the order the server lists them. */
 export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
@@ -15,6 +21,7 @@ export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
   custom_emoji: "Custom emoji",
   workspace_plugins: "Workspace plugins",
   ai_commands: "AI commands",
+  avatars: "Profile pictures",
 };
 
 /** The features whose name is a plural, so a sentence about them says "are". */
@@ -23,6 +30,7 @@ const PLURAL: ReadonlySet<string> = new Set([
   "link_previews",
   "workspace_plugins",
   "ai_commands",
+  "avatars",
 ]);
 
 /** Whether `key` names a feature this client knows. */

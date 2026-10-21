@@ -1858,6 +1858,8 @@ export type Mutation = {
    * # Errors
    *
    * - `UNAUTHENTICATED` — no session.
+   * - `FEATURE_DISABLED` — `avatarUrl` given while the instance has the `avatars` feature
+   * off.
    * - `FORBIDDEN` — `displayName` from a member whose relay is another server; their
    * display name comes from their profile card.
    * - `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
@@ -3671,8 +3673,8 @@ export type ServerBan = {
 export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-   * `email`, `custom_emoji`, `workspace_plugins` or `ai_commands`. A client ignores a name
-   * it does not know.
+   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands` or `avatars`. A client
+   * ignores a name it does not know.
    */
   key: Scalars['String']['output'];
   /** Why an unavailable feature is unavailable; null otherwise. */
@@ -3805,6 +3807,7 @@ export type ServerLimits = {
 };
 
 export type ServerMember = {
+  /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
@@ -4147,6 +4150,7 @@ export type UploadTicket = {
 };
 
 export type User = {
+  /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   /**

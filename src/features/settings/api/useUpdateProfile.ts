@@ -6,6 +6,7 @@ import { getApiOrigin } from "../../../core/graphql/config";
 import { csrfHeader } from "../../../core/graphql/csrf";
 import { UpdateMyProfileInput } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 
 const UPDATE_MY_PROFILE = gql`
   mutation UpdateMyProfile($input: UpdateMyProfileInput!) {
@@ -58,7 +59,8 @@ export function useUpdateProfileMutation() {
 
 /**
  * Upload an avatar image to the REST endpoint.
- * Returns the avatar URL path to use with updateMyProfile.
+ * Returns the avatar URL path to use with updateMyProfile. A server with profile pictures
+ * switched off refuses it with a `FeatureDisabledError`.
  */
 export async function uploadAvatar(file: Blob): Promise<string> {
   const uploadUrl = getApiOrigin() + "/api/files/avatar";
@@ -74,7 +76,10 @@ export async function uploadAvatar(file: Blob): Promise<string> {
   });
 
   if (!res.ok) {
-    throw new Error(`Avatar upload failed: ${res.status} ${res.statusText}`);
+    throw (
+      (await featureDisabledFromResponse(res)) ??
+      new Error(`Avatar upload failed: ${res.status} ${res.statusText}`)
+    );
   }
 
   const data = await res.json();

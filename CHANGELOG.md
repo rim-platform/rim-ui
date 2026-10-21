@@ -58,6 +58,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   first, with each one's role, uses, expiry, creator and state (Active, Expired, Used up or
   Revoked), and **Revoke** ends an active one after a confirmation. The invite dialog asks how
   long a new link lasts: 1 day, 7 days (the default) or 30 days, the most a server allows.
+- On a server whose operator switched off profile pictures (`avatars` in
+  `RIM_FEATURES_DISABLED`), Settings → Profile shows your initial with "Profile pictures are
+  switched off on this server" instead of the upload, and Settings → About lists Profile
+  pictures among the server's features.
 
 ### Changed
 
