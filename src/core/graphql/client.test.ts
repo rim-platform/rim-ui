@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 
 import { server } from "../../test/mocks/server";
@@ -29,6 +29,23 @@ describe("createGraphqlClient", () => {
   it("client has rawRequest method", () => {
     const client = createGraphqlClient();
     expect(typeof client.rawRequest).toBe("function");
+  });
+
+  it("sends to the page's own origin when the endpoint is relative", async () => {
+    vi.stubEnv("VITE_GRAPHQL_ENDPOINT", "/api");
+    let url: string | null = null;
+    server.use(
+      http.post("*/api", ({ request }) => {
+        url = request.url;
+        return HttpResponse.json({ data: { __typename: "Query" } });
+      }),
+    );
+    try {
+      await createGraphqlClient().request("query Ping { __typename }");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(url).toBe(`${window.location.origin}/api`);
   });
 });
 

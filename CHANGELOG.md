@@ -67,6 +67,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The web app built with a relative endpoint such as `VITE_GRAPHQL_ENDPOINT=/api`, as the
+  released web image is, reaches the server it is served by: until now every request failed
+  before it was sent, so sign-in failed and the login page could not tell whether the server
+  takes signups.
 - The desktop app reads a server's discovery document that carries its unsigned `features` or
   `registration` beside the descriptor, and both apps verify a descriptor that declares a
   `handleDomain` or an `abuseContact`; until now such a server could not be pinned, signed up on
