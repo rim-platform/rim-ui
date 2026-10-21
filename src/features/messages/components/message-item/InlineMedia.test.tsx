@@ -16,6 +16,13 @@ import { MessageAttachments } from "./MessageAttachments";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import type { MessageAttachment } from "../../../../core/types/messages";
 import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
+/**
+ * A successful download as `fetch` answers it. A plain object: Node 22's `Response` cannot read
+ * a body made from jsdom's `Blob`.
+ */
+function okResponse(): Response {
+  return { ok: true, status: 200, blob: async () => new Blob(["png"]) } as unknown as Response;
+}
 
 function attachment(overrides: Partial<MessageAttachment> = {}): MessageAttachment {
   return {
@@ -156,7 +163,7 @@ describe("MessageAttachments embeds", () => {
 });
 
 describe("MessageAttachments in the desktop app", () => {
-  const fetchMock = vi.fn(async () => new Response(new Blob(["png"]), { status: 200 }));
+  const fetchMock = vi.fn(async () => okResponse());
 
   function setDesktop(desktop: boolean) {
     const win = window as { __TAURI_INTERNALS__?: unknown };

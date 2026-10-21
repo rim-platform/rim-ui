@@ -15,6 +15,14 @@ import {
   useServerMediaUrl,
 } from "./serverMedia";
 
+/**
+ * A successful download as `fetch` answers it. A plain object: Node 22's `Response` cannot read
+ * a body made from jsdom's `Blob`.
+ */
+function okResponse(): Response {
+  return { ok: true, status: 200, blob: async () => new Blob(["png"]) } as unknown as Response;
+}
+
 type TauriWindow = { __TAURI_INTERNALS__?: unknown };
 
 function setDesktop(desktop: boolean) {
@@ -58,7 +66,7 @@ describe("useServerMedia", () => {
   beforeEach(() => {
     created = 0;
     revoked = [];
-    fetchMock = vi.fn(async () => new Response(new Blob(["png"]), { status: 200 }));
+    fetchMock = vi.fn(async () => okResponse());
     vi.stubGlobal("fetch", fetchMock);
     URL.createObjectURL = vi.fn(() => `blob:tauri://localhost/${++created}`);
     URL.revokeObjectURL = vi.fn((url: string) => {
@@ -173,7 +181,7 @@ describe("Avatar with a server avatar", () => {
     setDesktop(true);
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(new Blob(["png"]), { status: 200 })),
+      vi.fn(async () => okResponse()),
     );
     URL.createObjectURL = vi.fn(() => "blob:tauri://localhost/avatar");
     render(<Avatar name="Alice" userId="u2" url="/api/files/avatars/u2/avatar.png" />);
