@@ -312,7 +312,7 @@ export function JoinForm({
    * Validates the displayName field client-side.
    * Only validates when non-empty after trim — the field is optional.
    * Returns `false` and sets an inline error when the trimmed value exceeds
-   * 80 characters (matching the backend's 1–80 char constraint).
+   * 64 characters, the server's limit.
    */
   function validateDisplayName(value: string): boolean {
     const error = checkDisplayName(value);

@@ -3885,8 +3885,9 @@ export type SignupWithInviteInput = {
    */
   confirmedMinimumAge?: InputMaybe<Scalars['Int']['input']>;
   /**
-   * Optional display name (1–80 chars when present). Falls back to `username`
-   * when absent or blank after trim.
+   * Optional display name, stored without control and invisible format characters and with
+   * whitespace collapsed; at most 64 characters after that. Falls back to `username` when
+   * absent or when nothing visible is left.
    */
   displayName?: InputMaybe<Scalars['String']['input']>;
   /**
@@ -3929,8 +3930,9 @@ export type SignupWithKeyInput = {
   /** Certificate of the device signing up; the new session belongs to it. */
   device: SignedStatementInput;
   /**
-   * Optional display name (1–80 chars when present). Falls back to `username` when absent
-   * or blank after trim.
+   * Optional display name, stored without control and invisible format characters and with
+   * whitespace collapsed; at most 64 characters after that. Falls back to `username` when
+   * absent or when nothing visible is left.
    */
   displayName?: InputMaybe<Scalars['String']['input']>;
   instanceInviteToken?: InputMaybe<Scalars['String']['input']>;

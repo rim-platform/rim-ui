@@ -190,17 +190,17 @@ describe("KeySignupForm", () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-1"));
   });
 
-  it("refuses a display name longer than 80 characters before making keys", async () => {
+  it("refuses a display name longer than 64 characters before making keys", async () => {
     const user = userEvent.setup();
     renderForm();
     await waitFor(() =>
       expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
     );
     await user.type(screen.getByLabelText(/^username/i), "ada");
-    await user.type(screen.getByLabelText(/display name/i), "x".repeat(81));
+    await user.type(screen.getByLabelText(/display name/i), "x".repeat(65));
     await user.click(screen.getByRole("button", { name: /create keys/i }));
 
-    expect(screen.getByText(/at most 80 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/at most 64 characters/i)).toBeInTheDocument();
     expect(api.beginEnrollment).not.toHaveBeenCalled();
   });
 
