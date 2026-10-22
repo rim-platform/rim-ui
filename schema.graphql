@@ -1810,7 +1810,10 @@ type Mutation {
 	"""
 	leaveConversation(serverId: ID!, conversationId: ID!): Boolean!
 	"""
-	Add (invite) workspace members to a channel or group the caller belongs to.
+	Add (invite) workspace members to a channel or group the caller belongs to. In the
+	server's default workspace a channel takes them from an Owner, a Moderator or a private
+	channel's creator, a group as a DM with each would be started, and one call names at
+	most 50.
 	"""
 	addConversationMembers(serverId: ID!, conversationId: ID!, userIds: [ID!]!): Conversation!
 	"""
@@ -1922,7 +1925,8 @@ type Mutation {
 	setMemberRole(serverId: ID!, userId: ID!, role: ServerMemberRoleGql!): ServerMember!
 	"""
 	Remove a member from the workspace (Owner/Moderator; nobody can kick the owner, and a
-	moderator cannot kick a moderator). They may re-join with a new invite. Audited.
+	moderator cannot kick a moderator), with their macros and pipelines there. They may
+	re-join with a new invite. Audited.
 	"""
 	kickMember(serverId: ID!, userId: ID!, reason: String): Boolean!
 	"""
@@ -2153,7 +2157,8 @@ type Mutation {
 	- `UNAUTHENTICATED`: no session.
 	- `FORBIDDEN`: the caller is not the owner.
 	- `NOT_FOUND`: `userId` is not a member.
-	- `VALIDATION`: the direct space, a guest as the new owner, or the caller themself.
+	- `VALIDATION`: the direct space, a guest as the new owner, the caller themself, or a new
+	owner who already owns as many workspaces as the instance allows.
 	"""
 	transferWorkspaceOwnership(input: TransferWorkspaceOwnershipInput!): Server!
 	"""
@@ -3419,7 +3424,7 @@ requests always have one. Creating one more past a cap answers `VALIDATION` nami
 """
 type ServerLimits {
 	"""
-	Workspaces one user owns.
+	Workspaces one user owns, created or handed over to them.
 	"""
 	workspacesPerUser: Int
 	"""
@@ -3427,7 +3432,7 @@ type ServerLimits {
 	"""
 	membersPerWorkspace: Int
 	"""
-	Channels of one workspace, public and private.
+	Unarchived channels of one workspace, public and private; unarchiving one needs room.
 	"""
 	channelsPerWorkspace: Int
 	"""
@@ -3440,11 +3445,13 @@ type ServerLimits {
 	"""
 	dmRequestsPerDay: Int
 	"""
-	Macros of one workspace.
+	Macros of one workspace; a member who is neither Owner nor Moderator holds at most a
+	fifth of them.
 	"""
 	macrosPerWorkspace: Int
 	"""
-	Pipelines of one workspace.
+	Pipelines of one workspace; a member who is neither Owner nor Moderator holds at most
+	a fifth of them.
 	"""
 	pipelinesPerWorkspace: Int
 	"""

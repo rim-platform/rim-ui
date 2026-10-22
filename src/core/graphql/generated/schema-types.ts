@@ -1481,7 +1481,12 @@ export type Mutation = {
   ackRelayItems: Scalars['Boolean']['output'];
   /** Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each). */
   addContact: Contact;
-  /** Add (invite) workspace members to a channel or group the caller belongs to. */
+  /**
+   * Add (invite) workspace members to a channel or group the caller belongs to. In the
+   * server's default workspace a channel takes them from an Owner, a Moderator or a private
+   * channel's creator, a group as a DM with each would be started, and one call names at
+   * most 50.
+   */
   addConversationMembers: Conversation;
   /** Add a device certified by the current identity key. */
   addDeviceKey: DeviceKey;
@@ -1613,7 +1618,8 @@ export type Mutation = {
   keyLoginChallenge: KeyLoginChallenge;
   /**
    * Remove a member from the workspace (Owner/Moderator; nobody can kick the owner, and a
-   * moderator cannot kick a moderator). They may re-join with a new invite. Audited.
+   * moderator cannot kick a moderator), with their macros and pipelines there. They may
+   * re-join with a new invite. Audited.
    */
   kickMember: Scalars['Boolean']['output'];
   /** Leave a channel or group (not a DM). */
@@ -1838,7 +1844,8 @@ export type Mutation = {
    * - `UNAUTHENTICATED`: no session.
    * - `FORBIDDEN`: the caller is not the owner.
    * - `NOT_FOUND`: `userId` is not a member.
-   * - `VALIDATION`: the direct space, a guest as the new owner, or the caller themself.
+   * - `VALIDATION`: the direct space, a guest as the new owner, the caller themself, or a new
+   * owner who already owns as many workspaces as the instance allows.
    */
   transferWorkspaceOwnership: Server;
   /** Lift a ban (Owner/Moderator). Returns whether a ban existed. Audited. */
@@ -3773,7 +3780,7 @@ export type ServerLimits = {
    * at it every signup answers `REGISTRATION_FULL` and `serverInfo.registrationFull` is true.
    */
   accounts?: Maybe<Scalars['Int']['output']>;
-  /** Channels of one workspace, public and private. */
+  /** Unarchived channels of one workspace, public and private; unarchiving one needs room. */
   channelsPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Devices on one account: the stricter of the instance cap and the relay quota. */
   devicesPerUser?: Maybe<Scalars['Int']['output']>;
@@ -3786,7 +3793,10 @@ export type ServerLimits = {
   inviteMaxUses?: Maybe<Scalars['Int']['output']>;
   /** Invites one user creates per day. */
   invitesPerUserPerDay?: Maybe<Scalars['Int']['output']>;
-  /** Macros of one workspace. */
+  /**
+   * Macros of one workspace; a member who is neither Owner nor Moderator holds at most a
+   * fifth of them.
+   */
   macrosPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Members of one workspace; the direct space has no cap. */
   membersPerWorkspace?: Maybe<Scalars['Int']['output']>;
@@ -3797,7 +3807,10 @@ export type ServerLimits = {
    * one more answers `VALIDATION`.
    */
   pendingInvitesPerUser?: Maybe<Scalars['Int']['output']>;
-  /** Pipelines of one workspace. */
+  /**
+   * Pipelines of one workspace; a member who is neither Owner nor Moderator holds at most
+   * a fifth of them.
+   */
   pipelinesPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /** Plugins of one workspace's registry. */
   pluginsPerWorkspace?: Maybe<Scalars['Int']['output']>;
@@ -3807,7 +3820,7 @@ export type ServerLimits = {
    * when the caller's ends.
    */
   probationHours?: Maybe<Scalars['Int']['output']>;
-  /** Workspaces one user owns. */
+  /** Workspaces one user owns, created or handed over to them. */
   workspacesPerUser?: Maybe<Scalars['Int']['output']>;
 };
 
