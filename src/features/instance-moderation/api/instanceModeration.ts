@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -69,13 +69,16 @@ const INSTANCE_IP_BLOCK_FIELDS = gql`
 `;
 
 const INSTANCE_REPORTS = gql`
-  query InstanceReports($openOnly: Boolean!) {
-    instanceReports(openOnly: $openOnly) {
+  query InstanceReports($openOnly: Boolean!, $after: ID, $limit: Int!) {
+    instanceReports(openOnly: $openOnly, after: $after, limit: $limit) {
       ...InstanceReportFields
     }
   }
   ${INSTANCE_REPORT_FIELDS}
 `;
+
+/** The most abuse reports one page asks for. */
+export const INSTANCE_REPORT_PAGE = 100;
 
 const INSTANCE_PRINCIPAL_BLOCKS = gql`
   query InstancePrincipalBlocks {
@@ -189,18 +192,25 @@ export function useIsInstanceOperator() {
   };
 }
 
-/** Abuse reports, oldest first; only the open ones unless `openOnly` is false. */
+/**
+ * Abuse reports, oldest first, a page of `INSTANCE_REPORT_PAGE` at a time; only the open ones
+ * unless `openOnly` is false. The next page starts after the last report of the previous one,
+ * and there is one while a page comes back full.
+ */
 export function useInstanceReports(openOnly: boolean) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: queryKeys.instanceReports(openOnly),
     retry: false,
-    queryFn: async () => {
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
       const res = await graphqlClient.request<{ instanceReports: InstanceAbuseReport[] }>(
         INSTANCE_REPORTS,
-        { openOnly },
+        { openOnly, after: pageParam, limit: INSTANCE_REPORT_PAGE },
       );
       return res.instanceReports;
     },
+    getNextPageParam: (lastPage) =>
+      lastPage.length >= INSTANCE_REPORT_PAGE ? lastPage[lastPage.length - 1].id : null,
   });
 }
 

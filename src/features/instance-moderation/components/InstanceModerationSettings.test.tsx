@@ -122,7 +122,11 @@ describe("InstanceModerationSettings", () => {
     serve();
     renderPage();
     const r1 = await screen.findByTestId("instance-report-r1");
-    expect(callsTo(requestMock, "query InstanceReports(")[0]).toEqual({ openOnly: true });
+    expect(callsTo(requestMock, "query InstanceReports(")[0]).toEqual({
+      openOnly: true,
+      after: null,
+      limit: 100,
+    });
     expect(r1).toHaveTextContent("@mallory");
     expect(r1).toHaveTextContent(MALLORY);
     expect(r1).toHaveTextContent("reported by @alice");
@@ -140,7 +144,7 @@ describe("InstanceModerationSettings", () => {
     });
     try {
       serve({
-        "query MessageReports": () => ({
+        "query DirectSpaceMessageReports": () => ({
           messageReports: {
             items: [
               {
@@ -172,7 +176,7 @@ describe("InstanceModerationSettings", () => {
       renderPage();
       const row = await screen.findByTestId("report-row-dm-r1");
       expect(screen.getByText("Reported direct messages")).toBeInTheDocument();
-      expect(callsTo(requestMock, "query MessageReports")[0]).toMatchObject({
+      expect(callsTo(requestMock, "query DirectSpaceMessageReports")[0]).toMatchObject({
         serverId: "direct-1",
       });
       expect(row).toHaveTextContent("threats in a DM");
@@ -187,12 +191,98 @@ describe("InstanceModerationSettings", () => {
     }
   });
 
+  it("shows a reported unencrypted DM message, blocks its author's principal and deletes it", async () => {
+    useRelayStore.setState({
+      info: { serverId: "rims1_relay", roles: ["relay"], directSpaceId: "direct-1" },
+    });
+    try {
+      serve({
+        "query DirectSpaceMessageReports": () => ({
+          messageReports: {
+            items: [
+              {
+                id: "dm-r2",
+                conversationId: "dm-2",
+                messageId: "m-2",
+                reporterUserId: "u-alice",
+                reason: "spam in a DM",
+                status: "OPEN",
+                resolvedBy: null,
+                resolvedAt: null,
+                createdAt: "2026-10-03T10:00:00Z",
+                messageReadable: false,
+                messageText: "buy cheap stuff",
+                messageAuthorId: "u-mallory",
+                messageAuthorPrincipalId: MALLORY,
+                messageSentAt: "2026-10-03T09:00:00Z",
+                frankingVerifiedAt: null,
+                frankedSenderDeviceId: null,
+                frankedContentExpiresAt: null,
+              },
+            ],
+            next: null,
+            pageInfo: { hasNext: false, hasPrev: false },
+          },
+        }),
+        "mutation DeleteReportedMessage": () => ({ deleteMessage: true }),
+      });
+      renderPage();
+      const row = await screen.findByTestId("report-row-dm-r2");
+      expect(row).toHaveTextContent("buy cheap stuff");
+      expect(row).toHaveTextContent("Only the reported message is shown");
+      expect(row).toHaveTextContent(`a message by ${MALLORY}`);
+      expect(row).not.toHaveTextContent("u-mallor");
+      expect(row).not.toHaveTextContent("message not visible to you");
+
+      fireEvent.click(within(row).getByRole("button", { name: `Block principal ${MALLORY}` }));
+      const form = screen.getByRole("form", { name: "Block a principal" });
+      expect(within(form).getByLabelText("Principal id")).toHaveValue(MALLORY);
+      expect(within(form).getByLabelText("Reason")).toHaveFocus();
+
+      fireEvent.click(within(row).getByRole("button", { name: "Delete message" }));
+      const dialog = screen.getByRole("dialog", { name: "Delete this message?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await waitFor(() =>
+        expect(callsTo(requestMock, "mutation DeleteReportedMessage")).toEqual([
+          { input: { serverId: "direct-1", conversationId: "dm-2", messageId: "m-2" } },
+        ]),
+      );
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Message deleted"));
+    } finally {
+      useRelayStore.setState({ info: null });
+    }
+  });
+
   it("asks for no direct-space reports before relayInfo answers", async () => {
     serve();
     renderPage();
     await screen.findByTestId("instance-report-r1");
     expect(screen.queryByText("Reported direct messages")).not.toBeInTheDocument();
-    expect(callsTo(requestMock, "query MessageReports")).toHaveLength(0);
+    expect(callsTo(requestMock, "query DirectSpaceMessageReports")).toHaveLength(0);
+  });
+
+  it("pages through the reports with Load more, after the last one shown", async () => {
+    world.reports = Array.from({ length: 101 }, (_, i) => abuseReport(`p${i}`));
+    serve();
+    renderPage();
+    await screen.findByTestId("instance-report-p99");
+    expect(screen.queryByTestId("instance-report-p100")).not.toBeInTheDocument();
+    expect(screen.queryByText(/only the oldest/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByTestId("instance-report-p100")).toBeInTheDocument();
+    expect(screen.getByTestId("instance-report-p0")).toBeInTheDocument();
+    expect(callsTo(requestMock, "query InstanceReports(")).toEqual([
+      { openOnly: true, after: null, limit: 100 },
+      { openOnly: true, after: "p99", limit: 100 },
+    ]);
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("shows no Load more while the reports fit in one page", async () => {
+    serve();
+    renderPage();
+    await screen.findByTestId("instance-report-r1");
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
   it("shows resolved reports, without Resolve, when asked", async () => {
@@ -201,7 +291,11 @@ describe("InstanceModerationSettings", () => {
     await screen.findByTestId("instance-report-r1");
     fireEvent.click(screen.getByRole("switch", { name: "Show resolved reports" }));
     const r3 = await screen.findByTestId("instance-report-r3");
-    expect(callsTo(requestMock, "query InstanceReports(").at(-1)).toEqual({ openOnly: false });
+    expect(callsTo(requestMock, "query InstanceReports(").at(-1)).toEqual({
+      openOnly: false,
+      after: null,
+      limit: 100,
+    });
     expect(r3).toHaveTextContent("Resolved");
     expect(within(r3).queryByRole("button", { name: "Resolve" })).not.toBeInTheDocument();
   });

@@ -1313,6 +1313,11 @@ export type MessagePage = {
  * the viewing moderator can read the conversation (`messageReadable`); otherwise only the ids
  * and the reporter's reason are shown. `messageText` is also null for a deleted message.
  *
+ * A report of the direct space (DMs and groups) goes to the instance operators, who are not
+ * members of its conversations: they see the author, send time and text of the one reported
+ * message when it is not encrypted, and the author's principal id (`messageAuthorPrincipalId`)
+ * whenever the author is shown.
+ *
  * A report of an encrypted message is franked: the server verified that its content is what
  * the sender's device sent (`frankingVerifiedAt`). Its author, send time and sender device are
  * shown to every moderator; its content (`frankedContent`) only by `messageReport`.
@@ -1336,6 +1341,12 @@ export type MessageReport = {
   frankingVerifiedAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
   messageAuthorId?: Maybe<Scalars['ID']['output']>;
+  /**
+   * The author's principal id, for `instanceBlockPrincipal`: filled for a report of the
+   * direct space whenever `messageAuthorId` is, null elsewhere and for an author without
+   * one.
+   */
+  messageAuthorPrincipalId?: Maybe<Scalars['String']['output']>;
   messageId: Scalars['ID']['output'];
   messageReadable: Scalars['Boolean']['output'];
   /** When the reported message was sent; null when its details are not shown. */

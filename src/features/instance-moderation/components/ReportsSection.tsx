@@ -1,4 +1,4 @@
-import type { UseQueryResult } from "@tanstack/react-query";
+import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { InstanceAbuseReport } from "../../../core/graphql/generated/schema-types";
@@ -10,15 +10,12 @@ import { useResolveInstanceReportMutation } from "../api/instanceModeration";
 import { BADGE, ERROR_BOX, PANEL } from "./styles";
 
 interface ReportsSectionProps {
-  reports: UseQueryResult<InstanceAbuseReport[]>;
+  reports: UseInfiniteQueryResult<InfiniteData<InstanceAbuseReport[]>>;
   openOnly: boolean;
   onOpenOnlyChange: (openOnly: boolean) => void;
   /** Opens the block form with this principal filled in. */
   onBlockPrincipal: (principalId: string) => void;
 }
-
-/** The reports the server returns at once when no page size is asked for. */
-const REPORT_PAGE = 100;
 
 /** Who or what a report names: the local username, else the principal, else the server. */
 function reportSubject(report: InstanceAbuseReport): string {
@@ -32,14 +29,18 @@ function reportReporter(report: InstanceAbuseReport): string {
   return report.reporterUserId ?? "the abuse address";
 }
 
-/** Abuse reports filed with this server, oldest first, with Resolve and Block principal. */
+/**
+ * Abuse reports filed with this server, oldest first, with Resolve, Block principal and Load
+ * more for the next page.
+ */
 export function ReportsSection({
   reports,
   openOnly,
   onOpenOnlyChange,
   onBlockPrincipal,
 }: ReportsSectionProps) {
-  const { data, isPending, isError, error } = reports;
+  const { isPending, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } = reports;
+  const data = reports.data?.pages.flat();
 
   return (
     <div className={PANEL}>
@@ -54,11 +55,7 @@ export function ReportsSection({
           />
         </label>
       </div>
-      <p className="mt-1 text-xs text-rim-text-faint">
-        {data && data.length >= REPORT_PAGE
-          ? `Oldest first; only the oldest ${REPORT_PAGE} are shown.`
-          : "Oldest first."}
-      </p>
+      <p className="mt-1 text-xs text-rim-text-faint">Oldest first.</p>
       {isPending && <p className="mt-2 text-sm text-rim-text-muted">Loading reports…</p>}
       {isError && (
         <p role="alert" className={`mt-2 ${ERROR_BOX}`}>
@@ -76,6 +73,19 @@ export function ReportsSection({
             <ReportRow key={report.id} report={report} onBlockPrincipal={onBlockPrincipal} />
           ))}
         </ul>
+      )}
+      {hasNextPage && (
+        <div className="mt-2 flex justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            isLoading={isFetchingNextPage}
+            onClick={() => void fetchNextPage()}
+          >
+            Load more
+          </Button>
+        </div>
       )}
     </div>
   );

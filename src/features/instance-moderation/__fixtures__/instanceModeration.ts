@@ -92,9 +92,12 @@ export function moderationHandlers(world: ModerationWorld): Record<string, Handl
     "query ViewerInstanceOperator": () => ({
       me: { id: "u-op", instanceOperator: world.operator },
     }),
-    "query InstanceReports(": (vars) => ({
-      instanceReports: world.reports.filter((r) => !vars.openOnly || !r.resolved),
-    }),
+    "query InstanceReports(": (vars) => {
+      const listed = world.reports.filter((r) => !vars.openOnly || !r.resolved);
+      const start = vars.after ? listed.findIndex((r) => r.id === vars.after) + 1 : 0;
+      const limit = typeof vars.limit === "number" ? vars.limit : listed.length;
+      return { instanceReports: listed.slice(start, start + limit) };
+    },
     "query InstancePrincipalBlocks": () => ({ instancePrincipalBlocks: world.principalBlocks }),
     "query InstanceIpBlocks": () => ({ instanceIpBlocks: world.ipBlocks }),
     "mutation InstanceResolveReport": (vars) => {

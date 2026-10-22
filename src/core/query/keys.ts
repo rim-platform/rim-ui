@@ -14,10 +14,11 @@ export const queryKeys = {
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
   server: (serverId?: string) => ["server", serverId] as const,
-  // Moderation: active bans, and message reports filtered by status (null = all).
+  // Moderation: active bans, and message reports filtered by status (null = all), with the
+  // authors' principal ids when an instance operator reads the direct space's reports.
   serverBans: (serverId?: string) => ["serverBans", serverId] as const,
-  messageReports: (serverId?: string, status?: string | null) =>
-    ["messageReports", serverId, status ?? null] as const,
+  messageReports: (serverId?: string, status?: string | null, withAuthorPrincipal = false) =>
+    ["messageReports", serverId, status ?? null, withAuthorPrincipal] as const,
   // One report with its verified encrypted content; under the reports root so a resolve
   // invalidates it too.
   messageReport: (serverId?: string, reportId?: string) =>
