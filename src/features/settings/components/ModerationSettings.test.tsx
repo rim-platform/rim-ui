@@ -170,6 +170,10 @@ describe("ModerationSettings", () => {
     expect(row).toHaveTextContent("a message by Bob");
     expect(row).toHaveTextContent("reason r1");
     expect(row).toHaveTextContent("text of r1");
+    expect(callsTo(requestMock, "query DirectSpaceMessageReports")).toHaveLength(0);
+    expect(within(row).queryByRole("button", { name: /Block principal/ })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Delete message" })).not.toBeInTheDocument();
+    expect(row).not.toHaveTextContent("Only the reported message is shown");
   });
 
   it("says when the reported message is not visible to the moderator", async () => {

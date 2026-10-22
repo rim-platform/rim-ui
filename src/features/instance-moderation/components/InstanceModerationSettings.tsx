@@ -61,6 +61,8 @@ function ModerationQueue() {
   const principalBlocks = useInstancePrincipalBlocks();
   const ipBlocks = useInstanceIpBlocks();
   const directSpaceId = useLocalDirectSpaceId();
+  const blockPrincipal = (principalId: string) =>
+    setDraft((current) => ({ principalId, seq: current.seq + 1 }));
 
   if ([reports.error, principalBlocks.error, ipBlocks.error].some(isOperatorRefusal)) {
     return <OperatorsOnly />;
@@ -82,12 +84,14 @@ function ModerationQueue() {
         reports={reports}
         openOnly={openOnly}
         onOpenOnlyChange={setOpenOnly}
-        onBlockPrincipal={(principalId) =>
-          setDraft((current) => ({ principalId, seq: current.seq + 1 }))
-        }
+        onBlockPrincipal={blockPrincipal}
       />
       {directSpaceId && (
-        <MessageReportsList serverId={directSpaceId} title="Reported direct messages" />
+        <MessageReportsList
+          serverId={directSpaceId}
+          title="Reported direct messages"
+          onBlockPrincipal={blockPrincipal}
+        />
       )}
       <PrincipalBlocksSection blocks={principalBlocks} draft={draft} />
       <IpBlocksSection blocks={ipBlocks} />

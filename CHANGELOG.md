@@ -74,6 +74,13 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- **Upgrade:** run a rim-server with `MessageReport.messageAuthorPrincipalId` for the reported
+  direct messages in Settings → Instance → Moderation. A reported unencrypted message of a DM
+  or group there now shows its text, with a note that the rest of the conversation is not
+  shown, and an instance operator can delete it; the author is named by their principal when
+  the operator shares no conversation with them, with a Block principal action that fills in
+  the block form. The abuse reports load more with Load more instead of stopping at the oldest
+  100.
 - The signup forms refuse a display name over 64 characters before sending it, the limit the
   server keeps for every display name; they allowed 80, which the server then refused.
 - A sandboxed plugin has no WebRTC: `RTCPeerConnection` and the other WebRTC constructors are

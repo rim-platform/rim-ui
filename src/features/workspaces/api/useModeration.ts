@@ -101,6 +101,27 @@ const REPORT_MESSAGE = gql`
   }
 `;
 
+const MESSAGE_REPORT_ROW_FIELDS = gql`
+  fragment MessageReportRowFields on MessageReport {
+    id
+    conversationId
+    messageId
+    reporterUserId
+    reason
+    status
+    resolvedBy
+    resolvedAt
+    createdAt
+    messageReadable
+    messageText
+    messageAuthorId
+    messageSentAt
+    frankingVerifiedAt
+    frankedSenderDeviceId
+    frankedContentExpiresAt
+  }
+`;
+
 const MESSAGE_REPORTS = gql`
   query MessageReports(
     $serverId: ID!
@@ -117,22 +138,7 @@ const MESSAGE_REPORTS = gql`
       limit: $limit
     ) {
       items {
-        id
-        conversationId
-        messageId
-        reporterUserId
-        reason
-        status
-        resolvedBy
-        resolvedAt
-        createdAt
-        messageReadable
-        messageText
-        messageAuthorId
-        messageSentAt
-        frankingVerifiedAt
-        frankedSenderDeviceId
-        frankedContentExpiresAt
+        ...MessageReportRowFields
       }
       next {
         createdAt
@@ -144,6 +150,44 @@ const MESSAGE_REPORTS = gql`
       }
     }
   }
+  ${MESSAGE_REPORT_ROW_FIELDS}
+`;
+
+/**
+ * `MESSAGE_REPORTS` with each author's principal id, which the server fills for an instance
+ * operator reading the direct space's reports. A query of its own so a workspace's moderation
+ * keeps working against a server without the field.
+ */
+const DIRECT_SPACE_MESSAGE_REPORTS = gql`
+  query DirectSpaceMessageReports(
+    $serverId: ID!
+    $status: MessageReportStatus
+    $dir: PageDir!
+    $cursor: MessageReportCursorInput
+    $limit: Int!
+  ) {
+    messageReports(
+      serverId: $serverId
+      status: $status
+      dir: $dir
+      cursor: $cursor
+      limit: $limit
+    ) {
+      items {
+        ...MessageReportRowFields
+        messageAuthorPrincipalId
+      }
+      next {
+        createdAt
+        reportId
+      }
+      pageInfo {
+        hasNext
+        hasPrev
+      }
+    }
+  }
+  ${MESSAGE_REPORT_ROW_FIELDS}
 `;
 
 const REPORT_ENCRYPTED_MESSAGE = gql`
@@ -216,8 +260,17 @@ export interface MessageReportRow {
   resolvedAt: string | null;
   createdAt: string;
   messageReadable: boolean;
+  /**
+   * The reported message's text: when the moderator reads the conversation, and for an
+   * instance operator on a report of an unencrypted message of the direct space.
+   */
   messageText: string | null;
   messageAuthorId: string | null;
+  /**
+   * The author's principal id, which an instance operator can block; asked for only on the
+   * direct space's reports.
+   */
+  messageAuthorPrincipalId?: string | null;
   messageSentAt: string | null;
   /** Set for a verified report of an encrypted message. */
   frankingVerifiedAt: string | null;
@@ -393,20 +446,23 @@ export function useDeleteReportedMessageMutation() {
  * Message reports of the workspace, filtered by status (`null` = all). The server orders
  * reports oldest first and has no "newest page" entry point (an uncursored `BEFORE` also
  * starts at the oldest), so the list reads as a queue: oldest first, Load more for newer.
+ * `withAuthorPrincipal` also asks for each author's principal id (the direct space's reports,
+ * read by an instance operator).
  */
 export function useMessageReports(
   serverId: string | null | undefined,
   status: MessageReportStatus | null,
   enabled = true,
+  withAuthorPrincipal = false,
 ) {
   const id = serverId ?? undefined;
   return useInfiniteQuery({
-    queryKey: queryKeys.messageReports(id, status),
+    queryKey: queryKeys.messageReports(id, status, withAuthorPrincipal),
     enabled: Boolean(id) && enabled,
     initialPageParam: null as MessageReportPage["next"],
     queryFn: async ({ pageParam }) => {
       const res = await graphqlClient.request<{ messageReports: MessageReportPage }>(
-        MESSAGE_REPORTS,
+        withAuthorPrincipal ? DIRECT_SPACE_MESSAGE_REPORTS : MESSAGE_REPORTS,
         {
           serverId: id!,
           status,

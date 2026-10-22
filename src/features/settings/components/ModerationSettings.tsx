@@ -8,6 +8,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { MessageReportStatus, ReportOutcome } from "../../../core/graphql/generated/schema-types";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import {
+  useDeleteReportedMessageMutation,
   useMessageReports,
   useResolveReportMutation,
   useServerBans,
@@ -15,6 +16,7 @@ import {
   type MessageReportRow,
   type ServerBanRow,
 } from "../../workspaces/api/useModeration";
+import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { EncryptedReportView } from "./EncryptedReportView";
 
@@ -135,18 +137,24 @@ const STATUS_LABEL: Record<MessageReportStatus, string> = {
 /**
  * The message reports of `serverId`, newest first, filtered by status, with Resolve, Dismiss
  * and the verified content of reported encrypted messages. Titled `title`.
+ *
+ * With `onBlockPrincipal` the list is an instance operator's view of the direct space: it asks
+ * for each author's principal id, shows it with a Block principal action that calls
+ * `onBlockPrincipal`, and offers Delete on a reported unencrypted message.
  */
 export function MessageReportsList({
   serverId,
   title = "Reports",
+  onBlockPrincipal,
 }: {
   serverId: string;
   title?: string;
+  onBlockPrincipal?: (principalId: string) => void;
 }) {
   const [filter, setFilter] = useState<MessageReportStatus | "ALL">(MessageReportStatus.OPEN);
   const status = filter === "ALL" ? null : filter;
   const { data, isPending, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } =
-    useMessageReports(serverId, status);
+    useMessageReports(serverId, status, true, onBlockPrincipal !== undefined);
   const reports = data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
@@ -181,7 +189,12 @@ export function MessageReportsList({
       {reports.length > 0 && (
         <ul className="mt-2 divide-y divide-rim-line" aria-label="Reports">
           {reports.map((report) => (
-            <ReportRow key={report.id} serverId={serverId} report={report} />
+            <ReportRow
+              key={report.id}
+              serverId={serverId}
+              report={report}
+              onBlockPrincipal={onBlockPrincipal}
+            />
           ))}
         </ul>
       )}
@@ -202,16 +215,37 @@ export function MessageReportsList({
   );
 }
 
-function ReportRow({ serverId, report }: { serverId: string; report: MessageReportRow }) {
+function ReportRow({
+  serverId,
+  report,
+  onBlockPrincipal,
+}: {
+  serverId: string;
+  report: MessageReportRow;
+  onBlockPrincipal?: (principalId: string) => void;
+}) {
   const memberLookup = useMemberLookup(serverId);
   const resolve = useResolveReportMutation();
+  const deleteMessage = useDeleteReportedMessageMutation();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const reporter = memberLookup.resolve(report.reporterUserId).displayName;
-  const author = report.messageAuthorId
-    ? memberLookup.resolve(report.messageAuthorId).displayName
-    : null;
+  const principalId = report.messageAuthorPrincipalId ?? null;
+  const authorId = report.messageAuthorId;
+  // Someone the viewer shares no conversation with is named by their principal, not an id prefix.
+  const author = !authorId
+    ? null
+    : principalId && !memberLookup.map.has(authorId)
+      ? principalId
+      : memberLookup.resolve(authorId).displayName;
   const isOpen = report.status === MessageReportStatus.OPEN;
   const verified = report.frankingVerifiedAt !== null && report.frankingVerifiedAt !== undefined;
   const [showContent, setShowContent] = useState(false);
+  // Only the reported message is shown: an instance operator reads no other message of the
+  // conversation, and a deleted one shows its author but no text.
+  const singleMessage = !report.messageReadable && !verified && authorId !== null;
+  // An instance operator deletes a reported unencrypted message here; a verified encrypted one
+  // is deleted from its content view.
+  const canDelete = onBlockPrincipal !== undefined && !verified && report.messageText !== null;
 
   function handleResolve(outcome: ReportOutcome) {
     resolve.mutate(
@@ -245,6 +279,24 @@ function ReportRow({ serverId, report }: { serverId: string; report: MessageRepo
         )}
       </div>
       <p className="text-sm text-rim-text">{report.reason}</p>
+      {principalId && (
+        <p className="flex flex-wrap items-center gap-2 text-[11px] text-rim-text-faint">
+          <span>
+            Author principal <span className="font-mono">{principalId}</span>
+          </span>
+          {onBlockPrincipal && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onBlockPrincipal(principalId)}
+              aria-label={`Block principal ${principalId}`}
+            >
+              Block principal
+            </Button>
+          )}
+        </p>
+      )}
       {verified ? (
         showContent ? (
           <EncryptedReportView serverId={serverId} report={report} />
@@ -253,36 +305,76 @@ function ReportRow({ serverId, report }: { serverId: string; report: MessageRepo
             Show reported message
           </Button>
         )
-      ) : report.messageReadable ? (
-        <blockquote className="whitespace-pre-wrap break-words border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
-          {report.messageText ?? <span className="italic">This message was deleted</span>}
-        </blockquote>
+      ) : report.messageReadable || singleMessage ? (
+        <>
+          <blockquote className="whitespace-pre-wrap break-words border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
+            {report.messageText ?? <span className="italic">This message was deleted</span>}
+          </blockquote>
+          {singleMessage && report.messageText !== null && (
+            <p className="text-xs text-rim-text-faint">
+              Only the reported message is shown, not the rest of the conversation.
+            </p>
+          )}
+        </>
       ) : (
         <p className="border-l-2 border-rim-line pl-2 text-sm italic text-rim-text-faint">
           message not visible to you
         </p>
       )}
-      {isOpen && (
+      {(isOpen || canDelete) && (
         <div className="flex gap-2 pt-1">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={resolve.isPending}
-            onClick={() => handleResolve(ReportOutcome.RESOLVED)}
-          >
-            Resolve
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={resolve.isPending}
-            onClick={() => handleResolve(ReportOutcome.DISMISSED)}
-          >
-            Dismiss
-          </Button>
+          {isOpen && (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={resolve.isPending}
+                onClick={() => handleResolve(ReportOutcome.RESOLVED)}
+              >
+                Resolve
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={resolve.isPending}
+                onClick={() => handleResolve(ReportOutcome.DISMISSED)}
+              >
+                Dismiss
+              </Button>
+            </>
+          )}
+          {canDelete && (
+            <Button type="button" variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+              Delete message
+            </Button>
+          )}
         </div>
+      )}
+      {confirmDelete && (
+        <ModerationDialog
+          title="Delete this message?"
+          description="You are deleting a reported message as an instance operator. It is removed for every member of the conversation. This cannot be undone, and it is recorded in the audit log."
+          tone="danger"
+          chips={["DANGEROUS", "OPERATOR"]}
+          confirmLabel="Delete"
+          errorFallback="Failed to delete message"
+          onConfirm={() =>
+            deleteMessage.mutateAsync({
+              input: {
+                serverId,
+                conversationId: report.conversationId,
+                messageId: report.messageId,
+              },
+            })
+          }
+          onDone={() => {
+            setConfirmDelete(false);
+            toast.success("Message deleted");
+          }}
+          onClose={() => setConfirmDelete(false)}
+        />
       )}
     </li>
   );
