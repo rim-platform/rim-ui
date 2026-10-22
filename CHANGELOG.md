@@ -82,6 +82,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   approved: a git update opens the permission prompt naming the new sites, a workspace registry
   update waits behind **Update \<name\>?**, and the plugin has no network until it is approved
   again.
+- Reporting a message in a DM or group says where the report goes: to the people who run the
+  server, since a DM has no workspace moderators. The instance operators see these reports in
+  Settings → Instance → Moderation under "Reported direct messages", with the verified content
+  of an encrypted message, Delete, Resolve and Dismiss. Needs a server that routes these
+  reports to its operators. The abuse report list says when it shows only the oldest 100.
 - The desktop app shows profile pictures uploaded to the server, in the profile settings and
   wherever a person appears, and images and videos attached to messages; until now they showed
   as a broken image. Attachments above 5 MB wait for a click before they download, as encrypted

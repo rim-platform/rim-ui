@@ -36,6 +36,7 @@ import { toast } from "../../../shared/toast";
 import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
 
 const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
@@ -225,6 +226,28 @@ describe("useMessageContextMenu — report and delete", () => {
       expect(toast.success).toHaveBeenCalledWith("Message reported to the moderators"),
     );
     expect(menuIsOpen()).toBe(false);
+  });
+
+  it("says a report in a DM goes to the people who run the server", async () => {
+    useRelayStore.setState({ info: { serverId: "rims1_relay", roles: [], directSpaceId: "ws-1" } });
+    try {
+      serve(ServerMemberRoleGql.GUEST);
+      await renderMenu(ServerMemberRoleGql.GUEST, false);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
+
+      const dialog = screen.getByRole("dialog", { name: "Report message" });
+      expect(dialog).toHaveTextContent("The people who run the server this conversation is on");
+      expect(dialog).not.toHaveTextContent("Moderators of this workspace");
+      fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "spam" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Report" }));
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          "Message reported to the people who run the server",
+        ),
+      );
+    } finally {
+      useRelayStore.setState({ info: null });
+    }
   });
 
   it("shows the server's message when the message was already reported", async () => {

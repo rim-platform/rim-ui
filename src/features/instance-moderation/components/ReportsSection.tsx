@@ -17,6 +17,9 @@ interface ReportsSectionProps {
   onBlockPrincipal: (principalId: string) => void;
 }
 
+/** The reports the server returns at once when no page size is asked for. */
+const REPORT_PAGE = 100;
+
 /** Who or what a report names: the local username, else the principal, else the server. */
 function reportSubject(report: InstanceAbuseReport): string {
   if (report.subjectUsername) return `@${report.subjectUsername}`;
@@ -51,7 +54,11 @@ export function ReportsSection({
           />
         </label>
       </div>
-      <p className="mt-1 text-xs text-rim-text-faint">Oldest first.</p>
+      <p className="mt-1 text-xs text-rim-text-faint">
+        {data && data.length >= REPORT_PAGE
+          ? `Oldest first; only the oldest ${REPORT_PAGE} are shown.`
+          : "Oldest first."}
+      </p>
       {isPending && <p className="mt-2 text-sm text-rim-text-muted">Loading reports…</p>}
       {isError && (
         <p role="alert" className={`mt-2 ${ERROR_BOX}`}>

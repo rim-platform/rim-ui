@@ -254,6 +254,9 @@ A placeholder (this device could not decrypt it), a message that could not be ve
 own message the server has not acknowledged yet cannot be reported; the dialog says why.
 
 Moderators see a verified report in Settings → Workspace → Moderation as "Encrypted · verified".
+A DM or group lives in the relay's direct space, which has no moderators: the dialog says the
+report goes to the people who run the server, and the instance operators see it in Settings →
+Instance → Moderation under "Reported direct messages", the same way.
 "Show reported message" fetches `messageReport` (each fetch is an audit row, so it is fetched
 once per opening) and shows:
 
