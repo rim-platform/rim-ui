@@ -406,7 +406,7 @@ describe("JoinForm — a server that takes key signups only", () => {
   });
 });
 
-// ── displayName 1–80 character guard ─────────────────────────────────────────
+// ── displayName 1–64 character guard ─────────────────────────────────────────
 
 describe("JoinForm — displayName length guard", () => {
   beforeEach(() => {
@@ -423,7 +423,7 @@ describe("JoinForm — displayName length guard", () => {
     await user.type(screen.getByPlaceholderText("password"), "password123");
   }
 
-  it("rejects a displayName longer than 80 characters client-side — mutation not called", async () => {
+  it("rejects a displayName longer than 64 characters client-side — mutation not called", async () => {
     const user = userEvent.setup();
     renderWithServerInfo(
       <MemoryRouter>
@@ -438,10 +438,10 @@ describe("JoinForm — displayName length guard", () => {
 
     await fillValidRequiredFields(user);
 
-    const eightyOneChars = "a".repeat(81);
+    const sixtyFiveChars = "a".repeat(65);
     await user.type(
       screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!,
-      eightyOneChars,
+      sixtyFiveChars,
     );
     await user.click(screen.getByText("Create account"));
 
@@ -449,10 +449,10 @@ describe("JoinForm — displayName length guard", () => {
     expect(mockSignupMutate).not.toHaveBeenCalled();
 
     // The exact copy for a display name over the limit.
-    expect(screen.getByText("Display name must be at most 80 characters.")).toBeInTheDocument();
+    expect(screen.getByText("Display name must be at most 64 characters.")).toBeInTheDocument();
   });
 
-  it("accepts a displayName of exactly 80 characters — mutation is called", async () => {
+  it("accepts a displayName of exactly 64 characters — mutation is called", async () => {
     mockSignupMutate.mockImplementation(
       (
         input: unknown,
@@ -478,22 +478,22 @@ describe("JoinForm — displayName length guard", () => {
 
     await fillValidRequiredFields(user);
 
-    const eightyChars = "a".repeat(80);
+    const sixtyFourChars = "a".repeat(64);
     await user.type(
       screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!,
-      eightyChars,
+      sixtyFourChars,
     );
     await user.click(screen.getByText("Create account"));
 
     expect(mockSignupMutate).toHaveBeenCalledOnce();
     expect(mockSignupMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ displayName: eightyChars }),
+      expect.objectContaining({ displayName: sixtyFourChars }),
       expect.any(Object),
     );
   });
 
-  it("accepts displayName that is over 80 chars before trimming but at most 80 after trim", async () => {
-    // e.g. 79 "a" chars + 2 spaces on each side = 83 total chars, but trimmed = 79 (valid)
+  it("accepts displayName that is over 64 chars before trimming but at most 64 after trim", async () => {
+    // e.g. 63 "a" chars + 2 spaces on each side = 67 total chars, but trimmed = 63 (valid)
     mockSignupMutate.mockImplementation(
       (
         input: unknown,
@@ -519,8 +519,8 @@ describe("JoinForm — displayName length guard", () => {
 
     await fillValidRequiredFields(user);
 
-    // 79 meaningful chars + surrounding spaces (trimmed = 79, within limit)
-    const valueWithPadding = "  " + "a".repeat(79) + "  ";
+    // 63 meaningful chars + surrounding spaces (trimmed = 63, within limit)
+    const valueWithPadding = "  " + "a".repeat(63) + "  ";
     await user.type(
       screen.getByText("Display name (optional)").closest("label")!.querySelector("input")!,
       valueWithPadding,
@@ -529,7 +529,7 @@ describe("JoinForm — displayName length guard", () => {
 
     expect(mockSignupMutate).toHaveBeenCalledOnce();
     expect(mockSignupMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ displayName: "a".repeat(79) }),
+      expect.objectContaining({ displayName: "a".repeat(63) }),
       expect.any(Object),
     );
   });

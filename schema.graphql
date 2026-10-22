@@ -3557,8 +3557,9 @@ input SignupWithInviteInput {
 	"""
 	email: String!
 	"""
-	Optional display name (1–80 chars when present). Falls back to `username`
-	when absent or blank after trim.
+	Optional display name, stored without control and invisible format characters and with
+	whitespace collapsed; at most 64 characters after that. Falls back to `username` when
+	absent or when nothing visible is left.
 	"""
 	displayName: String
 	password: String!
@@ -3602,8 +3603,9 @@ invite-only mode, none in open mode. In pow mode it takes one token or `proofOfW
 input SignupWithKeyInput {
 	username: String!
 	"""
-	Optional display name (1–80 chars when present). Falls back to `username` when absent
-	or blank after trim.
+	Optional display name, stored without control and invisible format characters and with
+	whitespace collapsed; at most 64 characters after that. Falls back to `username` when
+	absent or when nothing visible is left.
 	"""
 	displayName: String
 	"""

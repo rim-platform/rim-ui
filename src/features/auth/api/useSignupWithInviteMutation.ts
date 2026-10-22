@@ -14,7 +14,7 @@
  * - `username` — required; user-facing unique handle.
  * - `email` — required; trimmed + lowercased server-side; case-insensitive
  *   unique. Returns `EMAIL_TAKEN` error extension code on conflict.
- * - `displayName` — optional (1–80 chars when present). Omit entirely (do NOT
+ * - `displayName` — optional (1–64 chars when present). Omit entirely (do NOT
  *   send `""`) when the user leaves the field blank. Falls back to `username`
  *   server-side when absent.
  * - `password` — required.

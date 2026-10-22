@@ -74,6 +74,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- The signup forms refuse a display name over 64 characters before sending it, the limit the
+  server keeps for every display name; they allowed 80, which the server then refused.
 - A sandboxed plugin has no WebRTC: `RTCPeerConnection` and the other WebRTC constructors are
   `undefined` in its frame and its panels, so it can no longer send what it reads to a STUN or
   TURN server of its choosing without `network.fetch`. The permission prompt now says that what
