@@ -74,6 +74,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
+
 - Workspace reports have a dedicated Moderation tab, a Reports menu item, and a pointer from
   instance moderation; report confirmations name the workspace.
 - Hover tooltips stay within the window edges and flip using their measured height.

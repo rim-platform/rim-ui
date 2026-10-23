@@ -4,6 +4,7 @@ import { encodeBase64, sha256Hex } from "./bundle";
 import {
   BundleLinkError,
   fetchBundleOnDesktop,
+  fetchBundle,
   fetchLinkBytes,
   parseBundleLink,
   type InvokeImpl,
@@ -53,7 +54,7 @@ describe("fetching a pasted link's bundle", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("fetches from the webview without credentials on the web, never the host", async () => {
+  it("fetches through the authenticated RIM server in the browser", async () => {
     const link = await linkFor(BYTES);
     const invoke = invokeReturning(BYTES);
     const fetchImpl = fetchReturning(BYTES);
@@ -62,8 +63,13 @@ describe("fetching a pasted link's bundle", () => {
 
     expect(Array.from(bytes)).toEqual(Array.from(BYTES));
     expect(fetchImpl).toHaveBeenCalledWith(
-      RELEASE,
-      expect.objectContaining({ credentials: "omit", cache: "no-store" }),
+      expect.stringMatching(/\/api\/plugin-bundles\/fetch$/),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify({ url: RELEASE, sha256: link.sha256 }),
+      }),
     );
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -100,5 +106,63 @@ describe("fetching a pasted link's bundle", () => {
     await expect(fetchBundleOnDesktop(RELEASE, "a".repeat(64), invoke)).rejects.toThrow(
       "The desktop app returned a damaged bundle.",
     );
+  });
+});
+
+describe("browser fetch-through errors", () => {
+  it.each([400, 404])("explains an older server answering %s", async (status) => {
+    await expect(
+      fetchBundle(
+        RELEASE,
+        "a".repeat(64),
+        vi.fn(async () => new Response(null, { status })),
+      ),
+    ).rejects.toThrow("Update the server");
+  });
+  it("explains an older server that treats fetch as a disabled workspace upload", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ code: "FEATURE_DISABLED", feature: "workspace_plugins" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await expect(fetchBundle(RELEASE, "a".repeat(64), fetchImpl)).rejects.toThrow(
+      "Update the server",
+    );
+  });
+  it("explains a rejected hash pin", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "bundle SHA-256 mismatch" }), { status: 422 }),
+    );
+    await expect(fetchBundle(RELEASE, "a".repeat(64), fetchImpl)).rejects.toThrow(
+      "does not match the SHA-256",
+    );
+  });
+  it("sends the browser CSRF cookie only to the RIM server", async () => {
+    document.cookie = "rim_csrf=browser-token; path=/";
+    const link = await linkFor(BYTES);
+    const fetchImpl = fetchReturning(BYTES);
+    await fetchBundle(RELEASE, link.sha256, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/plugin-bundles\/fetch$/),
+      expect.objectContaining({
+        headers: { "content-type": "application/json", "x-csrf-token": "browser-token" },
+        credentials: "include",
+      }),
+    );
+    document.cookie = "rim_csrf=; max-age=0; path=/";
+  });
+  it("reports a connection failure without blaming external CORS", async () => {
+    await expect(
+      fetchBundle(
+        RELEASE,
+        "a".repeat(64),
+        vi.fn(async () => {
+          throw new TypeError("Failed to fetch");
+        }),
+      ),
+    ).rejects.toThrow("Could not reach your RIM server");
   });
 });

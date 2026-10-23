@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { FeatureDisabledError } from "../../../core/serverFeatures";
-import { BundleLinkError, fetchBundle } from "../web/bundleLink";
+import { fetchBundle } from "../web/bundleLink";
 import { uploadPluginBundle } from "./api";
 
 const SHA = "a".repeat(64);
@@ -44,12 +44,18 @@ describe("plugin bundle routes while workspace plugins are switched off", () => 
     expect(err).toBeInstanceOf(FeatureDisabledError);
   });
 
-  it("reads another host's 403 as that host's answer, whatever its body says", async () => {
-    const fetchImpl = vi.fn(async () => pluginsOff()) as unknown as typeof fetch;
+  it("recognizes the fetch-through feature refusal for an external bundle", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ code: "FEATURE_DISABLED", feature: "plugin_link_fetch" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
     const err = await fetchBundle("https://elsewhere.test/b", SHA, fetchImpl).catch(
       (e: unknown) => e,
     );
-    expect(err).toBeInstanceOf(BundleLinkError);
-    expect((err as Error).message).toBe("The bundle's server answered 403.");
+    expect(err).toBeInstanceOf(FeatureDisabledError);
+    expect((err as Error).message).toBe("Plugin link installation is switched off on this server");
   });
 });

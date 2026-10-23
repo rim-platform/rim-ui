@@ -109,14 +109,14 @@ describe("verifying a registry entry on this device", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("fetches a bundle on another host from the webview without credentials on the web", async () => {
+  it("fetches an external bundle through the RIM server in the browser", async () => {
     const check = await releaseCheck();
     const fetchImpl = respond(helloWebBundle());
     const invoke = invokeReturning(helloWebBundle());
     await expect(fetchEntryBundle(check, "web", fetchImpl, invoke)).resolves.toHaveLength(1605);
     expect(fetchImpl).toHaveBeenCalledWith(
-      RELEASE,
-      expect.objectContaining({ credentials: "omit" }),
+      expect.stringMatching(/\/api\/plugin-bundles\/fetch$/),
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
     expect(invoke).not.toHaveBeenCalled();
   });
