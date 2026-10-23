@@ -37,6 +37,10 @@ import {
   handleReadStateUpdated,
   handleViewerMembershipChange,
 } from "../../features/notifications/state/notificationEvents";
+import {
+  handleJoinRequestCreated,
+  handleJoinRequestDecided,
+} from "../../features/workspaces/state/joinRequestEvents";
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
@@ -344,6 +348,20 @@ export function applyWorkspaceEvent(
     case "MemberJoined":
       // Invalidate member list
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+      // A join through the public link counts in the Owner's link statistics.
+      if (event.source === "public_link") {
+        qc.invalidateQueries({ queryKey: queryKeys.publicJoinLink(workspaceId) });
+      }
+      break;
+
+    // These carry the workspace asked to join, which is not the subscription's space for the
+    // person asking: they hear it on their direct-space subscription.
+    case "JoinRequestCreated":
+      handleJoinRequestCreated(qc, event);
+      break;
+
+    case "JoinRequestDecided":
+      void handleJoinRequestDecided(qc, event);
       break;
 
     case "MemberLeft":

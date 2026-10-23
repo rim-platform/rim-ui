@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 
 import vectors from "../../../../protocol/relay-vectors.json";
 
@@ -12,6 +13,30 @@ vi.mock("../api/useJoinServer", () => ({
   useJoinServerMutation: () => ({ ...local, reset: vi.fn(), isPending: false, error: null }),
 }));
 
+const mockNavigate = vi.hoisted(() => vi.fn());
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+// The viewer's open join requests, and the withdrawal of one.
+const myRequests = vi.hoisted(() => ({
+  data: [] as unknown[],
+  withdraw: vi.fn(),
+}));
+vi.mock("../api/publicJoinLink", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/publicJoinLink")>()),
+  useMyJoinRequests: () => ({ data: myRequests.data }),
+  useWithdrawJoinRequest: () => ({
+    mutate: myRequests.withdraw,
+    isPending: false,
+    variables: undefined,
+  }),
+}));
+vi.mock("../../../shared/toast", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
+}));
+
+import { toast } from "../../../shared/toast";
 import { withLimits } from "../../../test/limits";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
@@ -21,14 +46,19 @@ const LINK = `rim-invite:1:${vectors.host.serverId}:${vectors.host.keyHash}:rim_
 function renderDialog(onClose = vi.fn()) {
   const qc = new QueryClient();
   render(
-    <QueryClientProvider client={qc}>
-      <AddWorkspaceDialog onClose={onClose} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>
+        <AddWorkspaceDialog onClose={onClose} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
   return onClose;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  myRequests.data = [];
+});
 
 describe("AddWorkspaceDialog", () => {
   it("joins a workspace on another server from a rim-invite link", async () => {
@@ -120,6 +150,46 @@ describe("AddWorkspaceDialog", () => {
     await user.click(screen.getByRole("button", { name: "Join" }));
     expect(local.mutate).toHaveBeenCalledWith("rim_inv_local", expect.anything());
     expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+
+  it("opens the join page of a pasted public link instead of joining with it", async () => {
+    const user = userEvent.setup();
+    const onClose = renderDialog();
+    await user.click(screen.getByText("Join Existing"));
+    await user.click(screen.getByRole("textbox"));
+    await user.paste("https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
+    expect(screen.getByText(/This is a workspace's public link/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
+    expect(local.mutate).not.toHaveBeenCalled();
+    expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+
+  it("lists the person's open join requests under Waiting for approval, with Withdraw", async () => {
+    myRequests.data = [
+      {
+        id: "jr-1",
+        serverId: "ws-acme",
+        workspaceName: "Acme",
+        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+    const user = userEvent.setup();
+    renderDialog();
+
+    expect(screen.getByRole("heading", { name: "Waiting for approval" })).toBeInTheDocument();
+    expect(screen.getByTestId("my-join-request-jr-1")).toHaveTextContent("AcmeAsked 3h ago");
+    await user.click(screen.getByRole("button", { name: "Withdraw your request to join Acme" }));
+    expect(myRequests.withdraw).toHaveBeenCalledWith("jr-1", expect.anything());
+
+    myRequests.withdraw.mock.calls[0][1].onSuccess();
+    expect(toast.success).toHaveBeenCalledWith("Withdrew your request to join Acme");
+  });
+
+  it("shows no Waiting for approval without open requests", () => {
+    renderDialog();
+    expect(screen.queryByRole("heading", { name: "Waiting for approval" })).toBeNull();
   });
 
   it("gives a new account on probation the reason on the create choice and holds the form", async () => {

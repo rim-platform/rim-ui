@@ -29,6 +29,8 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsInstanceOperator } from "../../instance-moderation/api/instanceModeration";
 import { RimMark } from "../../../shared/brand/RimLogo";
 import { OperatorDmPolicy } from "../../dm-policy/components/OperatorDmPolicy";
+import { joinRequestBadge, useJoinRequestCount } from "../../workspaces/api/publicJoinLink";
+import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -62,6 +64,11 @@ const ModerationSettings = lazy(() =>
 const WorkspaceInvites = lazy(() =>
   import("./WorkspaceInvites").then((m) => ({
     default: m.WorkspaceInvites,
+  })),
+);
+const PublicLinkSettings = lazy(() =>
+  import("./PublicLinkSettings").then((m) => ({
+    default: m.PublicLinkSettings,
   })),
 );
 const WorkspacePluginSettings = lazy(() =>
@@ -308,6 +315,10 @@ export function SettingsPage() {
   // Instance moderation is listed for instance operators only. Opened directly by anyone else,
   // the page says it is for operators instead of falling back to Profile.
   const { isOperator } = useIsInstanceOperator();
+  // Open join requests, counted on the Moderation entry.
+  const canHaveLink = useCanHavePublicLink(workspaceId);
+  const { data: requestCount } = useJoinRequestCount(workspaceId, canModerate && canHaveLink);
+  const moderationBadge = canModerate && canHaveLink ? joinRequestBadge(requestCount) : null;
   const visibleTabs = tabs.filter(
     (tab) =>
       (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
@@ -382,6 +393,17 @@ export function SettingsPage() {
                     )}
                   >
                     {tab.label}
+                    {tab.key === "workspace-moderation" && moderationBadge && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="ml-2 rounded-full bg-rim-accent px-1.5 text-[10px] font-semibold text-rim-void"
+                        >
+                          {moderationBadge}
+                        </span>
+                        <span className="sr-only">, {moderationBadge} join requests</span>
+                      </>
+                    )}
                   </button>
                 ))}
               </div>
@@ -413,6 +435,10 @@ export function SettingsPage() {
               {shownTab === "workspace" && (
                 <div className="space-y-10">
                   <WorkspaceInvites serverId={workspaceId} />
+                  <PublicLinkSettings
+                    serverId={workspaceId}
+                    onOpenRequests={() => setActiveTab("workspace-moderation")}
+                  />
                   <WorkspaceDmPolicySettings serverId={workspaceId} />
                   <WorkspacePluginSettings serverId={workspaceId} />
                   <WorkspaceOwnerSettings serverId={workspaceId} />

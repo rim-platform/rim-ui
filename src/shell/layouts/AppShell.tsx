@@ -8,6 +8,7 @@ import { useSessionHydration } from "../../features/auth/api/useSessionHydration
 import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
 import { RestoringSessionSplash } from "../../features/auth/components/RestoringSession";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { usePendingPublicLinkReturn } from "../../features/auth/hooks/usePendingPublicLinkReturn";
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
 import { WorkspaceSelector } from "../../features/workspaces/components/WorkspaceSelector";
 import { MessageTimeline } from "../../features/messages/components/MessageTimeline";
@@ -102,6 +103,8 @@ export function AppShell() {
   const { capabilities } = useRuntime();
   const navigate = useNavigate();
   const location = useLocation();
+  // Where the app lands after sign-in or signup: back to a public link left for it.
+  usePendingPublicLinkReturn(!isHydrating && session !== null);
 
   useEffect(() => {
     if (!isHydrating && !session) {

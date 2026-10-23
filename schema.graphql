@@ -1284,6 +1284,29 @@ A scalar that can represent any JSON value.
 scalar JSON
 
 """
+What `joinByPublicLink` did.
+"""
+enum JoinByPublicLinkOutcome {
+	"""
+	The caller is a member now.
+	"""
+	JOINED
+	"""
+	The caller's join request was filed.
+	"""
+	REQUESTED
+}
+
+type JoinByPublicLinkPayload {
+	outcome: JoinByPublicLinkOutcome!
+	serverId: ID!
+	"""
+	The filed request, with `REQUESTED`.
+	"""
+	joinRequest: JoinRequest
+}
+
+"""
 Join a workspace on another host through this relay.
 """
 input JoinRemoteWorkspaceInput {
@@ -1304,6 +1327,74 @@ input JoinRemoteWorkspaceInput {
 	A delegation of the signing device for this relay, the host and the workspace.
 	"""
 	delegation: SignedStatementInput!
+}
+
+"""
+A person's request to join a workspace through its public link.
+"""
+type JoinRequest {
+	id: ID!
+	serverId: ID!
+	workspaceName: String!
+	userId: ID!
+	"""
+	The person's note to the moderators, at most 500 characters.
+	"""
+	message: String
+	status: JoinRequestStatus!
+	createdAt: DateTime!
+	"""
+	When an open request expires: 30 days after it was filed.
+	"""
+	expiresAt: DateTime!
+	decidedAt: DateTime
+	decidedById: ID
+	"""
+	The person asking (null once the account no longer exists).
+	"""
+	user: User
+}
+
+input JoinRequestCursorInput {
+	createdAt: DateTime!
+	requestId: ID!
+}
+
+type JoinRequestCursorOutput {
+	createdAt: DateTime!
+	requestId: ID!
+}
+
+"""
+A workspace's open join requests ordered `createdAt DESC, id DESC` (newest first), with the
+standard cursor semantics: `AFTER` pages go to older requests.
+"""
+type JoinRequestPage {
+	items: [JoinRequest!]!
+	next: JoinRequestCursorOutput
+	prev: JoinRequestCursorOutput
+	pageInfo: PageInfo!
+}
+
+"""
+Where a join request stands.
+"""
+enum JoinRequestStatus {
+	OPEN
+	ACCEPTED
+	DECLINED
+	"""
+	The person took it back.
+	"""
+	WITHDRAWN
+	"""
+	A ban or the person's account deletion ended it.
+	"""
+	CANCELLED
+	"""
+	It stayed open for 30 days.
+	"""
+	EXPIRED
 }
 
 input JoinServerByInviteInput {
@@ -2329,6 +2420,46 @@ type Mutation {
 	revoked invite returns it unchanged.
 	"""
 	revokeInvite(inviteId: ID!): WorkspaceInvite!
+	"""
+	Change the workspace's public link: on or off, `mode`, `role` (`MEMBER` or `GUEST`) and
+	`allowRemote`. Turning it on for the first time issues its token; turning it off makes
+	every lookup of it answer `NOT_FOUND` until it is turned on again. Owner only
+	(`FORBIDDEN`); `VALIDATION` for the direct space, the server's default workspace and any
+	other role.
+	"""
+	updatePublicJoinLink(input: UpdatePublicJoinLinkInput!): PublicJoinLink!
+	"""
+	Issue a new token for the workspace's public link; the old one stops working at once.
+	The settings stay. Owner only, with the refusals of `updatePublicJoinLink`.
+	"""
+	reissuePublicJoinLink(serverId: ID!): PublicJoinLink!
+	"""
+	Join a workspace through its public link (`DIRECT`), or ask to join with an optional
+	`message` of at most 500 characters (`REQUESTS`). For an account of this server; the
+	link never creates an account. An invalid link is `NOT_FOUND` and counts towards the
+	address's misses (`RATE_LIMITED` past them); a ban is `FORBIDDEN`; a full workspace,
+	a too long message, 20 open requests or a decline less than 24 hours ago are
+	`VALIDATION`; a member or an open request is `CONFLICT`.
+	"""
+	joinByPublicLink(token: String!, message: String): JoinByPublicLinkPayload!
+	"""
+	Take back the caller's open join request. `NOT_FOUND` unless it is theirs, `CONFLICT`
+	once it is no longer open.
+	"""
+	withdrawJoinRequest(requestId: ID!): JoinRequest!
+	"""
+	Accept an open join request: the person joins with the link's current role and the
+	public channels, as a direct join does; a person who has joined another way since is
+	left as they are and the request is closed as accepted. Owner and Moderators only
+	(`FORBIDDEN`); a request of another workspace is `NOT_FOUND`, one no longer open is
+	`CONFLICT`, a ban `FORBIDDEN`, a full workspace `VALIDATION`.
+	"""
+	acceptJoinRequest(serverId: ID!, requestId: ID!): JoinRequest!
+	"""
+	Decline an open join request; the person may ask again 24 hours later. Owner and
+	Moderators only, with the refusals of `acceptJoinRequest` other than the join checks.
+	"""
+	declineJoinRequest(serverId: ID!, requestId: ID!): JoinRequest!
 }
 
 input MuteConversationInput {
@@ -2650,6 +2781,112 @@ type ProfileCard {
 	updatedAt: DateTime!
 }
 
+"""
+A workspace's public link as its Owner sees it: the settings, the link itself, which the
+Owner can copy again at any time, and how it is used.
+"""
+type PublicJoinLink {
+	serverId: ID!
+	"""
+	Whether the link admits anyone; off by default.
+	"""
+	enabled: Boolean!
+	mode: PublicJoinLinkMode!
+	"""
+	`MEMBER` or `GUEST`: the role a person joining through the link gets.
+	"""
+	role: ServerMemberRoleGql!
+	"""
+	Whether accounts from other servers may join through the link.
+	"""
+	allowRemote: Boolean!
+	"""
+	When the link was last turned on.
+	"""
+	enabledAt: DateTime
+	"""
+	When the current token was issued; null while the workspace never had a link.
+	"""
+	issuedAt: DateTime
+	issuedById: ID
+	"""
+	The token, `rim_pjl_` and 22 base64url characters; null while the workspace never had a
+	link.
+	"""
+	token: String
+	"""
+	`<server>/join/<token>`; null while the workspace never had a link.
+	"""
+	url: String
+	"""
+	Joins through the link, directly or by an accepted request, in the last 24 hours.
+	"""
+	joinsLastDay: Int!
+	"""
+	Joins through the link in the last seven days.
+	"""
+	joinsLastWeek: Int!
+	"""
+	The workspace's open join requests.
+	"""
+	openRequests: Int!
+	"""
+	Who issued the current token (null once the account no longer exists).
+	"""
+	issuedBy: User
+}
+
+"""
+What opening a workspace's public link does.
+"""
+enum PublicJoinLinkMode {
+	"""
+	The person joins at once.
+	"""
+	DIRECT
+	"""
+	The person asks to join; the Owner or a Moderator accepts or declines.
+	"""
+	REQUESTS
+}
+
+"""
+What a valid, switched-on public link shows anyone who has it.
+"""
+type PublicJoinLinkPreview {
+	serverId: ID!
+	name: String!
+	mode: PublicJoinLinkMode!
+	viewer: PublicJoinLinkViewer!
+	"""
+	The caller's open join request, with `REQUEST_OPEN`.
+	"""
+	joinRequestId: ID
+}
+
+"""
+Where the caller of `publicJoinLinkPreview` stands with the link's workspace.
+"""
+enum PublicJoinLinkViewer {
+	"""
+	Nobody is signed in.
+	"""
+	SIGNED_OUT
+	"""
+	Signed in, not a member, not banned, no open request.
+	"""
+	NOT_MEMBER
+	MEMBER
+	"""
+	Banned from the workspace: cannot join or ask to.
+	"""
+	BANNED
+	"""
+	The caller's join request is waiting for the moderators.
+	"""
+	REQUEST_OPEN
+}
+
 type Query {
 	"""
 	The commands the caller may run on `surface` (default `PALETTE`), sorted by id.
@@ -2923,6 +3160,28 @@ type Query {
 	token is never listed.
 	"""
 	workspaceInvites(serverId: ID!, dir: PageDir, cursor: WorkspaceInviteCursorInput, limit: Int): WorkspaceInvitePage!
+	"""
+	The workspace's public link, its settings and how it is used, for its Owner (`FORBIDDEN`
+	for anyone else; `VALIDATION` for the direct space and the server's default workspace).
+	A workspace that never had a link answers with `enabled` false and a null `token`.
+	"""
+	publicJoinLink(serverId: ID!): PublicJoinLink!
+	"""
+	What a valid, switched-on public link shows; no sign-in needed. Every other token
+	answers `NOT_FOUND` with the same message, and an address with 20 such answers in ten
+	minutes gets `RATE_LIMITED` for every link lookup and join for an hour.
+	"""
+	publicJoinLinkPreview(token: String!): PublicJoinLinkPreview!
+	"""
+	The workspace's open join requests, newest first (`createdAt DESC, id DESC`); `AFTER`
+	pages go to older ones. Defaults: `dir` `AFTER`, `limit` 50 (clamped to 1..=100). Owner
+	and Moderators only: anyone else gets `FORBIDDEN`.
+	"""
+	joinRequests(serverId: ID!, dir: PageDir, cursor: JoinRequestCursorInput, limit: Int): JoinRequestPage!
+	"""
+	The caller's open join requests, newest first; at most 20.
+	"""
+	myJoinRequests: [JoinRequest!]!
 }
 
 type ReactionGroup {
@@ -3861,6 +4120,21 @@ input UpdatePipelineInput {
 	filter: PipelineFilterInput
 	actions: [PipelineActionInput!]!
 	cooldownSecs: Int
+}
+
+"""
+The Owner's change to a workspace's public link; an omitted field stays as it is. Turning
+the link on for the first time issues its token.
+"""
+input UpdatePublicJoinLinkInput {
+	serverId: ID!
+	enabled: Boolean
+	mode: PublicJoinLinkMode
+	"""
+	`MEMBER` or `GUEST`; any other role is `VALIDATION`.
+	"""
+	role: ServerMemberRoleGql
+	allowRemote: Boolean
 }
 
 input UpdateUserCommandInput {

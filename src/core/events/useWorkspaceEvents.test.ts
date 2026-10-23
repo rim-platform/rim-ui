@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, type ReactNode } from "react";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import {
@@ -43,6 +43,28 @@ vi.mock("../../shared/toast", () => ({
   },
 }));
 
+const platform = vi.hoisted(() => ({ value: "web" as "web" | "desktop" }));
+vi.mock("../runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../runtime/runtime")>()),
+  detectPlatform: () => platform.value,
+}));
+const notifications = vi.hoisted(() => ({
+  desktop: vi.fn(() => Promise.resolve()),
+  browser: vi.fn(() => false),
+}));
+vi.mock("../../features/notifications/runtime/desktopNotification", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../features/notifications/runtime/desktopNotification")
+  >()),
+  showDesktopNotification: notifications.desktop,
+}));
+vi.mock("../../features/notifications/runtime/browserNotification", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../features/notifications/runtime/browserNotification")
+  >()),
+  showBrowserTextNotification: notifications.browser,
+}));
+
 import { toast } from "../../shared/toast";
 import { logger } from "../logger";
 import { useShellStore } from "../../shell/state/useShellStore";
@@ -59,6 +81,10 @@ import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS, type TypingStartedEvent, type TypingStoppedEvent } from "./busEvents";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
+import { JoinRequestStatus } from "../graphql/generated/schema-types";
+import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
+import { DIRECT_SPACE_ID } from "../../test/directSpace";
+import type { JoinRequestRow } from "../../features/workspaces/api/publicJoinLink";
 
 /** Simulates the backend pushing a `WorkspaceEvent` down the subscription. */
 function emitWorkspaceEvent(event: WorkspaceEvent) {
@@ -565,5 +591,209 @@ describe("useWorkspaceEvents typing", () => {
       { conversationId: "c-1", userId: "u-2" },
       { conversationId: "c-enc", userId: "u-2" },
     ]);
+  });
+});
+
+describe("join request events", () => {
+  const ME = "u1";
+  const mine: JoinRequestRow = {
+    id: "jr-1",
+    serverId: "ws-acme",
+    workspaceName: "Acme Community",
+    userId: ME,
+    message: null,
+    status: JoinRequestStatus.OPEN,
+    createdAt: "2026-10-23T10:00:00Z",
+    expiresAt: "2026-11-22T10:00:00Z",
+    user: null,
+  };
+
+  function decided(outcome: string, userId = ME): WorkspaceEvent {
+    return {
+      type: "JoinRequestDecided",
+      workspace_id: "ws-acme",
+      request_id: "jr-1",
+      user_id: userId,
+      outcome,
+    } as WorkspaceEvent;
+  }
+
+  /** A client that knows the viewer's open request, and spies on what it refreshes. */
+  function listen(spaceId: string, withRequest = true) {
+    const qc = new QueryClient();
+    if (withRequest) qc.setQueryData(queryKeys.myJoinRequests(), [mine]);
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useWorkspaceEvents(spaceId), { wrapper: wrapperFor(qc) });
+    return { qc, invalidate };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    platform.value = "web";
+    notifications.browser.mockReturnValue(false);
+    useAuthStore.setState({ session: { userId: ME } });
+    useNotificationSettingsStore.setState({ enabled: true, soundEnabled: true });
+  });
+
+  afterEach(() => useAuthStore.setState({ session: null }));
+
+  it.each([
+    ["the workspace's own subscription", "ws-acme"],
+    ["the direct-space subscription", DIRECT_SPACE_ID],
+  ])("refreshes the asked workspace's requests and link on %s", async (_name, spaceId) => {
+    const { invalidate } = listen(spaceId);
+
+    emitWorkspaceEvent({
+      type: "JoinRequestCreated",
+      workspace_id: "ws-acme",
+      request_id: "jr-2",
+      user_id: "u-other",
+    });
+    emitWorkspaceEvent(decided("declined", "u-other"));
+
+    await waitFor(() =>
+      expect(
+        invalidate.mock.calls.filter(
+          ([filters]) =>
+            JSON.stringify(filters) ===
+            JSON.stringify({ queryKey: queryKeys.joinRequests("ws-acme") }),
+        ),
+      ).toHaveLength(2),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.publicJoinLink("ws-acme") });
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.joinRequests(DIRECT_SPACE_ID),
+    });
+    // Someone else's request tells the viewer nothing.
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("tells the person on the direct space that their request was accepted", async () => {
+    const { invalidate } = listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided("accepted"));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Your request to join Acme Community was accepted.",
+        { description: "The workspace is in your workspace list now." },
+      ),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.myJoinRequests() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["publicJoinLinkPreview"] });
+  });
+
+  it("tells the person that their request was declined, without refreshing their workspaces", async () => {
+    const { invalidate } = listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided("declined"));
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith("Your request to join Acme Community was declined.", {
+        description: "You can ask to join it again in 24 hours.",
+      }),
+    );
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
+  });
+
+  it("shows a browser notification where the site may, instead of a toast", async () => {
+    notifications.browser.mockReturnValue(true);
+    listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided("declined"));
+
+    await waitFor(() =>
+      expect(notifications.browser).toHaveBeenCalledWith(
+        "Your request to join Acme Community was declined.",
+        "You can ask to join it again in 24 hours.",
+      ),
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("shows a desktop notification in the desktop app, with the device's sound setting", async () => {
+    platform.value = "desktop";
+    useNotificationSettingsStore.setState({ soundEnabled: false });
+    listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided("accepted"));
+
+    await waitFor(() =>
+      expect(notifications.desktop).toHaveBeenCalledWith({
+        title: "Your request to join Acme Community was accepted.",
+        body: "The workspace is in your workspace list now.",
+        sound: false,
+      }),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("follows the device's notification switch", async () => {
+    useNotificationSettingsStore.setState({ enabled: false });
+    const { invalidate } = listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided("accepted"));
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() }),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(notifications.browser).not.toHaveBeenCalled();
+  });
+
+  it.each(["withdrawn", "cancelled"])("says nothing when a request is %s", async (outcome) => {
+    const { invalidate } = listen(DIRECT_SPACE_ID);
+
+    emitWorkspaceEvent(decided(outcome));
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.myJoinRequests() }),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(notifications.browser).not.toHaveBeenCalled();
+    expect(notifications.desktop).not.toHaveBeenCalled();
+  });
+
+  it("names a workspace it does not know as a workspace", async () => {
+    listen(DIRECT_SPACE_ID, false);
+    emitWorkspaceEvent(decided("declined"));
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        "Your request to join a workspace was declined.",
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("refreshes the Owner's link statistics on a join through the public link only", async () => {
+    const { invalidate } = listen("ws-acme", false);
+
+    emitWorkspaceEvent({
+      type: "MemberJoined",
+      workspace_id: "ws-acme",
+      user_id: "u-new",
+      username: "new",
+      source: "public_link",
+    });
+    emitWorkspaceEvent({
+      type: "MemberJoined",
+      workspace_id: "ws-acme",
+      user_id: "u-inv",
+      username: "inv",
+    });
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-acme") }),
+    );
+    expect(
+      invalidate.mock.calls.filter(
+        ([filters]) =>
+          JSON.stringify(filters) ===
+          JSON.stringify({ queryKey: queryKeys.publicJoinLink("ws-acme") }),
+      ),
+    ).toHaveLength(1);
   });
 });

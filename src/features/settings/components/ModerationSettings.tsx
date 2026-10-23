@@ -22,6 +22,8 @@ import {
 } from "../../workspaces/api/useModeration";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { JoinRequestsSection } from "../../workspaces/components/JoinRequestsSection";
+import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 import { EncryptedReportView } from "./EncryptedReportView";
 
 interface ModerationSettingsProps {
@@ -29,12 +31,14 @@ interface ModerationSettingsProps {
 }
 
 /**
- * Settings → Workspace → Moderation (Owner/Moderator): active bans with Unban, and message
+ * Settings → Workspace → Moderation (Owner/Moderator): open join requests with Accept and
+ * Decline (in a workspace that can have a public link), active bans with Unban, and message
  * reports with Resolve / Dismiss, including the verified content of reported encrypted
  * messages. The server answers `FORBIDDEN` to anyone else and that message is shown here.
  */
 export function ModerationSettings({ serverId }: ModerationSettingsProps) {
   const canModerate = useCanModerate(serverId ?? undefined);
+  const canHaveLink = useCanHavePublicLink(serverId);
   if (!serverId || !canModerate) return null;
 
   return (
@@ -44,10 +48,11 @@ export function ModerationSettings({ serverId }: ModerationSettingsProps) {
           Moderation
         </h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Bans and reported messages for this workspace. Every action here is recorded in the audit
-          log.
+          Join requests, bans and reported messages for this workspace. Every action here is
+          recorded in the audit log.
         </p>
       </div>
+      {canHaveLink && <JoinRequestsSection serverId={serverId} />}
       <BansList serverId={serverId} />
       <MessageReportsList serverId={serverId} />
     </section>

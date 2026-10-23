@@ -110,6 +110,21 @@ Its badge counts unread messages before you open it. The rail shows once a works
   of the workspace rail) and then **Join Existing**, takes the invite code: the whole invite link,
   the part of it that starts with `rim_inv_`, or a whole `rim-invite:1:…` link for a workspace on
   another server. **Join** opens it.
+- **Join with a public link.** A workspace can have one permanent link, `…/join/rim_pjl_…`, that
+  its Owner posts on a website or a profile. Opened in a browser, it shows the workspace's name.
+  Signed in, **Join \<workspace\>** joins it and opens it; on a workspace that asks first,
+  **Ask to join** takes an optional **Message** to the moderators (at most 500 characters) and the
+  page says "Waiting for the moderators", with **Withdraw request**. When a moderator decides, the
+  app tells you "Your request to join \<workspace\> was accepted." (the workspace appears in the
+  rail) or "… was declined." (you can ask again after 24 hours), as your notification settings
+  allow. Signed out, the page offers **Sign in** and **Create an account**: the link never
+  creates an account, so that is the server's own signup, and once you are signed in the app
+  opens the link again. A member is told "You're already a member" with **Open workspace**, and
+  someone banned there "You are banned from this workspace." A wrong, old or switched-off link
+  says "This link isn't valid.", the same in every case; after many of those from one network
+  the page says how many minutes to wait. Pasted into **Add workspace**, the link opens the same
+  page, and **Add workspace** lists your open requests under **Waiting for approval**, each with
+  **Withdraw**.
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
@@ -131,6 +146,18 @@ first: its role, how many of its uses are taken, when it expires and who created
 Active, Expired, Used up or Revoked. **Revoke** on an active invite, after its confirmation,
 stops the link admitting anyone; people who already joined with it stay. **Create invite** there
 opens the same dialog.
+
+Settings → Workspace → **Public link**, for the Owner only and not in the server's default
+workspace, sets up the workspace's permanent link. It lets people who already have an account on
+this server join or ask to join, and never creates an account. The first time the switch turns it
+on, the app asks again: "Anyone with this link can join. Post it only where you want it public."
+The switch only pauses the link: "Turning the link off pauses it. Turning it on again brings back
+the same link." Off, the link says "This link isn't valid."; on again, it works wherever it was
+posted. **Mode** is **Join directly** or **Ask to join**, and **Role** is **Member** or **Guest**.
+While the link is on it shows with a copy button, and a line reads "N joined in the last 24
+hours · M in the last 7 days · K requests waiting". **Issue a new link**, after the confirmation
+"The current link stops working everywhere you posted it.", ends the current link at once;
+people who joined with it stay, and open requests stay open.
 
 **Creating a channel.** **New channel** (the **+** beside Channels in the tool panel, or
 <kbd>Ctrl+Shift+C</kbd>) asks for a **Channel name**. The **Private** switch says "Only invited

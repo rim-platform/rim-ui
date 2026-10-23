@@ -30,7 +30,6 @@
  * the origin as an additional precaution.
  */
 
-import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 
@@ -44,23 +43,7 @@ import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
 import { RestoringSession } from "./RestoringSession";
-
-/**
- * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
- * on mount and removes it on unmount. Used on routes that carry sensitive tokens
- * in their URL path to prevent token leakage via the Referer header.
- */
-function useNoReferrerMeta(): void {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "referrer";
-    meta.content = "no-referrer";
-    document.head.appendChild(meta);
-    return () => {
-      document.head.removeChild(meta);
-    };
-  }, []);
-}
+import { useNoReferrerMeta } from "../hooks/useNoReferrerMeta";
 
 export function JoinPage() {
   useNoReferrerMeta();

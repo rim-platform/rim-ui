@@ -9,6 +9,7 @@ import { useQuickAccessStore } from "../../features/commands/state/useQuickAcces
 import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../core/query/keys";
 import { callsTo, routeRequests } from "../../features/conversations/__fixtures__/conversations";
+import { fakeServerInfo } from "../../test/serverInfo";
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../core/graphql/client", () => ({
@@ -115,8 +116,15 @@ describe("WorkspaceRail", () => {
 });
 
 describe("WorkspaceRail — workspace context menu", () => {
-  function serve(role: ServerMemberRoleGql, dndPaused = false) {
+  function serve(role: ServerMemberRoleGql, dndPaused = false, joinRequests = 0) {
     routeRequests(requestMock, {
+      "query ServerInfo": () => ({ serverInfo: fakeServerInfo() }),
+      "query JoinRequestCount": () => ({
+        joinRequests: {
+          items: Array.from({ length: joinRequests }, (_, i) => ({ id: `jr-${i}` })),
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      }),
       "query Server(": (vars) => ({
         server: { id: vars.serverId, name: "Beta", viewerRole: role },
       }),
@@ -205,6 +213,28 @@ describe("WorkspaceRail — workspace context menu", () => {
       kind: "settings",
       tab: "workspace-moderation",
     });
+  });
+
+  it("offers a moderator the open join requests with their number", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, false, 2);
+    const beta = await openBetaMenu();
+    await waitFor(() => {
+      fireEvent.contextMenu(beta);
+      expect(menuLabels()).toContain("Join requests…: 2 waiting");
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Join requests…: 2 waiting" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "settings",
+      tab: "workspace-moderation",
+    });
+  });
+
+  it("leaves join requests out of the menu while none are open", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openBetaMenu();
+    await waitFor(() => expect(callsTo(requestMock, "query JoinRequestCount")).toHaveLength(1));
+    expect(menuLabels().some((label) => label.startsWith("Join requests"))).toBe(false);
   });
 
   it("pauses that workspace's notifications for an hour", async () => {

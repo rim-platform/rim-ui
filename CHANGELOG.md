@@ -23,6 +23,15 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- A workspace's Owner can turn on one permanent public link in Settings → Workspace → **Public
+  link**, after a warning: join directly or ask to join, as a Member or a Guest, with the link to
+  copy, joins of the last 24 hours and 7 days, and **Issue a new link** to end the old one. Off
+  only pauses the link. Opening it lets an account of the server join, or ask to join with a
+  message; someone without an account signs up the server's usual way and comes back to the link,
+  which never creates an account. Owners and Moderators accept or decline requests in Settings →
+  Moderation → **Join requests**, with a count of open requests there and in the workspace's menu,
+  and the person is told when their request is accepted or declined. **Add workspace** opens a
+  pasted public link and lists the person's open requests with **Withdraw**.
 - A person has one context menu wherever they appear: right-click or long-press a message's
   author or an @mention, or a row of a conversation's members or of **Workspace members**, or
   press the ContextMenu key on a focused mention or member row. It offers View profile, Send

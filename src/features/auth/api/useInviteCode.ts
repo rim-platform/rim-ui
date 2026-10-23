@@ -17,6 +17,10 @@ const PREVIEW_DELAY_MS = 300;
 export const REMOTE_INVITE_MESSAGE =
   "This invite is for a workspace on another server. Create your account first, then join it with Join with an invite code.";
 
+/** What a signup says about a workspace's public link given as its invite code. */
+export const PUBLIC_LINK_AT_SIGNUP_MESSAGE =
+  "This is a workspace's public link, not an invite: it does not create an account. Create your account without it, then open the link to join.";
+
 /** The token fields a signup sends: one for an invite this server takes there, else none. */
 export interface InviteSignupTokens {
   instanceInviteToken?: string;
@@ -99,6 +103,7 @@ export function useInviteCode(mode: RegistrationMode | undefined): InviteCodeSta
 
   let error: string | null = null;
   if (code.kind === "remote") error = REMOTE_INVITE_MESSAGE;
+  else if (code.kind === "publicLink") error = PUBLIC_LINK_AT_SIGNUP_MESSAGE;
   else if (refusedHere) error = refused.message;
   else if (current && query.error && !query.isFetching) {
     error = graphqlErrorMessage(query.error, "Could not check this invite code.");

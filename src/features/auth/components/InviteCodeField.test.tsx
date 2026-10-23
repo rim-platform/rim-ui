@@ -34,7 +34,7 @@ vi.mock("./KeySignupForm");
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import { JoinForm } from "./JoinForm";
-import { REMOTE_INVITE_MESSAGE } from "../api/useInviteCode";
+import { PUBLIC_LINK_AT_SIGNUP_MESSAGE, REMOTE_INVITE_MESSAGE } from "../api/useInviteCode";
 import { RegistrationMode } from "../types";
 
 const WORKSPACE_TOKEN = "rim_inv_abc123";
@@ -268,6 +268,19 @@ describe("the invite code field", () => {
 
     expect(screen.getByText(REMOTE_INVITE_MESSAGE)).toBeInTheDocument();
     expect(createAccount()).toBeDisabled();
+  });
+
+  it("refuses a workspace's public link, which creates no account, without asking the server", async () => {
+    const user = userEvent.setup();
+    answer();
+    renderForm(RegistrationMode.INVITE_ONLY);
+
+    await fillPasswordSignup(user);
+    await pasteCode(user, "https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
+
+    expect(screen.getByText(PUBLIC_LINK_AT_SIGNUP_MESSAGE)).toBeInTheDocument();
+    expect(createAccount()).toBeDisabled();
+    expect(sent.filter((op) => op.operationName === "PreviewInviteToken")).toHaveLength(0);
   });
 });
 

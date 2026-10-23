@@ -12,6 +12,11 @@ vi.mock("../../features/auth/components/LoginPage", () => ({
 vi.mock("../../features/auth/components/JoinPage", () => ({
   JoinPage: () => <div data-testid="join-page" />,
 }));
+vi.mock("../../features/auth/components/PublicLinkJoin", () => ({
+  PublicLinkJoin: ({ token }: { token: string }) => (
+    <div data-testid="public-link-join">{token}</div>
+  ),
+}));
 vi.mock("../../features/auth/components/OpenJoinPage", () => ({
   OpenJoinPage: () => <div data-testid="open-join-page" />,
 }));
@@ -21,6 +26,8 @@ vi.mock("../../features/auth/components/ForgotPasswordPage", () => ({
 vi.mock("../../features/auth/components/ResetPasswordPage", () => ({
   ResetPasswordPage: () => <div data-testid="reset-password-page" />,
 }));
+
+import { JoinTokenRoute } from "./AppRouter";
 
 /**
  * Renders a minimal route tree matching AppRouter's configuration at the
@@ -32,7 +39,7 @@ function renderAtPath(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/login" element={<div data-testid="login-page" />} />
-        <Route path="/join/:token" element={<div data-testid="join-page" />} />
+        <Route path="/join/:token" element={<JoinTokenRoute />} />
         <Route path="/join" element={<div data-testid="open-join-page" />} />
         <Route path="/forgot-password" element={<div data-testid="forgot-password-page" />} />
         <Route path="/reset-password/:token" element={<div data-testid="reset-password-page" />} />
@@ -57,6 +64,20 @@ describe("AppRouter route resolution", () => {
     renderAtPath("/join/my-invite-token");
     expect(screen.getByTestId("join-page")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).not.toBeInTheDocument();
+  });
+
+  it("/join/:token with a public link resolves to PublicLinkJoin, never the invite flow", () => {
+    renderAtPath("/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
+    expect(screen.getByTestId("public-link-join")).toHaveTextContent(
+      "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA",
+    );
+    expect(screen.queryByTestId("join-page")).not.toBeInTheDocument();
+  });
+
+  it.each(["rim_inv_abc", "rim_iinv_abc"])("/join/%s keeps the invite flow", (token) => {
+    renderAtPath(`/join/${token}`);
+    expect(screen.getByTestId("join-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("public-link-join")).not.toBeInTheDocument();
   });
 
   it("/join (no token) resolves to OpenJoinPage, not JoinPage", () => {

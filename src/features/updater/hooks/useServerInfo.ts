@@ -31,14 +31,17 @@ export interface ServerInfoView {
 /**
  * The connected server's versions and features, read once per session (and again after a call
  * is refused for a disabled feature); a failure only sets `unreachable`.
+ *
+ * @param enabled Whether to fetch it when it is not cached yet; `false` only reads the cache.
  */
-export function useServerInfo(): ServerInfoView {
+export function useServerInfo(enabled = true): ServerInfoView {
   const query = useQuery({
     queryKey: queryKeys.serverInfo,
     queryFn: fetchServerInfo,
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
+    enabled,
   });
   const info = query.data;
   return {

@@ -1,10 +1,16 @@
 import { isInviteLink } from "../relay/remote/inviteLink";
+import { isPublicLinkToken } from "../workspaces/publicJoinLink";
 
 /**
- * What an invite code typed at signup holds: nothing, a token of this server, or an invite to a
- * workspace on another server (`rim-invite:1:…`), which a signup here cannot take.
+ * What an invite code typed at signup holds: nothing, a token of this server, an invite to a
+ * workspace on another server (`rim-invite:1:…`), which a signup here cannot take, or a
+ * workspace's public link (`rim_pjl_…`), which is no invite and creates no account.
  */
-export type InviteCode = { kind: "empty" } | { kind: "token"; token: string } | { kind: "remote" };
+export type InviteCode =
+  | { kind: "empty" }
+  | { kind: "token"; token: string }
+  | { kind: "remote" }
+  | { kind: "publicLink"; token: string };
 
 /** The token segment of an invite link's path: `…/join/<token>`, then an optional query. */
 const JOIN_PATH = /\/join\/([^/?#]+)\/?(?:[?#].*)?$/;
@@ -15,17 +21,21 @@ const JOIN_PATH = /\/join\/([^/?#]+)\/?(?:[?#].*)?$/;
  * percent-decoded. ASCII whitespace anywhere is dropped, as a pasted link may carry line breaks.
  *
  * @param text - The field's contents.
- * @returns The token, `empty` for a blank field, or `remote` for an invite to another server.
+ * @returns The token, `empty` for a blank field, `remote` for an invite to another server, or
+ *   `publicLink` with the token of a workspace's public link.
  */
 export function inviteCodeToken(text: string): InviteCode {
   const compact = text.replace(/[\t\n\f\r ]/g, "");
   if (!compact) return { kind: "empty" };
   if (isInviteLink(compact)) return { kind: "remote" };
   const segment = JOIN_PATH.exec(compact)?.[1];
-  if (!segment) return { kind: "token", token: compact };
-  try {
-    return { kind: "token", token: decodeURIComponent(segment) };
-  } catch {
-    return { kind: "token", token: segment };
+  let token = segment ?? compact;
+  if (segment) {
+    try {
+      token = decodeURIComponent(segment);
+    } catch {
+      token = segment;
+    }
   }
+  return isPublicLinkToken(token) ? { kind: "publicLink", token } : { kind: "token", token };
 }

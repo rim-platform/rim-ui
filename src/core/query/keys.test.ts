@@ -120,6 +120,8 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "server",
     "serverBans",
     "messageReports",
+    "publicJoinLink",
+    "joinRequests",
     "customEmojis",
     "workspaceState",
     "workspaceStateList",
