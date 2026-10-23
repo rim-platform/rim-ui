@@ -34,6 +34,9 @@ export interface ReactionGroupData {
 /** Why a `NotificationDue` was sent; lowercase on the wire (`NotificationReason` in GraphQL). */
 export type NotificationDueReason = "direct" | "mention" | "keyword" | "thread_reply" | "all";
 
+/** How a join request was closed; lowercase on the wire. */
+export type JoinRequestOutcome = "accepted" | "declined" | "withdrawn" | "cancelled";
+
 export type WorkspaceEvent =
   | {
       type: "NewMessage";
@@ -74,6 +77,30 @@ export type WorkspaceEvent =
       workspace_id: string;
       user_id: string;
       username: string;
+      /** `public_link` for a join through the workspace's public link; absent otherwise. */
+      source?: string | null;
+    }
+  /**
+   * A person asked to join `workspace_id` through its public link. Reaches the workspace's
+   * Owner and Moderators, and the person on their direct-space subscription.
+   */
+  | {
+      type: "JoinRequestCreated";
+      workspace_id: string;
+      request_id: string;
+      user_id: string;
+    }
+  /**
+   * A join request was closed. Same delivery as `JoinRequestCreated`: the person is no member,
+   * so they hear it on their direct-space subscription with `workspace_id` still the workspace
+   * they asked to join.
+   */
+  | {
+      type: "JoinRequestDecided";
+      workspace_id: string;
+      request_id: string;
+      user_id: string;
+      outcome: JoinRequestOutcome;
     }
   /**
    * A member was kicked or banned. Delivered to the workspace (a guest only hears about

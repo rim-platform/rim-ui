@@ -72,13 +72,15 @@ describe("OpenJoinPage", () => {
     auth.isHydrating = false;
   });
 
-  function renderPage() {
+  function renderPage(state?: unknown) {
     return renderWithServerInfo(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[{ pathname: "/join", state }]}>
         <OpenJoinPage />
       </MemoryRouter>,
     );
   }
+
+  const RETURN = { returnTo: "/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA" };
 
   it("renders the signup form when registrationMode is OPEN", () => {
     mockUseServerConfig.mockReturnValue({
@@ -173,6 +175,38 @@ describe("OpenJoinPage", () => {
 
     expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
     expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("returns a new account to the public link that sent it here", async () => {
+    desktop.value = true;
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
+    const user = userEvent.setup();
+    renderPage(RETURN);
+
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
+    await user.click(screen.getByRole("button", { name: /finish key signup/i }));
+
+    expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
+    expect(mockNavigate).toHaveBeenCalledWith(RETURN.returnTo);
+  });
+
+  it("sends a signed-in account back to the public link it came from", () => {
+    mockUseServerConfig.mockReturnValue({ data: { registrationMode: "OPEN" }, isPending: false });
+    auth.session = { userId: "existing-user" };
+    renderPage(RETURN);
+    expect(mockNavigate).toHaveBeenCalledWith(RETURN.returnTo, { replace: true });
+  });
+
+  it("keeps where to return when it falls back to sign-in", () => {
+    vi.useFakeTimers();
+    try {
+      mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
+      renderPage(RETURN);
+      vi.advanceTimersByTime(3000);
+      expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true, state: RETURN });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("offers only the key signup in the desktop app when registrationMode is POW", () => {

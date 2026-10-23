@@ -11,16 +11,19 @@
  * While the mode loads it shows "Loading...". In the web app on a pow server, or when the mode
  * cannot be read, it says so and redirects to `/login` after 3 seconds.
  *
- * Post-signup: navigate to `/`, with the invite's workspace open for a workspace invite.
+ * Post-signup: navigate to `state.returnTo` when the page was opened with one, such as a
+ * workspace's public link that sent a signed-out visitor here, else to `/`, with the invite's
+ * workspace open for a workspace invite.
  * Otherwise `WorkspaceSelector` opens the server's default workspace, which every new account
  * joins, or shows the empty-workspace state when the server names none.
  *
  * A signed-in account has no use for the form: once `useSessionHydration` has checked the
- * session cookie, it is sent on to `/`.
+ * session cookie, it is sent on to `state.returnTo` or `/`. The redirect to `/login` keeps the
+ * same `state`.
  */
 
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAuthStore } from "../state/useAuthStore";
@@ -38,6 +41,8 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
  */
 export function OpenJoinPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? "/";
   const { data: serverConfig, isPending } = useServerConfig();
   const { isHydrating } = useSessionHydration();
   const session = useAuthStore((s) => s.session);
@@ -53,19 +58,19 @@ export function OpenJoinPage() {
     (isPow && capabilities.identityKeys);
 
   useEffect(() => {
-    if (!isHydrating && session) navigate("/", { replace: true });
-  }, [isHydrating, session, navigate]);
+    if (!isHydrating && session) navigate(returnTo, { replace: true });
+  }, [isHydrating, session, navigate, returnTo]);
 
   // Redirect to /login where this app cannot sign up here.
   useEffect(() => {
     if (isPending || canSignUp || isHydrating || session) return;
 
     const timer = setTimeout(() => {
-      navigate("/login", { replace: true });
+      navigate("/login", { replace: true, state: location.state });
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [isPending, canSignUp, isHydrating, session, navigate]);
+  }, [isPending, canSignUp, isHydrating, session, navigate, location.state]);
 
   if (isHydrating) {
     return <RestoringSession />;
@@ -104,7 +109,7 @@ export function OpenJoinPage() {
     if (serverId) {
       setWorkspaceId(serverId);
     }
-    navigate("/");
+    navigate(returnTo);
   }
 
   return (

@@ -3,7 +3,9 @@
  *
  * Orchestrates the invite token preview → signup flow:
  *
- * 1. Extracts `token` from `useParams`. Missing token → `InvalidTokenState`.
+ * 1. Extracts `token` from `useParams`. Missing token → `InvalidTokenState`. A workspace's
+ *    public link (`rim_pjl_…`) goes to `PublicLinkJoinPage` instead, which never offers the
+ *    invite signup.
  * 2. Calls `usePreviewInviteToken(token)` — no auth required — and reads the server's
  *    registration mode with `useServerConfig`.
  * 3. While either loads: shows a loading skeleton.
@@ -44,6 +46,8 @@ import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
 import { RestoringSession } from "./RestoringSession";
+import { isPublicLinkToken } from "../../public-link/token";
+import { PublicLinkJoinPage } from "../../public-link/components/PublicLinkJoinPage";
 
 /**
  * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
@@ -73,6 +77,17 @@ export function JoinPage() {
 
   if (!token) {
     return <InvalidTokenState code="INVALID_TOKEN" />;
+  }
+
+  // A workspace's public link admits existing accounts and never reaches the invite signup.
+  if (isPublicLinkToken(token)) {
+    return (
+      <PublicLinkJoinPage
+        token={token}
+        isHydrating={isHydrating}
+        userId={session?.userId ?? null}
+      />
+    );
   }
 
   return (

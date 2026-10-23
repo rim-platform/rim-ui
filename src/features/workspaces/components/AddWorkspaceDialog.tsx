@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Building2, Link } from "lucide-react";
 
 import {
@@ -17,6 +18,7 @@ import { WorkspaceCreationNote } from "./CreateWorkspaceDialog";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { joinWithInvite } from "../../relay/remote/remoteWorkspaces";
 import { inviteCodeToken } from "../../auth/inviteCode";
+import { MyJoinRequests } from "../../public-link/components/MyJoinRequests";
 
 type Step = "choose" | "create" | "join";
 
@@ -30,7 +32,9 @@ const stepTitles: Record<Step, string> = {
  * Dialog that creates a workspace or joins one with an invite code, and opens the result. The
  * join form takes the bare code, a whole invite link of this server (`https://…/join/<token>`),
  * whose token it joins with, or a `rim-invite:1:…` link to a workspace on another server, which
- * it joins through this server.
+ * it joins through this server. A workspace's public link (`…/join/rim_pjl_…`) opens its join
+ * page, where the person joins or asks to join. The first step also lists the person's open
+ * requests to join workspaces, with Withdraw.
  *
  * @param onClose - Called when the dialog closes, after a workspace was created or joined too.
  * @param initialStep - The step it opens on: the choice between creating and joining (the
@@ -47,6 +51,7 @@ export function AddWorkspaceDialog({
   const [name, setName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  const navigate = useNavigate();
 
   const create = useCreateServerMutation();
   const join = useJoinServerMutation();
@@ -74,6 +79,12 @@ export function AddWorkspaceDialog({
   function handleJoin(e: React.FormEvent) {
     e.preventDefault();
     if (code.kind === "empty") return;
+
+    if (code.kind === "publicLink") {
+      onClose();
+      navigate(`/join/${encodeURIComponent(code.token)}`);
+      return;
+    }
 
     if (code.kind === "remote") {
       joinRemote.mutate(inviteCode, {
@@ -151,8 +162,10 @@ export function AddWorkspaceDialog({
               <Link className="h-4 w-4 text-rim-text-muted" />
               Join Existing
             </div>
-            <div className="text-xs text-rim-text-muted">Enter an invite code</div>
+            <div className="text-xs text-rim-text-muted">Enter an invite code or link</div>
           </button>
+
+          <MyJoinRequests />
         </div>
       )}
 
@@ -209,6 +222,12 @@ export function AddWorkspaceDialog({
               className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
             />
           </label>
+          {code.kind === "publicLink" && (
+            <p className="text-xs text-rim-text-muted">
+              This is a workspace&apos;s public link. Continue opens it, where you can join or ask
+              to join.
+            </p>
+          )}
           {remote && (
             <p className="text-xs text-rim-text-muted">
               This workspace is on another server. RIM checks that server&apos;s identity against
@@ -229,7 +248,7 @@ export function AddWorkspaceDialog({
             isLoading={joining.isPending}
             className="w-full"
           >
-            {joining.isPending ? "Joining..." : "Join"}
+            {code.kind === "publicLink" ? "Continue" : joining.isPending ? "Joining..." : "Join"}
           </Button>
         </form>
       )}

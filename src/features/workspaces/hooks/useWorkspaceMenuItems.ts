@@ -16,6 +16,8 @@ import {
   useSetDoNotDisturb,
 } from "../../notifications/api/useNotificationSettings";
 import { inOneHour, isPauseActive, tomorrowMorning } from "../../notifications/rules";
+import { joinRequestBadge, useJoinRequestCount } from "../../public-link/api/publicLink";
+import { useCanHavePublicLink } from "../../public-link/hooks/useCanHavePublicLink";
 import { useMyServerRole } from "../api/useMyServerRole";
 import { canModerate, isGuest, isOwner } from "../role";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
@@ -50,7 +52,8 @@ interface UseWorkspaceMenuItemsOptions {
  * Workspace settings, which goes there: Mark all as read (when something is unread), Pause
  * notifications with its durations and Resume notifications while paused, Browse channels…
  * and Create channel… (not for guests), Workspace settings (Owner and Moderator, who have
- * that page), Invite people… (the Owner) and Assign keybind….
+ * that page), Join requests… with the number waiting (Owner and Moderator, while requests are
+ * open), Invite people… (the Owner) and Assign keybind….
  *
  * @returns A function that gives the items when the menu opens.
  */
@@ -63,6 +66,12 @@ export function useWorkspaceMenuItems({
   const role = useMyServerRole(enabled ? workspaceId : undefined);
   const { data: settings } = useNotificationSettings(enabled ? workspaceId : null);
   const { mutate: setDnd } = useSetDoNotDisturb();
+  const canHaveLink = useCanHavePublicLink(workspaceId, enabled);
+  const { data: requestCount } = useJoinRequestCount(
+    workspaceId,
+    enabled && canModerate(role) && canHaveLink,
+  );
+  const requestBadge = joinRequestBadge(requestCount);
 
   return useCallback(() => {
     const items: DropdownMenuItem[] = [];
@@ -145,6 +154,20 @@ export function useWorkspaceMenuItems({
         },
       });
     }
+    if (canModerate(role) && requestBadge) {
+      items.push({
+        id: "join-requests",
+        label: "Join requests…",
+        detail: `${requestBadge} waiting`,
+        onSelect: () => {
+          const workspaces = useWorkspaceStore.getState();
+          if (workspaces.workspaceId !== workspaceId) workspaces.setWorkspaceId(workspaceId);
+          useShellStore
+            .getState()
+            .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
+        },
+      });
+    }
     if (isOwner(role)) {
       items.push({
         id: "invite",
@@ -167,5 +190,5 @@ export function useWorkspaceMenuItems({
         useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label }),
     });
     return items;
-  }, [workspaceId, label, role, settings, setDnd, onOpenDialog]);
+  }, [workspaceId, label, role, settings, setDnd, onOpenDialog, requestBadge]);
 }

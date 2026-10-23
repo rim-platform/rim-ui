@@ -30,4 +30,14 @@ describe("inviteCodeToken", () => {
       kind: "remote",
     });
   });
+
+  it.each([
+    ["rim_pjl_AAAAAAAAAAAAAAAAAAAAAA", "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA"],
+    [
+      "https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA\n",
+      "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA",
+    ],
+  ])("tells a workspace's public link %j apart from an invite", (text, token) => {
+    expect(inviteCodeToken(text)).toEqual({ kind: "publicLink", token });
+  });
 });

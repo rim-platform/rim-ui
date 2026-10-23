@@ -101,6 +101,26 @@ vi.mock("./ModerationSettings", () => ({
 vi.mock("./WorkspaceInvites", () => ({
   WorkspaceInvites: () => null,
 }));
+vi.mock("../../public-link/components/PublicLinkSettings", () => ({
+  PublicLinkSettings: ({ onOpenRequests }: { onOpenRequests?: () => void }) => (
+    <button type="button" onClick={onOpenRequests}>
+      Public link panel
+    </button>
+  ),
+}));
+// Open join requests of the workspace, as the badge counts them — mutable per test.
+const mockRequests = vi.hoisted(() => ({ count: { count: 0, more: false } }));
+vi.mock("../../public-link/api/publicLink", async () => {
+  const actual = await vi.importActual<typeof import("../../public-link/api/publicLink")>(
+    "../../public-link/api/publicLink",
+  );
+  return {
+    ...actual,
+    useJoinRequestCount: (_serverId: string | null, enabled: boolean) => ({
+      data: enabled ? mockRequests.count : undefined,
+    }),
+  };
+});
 vi.mock("./WorkspaceOwnerSettings", () => ({
   WorkspaceOwnerSettings: () => null,
 }));
@@ -150,6 +170,7 @@ describe("SettingsPage", () => {
     mockGate.canModerate = false;
     mockOperator.isOperator = false;
     mockWorkspace.workspaceId = "ws-1";
+    mockRequests.count = { count: 0, more: false };
   });
 
   afterEach(() => useRelayStore.getState().reset());
@@ -382,6 +403,49 @@ describe("SettingsPage", () => {
           name: "Moderation",
         }),
       );
+      expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+    });
+  });
+
+  describe("join request badge", () => {
+    const moderationEntry = () =>
+      within(screen.getByRole("group", { name: "Workspace" })).getByRole("button", {
+        name: /^Moderation/,
+      });
+
+    it("counts a workspace's open join requests on the Moderation entry", () => {
+      mockGate.canModerate = true;
+      mockRequests.count = { count: 3, more: false };
+      renderSettings();
+      expect(moderationEntry()).toHaveAccessibleName("Moderation, 3 join requests");
+    });
+
+    it("says there are more than a page of them", () => {
+      mockGate.canModerate = true;
+      mockRequests.count = { count: 100, more: true };
+      renderSettings();
+      expect(moderationEntry()).toHaveTextContent("100+");
+    });
+
+    it("shows no badge without open requests", () => {
+      mockGate.canModerate = true;
+      renderSettings();
+      expect(moderationEntry()).toHaveAccessibleName("Moderation");
+    });
+
+    it("leaves the server's default workspace without a badge", () => {
+      mockGate.canModerate = true;
+      mockRequests.count = { count: 3, more: false };
+      renderSettings({}, { defaultWorkspace: "ws-1" });
+      expect(moderationEntry()).toHaveAccessibleName("Moderation");
+    });
+
+    it("opens the moderation tab from the public link's open requests", async () => {
+      mockGate.canModerate = true;
+      mockShellState.mainSurface = { kind: "settings", tab: "workspace" };
+      const user = userEvent.setup();
+      renderSettings();
+      await user.click(await screen.findByRole("button", { name: "Public link panel" }));
       expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
     });
   });

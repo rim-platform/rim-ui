@@ -25,6 +25,17 @@ export const queryKeys = {
     ["messageReports", serverId, "report", reportId] as const,
   // A workspace's invites as its owner lists them, newest first.
   workspaceInvites: (serverId?: string) => ["workspaceInvites", serverId] as const,
+  // A workspace's public link as its owner sees it: settings, the link and its use.
+  publicJoinLink: (serverId?: string) => ["publicJoinLink", serverId] as const,
+  // What a public link shows; keyed by the signed-in user, whose standing the answer carries.
+  publicJoinLinkPreview: (token: string, userId?: string | null) =>
+    ["publicJoinLinkPreview", token, userId ?? null] as const,
+  // A workspace's open join requests and their count; the `["joinRequests", serverId]` prefix
+  // covers both.
+  joinRequests: (serverId?: string) => ["joinRequests", serverId, "list"] as const,
+  joinRequestCount: (serverId?: string) => ["joinRequests", serverId, "count"] as const,
+  // The signed-in account's own open join requests.
+  myJoinRequests: ["myJoinRequests"] as const,
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,
@@ -155,6 +166,8 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "server",
   "serverBans",
   "messageReports",
+  "publicJoinLink",
+  "joinRequests",
   "customEmojis",
   "workspaceState",
   "workspaceStateList",

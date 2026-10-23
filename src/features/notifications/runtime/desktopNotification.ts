@@ -35,9 +35,17 @@ function platformSound(): string | undefined {
   }
 }
 
-export async function showMessageNotification(
-  opts: MessageNotificationContent & { sound?: boolean },
-) {
+/**
+ * A desktop notification with `title` and `body`, asking for the permission first when it was
+ * never given; nothing is shown when it is refused.
+ *
+ * @param opts.sound - Whether to play the platform's notification sound.
+ */
+export async function showDesktopNotification(opts: {
+  title: string;
+  body: string;
+  sound?: boolean;
+}) {
   const granted = await isPermissionGranted();
   if (!granted) {
     const permission = await requestPermission();
@@ -46,8 +54,18 @@ export async function showMessageNotification(
 
   const sound = opts.sound ? platformSound() : undefined;
   sendNotification({
+    title: opts.title,
+    body: opts.body,
+    ...(sound ? { sound } : {}),
+  });
+}
+
+export async function showMessageNotification(
+  opts: MessageNotificationContent & { sound?: boolean },
+) {
+  await showDesktopNotification({
     title: opts.channelName,
     body: notificationBody(opts),
-    ...(sound ? { sound } : {}),
+    sound: opts.sound,
   });
 }
