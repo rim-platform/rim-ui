@@ -1851,6 +1851,11 @@ type Mutation {
 	toggleReaction(input: ToggleReactionInput!): [ReactionGroup!]!
 	markAsRead(input: MarkAsReadInput!): Boolean!
 	markAllAsRead(input: MarkAllAsReadInput!): Boolean!
+	"""
+	Join the current default workspace as Member with its public channels. Active bans
+	are refused; existing membership is unchanged.
+	"""
+	joinDefaultWorkspace: ID!
 	createServer(input: CreateServerInput!): Server!
 	deleteKeybind(input: DeleteKeybindInput!): Boolean!
 	pinMessage(input: PinMessageInput!): Boolean!
@@ -3520,6 +3525,14 @@ type ServerMember {
 	The member's key identity (`rimp1_…`), once enrolled; null for a password-only account.
 	"""
 	principalId: String
+	"""
+	Whether this member is banned in this workspace.
+	"""
+	banned: Boolean!
+	"""
+	End of the active ban; null for a permanent ban or no ban.
+	"""
+	bannedUntil: DateTime
 }
 
 """
@@ -3918,6 +3931,18 @@ type User {
 	deleted account.
 	"""
 	handle: String
+	"""
+	Whether this message's author is banned in its workspace; false outside message authors.
+	"""
+	banned: Boolean!
+	"""
+	End of the active workspace ban; null for a permanent ban or no ban.
+	"""
+	bannedUntil: DateTime
+	"""
+	The active ban's reason, readable only by workspace moderators.
+	"""
+	banReason: String
 }
 
 """

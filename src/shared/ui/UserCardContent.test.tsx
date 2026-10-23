@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+
 import { UserCardContent } from "./UserCardContent";
 
 // Mock clipboard API
@@ -18,6 +19,21 @@ describe("UserCardContent", () => {
   it("explains a former membership and offers no direct message action", () => {
     render(<UserCardContent {...defaultProps} isFormerMember onSendDm={vi.fn()} />);
     expect(screen.getByText("Not a member of this workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send DM" })).not.toBeInTheDocument();
+  });
+
+  it("shows a ban reason only when supplied and offers no direct message action", () => {
+    render(
+      <UserCardContent
+        {...defaultProps}
+        isFormerMember
+        ban={{ banned: true, banReason: "Repeated spam" }}
+        onSendDm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Banned from this workspace")).toBeInTheDocument();
+    expect(screen.getByText("Reason: Repeated spam")).toBeInTheDocument();
+    expect(screen.queryByText("Not a member of this workspace")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send DM" })).not.toBeInTheDocument();
   });
 

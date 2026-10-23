@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
+import type { AuthorBan } from "../../messages/hooks/useBanExpiry";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { encryptedStoreAccount, readCachedThread } from "../../messages/api/messageCache";
@@ -72,7 +73,7 @@ interface ThreadMessageReaction {
   userIds: string[];
 }
 
-interface ThreadMessageAuthor {
+interface ThreadMessageAuthor extends AuthorBan {
   id: string;
   username: string;
   displayName: string | null;

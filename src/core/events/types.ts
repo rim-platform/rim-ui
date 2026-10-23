@@ -83,7 +83,11 @@ export type WorkspaceEvent =
       type: "MemberLeft";
       workspace_id: string;
       user_id: string;
+      cause?: string | null;
+      until?: string | null;
+      reason?: string | null;
     }
+  | { type: "MemberBanChanged"; workspace_id: string; user_id: string }
   /**
    * A member's role changed. `role` is the lowercase name: `owner`, `moderator`, `member` or
    * `guest`. Same visibility as `MemberLeft`.

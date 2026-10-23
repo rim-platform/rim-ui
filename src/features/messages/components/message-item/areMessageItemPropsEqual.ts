@@ -11,6 +11,9 @@ export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean 
   return (
     a === b ||
     (a.isFormerMember === b.isFormerMember &&
+      a.ban?.banned === b.ban?.banned &&
+      a.ban?.bannedUntil === b.ban?.bannedUntil &&
+      a.ban?.banReason === b.ban?.banReason &&
       a.name === b.name &&
       a.avatarUrl === b.avatarUrl &&
       a.username === b.username &&

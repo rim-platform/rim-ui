@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Send, X } from "lucide-react";
 
+import { activeBan, useBanExpiry } from "../../messages/hooks/useBanExpiry";
 import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
 import { useReplyToMessageMutation } from "../api/useReplyToMessage";
 import { useConversationMessages } from "../../messages/api/useMessages";
@@ -159,6 +160,10 @@ export function ThreadPanel() {
 
   // Backend returns thread messages in display order (oldest-first); no reverse needed.
   // Decrypted replies name mentioned principals; the renderer names users.
+  useBanExpiry(workspaceId, [
+    rootMessage?.author,
+    ...(threadMessages?.items ?? []).map((message) => message.author),
+  ]);
   const items = useMemo(() => {
     const replies = threadMessages?.items ?? [];
     if (!encrypted) return replies;
@@ -350,6 +355,11 @@ export function ThreadPanel() {
                   message: rootMessage,
                   author: {
                     name,
+                    ban: {
+                      banned: activeBan(rootMessage.author),
+                      bannedUntil: rootMessage.author?.bannedUntil,
+                      banReason: rootMessage.author?.banReason,
+                    },
                     avatarUrl: rootMessage.author?.avatarUrl,
                     username: rootMessage.author?.username,
                     handle: viewHandle(
@@ -386,6 +396,11 @@ export function ThreadPanel() {
                   message: msg,
                   author: {
                     name,
+                    ban: {
+                      banned: activeBan(msg.author),
+                      bannedUntil: msg.author?.bannedUntil,
+                      banReason: msg.author?.banReason,
+                    },
                     avatarUrl: msg.author?.avatarUrl,
                     username: msg.author?.username,
                     handle: viewHandle(msg.author?.username, msg.author?.handle, ownDomain),

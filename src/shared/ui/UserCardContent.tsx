@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { Copy, MessageCircle, Pencil } from "lucide-react";
 
+import { activeBan } from "../utils/banStatus";
+import type { AuthorBan } from "../utils/banStatus";
 import { Avatar, type PresenceStatus } from "./Avatar";
 import { toast } from "../toast";
 import { formatRelativeDate } from "../utils/formatDate";
@@ -9,6 +11,7 @@ import { viewHandle, type HandleView } from "../utils/handles";
 export interface UserCardContentProps {
   userId: string;
   isFormerMember?: boolean;
+  ban?: AuthorBan;
   username: string;
   /**
    * How the person's handle reads and what Copy puts on the clipboard; without it, `@username`
@@ -30,6 +33,7 @@ export interface UserCardContentProps {
 export function UserCardContent({
   userId,
   isFormerMember,
+  ban,
   username,
   handle,
   displayName,
@@ -73,8 +77,20 @@ export function UserCardContent({
         </div>
       </div>
 
-      {isFormerMember && (
-        <p className="mt-2 text-sm text-rim-text-muted">Not a member of this workspace</p>
+      {activeBan(ban) ? (
+        <div className="mt-2 text-sm text-rim-text-muted">
+          <p>
+            Banned from this workspace
+            {ban?.bannedUntil ? ` until ${new Date(ban.bannedUntil).toLocaleString()}` : ""}
+          </p>
+          {ban?.banReason && (
+            <p className="whitespace-pre-wrap break-words">Reason: {ban.banReason}</p>
+          )}
+        </div>
+      ) : (
+        isFormerMember && (
+          <p className="mt-2 text-sm text-rim-text-muted">Not a member of this workspace</p>
+        )
       )}
 
       {/* Status */}
@@ -114,7 +130,7 @@ export function UserCardContent({
             </button>
           ) : (
             <>
-              {onSendDm && !isFormerMember && (
+              {onSendDm && !isFormerMember && !activeBan(ban) && (
                 <button
                   type="button"
                   onClick={onSendDm}

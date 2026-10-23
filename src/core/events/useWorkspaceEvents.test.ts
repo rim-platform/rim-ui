@@ -3,6 +3,10 @@ import { createElement, type ReactNode } from "react";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import {
+  removalAccountKey,
+  useRemovalNotices,
+} from "../../features/workspaces/state/useRemovalNotices";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { MessageEventData, WorkspaceEvent } from "./types";
 
@@ -423,6 +427,35 @@ describe("useWorkspaceEvents workspace roles and removal", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-1") });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
     expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("keeps a ban explanation for the removed account after leaving", () => {
+    useRemovalNotices.setState({ accounts: {} });
+    setup();
+    emitWorkspaceEvent({
+      type: "MemberLeft",
+      workspace_id: "ws-1",
+      user_id: "me",
+      cause: "ban",
+      reason: "Repeated spam",
+    });
+    expect(useRemovalNotices.getState().accounts[removalAccountKey("me")]).toEqual([
+      expect.objectContaining({ workspaceName: "Acme", cause: "ban", reason: "Repeated spam" }),
+    ]);
+    expect(toast.info).toHaveBeenCalledWith("You were banned from Acme");
+  });
+
+  it("does not save another person's removal reason", () => {
+    useRemovalNotices.setState({ accounts: {} });
+    setup();
+    emitWorkspaceEvent({
+      type: "MemberLeft",
+      workspace_id: "ws-1",
+      user_id: "u-alice",
+      cause: "ban",
+      reason: "private",
+    });
+    expect(useRemovalNotices.getState().accounts).toEqual({});
   });
 
   it("MemberLeft for the viewer leaves the workspace with a toast and refetches myServers", () => {

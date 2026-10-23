@@ -287,6 +287,7 @@ function KickDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       onClose={onClose}
     >
       <ReasonField id="kick-reason" value={reason} onChange={setReason} />
+      <p className="text-xs text-rim-text-muted">The member will see this reason.</p>
     </ModerationDialog>
   );
 }
@@ -332,6 +333,7 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       onClose={onClose}
     >
       <ReasonField id="ban-reason" value={reason} onChange={setReason} />
+      <p className="text-xs text-rim-text-muted">The member will see this reason.</p>
       <DurationPicker
         label="Ban expires"
         presets={BAN_EXPIRY_PRESETS}

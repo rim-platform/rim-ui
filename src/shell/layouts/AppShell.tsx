@@ -1,5 +1,8 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+
+import { RemovalNotices } from "../../features/workspaces/components/RemovalNotices";
+import { JoinDefaultWorkspace } from "../../features/workspaces/components/JoinDefaultWorkspace";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
@@ -132,6 +135,7 @@ export function AppShell() {
         <AccountDeletionBanner />
         <ProbationBanner />
         <RecoveryKitBanner />
+        <RemovalNotices />
         <div className="min-h-0 flex-1">
           <WorkspaceSelector />
         </div>
@@ -150,6 +154,8 @@ export function AppShell() {
       <AccountDeletionBanner />
       <ProbationBanner />
       <RecoveryKitBanner />
+      <RemovalNotices />
+      <JoinDefaultWorkspace />
       <div className="flex min-h-0 flex-1">
         <WorkspaceShell />
       </div>

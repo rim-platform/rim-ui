@@ -38,6 +38,9 @@ export const MESSAGE_FIELDS = gql`
       avatarUrl
       principalId
       handle
+      banned
+      bannedUntil
+      banReason
     }
     text
     hasAttachments
