@@ -440,7 +440,7 @@ describe("useWorkspaceEvents workspace roles and removal", () => {
       "ws-2",
     ]);
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
-    expect(toast.info).toHaveBeenCalledWith("You were removed from this workspace");
+    expect(toast.info).toHaveBeenCalledWith("You were removed from Acme");
   });
 });
 

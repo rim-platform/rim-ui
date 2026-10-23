@@ -8,6 +8,7 @@ import { viewHandle, type HandleView } from "../utils/handles";
 
 export interface UserCardContentProps {
   userId: string;
+  isFormerMember?: boolean;
   username: string;
   /**
    * How the person's handle reads and what Copy puts on the clipboard; without it, `@username`
@@ -28,6 +29,7 @@ export interface UserCardContentProps {
 
 export function UserCardContent({
   userId,
+  isFormerMember,
   username,
   handle,
   displayName,
@@ -71,6 +73,10 @@ export function UserCardContent({
         </div>
       </div>
 
+      {isFormerMember && (
+        <p className="mt-2 text-sm text-rim-text-muted">Not a member of this workspace</p>
+      )}
+
       {/* Status */}
       {statusText && <p className="mt-2 text-sm text-rim-text-muted">{statusText}</p>}
 
@@ -108,7 +114,7 @@ export function UserCardContent({
             </button>
           ) : (
             <>
-              {onSendDm && (
+              {onSendDm && !isFormerMember && (
                 <button
                   type="button"
                   onClick={onSendDm}

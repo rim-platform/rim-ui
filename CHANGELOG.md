@@ -74,6 +74,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Accounts without a workspace open direct messages. Removal notices remain visible, and
+  departed authors keep their names with a former-member marker instead of an identifier.
+
 - **Upgrade:** run a rim-server with `MessageReport.messageAuthorPrincipalId` for the reported
   direct messages in Settings → Instance → Moderation. A reported unencrypted message of a DM
   or group there now shows its text, with a note that the rest of the conversation is not

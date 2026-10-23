@@ -10,7 +10,8 @@ import type {
 export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean {
   return (
     a === b ||
-    (a.name === b.name &&
+    (a.isFormerMember === b.isFormerMember &&
+      a.name === b.name &&
       a.avatarUrl === b.avatarUrl &&
       a.username === b.username &&
       a.handle?.shown === b.handle?.shown &&

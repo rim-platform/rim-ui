@@ -21,6 +21,7 @@ function currentUserId(qc: QueryClient): string | undefined {
 
 interface CachedServer {
   id: string;
+  name?: string;
 }
 
 interface CachedServerDetail {
@@ -97,7 +98,10 @@ export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: s
     return;
   }
 
+  const name = qc
+    .getQueryData<CachedServer[]>(queryKeys.myServers())
+    ?.find((s) => s.id === workspaceId)?.name;
   leaveWorkspace(qc, workspaceId);
   if (departing.delete(workspaceId)) return;
-  toast.info("You were removed from this workspace");
+  toast.info(name ? `You were removed from ${name}` : "You were removed from this workspace");
 }

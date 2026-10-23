@@ -30,6 +30,7 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
   const presence = useAuthorPresence(authorId, author.presenceStatus);
   return (
     <UserHoverCard
+      isFormerMember={author.isFormerMember}
       userId={authorId}
       username={author.username ?? author.name}
       handle={author.handle}
@@ -41,7 +42,7 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
       bio={author.bio}
       presenceStatus={presence}
       isCurrentUser={author.isCurrentUser}
-      onSendDm={() => void openDirectWithMember(authorId)}
+      onSendDm={author.isFormerMember ? undefined : () => void openDirectWithMember(authorId)}
     >
       {children}
     </UserHoverCard>
@@ -66,7 +67,9 @@ export const MessageAvatar = memo(function MessageAvatar({
     <AuthorHoverCard authorId={authorId} author={author}>
       <span
         className="cursor-pointer"
-        {...bindUserContextMenu?.({ userId: authorId, displayName: author.name })}
+        {...(author.isFormerMember
+          ? {}
+          : bindUserContextMenu?.({ userId: authorId, displayName: author.name }))}
       >
         <Avatar
           url={author.avatarUrl}
@@ -123,7 +126,9 @@ export const MessageHeader = memo(function MessageHeader({
     <div className="flex items-baseline gap-2">
       <AuthorHoverCard authorId={authorId} author={author}>
         <span
-          {...bindUserContextMenu?.({ userId: authorId, displayName: author.name })}
+          {...(author.isFormerMember
+            ? {}
+            : bindUserContextMenu?.({ userId: authorId, displayName: author.name }))}
           className={cn(
             "text-sm font-medium cursor-pointer hover:underline",
             author.isCurrentUser ? "text-rim-accent" : "text-rim-text",
@@ -132,6 +137,9 @@ export const MessageHeader = memo(function MessageHeader({
           {author.name}
         </span>
       </AuthorHoverCard>
+      {author.isFormerMember && (
+        <span className="text-xs text-rim-text-muted">(former member)</span>
+      )}
       <span className="text-xs text-rim-text-faint">{formatTime(sentAt)}</span>
       {encrypted && <LockMark className="self-center" />}
       {beforeEncryption && (

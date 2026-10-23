@@ -82,19 +82,17 @@ export function viewHandle(
 
 /**
  * The name a person is shown under: their display name, else their handle as it reads without
- * the `@`, else the start of their user id.
+ * the `@`, else a readable unknown-person label.
  *
  * @param person - The person as a server answered them, or `null` when it did not.
- * @param userId - Their user id.
+ * @param _userId - Their user id.
  * @param ownDomain - The viewer's own handle domain, as for {@link viewHandle}.
  */
 export function personName(
   person: { username?: string | null; displayName?: string | null; handle?: string | null } | null,
-  userId: string,
+  _userId: string,
   ownDomain: string | null,
 ): string {
   if (person?.displayName) return person.displayName;
-  return (
-    viewHandle(person?.username, person?.handle, ownDomain)?.shown.slice(1) ?? userId.slice(0, 8)
-  );
+  return viewHandle(person?.username, person?.handle, ownDomain)?.shown.slice(1) ?? "Unknown user";
 }

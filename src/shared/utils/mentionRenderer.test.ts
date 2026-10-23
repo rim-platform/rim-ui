@@ -20,10 +20,10 @@ describe("preprocessMentions", () => {
     expect(result.mentions).toHaveLength(2);
   });
 
-  it("uses truncated userId when not in memberMap", () => {
+  it("uses a readable fallback when not in memberMap", () => {
     const memberMap = new Map<string, string>();
     const result = preprocessMentions("Hello <@unknown-user-id>!", memberMap);
-    expect(result.mentions[0].displayName).toBe("unknown-");
+    expect(result.mentions[0].displayName).toBe("Former member");
   });
 
   it("returns unchanged text when no mentions", () => {

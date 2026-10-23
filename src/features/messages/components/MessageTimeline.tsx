@@ -49,12 +49,7 @@ import type { MessageMembers } from "./MessageItem";
 
 /** The name a row shows for a message's author. */
 function authorNameOf(msg: TimelineMessage, member: { displayName?: string | null }): string {
-  return (
-    member.displayName ||
-    msg.author?.displayName ||
-    msg.author?.username ||
-    msg.authorId.slice(0, 8)
-  );
+  return member.displayName || msg.author?.displayName || msg.author?.username || "Former member";
 }
 
 /**
@@ -95,17 +90,6 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const clearLens = useLensStore((s) => s.setActiveLens);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
 
-  // userId -> displayName map for mention rendering
-  const memberDisplayMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [userId, info] of memberLookup.map) map.set(userId, info.displayName);
-    return map;
-  }, [memberLookup.map]);
-  const members = useMemo<MessageMembers>(
-    () => ({ resolve: memberLookup.resolve, displayMap: memberDisplayMap }),
-    [memberLookup.resolve, memberDisplayMap],
-  );
-
   const e2ee = useE2eeConversation(workspaceId, conversationId);
   const principalNames = usePrincipalNames(workspaceId);
   const resets = e2ee.group?.resets;
@@ -126,6 +110,30 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
 
   const timeline = useTimelineItems(workspaceId, conversationId, encryption);
   const items: TimelineMessage[] = timeline.items;
+  const formerNamesKey = JSON.stringify(
+    [
+      ...new Map(
+        items
+          .filter((message) => !memberLookup.map.has(message.authorId))
+          .map((message) => [
+            message.authorId,
+            `${authorNameOf(message, memberLookup.resolve(message.authorId))}${memberLookup.resolve(message.authorId).isFormerMember ? " (former member)" : ""}`,
+          ]),
+      ).entries(),
+    ].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  // userId -> displayName map for mention rendering
+  const memberDisplayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [userId, info] of memberLookup.map) map.set(userId, info.displayName);
+    for (const [id, name] of JSON.parse(formerNamesKey) as [string, string][]) map.set(id, name);
+    return map;
+  }, [memberLookup.map, formerNamesKey]);
+  const members = useMemo<MessageMembers>(
+    () => ({ resolve: memberLookup.resolve, displayMap: memberDisplayMap }),
+    [memberLookup.resolve, memberDisplayMap],
+  );
+
   // What the viewer sent while their DM waits as a request.
   const sentCount = useMemo(
     () =>
@@ -345,7 +353,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                   ? replyQuoteFor(
                       msg.parentMessageId,
                       parent,
-                      parent ? authorNameOf(parent, memberLookup.resolve(parent.authorId)) : null,
+                      parent
+                        ? `${authorNameOf(parent, memberLookup.resolve(parent.authorId))}${memberLookup.resolve(parent.authorId).isFormerMember ? " (former member)" : ""}`
+                        : null,
                       mentionNameOf,
                     )
                   : null;
@@ -364,6 +374,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                         replyTo,
                         author: {
                           name: authorNameOf(msg, member),
+                          isFormerMember: member.isFormerMember,
                           avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
                           username: member.username ?? msg.author?.username,
                           handle: viewHandle(

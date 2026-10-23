@@ -136,6 +136,7 @@ export function AppShell() {
           <WorkspaceSelector />
         </div>
         <KeySetupStep />
+        <ToastContainer />
       </div>
     );
   }

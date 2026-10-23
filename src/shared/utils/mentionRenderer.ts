@@ -26,7 +26,7 @@ export function preprocessMentions(
   let index = 0;
 
   const processed = text.replace(MENTION_TOKEN_RE, (_match, userId: string) => {
-    const displayName = memberMap.get(userId) ?? userId.slice(0, 8);
+    const displayName = memberMap.get(userId) ?? "Former member";
     mentions.push({ userId, displayName });
     const placeholder = `%%MENTION_${index}%%`;
     index++;
