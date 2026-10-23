@@ -8,6 +8,7 @@ import {
   useReportEncryptedMessageMutation,
   useReportMessageMutation,
 } from "../../workspaces/api/useModeration";
+import { useMyServers } from "../../workspaces/api/useMyServers";
 import { ModerationDialog, ReasonField } from "../../workspaces/components/ModerationDialog";
 
 interface ReportMessageDialogProps {
@@ -50,6 +51,8 @@ export function ReportMessageDialog({
   message,
   onClose,
 }: ReportMessageDialogProps) {
+  const { data: workspaces } = useMyServers(false);
+  const workspaceName = workspaces?.find((workspace) => workspace.id === workspaceId)?.name;
   const [reason, setReason] = useState("");
   const reportMessage = useReportMessageMutation();
   const reportEncrypted = useReportEncryptedMessageMutation();
@@ -75,7 +78,11 @@ export function ReportMessageDialog({
   return (
     <ModerationDialog
       title="Report message"
-      description={description(direct, Boolean(encrypted))}
+      description={
+        workspaceName && !direct
+          ? description(false, Boolean(encrypted)).split("this workspace").join(workspaceName)
+          : description(direct, Boolean(encrypted))
+      }
       tone="warm"
       confirmLabel="Report"
       confirmDisabled={!trimmed || refusal !== null}
@@ -85,7 +92,9 @@ export function ReportMessageDialog({
         toast.success(
           direct
             ? "Message reported to the people who run the server"
-            : "Message reported to the moderators",
+            : workspaceName
+              ? `Reported to the moderators of ${workspaceName}`
+              : "Message reported to the moderators",
         );
         onClose();
       }}

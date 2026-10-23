@@ -74,6 +74,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Workspace reports have a dedicated Moderation tab, a Reports menu item, and a pointer from
+  instance moderation; report confirmations name the workspace.
+- Hover tooltips stay within the window edges and flip using their measured height.
 - Accounts without a workspace open direct messages. Removal notices remain visible, and
   departed authors keep their names with a former-member marker instead of an identifier.
 
