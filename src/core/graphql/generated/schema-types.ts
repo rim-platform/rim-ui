@@ -1620,6 +1620,11 @@ export type Mutation = {
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   /**
+   * Join the current default workspace as Member with its public channels. Active bans
+   * are refused; existing membership is unchanged.
+   */
+  joinDefaultWorkspace: Scalars['ID']['output'];
+  /**
    * Join a workspace on another host: the relay presents the caller's identity, proof and
    * delegation, and records the subscription.
    */
@@ -1883,7 +1888,7 @@ export type Mutation = {
    * display name comes from their profile card.
    * - `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
    * `bio` > 2000 chars, or `avatarUrl` neither empty nor the URL of one of the caller's own
-   * uploaded avatars (`/api/files/avatars/<caller id>/avatar.<png|jpeg|gif|webp>`, as
+   * uploaded avatars (`/api/files/avatars/<caller id>/avatar-<content hash>.<ext>`, as
    * `POST /api/files/avatar` answers it).
    * - `NOT_FOUND` — caller's user row missing (should not happen in practice).
    * - `INTERNAL` — repository failure.
@@ -3696,7 +3701,7 @@ export type ServerBan = {
 export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands` or `avatars`. A client
+   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars` or `plugin_link_fetch`. A client
    * ignores a name it does not know.
    */
   key: Scalars['String']['output'];
@@ -3838,6 +3843,10 @@ export type ServerLimits = {
 export type ServerMember = {
   /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Whether this member is banned in this workspace. */
+  banned: Scalars['Boolean']['output'];
+  /** End of the active ban; null for a permanent ban or no ban. */
+  bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   joinedAt: Scalars['DateTime']['output'];
@@ -4186,6 +4195,12 @@ export type UploadTicket = {
 export type User = {
   /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** The active ban's reason, readable only by workspace moderators. */
+  banReason?: Maybe<Scalars['String']['output']>;
+  /** Whether this message's author is banned in its workspace; false outside message authors. */
+  banned: Scalars['Boolean']['output'];
+  /** End of the active workspace ban; null for a permanent ban or no ban. */
+  bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   /**
    * When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);

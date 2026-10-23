@@ -1851,6 +1851,11 @@ type Mutation {
 	toggleReaction(input: ToggleReactionInput!): [ReactionGroup!]!
 	markAsRead(input: MarkAsReadInput!): Boolean!
 	markAllAsRead(input: MarkAllAsReadInput!): Boolean!
+	"""
+	Join the current default workspace as Member with its public channels. Active bans
+	are refused; existing membership is unchanged.
+	"""
+	joinDefaultWorkspace: ID!
 	createServer(input: CreateServerInput!): Server!
 	deleteKeybind(input: DeleteKeybindInput!): Boolean!
 	pinMessage(input: PinMessageInput!): Boolean!
@@ -1913,7 +1918,7 @@ type Mutation {
 	display name comes from their profile card.
 	- `VALIDATION` — `displayName` > 64 chars, `statusText` > 256 chars,
 	`bio` > 2000 chars, or `avatarUrl` neither empty nor the URL of one of the caller's own
-	uploaded avatars (`/api/files/avatars/<caller id>/avatar.<png|jpeg|gif|webp>`, as
+	uploaded avatars (`/api/files/avatars/<caller id>/avatar-<content hash>.<ext>`, as
 	`POST /api/files/avatar` answers it).
 	- `NOT_FOUND` — caller's user row missing (should not happen in practice).
 	- `INTERNAL` — repository failure.
@@ -3320,7 +3325,7 @@ One optional feature and whether it works here.
 type ServerFeatureInfo {
 	"""
 	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands` or `avatars`. A client
+	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars` or `plugin_link_fetch`. A client
 	ignores a name it does not know.
 	"""
 	key: String!
@@ -3520,6 +3525,14 @@ type ServerMember {
 	The member's key identity (`rimp1_…`), once enrolled; null for a password-only account.
 	"""
 	principalId: String
+	"""
+	Whether this member is banned in this workspace.
+	"""
+	banned: Boolean!
+	"""
+	End of the active ban; null for a permanent ban or no ban.
+	"""
+	bannedUntil: DateTime
 }
 
 """
@@ -3918,6 +3931,18 @@ type User {
 	deleted account.
 	"""
 	handle: String
+	"""
+	Whether this message's author is banned in its workspace; false outside message authors.
+	"""
+	banned: Boolean!
+	"""
+	End of the active workspace ban; null for a permanent ban or no ban.
+	"""
+	bannedUntil: DateTime
+	"""
+	The active ban's reason, readable only by workspace moderators.
+	"""
+	banReason: String
 }
 
 """

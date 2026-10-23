@@ -1,3 +1,4 @@
+import type { AuthorBan } from "../../hooks/useBanExpiry";
 import type { MessageAttachment, MessageE2ee } from "../../../../core/types/messages";
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
 import type { PresenceStatus } from "../../../../shared/ui/Avatar";
@@ -51,6 +52,7 @@ export interface MessageItemMessage {
 
 export interface ResolvedMember {
   isFormerMember?: boolean;
+  ban?: AuthorBan;
   displayName: string;
   username?: string;
   /** How the member's handle reads to the viewer. */
@@ -68,6 +70,7 @@ export type MemberResolver = (userId: string) => ResolvedMember;
 /** Author details resolved by the parent (member directory + message author). */
 export interface MessageAuthorView {
   isFormerMember?: boolean;
+  ban?: AuthorBan;
   name: string;
   avatarUrl?: string | null;
   username?: string;

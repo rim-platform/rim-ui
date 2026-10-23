@@ -12,7 +12,12 @@ const USER_EVENTS = new Set([
   "MlsWelcomeAvailable",
   "DmInvite",
 ]);
-const DIRECTORY_EVENTS = new Set(["MemberJoined", "MemberLeft", "MemberRoleChanged"]);
+const DIRECTORY_EVENTS = new Set([
+  "MemberJoined",
+  "MemberLeft",
+  "MemberRoleChanged",
+  "MemberBanChanged",
+]);
 const EPHEMERAL_EVENTS = new Set(["TypingStarted", "PresenceChanged"]);
 
 export interface StreamedEvent {

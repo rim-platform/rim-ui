@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
+
+import { handleMemberBanChanged } from "../../features/workspaces/state/memberEvents";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { isSessionEndedClose, reportSubscriptionLimit } from "../graphql/subscriptionErrors";
 import { logger } from "../logger";
@@ -339,7 +341,12 @@ export function applyWorkspaceEvent(
 
     case "MemberLeft":
       handleViewerMembershipChange(qc, workspaceId, event.user_id);
-      handleMemberLeft(qc, workspaceId, event.user_id);
+      handleMemberLeft(qc, workspaceId, event.user_id, event);
+      handleMemberBanChanged(qc, workspaceId);
+      break;
+
+    case "MemberBanChanged":
+      handleMemberBanChanged(qc, workspaceId);
       break;
 
     case "MemberRoleChanged":

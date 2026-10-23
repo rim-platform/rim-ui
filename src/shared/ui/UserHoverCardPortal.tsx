@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import type { AuthorBan } from "../utils/banStatus";
 import type { PresenceStatus } from "./Avatar";
 import type { HandleView } from "../utils/handles";
 import { UserCardContent } from "./UserCardContent";
@@ -9,6 +10,7 @@ import { Z } from "./zIndex";
 interface UserHoverCardPortalProps {
   userId: string;
   isFormerMember?: boolean;
+  ban?: AuthorBan;
   username: string;
   /** How the person's handle reads; see `UserCardContent`. */
   handle?: HandleView | null;
@@ -32,6 +34,7 @@ interface UserHoverCardPortalProps {
 export function UserHoverCardPortal({
   userId,
   isFormerMember,
+  ban,
   username,
   handle,
   displayName,
@@ -110,6 +113,7 @@ export function UserHoverCardPortal({
     >
       <UserCardContent
         isFormerMember={isFormerMember}
+        ban={ban}
         userId={userId}
         username={username}
         handle={handle}

@@ -1,5 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import type { RemovalNotice } from "./useRemovalNotices";
+import { removalAccountKey, removalMessage, useRemovalNotices } from "./useRemovalNotices";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -92,7 +94,12 @@ export function leaveWorkspace(qc: QueryClient, workspaceId: string): void {
  * member directory. For the viewer, leave the workspace and say why with a toast, unless this
  * client is deleting it.
  */
-export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: string): void {
+export function handleMemberLeft(
+  qc: QueryClient,
+  workspaceId: string,
+  userId: string,
+  details?: { cause?: string | null; until?: string | null; reason?: string | null },
+): void {
   if (userId !== currentUserId(qc)) {
     qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
     return;
@@ -103,5 +110,33 @@ export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: s
     ?.find((s) => s.id === workspaceId)?.name;
   leaveWorkspace(qc, workspaceId);
   if (departing.delete(workspaceId)) return;
+  if (details?.cause === "ban" || details?.cause === "kick") {
+    const notice: RemovalNotice = {
+      workspaceId,
+      workspaceName: name,
+      cause: details.cause,
+      until: details.until,
+      reason: details.reason,
+    };
+    useRemovalNotices.getState().add(removalAccountKey(userId), notice);
+    toast.info(removalMessage(notice));
+    return;
+  }
   toast.info(name ? `You were removed from ${name}` : "You were removed from this workspace");
+}
+
+/** Refresh every view that embeds workspace author ban status. */
+export function handleMemberBanChanged(qc: QueryClient, workspaceId: string): void {
+  const roots = new Set([
+    "messages",
+    "threadMessages",
+    "searchMessages",
+    "pinnedMessages",
+    "lensMessages",
+    "serverMembers",
+    "serverBans",
+  ]);
+  void qc.invalidateQueries({
+    predicate: (query) => roots.has(String(query.queryKey[0])) && query.queryKey[1] === workspaceId,
+  });
 }

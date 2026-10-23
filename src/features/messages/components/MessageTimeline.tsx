@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { AuthorBan } from "../hooks/useBanExpiry";
+import { activeBan, banLabel, useBanExpiry } from "../hooks/useBanExpiry";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
 import { useMessageNavigation } from "../hooks/useMessageNavigation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -110,6 +112,10 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
 
   const timeline = useTimelineItems(workspaceId, conversationId, encryption);
   const items: TimelineMessage[] = timeline.items;
+  useBanExpiry(
+    workspaceId,
+    items.map((message) => message.author),
+  );
   const formerNamesKey = JSON.stringify(
     [
       ...new Map(
@@ -117,7 +123,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
           .filter((message) => !memberLookup.map.has(message.authorId))
           .map((message) => [
             message.authorId,
-            `${authorNameOf(message, memberLookup.resolve(message.authorId))}${memberLookup.resolve(message.authorId).isFormerMember ? " (former member)" : ""}`,
+            `${authorNameOf(message, memberLookup.resolve(message.authorId))}${activeBan(message.author) ? ` (${banLabel(message.author)})` : memberLookup.resolve(message.authorId).isFormerMember ? " (former member)" : ""}`,
           ]),
       ).entries(),
     ].sort(([a], [b]) => a.localeCompare(b)),
@@ -129,9 +135,33 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     for (const [id, name] of JSON.parse(formerNamesKey) as [string, string][]) map.set(id, name);
     return map;
   }, [memberLookup.map, formerNamesKey]);
+  const banDetailsKey = JSON.stringify(
+    [
+      ...new Map(
+        items
+          .filter((message) => !memberLookup.map.has(message.authorId))
+          .map((message) => [
+            message.authorId,
+            {
+              banned: activeBan(message.author),
+              bannedUntil: message.author?.bannedUntil,
+              banReason: message.author?.banReason,
+            },
+          ]),
+      ).entries(),
+    ].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  const authorBans = useMemo(
+    () => new Map<string, AuthorBan>(JSON.parse(banDetailsKey)),
+    [banDetailsKey],
+  );
+  const resolveMember = useCallback(
+    (id: string) => ({ ...memberLookup.resolve(id), ban: authorBans.get(id) }),
+    [memberLookup.resolve, authorBans],
+  );
   const members = useMemo<MessageMembers>(
-    () => ({ resolve: memberLookup.resolve, displayMap: memberDisplayMap }),
-    [memberLookup.resolve, memberDisplayMap],
+    () => ({ resolve: resolveMember, displayMap: memberDisplayMap }),
+    [resolveMember, memberDisplayMap],
   );
 
   // What the viewer sent while their DM waits as a request.
@@ -354,7 +384,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                       msg.parentMessageId,
                       parent,
                       parent
-                        ? `${authorNameOf(parent, memberLookup.resolve(parent.authorId))}${memberLookup.resolve(parent.authorId).isFormerMember ? " (former member)" : ""}`
+                        ? `${authorNameOf(parent, memberLookup.resolve(parent.authorId))}${activeBan(parent.author) ? ` (${banLabel(parent.author)})` : memberLookup.resolve(parent.authorId).isFormerMember ? " (former member)" : ""}`
                         : null,
                       mentionNameOf,
                     )
@@ -375,6 +405,11 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                         author: {
                           name: authorNameOf(msg, member),
                           isFormerMember: member.isFormerMember,
+                          ban: {
+                            banned: activeBan(msg.author),
+                            bannedUntil: msg.author?.bannedUntil,
+                            banReason: msg.author?.banReason,
+                          },
                           avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
                           username: member.username ?? msg.author?.username,
                           handle: viewHandle(
