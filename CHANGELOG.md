@@ -75,7 +75,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 ### Fixed
 
 - Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
-- Keep readable kick and ban reasons until dismissed, show active author bans, and let older accounts join the default workspace from direct messages.
+- **Upgrade:** update the server before this client: message queries now require the workspace
+  author fields `banned`, `bannedUntil` and `banReason`, and default-workspace joining uses
+  `joinDefaultWorkspace`. Keep readable kick and ban reasons until dismissed, show active
+  author bans, and let older accounts join the default workspace from direct messages.
 
 - Workspace reports have a dedicated Moderation tab, a Reports menu item, and a pointer from
   instance moderation; report confirmations name the workspace.
