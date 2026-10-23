@@ -42,7 +42,7 @@ RUN rm /etc/nginx/conf.d/default.conf
 # Derive the bare origin (scheme + host, no path) from the endpoint arg.
 # Example: "https://api.rim.app/api" → "https://api.rim.app"
 # The ws(s):// variant mirrors the http(s):// scheme for WebSocket support.
-RUN API_ORIGIN=$(echo "$VITE_GRAPHQL_ENDPOINT" | sed 's|^\(https\?://[^/]*\).*|\1|') && \
+RUN API_ORIGIN=$(echo "$VITE_GRAPHQL_ENDPOINT" | sed -n 's|^\(https\?://[^/]*\).*|\1|p') && \
     WS_ORIGIN=$(echo "$API_ORIGIN" | sed 's|^http|ws|') && \
     cat > /etc/nginx/conf.d/rim.conf <<NGINX
 server {

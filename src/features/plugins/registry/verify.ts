@@ -170,8 +170,8 @@ export function bundleRequest(bundleUrl: string): { url: string; credentials: Re
  * Step 5 for a bundle source: fetch the entry's bundle and check it. The server's own copy is
  * fetched from the webview with the session on every platform. A bundle on another host is
  * fetched through the desktop host's `plugin_fetch_bundle` command on the desktop, which reads
- * hosts that send no `Access-Control-Allow-Origin`, and from the webview without credentials
- * elsewhere. Either way the bytes must hash to the signed SHA-256.
+ * hosts that send no `Access-Control-Allow-Origin`, and through the RIM server in the browser.
+ * Either way the bytes must hash to the signed SHA-256.
  *
  * @param check - The verified entry.
  * @param platform - The platform this client runs on.

@@ -118,6 +118,7 @@ describe("AboutServerFeatures", () => {
       "Workspace pluginsOn",
       "AI commandsOn",
       "Profile picturesOn",
+      "Plugin link installationOn",
     ]);
   });
 

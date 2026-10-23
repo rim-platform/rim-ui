@@ -11,7 +11,8 @@ export type ServerFeatureKey =
   | "custom_emoji"
   | "workspace_plugins"
   | "ai_commands"
-  | "avatars";
+  | "avatars"
+  | "plugin_link_fetch";
 
 /** Each known feature's name, in the order the server lists them. */
 export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
@@ -22,6 +23,7 @@ export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
   workspace_plugins: "Workspace plugins",
   ai_commands: "AI commands",
   avatars: "Profile pictures",
+  plugin_link_fetch: "Plugin link installation",
 };
 
 /** The features whose name is a plural, so a sentence about them says "are". */

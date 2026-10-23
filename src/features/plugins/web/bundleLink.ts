@@ -1,6 +1,7 @@
 // Pasted links to a bundle: `https://host/path/name.rimbundle#sha256=<64 hex>`.
 // The fragment pins the bytes: the link installs only a bundle with that hash.
 
+import { csrfHeader } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import type { AppPlatform } from "../../../core/runtime/runtime";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
@@ -47,34 +48,60 @@ export function serverBundleUrl(serverId: string, sha256: string): string {
   return `${getApiOrigin()}/api/plugin-bundles/${encodeURIComponent(serverId)}/${sha256}`;
 }
 
-/**
- * Fetch a bundle without caches, following redirects, and stop reading past
- * 8 MiB. The bytes must hash to `sha256`. Credentials go only to the RIM
- * server's own copy, which needs the session; any other host gets none. The server's own copy
- * is refused with a `FeatureDisabledError` while workspace plugins are switched off.
- */
+/** Fetch a pinned external bundle through the RIM server, or its authenticated stored copy. */
 export async function fetchBundle(
   url: string,
   sha256: string,
   fetchImpl: typeof fetch = fetch,
   credentials: RequestCredentials = "omit",
 ): Promise<Uint8Array> {
+  const external = credentials !== "include";
   let response: Response;
   try {
-    response = await fetchImpl(url, {
-      credentials,
+    response = await fetchImpl(external ? `${getApiOrigin()}/api/plugin-bundles/fetch` : url, {
+      credentials: "include",
       cache: "no-store",
-      redirect: "follow",
+      redirect: external ? "error" : "follow",
       referrerPolicy: "no-referrer",
+      ...(external
+        ? {
+            method: "POST",
+            headers: { "content-type": "application/json", ...csrfHeader() },
+            body: JSON.stringify({ url, sha256 }),
+          }
+        : {}),
     });
   } catch {
     throw new BundleLinkError(
-      "The bundle could not be fetched. Its server must allow it with Access-Control-Allow-Origin: *.",
+      "Could not reach your RIM server to fetch the bundle. Check your connection and try again.",
     );
   }
   if (!response.ok) {
-    const disabled = credentials === "include" ? await featureDisabledFromResponse(response) : null;
-    throw disabled ?? new BundleLinkError(`The bundle's server answered ${response.status}.`);
+    const disabled = await featureDisabledFromResponse(response);
+    if (external && disabled?.feature === "workspace_plugins")
+      throw new BundleLinkError(
+        "This RIM server does not support installing plugins from links in the browser. Update the server.",
+      );
+    if (disabled) throw disabled;
+    if (external && (response.status === 400 || response.status === 404))
+      throw new BundleLinkError(
+        "This RIM server does not support installing plugins from links in the browser. Update the server.",
+      );
+    if (external && response.status === 422) {
+      const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      throw new BundleLinkError(
+        body?.error === "bundle SHA-256 mismatch"
+          ? "The bundle does not match the SHA-256 in the link."
+          : "The server refused the bundle: its link, size or contents are invalid.",
+      );
+    }
+    if (response.status === 401)
+      throw new BundleLinkError("Sign in again to fetch this plugin bundle.");
+    if (response.status === 429)
+      throw new BundleLinkError("Too many plugin download attempts. Try again later.");
+    throw new BundleLinkError(
+      `The RIM server could not fetch the bundle (HTTP ${response.status}).`,
+    );
   }
   return checkPin(await readCapped(response), sha256);
 }
@@ -126,8 +153,7 @@ export async function fetchBundleOnDesktop(
 
 /**
  * Fetch a pasted link's bundle the way the platform allows: through the desktop host on
- * the desktop, from the webview elsewhere, where the bundle's server must send
- * `Access-Control-Allow-Origin`.
+ * the desktop, through the configured RIM server in the browser.
  *
  * @returns The bundle's bytes, checked against the link's pin.
  */

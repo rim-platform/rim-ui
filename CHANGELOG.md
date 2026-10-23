@@ -74,6 +74,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
 - Refresh member pictures, message authors and the signed-in profile when a profile update arrives from another session.
 - **Upgrade:** update the server before this client: message queries now require the workspace
   author fields `banned`, `bannedUntil` and `banReason`, and default-workspace joining uses
