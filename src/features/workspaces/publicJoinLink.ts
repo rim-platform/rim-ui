@@ -9,25 +9,34 @@ import {
   VALIDATION,
 } from "../../core/graphql/errors";
 
+/** The prefix of a workspace's public link token; invite tokens start `rim_inv_` or `rim_iinv_`. */
+export const PUBLIC_LINK_PREFIX = "rim_pjl_";
+
+/** Whether `token` is a workspace's public link rather than an invite. */
+export function isPublicLinkToken(token: string): boolean {
+  return token.startsWith(PUBLIC_LINK_PREFIX);
+}
+
 /** What every invalid link says, whatever made it invalid. */
-export const INVALID_LINK_MESSAGE = "This link isn't valid";
+export const INVALID_LINK_MESSAGE = "This link isn't valid.";
+
+/** What a person banned from the link's workspace is told. */
+export const BANNED_MESSAGE = "You are banned from this workspace.";
 
 /**
- * How long `seconds` is, rounded up to its largest whole unit.
+ * How long `seconds` is in whole minutes, rounded up.
  *
- * @returns For example "45 seconds", "1 minute" or "58 minutes".
+ * @returns For example "1 minute" or "58 minutes".
  */
 export function waitLabel(seconds: number): string {
-  const whole = Math.max(1, Math.ceil(seconds));
-  if (whole < 60) return `${whole} second${whole === 1 ? "" : "s"}`;
-  const minutes = Math.ceil(whole / 60);
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 /** The wording for a `RATE_LIMITED` link lookup or join, with the wait when the server gave it. */
 export function linkRateLimitedMessage(seconds: number | undefined): string {
   const wait = seconds === undefined ? "later" : `in ${waitLabel(seconds)}`;
-  return `Too many links that don't work were opened from your network. Try again ${wait}.`;
+  return `Too many tries from this network. Try again ${wait}.`;
 }
 
 /** `text` as a sentence: a capital first letter and a closing full stop. */
@@ -40,8 +49,8 @@ function sentence(text: string): string {
 
 /**
  * What a failed link lookup, join or join request says: one message for every invalid link,
- * the wait for a rate limit, and a plain sentence for each refusal of a valid link (banned,
- * full, already a member or asked, too many open requests, declined recently, a long message).
+ * the wait for a rate limit, the banned text, whether the person is a member already or asked
+ * already, and otherwise the server's own message, which names the cap or the hours to wait.
  *
  * @param err - What the request failed with.
  * @param fallback - What to say when the failure names no reason.
@@ -51,27 +60,18 @@ export function publicLinkErrorMessage(err: unknown, fallback: string): string {
   const message = graphqlErrorMessage(err, fallback);
   switch (code) {
     case NOT_FOUND:
-      return `${INVALID_LINK_MESSAGE}.`;
+      return INVALID_LINK_MESSAGE;
     case RATE_LIMITED:
       return linkRateLimitedMessage(retryAfterSeconds(err));
     case FORBIDDEN:
-      return message.includes("banned") ? "You are banned from this workspace." : sentence(message);
+      return message.includes("banned") ? BANNED_MESSAGE : sentence(message);
     case CONFLICT:
       if (message.includes("already a member"))
         return "You are already a member of this workspace.";
-      if (message.includes("already asked")) return "You already asked to join this workspace.";
+      if (message.includes("already asked")) return "Your request to join was already sent.";
       if (message.includes("no longer open")) return "This request is no longer open.";
       return sentence(message);
     case VALIDATION:
-      if (message.includes("members per workspace")) {
-        return `This workspace is full: ${message.replace(/^this /, "the ")}.`;
-      }
-      if (message.includes("open join requests")) {
-        return "You have as many open requests to join workspaces as you can. Withdraw one first.";
-      }
-      if (message.includes("characters")) {
-        return "Your message is too long: at most 500 characters.";
-      }
       return sentence(message);
     default:
       return message;

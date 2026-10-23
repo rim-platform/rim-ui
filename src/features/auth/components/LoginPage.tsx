@@ -18,8 +18,7 @@
  *
  * **Session redirect:** if a session is already restored via
  * `useSessionHydration`, navigates immediately to `state.returnTo ?? "/"` so
- * the login page is never shown to an authenticated user. "Create account" hands the same
- * `state` to `/join`, so a signup lands on `returnTo` too.
+ * the login page is never shown to an authenticated user.
  *
  * **Server notices:** the operator's instance notice at the top, an alert when the server
  * blocked this address, and a note when the server ended the last session.
@@ -206,7 +205,6 @@ export function LoginPage() {
             </div>
             <Link
               to="/join"
-              state={location.state}
               className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text"
             >
               Create account

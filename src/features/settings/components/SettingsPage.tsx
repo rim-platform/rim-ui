@@ -29,8 +29,8 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsInstanceOperator } from "../../instance-moderation/api/instanceModeration";
 import { RimMark } from "../../../shared/brand/RimLogo";
 import { OperatorDmPolicy } from "../../dm-policy/components/OperatorDmPolicy";
-import { joinRequestBadge, useJoinRequestCount } from "../../public-link/api/publicLink";
-import { useCanHavePublicLink } from "../../public-link/hooks/useCanHavePublicLink";
+import { joinRequestBadge, useJoinRequestCount } from "../../workspaces/api/publicJoinLink";
+import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazy(() =>
@@ -67,7 +67,7 @@ const WorkspaceInvites = lazy(() =>
   })),
 );
 const PublicLinkSettings = lazy(() =>
-  import("../../public-link/components/PublicLinkSettings").then((m) => ({
+  import("./PublicLinkSettings").then((m) => ({
     default: m.PublicLinkSettings,
   })),
 );

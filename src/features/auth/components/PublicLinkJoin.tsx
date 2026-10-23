@@ -9,41 +9,50 @@ import {
   PublicJoinLinkViewer,
 } from "../../../core/graphql/generated/schema-types";
 import { Button } from "../../../shared/ui/Button";
-import { BrandHeading } from "../../auth/components/BrandHeading";
-import { RestoringSession } from "../../auth/components/RestoringSession";
-import { useServerConfig } from "../../auth/api/useServerConfig";
-import { RegistrationMode } from "../../auth/types";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   JOIN_REQUEST_MESSAGE_MAX,
-  useJoinByPublicLinkMutation,
+  useJoinByPublicLink,
   usePublicJoinLinkPreview,
-  useWithdrawJoinRequestMutation,
+  useWithdrawJoinRequest,
   type PublicJoinLinkPreviewData,
-} from "../api/publicLink";
-import { INVALID_LINK_MESSAGE, publicLinkErrorMessage } from "../linkErrors";
+} from "../../workspaces/api/publicJoinLink";
+import {
+  BANNED_MESSAGE,
+  INVALID_LINK_MESSAGE,
+  publicLinkErrorMessage,
+} from "../../workspaces/publicJoinLink";
+import { useServerConfig } from "../api/useServerConfig";
+import { useSessionHydration } from "../api/useSessionHydration";
+import { useNoReferrerMeta } from "../hooks/useNoReferrerMeta";
+import { rememberPendingPublicLink } from "../pendingPublicLink";
+import { useAuthStore } from "../state/useAuthStore";
+import { RegistrationMode } from "../types";
+import { BrandHeading } from "./BrandHeading";
+import { RestoringSession } from "./RestoringSession";
 
-interface PublicLinkJoinPageProps {
+interface PublicLinkJoinProps {
   /** The link's token from the `/join/:token` path, `rim_pjl_…`. */
   token: string;
-  /** The session cookie is still being checked, so who is signed in is not known yet. */
-  isHydrating: boolean;
-  /** The signed-in account, or null. */
-  userId: string | null;
 }
 
 const ERROR_BOX =
   "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
 
 /**
- * The `/join/:token` page for a workspace's public link. It shows the workspace's name and
- * what the visitor can do: sign in or create an account (signed out), join or ask to join
- * (signed in), open the workspace (a member), wait for the moderators with Withdraw request
- * (asked already), or that they are banned. Every invalid link says "This link isn't valid";
- * too many of them from one address say when to try again. The link never creates an account:
- * "Create an account" is the server's own signup, which comes back here afterwards.
+ * The `/join/:token` page for a workspace's public link. Once the session cookie is checked it
+ * shows the workspace's name and what the visitor can do: sign in or create an account (signed
+ * out), join or ask to join (signed in), open the workspace (a member), wait for the moderators
+ * with Withdraw request (asked already), or that they are banned. Every invalid link says
+ * "This link isn't valid."; too many of them from one network say when to try again. The link
+ * never creates an account: "Create an account" is the server's own signup, and the link is
+ * kept for the tab so the app comes back to it afterwards. The token never reaches an invite
+ * preview or the invite signup, and the page sends no referrer.
  */
-export function PublicLinkJoinPage({ token, isHydrating, userId }: PublicLinkJoinPageProps) {
+export function PublicLinkJoin({ token }: PublicLinkJoinProps) {
+  useNoReferrerMeta();
+  const { isHydrating } = useSessionHydration();
+  const userId = useAuthStore((s) => s.session?.userId ?? null);
   const preview = usePublicJoinLinkPreview(token, userId, !isHydrating);
 
   if (isHydrating) return <RestoringSession />;
@@ -117,7 +126,7 @@ function ViewerAction({ token, preview }: { token: string; preview: PublicJoinLi
     case PublicJoinLinkViewer.BANNED:
       return (
         <p role="alert" className={ERROR_BOX}>
-          You are banned from this workspace, so you cannot join it or ask to.
+          {BANNED_MESSAGE}
         </p>
       );
     case PublicJoinLinkViewer.REQUEST_OPEN:
@@ -126,7 +135,7 @@ function ViewerAction({ token, preview }: { token: string; preview: PublicJoinLi
       return preview.mode === PublicJoinLinkMode.REQUESTS ? (
         <AskToJoin token={token} />
       ) : (
-        <JoinDirectly token={token} />
+        <JoinDirectly token={token} name={preview.name} />
       );
     default: {
       const _exhaustive: never = preview.viewer;
@@ -138,7 +147,6 @@ function ViewerAction({ token, preview }: { token: string; preview: PublicJoinLi
 function SignedOut({ token, asks }: { token: string; asks: boolean }) {
   const navigate = useNavigate();
   const { data: serverConfig } = useServerConfig();
-  const returnTo = `/join/${token}`;
   const inviteOnly = serverConfig?.registrationMode === RegistrationMode.INVITE_ONLY;
 
   return (
@@ -156,13 +164,22 @@ function SignedOut({ token, asks }: { token: string; asks: boolean }) {
         </p>
       )}
       <div className="flex flex-col gap-2">
-        <Button type="button" onClick={() => navigate("/login", { state: { returnTo } })}>
+        <Button
+          type="button"
+          onClick={() => {
+            rememberPendingPublicLink(token);
+            navigate("/login");
+          }}
+        >
           Sign in
         </Button>
         <Button
           type="button"
           variant="secondary"
-          onClick={() => navigate("/join", { state: { returnTo } })}
+          onClick={() => {
+            rememberPendingPublicLink(token);
+            navigate("/join");
+          }}
         >
           Create an account
         </Button>
@@ -190,7 +207,7 @@ function AlreadyMember({ preview }: { preview: PublicJoinLinkPreviewData }) {
   const open = useOpenWorkspace();
   return (
     <div className="space-y-4">
-      <p className="text-sm text-rim-text-muted">You are already a member of this workspace.</p>
+      <p className="text-sm text-rim-text-muted">You&apos;re already a member.</p>
       <Button type="button" className="w-full" onClick={() => open(preview.serverId)}>
         Open workspace
       </Button>
@@ -200,7 +217,7 @@ function AlreadyMember({ preview }: { preview: PublicJoinLinkPreviewData }) {
 
 function Waiting({ preview }: { preview: PublicJoinLinkPreviewData }) {
   const navigate = useNavigate();
-  const withdraw = useWithdrawJoinRequestMutation();
+  const withdraw = useWithdrawJoinRequest();
   const requestId = preview.joinRequestId;
 
   return (
@@ -236,8 +253,8 @@ function Waiting({ preview }: { preview: PublicJoinLinkPreviewData }) {
   );
 }
 
-function JoinDirectly({ token }: { token: string }) {
-  const join = useJoinByPublicLinkMutation();
+function JoinDirectly({ token, name }: { token: string; name: string }) {
+  const join = useJoinByPublicLink();
   const open = useOpenWorkspace();
   const qc = useQueryClient();
 
@@ -267,14 +284,14 @@ function JoinDirectly({ token }: { token: string }) {
           )
         }
       >
-        {join.isPending ? "Joining..." : "Join"}
+        {join.isPending ? "Joining..." : `Join ${name}`}
       </Button>
     </div>
   );
 }
 
 function AskToJoin({ token }: { token: string }) {
-  const join = useJoinByPublicLinkMutation();
+  const join = useJoinByPublicLink();
   const open = useOpenWorkspace();
   const qc = useQueryClient();
   const messageId = useId();
@@ -303,7 +320,7 @@ function AskToJoin({ token }: { token: string }) {
       </p>
       <div>
         <label htmlFor={messageId} className="mb-1 block text-xs font-medium text-rim-text">
-          Message to the moderators (optional)
+          Message (optional)
         </label>
         <textarea
           id={messageId}

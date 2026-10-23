@@ -40,7 +40,7 @@ import {
 import {
   handleJoinRequestCreated,
   handleJoinRequestDecided,
-} from "../../features/public-link/state/joinRequestEvents";
+} from "../../features/workspaces/state/joinRequestEvents";
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,

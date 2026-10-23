@@ -116,15 +116,6 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
 // The key form has its own tests; the stand-in is in `__mocks__`.
 vi.mock("./KeySignupForm");
 
-// The public link page has its own tests; the stand-in shows what it was given.
-vi.mock("../../public-link/components/PublicLinkJoinPage", () => ({
-  PublicLinkJoinPage: (props: { token: string; isHydrating: boolean; userId: string | null }) => (
-    <p data-testid="public-link-page">
-      {props.token} {String(props.isHydrating)} {String(props.userId)}
-    </p>
-  ),
-}));
-
 import { JoinPage } from "./JoinPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 
@@ -582,54 +573,5 @@ describe("JoinPage — create account with a key (desktop)", () => {
     expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
     expect(mockSetWorkspaceId).not.toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith("/");
-  });
-});
-
-describe("JoinPage — public link or invite", () => {
-  const LINK = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
-
-  function renderAt(token: string) {
-    return renderWithServerInfo(
-      <MemoryRouter initialEntries={[`/join/${token}`]}>
-        <Routes>
-          <Route path="/join/:token" element={<JoinPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSession = null;
-    hydration.isHydrating = false;
-    mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
-  });
-
-  it("hands a public link to its own page, never to the invite preview or signup", () => {
-    renderAt(LINK);
-    expect(screen.getByTestId("public-link-page")).toHaveTextContent(`${LINK} false null`);
-    expect(mockUsePreviewInviteToken).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: /create account/i })).not.toBeInTheDocument();
-    expect(mockSignupMutate).not.toHaveBeenCalled();
-  });
-
-  it("gives a signed-in account's public link page the account, not the invite join", () => {
-    mockSession = { userId: "u1" };
-    renderAt(LINK);
-    expect(screen.getByTestId("public-link-page")).toHaveTextContent(`${LINK} false u1`);
-    expect(mockUsePreviewInviteToken).not.toHaveBeenCalled();
-    expect(mockJoinServerMutate).not.toHaveBeenCalled();
-  });
-
-  it("passes the session check on to the public link page", () => {
-    hydration.isHydrating = true;
-    renderAt(LINK);
-    expect(screen.getByTestId("public-link-page")).toHaveTextContent(`${LINK} true null`);
-  });
-
-  it("keeps the invite flow for an invite token", () => {
-    renderAt("rim_inv_abc");
-    expect(screen.queryByTestId("public-link-page")).not.toBeInTheDocument();
-    expect(mockUsePreviewInviteToken).toHaveBeenCalledWith("rim_inv_abc");
   });
 });

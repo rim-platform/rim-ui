@@ -22,8 +22,8 @@ import {
 } from "../../workspaces/api/useModeration";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import { JoinRequestsList } from "../../public-link/components/JoinRequestsList";
-import { useCanHavePublicLink } from "../../public-link/hooks/useCanHavePublicLink";
+import { JoinRequestsSection } from "../../workspaces/components/JoinRequestsSection";
+import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 import { EncryptedReportView } from "./EncryptedReportView";
 
 interface ModerationSettingsProps {
@@ -52,7 +52,7 @@ export function ModerationSettings({ serverId }: ModerationSettingsProps) {
           recorded in the audit log.
         </p>
       </div>
-      {canHaveLink && <JoinRequestsList serverId={serverId} />}
+      {canHaveLink && <JoinRequestsSection serverId={serverId} />}
       <BansList serverId={serverId} />
       <MessageReportsList serverId={serverId} />
     </section>

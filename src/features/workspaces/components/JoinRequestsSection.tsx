@@ -1,21 +1,19 @@
-import { useState } from "react";
-
 import { graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime";
-import { personName } from "../../../shared/utils/handles";
-import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
+import { handleDomain, personName, viewHandle } from "../../../shared/utils/handles";
 import {
   joinRequestBadge,
-  useAcceptJoinRequestMutation,
-  useDeclineJoinRequestMutation,
+  useAcceptJoinRequest,
+  useDeclineJoinRequest,
   useJoinRequestCount,
   useJoinRequests,
   type JoinRequestRow,
-} from "../api/publicLink";
-import { publicLinkErrorMessage } from "../linkErrors";
+} from "../api/publicJoinLink";
+import { useCurrentUser } from "../api/useCurrentUser";
+import { publicLinkErrorMessage } from "../publicJoinLink";
 
 const ERROR_BOX =
   "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
@@ -26,28 +24,38 @@ function requesterName(request: JoinRequestRow): string {
 
 /**
  * Settings → Moderation → Join requests (Owner and Moderators): the workspace's open requests
- * to join through its public link, newest first, each with the person, their message, when
- * they asked and when the request expires, and Accept or Decline (after a confirmation, as the
- * person can ask again only 24 hours later). Load more follows the server's cursor.
+ * to join through its public link, newest first, each with the person (avatar, display name,
+ * handle), their message, when they asked and when the request expires, and Accept or Decline.
+ * Load more follows the server's cursor; a count of the open requests sits by the title. A
+ * server without join requests shows nothing.
  */
-export function JoinRequestsList({ serverId }: { serverId: string }) {
+export function JoinRequestsSection({ serverId }: { serverId: string }) {
   const { data, isPending, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useJoinRequests(serverId);
   const { data: count } = useJoinRequestCount(serverId);
-  const accept = useAcceptJoinRequestMutation();
-  const decline = useDeclineJoinRequestMutation();
-  const [declining, setDeclining] = useState<JoinRequestRow | null>(null);
+  const { data: me } = useCurrentUser();
+  const accept = useAcceptJoinRequest();
+  const decline = useDeclineJoinRequest();
   const requests = data?.pages.flatMap((page) => page.items) ?? [];
   const badge = joinRequestBadge(count);
+  const ownDomain = handleDomain(me?.handle);
   // A server without join requests refuses the query itself: there is nothing to show.
   if (isError && isSchemaRefusal(error)) return null;
 
-  function handleAccept(request: JoinRequestRow) {
-    accept.mutate(
+  function decide(request: JoinRequestRow, accepted: boolean) {
+    const name = requesterName(request);
+    (accepted ? accept : decline).mutate(
       { serverId, requestId: request.id },
       {
-        onSuccess: () => toast.success(`${requesterName(request)} joined the workspace`),
-        onError: (err) => toast.error(publicLinkErrorMessage(err, "Could not accept the request")),
+        onSuccess: () =>
+          toast.success(accepted ? `${name} joined the workspace` : `Declined ${name}'s request`),
+        onError: (err) =>
+          toast.error(
+            publicLinkErrorMessage(
+              err,
+              accepted ? "Could not accept the request" : "Could not decline the request",
+            ),
+          ),
       },
     );
   }
@@ -70,7 +78,7 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
       </h3>
       <p className="mt-1 text-xs text-rim-text-faint">
         People asking to join through the workspace&apos;s public link. Newest first; a request
-        expires after 30 days.
+        expires after 30 days, and someone declined can ask again after 24 hours.
       </p>
       {isPending && <p className="mt-2 text-sm text-rim-text-muted">Loading join requests…</p>}
       {isError && (
@@ -79,12 +87,15 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
         </p>
       )}
       {data && requests.length === 0 && (
-        <p className="mt-2 text-sm text-rim-text-muted">No open requests.</p>
+        <p className="mt-2 text-sm text-rim-text-muted">No one is waiting to join.</p>
       )}
       {requests.length > 0 && (
         <ul className="mt-2 divide-y divide-rim-line" aria-label="Join requests">
           {requests.map((request) => {
             const name = requesterName(request);
+            const handle = request.user
+              ? viewHandle(request.user.username, request.user.handle, ownDomain)?.shown
+              : undefined;
             const busy =
               (accept.isPending && accept.variables?.requestId === request.id) ||
               (decline.isPending && decline.variables?.requestId === request.id);
@@ -101,7 +112,12 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
                   size="sm"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-rim-text">{name}</p>
+                  <p className="truncate text-sm text-rim-text">
+                    {name}
+                    {handle && handle.slice(1) !== name && (
+                      <span className="ml-1 text-xs text-rim-text-muted">{handle}</span>
+                    )}
+                  </p>
                   {request.message ? (
                     <p className="whitespace-pre-wrap break-words text-sm text-rim-text-muted">
                       {request.message}
@@ -111,10 +127,10 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
                   )}
                   <p className="text-xs text-rim-text-faint">
                     <span title={formatTime(request.createdAt)}>
-                      Asked {formatRelativeTime(request.createdAt)}
+                      asked {formatRelativeTime(request.createdAt)}
                     </span>
                     {" · "}
-                    Expires {formatTime(request.expiresAt)}
+                    expires {formatTime(request.expiresAt)}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -123,7 +139,7 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
                     size="sm"
                     disabled={busy}
                     aria-label={`Accept ${name}`}
-                    onClick={() => handleAccept(request)}
+                    onClick={() => decide(request, true)}
                   >
                     Accept
                   </Button>
@@ -133,7 +149,7 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
                     size="sm"
                     disabled={busy}
                     aria-label={`Decline ${name}`}
-                    onClick={() => setDeclining(request)}
+                    onClick={() => decide(request, false)}
                   >
                     Decline
                   </Button>
@@ -155,22 +171,6 @@ export function JoinRequestsList({ serverId }: { serverId: string }) {
             Load more
           </Button>
         </div>
-      )}
-      {declining && (
-        <ModerationDialog
-          title={`Decline ${requesterName(declining)}?`}
-          description="They are told their request was declined, and can ask to join again in 24 hours."
-          tone="warm"
-          chips={["MODERATOR"]}
-          confirmLabel="Decline"
-          errorFallback="Could not decline the request"
-          onConfirm={() => decline.mutateAsync({ serverId, requestId: declining.id })}
-          onDone={() => {
-            toast.success(`Declined ${requesterName(declining)}'s request`);
-            setDeclining(null);
-          }}
-          onClose={() => setDeclining(null)}
-        />
       )}
     </div>
   );

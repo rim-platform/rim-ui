@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import {
   JoinRequestStatus,
@@ -16,7 +16,13 @@ import {
   routeRequests,
 } from "../../conversations/__fixtures__/conversations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import type { JoinRequestRow, PublicJoinLinkPreviewData } from "../api/publicLink";
+import type {
+  JoinRequestRow,
+  PublicJoinLinkPreviewData,
+} from "../../workspaces/api/publicJoinLink";
+import { useAuthStore } from "../state/useAuthStore";
+import { PENDING_PUBLIC_LINK_KEY } from "../pendingPublicLink";
+import { usePendingPublicLinkReturn } from "../hooks/usePendingPublicLinkReturn";
 
 const requestMock = vi.fn();
 
@@ -27,12 +33,22 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 
 const mockNavigate = vi.hoisted(() => vi.fn());
+const routing = vi.hoisted(() => ({ real: false }));
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { ...actual, useNavigate: () => mockNavigate };
+  return {
+    ...actual,
+    useNavigate: () => (routing.real ? actual.useNavigate() : mockNavigate),
+  };
 });
 
-import { PublicLinkJoinPage } from "./PublicLinkJoinPage";
+// Whether the session cookie is still being checked; the session itself is the auth store's.
+const hydration = vi.hoisted(() => ({ isHydrating: false }));
+vi.mock("../api/useSessionHydration", () => ({
+  useSessionHydration: () => ({ isHydrating: hydration.isHydrating, isAuthenticated: false }),
+}));
+
+import { PublicLinkJoin } from "./PublicLinkJoin";
 
 const TOKEN = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
 
@@ -73,24 +89,39 @@ function renderPage({
   userId = "u1",
   isHydrating = false,
 }: { userId?: string | null; isHydrating?: boolean } = {}) {
+  hydration.isHydrating = isHydrating;
+  useAuthStore.setState({ session: userId ? { userId } : null });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <MemoryRouter>
       <QueryClientProvider client={qc}>
-        <PublicLinkJoinPage token={TOKEN} isHydrating={isHydrating} userId={userId} />
+        <PublicLinkJoin token={TOKEN} />
       </QueryClientProvider>
     </MemoryRouter>,
   );
   return qc;
 }
 
-describe("PublicLinkJoinPage", () => {
+describe("PublicLinkJoin", () => {
   beforeEach(() => {
     requestMock.mockReset();
     mockNavigate.mockReset();
+    sessionStorage.clear();
   });
 
-  afterEach(() => useWorkspaceStore.setState({ workspaceId: null }));
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  it("sends no referrer while it is open", () => {
+    serve(() => preview());
+    renderPage();
+    expect(document.querySelector("meta[name='referrer']")).toHaveAttribute(
+      "content",
+      "no-referrer",
+    );
+  });
 
   it("waits for the session check before looking the link up", () => {
     serve(() => preview());
@@ -104,7 +135,7 @@ describe("PublicLinkJoinPage", () => {
       throw graphqlError("NOT_FOUND", "not found");
     });
     renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/^This link isn't valid$/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^This link isn't valid\.$/);
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(callsTo(requestMock, "query PublicJoinLinkPreview")).toEqual([{ token: TOKEN }]);
   });
@@ -124,7 +155,7 @@ describe("PublicLinkJoinPage", () => {
     });
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Too many links that don't work were opened from your network. Try again in 57 minutes.",
+      "Too many tries from this network. Try again in 57 minutes.",
     );
   });
 
@@ -139,32 +170,31 @@ describe("PublicLinkJoinPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load this link.");
     fail = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("button", { name: "Join" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Join Acme Community" })).toBeInTheDocument();
   });
 
-  it("offers a signed-out visitor sign-in and signup, both coming back to the link", async () => {
+  it.each([
+    ["Sign in", "/login"],
+    ["Create an account", "/join"],
+  ])("keeps the link for after %s and goes to %s", async (button, path) => {
     serve(() => preview({ viewer: PublicJoinLinkViewer.SIGNED_OUT }));
     const user = userEvent.setup();
     renderPage({ userId: null });
 
     expect(await screen.findByRole("heading", { name: "Acme Community" })).toBeInTheDocument();
     expect(await screen.findByText(/only with an invite from someone on it/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(mockNavigate).toHaveBeenLastCalledWith("/login", {
-      state: { returnTo: `/join/${TOKEN}` },
-    });
-    await user.click(screen.getByRole("button", { name: "Create an account" }));
-    expect(mockNavigate).toHaveBeenLastCalledWith("/join", {
-      state: { returnTo: `/join/${TOKEN}` },
-    });
+    await user.click(screen.getByRole("button", { name: button }));
+    expect(sessionStorage.getItem(PENDING_PUBLIC_LINK_KEY)).toBe(TOKEN);
+    expect(mockNavigate).toHaveBeenCalledWith(path);
     expect(callsTo(requestMock, "mutation")).toHaveLength(0);
+    expect(callsTo(requestMock, "PreviewInviteToken")).toHaveLength(0);
   });
 
   it("opens the workspace for a member", async () => {
     serve(() => preview({ viewer: PublicJoinLinkViewer.MEMBER }));
     const user = userEvent.setup();
     renderPage();
-    expect(await screen.findByText("You are already a member of this workspace.")).toBeVisible();
+    expect(await screen.findByText("You're already a member.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open workspace" }));
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-acme");
     expect(mockNavigate).toHaveBeenCalledWith("/");
@@ -174,7 +204,7 @@ describe("PublicLinkJoinPage", () => {
     serve(() => preview({ viewer: PublicJoinLinkViewer.BANNED }));
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "You are banned from this workspace",
+      /^You are banned from this workspace\.$/,
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
@@ -190,7 +220,7 @@ describe("PublicLinkJoinPage", () => {
     const invalidate = vi.spyOn(qc, "invalidateQueries");
 
     expect(await screen.findByText("You can join")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Join" }));
+    await user.click(screen.getByRole("button", { name: "Join Acme Community" }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-acme");
@@ -210,7 +240,7 @@ describe("PublicLinkJoinPage", () => {
     [
       "VALIDATION",
       "this instance allows 50 members per workspace",
-      "This workspace is full: the instance allows 50 members per workspace.",
+      "This instance allows 50 members per workspace.",
     ],
     ["NOT_FOUND", "not found", "This link isn't valid."],
   ])("says why a %s join was refused and reads the link again", async (code, message, shown) => {
@@ -221,7 +251,7 @@ describe("PublicLinkJoinPage", () => {
     });
     const user = userEvent.setup();
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Join" }));
+    await user.click(await screen.findByRole("button", { name: "Join Acme Community" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(shown);
     await waitFor(() =>
       expect(callsTo(requestMock, "query PublicJoinLinkPreview")).toHaveLength(2),
@@ -251,14 +281,14 @@ describe("PublicLinkJoinPage", () => {
     const qc = renderPage();
 
     expect(await screen.findByText("You can ask to join")).toBeInTheDocument();
-    await user.type(screen.getByLabelText("Message to the moderators (optional)"), "  Hi there ");
+    await user.type(screen.getByLabelText("Message (optional)"), "  Hi there ");
     await user.click(screen.getByRole("button", { name: "Ask to join" }));
 
     expect(await screen.findByText("Waiting for the moderators")).toBeInTheDocument();
     expect(callsTo(requestMock, "mutation JoinByPublicLink")).toEqual([
       { token: TOKEN, message: "Hi there" },
     ]);
-    expect(qc.getQueryData(queryKeys.myJoinRequests)).toEqual([filed]);
+    expect(qc.getQueryData(queryKeys.myJoinRequests())).toEqual([filed]);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -270,7 +300,7 @@ describe("PublicLinkJoinPage", () => {
     });
     const user = userEvent.setup();
     renderPage();
-    const field = await screen.findByLabelText("Message to the moderators (optional)");
+    const field = await screen.findByLabelText("Message (optional)");
     await user.click(field);
     await user.paste("x".repeat(501));
     expect(screen.getByText("501 / 500")).toBeInTheDocument();
@@ -294,17 +324,17 @@ describe("PublicLinkJoinPage", () => {
     [
       "VALIDATION",
       "you can have at most 20 open join requests; withdraw one first",
-      "You have as many open requests to join workspaces as you can. Withdraw one first.",
+      "You can have at most 20 open join requests; withdraw one first.",
     ],
     [
       "VALIDATION",
       "a join request message is at most 500 characters",
-      "Your message is too long: at most 500 characters.",
+      "A join request message is at most 500 characters.",
     ],
     [
       "CONFLICT",
       "you already asked to join this workspace",
-      "You already asked to join this workspace.",
+      "Your request to join was already sent.",
     ],
   ])("says why a %s request was refused: %s", async (code, message, shown) => {
     serve(() => preview({ mode: PublicJoinLinkMode.REQUESTS }), {
@@ -357,5 +387,54 @@ describe("PublicLinkJoinPage", () => {
     renderPage();
     await user.click(await screen.findByRole("button", { name: "Open RIM" }));
     expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+});
+
+describe("returning to a public link after sign-in", () => {
+  function Landing({ signedIn }: { signedIn: boolean }) {
+    usePendingPublicLinkReturn(signedIn);
+    return <p data-testid="landed">{useLocation().pathname}</p>;
+  }
+
+  function renderLanding(signedIn: boolean) {
+    routing.real = true;
+    return render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="*" element={<Landing signedIn={signedIn} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => {
+    routing.real = false;
+  });
+
+  it("opens the kept link once the account is signed in, and forgets it", () => {
+    sessionStorage.setItem(PENDING_PUBLIC_LINK_KEY, TOKEN);
+    renderLanding(true);
+    expect(screen.getByTestId("landed")).toHaveTextContent(`/join/${TOKEN}`);
+    expect(sessionStorage.getItem(PENDING_PUBLIC_LINK_KEY)).toBeNull();
+  });
+
+  it("keeps the link while nobody is signed in", () => {
+    sessionStorage.setItem(PENDING_PUBLIC_LINK_KEY, TOKEN);
+    renderLanding(false);
+    expect(screen.getByTestId("landed")).toHaveTextContent(/^\/$/);
+    expect(sessionStorage.getItem(PENDING_PUBLIC_LINK_KEY)).toBe(TOKEN);
+  });
+
+  it("drops anything kept that is no public link", () => {
+    sessionStorage.setItem(PENDING_PUBLIC_LINK_KEY, "rim_inv_abc");
+    renderLanding(true);
+    expect(screen.getByTestId("landed")).toHaveTextContent(/^\/$/);
+    expect(sessionStorage.getItem(PENDING_PUBLIC_LINK_KEY)).toBeNull();
+  });
+
+  it("stays where it landed without a kept link", () => {
+    renderLanding(true);
+    expect(screen.getByTestId("landed")).toHaveTextContent(/^\/$/);
   });
 });

@@ -1,5 +1,5 @@
 import { isInviteLink } from "../relay/remote/inviteLink";
-import { isPublicLinkToken } from "../public-link/token";
+import { isPublicLinkToken } from "../workspaces/publicJoinLink";
 
 /**
  * What an invite code typed at signup holds: nothing, a token of this server, an invite to a

@@ -5,12 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { applyWorkspaceEvent } from "../../../core/events/useWorkspaceEvents";
 import { JoinRequestStatus } from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
 import {
   callsTo,
   graphqlError,
   routeRequests,
 } from "../../conversations/__fixtures__/conversations";
-import type { JoinRequestRow } from "../api/publicLink";
+import type { JoinRequestRow } from "../api/publicJoinLink";
 
 const requestMock = vi.fn();
 
@@ -24,7 +25,7 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
-import { JoinRequestsList } from "./JoinRequestsList";
+import { JoinRequestsSection } from "./JoinRequestsSection";
 
 const NOW = Date.now();
 const DAY = 24 * 60 * 60 * 1000;
@@ -39,25 +40,37 @@ function request(id: string, overrides: Partial<JoinRequestRow> = {}): JoinReque
     status: JoinRequestStatus.OPEN,
     createdAt: new Date(NOW - 2 * 60 * 60 * 1000).toISOString(),
     expiresAt: new Date(NOW + 29 * DAY).toISOString(),
-    user: { id: `u-${id}`, username: `user_${id}`, displayName: null, avatarUrl: null },
+    user: {
+      id: `u-${id}`,
+      username: `user_${id}`,
+      displayName: null,
+      avatarUrl: null,
+      handle: null,
+    },
     ...overrides,
   };
 }
 
 const ada = request("jr-ada", {
   message: "I maintain the docs\nand would like to help.",
-  user: { id: "u-jr-ada", username: "ada", displayName: "Ada", avatarUrl: null },
+  user: {
+    id: "u-jr-ada",
+    username: "ada",
+    displayName: "Ada",
+    avatarUrl: null,
+    handle: "@ada:rim.example.org",
+  },
 });
 const bob = request("jr-bob", {
-  user: { id: "u-jr-bob", username: "bob", displayName: null, avatarUrl: null },
+  user: { id: "u-jr-bob", username: "bob", displayName: null, avatarUrl: null, handle: null },
 });
 const gone = request("jr-gone", { user: null });
 const older = request("jr-older", {
   createdAt: new Date(NOW - 10 * DAY).toISOString(),
-  user: { id: "u-jr-older", username: "old", displayName: "Olga", avatarUrl: null },
+  user: { id: "u-jr-older", username: "old", displayName: "Olga", avatarUrl: null, handle: null },
 });
 const late = request("jr-late", {
-  user: { id: "u-jr-late", username: "late", displayName: "Lena", avatarUrl: null },
+  user: { id: "u-jr-late", username: "late", displayName: "Lena", avatarUrl: null, handle: null },
 });
 
 /** A server whose open requests are `open`; accept and decline close them. */
@@ -109,9 +122,15 @@ function serve(
 
 function renderList() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The viewer, whose handle domain shortens handles on it.
+  qc.setQueryData(queryKeys.me, {
+    id: "u-me",
+    username: "viewer",
+    handle: "@viewer:rim.example.org",
+  });
   render(
     <QueryClientProvider client={qc}>
-      <JoinRequestsList serverId="ws-1" />
+      <JoinRequestsSection serverId="ws-1" />
     </QueryClientProvider>,
   );
   return qc;
@@ -120,7 +139,7 @@ function renderList() {
 const row = (id: string) => screen.getByTestId(`join-request-row-${id}`);
 const heading = () => screen.getByRole("heading", { name: /^Join requests/ });
 
-describe("JoinRequestsList", () => {
+describe("JoinRequestsSection", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
@@ -146,9 +165,13 @@ describe("JoinRequestsList", () => {
 
     expect(row("jr-ada")).toHaveTextContent("Ada");
     expect(row("jr-ada")).toHaveTextContent("I maintain the docs and would like to help.");
-    expect(row("jr-ada")).toHaveTextContent("Asked 2h ago");
-    expect(row("jr-ada")).toHaveTextContent(/Expires /);
-    expect(row("jr-bob")).toHaveTextContent("bob");
+    // A handle on the viewer's own domain reads short.
+    await waitFor(() => expect(row("jr-ada")).toHaveTextContent(/Ada@adaI maintain/));
+    expect(row("jr-ada")).toHaveTextContent("asked 2h ago");
+    expect(row("jr-ada")).toHaveTextContent(/expires /);
+    // A person named by their handle is not named twice.
+    expect(row("jr-bob")).toHaveTextContent("bobNo message");
+    expect(row("jr-bob")).not.toHaveTextContent("@bob");
     expect(row("jr-bob")).toHaveTextContent("No message");
     expect(row("jr-gone")).toHaveTextContent("A deleted account");
     expect(within(row("jr-ada")).getByRole("button", { name: "Accept Ada" })).toBeEnabled();
@@ -158,7 +181,8 @@ describe("JoinRequestsList", () => {
   it("says when there are no open requests", async () => {
     serve([]);
     renderList();
-    expect(await screen.findByText("No open requests.")).toBeInTheDocument();
+    expect(await screen.findByText("No one is waiting to join.")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
   it("shows the server's refusal to list them", async () => {
@@ -239,24 +263,16 @@ describe("JoinRequestsList", () => {
     renderList();
     await user.click(await screen.findByRole("button", { name: "Accept Ada" }));
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "This workspace is full: the instance allows 50 members per workspace.",
-      ),
+      expect(toast.error).toHaveBeenCalledWith("This instance allows 50 members per workspace."),
     );
   });
 
-  it("declines a request after a confirmation that they can ask again in 24 hours", async () => {
+  it("declines a request at once, and it leaves the list", async () => {
     serve();
     const user = userEvent.setup();
     renderList();
 
     await user.click(await screen.findByRole("button", { name: "Decline Ada" }));
-    const dialog = screen.getByTestId("moderation-dialog");
-    expect(screen.getByRole("dialog", { name: "Decline Ada?" })).toBeInTheDocument();
-    expect(dialog).toHaveTextContent("can ask to join again in 24 hours");
-    expect(callsTo(requestMock, "mutation DeclineJoinRequest")).toHaveLength(0);
-
-    await user.click(within(dialog).getByRole("button", { name: "Decline" }));
 
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation DeclineJoinRequest")).toEqual([
@@ -265,18 +281,23 @@ describe("JoinRequestsList", () => {
     );
     expect(toast.success).toHaveBeenCalledWith("Declined Ada's request");
     await waitFor(() => expect(screen.queryByTestId("join-request-row-jr-ada")).toBeNull());
+    await waitFor(() => expect(heading()).toHaveTextContent("Join requests3"));
   });
 
-  it("keeps the request when the decline is cancelled", async () => {
-    serve();
-    const user = userEvent.setup();
+  it("shows 100+ when the first page of 100 has more after it", async () => {
+    serve([ada], {
+      "query JoinRequestCount": (vars) => {
+        expect(vars.limit).toBe(100);
+        return {
+          joinRequests: {
+            items: Array.from({ length: 100 }, (_, n) => ({ id: `jr-${n}` })),
+            pageInfo: { hasNext: true, hasPrev: false },
+          },
+        };
+      },
+    });
     renderList();
-    await user.click(await screen.findByRole("button", { name: "Decline Ada" }));
-    await user.click(
-      within(screen.getByTestId("moderation-dialog")).getByRole("button", { name: "Cancel" }),
-    );
-    expect(callsTo(requestMock, "mutation DeclineJoinRequest")).toHaveLength(0);
-    expect(row("jr-ada")).toBeInTheDocument();
+    await waitFor(() => expect(heading()).toHaveTextContent("Join requests100+"));
   });
 
   describe("live updates", () => {

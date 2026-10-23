@@ -15,7 +15,7 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
 import { useRelayStore } from "../../relay/state/useRelayStore";
-import type { PublicJoinLinkSettings as Link } from "../api/publicLink";
+import type { PublicJoinLinkSettings as Link } from "../../workspaces/api/publicJoinLink";
 
 const requestMock = vi.fn();
 
@@ -29,7 +29,12 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
-import { PUBLIC_LINK_WARNING, PublicLinkSettings } from "./PublicLinkSettings";
+import {
+  PUBLIC_LINK_PAUSE_NOTE,
+  PUBLIC_LINK_WARNING,
+  PublicLinkSettings,
+  REISSUE_WARNING,
+} from "./PublicLinkSettings";
 
 const TOKEN = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
 const NEW_TOKEN = "rim_pjl_BBBBBBBBBBBBBBBBBBBBBB";
@@ -109,6 +114,8 @@ function renderSettings(
 }
 
 const linkSwitch = () => screen.getByRole("switch", { name: "Public link" });
+const linkUrl = async () =>
+  ((await screen.findByRole("textbox", { name: "Public link" })) as HTMLInputElement).value;
 
 describe("PublicLinkSettings", () => {
   beforeEach(() => {
@@ -192,9 +199,7 @@ describe("PublicLinkSettings", () => {
         { input: { serverId: "ws-1", enabled: true } },
       ]),
     );
-    expect(await screen.findByTestId("public-link-url")).toHaveTextContent(
-      `https://rim.example.org/join/${TOKEN}`,
-    );
+    expect(await linkUrl()).toBe(`https://rim.example.org/join/${TOKEN}`);
     expect(linkSwitch()).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
@@ -211,13 +216,13 @@ describe("PublicLinkSettings", () => {
     expect(linkSwitch()).toHaveAttribute("aria-checked", "false");
   });
 
-  it("explains that off pauses the link and the same link comes back", async () => {
+  it("explains that off pauses the link, hides it, and brings the same link back", async () => {
     serve(issued());
     const user = userEvent.setup();
     renderSettings();
 
-    expect(await screen.findByText(/Turning it on again brings the same link back/)).toBeVisible();
-    expect(screen.getByText(/Only issuing a new link ends this one for good/)).toBeVisible();
+    expect(await screen.findByText(PUBLIC_LINK_PAUSE_NOTE)).toBeVisible();
+    expect(await linkUrl()).toBe(`https://rim.example.org/join/${TOKEN}`);
 
     await user.click(linkSwitch());
     await waitFor(() =>
@@ -225,17 +230,17 @@ describe("PublicLinkSettings", () => {
         { input: { serverId: "ws-1", enabled: false } },
       ]),
     );
-    expect(toast.success).toHaveBeenCalledWith(
-      "Public link paused. Turning it on again brings the same link back.",
+    expect(toast.success).toHaveBeenCalledWith("Public link paused");
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Public link" })).not.toBeInTheDocument(),
     );
-    expect(await screen.findByText(/Paused: nobody can join with this link/)).toBeVisible();
-    expect(screen.getByTestId("public-link-url")).toHaveTextContent(TOKEN);
+    expect(screen.queryByRole("button", { name: "Copy public link" })).not.toBeInTheDocument();
 
-    // On again: no warning dialog, the same link.
+    // On again: no confirmation, the same link.
     await user.click(linkSwitch());
     expect(screen.queryByTestId("moderation-dialog")).not.toBeInTheDocument();
-    await waitFor(() => expect(linkSwitch()).toHaveAttribute("aria-checked", "true"));
-    expect(screen.getByTestId("public-link-url")).toHaveTextContent(TOKEN);
+    expect(await linkUrl()).toBe(`https://rim.example.org/join/${TOKEN}`);
+    expect(linkSwitch()).toHaveAttribute("aria-checked", "true");
   });
 
   it("changes the mode and the role", async () => {
@@ -287,9 +292,7 @@ describe("PublicLinkSettings", () => {
   it("builds the address from this app's origin when the server gives none", async () => {
     serve(issued({ url: null }));
     renderSettings();
-    expect(await screen.findByTestId("public-link-url")).toHaveTextContent(
-      `${window.location.origin}/join/${TOKEN}`,
-    );
+    expect(await linkUrl()).toBe(`${window.location.origin}/join/${TOKEN}`);
   });
 
   it("issues a new link only after a confirmation that the old one stops everywhere", async () => {
@@ -300,9 +303,8 @@ describe("PublicLinkSettings", () => {
     await user.click(await screen.findByRole("button", { name: "Issue a new link" }));
     const dialog = screen.getByTestId("moderation-dialog");
     expect(screen.getByRole("dialog", { name: "Issue a new link?" })).toBeInTheDocument();
-    expect(dialog).toHaveTextContent(
-      "The current link stops working at once, everywhere it was posted",
-    );
+    expect(dialog).toHaveTextContent(REISSUE_WARNING);
+    expect(REISSUE_WARNING).toBe("The current link stops working everywhere you posted it.");
     expect(callsTo(requestMock, "mutation ReissuePublicJoinLink")).toHaveLength(0);
 
     await user.click(within(dialog).getByRole("button", { name: "Issue a new link" }));
@@ -312,7 +314,9 @@ describe("PublicLinkSettings", () => {
         { serverId: "ws-1" },
       ]),
     );
-    expect(await screen.findByTestId("public-link-url")).toHaveTextContent(NEW_TOKEN);
+    await waitFor(async () =>
+      expect(await linkUrl()).toBe(`https://rim.example.org/join/${NEW_TOKEN}`),
+    );
     expect(toast.success).toHaveBeenCalledWith("New link issued. The old one no longer works.");
   });
 
@@ -325,28 +329,36 @@ describe("PublicLinkSettings", () => {
       within(screen.getByTestId("moderation-dialog")).getByRole("button", { name: "Cancel" }),
     );
     expect(callsTo(requestMock, "mutation ReissuePublicJoinLink")).toHaveLength(0);
-    expect(screen.getByTestId("public-link-url")).toHaveTextContent(TOKEN);
+    expect(await linkUrl()).toBe(`https://rim.example.org/join/${TOKEN}`);
   });
 
-  it("shows the joins of the last day and week and the open requests, which open Moderation", async () => {
+  it("shows the joins of the last day and week and the requests waiting, which open Moderation", async () => {
     serve(issued());
     const onOpenRequests = vi.fn();
     const user = userEvent.setup();
     renderSettings("ws-1", { defaultWorkspace: "ws-default" }, onOpenRequests);
 
-    const stats = await screen.findByLabelText("Public link use");
-    expect(stats).toHaveTextContent("Joined, last 24 hours2 people");
-    expect(stats).toHaveTextContent("Joined, last 7 days9 people");
-    await user.click(within(stats).getByRole("button", { name: "3 open requests" }));
+    const stats = await screen.findByTestId("public-link-stats");
+    expect(stats).toHaveTextContent(
+      "2 joined in the last 24 hours · 9 in the last 7 days · 3 requests waiting",
+    );
+    await user.click(within(stats).getByRole("button", { name: "3 requests waiting" }));
     expect(onOpenRequests).toHaveBeenCalled();
   });
 
-  it("says one person and no requests in the singular and plain", async () => {
-    serve(issued({ joinsLastDay: 1, joinsLastWeek: 1, openRequests: 0 }));
+  it("says one request in the singular and none as plain text", async () => {
+    serve(issued({ joinsLastDay: 1, joinsLastWeek: 1, openRequests: 1 }));
+    renderSettings();
+    expect(await screen.findByTestId("public-link-stats")).toHaveTextContent(
+      "1 joined in the last 24 hours · 1 in the last 7 days · 1 request waiting",
+    );
+  });
+
+  it("offers no button for no requests waiting", async () => {
+    serve(issued({ openRequests: 0 }));
     renderSettings("ws-1", { defaultWorkspace: "ws-default" }, vi.fn());
-    const stats = await screen.findByLabelText("Public link use");
-    expect(stats).toHaveTextContent("Joined, last 24 hours1 person");
+    const stats = await screen.findByTestId("public-link-stats");
+    expect(stats).toHaveTextContent("0 requests waiting");
     expect(within(stats).queryByRole("button")).not.toBeInTheDocument();
-    expect(stats).toHaveTextContent("0 open requests");
   });
 });

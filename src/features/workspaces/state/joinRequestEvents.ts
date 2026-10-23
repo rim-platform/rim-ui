@@ -6,14 +6,15 @@ import { queryKeys } from "../../../core/query/keys";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { showBrowserTextNotification } from "../../notifications/runtime/browserNotification";
 import { showDesktopNotification } from "../../notifications/runtime/desktopNotification";
 import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
-import type { Server } from "../../workspaces/api/useMyServers";
+import type { Server } from "../api/useMyServers";
 import {
   invalidateJoinRequests,
   type JoinRequestRow,
   type PublicJoinLinkPreviewData,
-} from "../api/publicLink";
+} from "../api/publicJoinLink";
 
 /**
  * Realtime handlers for join requests, called from `useWorkspaceEvents` with the event as it
@@ -33,7 +34,7 @@ function currentUserId(qc: QueryClient): string | undefined {
 
 /** Refreshes the viewer's own requests and every open link page. */
 function refreshOwnRequests(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: queryKeys.myJoinRequests });
+  void qc.invalidateQueries({ queryKey: queryKeys.myJoinRequests() });
   void qc.invalidateQueries({ queryKey: ["publicJoinLinkPreview"] });
 }
 
@@ -43,7 +44,7 @@ function refreshOwnRequests(qc: QueryClient): void {
  */
 function cachedWorkspaceName(qc: QueryClient, workspaceId: string): string | null {
   const request = qc
-    .getQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests)
+    .getQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests())
     ?.find((r) => r.serverId === workspaceId);
   if (request) return request.workspaceName;
   for (const [, preview] of qc.getQueriesData<PublicJoinLinkPreviewData>({
@@ -87,8 +88,9 @@ export async function handleJoinRequestDecided(
 
 /**
  * Tells the person their request to join `workspaceName` was accepted or declined, as the
- * device's notification settings allow: a desktop notification in the desktop app, an in-app
- * toast elsewhere, nothing while notifications are off.
+ * device's notification settings allow: a desktop notification in the desktop app, a browser
+ * notification where this site may show them, an in-app toast otherwise, and nothing while
+ * notifications are off.
  *
  * @param workspaceName The workspace, or null when its name is not known here.
  * @param accepted Whether the request was accepted rather than declined.
@@ -101,7 +103,7 @@ export async function notifyJoinRequestDecided(
   if (!device.enabled) return;
   const title = `Your request to join ${workspaceName ?? "a workspace"} was ${
     accepted ? "accepted" : "declined"
-  }`;
+  }.`;
   const body = accepted
     ? "The workspace is in your workspace list now."
     : "You can ask to join it again in 24 hours.";
@@ -113,6 +115,7 @@ export async function notifyJoinRequestDecided(
     }
     return;
   }
+  if (showBrowserTextNotification(title, body)) return;
   if (accepted) toast.success(title, { description: body });
   else toast.info(title, { description: body });
 }

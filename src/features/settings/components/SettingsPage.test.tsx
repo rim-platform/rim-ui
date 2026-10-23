@@ -101,7 +101,7 @@ vi.mock("./ModerationSettings", () => ({
 vi.mock("./WorkspaceInvites", () => ({
   WorkspaceInvites: () => null,
 }));
-vi.mock("../../public-link/components/PublicLinkSettings", () => ({
+vi.mock("./PublicLinkSettings", () => ({
   PublicLinkSettings: ({ onOpenRequests }: { onOpenRequests?: () => void }) => (
     <button type="button" onClick={onOpenRequests}>
       Public link panel
@@ -110,9 +110,9 @@ vi.mock("../../public-link/components/PublicLinkSettings", () => ({
 }));
 // Open join requests of the workspace, as the badge counts them — mutable per test.
 const mockRequests = vi.hoisted(() => ({ count: { count: 0, more: false } }));
-vi.mock("../../public-link/api/publicLink", async () => {
-  const actual = await vi.importActual<typeof import("../../public-link/api/publicLink")>(
-    "../../public-link/api/publicLink",
+vi.mock("../../workspaces/api/publicJoinLink", async () => {
+  const actual = await vi.importActual<typeof import("../../workspaces/api/publicJoinLink")>(
+    "../../workspaces/api/publicJoinLink",
   );
   return {
     ...actual,

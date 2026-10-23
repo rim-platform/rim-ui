@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 
 const mockLoginMutate = vi.fn();
 const mockNavigate = vi.fn();
@@ -157,26 +157,6 @@ describe("LoginPage", () => {
     const link = screen.getByRole("link", { name: "Create account" });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "/join");
-  });
-
-  it("hands Create account where to return, so a signup comes back to a public link", async () => {
-    const returnTo = "/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
-    function SignupPage() {
-      const location = useLocation();
-      return <p data-testid="signup-state">{JSON.stringify(location.state)}</p>;
-    }
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter initialEntries={[{ pathname: "/login", state: { returnTo } }]}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/join" element={<SignupPage />} />
-        </Routes>
-      </MemoryRouter>,
-      { wrapper: withServerInfo() },
-    );
-    await user.click(screen.getByRole("link", { name: "Create account" }));
-    expect(JSON.parse(screen.getByTestId("signup-state").textContent ?? "")).toEqual({ returnTo });
   });
 
   it("renders the Create account link in the desktop app when registrationMode is POW", () => {

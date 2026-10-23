@@ -90,6 +90,7 @@ const JOIN_REQUEST_FIELDS = gql`
       username
       displayName
       avatarUrl
+      handle
     }
   }
 `;
@@ -226,6 +227,8 @@ export interface JoinRequestRow {
     username: string;
     displayName: string | null;
     avatarUrl: string | null;
+    /** `@<username>:<domain>`; null when the server does not know it. */
+    handle: string | null;
   } | null;
 }
 
@@ -279,7 +282,7 @@ export function usePublicJoinLink(serverId: string | null | undefined, enabled =
 }
 
 /** Changes the link's settings; the answer replaces the cached link. */
-export function useUpdatePublicJoinLinkMutation() {
+export function useUpdatePublicJoinLink() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: UpdatePublicJoinLinkInput) => {
@@ -294,7 +297,7 @@ export function useUpdatePublicJoinLinkMutation() {
 }
 
 /** Issues a new token for the link, which ends the old one; the answer replaces the cached link. */
-export function useReissuePublicJoinLinkMutation() {
+export function useReissuePublicJoinLink() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serverId: string) => {
@@ -343,7 +346,7 @@ function invalidatePreviews(qc: QueryClient) {
  * name is at hand when the request is decided.
  */
 function rememberMyRequest(qc: QueryClient, request: JoinRequestRow) {
-  qc.setQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests, (old) => [
+  qc.setQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests(), (old) => [
     request,
     ...(old ?? []).filter((r) => r.id !== request.id),
   ]);
@@ -353,7 +356,7 @@ function rememberMyRequest(qc: QueryClient, request: JoinRequestRow) {
  * Joins through the link, or asks to join with an optional message, as the link's mode says.
  * A join refreshes the caller's workspaces; a request goes into their open requests.
  */
-export function useJoinByPublicLinkMutation() {
+export function useJoinByPublicLink() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { token: string; message?: string | null }) => {
@@ -436,14 +439,14 @@ export function joinRequestBadge(count: JoinRequestCount | undefined): string | 
 
 /** Refreshes the workspace's open requests, their count and the Owner's link statistics. */
 export function invalidateJoinRequests(qc: QueryClient, serverId: string): void {
-  void qc.invalidateQueries({ queryKey: ["joinRequests", serverId] });
+  void qc.invalidateQueries({ queryKey: queryKeys.joinRequests(serverId) });
   void qc.invalidateQueries({ queryKey: queryKeys.publicJoinLink(serverId) });
 }
 
 /** The signed-in account's own open join requests, newest first. */
 export function useMyJoinRequests(enabled = true) {
   return useQuery({
-    queryKey: queryKeys.myJoinRequests,
+    queryKey: queryKeys.myJoinRequests(),
     enabled,
     retry: false,
     queryFn: async () => {
@@ -456,7 +459,7 @@ export function useMyJoinRequests(enabled = true) {
 }
 
 /** A moderator accepts an open request; the person joins with the link's current role. */
-export function useAcceptJoinRequestMutation() {
+export function useAcceptJoinRequest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { serverId: string; requestId: string }) =>
@@ -472,7 +475,7 @@ export function useAcceptJoinRequestMutation() {
 }
 
 /** A moderator declines an open request; the person may ask again after 24 hours. */
-export function useDeclineJoinRequestMutation() {
+export function useDeclineJoinRequest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { serverId: string; requestId: string }) =>
@@ -485,7 +488,7 @@ export function useDeclineJoinRequestMutation() {
 }
 
 /** The person takes back their own open request. */
-export function useWithdrawJoinRequestMutation() {
+export function useWithdrawJoinRequest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (requestId: string) =>
@@ -494,11 +497,11 @@ export function useWithdrawJoinRequestMutation() {
         { requestId },
       ),
     onSuccess: async (_data, requestId) => {
-      qc.setQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests, (old) =>
+      qc.setQueryData<JoinRequestRow[]>(queryKeys.myJoinRequests(), (old) =>
         old?.filter((r) => r.id !== requestId),
       );
       await Promise.all([
-        qc.invalidateQueries({ queryKey: queryKeys.myJoinRequests }),
+        qc.invalidateQueries({ queryKey: queryKeys.myJoinRequests() }),
         invalidatePreviews(qc),
       ]);
     },

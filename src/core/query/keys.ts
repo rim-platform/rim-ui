@@ -30,12 +30,12 @@ export const queryKeys = {
   // What a public link shows; keyed by the signed-in user, whose standing the answer carries.
   publicJoinLinkPreview: (token: string, userId?: string | null) =>
     ["publicJoinLinkPreview", token, userId ?? null] as const,
-  // A workspace's open join requests and their count; the `["joinRequests", serverId]` prefix
-  // covers both.
-  joinRequests: (serverId?: string) => ["joinRequests", serverId, "list"] as const,
+  // A workspace's open join requests, page by page; also the prefix of their count, so
+  // invalidating it refreshes both.
+  joinRequests: (serverId?: string) => ["joinRequests", serverId] as const,
   joinRequestCount: (serverId?: string) => ["joinRequests", serverId, "count"] as const,
   // The signed-in account's own open join requests.
-  myJoinRequests: ["myJoinRequests"] as const,
+  myJoinRequests: () => ["myJoinRequests"] as const,
   conversations: (workspaceId?: string) => ["conversations", workspaceId] as const,
   messages: (workspaceId?: string, conversationId?: string) =>
     ["messages", workspaceId, conversationId] as const,

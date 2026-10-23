@@ -3,9 +3,7 @@
  *
  * Orchestrates the invite token preview → signup flow:
  *
- * 1. Extracts `token` from `useParams`. Missing token → `InvalidTokenState`. A workspace's
- *    public link (`rim_pjl_…`) goes to `PublicLinkJoinPage` instead, which never offers the
- *    invite signup.
+ * 1. Extracts `token` from `useParams`. Missing token → `InvalidTokenState`.
  * 2. Calls `usePreviewInviteToken(token)` — no auth required — and reads the server's
  *    registration mode with `useServerConfig`.
  * 3. While either loads: shows a loading skeleton.
@@ -32,7 +30,6 @@
  * the origin as an additional precaution.
  */
 
-import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 
@@ -46,25 +43,7 @@ import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
 import { RestoringSession } from "./RestoringSession";
-import { isPublicLinkToken } from "../../public-link/token";
-import { PublicLinkJoinPage } from "../../public-link/components/PublicLinkJoinPage";
-
-/**
- * Injects `<meta name="referrer" content="no-referrer">` into `document.head`
- * on mount and removes it on unmount. Used on routes that carry sensitive tokens
- * in their URL path to prevent token leakage via the Referer header.
- */
-function useNoReferrerMeta(): void {
-  useEffect(() => {
-    const meta = document.createElement("meta");
-    meta.name = "referrer";
-    meta.content = "no-referrer";
-    document.head.appendChild(meta);
-    return () => {
-      document.head.removeChild(meta);
-    };
-  }, []);
-}
+import { useNoReferrerMeta } from "../hooks/useNoReferrerMeta";
 
 export function JoinPage() {
   useNoReferrerMeta();
@@ -77,17 +56,6 @@ export function JoinPage() {
 
   if (!token) {
     return <InvalidTokenState code="INVALID_TOKEN" />;
-  }
-
-  // A workspace's public link admits existing accounts and never reaches the invite signup.
-  if (isPublicLinkToken(token)) {
-    return (
-      <PublicLinkJoinPage
-        token={token}
-        isHydrating={isHydrating}
-        userId={session?.userId ?? null}
-      />
-    );
   }
 
   return (

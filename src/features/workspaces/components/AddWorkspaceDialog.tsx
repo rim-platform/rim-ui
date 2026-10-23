@@ -18,7 +18,10 @@ import { WorkspaceCreationNote } from "./CreateWorkspaceDialog";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { joinWithInvite } from "../../relay/remote/remoteWorkspaces";
 import { inviteCodeToken } from "../../auth/inviteCode";
-import { MyJoinRequests } from "../../public-link/components/MyJoinRequests";
+import { toast } from "../../../shared/toast";
+import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime";
+import { useMyJoinRequests, useWithdrawJoinRequest } from "../api/publicJoinLink";
+import { publicLinkErrorMessage } from "../publicJoinLink";
 
 type Step = "choose" | "create" | "join";
 
@@ -34,7 +37,7 @@ const stepTitles: Record<Step, string> = {
  * whose token it joins with, or a `rim-invite:1:…` link to a workspace on another server, which
  * it joins through this server. A workspace's public link (`…/join/rim_pjl_…`) opens its join
  * page, where the person joins or asks to join. The first step also lists the person's open
- * requests to join workspaces, with Withdraw.
+ * requests to join workspaces under "Waiting for approval", each with Withdraw.
  *
  * @param onClose - Called when the dialog closes, after a workspace was created or joined too.
  * @param initialStep - The step it opens on: the choice between creating and joining (the
@@ -165,7 +168,7 @@ export function AddWorkspaceDialog({
             <div className="text-xs text-rim-text-muted">Enter an invite code or link</div>
           </button>
 
-          <MyJoinRequests />
+          <WaitingForApproval />
         </div>
       )}
 
@@ -253,5 +256,62 @@ export function AddWorkspaceDialog({
         </form>
       )}
     </Dialog>
+  );
+}
+
+/**
+ * The signed-in account's open requests to join workspaces, each with its workspace, when it
+ * was asked and Withdraw. Renders nothing while there are none or they cannot be read.
+ */
+function WaitingForApproval() {
+  const { data: requests } = useMyJoinRequests();
+  const withdraw = useWithdrawJoinRequest();
+  if (!requests || requests.length === 0) return null;
+
+  return (
+    <section aria-labelledby="waiting-for-approval-heading" className="pt-2">
+      <h3
+        id="waiting-for-approval-heading"
+        className="text-xs font-medium uppercase tracking-wider text-rim-text-faint"
+      >
+        Waiting for approval
+      </h3>
+      <ul className="mt-1 divide-y divide-rim-line" aria-label="Your join requests">
+        {requests.map((request) => (
+          <li
+            key={request.id}
+            data-testid={`my-join-request-${request.id}`}
+            className="flex items-center gap-3 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-rim-text">{request.workspaceName}</p>
+              <p
+                className="truncate text-xs text-rim-text-muted"
+                title={formatTime(request.createdAt)}
+              >
+                Asked {formatRelativeTime(request.createdAt)}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={withdraw.isPending && withdraw.variables === request.id}
+              aria-label={`Withdraw your request to join ${request.workspaceName}`}
+              onClick={() =>
+                withdraw.mutate(request.id, {
+                  onSuccess: () =>
+                    toast.success(`Withdrew your request to join ${request.workspaceName}`),
+                  onError: (err) =>
+                    toast.error(publicLinkErrorMessage(err, "Could not withdraw the request")),
+                })
+              }
+            >
+              Withdraw
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

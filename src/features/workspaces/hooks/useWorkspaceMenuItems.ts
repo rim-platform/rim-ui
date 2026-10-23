@@ -16,8 +16,8 @@ import {
   useSetDoNotDisturb,
 } from "../../notifications/api/useNotificationSettings";
 import { inOneHour, isPauseActive, tomorrowMorning } from "../../notifications/rules";
-import { joinRequestBadge, useJoinRequestCount } from "../../public-link/api/publicLink";
-import { useCanHavePublicLink } from "../../public-link/hooks/useCanHavePublicLink";
+import { joinRequestBadge, useJoinRequestCount } from "../api/publicJoinLink";
+import { useCanHavePublicLink } from "./useCanHavePublicLink";
 import { useMyServerRole } from "../api/useMyServerRole";
 import { canModerate, isGuest, isOwner } from "../role";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
