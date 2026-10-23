@@ -74,6 +74,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Refresh member pictures, message authors and the signed-in profile when a profile update arrives from another session.
+
 - Workspace reports have a dedicated Moderation tab, a Reports menu item, and a pointer from
   instance moderation; report confirmations name the workspace.
 - Hover tooltips stay within the window edges and flip using their measured height.

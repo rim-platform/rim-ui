@@ -105,3 +105,23 @@ export function handleMemberLeft(qc: QueryClient, workspaceId: string, userId: s
   if (departing.delete(workspaceId)) return;
   toast.info(name ? `You were removed from ${name}` : "You were removed from this workspace");
 }
+
+/** Refresh member pictures, embedded message authors and this account's other sessions. */
+export function handleMemberProfileUpdated(
+  qc: QueryClient,
+  workspaceId: string,
+  userId: string,
+): void {
+  qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+  const roots = new Set([
+    "messages",
+    "threadMessages",
+    "searchMessages",
+    "pinnedMessages",
+    "lensMessages",
+  ]);
+  qc.invalidateQueries({
+    predicate: (query) => roots.has(String(query.queryKey[0])) && query.queryKey[1] === workspaceId,
+  });
+  if (userId === currentUserId(qc)) qc.invalidateQueries({ queryKey: queryKeys.me });
+}

@@ -1,3 +1,4 @@
+import { handleMemberProfileUpdated } from "../../features/workspaces/state/memberEvents";
 import { useEffect, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
@@ -330,6 +331,10 @@ export function applyWorkspaceEvent(
       // Invalidate both channel and conversation lists
       qc.invalidateQueries({ queryKey: queryKeys.channels(workspaceId) });
       qc.invalidateQueries({ queryKey: queryKeys.conversations(workspaceId) });
+      break;
+
+    case "MemberProfileUpdated":
+      handleMemberProfileUpdated(qc, workspaceId, event.user_id);
       break;
 
     case "MemberJoined":
