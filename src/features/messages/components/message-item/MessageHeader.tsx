@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Pin } from "lucide-react";
 
+import { activeBan, banLabel } from "../../hooks/useBanExpiry";
 import { Avatar } from "../../../../shared/ui/Avatar";
 import { UserHoverCard } from "../../../../shared/ui/UserHoverCard";
 import { cn } from "../../../../shared/ui/cn";
@@ -31,6 +32,7 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
   return (
     <UserHoverCard
       isFormerMember={author.isFormerMember}
+      ban={author.ban}
       userId={authorId}
       username={author.username ?? author.name}
       handle={author.handle}
@@ -42,7 +44,11 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
       bio={author.bio}
       presenceStatus={presence}
       isCurrentUser={author.isCurrentUser}
-      onSendDm={author.isFormerMember ? undefined : () => void openDirectWithMember(authorId)}
+      onSendDm={
+        author.isFormerMember || activeBan(author.ban)
+          ? undefined
+          : () => void openDirectWithMember(authorId)
+      }
     >
       {children}
     </UserHoverCard>
@@ -67,7 +73,7 @@ export const MessageAvatar = memo(function MessageAvatar({
     <AuthorHoverCard authorId={authorId} author={author}>
       <span
         className="cursor-pointer"
-        {...(author.isFormerMember
+        {...(author.isFormerMember || activeBan(author.ban)
           ? {}
           : bindUserContextMenu?.({ userId: authorId, displayName: author.name }))}
       >
@@ -126,7 +132,7 @@ export const MessageHeader = memo(function MessageHeader({
     <div className="flex items-baseline gap-2">
       <AuthorHoverCard authorId={authorId} author={author}>
         <span
-          {...(author.isFormerMember
+          {...(author.isFormerMember || activeBan(author.ban)
             ? {}
             : bindUserContextMenu?.({ userId: authorId, displayName: author.name }))}
           className={cn(
@@ -137,8 +143,12 @@ export const MessageHeader = memo(function MessageHeader({
           {author.name}
         </span>
       </AuthorHoverCard>
-      {author.isFormerMember && (
-        <span className="text-xs text-rim-text-muted">(former member)</span>
+      {activeBan(author.ban) ? (
+        <span className="text-xs text-rim-text-muted">({banLabel(author.ban)})</span>
+      ) : (
+        author.isFormerMember && (
+          <span className="text-xs text-rim-text-muted">(former member)</span>
+        )
       )}
       <span className="text-xs text-rim-text-faint">{formatTime(sentAt)}</span>
       {encrypted && <LockMark className="self-center" />}

@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect } from "react";
 import { useInfiniteQuery, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
+import type { User } from "../../../core/graphql/generated/schema-types";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import {
@@ -42,6 +43,9 @@ const SEARCH_MESSAGES_QUERY = gql`
           displayName
           avatarUrl
           handle
+          banned
+          bannedUntil
+          banReason
         }
         text
         sentAt
@@ -64,7 +68,9 @@ const SEARCH_MESSAGES_QUERY = gql`
   }
 `;
 
-export interface SearchMessageAuthor {
+export interface SearchMessageAuthor extends Partial<
+  Pick<User, "banned" | "bannedUntil" | "banReason">
+> {
   id: string;
   username: string;
   displayName: string | null;

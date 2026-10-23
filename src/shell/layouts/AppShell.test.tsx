@@ -13,6 +13,9 @@ import type { PluginInfo } from "../../features/plugins/types";
 // Mocked as no-ops so this test exercises only the render tree and the
 // SurfaceErrorBoundary wiring around the three panels under test, not the
 // (separately-tested) subscription/query plumbing.
+vi.mock("../../features/workspaces/components/JoinDefaultWorkspace", () => ({
+  JoinDefaultWorkspace: () => null,
+}));
 const hydration = vi.hoisted(() => ({ isHydrating: false }));
 vi.mock("../../features/auth/api/useSessionHydration", () => ({
   useSessionHydration: () => hydration,

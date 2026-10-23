@@ -74,6 +74,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Keep readable kick and ban reasons until dismissed, show active author bans, and let older accounts join the default workspace from direct messages.
+
 - Workspace reports have a dedicated Moderation tab, a Reports menu item, and a pointer from
   instance moderation; report confirmations name the workspace.
 - Hover tooltips stay within the window edges and flip using their measured height.

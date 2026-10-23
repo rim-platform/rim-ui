@@ -5,7 +5,7 @@ export interface MessageReaction {
   userIds: string[];
 }
 
-import { AttachmentStatusEnum } from "../graphql/generated/schema-types";
+import { AttachmentStatusEnum, type User } from "../graphql/generated/schema-types";
 
 export type AttachmentStatus = AttachmentStatusEnum;
 
@@ -19,7 +19,7 @@ export interface MessageAttachment {
   blobSha256?: string | null;
 }
 
-export interface MessageAuthor {
+export interface MessageAuthor extends Partial<Pick<User, "banned" | "bannedUntil" | "banReason">> {
   id: string;
   username: string;
   displayName: string | null;

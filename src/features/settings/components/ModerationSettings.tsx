@@ -1,8 +1,12 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { queryKeys } from "../../../core/query/keys";
+import type { KnownServerInfo } from "../../updater/api/serverInfoApi";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { Button } from "../../../shared/ui/Button";
 import { toast } from "../../../shared/toast";
+import { personName } from "../../../shared/utils/handles";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { MessageReportStatus, ReportOutcome } from "../../../core/graphql/generated/schema-types";
@@ -56,16 +60,23 @@ const ERROR_BOX =
 function BansList({ serverId }: { serverId: string }) {
   const { data: bans, isPending, isError, error } = useServerBans(serverId);
   const unban = useUnbanMemberMutation();
+  const qc = useQueryClient();
 
   function banName(ban: ServerBanRow): string {
-    return ban.user?.displayName || ban.user?.username || ban.userId.slice(0, 8);
+    return ban.user ? personName(ban.user, ban.userId) : "this person";
   }
 
   function handleUnban(ban: ServerBanRow) {
     unban.mutate(
       { serverId, userId: ban.userId },
       {
-        onSuccess: () => toast.success(`Unbanned ${banName(ban)}`),
+        onSuccess: () => {
+          const isDefault =
+            qc.getQueryData<KnownServerInfo>(queryKeys.serverInfo)?.defaultWorkspace === serverId;
+          toast.success(
+            `Unbanned ${banName(ban)}${isDefault ? ". Local accounts are restored to the default workspace." : ""}`,
+          );
+        },
         onError: (err) => toast.error(graphqlErrorMessage(err, "Could not lift the ban")),
       },
     );
