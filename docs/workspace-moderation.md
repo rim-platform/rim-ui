@@ -12,3 +12,6 @@ In direct messages, local accounts missing the configured default workspace can 
 “Join the default workspace”. Active bans still prevent joining. An explicit unban restores
 local membership in the current default workspace and its public channels; other workspaces
 still require an invitation.
+
+Deploy the corresponding server update before this client. Older servers reject the new
+message-author ban fields, so message queries require a server that provides them.
