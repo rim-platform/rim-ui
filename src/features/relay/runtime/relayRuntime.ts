@@ -103,6 +103,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
   const info = await fetchRelayInfo();
   const me = await fetchRelayMe();
   if (me.id !== userId || !me.principalId) {
+    useRelayStore.getState().setStatus("off");
     logger.debug("[RIM:relay] this account has no principal id; the relay stays off");
     return () => undefined;
   }
@@ -243,6 +244,7 @@ export function useRelayRuntime() {
           else stop = stopper;
           return true;
         } catch (err) {
+          if (!stopped()) useRelayStore.getState().setStatus("off");
           logger.debug("[RIM:relay] the relay is off:", err);
           return false;
         }

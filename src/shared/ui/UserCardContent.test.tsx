@@ -15,6 +15,12 @@ describe("UserCardContent", () => {
     username: "testuser",
   };
 
+  it("explains a former membership and offers no direct message action", () => {
+    render(<UserCardContent {...defaultProps} isFormerMember onSendDm={vi.fn()} />);
+    expect(screen.getByText("Not a member of this workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send DM" })).not.toBeInTheDocument();
+  });
+
   it("renders username", () => {
     render(<UserCardContent {...defaultProps} />);
     expect(screen.getByText("@testuser")).toBeInTheDocument();

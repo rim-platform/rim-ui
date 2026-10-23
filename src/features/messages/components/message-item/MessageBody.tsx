@@ -89,9 +89,11 @@ export const MessageText = memo(function MessageText({
   let mentionCardBlock: React.ReactNode = null;
   if (mentionCard) {
     const member = resolveMember?.(mentionCard.userId);
-    const memberDisplayName = member?.displayName ?? mentionCard.userId.slice(0, 8);
+    const memberDisplayName =
+      member?.displayName || memberDisplayMap?.get(mentionCard.userId) || "Former member";
     mentionCardBlock = (
       <UserHoverCardPortal
+        isFormerMember={member?.isFormerMember}
         userId={mentionCard.userId}
         username={member?.username ?? memberDisplayName}
         handle={member?.handleView}
@@ -102,7 +104,9 @@ export const MessageText = memo(function MessageText({
         joinedAt={member?.joinedAt}
         bio={member?.bio}
         isCurrentUser={member?.isCurrentUser}
-        onSendDm={() => void openDirectWithMember(mentionCard.userId)}
+        onSendDm={
+          member?.isFormerMember ? undefined : () => void openDirectWithMember(mentionCard.userId)
+        }
         anchorRect={mentionCard.rect}
         onMouseEnter={handleMentionCardEnter}
         onMouseLeave={scheduleMentionClose}
@@ -120,7 +124,9 @@ export const MessageText = memo(function MessageText({
           onMentionClick={handleMentionClick}
           onMentionHover={handleMentionHover}
           onMentionLeave={scheduleMentionClose}
-          onMentionContextMenu={onMentionContextMenu}
+          onMentionContextMenu={(id, element, event) => {
+            if (!resolveMember?.(id).isFormerMember) onMentionContextMenu?.(id, element, event);
+          }}
           showInlineMedia={showInlineMedia}
         />
       ) : !hasAttachments ? (

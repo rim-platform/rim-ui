@@ -7,6 +7,7 @@ import {
   viewHandle,
   type HandleView,
 } from "../../../shared/utils/handles";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
@@ -14,6 +15,7 @@ import { useKnownHandles } from "../state/useKnownHandles";
 
 type MemberInfo = {
   displayName: string;
+  isFormerMember?: boolean;
   username?: string;
   /** `@<username>:<domain>` once a server answered it for this person. */
   handle?: string | null;
@@ -29,6 +31,7 @@ type MemberInfo = {
 };
 
 export function useMemberLookup(serverId?: string) {
+  const inDirectSpace = useIsDirectSpace(serverId);
   const { data: me } = useCurrentUser();
   const { data: members } = useServerMembers(serverId ?? undefined);
   // A name the person gave a contact wins over the name the member published.
@@ -111,7 +114,8 @@ export function useMemberLookup(serverId?: string) {
       const handle = handles[userId] ?? null;
       return (
         map.get(userId) ?? {
-          displayName: userId.slice(0, 8),
+          displayName: "",
+          isFormerMember: !inDirectSpace && members !== undefined,
           handle,
           handleView: viewHandle(null, handle, ownDomain),
           isCurrentUser: false,
@@ -120,5 +124,5 @@ export function useMemberLookup(serverId?: string) {
     }
 
     return { resolve, map, ownDomain };
-  }, [me, members, aliases, handles]);
+  }, [me, members, aliases, handles, inDirectSpace]);
 }

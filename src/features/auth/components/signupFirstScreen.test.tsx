@@ -8,6 +8,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../test/mocks/server";
 import { serverInfoQueryClient } from "../../../test/serverInfo";
 import { WorkspaceSelector } from "../../workspaces/components/WorkspaceSelector";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAuthStore } from "../state/useAuthStore";
 import { JoinPage } from "./JoinPage";
@@ -148,6 +149,7 @@ async function signUpWithKey() {
 
 describe("the first screen after signup", () => {
   beforeEach(() => {
+    useRelayStore.setState({ status: "off", info: null });
     desktop.value = false;
     useAuthStore.setState({ session: null, csrfToken: null });
     useWorkspaceStore.setState({ workspaceId: null });
@@ -172,6 +174,16 @@ describe("the first screen after signup", () => {
     await signUpWithKey();
 
     expect(await screen.findByText(`Workspace ${DEFAULT_WORKSPACE} open`)).toBeInTheDocument();
+  });
+
+  it("opens direct messages after signup with no workspace on a relay", async () => {
+    useRelayStore.setState({
+      status: "ready",
+      info: { serverId: "relay", roles: [], directSpaceId: "direct" },
+    });
+    renderSignup("/join", { defaultWorkspace: null, servers: [] });
+    await signUpWithPassword();
+    expect(await screen.findByText("Workspace direct open")).toBeInTheDocument();
   });
 
   it("shows the empty state when the server names a default the account did not join", async () => {

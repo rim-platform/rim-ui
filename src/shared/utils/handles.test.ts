@@ -73,13 +73,13 @@ describe("handles", () => {
     expect(isInternalUsername("robert")).toBe(false);
   });
 
-  it("names a person by display name, then handle, then id", () => {
+  it("names a person by display name, then handle, then a readable fallback", () => {
     expect(personName({ displayName: "Ada", username: "r_x" }, "u-1234567890", null)).toBe("Ada");
     expect(
       personName({ username: "r_x", handle: "@ada:elsewhere.example" }, "u-1234567890", null),
     ).toBe("ada:elsewhere.example");
     expect(personName({ username: "kuba" }, "u-1234567890", null)).toBe("kuba");
-    expect(personName({ username: "r_x" }, "u-1234567890", null)).toBe("u-123456");
-    expect(personName(null, "u-1234567890", null)).toBe("u-123456");
+    expect(personName({ username: "r_x" }, "u-1234567890", null)).toBe("Unknown user");
+    expect(personName(null, "u-1234567890", null)).toBe("Unknown user");
   });
 });

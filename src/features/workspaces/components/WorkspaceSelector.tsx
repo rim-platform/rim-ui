@@ -10,6 +10,8 @@ export function WorkspaceSelector() {
   const { data: servers, isPending, isError } = useMyServers();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  const directSpaceId = useRelayStore((s) => s.info?.directSpaceId);
+  const relayStatus = useRelayStore((s) => s.status);
   // A workspace on another server, for an account with none here.
   const elsewhere = useRelayStore(
     (s) => Object.values(s.spaces).find((space) => space.kind === "workspace")?.spaceId ?? null,
@@ -19,9 +21,10 @@ export function WorkspaceSelector() {
     if (workspaceId) return;
     if (servers && servers.length >= 1) setWorkspaceId(servers[0].id);
     else if (servers && elsewhere) setWorkspaceId(elsewhere);
-  }, [servers, elsewhere, workspaceId, setWorkspaceId]);
+    else if (servers && directSpaceId) setWorkspaceId(directSpaceId);
+  }, [servers, elsewhere, directSpaceId, workspaceId, setWorkspaceId]);
 
-  if (isPending) {
+  if (isPending || (servers?.length === 0 && relayStatus === "pending")) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-rim-void">
         <p className="text-sm text-rim-text-muted">Loading workspaces...</p>
@@ -68,7 +71,6 @@ export function WorkspaceSelector() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-rim-text">{labels[index]}</p>
-                  <p className="truncate text-xs text-rim-text-faint">{server.id}</p>
                 </div>
               </button>
             </li>
