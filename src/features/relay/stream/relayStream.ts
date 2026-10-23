@@ -5,9 +5,10 @@
  * Every `RelayItem` is checked before it is applied: the envelope is signed by the host's
  * pinned key at its `keySeq` (a newer seq refetches the host once), names the item's host and
  * space, the space is one this account uses on that host (or this is the `DmInvite` that adds
- * it), and the stream fits the event. Events are then ordered per stream (`StreamSequencer`);
- * a gap held too long is reconciled through host-signed answers, and only when that fails does
- * the space show "Messages may be missing". Items are acknowledged once applied or dropped.
+ * it, or the decision on a join request this account filed there), and the stream fits the
+ * event. Events are then ordered per stream (`StreamSequencer`); a gap held too long is
+ * reconciled through host-signed answers, and only when that fails does the space show
+ * "Messages may be missing". Items are acknowledged once applied or dropped.
  *
  * While the app is connected to a host directly, that host's items are held unapplied and
  * unacknowledged; switching back takes the host's stream heads as the baseline and runs them
@@ -29,6 +30,8 @@ export interface RelayStreamDeps {
   principalId: string;
   /** The host a space is bound to, or `null`. */
   hostOf(spaceId: string): string | null;
+  /** Whether this account waits for the decision on a join request for `spaceId` at `host`. */
+  pendingJoinAt(host: string, spaceId: string): boolean;
   /** Bind a new direct space to its host; `false` when refused. */
   registerSpace(spaceId: string, host: string): Promise<boolean>;
   /** Pin `host` from one of `origins` unless pinned; throws when it cannot or forked. */
@@ -69,6 +72,24 @@ export function cardRelays(card: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Whether `event` decides a join request this account filed at its host, for a space it does
+ * not use yet. Such a decision applies once, outside the space's stream order: the space has no
+ * baseline until the join it allows.
+ */
+function isPendingDecision(
+  event: HostEvent,
+  known: string | null,
+  deps: Pick<RelayStreamDeps, "principalId" | "pendingJoinAt">,
+): boolean {
+  return (
+    known === null &&
+    event.event.type === "JoinRequestDecided" &&
+    event.stream === `u:${deps.principalId}` &&
+    deps.pendingJoinAt(event.host, event.workspaceId)
+  );
 }
 
 function streamKey(host: string, spaceId: string, stream: string): string {
@@ -224,7 +245,8 @@ export class RelayStreamProcessor {
     const known = this.deps.hostOf(item.workspaceId);
     const invite =
       unverified.event.type === "DmInvite" && unverified.stream === `u:${this.deps.principalId}`;
-    if (known !== host && !(known === null && invite)) {
+    const decision = isPendingDecision(unverified, known, this.deps);
+    if (known !== host && !(known === null && (invite || decision))) {
       logger.warn("[RIM:relay] dropping an item for a space this account does not use there");
       return null;
     }
@@ -236,7 +258,7 @@ export class RelayStreamProcessor {
         logger.warn("[RIM:relay] dropping an event on a stream it does not belong to");
         return null;
       }
-      if (known === null && !(await this.deps.registerSpace(item.workspaceId, host))) {
+      if (known === null && invite && !(await this.deps.registerSpace(item.workspaceId, host))) {
         logger.warn("[RIM:relay] dropping an invite to a space id that is taken");
         return null;
       }
@@ -282,7 +304,10 @@ export class RelayStreamProcessor {
       host: item.hostServerId,
       itemId: item.id,
     };
-    if (event.seq === null) {
+    if (
+      event.seq === null ||
+      isPendingDecision(event, this.deps.hostOf(item.workspaceId), this.deps)
+    ) {
       this.applyAll([applicable]);
       return this.flushAck();
     }

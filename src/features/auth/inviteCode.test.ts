@@ -31,13 +31,43 @@ describe("inviteCodeToken", () => {
     });
   });
 
+  const OWN = ["https://rim.example.org", "https://api.rim.example.org"];
+  const TOKEN = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
+
   it.each([
-    ["rim_pjl_AAAAAAAAAAAAAAAAAAAAAA", "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA"],
-    [
-      "https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA\n",
-      "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA",
-    ],
-  ])("tells a workspace's public link %j apart from an invite", (text, token) => {
-    expect(inviteCodeToken(text)).toEqual({ kind: "publicLink", token });
+    [TOKEN],
+    [`https://rim.example.org/join/${TOKEN}\n`],
+    [`https://api.rim.example.org/join/${TOKEN}`],
+    [`https://rim.example.org/sub/join/${TOKEN}?from=site`],
+  ])("tells a public link of this server %j apart from an invite", (text) => {
+    expect(inviteCodeToken(text, OWN)).toEqual({
+      kind: "publicLink",
+      token: TOKEN,
+      hostOrigin: null,
+    });
+  });
+
+  it.each([
+    [`https://other.example/join/${TOKEN}`, "https://other.example"],
+    [`  https://other.example:8443/join/${TOKEN}/\n`, "https://other.example:8443"],
+    [`http://rim.example.org:8080/join/${TOKEN}`, "http://rim.example.org:8080"],
+  ])("reads %j as a public link of the server at %j", (text, hostOrigin) => {
+    expect(inviteCodeToken(text, OWN)).toEqual({ kind: "publicLink", token: TOKEN, hostOrigin });
+  });
+
+  it("compares a link's origin with this app's own server by default", () => {
+    expect(inviteCodeToken(`${window.location.origin}/join/${TOKEN}`)).toMatchObject({
+      hostOrigin: null,
+    });
+    expect(inviteCodeToken(`https://other.example/join/${TOKEN}`)).toMatchObject({
+      hostOrigin: "https://other.example",
+    });
+  });
+
+  it("keeps an invite link of another origin a token of this server", () => {
+    expect(inviteCodeToken("https://other.example/join/rim_inv_x", OWN)).toEqual({
+      kind: "token",
+      token: "rim_inv_x",
+    });
   });
 });

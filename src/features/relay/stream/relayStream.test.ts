@@ -61,6 +61,7 @@ function setup(overrides: Partial<RelayStreamDeps> = {}) {
     crypto: browserRelayCrypto,
     principalId: ME,
     hostOf: (id) => spaces.get(id) ?? null,
+    pendingJoinAt: vi.fn(() => false),
     registerSpace: vi.fn(async (id: string, host: string) => {
       spaces.set(id, host);
       return true;
@@ -88,6 +89,7 @@ function setup(overrides: Partial<RelayStreamDeps> = {}) {
     deps,
     applied,
     spaces,
+    stored,
     processor: new RelayStreamProcessor(deps),
     advance: (ms: number) => {
       now += ms;
@@ -193,6 +195,55 @@ describe("RelayStreamProcessor", () => {
     await processor.push(await message(1));
     expect(deps.registerSpace).not.toHaveBeenCalled();
     expect(applied).toEqual([]);
+  });
+
+  describe("the decision on a join request filed at another server", () => {
+    const decided = (stream = `u:${ME}`, seq = 7, seed?: number) =>
+      item(
+        stream,
+        seq,
+        {
+          type: "JoinRequestDecided",
+          request_id: "jr-1",
+          user_id: "r_at_host",
+          outcome: "accepted",
+        },
+        { seed },
+      );
+
+    it("lets it through for a pending request, without binding the space", async () => {
+      const pendingJoinAt = vi.fn(
+        (host: string, space: string) => host === HOST && space === SPACE,
+      );
+      const { processor, applied, deps, spaces, stored } = setup({ pendingJoinAt });
+      spaces.clear();
+      // A position left from an earlier membership does not hold it back.
+      stored.set(`${HOST}|${SPACE}|u:${ME}`, 2);
+      await processor.push(await decided());
+      expect(applied).toEqual(["JoinRequestDecided"]);
+      expect(pendingJoinAt).toHaveBeenCalledWith(HOST, SPACE);
+      expect(deps.hostKeyAt).toHaveBeenCalledWith(HOST, 0);
+      expect(deps.registerSpace).not.toHaveBeenCalled();
+      expect(deps.ack).toHaveBeenLastCalledWith(processor.ackedThrough);
+    });
+
+    it("drops it without a pending request", async () => {
+      const { processor, applied, deps, spaces } = setup();
+      spaces.clear();
+      await processor.push(await decided());
+      expect(applied).toEqual([]);
+      expect(deps.registerSpace).not.toHaveBeenCalled();
+      expect(deps.ack).toHaveBeenCalled();
+    });
+
+    it("still drops one that does not verify or is on someone else's stream", async () => {
+      const { processor, applied, spaces } = setup({ pendingJoinAt: vi.fn(() => true) });
+      spaces.clear();
+      await processor.push(await decided(`u:${ME}`, 7, 30));
+      await processor.push(await decided("u:rimp1_other"));
+      await processor.push(await decided("w"));
+      expect(applied).toEqual([]);
+    });
   });
 
   it("stops using a host whose identity forked", async () => {

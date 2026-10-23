@@ -1316,7 +1316,7 @@ input JoinRemoteWorkspaceInput {
 	"""
 	hostOrigin: String!
 	"""
-	The invite token; null for a current member.
+	The invite token; null for a current member or a join through a public link.
 	"""
 	inviteToken: String
 	"""
@@ -1327,6 +1327,15 @@ input JoinRemoteWorkspaceInput {
 	A delegation of the signing device for this relay, the host and the workspace.
 	"""
 	delegation: SignedStatementInput!
+	"""
+	The workspace's public link token (`rim_pjl_…`), instead of an invite.
+	"""
+	publicLinkToken: String
+	"""
+	A note to the moderators, at most 500 characters, when the public link takes join
+	requests.
+	"""
+	message: String
 }
 
 """
@@ -2235,12 +2244,14 @@ type Mutation {
 	leaveRelay: Boolean!
 	"""
 	Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
-	join, with the workspace `inviteToken` names (the invite is not used).
+	join, with the workspace `inviteToken` names (the invite is not used), or the workspace,
+	its name and the link's mode `publicLinkToken` names. At most one of the two.
 	"""
-	remoteJoinChallenge(hostServerId: String!, hostOrigin: String!, inviteToken: String): RemoteJoinChallenge!
+	remoteJoinChallenge(hostServerId: String!, hostOrigin: String!, inviteToken: String, publicLinkToken: String): RemoteJoinChallenge!
 	"""
 	Join a workspace on another host: the relay presents the caller's identity, proof and
-	delegation, and records the subscription.
+	delegation, and records the subscription. Through a public link that takes join
+	requests, the host files a request instead (`outcome: REQUESTED`).
 	"""
 	joinRemoteWorkspace(input: JoinRemoteWorkspaceInput!): RemoteJoinResult!
 	"""
@@ -3268,13 +3279,22 @@ type RemoteJoinChallenge {
 	nonce: String!
 	expiresAt: DateTime!
 	"""
-	The workspace the invite names, for the delegation; null without an invite.
+	The workspace the invite or public link names, for the delegation; null without
+	either.
 	"""
 	workspaceId: ID
+	"""
+	The workspace's name, with a public link; null otherwise.
+	"""
+	workspaceName: String
+	"""
+	What the public link does: join at once, or ask to join; null without a link.
+	"""
+	publicLinkMode: PublicJoinLinkMode
 }
 
 """
-A workspace joined on another host.
+A workspace joined on another host, or a join request filed there through its public link.
 """
 type RemoteJoinResult {
 	hostServerId: String!
@@ -3284,9 +3304,22 @@ type RemoteJoinResult {
 	"""
 	userId: ID!
 	"""
-	`owner`, `moderator`, `member` or `guest`.
+	`owner`, `moderator`, `member` or `guest`; with `REQUESTED`, the role the link gives.
 	"""
 	role: String!
+	"""
+	`JOINED`, or `REQUESTED` when the public link takes join requests: the caller is not a
+	member yet, and the decision arrives as a `JoinRequestDecided` relay item.
+	"""
+	outcome: JoinByPublicLinkOutcome!
+	"""
+	The join request filed at the host, with `REQUESTED`.
+	"""
+	joinRequestId: ID
+	"""
+	When that request expires unless it is decided first.
+	"""
+	joinRequestExpiresAt: DateTime
 }
 
 """

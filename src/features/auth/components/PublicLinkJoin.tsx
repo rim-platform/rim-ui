@@ -46,8 +46,9 @@ const ERROR_BOX =
  * with Withdraw request (asked already), or that they are banned. Every invalid link says
  * "This link isn't valid."; too many of them from one network say when to try again. The link
  * never creates an account: "Create an account" is the server's own signup, and the link is
- * kept for the tab so the app comes back to it afterwards. The token never reaches an invite
- * preview or the invite signup, and the page sends no referrer.
+ * kept for the tab so the app comes back to it afterwards. A signed-out visitor whose account is
+ * on another server is told to paste the link into their own app under Add workspace. The token
+ * never reaches an invite preview or the invite signup, and the page sends no referrer.
  */
 export function PublicLinkJoin({ token }: PublicLinkJoinProps) {
   useNoReferrerMeta();
@@ -184,7 +185,23 @@ function SignedOut({ token, asks }: { token: string; asks: boolean }) {
           Create an account
         </Button>
       </div>
+      <OtherServer />
     </div>
+  );
+}
+
+/** "I have an account on another server": where such an account joins through this link. */
+function OtherServer() {
+  return (
+    <details className="text-sm text-rim-text-muted">
+      <summary className="cursor-pointer text-xs font-medium text-rim-accent hover:underline">
+        I have an account on another server
+      </summary>
+      <p className="mt-2 text-xs">
+        Open RIM where your account is, choose Add workspace, then Join Existing, and paste this
+        link there. You join through your own server, without an account here.
+      </p>
+    </details>
   );
 }
 

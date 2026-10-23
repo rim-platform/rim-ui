@@ -30,6 +30,7 @@ vi.mock("../../../shared/toast", () => ({
 
 import { toast } from "../../../shared/toast";
 import {
+  ALLOW_REMOTE_NOTE,
   PUBLIC_LINK_PAUSE_NOTE,
   PUBLIC_LINK_WARNING,
   PublicLinkSettings,
@@ -45,6 +46,7 @@ function link(overrides: Partial<Link> = {}): Link {
     enabled: false,
     mode: PublicJoinLinkMode.DIRECT,
     role: ServerMemberRoleGql.MEMBER,
+    allowRemote: true,
     enabledAt: null,
     issuedAt: null,
     token: null,
@@ -259,6 +261,27 @@ describe("PublicLinkSettings", () => {
     ]);
     expect(screen.getByRole("radio", { name: /Join directly/ })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: /Member/ })).not.toBeChecked();
+  });
+
+  it("lets accounts from other servers join by default, and switches that off and on", async () => {
+    serve(issued());
+    const user = userEvent.setup();
+    renderSettings();
+
+    const remote = await screen.findByRole("switch", {
+      name: "Accounts from other servers can join",
+    });
+    expect(remote).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(ALLOW_REMOTE_NOTE)).toBeInTheDocument();
+
+    await user.click(remote);
+    await waitFor(() => expect(remote).toHaveAttribute("aria-checked", "false"));
+    await user.click(remote);
+    await waitFor(() => expect(remote).toHaveAttribute("aria-checked", "true"));
+    expect(callsTo(requestMock, "mutation UpdatePublicJoinLink")).toEqual([
+      { input: { serverId: "ws-1", allowRemote: false } },
+      { input: { serverId: "ws-1", allowRemote: true } },
+    ]);
   });
 
   it("shows the server's refusal of a change", async () => {

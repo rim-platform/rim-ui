@@ -72,6 +72,15 @@ describe("streamMatches", () => {
     expect(streamMatches({ stream: `c:${conv}`, seq: 1, event: invite }, me)).toBe(false);
   });
 
+  it("takes join request events only on this app's own stream", () => {
+    for (const type of ["JoinRequestCreated", "JoinRequestDecided"]) {
+      const event = { type };
+      expect(streamMatches({ stream: `u:${me}`, seq: 1, event }, me)).toBe(true);
+      expect(streamMatches({ stream: "u:rimp1_other", seq: 1, event }, me)).toBe(false);
+      expect(streamMatches({ stream: "w", seq: 1, event }, me)).toBe(false);
+    }
+  });
+
   it("keeps typing and presence on the ephemeral stream without a seq", () => {
     const typing = { type: "TypingStarted", conversation_id: conv };
     expect(streamMatches({ stream: "e", seq: null, event: typing }, me)).toBe(true);

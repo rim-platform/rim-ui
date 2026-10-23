@@ -255,19 +255,38 @@ device-link code (ASCII whitespace removed, at most 400 characters, scheme case 
 the first four `:` after the scheme, so the origin keeps its colons). The join dialog takes it
 where it takes an invite code; plain codes still join workspaces on this server.
 
+A workspace's public link, `https://<origin>/join/rim_pjl_…`, is another server's when its
+origin is neither this app's web origin nor its API origin (`auth/inviteCode.ts`); a bare token
+is this server's. Such a link names its host by origin only: `remoteServer(origin)` pins
+whatever server id the origin answers.
+
 Joining (`remote/joinRemote.ts`):
 
 1. `remoteServer(origin)` pins the host through the relay; the log must hash to the invite's
    server id, and the key hash must name a key of the log followed only by `signer: server`
    rotations. Anything else is refused before the host is asked anything.
-2. `remoteJoinChallenge(hostServerId, hostOrigin, inviteToken)` gets the host's login challenge
-   and the workspace the token names.
+2. `remoteJoinChallenge(hostServerId, hostOrigin, inviteToken, publicLinkToken)` gets the host's
+   login challenge and the workspace the token names; for a public link also its name and
+   `publicLinkMode`, which **Add workspace** shows (on **Continue**, so a half-typed link is never
+   looked up) before the person chooses **Join** or **Ask to join**.
 3. The device signs a `login` statement whose `audience` is the host's server id
    (`key_identity_sign_login_for_server`, or the browser's device key) and a delegation for the
    relay (below).
 4. `joinRemoteWorkspace` joins. The space is bound to the host, the delegation kept, and the
    host's `streamHeads` of `w` and `u:<principal id>` (asked through the forward path) become
    the baseline of its events; without them the first event seen is the baseline.
+
+Through a public link that takes join requests, `joinRemoteWorkspace` answers `outcome:
+REQUESTED`: nothing is bound, kept or subscribed. The request is kept in `localStorage`
+(`rim:remote-join-requests:<account>`, `remote/pendingRemoteJoins.ts`) until it is decided or
+expires, and **Add workspace** lists it under **Waiting for approval** with its server, without
+Withdraw. The decision arrives as a `JoinRequestDecided` relay item on `u:<principal id>` for a
+space this account does not use yet; the stream lets it through only while such a request is
+kept for that host and workspace, verified like any item, applied once outside the stream's
+order, and without binding the space. It is matched by the kept request, never by its
+`user_id` (the person's id at the host): `accepted` joins as a current member with a fresh
+challenge and delegation and no token, then notifies; `declined` notifies; `cancelled` only
+forgets the request.
 
 The workspace then shows in the rail after this server's own, under the name its host answers,
 and everything it shows is loaded through the forward path. A person with no workspace here

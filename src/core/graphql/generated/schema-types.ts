@@ -1070,10 +1070,17 @@ export type JoinRemoteWorkspaceInput = {
   /** The host's origin, from the invite link. */
   hostOrigin: Scalars['String']['input'];
   hostServerId: Scalars['String']['input'];
-  /** The invite token; null for a current member. */
+  /** The invite token; null for a current member or a join through a public link. */
   inviteToken?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * A note to the moderators, at most 500 characters, when the public link takes join
+   * requests.
+   */
+  message?: InputMaybe<Scalars['String']['input']>;
   /** A `login` statement over a `remoteJoinChallenge`, naming the host's server id. */
   proof: SignedStatementInput;
+  /** The workspace's public link token (`rim_pjl_…`), instead of an invite. */
+  publicLinkToken?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** A person's request to join a workspace through its public link. */
@@ -1715,7 +1722,8 @@ export type Mutation = {
   joinDefaultWorkspace: Scalars['ID']['output'];
   /**
    * Join a workspace on another host: the relay presents the caller's identity, proof and
-   * delegation, and records the subscription.
+   * delegation, and records the subscription. Through a public link that takes join
+   * requests, the host files a request instead (`outcome: REQUESTED`).
    */
   joinRemoteWorkspace: RemoteJoinResult;
   joinServerByInvite: JoinServerByInvitePayload;
@@ -1761,7 +1769,8 @@ export type Mutation = {
   reissuePublicJoinLink: PublicJoinLink;
   /**
    * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
-   * join, with the workspace `inviteToken` names (the invite is not used).
+   * join, with the workspace `inviteToken` names (the invite is not used), or the workspace,
+   * its name and the link's mode `publicLinkToken` names. At most one of the two.
    */
   remoteJoinChallenge: RemoteJoinChallenge;
   removeContact: Scalars['Boolean']['output'];
@@ -2395,6 +2404,7 @@ export type MutationRemoteJoinChallengeArgs = {
   hostOrigin: Scalars['String']['input'];
   hostServerId: Scalars['String']['input'];
   inviteToken?: InputMaybe<Scalars['String']['input']>;
+  publicLinkToken?: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -3694,14 +3704,30 @@ export type RemoteJoinChallenge = {
   challengeId: Scalars['ID']['output'];
   expiresAt: Scalars['DateTime']['output'];
   nonce: Scalars['String']['output'];
-  /** The workspace the invite names, for the delegation; null without an invite. */
+  /** What the public link does: join at once, or ask to join; null without a link. */
+  publicLinkMode?: Maybe<PublicJoinLinkMode>;
+  /**
+   * The workspace the invite or public link names, for the delegation; null without
+   * either.
+   */
   workspaceId?: Maybe<Scalars['ID']['output']>;
+  /** The workspace's name, with a public link; null otherwise. */
+  workspaceName?: Maybe<Scalars['String']['output']>;
 };
 
-/** A workspace joined on another host. */
+/** A workspace joined on another host, or a join request filed there through its public link. */
 export type RemoteJoinResult = {
   hostServerId: Scalars['String']['output'];
-  /** `owner`, `moderator`, `member` or `guest`. */
+  /** When that request expires unless it is decided first. */
+  joinRequestExpiresAt?: Maybe<Scalars['DateTime']['output']>;
+  /** The join request filed at the host, with `REQUESTED`. */
+  joinRequestId?: Maybe<Scalars['ID']['output']>;
+  /**
+   * `JOINED`, or `REQUESTED` when the public link takes join requests: the caller is not a
+   * member yet, and the decision arrives as a `JoinRequestDecided` relay item.
+   */
+  outcome: JoinByPublicLinkOutcome;
+  /** `owner`, `moderator`, `member` or `guest`; with `REQUESTED`, the role the link gives. */
   role: Scalars['String']['output'];
   /** The member's user id at the host. */
   userId: Scalars['ID']['output'];
