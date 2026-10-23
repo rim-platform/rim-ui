@@ -77,11 +77,15 @@ const SERVER_INFO_QUERY = gql`
       registrationFull
       abuseContact
       minimumAge
+      defaultWorkspace
     }
   }
 `;
 
-/** The same without the account cap and the safety settings, for a server older than them. */
+/**
+ * The same without the account cap, the safety settings and the default workspace, for a
+ * server older than them.
+ */
 const SERVER_DM_QUERY = gql`
   query ServerInfoWithDm {
     serverInfo {
@@ -201,13 +205,13 @@ function refusedByServer(err: unknown): boolean {
 
 /**
  * The connected server's release version, API version, features, audit retention, instance
- * notice, terms URL, limits, signup policy, DM settings, account cap, abuse contact and minimum
- * age; needs no session. Each query a server refuses falls back to the next older one. A server
- * older than the account cap leaves `registrationFull`, `abuseContact` and `minimumAge`
- * undefined; one older than DM policies also leaves the
- * `dm*` settings undefined; one older than the signup policy also leaves
- * `signupRequiresKeys` undefined; one older than instance limits also leaves `limits` undefined; one older than
- * the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
+ * notice, terms URL, limits, signup policy, DM settings, account cap, abuse contact, minimum
+ * age and default workspace; needs no session. Each query a server refuses falls back to the
+ * next older one. A server older than the account cap leaves `registrationFull`,
+ * `abuseContact`, `minimumAge` and `defaultWorkspace` undefined; one older than DM policies
+ * also leaves the `dm*` settings undefined; one older than the signup policy also leaves
+ * `signupRequiresKeys` undefined; one older than instance limits also leaves `limits`
+ * undefined; one older than the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
  * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
  * `features` runs every feature, so it reads as listing none.
  */
