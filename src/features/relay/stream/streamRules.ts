@@ -11,6 +11,7 @@ const USER_EVENTS = new Set([
   "ReadStateUpdated",
   "MlsWelcomeAvailable",
   "DmInvite",
+  "JoinRequestCreated",
   "JoinRequestDecided",
 ]);
 const DIRECTORY_EVENTS = new Set([
