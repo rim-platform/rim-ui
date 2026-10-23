@@ -50,6 +50,7 @@ export interface MessageItemMessage {
 }
 
 export interface ResolvedMember {
+  isFormerMember?: boolean;
   displayName: string;
   username?: string;
   /** How the member's handle reads to the viewer. */
@@ -66,6 +67,7 @@ export type MemberResolver = (userId: string) => ResolvedMember;
 
 /** Author details resolved by the parent (member directory + message author). */
 export interface MessageAuthorView {
+  isFormerMember?: boolean;
   name: string;
   avatarUrl?: string | null;
   username?: string;

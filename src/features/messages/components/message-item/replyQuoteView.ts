@@ -20,7 +20,7 @@ export function plainFirstLine(
     .replace(/^(?:>\s*)+/, "")
     .replace(/^#{1,6}\s+/, "")
     .replace(/^(?:[-*+]|\d+[.)])\s+/, "")
-    .replace(/<@([a-zA-Z0-9_-]+)>/g, (_m, id: string) => `@${nameOf?.(id) ?? id.slice(0, 8)}`)
+    .replace(/<@([a-zA-Z0-9_-]+)>/g, (_m, id: string) => `@${nameOf?.(id) ?? "Former member"}`)
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\*\*|__|[*`~]/g, "")
     .trim();

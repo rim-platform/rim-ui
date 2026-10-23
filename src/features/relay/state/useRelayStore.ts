@@ -40,6 +40,8 @@ export interface MissingNotice {
 }
 
 interface RelayState {
+  status: "pending" | "ready" | "off";
+  setStatus: (status: "pending" | "ready" | "off") => void;
   info: RelayInfo | null;
   account: RelayAccount | null;
   /** Spaces on other servers, by space id. */
@@ -62,6 +64,8 @@ interface RelayState {
 }
 
 export const useRelayStore = create<RelayState>((set) => ({
+  status: "pending",
+  setStatus: (status) => set({ status }),
   info: null,
   account: null,
   spaces: {},
@@ -70,7 +74,12 @@ export const useRelayStore = create<RelayState>((set) => ({
   origins: {},
   refusals: {},
   setStarted: (info, account, spaces) =>
-    set({ info, account, spaces: Object.fromEntries(spaces.map((s) => [s.spaceId, s])) }),
+    set({
+      status: "ready",
+      info,
+      account,
+      spaces: Object.fromEntries(spaces.map((s) => [s.spaceId, s])),
+    }),
   addSpace: (space) => set((s) => ({ spaces: { ...s.spaces, [space.spaceId]: space } })),
   markForked: (serverId) =>
     set((s) => (s.forked.includes(serverId) ? s : { forked: [...s.forked, serverId] })),
@@ -100,6 +109,7 @@ export const useRelayStore = create<RelayState>((set) => ({
     }),
   reset: () =>
     set({
+      status: "pending",
       info: null,
       account: null,
       spaces: {},

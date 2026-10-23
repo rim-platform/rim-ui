@@ -8,6 +8,7 @@ import { Z } from "./zIndex";
 
 interface UserHoverCardPortalProps {
   userId: string;
+  isFormerMember?: boolean;
   username: string;
   /** How the person's handle reads; see `UserCardContent`. */
   handle?: HandleView | null;
@@ -30,6 +31,7 @@ interface UserHoverCardPortalProps {
 
 export function UserHoverCardPortal({
   userId,
+  isFormerMember,
   username,
   handle,
   displayName,
@@ -107,6 +109,7 @@ export function UserHoverCardPortal({
       className="w-72 rounded-xl border border-rim-line bg-rim-panel shadow-xl p-4"
     >
       <UserCardContent
+        isFormerMember={isFormerMember}
         userId={userId}
         username={username}
         handle={handle}

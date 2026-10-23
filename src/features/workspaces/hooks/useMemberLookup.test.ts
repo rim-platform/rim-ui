@@ -14,11 +14,13 @@ vi.mock("../api/useServerMembers", () => ({
 import { useMemberLookup } from "./useMemberLookup";
 import { useCurrentUser } from "../api/useCurrentUser";
 import { useServerMembers } from "../api/useServerMembers";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useKnownHandles } from "../state/useKnownHandles";
 
 describe("useMemberLookup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useRelayStore.getState().reset();
   });
 
   it("returns a resolve function", () => {
@@ -43,9 +45,24 @@ describe("useMemberLookup", () => {
 
     const { result } = renderHook(() => useMemberLookup("ws-1"));
     const info = result.current.resolve("unknown-user-id-xxx");
-    // userId.slice(0, 8) of "unknown-user-id-xxx" = "unknown-"
-    expect(info.displayName).toBe("unknown-");
+    expect(info.displayName).toBe("");
     expect(info.isCurrentUser).toBe(false);
+  });
+
+  it("marks a missing workspace member as former but keeps direct-message peers unmarked", () => {
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
+    vi.mocked(useServerMembers).mockReturnValue({ data: [] } as unknown as ReturnType<
+      typeof useServerMembers
+    >);
+    useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "direct" } });
+    const { result, rerender } = renderHook(({ id }) => useMemberLookup(id), {
+      initialProps: { id: "ws-1" },
+    });
+    expect(result.current.resolve("departed").isFormerMember).toBe(true);
+    rerender({ id: "direct" });
+    expect(result.current.resolve("peer").isFormerMember).toBe(false);
   });
 
   it("resolve returns current user info with isCurrentUser true", () => {
@@ -237,7 +254,7 @@ describe("useMemberLookup", () => {
       expect(result.current.resolve("u-bob").handleView?.shown).toBe("@bob");
       expect(result.current.resolve("u-ada").displayName).toBe("ada:elsewhere.example");
       expect(result.current.resolve("u-ada").handleView?.shown).toBe("@ada:elsewhere.example");
-      expect(result.current.resolve("u-zed").displayName).toBe("u-zed");
+      expect(result.current.resolve("u-zed").displayName).toBe("Unknown user");
       expect(result.current.resolve("u-zed").handleView).toBeNull();
     } finally {
       useKnownHandles.setState({ byUser: {} });
