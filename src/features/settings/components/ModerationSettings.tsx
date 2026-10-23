@@ -63,7 +63,7 @@ function BansList({ serverId }: { serverId: string }) {
   const qc = useQueryClient();
 
   function banName(ban: ServerBanRow): string {
-    return ban.user ? personName(ban.user, ban.userId) : "this person";
+    return ban.user ? personName(ban.user, ban.userId, null) : "this person";
   }
 
   function handleUnban(ban: ServerBanRow) {
