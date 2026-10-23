@@ -1620,6 +1620,11 @@ export type Mutation = {
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   /**
+   * Join the current default workspace as Member with its public channels. Active bans
+   * are refused; existing membership is unchanged.
+   */
+  joinDefaultWorkspace: Scalars['ID']['output'];
+  /**
    * Join a workspace on another host: the relay presents the caller's identity, proof and
    * delegation, and records the subscription.
    */
@@ -3838,6 +3843,10 @@ export type ServerLimits = {
 export type ServerMember = {
   /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Whether this member is banned in this workspace. */
+  banned: Scalars['Boolean']['output'];
+  /** End of the active ban; null for a permanent ban or no ban. */
+  bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   displayName?: Maybe<Scalars['String']['output']>;
   joinedAt: Scalars['DateTime']['output'];
@@ -4186,6 +4195,12 @@ export type UploadTicket = {
 export type User = {
   /** The profile picture's URL; null while the instance has the `avatars` feature off. */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** The active ban's reason, readable only by workspace moderators. */
+  banReason?: Maybe<Scalars['String']['output']>;
+  /** Whether this message's author is banned in its workspace; false outside message authors. */
+  banned: Scalars['Boolean']['output'];
+  /** End of the active workspace ban; null for a permanent ban or no ban. */
+  bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
   /**
    * When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);

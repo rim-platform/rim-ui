@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { activeBan } from "../../hooks/useBanExpiry";
 import { MarkdownRenderer } from "../../../../shared/ui/MarkdownRenderer";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
@@ -94,6 +95,7 @@ export const MessageText = memo(function MessageText({
     mentionCardBlock = (
       <UserHoverCardPortal
         isFormerMember={member?.isFormerMember}
+        ban={member?.ban}
         userId={mentionCard.userId}
         username={member?.username ?? memberDisplayName}
         handle={member?.handleView}
@@ -105,7 +107,9 @@ export const MessageText = memo(function MessageText({
         bio={member?.bio}
         isCurrentUser={member?.isCurrentUser}
         onSendDm={
-          member?.isFormerMember ? undefined : () => void openDirectWithMember(mentionCard.userId)
+          member?.isFormerMember || activeBan(member?.ban)
+            ? undefined
+            : () => void openDirectWithMember(mentionCard.userId)
         }
         anchorRect={mentionCard.rect}
         onMouseEnter={handleMentionCardEnter}
@@ -125,7 +129,8 @@ export const MessageText = memo(function MessageText({
           onMentionHover={handleMentionHover}
           onMentionLeave={scheduleMentionClose}
           onMentionContextMenu={(id, element, event) => {
-            if (!resolveMember?.(id).isFormerMember) onMentionContextMenu?.(id, element, event);
+            if (!resolveMember?.(id).isFormerMember && !activeBan(resolveMember?.(id).ban))
+              onMentionContextMenu?.(id, element, event);
           }}
           showInlineMedia={showInlineMedia}
         />
