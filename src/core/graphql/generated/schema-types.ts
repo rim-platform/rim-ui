@@ -1048,6 +1048,21 @@ export enum InviteTokenTypeGql {
   WORKSPACE = 'WORKSPACE'
 }
 
+/** What `joinByPublicLink` did. */
+export enum JoinByPublicLinkOutcome {
+  /** The caller is a member now. */
+  JOINED = 'JOINED',
+  /** The caller's join request was filed. */
+  REQUESTED = 'REQUESTED'
+}
+
+export type JoinByPublicLinkPayload = {
+  /** The filed request, with `REQUESTED`. */
+  joinRequest?: Maybe<JoinRequest>;
+  outcome: JoinByPublicLinkOutcome;
+  serverId: Scalars['ID']['output'];
+};
+
 /** Join a workspace on another host through this relay. */
 export type JoinRemoteWorkspaceInput = {
   /** A delegation of the signing device for this relay, the host and the workspace. */
@@ -1060,6 +1075,58 @@ export type JoinRemoteWorkspaceInput = {
   /** A `login` statement over a `remoteJoinChallenge`, naming the host's server id. */
   proof: SignedStatementInput;
 };
+
+/** A person's request to join a workspace through its public link. */
+export type JoinRequest = {
+  createdAt: Scalars['DateTime']['output'];
+  decidedAt?: Maybe<Scalars['DateTime']['output']>;
+  decidedById?: Maybe<Scalars['ID']['output']>;
+  /** When an open request expires: 30 days after it was filed. */
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /** The person's note to the moderators, at most 500 characters. */
+  message?: Maybe<Scalars['String']['output']>;
+  serverId: Scalars['ID']['output'];
+  status: JoinRequestStatus;
+  /** The person asking (null once the account no longer exists). */
+  user?: Maybe<User>;
+  userId: Scalars['ID']['output'];
+  workspaceName: Scalars['String']['output'];
+};
+
+export type JoinRequestCursorInput = {
+  createdAt: Scalars['DateTime']['input'];
+  requestId: Scalars['ID']['input'];
+};
+
+export type JoinRequestCursorOutput = {
+  createdAt: Scalars['DateTime']['output'];
+  requestId: Scalars['ID']['output'];
+};
+
+/**
+ * A workspace's open join requests ordered `createdAt DESC, id DESC` (newest first), with the
+ * standard cursor semantics: `AFTER` pages go to older requests.
+ */
+export type JoinRequestPage = {
+  items: Array<JoinRequest>;
+  next?: Maybe<JoinRequestCursorOutput>;
+  pageInfo: PageInfo;
+  prev?: Maybe<JoinRequestCursorOutput>;
+};
+
+/** Where a join request stands. */
+export enum JoinRequestStatus {
+  ACCEPTED = 'ACCEPTED',
+  /** A ban or the person's account deletion ended it. */
+  CANCELLED = 'CANCELLED',
+  DECLINED = 'DECLINED',
+  /** It stayed open for 30 days. */
+  EXPIRED = 'EXPIRED',
+  OPEN = 'OPEN',
+  /** The person took it back. */
+  WITHDRAWN = 'WITHDRAWN'
+}
 
 export type JoinServerByInviteInput = {
   inviteToken: Scalars['String']['input'];
@@ -1486,6 +1553,14 @@ export type Mutation = {
   acceptConversationInvite: Conversation;
   /** Release the request's held items, let later ones flow, and add the sender as a contact. */
   acceptDmRequest: DmRequest;
+  /**
+   * Accept an open join request: the person joins with the link's current role and the
+   * public channels, as a direct join does; a person who has joined another way since is
+   * left as they are and the request is closed as accepted. Owner and Moderators only
+   * (`FORBIDDEN`); a request of another workspace is `NOT_FOUND`, one no longer open is
+   * `CONFLICT`, a ban `FORBIDDEN`, a full workspace `VALIDATION`.
+   */
+  acceptJoinRequest: JoinRequest;
   /** Acknowledge Welcomes of the session's device; answers how many were acknowledged now. */
   ackMlsWelcomes: Scalars['Int']['output'];
   /** Move the session device's cursor up to `upTo`. */
@@ -1545,6 +1620,11 @@ export type Mutation = {
   createUserCommand: Command;
   /** Decline the caller's pending invitation; `NOT_FOUND` when there is none. */
   declineConversationInvite: Scalars['Boolean']['output'];
+  /**
+   * Decline an open join request; the person may ask again 24 hours later. Owner and
+   * Moderators only, with the refusals of `acceptJoinRequest` other than the join checks.
+   */
+  declineJoinRequest: JoinRequest;
   deleteAttachment: Scalars['Boolean']['output'];
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
@@ -1617,6 +1697,15 @@ export type Mutation = {
    * invites stay ended. Instance operators only; anyone else gets `FORBIDDEN`.
    */
   instanceUnblockPrincipal: InstancePrincipalUnblockOutcome;
+  /**
+   * Join a workspace through its public link (`DIRECT`), or ask to join with an optional
+   * `message` of at most 500 characters (`REQUESTS`). For an account of this server; the
+   * link never creates an account. An invalid link is `NOT_FOUND` and counts towards the
+   * address's misses (`RATE_LIMITED` past them); a ban is `FORBIDDEN`; a full workspace,
+   * a too long message, 20 open requests or a decline less than 24 hours ago are
+   * `VALIDATION`; a member or an open request is `CONFLICT`.
+   */
+  joinByPublicLink: JoinByPublicLinkPayload;
   /** Join a public, unarchived channel. Idempotent. */
   joinChannel: Conversation;
   /**
@@ -1665,6 +1754,11 @@ export type Mutation = {
   pinMessage: Scalars['Boolean']['output'];
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
+  /**
+   * Issue a new token for the workspace's public link; the old one stops working at once.
+   * The settings stay. Owner only, with the refusals of `updatePublicJoinLink`.
+   */
+  reissuePublicJoinLink: PublicJoinLink;
   /**
    * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
    * join, with the workspace `inviteToken` names (the invite is not used).
@@ -1915,6 +2009,14 @@ export type Mutation = {
    * of its workspace; anyone else gets `FORBIDDEN`.
    */
   updatePipeline: PipelineGql;
+  /**
+   * Change the workspace's public link: on or off, `mode`, `role` (`MEMBER` or `GUEST`) and
+   * `allowRemote`. Turning it on for the first time issues its token; turning it off makes
+   * every lookup of it answer `NOT_FOUND` until it is turned on again. Owner only
+   * (`FORBIDDEN`); `VALIDATION` for the direct space, the server's default workspace and any
+   * other role.
+   */
+  updatePublicJoinLink: PublicJoinLink;
   updateUserCommand: Command;
   /** Change an entry's statement, status or bundle URL. Owner or Moderator. */
   updateWorkspacePlugin: WorkspacePlugin;
@@ -1923,6 +2025,11 @@ export type Mutation = {
    * the device's previous one.
    */
   uploadMlsKeyPackages: MlsKeyPackageStatus;
+  /**
+   * Take back the caller's open join request. `NOT_FOUND` unless it is theirs, `CONFLICT`
+   * once it is no longer open.
+   */
+  withdrawJoinRequest: JoinRequest;
 };
 
 
@@ -1934,6 +2041,12 @@ export type MutationAcceptConversationInviteArgs = {
 
 export type MutationAcceptDmRequestArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationAcceptJoinRequestArgs = {
+  requestId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -2065,6 +2178,12 @@ export type MutationDeclineConversationInviteArgs = {
 };
 
 
+export type MutationDeclineJoinRequestArgs = {
+  requestId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationDeleteAttachmentArgs = {
   input: DeleteAttachmentInput;
 };
@@ -2190,6 +2309,12 @@ export type MutationInstanceUnblockPrincipalArgs = {
 };
 
 
+export type MutationJoinByPublicLinkArgs = {
+  message?: InputMaybe<Scalars['String']['input']>;
+  token: Scalars['String']['input'];
+};
+
+
 export type MutationJoinChannelArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
@@ -2258,6 +2383,11 @@ export type MutationPinMessageArgs = {
 
 export type MutationPublishProfileCardArgs = {
   card: SignedStatementInput;
+};
+
+
+export type MutationReissuePublicJoinLinkArgs = {
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -2540,6 +2670,11 @@ export type MutationUpdatePipelineArgs = {
 };
 
 
+export type MutationUpdatePublicJoinLinkArgs = {
+  input: UpdatePublicJoinLinkInput;
+};
+
+
 export type MutationUpdateUserCommandArgs = {
   input: UpdateUserCommandInput;
 };
@@ -2552,6 +2687,11 @@ export type MutationUpdateWorkspacePluginArgs = {
 
 export type MutationUploadMlsKeyPackagesArgs = {
   keyPackages: Array<Scalars['String']['input']>;
+};
+
+
+export type MutationWithdrawJoinRequestArgs = {
+  requestId: Scalars['ID']['input'];
 };
 
 export type MuteConversationInput = {
@@ -2831,6 +2971,72 @@ export type ProfileCard = {
   version: Scalars['Int']['output'];
 };
 
+/**
+ * A workspace's public link as its Owner sees it: the settings, the link itself, which the
+ * Owner can copy again at any time, and how it is used.
+ */
+export type PublicJoinLink = {
+  /** Whether accounts from other servers may join through the link. */
+  allowRemote: Scalars['Boolean']['output'];
+  /** Whether the link admits anyone; off by default. */
+  enabled: Scalars['Boolean']['output'];
+  /** When the link was last turned on. */
+  enabledAt?: Maybe<Scalars['DateTime']['output']>;
+  /** When the current token was issued; null while the workspace never had a link. */
+  issuedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** Who issued the current token (null once the account no longer exists). */
+  issuedBy?: Maybe<User>;
+  issuedById?: Maybe<Scalars['ID']['output']>;
+  /** Joins through the link, directly or by an accepted request, in the last 24 hours. */
+  joinsLastDay: Scalars['Int']['output'];
+  /** Joins through the link in the last seven days. */
+  joinsLastWeek: Scalars['Int']['output'];
+  mode: PublicJoinLinkMode;
+  /** The workspace's open join requests. */
+  openRequests: Scalars['Int']['output'];
+  /** `MEMBER` or `GUEST`: the role a person joining through the link gets. */
+  role: ServerMemberRoleGql;
+  serverId: Scalars['ID']['output'];
+  /**
+   * The token, `rim_pjl_` and 22 base64url characters; null while the workspace never had a
+   * link.
+   */
+  token?: Maybe<Scalars['String']['output']>;
+  /** `<server>/join/<token>`; null while the workspace never had a link. */
+  url?: Maybe<Scalars['String']['output']>;
+};
+
+/** What opening a workspace's public link does. */
+export enum PublicJoinLinkMode {
+  /** The person joins at once. */
+  DIRECT = 'DIRECT',
+  /** The person asks to join; the Owner or a Moderator accepts or declines. */
+  REQUESTS = 'REQUESTS'
+}
+
+/** What a valid, switched-on public link shows anyone who has it. */
+export type PublicJoinLinkPreview = {
+  /** The caller's open join request, with `REQUEST_OPEN`. */
+  joinRequestId?: Maybe<Scalars['ID']['output']>;
+  mode: PublicJoinLinkMode;
+  name: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+  viewer: PublicJoinLinkViewer;
+};
+
+/** Where the caller of `publicJoinLinkPreview` stands with the link's workspace. */
+export enum PublicJoinLinkViewer {
+  /** Banned from the workspace: cannot join or ask to. */
+  BANNED = 'BANNED',
+  MEMBER = 'MEMBER',
+  /** Signed in, not a member, not banned, no open request. */
+  NOT_MEMBER = 'NOT_MEMBER',
+  /** The caller's join request is waiting for the moderators. */
+  REQUEST_OPEN = 'REQUEST_OPEN',
+  /** Nobody is signed in. */
+  SIGNED_OUT = 'SIGNED_OUT'
+}
+
 export type Query = {
   applyChannelLens: Array<Message>;
   channelLenses: Array<ChannelLens>;
@@ -2902,6 +3108,12 @@ export type Query = {
    */
   instanceReports: Array<InstanceAbuseReport>;
   /**
+   * The workspace's open join requests, newest first (`createdAt DESC, id DESC`); `AFTER`
+   * pages go to older ones. Defaults: `dir` `AFTER`, `limit` 50 (clamped to 1..=100). Owner
+   * and Moderators only: anyone else gets `FORBIDDEN`.
+   */
+  joinRequests: JoinRequestPage;
+  /**
    * The public key log of a principal enrolled on this server, oldest first; empty when none
    * is. No session needed: a person who lost every device reads the head here to sign a
    * recovery rotation (`rotateIdentityKey`).
@@ -2947,6 +3159,8 @@ export type Query = {
    * floors are taken in, with where a refusing floor comes from.
    */
   myDmSettings: MyDmSettings;
+  /** The caller's open join requests, newest first; at most 20. */
+  myJoinRequests: Array<JoinRequest>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
   /** The caller's own macros in the workspace. `FORBIDDEN` for a non-member. */
@@ -2984,6 +3198,18 @@ export type Query = {
    * space included); an empty list for any other principal. At most 100 ids.
    */
   principalDevices: Array<PrincipalDevices>;
+  /**
+   * The workspace's public link, its settings and how it is used, for its Owner (`FORBIDDEN`
+   * for anyone else; `VALIDATION` for the direct space and the server's default workspace).
+   * A workspace that never had a link answers with `enabled` false and a null `token`.
+   */
+  publicJoinLink: PublicJoinLink;
+  /**
+   * What a valid, switched-on public link shows; no sign-in needed. Every other token
+   * answers `NOT_FOUND` with the same message, and an address with 20 such answers in ten
+   * minutes gets `RATE_LIMITED` for every link lookup and join for an hour.
+   */
+  publicJoinLinkPreview: PublicJoinLinkPreview;
   /**
    * Return the deployment-wide registration mode.
    *
@@ -3150,6 +3376,14 @@ export type QueryInstanceReportsArgs = {
 };
 
 
+export type QueryJoinRequestsArgs = {
+  cursor?: InputMaybe<JoinRequestCursorInput>;
+  dir?: InputMaybe<PageDir>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type QueryKeyLogArgs = {
   principalId: Scalars['String']['input'];
 };
@@ -3267,6 +3501,16 @@ export type QueryPreviewInviteTokenArgs = {
 
 export type QueryPrincipalDevicesArgs = {
   principalIds: Array<Scalars['String']['input']>;
+};
+
+
+export type QueryPublicJoinLinkArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryPublicJoinLinkPreviewArgs = {
+  token: Scalars['String']['input'];
 };
 
 
@@ -4165,6 +4409,19 @@ export type UpdatePipelineInput = {
   name: Scalars['String']['input'];
   pipelineId: Scalars['ID']['input'];
   trigger: PipelineTriggerInput;
+};
+
+/**
+ * The Owner's change to a workspace's public link; an omitted field stays as it is. Turning
+ * the link on for the first time issues its token.
+ */
+export type UpdatePublicJoinLinkInput = {
+  allowRemote?: InputMaybe<Scalars['Boolean']['input']>;
+  enabled?: InputMaybe<Scalars['Boolean']['input']>;
+  mode?: InputMaybe<PublicJoinLinkMode>;
+  /** `MEMBER` or `GUEST`; any other role is `VALIDATION`. */
+  role?: InputMaybe<ServerMemberRoleGql>;
+  serverId: Scalars['ID']['input'];
 };
 
 export type UpdateUserCommandInput = {
