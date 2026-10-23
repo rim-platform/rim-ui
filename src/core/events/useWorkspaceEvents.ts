@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 
-import { handleMemberBanChanged } from "../../features/workspaces/state/memberEvents";
+import {
+  handleMemberBanChanged,
+  handleMemberProfileUpdated,
+} from "../../features/workspaces/state/memberEvents";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { isSessionEndedClose, reportSubscriptionLimit } from "../graphql/subscriptionErrors";
 import { logger } from "../logger";
@@ -332,6 +335,10 @@ export function applyWorkspaceEvent(
       // Invalidate both channel and conversation lists
       qc.invalidateQueries({ queryKey: queryKeys.channels(workspaceId) });
       qc.invalidateQueries({ queryKey: queryKeys.conversations(workspaceId) });
+      break;
+
+    case "MemberProfileUpdated":
+      handleMemberProfileUpdated(qc, workspaceId, event.user_id);
       break;
 
     case "MemberJoined":

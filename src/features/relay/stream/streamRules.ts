@@ -16,6 +16,7 @@ const DIRECTORY_EVENTS = new Set([
   "MemberJoined",
   "MemberLeft",
   "MemberRoleChanged",
+  "MemberProfileUpdated",
   "MemberBanChanged",
 ]);
 const EPHEMERAL_EVENTS = new Set(["TypingStarted", "PresenceChanged"]);
