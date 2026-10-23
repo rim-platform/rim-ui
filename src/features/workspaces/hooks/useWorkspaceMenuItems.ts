@@ -132,6 +132,19 @@ export function useWorkspaceMenuItems({
         },
       });
     }
+    if (canModerate(role)) {
+      items.push({
+        id: "reports",
+        label: "Reports…",
+        onSelect: () => {
+          const workspaces = useWorkspaceStore.getState();
+          if (workspaces.workspaceId !== workspaceId) workspaces.setWorkspaceId(workspaceId);
+          useShellStore
+            .getState()
+            .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
+        },
+      });
+    }
     if (isOwner(role)) {
       items.push({
         id: "invite",

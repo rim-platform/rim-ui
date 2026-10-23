@@ -369,15 +369,38 @@ describe("SettingsPage", () => {
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
 
-    it("is offered to a moderator with the moderation settings", async () => {
+    it("offers workspace settings and a separate moderation tab to a moderator", async () => {
       mockGate.canModerate = true;
       const user = userEvent.setup();
       renderSettings();
 
       await user.click(screen.getByRole("button", { name: "Workspace" }));
+      expect(await screen.findByTestId("workspace-dm-settings")).toBeInTheDocument();
+      expect(screen.queryByTestId("moderation-settings")).not.toBeInTheDocument();
+      await user.click(
+        within(screen.getByRole("group", { name: "Workspace" })).getByRole("button", {
+          name: "Moderation",
+        }),
+      );
       expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
-      expect(screen.getByTestId("workspace-dm-settings")).toBeInTheDocument();
     });
+  });
+
+  it("opens a workspace moderation deep link for moderators", async () => {
+    mockGate.canModerate = true;
+    mockShellState.mainSurface = { kind: "settings", tab: "workspace-moderation" };
+    renderSettings();
+    expect(await screen.findByTestId("moderation-settings")).toBeInTheDocument();
+  });
+
+  it("hides workspace moderation in the direct space", () => {
+    mockGate.canModerate = true;
+    startRelayWithDirectSpace();
+    mockWorkspace.workspaceId = DIRECT_SPACE_ID;
+    mockShellState.mainSurface = { kind: "settings", tab: "workspace-moderation" };
+    renderSettings();
+    expect(screen.queryByRole("button", { name: "Moderation" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
   describe("Moderation tab", () => {
@@ -396,7 +419,7 @@ describe("SettingsPage", () => {
       renderSettings();
 
       const instance = screen.getByRole("group", { name: "Instance" });
-      await user.click(within(instance).getByRole("button", { name: "Moderation" }));
+      await user.click(within(instance).getByRole("button", { name: "Instance moderation" }));
       expect(await screen.findByTestId("instance-moderation")).toBeInTheDocument();
     });
   });

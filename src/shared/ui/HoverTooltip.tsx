@@ -3,6 +3,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useId,
   cloneElement,
   type ReactElement,
@@ -55,16 +56,32 @@ export function HoverTooltip({
     const el = triggerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const tooltipHeight = 120; // estimated max
-    const spaceAbove = rect.top;
-    const flipBelow = spaceAbove < tooltipHeight;
+    const tooltip = tooltipRef.current?.getBoundingClientRect();
+    const tooltipHeight = tooltip?.height ?? 0;
+    const tooltipWidth = tooltip?.width ?? 0;
+    const flipBelow = rect.top < tooltipHeight + 14;
+    const x = Math.max(
+      8,
+      Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 8),
+    );
 
     setPosition({
-      x: rect.left + rect.width / 2,
+      x,
       y: flipBelow ? rect.bottom + 6 : rect.top - 6,
       flipBelow,
     });
   }, []);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    computePosition();
+    window.addEventListener("resize", computePosition);
+    window.addEventListener("scroll", computePosition, true);
+    return () => {
+      window.removeEventListener("resize", computePosition);
+      window.removeEventListener("scroll", computePosition, true);
+    };
+  }, [visible, content, computePosition]);
 
   const show = useCallback(() => {
     clearTimers();
@@ -121,7 +138,8 @@ export function HoverTooltip({
   const tooltipStyle: React.CSSProperties = {
     position: "fixed",
     left: position.x,
-    transform: "translateX(-50%)",
+    maxWidth: "calc(100vw - 16px)",
+    overflowWrap: "anywhere",
     zIndex: Z.POPOVER,
     ...(position.flipBelow ? { top: position.y } : { bottom: window.innerHeight - position.y }),
   };

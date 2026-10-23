@@ -190,6 +190,20 @@ describe("useMessageContextMenu — report and delete", () => {
     expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
   });
 
+  it("names the workspace in the report dialog and confirmation", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    const { qc } = await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    qc.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme", owner: null }]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
+    const dialog = screen.getByRole("dialog", { name: "Report message" });
+    expect(within(dialog).getByText(/Moderators of Acme/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "spam" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Report" }));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Reported to the moderators of Acme"),
+    );
+  });
+
   it("offers Report but no Delete on someone else's message to a member", async () => {
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, false);

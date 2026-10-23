@@ -47,10 +47,12 @@ function serve(extra: Record<string, (vars: Record<string, unknown>) => unknown>
   routeRequests(requestMock, { ...moderationHandlers(world), ...extra });
 }
 
-function renderPage() {
+function renderPage(onNavigateToWorkspaceModeration?: () => void) {
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <InstanceModerationSettings />
+      <InstanceModerationSettings
+        onNavigateToWorkspaceModeration={onNavigateToWorkspaceModeration}
+      />
     </QueryClientProvider>,
   );
 }
@@ -85,6 +87,15 @@ describe("InstanceModerationSettings", () => {
         ipBlock("203.0.113.7/32", { expiresAt: "2026-10-01T10:00:00Z", expired: true }),
       ],
     };
+  });
+
+  it("explains workspace reports and links to workspace moderation when allowed", async () => {
+    serve();
+    const navigate = vi.fn();
+    renderPage(navigate);
+    expect(await screen.findByText(/Reports of messages in a workspace/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace moderation" }));
+    expect(navigate).toHaveBeenCalledOnce();
   });
 
   it("tells a non-operator the page is for operators and asks for no queue", async () => {

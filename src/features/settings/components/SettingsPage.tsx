@@ -229,11 +229,18 @@ type SettingsTab =
   | "security"
   | "contacts"
   | "account"
+  | "workspace-moderation"
   | "moderation"
   | "about";
 
 /** Tabs that edit what only a workspace has: hidden in a direct space. */
-const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = ["pipelines", "state", "emoji"];
+const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
+  "pipelines",
+  "state",
+  "emoji",
+  "workspace",
+  "workspace-moderation",
+];
 
 /** Sections of the settings navigation, in display order. */
 const groups = [
@@ -268,7 +275,8 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "emoji", label: "Emoji", group: "Extensions" },
   { key: "agent", label: "AI Agent", group: "Extensions" },
   { key: "workspace", label: "Workspace", group: "Workspace" },
-  { key: "moderation", label: "Moderation", group: "Instance" },
+  { key: "workspace-moderation", label: "Moderation", group: "Workspace" },
+  { key: "moderation", label: "Instance moderation", group: "Instance" },
   { key: "about", label: "About", group: "About" },
 ];
 
@@ -302,7 +310,7 @@ export function SettingsPage() {
   const { isOperator } = useIsInstanceOperator();
   const visibleTabs = tabs.filter(
     (tab) =>
-      (tab.key !== "workspace" || canModerate) &&
+      (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
       (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
@@ -404,7 +412,6 @@ export function SettingsPage() {
               {shownTab === "history" && <HistoryArchiveSettings />}
               {shownTab === "workspace" && (
                 <div className="space-y-10">
-                  <ModerationSettings serverId={workspaceId} />
                   <WorkspaceInvites serverId={workspaceId} />
                   <WorkspaceDmPolicySettings serverId={workspaceId} />
                   <WorkspacePluginSettings serverId={workspaceId} />
@@ -413,7 +420,19 @@ export function SettingsPage() {
               )}
               {shownTab === "security" && <KeyIdentitySettings />}
               {shownTab === "contacts" && <ContactsSettings />}
-              {shownTab === "moderation" && <InstanceModerationSettings />}
+              {shownTab === "workspace-moderation" && workspaceId && (
+                <ModerationSettings serverId={workspaceId} />
+              )}
+              {shownTab === "moderation" && (
+                <InstanceModerationSettings
+                  onNavigateToWorkspaceModeration={
+                    canModerate && !inDirectSpace
+                      ? () => setActiveTab("workspace-moderation")
+                      : undefined
+                  }
+                />
+              )}
+
               {shownTab === "account" && (
                 <AccountSettings
                   onNavigateToProfile={() => setActiveTab("profile")}

@@ -43,6 +43,7 @@ vi.mock("../../features/workspaces/components/AddWorkspaceDialog", () => ({
   AddWorkspaceDialog: () => null,
 }));
 
+import { useShellStore } from "../state/useShellStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -180,6 +181,7 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Pause notifications",
       "Browse channels…",
       "Workspace settings",
+      "Reports…",
       "Invite people…",
       "Create channel…",
       "Assign keybind…",
@@ -192,6 +194,17 @@ describe("WorkspaceRail — workspace context menu", () => {
     );
     expect(useUnreadStore.getState().counts.c2 ?? 0).toBe(0);
     expect(setWorkspaceId).not.toHaveBeenCalled();
+  });
+
+  it("opens the selected workspace's reports from its menu", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openBetaMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reports…" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "settings",
+      tab: "workspace-moderation",
+    });
   });
 
   it("pauses that workspace's notifications for an hour", async () => {

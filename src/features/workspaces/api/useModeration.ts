@@ -444,8 +444,7 @@ export function useDeleteReportedMessageMutation() {
 
 /**
  * Message reports of the workspace, filtered by status (`null` = all). The server orders
- * reports oldest first and has no "newest page" entry point (an uncursored `BEFORE` also
- * starts at the oldest), so the list reads as a queue: oldest first, Load more for newer.
+ * reports newest first; Load more fetches the older reports after the last cursor.
  * `withAuthorPrincipal` also asks for each author's principal id (the direct space's reports,
  * read by an instance operator).
  */

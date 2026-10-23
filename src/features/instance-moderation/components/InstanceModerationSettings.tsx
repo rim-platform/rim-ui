@@ -22,7 +22,11 @@ import { ERROR_BOX } from "./styles";
  * deny list, for instance operators. Anyone else, and an operator the server refuses with
  * `FORBIDDEN`, sees that the page is for operators only.
  */
-export function InstanceModerationSettings() {
+export function InstanceModerationSettings({
+  onNavigateToWorkspaceModeration,
+}: {
+  onNavigateToWorkspaceModeration?: () => void;
+}) {
   const { isOperator, isPending, error } = useIsInstanceOperator();
   if (isPending) {
     return (
@@ -39,7 +43,7 @@ export function InstanceModerationSettings() {
     );
   }
   if (!isOperator) return <OperatorsOnly />;
-  return <ModerationQueue />;
+  return <ModerationQueue onNavigateToWorkspaceModeration={onNavigateToWorkspaceModeration} />;
 }
 
 function OperatorsOnly() {
@@ -54,7 +58,11 @@ function OperatorsOnly() {
   );
 }
 
-function ModerationQueue() {
+function ModerationQueue({
+  onNavigateToWorkspaceModeration,
+}: {
+  onNavigateToWorkspaceModeration?: () => void;
+}) {
   const [openOnly, setOpenOnly] = useState(true);
   const [draft, setDraft] = useState<BlockDraft>({ principalId: "", seq: 0 });
   const reports = useInstanceReports(openOnly);
@@ -80,6 +88,18 @@ function ModerationQueue() {
           server&apos;s audit log.
         </p>
       </div>
+      <p className="text-sm text-rim-text-muted">
+        Reports of messages in a workspace&apos;s channels go to that workspace&apos;s moderators.
+        {onNavigateToWorkspaceModeration && (
+          <button
+            type="button"
+            className="ml-2 text-rim-accent underline"
+            onClick={onNavigateToWorkspaceModeration}
+          >
+            Open workspace moderation
+          </button>
+        )}
+      </p>
       <ReportsSection
         reports={reports}
         openOnly={openOnly}
