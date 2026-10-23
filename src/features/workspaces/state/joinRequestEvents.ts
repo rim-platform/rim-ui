@@ -9,6 +9,11 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { showBrowserTextNotification } from "../../notifications/runtime/browserNotification";
 import { showDesktopNotification } from "../../notifications/runtime/desktopNotification";
 import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
+import {
+  pendingRemoteJoinAt,
+  removePendingRemoteJoin,
+} from "../../relay/remote/pendingRemoteJoins";
+import { joinAsMember, refreshWorkspaceDetails } from "../../relay/remote/remoteWorkspaces";
 import type { Server } from "../api/useMyServers";
 import {
   invalidateJoinRequests,
@@ -83,6 +88,44 @@ export async function handleJoinRequestDecided(
     await notifyJoinRequestDecided(name ?? cachedWorkspaceName(qc, event.workspace_id), true);
   } else if (event.outcome === "declined") {
     await notifyJoinRequestDecided(name, false);
+  }
+}
+
+/**
+ * The decision on a join request this account filed at another server, `host`, through a public
+ * link. It is matched by the request kept here for the event's workspace, never by `user_id`,
+ * which is the person's id at that server. An acceptance finishes the join as the member the
+ * host made them, refreshes the relay's subscriptions, then notifies; a decline notifies; a cancellation forgets the request quietly.
+ * A join that fails after an acceptance says so, as the request is gone either way.
+ *
+ * @param qc - The query client.
+ * @param host - The server id of the host that sent the decision.
+ * @param event - The decision.
+ */
+export async function handleRemoteJoinDecided(
+  qc: QueryClient,
+  host: string,
+  event: JoinRequestDecidedEvent,
+): Promise<void> {
+  const entry = pendingRemoteJoinAt(host, event.workspace_id);
+  if (!entry) return;
+  removePendingRemoteJoin(host, event.workspace_id);
+  if (event.outcome === "accepted") {
+    try {
+      await joinAsMember(entry);
+    } catch (err) {
+      logger.warn("[RIM:JoinRequests] joining after an accepted request failed", err);
+      toast.error(
+        `Your request to join ${entry.workspaceName ?? "a workspace"} was accepted, but joining it failed.`,
+        { description: "Paste its link under Add workspace to join." },
+      );
+      return;
+    }
+    await refreshWorkspaceDetails(entry.workspaceId);
+    void qc.invalidateQueries({ queryKey: ["remoteSubscriptions"] });
+    await notifyJoinRequestDecided(entry.workspaceName, true);
+  } else if (event.outcome === "declined") {
+    await notifyJoinRequestDecided(entry.workspaceName, false);
   }
 }
 

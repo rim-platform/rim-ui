@@ -190,6 +190,19 @@ describe("PublicLinkJoin", () => {
     expect(callsTo(requestMock, "PreviewInviteToken")).toHaveLength(0);
   });
 
+  it("tells a visitor with an account on another server to paste the link into their app", async () => {
+    serve(() => preview({ viewer: PublicJoinLinkViewer.SIGNED_OUT }));
+    const user = userEvent.setup();
+    renderPage({ userId: null });
+
+    const other = await screen.findByText("I have an account on another server");
+    expect(screen.getByText(/paste this link there/)).not.toBeVisible();
+    await user.click(other);
+    expect(screen.getByText(/paste this link there/)).toBeVisible();
+    expect(screen.getByText(/choose Add workspace, then Join Existing/)).toBeVisible();
+    expect(callsTo(requestMock, "mutation")).toHaveLength(0);
+  });
+
   it("opens the workspace for a member", async () => {
     serve(() => preview({ viewer: PublicJoinLinkViewer.MEMBER }));
     const user = userEvent.setup();

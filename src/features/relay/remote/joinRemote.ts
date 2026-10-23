@@ -4,15 +4,23 @@
  * 1. pin the host from the invite: the origin must serve the invite's server id, and the key
  *    hash must name a key of its log followed only by `signer: server` rotations;
  * 2. ask the host for a login challenge through the relay (it also names the workspace the
- *    invite token is for);
+ *    invite token or public link is for);
  * 3. sign a login proof whose audience is the host's server id, and a delegation for the relay;
  * 4. `joinRemoteWorkspace`; then bind the space to the host, keep the delegation, and take the
  *    host's stream heads as the baseline of its events (through the forward path).
+ *
+ * Through a public link that takes join requests, the host files a request instead of joining
+ * the person: nothing is bound, kept or subscribed until the moderators accept it.
  */
 
+import {
+  JoinByPublicLinkOutcome,
+  type PublicJoinLinkMode,
+} from "../../../core/graphql/generated/schema-types";
 import type { Statement } from "../../key-identity/browser/statements";
 import { keyHash } from "../crypto/serverStatements";
 import type { DelegationFields } from "../crypto/relayCrypto";
+import type { JoinChallengeTokens } from "../api/relayApi";
 import type { DelegationRecord, ServerPin } from "../state/relayDb";
 import { delegationFields } from "./delegations";
 import type { InviteLink } from "./inviteLink";
@@ -47,17 +55,33 @@ export interface JoinDeps {
   challenge(
     host: string,
     origin: string,
-    inviteToken: string | null,
-  ): Promise<{ challengeId: string; nonce: string; workspaceId?: string | null }>;
+    tokens: JoinChallengeTokens,
+  ): Promise<{
+    challengeId: string;
+    nonce: string;
+    workspaceId?: string | null;
+    workspaceName?: string | null;
+    publicLinkMode?: PublicJoinLinkMode | null;
+  }>;
   signLogin(host: string, challenge: { challengeId: string; nonce: string }): Promise<Statement>;
   signDelegation(fields: DelegationFields): Promise<Statement>;
   join(input: {
     hostServerId: string;
     hostOrigin: string;
     inviteToken: string | null;
+    publicLinkToken: string | null;
+    message: string | null;
     proof: Statement;
     delegation: Statement;
-  }): Promise<{ hostServerId: string; workspaceId: string; userId: string; role: string }>;
+  }): Promise<{
+    hostServerId: string;
+    workspaceId: string;
+    userId: string;
+    role: string;
+    outcome: JoinByPublicLinkOutcome;
+    joinRequestId?: string | null;
+    joinRequestExpiresAt?: string | null;
+  }>;
   /** Bind the workspace to its host; `false` when the id is taken. */
   registerSpace(workspaceId: string, host: string): Promise<boolean>;
   saveDelegation(record: DelegationRecord): Promise<void>;
@@ -68,28 +92,62 @@ export interface JoinDeps {
   now(): number;
 }
 
+/** A workspace on `host` this account is a member of: to join again without a token. */
+export interface MemberJoin {
+  hostServerId: string;
+  hostOrigin: string;
+  workspaceId: string;
+}
+
+/** A workspace's public link at `hostOrigin`, with the note to its moderators. */
+export interface PublicLinkJoin {
+  hostServerId: string;
+  hostOrigin: string;
+  publicLinkToken: string;
+  message?: string | null;
+}
+
+/** A workspace on another server this account joined. */
 export interface JoinedWorkspace {
+  outcome: JoinByPublicLinkOutcome.JOINED;
   hostServerId: string;
   workspaceId: string;
   role: string;
 }
 
+/** A join request filed at another server through a workspace's public link. */
+export interface RequestedJoin {
+  outcome: JoinByPublicLinkOutcome.REQUESTED;
+  hostServerId: string;
+  workspaceId: string;
+  /** The workspace's name, as the link named it; null when the host did not say. */
+  workspaceName: string | null;
+  joinRequestId: string;
+  /** When the request expires unless it is decided first, in milliseconds. */
+  expiresAt: number;
+}
+
 /**
- * Join the workspace an invite is for, or rejoin `workspaceId` on `host` as a current member
- * (`inviteToken` null).
+ * Join the workspace an invite or a public link is for, or rejoin `workspaceId` on `host` as a
+ * current member (no token). Through a public link that takes join requests, the host files a
+ * request and nothing is bound, kept or subscribed here.
+ *
+ * @returns The joined workspace, or the request filed.
  */
 export async function joinRemote(
-  invite: InviteLink | { hostServerId: string; hostOrigin: string; workspaceId: string },
+  invite: InviteLink | MemberJoin | PublicLinkJoin,
   deps: JoinDeps,
-): Promise<JoinedWorkspace> {
+): Promise<JoinedWorkspace | RequestedJoin> {
   const host = invite.hostServerId;
   const origin = invite.hostOrigin;
   const inviteToken = "inviteToken" in invite ? invite.inviteToken : null;
+  const publicLinkToken = "publicLinkToken" in invite ? invite.publicLinkToken : null;
+  const message = "publicLinkToken" in invite ? (invite.message ?? null) : null;
   const pin = await deps.pinHost(origin, host);
   if ("hostKeyHash" in invite && !(await pinNamesKey(pin, invite.hostKeyHash))) {
     throw new InviteKeyError();
   }
-  const challenge = await deps.challenge(host, origin, inviteToken);
+  const challenge = await deps.challenge(host, origin, { inviteToken, publicLinkToken });
   const workspaceId = "workspaceId" in invite ? invite.workspaceId : challenge.workspaceId;
   if (!workspaceId) throw new Error("The server did not say which workspace the invite is for.");
   const proof = await deps.signLogin(host, challenge);
@@ -100,11 +158,27 @@ export async function joinRemote(
     hostServerId: host,
     hostOrigin: origin,
     inviteToken,
+    publicLinkToken,
+    message,
     proof,
     delegation,
   });
   if (joined.hostServerId !== host || joined.workspaceId !== workspaceId) {
     throw new Error("The relay answered for another workspace than the one joined.");
+  }
+  if (joined.outcome === JoinByPublicLinkOutcome.REQUESTED) {
+    const expiresAt = Date.parse(joined.joinRequestExpiresAt ?? "");
+    if (!joined.joinRequestId || Number.isNaN(expiresAt)) {
+      throw new Error("The server filed a join request but did not say which.");
+    }
+    return {
+      outcome: JoinByPublicLinkOutcome.REQUESTED,
+      hostServerId: host,
+      workspaceId,
+      workspaceName: challenge.workspaceName ?? null,
+      joinRequestId: joined.joinRequestId,
+      expiresAt,
+    };
   }
   if (!(await deps.registerSpace(workspaceId, host))) {
     throw new Error("This workspace's id is already used by another server; RIM cannot open it.");
@@ -124,5 +198,10 @@ export async function joinRemote(
   } catch {
     // Without the heads, the first event seen on each stream is its baseline.
   }
-  return { hostServerId: host, workspaceId, role: joined.role };
+  return {
+    outcome: JoinByPublicLinkOutcome.JOINED,
+    hostServerId: host,
+    workspaceId,
+    role: joined.role,
+  };
 }

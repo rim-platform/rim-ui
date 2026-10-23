@@ -216,16 +216,24 @@ export const DEVICE_REVOCATION_STATUS_QUERY = gql`
 `;
 
 export const REMOTE_JOIN_CHALLENGE_MUTATION = gql`
-  mutation RemoteJoinChallenge($hostServerId: String!, $hostOrigin: String!, $inviteToken: String) {
+  mutation RemoteJoinChallenge(
+    $hostServerId: String!
+    $hostOrigin: String!
+    $inviteToken: String
+    $publicLinkToken: String
+  ) {
     remoteJoinChallenge(
       hostServerId: $hostServerId
       hostOrigin: $hostOrigin
       inviteToken: $inviteToken
+      publicLinkToken: $publicLinkToken
     ) {
       challengeId
       nonce
       expiresAt
       workspaceId
+      workspaceName
+      publicLinkMode
     }
   }
 `;
@@ -237,6 +245,9 @@ export const JOIN_REMOTE_WORKSPACE_MUTATION = gql`
       workspaceId
       userId
       role
+      outcome
+      joinRequestId
+      joinRequestExpiresAt
     }
   }
 `;

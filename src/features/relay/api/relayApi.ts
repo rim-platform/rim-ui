@@ -236,18 +236,30 @@ export async function fetchDeviceRevocationStatus(
   return res.deviceRevocationStatus;
 }
 
+/** The tokens a join challenge names its workspace by: at most one of the two. */
+export interface JoinChallengeTokens {
+  inviteToken: string | null;
+  publicLinkToken: string | null;
+}
+
 /**
  * A login challenge of `hostServerId`, fetched by the relay, for joining one of its spaces,
- * and the workspace `inviteToken` names there.
+ * and the workspace an invite or a public link names there; for a public link also the
+ * workspace's name and what the link does.
  */
 export async function remoteJoinChallenge(
   hostServerId: string,
   hostOrigin: string,
-  inviteToken: string | null,
-): Promise<Pick<RemoteJoinChallenge, "challengeId" | "nonce" | "expiresAt" | "workspaceId">> {
+  tokens: JoinChallengeTokens,
+): Promise<
+  Pick<
+    RemoteJoinChallenge,
+    "challengeId" | "nonce" | "expiresAt" | "workspaceId" | "workspaceName" | "publicLinkMode"
+  >
+> {
   const res = await graphqlClient.request<{ remoteJoinChallenge: RemoteJoinChallenge }>(
     REMOTE_JOIN_CHALLENGE_MUTATION,
-    { hostServerId, hostOrigin, inviteToken },
+    { hostServerId, hostOrigin, ...tokens },
   );
   return res.remoteJoinChallenge;
 }

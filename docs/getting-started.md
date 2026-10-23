@@ -125,6 +125,16 @@ Its badge counts unread messages before you open it. The rail shows once a works
   the page says how many minutes to wait. Pasted into **Add workspace**, the link opens the same
   page, and **Add workspace** lists your open requests under **Waiting for approval**, each with
   **Withdraw**.
+- **Join with a public link of another server.** Your account joins workspaces on other servers
+  too: paste their link into **Add workspace**, **Join Existing**, of your own app (the link's
+  page says so under "I have an account on another server"). **Continue** looks the link up
+  through your server and shows the workspace's name; **Join \<workspace\>** joins and opens it,
+  and **Ask to join** sends the request with an optional **Message**, after which the dialog says
+  "Waiting for the moderators of \<workspace\>. You'll be told when they decide." The request is
+  listed under **Waiting for approval** with its server, without **Withdraw**: it cannot be
+  withdrawn from your server and ends after 30 days. Once accepted, the app finishes the join
+  and tells you, as for a request on your own server. A workspace whose Owner switched off
+  accounts from other servers says so.
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
@@ -148,8 +158,10 @@ stops the link admitting anyone; people who already joined with it stay. **Creat
 opens the same dialog.
 
 Settings → Workspace → **Public link**, for the Owner only and not in the server's default
-workspace, sets up the workspace's permanent link. It lets people who already have an account on
-this server join or ask to join, and never creates an account. The first time the switch turns it
+workspace, sets up the workspace's permanent link. It lets people who already have an account
+join or ask to join, and never creates an account. **Accounts from other servers can join**, on
+by default, lets people whose account is on another server use the link from their own app;
+off, the link is for accounts of this server only. The first time the switch turns it
 on, the app asks again: "Anyone with this link can join. Post it only where you want it public."
 The switch only pauses the link: "Turning the link off pauses it. Turning it on again brings back
 the same link." Off, the link says "This link isn't valid."; on again, it works wherever it was

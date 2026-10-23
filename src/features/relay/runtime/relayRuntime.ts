@@ -26,6 +26,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { keyBackend } from "../../key-identity/api/keyBackend";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
+import { handleRemoteJoinDecided } from "../../workspaces/state/joinRequestEvents";
 import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
 import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -34,6 +35,7 @@ import { useContactStore } from "../contacts/useContactStore";
 import { activeDirect } from "../direct/directConnection";
 import { startDirect } from "../direct/directRuntime";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
+import { pendingRemoteJoinAt } from "../remote/pendingRemoteJoins";
 import { refreshWorkspaceDetails, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { resetRelaySelf } from "../remote/relaySelf";
 import { finishOnNewRelay } from "../remote/relaySwitchLive";
@@ -90,10 +92,28 @@ async function refetchSpace(qc: QueryClient, spaceId: string, conversationIds: s
   requestCacheSync(spaceId, conversationIds.length > 0 ? conversationIds : undefined);
 }
 
-function applyRelayEvent(qc: QueryClient, event: WorkspaceEvent, spaceId: string): void {
+/**
+ * Apply a host event of `spaceId` at `host`. The decision on a join request this account filed
+ * at `host` through a public link goes to the request it decides; every other event applies to
+ * its space.
+ */
+export function applyRelayEvent(
+  qc: QueryClient,
+  event: WorkspaceEvent,
+  spaceId: string,
+  host?: string,
+): void {
   if (event.type === "DmInvite") {
     rememberRelays(event.from_principal_id, cardRelays(event.from_card));
     void qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
+    return;
+  }
+  if (
+    event.type === "JoinRequestDecided" &&
+    host &&
+    pendingRemoteJoinAt(host, event.workspace_id)
+  ) {
+    void handleRemoteJoinDecided(qc, host, event);
     return;
   }
   applyWorkspaceEvent(event, qc, spaceId);
@@ -135,6 +155,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
     crypto: relayCrypto(),
     principalId: me.principalId,
     hostOf,
+    pendingJoinAt: (host, spaceId) => pendingRemoteJoinAt(host, spaceId) !== null,
     registerSpace: (spaceId, host) => registerSpace(spaceId, host, "direct"),
     ensurePinned: async (host, origins) => {
       await ensurePinned(host, origins);
@@ -148,7 +169,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
     },
     streamHeads: fetchStreamHeads,
     refetchSpace: (spaceId, conversations) => refetchSpace(qc, spaceId, conversations),
-    apply: (event, spaceId) => applyRelayEvent(qc, event, spaceId),
+    apply: (event, spaceId, host) => applyRelayEvent(qc, event, spaceId, host),
     ack: async (upTo) => {
       await ackRelayItems(upTo);
       await putRecord<CursorRecord>("meta", { account: key, name: CURSOR, after: upTo });

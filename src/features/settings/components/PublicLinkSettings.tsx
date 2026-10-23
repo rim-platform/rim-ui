@@ -40,6 +40,10 @@ export const PUBLIC_LINK_WARNING =
 export const PUBLIC_LINK_PAUSE_NOTE =
   "Turning the link off pauses it. Turning it on again brings back the same link.";
 
+/** What the switch for accounts of other servers lets in. */
+export const ALLOW_REMOTE_NOTE =
+  "People with an account on another server can use the link from their own app. Turn this off to keep the link to accounts of this server.";
+
 /** What issuing a new link does to the current one. */
 export const REISSUE_WARNING = "The current link stops working everywhere you posted it.";
 
@@ -70,10 +74,12 @@ const ROLES: DmChoice<ServerMemberRoleGql>[] = [
 ];
 
 /**
- * Settings → Workspace → Public link, owner only: one permanent link that lets accounts of this
- * server join the workspace or ask to join. It holds the on/off switch, whose first switch-on
+ * Settings → Workspace → Public link, owner only: one permanent link that lets existing
+ * accounts, of this server and of others unless the owner says no, join the workspace or ask to
+ * join. It holds the on/off switch, whose first switch-on
  * asks for a confirmation and whose off only pauses the same link, the mode (join directly or
- * ask to join), the role a joiner gets, the link with Copy while it is on, "Issue a new link"
+ * ask to join), the role a joiner gets, whether accounts from other servers can join through
+ * it, the link with Copy while it is on, "Issue a new link"
  * behind a confirmation, and the joins of the last 24 hours and 7 days with the requests
  * waiting. Hidden for everyone else, in the direct space, in the server's default workspace and
  * on a server without public links.
@@ -127,8 +133,8 @@ function PublicLinkSection({
         </h2>
         <p className="mt-1 text-sm text-rim-text-muted">
           One permanent link to this workspace, for a website, a README or a profile. It lets people
-          who already have an account on this server join, or ask to join; it never creates an
-          account. Only the owner sees these settings.
+          who already have an account join, or ask to join; it never creates an account. Only the
+          owner sees these settings.
         </p>
       </div>
       <div className="space-y-5 rounded-lg border border-rim-line bg-rim-panel p-4">
@@ -177,6 +183,20 @@ function PublicLinkSection({
               disabled={update.isPending}
               onChange={(role) => change({ role })}
             />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-rim-text">
+                  Accounts from other servers can join
+                </p>
+                <p className="mt-1 text-xs text-rim-text-muted">{ALLOW_REMOTE_NOTE}</p>
+              </div>
+              <ToggleSwitch
+                checked={link.allowRemote}
+                onChange={(allowRemote) => change({ allowRemote })}
+                label="Accounts from other servers can join"
+                disabled={update.isPending}
+              />
+            </div>
             {link.token && <LinkStats link={link} onOpenRequests={onOpenRequests} />}
             {link.token && (
               <div className="border-t border-rim-line pt-4">

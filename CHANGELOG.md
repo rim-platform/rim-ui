@@ -32,6 +32,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   Moderation → **Join requests**, with a count of open requests there and in the workspace's menu,
   and the person is told when their request is accepted or declined. **Add workspace** opens a
   pasted public link and lists the person's open requests with **Withdraw**.
+- A workspace's public link also works for accounts of other servers: pasted into **Add
+  workspace** of your own app, it shows the workspace's name and lets you join or ask to join
+  through your server, lists the request under **Waiting for approval** with its server, and
+  finishes the join when the moderators accept. The Owner can switch off **Accounts from other
+  servers can join** in the link's settings, and the link's page points such accounts to their
+  own app.
 - A person has one context menu wherever they appear: right-click or long-press a message's
   author or an @mention, or a row of a conversation's members or of **Workspace members**, or
   press the ContextMenu key on a focused mention or member row. It offers View profile, Send

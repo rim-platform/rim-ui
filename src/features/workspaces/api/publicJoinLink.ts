@@ -26,6 +26,7 @@ const PUBLIC_JOIN_LINK_FIELDS = gql`
     enabled
     mode
     role
+    allowRemote
     enabledAt
     issuedAt
     token
@@ -190,6 +191,8 @@ export interface PublicJoinLinkSettings {
   mode: PublicJoinLinkMode;
   /** `MEMBER` or `GUEST`: the role a person joining through the link gets. */
   role: ServerMemberRoleGql;
+  /** Whether accounts from other servers may join through the link. */
+  allowRemote: boolean;
   enabledAt: string | null;
   issuedAt: string | null;
   /** Null while the workspace never had a link. */

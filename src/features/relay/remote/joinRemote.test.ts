@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  JoinByPublicLinkOutcome,
+  PublicJoinLinkMode,
+} from "../../../core/graphql/generated/schema-types";
+
 import vectors from "../../../../protocol/relay-vectors.json";
 import { keyFromSeed } from "../../../test/ed25519";
 import { verify } from "../../key-identity/browser/statements";
@@ -61,6 +66,7 @@ async function deps(overrides: Partial<JoinDeps> = {}): Promise<JoinDeps> {
       workspaceId: WORKSPACE,
       userId: "u-remote",
       role: "member",
+      outcome: JoinByPublicLinkOutcome.JOINED,
     })),
     registerSpace: vi.fn(async () => true),
     saveDelegation: vi.fn(async () => undefined),
@@ -92,13 +98,17 @@ describe("joining a workspace on another server", () => {
   it("pins the host, signs a proof and a delegation, joins and takes the stream heads", async () => {
     const d = await deps();
     const joined = await joinRemote(invite, d);
-    expect(joined).toEqual({ hostServerId: host.serverId, workspaceId: WORKSPACE, role: "member" });
+    expect(joined).toEqual({
+      outcome: JoinByPublicLinkOutcome.JOINED,
+      hostServerId: host.serverId,
+      workspaceId: WORKSPACE,
+      role: "member",
+    });
     expect(d.pinHost).toHaveBeenCalledWith("https://host.example", host.serverId);
-    expect(d.challenge).toHaveBeenCalledWith(
-      host.serverId,
-      "https://host.example",
-      "rim_inv_token",
-    );
+    expect(d.challenge).toHaveBeenCalledWith(host.serverId, "https://host.example", {
+      inviteToken: "rim_inv_token",
+      publicLinkToken: null,
+    });
     expect(d.signLogin).toHaveBeenCalledWith(
       host.serverId,
       expect.objectContaining({ nonce: "n1" }),
@@ -109,6 +119,8 @@ describe("joining a workspace on another server", () => {
       hostServerId: host.serverId,
       hostOrigin: "https://host.example",
       inviteToken: "rim_inv_token",
+      publicLinkToken: null,
+      message: null,
       proof: { payload: "login", signature: "sig" },
     });
     const delegation = JSON.parse(input.delegation.payload) as Record<string, string>;
@@ -191,7 +203,97 @@ describe("joining a workspace on another server", () => {
       { hostServerId: host.serverId, hostOrigin: "https://host.example", workspaceId: WORKSPACE },
       d,
     );
-    expect(d.challenge).toHaveBeenCalledWith(host.serverId, "https://host.example", null);
-    expect(vi.mocked(d.join).mock.calls[0][0].inviteToken).toBeNull();
+    expect(d.challenge).toHaveBeenCalledWith(host.serverId, "https://host.example", {
+      inviteToken: null,
+      publicLinkToken: null,
+    });
+    expect(vi.mocked(d.join).mock.calls[0][0]).toMatchObject({
+      inviteToken: null,
+      publicLinkToken: null,
+      message: null,
+    });
+  });
+});
+
+describe("joining through a public link of another server", () => {
+  const link = {
+    hostServerId: host.serverId,
+    hostOrigin: "https://host.example",
+    publicLinkToken: "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA",
+    message: "Hi, I run the meetup.",
+  };
+  const challenge = vi.fn(async () => ({
+    challengeId: "c3",
+    nonce: "n3",
+    workspaceId: WORKSPACE,
+    workspaceName: "Acme",
+    publicLinkMode: PublicJoinLinkMode.REQUESTS,
+  }));
+
+  it("joins at once through a direct link, as through an invite", async () => {
+    const d = await deps({ challenge });
+    const joined = await joinRemote({ ...link, message: undefined }, d);
+    expect(joined).toMatchObject({
+      outcome: JoinByPublicLinkOutcome.JOINED,
+      workspaceId: WORKSPACE,
+    });
+    expect(d.challenge).toHaveBeenCalledWith(host.serverId, "https://host.example", {
+      inviteToken: null,
+      publicLinkToken: link.publicLinkToken,
+    });
+    expect(vi.mocked(d.join).mock.calls[0][0]).toMatchObject({
+      inviteToken: null,
+      publicLinkToken: link.publicLinkToken,
+      message: null,
+    });
+    expect(d.registerSpace).toHaveBeenCalledWith(WORKSPACE, host.serverId);
+    expect(d.saveDelegation).toHaveBeenCalled();
+    expect(d.setBaseline).toHaveBeenCalled();
+  });
+
+  it("returns the request filed and binds, keeps and subscribes nothing", async () => {
+    const expiresAt = "2026-11-08T00:00:00Z";
+    const d = await deps({
+      challenge,
+      join: vi.fn(async () => ({
+        hostServerId: host.serverId,
+        workspaceId: WORKSPACE,
+        userId: "u-remote",
+        role: "member",
+        outcome: JoinByPublicLinkOutcome.REQUESTED,
+        joinRequestId: "jr-9",
+        joinRequestExpiresAt: expiresAt,
+      })),
+    });
+    const requested = await joinRemote(link, d);
+    expect(requested).toEqual({
+      outcome: JoinByPublicLinkOutcome.REQUESTED,
+      hostServerId: host.serverId,
+      workspaceId: WORKSPACE,
+      workspaceName: "Acme",
+      joinRequestId: "jr-9",
+      expiresAt: Date.parse(expiresAt),
+    });
+    expect(vi.mocked(d.join).mock.calls[0][0].message).toBe("Hi, I run the meetup.");
+    expect(d.registerSpace).not.toHaveBeenCalled();
+    expect(d.saveDelegation).not.toHaveBeenCalled();
+    expect(d.streamHeads).not.toHaveBeenCalled();
+    expect(d.setBaseline).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request answer that names no request", async () => {
+    const d = await deps({
+      challenge,
+      join: vi.fn(async () => ({
+        hostServerId: host.serverId,
+        workspaceId: WORKSPACE,
+        userId: "u-remote",
+        role: "member",
+        outcome: JoinByPublicLinkOutcome.REQUESTED,
+        joinRequestId: null,
+        joinRequestExpiresAt: null,
+      })),
+    });
+    await expect(joinRemote(link, d)).rejects.toThrow(/did not say which/);
   });
 });

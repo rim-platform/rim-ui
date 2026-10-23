@@ -6,8 +6,17 @@ import { MemoryRouter } from "react-router-dom";
 
 import vectors from "../../../../protocol/relay-vectors.json";
 
-const remote = vi.hoisted(() => ({ joinWithInvite: vi.fn() }));
+const remote = vi.hoisted(() => ({
+  joinWithInvite: vi.fn(),
+  previewPublicLink: vi.fn(),
+  joinWithPublicLink: vi.fn(),
+}));
 vi.mock("../../relay/remote/remoteWorkspaces", () => remote);
+// The account's requests filed at other servers.
+const pendingRemote = vi.hoisted(() => ({ entries: [] as unknown[] }));
+vi.mock("../../relay/remote/pendingRemoteJoins", () => ({
+  usePendingRemoteJoins: () => pendingRemote.entries,
+}));
 const local = vi.hoisted(() => ({ mutate: vi.fn() }));
 vi.mock("../api/useJoinServer", () => ({
   useJoinServerMutation: () => ({ ...local, reset: vi.fn(), isPending: false, error: null }),
@@ -36,11 +45,16 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
+import {
+  JoinByPublicLinkOutcome,
+  PublicJoinLinkMode,
+} from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { withLimits } from "../../../test/limits";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
 
+const REMOTE_LINK = "https://host.example/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
 const LINK = `rim-invite:1:${vectors.host.serverId}:${vectors.host.keyHash}:rim_inv_x:https://host.example`;
 
 function renderDialog(onClose = vi.fn()) {
@@ -58,7 +72,15 @@ function renderDialog(onClose = vi.fn()) {
 beforeEach(() => {
   vi.clearAllMocks();
   myRequests.data = [];
+  pendingRemote.entries = [];
 });
+
+/** Opens the join form and pastes `text` into it. */
+async function paste(user: ReturnType<typeof userEvent.setup>, text: string) {
+  await user.click(screen.getByText("Join Existing"));
+  await user.click(screen.getByRole("textbox"));
+  await user.paste(text);
+}
 
 describe("AddWorkspaceDialog", () => {
   it("joins a workspace on another server from a rim-invite link", async () => {
@@ -157,13 +179,133 @@ describe("AddWorkspaceDialog", () => {
     const onClose = renderDialog();
     await user.click(screen.getByText("Join Existing"));
     await user.click(screen.getByRole("textbox"));
-    await user.paste("https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
+    await user.paste(`${window.location.origin}/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA`);
     expect(screen.getByText(/This is a workspace's public link/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(onClose).toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith("/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
     expect(local.mutate).not.toHaveBeenCalled();
     expect(remote.joinWithInvite).not.toHaveBeenCalled();
+  });
+
+  describe("a public link of another server", () => {
+    it("looks it up on Continue, then joins directly and opens the workspace", async () => {
+      remote.previewPublicLink.mockResolvedValue({
+        workspaceName: "Acme",
+        mode: PublicJoinLinkMode.DIRECT,
+        hostServerId: "rims1_host",
+        hostOrigin: "https://host.example",
+      });
+      remote.joinWithPublicLink.mockResolvedValue({
+        outcome: JoinByPublicLinkOutcome.JOINED,
+        hostServerId: "rims1_host",
+        workspaceId: "ws-acme",
+        role: "member",
+      });
+      const user = userEvent.setup();
+      const onClose = renderDialog();
+      await paste(user, REMOTE_LINK);
+      expect(screen.getByText(/public link of a workspace on host.example/)).toBeInTheDocument();
+      expect(remote.previewPublicLink).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      expect(remote.previewPublicLink).toHaveBeenCalledWith(REMOTE_LINK, expect.anything());
+      expect(await screen.findByText(/Anyone with the link can join/)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Message/)).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Join Acme" }));
+      await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(remote.joinWithPublicLink).toHaveBeenCalledWith(REMOTE_LINK, undefined);
+      expect(useWorkspaceStore.getState().workspaceId).toBe("ws-acme");
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(local.mutate).not.toHaveBeenCalled();
+    });
+
+    it("asks to join with a message and says the moderators decide", async () => {
+      remote.previewPublicLink.mockResolvedValue({
+        workspaceName: "Acme",
+        mode: PublicJoinLinkMode.REQUESTS,
+        hostServerId: "rims1_host",
+        hostOrigin: "https://host.example",
+      });
+      remote.joinWithPublicLink.mockResolvedValue({
+        outcome: JoinByPublicLinkOutcome.REQUESTED,
+        hostServerId: "rims1_host",
+        workspaceId: "ws-acme",
+        workspaceName: "Acme",
+        joinRequestId: "jr-1",
+        expiresAt: Date.now() + 1000,
+      });
+      const user = userEvent.setup();
+      const onClose = renderDialog();
+      await paste(user, REMOTE_LINK);
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.type(await screen.findByLabelText("Message (optional)"), "  Hi there  ");
+      await user.click(screen.getByRole("button", { name: "Ask to join" }));
+
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Waiting for the moderators of Acme. You'll be told when they decide.",
+      );
+      expect(remote.joinWithPublicLink).toHaveBeenCalledWith(REMOTE_LINK, "Hi there");
+      expect(onClose).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it("holds a message longer than 500 characters", async () => {
+      remote.previewPublicLink.mockResolvedValue({
+        workspaceName: "Acme",
+        mode: PublicJoinLinkMode.REQUESTS,
+        hostServerId: "rims1_host",
+        hostOrigin: "https://host.example",
+      });
+      const user = userEvent.setup();
+      renderDialog();
+      await paste(user, REMOTE_LINK);
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.click(await screen.findByLabelText("Message (optional)"));
+      await user.paste("x".repeat(501));
+      expect(screen.getByRole("button", { name: "Ask to join" })).toBeDisabled();
+      expect(screen.getByText("501 / 500")).toBeInTheDocument();
+    });
+
+    it.each([
+      ["NOT_FOUND", "not found", "This link isn't valid."],
+      [
+        "FORBIDDEN",
+        "this workspace's public link does not admit accounts from other servers",
+        "This workspace's public link does not admit accounts from other servers.",
+      ],
+    ])("reads a lookup's %s error", async (code, message, shown) => {
+      remote.previewPublicLink.mockRejectedValue(
+        Object.assign(new Error(message), {
+          response: { errors: [{ message, extensions: { code } }] },
+        }),
+      );
+      const user = userEvent.setup();
+      renderDialog();
+      await paste(user, REMOTE_LINK);
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(shown);
+      expect(remote.joinWithPublicLink).not.toHaveBeenCalled();
+    });
+  });
+
+  it("lists requests filed at other servers with their server and without Withdraw", () => {
+    pendingRemote.entries = [
+      {
+        hostServerId: "rims1_host",
+        hostOrigin: "https://host.example",
+        workspaceId: "ws-acme",
+        workspaceName: "Acme",
+        joinRequestId: "jr-9",
+        expiresAt: Date.now() + 1000,
+      },
+    ];
+    renderDialog();
+    expect(screen.getByRole("heading", { name: "Waiting for approval" })).toBeInTheDocument();
+    expect(screen.getByTestId("remote-join-request-jr-9")).toHaveTextContent("AcmeOn host.example");
+    expect(screen.queryByRole("button", { name: /Withdraw/ })).toBeNull();
   });
 
   it("lists the person's open join requests under Waiting for approval, with Withdraw", async () => {

@@ -20,7 +20,23 @@ vi.mock("../../../core/graphql/wsClient", () => ({
   },
 }));
 
-import { useRelayRuntime } from "./relayRuntime";
+const routed = vi.hoisted(() => ({
+  applyWorkspaceEvent: vi.fn(),
+  handleRemoteJoinDecided: vi.fn(async () => undefined),
+  pendingRemoteJoinAt: vi.fn(),
+}));
+vi.mock("../../../core/events/useWorkspaceEvents", () => ({
+  applyWorkspaceEvent: routed.applyWorkspaceEvent,
+}));
+vi.mock("../../workspaces/state/joinRequestEvents", () => ({
+  handleRemoteJoinDecided: routed.handleRemoteJoinDecided,
+}));
+vi.mock("../remote/pendingRemoteJoins", () => ({
+  pendingRemoteJoinAt: routed.pendingRemoteJoinAt,
+}));
+
+import type { WorkspaceEvent } from "../../../core/events/types";
+import { applyRelayEvent, useRelayRuntime } from "./relayRuntime";
 
 describe("useRelayRuntime", () => {
   const qc = createTestQueryClient();
@@ -106,5 +122,36 @@ describe("useRelayRuntime", () => {
     await advance(RETRY_MAX_MS * 3);
     expect(fetchRelayInfo).toHaveBeenCalledTimes(1);
     expect(wsConnected.size).toBe(0);
+  });
+});
+
+describe("applyRelayEvent", () => {
+  const decided: WorkspaceEvent = {
+    type: "JoinRequestDecided",
+    workspace_id: "ws-acme",
+    request_id: "jr-1",
+    user_id: "r_person_at_host",
+    outcome: "accepted",
+  };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("routes a decision on a request kept for its host and workspace to that request", () => {
+    const qc = createTestQueryClient();
+    routed.pendingRemoteJoinAt.mockReturnValue({ hostServerId: "rims1_host" });
+    applyRelayEvent(qc, decided, "ws-acme", "rims1_host");
+    expect(routed.pendingRemoteJoinAt).toHaveBeenCalledWith("rims1_host", "ws-acme");
+    expect(routed.handleRemoteJoinDecided).toHaveBeenCalledWith(qc, "rims1_host", decided);
+    expect(routed.applyWorkspaceEvent).not.toHaveBeenCalled();
+  });
+
+  it("applies every other decision to its space, unchanged", () => {
+    const qc = createTestQueryClient();
+    routed.pendingRemoteJoinAt.mockReturnValue(null);
+    applyRelayEvent(qc, decided, "ws-acme", "rims1_host");
+    applyRelayEvent(qc, decided, "ws-acme");
+    expect(routed.handleRemoteJoinDecided).not.toHaveBeenCalled();
+    expect(routed.applyWorkspaceEvent).toHaveBeenCalledTimes(2);
+    expect(routed.applyWorkspaceEvent).toHaveBeenCalledWith(decided, qc, "ws-acme");
   });
 });

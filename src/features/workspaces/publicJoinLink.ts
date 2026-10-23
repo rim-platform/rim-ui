@@ -8,6 +8,7 @@ import {
   retryAfterSeconds,
   VALIDATION,
 } from "../../core/graphql/errors";
+import { getApiOrigin, getWebBaseUrl } from "../../core/graphql/config";
 
 /** The prefix of a workspace's public link token; invite tokens start `rim_inv_` or `rim_iinv_`. */
 export const PUBLIC_LINK_PREFIX = "rim_pjl_";
@@ -15,6 +16,22 @@ export const PUBLIC_LINK_PREFIX = "rim_pjl_";
 /** Whether `token` is a workspace's public link rather than an invite. */
 export function isPublicLinkToken(token: string): boolean {
   return token.startsWith(PUBLIC_LINK_PREFIX);
+}
+
+/**
+ * The origins this app's own server answers on: where the web app is served and where its API
+ * is. A public link at either is a link of this server.
+ */
+export function ownServerOrigins(): string[] {
+  const origins: string[] = [];
+  for (const base of [getWebBaseUrl(), getApiOrigin()]) {
+    try {
+      origins.push(new URL(base).origin);
+    } catch {
+      // A base that does not parse names no origin.
+    }
+  }
+  return origins;
 }
 
 /** What every invalid link says, whatever made it invalid. */
