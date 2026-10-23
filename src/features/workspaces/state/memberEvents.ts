@@ -125,18 +125,34 @@ export function handleMemberLeft(
   toast.info(name ? `You were removed from ${name}` : "You were removed from this workspace");
 }
 
-/** Refresh every view that embeds workspace author ban status. */
-export function handleMemberBanChanged(qc: QueryClient, workspaceId: string): void {
+/** Refresh message authors in every cached view of a workspace. */
+function invalidateAuthors(qc: QueryClient, workspaceId: string): void {
   const roots = new Set([
     "messages",
     "threadMessages",
     "searchMessages",
     "pinnedMessages",
     "lensMessages",
-    "serverMembers",
-    "serverBans",
   ]);
   void qc.invalidateQueries({
     predicate: (query) => roots.has(String(query.queryKey[0])) && query.queryKey[1] === workspaceId,
   });
+}
+
+/** Refresh every view that embeds workspace author ban status. */
+export function handleMemberBanChanged(qc: QueryClient, workspaceId: string): void {
+  invalidateAuthors(qc, workspaceId);
+  void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.serverBans(workspaceId) });
+}
+
+/** Refresh member pictures, embedded message authors and this account's other sessions. */
+export function handleMemberProfileUpdated(
+  qc: QueryClient,
+  workspaceId: string,
+  userId: string,
+): void {
+  invalidateAuthors(qc, workspaceId);
+  void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+  if (userId === currentUserId(qc)) void qc.invalidateQueries({ queryKey: queryKeys.me });
 }

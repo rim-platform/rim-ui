@@ -68,6 +68,7 @@ export type WorkspaceEvent =
       title: string | null;
       conversation_type: string;
     }
+  | { type: "MemberProfileUpdated"; workspace_id: string; user_id: string }
   | {
       type: "MemberJoined";
       workspace_id: string;

@@ -102,7 +102,7 @@ export function ProfileSettings() {
       try {
         const resized = await resizeImageToBlob(file, 256);
         const url = await uploadAvatar(resized);
-        // The server keeps one avatar path per user, so a copy downloaded earlier is stale.
+        // Drop a locally cached copy before showing the uploaded picture.
         refreshServerMedia(url);
         setAvatarPreview(url);
 
