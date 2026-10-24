@@ -30,7 +30,8 @@ This repository is the client, in two builds from one React 19 and TypeScript co
   offline.
 - **The web app**, the same React app as static files, which a RIM server deployment serves on
   its own domain. It signs up and signs in with a key and a password, or as a linked device of a
-  desktop app, and runs web plugins. It has no identity key, no local plugin processes, no AI agent and no updater.
+  desktop app, keeps the account's keys and data encrypted in the browser, and runs web plugins.
+  It has no local plugin processes, no AI agent and no updater.
 
 ## What is in it
 
