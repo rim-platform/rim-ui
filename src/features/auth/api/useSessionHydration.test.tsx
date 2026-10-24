@@ -20,6 +20,11 @@ vi.mock("../../offline/api/offlineSession", () => ({
   saveSessionRecord: (record: SessionRecord) => saveSessionRecordMock(record),
 }));
 
+const restoreAfterReloadMock = vi.fn<(endpoint: string) => Promise<boolean>>();
+vi.mock("../runtime/reloadWindow", () => ({
+  restoreAfterReload: (endpoint: string) => restoreAfterReloadMock(endpoint),
+}));
+
 vi.mock("../../key-identity/api/keyIdentity", () => ({
   resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
 }));
@@ -65,6 +70,7 @@ describe("useSessionHydration", () => {
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
     saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
     resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
+    restoreAfterReloadMock.mockReset().mockResolvedValue(false);
     useAuthStore.setState({ session: null, csrfToken: null });
     useOfflineStore.setState({ offline: false });
   });
@@ -75,6 +81,22 @@ describe("useSessionHydration", () => {
     expect(result.current.isAuthenticated).toBe(true);
     expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
     expect(useOfflineStore.getState().offline).toBe(false);
+  });
+
+  it("brings a reloaded tab's session back before it asks who is signed in", async () => {
+    const order: string[] = [];
+    restoreAfterReloadMock.mockImplementation(async () => {
+      order.push("reload");
+      return true;
+    });
+    requestMock.mockImplementation(async () => {
+      order.push("me");
+      return { me: { id: "alice" } };
+    });
+    await hydrate();
+    expect(order).toEqual(["reload", "me"]);
+    expect(restoreAfterReloadMock).toHaveBeenCalledWith(endpoint);
+    expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
   });
 
   it("puts the recorded CSRF token back before the session the server confirms", async () => {

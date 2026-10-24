@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { csrfHeader } from "../../../core/graphql/csrf";
+import { authHeaders } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import type {
   AddWorkspacePluginInput,
@@ -116,7 +116,7 @@ export async function uploadPluginBundle(
 ): Promise<UploadedBundle> {
   const headers: Record<string, string> = {
     "Content-Type": BUNDLE_MEDIA_TYPE,
-    ...csrfHeader(),
+    ...authHeaders(),
   };
   const response = await fetchImpl(
     `${getApiOrigin()}/api/plugin-bundles/${encodeURIComponent(serverId)}`,

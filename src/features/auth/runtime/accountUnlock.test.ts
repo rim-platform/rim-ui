@@ -9,6 +9,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as opaque from "../opaque/wasm/rim_opaque_wasm";
 
 vi.mock("../opaque/opaqueModule", () => ({ loadOpaque: async () => opaque }));
+vi.mock("../api/sessionKeys", () => ({
+  setReloadKey: async () => "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+}));
 
 import {
   isVaultUnlocked,
@@ -16,6 +19,7 @@ import {
   VaultLockedError,
 } from "../../../core/accountVault/accountVault";
 import { seal, toB64 } from "../../../core/accountVault/crypto";
+import { sessionSecret } from "../../../core/graphql/sessionSecret";
 import { NeedsRecoveryError, readWraps } from "../../../core/accountVault/dkWraps";
 import {
   insert,
@@ -25,6 +29,7 @@ import {
   type BrowserKeyRecord,
 } from "../../key-identity/browser/keyStore";
 import {
+  holdSession,
   keepUnlocked,
   lockAccount,
   unlockAfterLogin,
@@ -226,5 +231,25 @@ describe("unlocking an account in the web app", () => {
       }),
     ).rejects.toThrow();
     expect(isVaultUnlocked()).toBe(false);
+  });
+
+  it("holds an unkept session's secret, keeps it for a reload, and forgets both at sign-out", async () => {
+    await signUp(random(64), null);
+    await holdSession({ sessionSecret: "c2VjcmV0", keepKey: null });
+    expect(sessionSecret()).toBe("c2VjcmV0");
+    expect(sessionStorage.getItem(`rim:reload:${ENDPOINT}`)).not.toBeNull();
+
+    lockAccount();
+    expect(sessionSecret()).toBeNull();
+    expect(sessionStorage.getItem(`rim:reload:${ENDPOINT}`)).toBeNull();
+  });
+
+  it("wraps the data key under a kept session's keep key", async () => {
+    await signUp(random(64), null);
+    const keepKey = random(32);
+    await holdSession({ sessionSecret: null, keepKey: toB64(keepKey) });
+    expect(sessionSecret()).toBeNull();
+    lockVault();
+    expect(await unlockKept(ENDPOINT, PRINCIPAL, keepKey)).toBe(true);
   });
 });

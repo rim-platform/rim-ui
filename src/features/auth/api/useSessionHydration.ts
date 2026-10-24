@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { gql } from "graphql-request";
 
+import { isTauri } from "@tauri-apps/api/core";
+
 import { graphqlClient } from "../../../core/graphql/client";
+import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { AddressBlockedError, isSessionRefused } from "../../../core/graphql/errors";
 import { resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
@@ -11,6 +14,7 @@ import {
   type SessionRecord,
 } from "../../offline/api/offlineSession";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
+import { restoreAfterReload } from "../runtime/reloadWindow";
 import { useAuthStore } from "../state/useAuthStore";
 
 const ME_QUERY = gql`
@@ -66,6 +70,9 @@ export function useSessionHydration() {
       try {
         const record = await loadSessionRecord();
         if (cancelled || record?.state === "signedOut") return;
+        // A reload within its window brings back the session secret, which `me` needs.
+        if (!isTauri()) await restoreAfterReload(getGraphqlEndpoint());
+        if (cancelled) return;
         try {
           const res = await graphqlClient.request<MeResponse>(ME_QUERY);
           if (!cancelled && res.me?.id) {

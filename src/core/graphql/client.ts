@@ -2,6 +2,7 @@ import { GraphQLClient } from "graphql-request";
 
 import { getGraphqlEndpoint } from "./config";
 import { CSRF_HEADER, csrfToken } from "./csrf";
+import { SESSION_SECRET_HEADER, sessionSecret } from "./sessionSecret";
 import { asGraphqlResponse } from "./edgeRefusals";
 
 /**
@@ -67,10 +68,12 @@ export function createGraphqlClient(): GraphQLClient {
     fetch: routingFetch,
     requestMiddleware: (request) => {
       const csrf = csrfToken();
-      if (!csrf) return request;
+      const secret = sessionSecret();
+      if (!csrf && !secret) return request;
 
       const headers = new Headers(request.headers as HeadersInit | undefined);
-      headers.set(CSRF_HEADER, csrf);
+      if (csrf) headers.set(CSRF_HEADER, csrf);
+      if (secret) headers.set(SESSION_SECRET_HEADER, secret);
       return { ...request, headers };
     },
   });

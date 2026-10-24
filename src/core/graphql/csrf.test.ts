@@ -10,7 +10,8 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 import { server } from "../../test/mocks/server";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { createGraphqlClient } from "./client";
-import { csrfHeader, csrfToken } from "./csrf";
+import { authHeaders, csrfHeader, csrfToken } from "./csrf";
+import { setSessionSecret } from "./sessionSecret";
 
 /** Sets the `rim_csrf` cookie, or removes it for `null`. */
 function csrfCookie(value: string | null) {
@@ -64,5 +65,21 @@ describe("csrfToken", () => {
     await createGraphqlClient().request("mutation Logout { logout }");
 
     expect(sent).toBe("from-sign-in");
+  });
+});
+
+describe("authHeaders", () => {
+  afterEach(() => {
+    setSessionSecret(null);
+    csrfCookie(null);
+  });
+
+  it("carries the CSRF token and the session secret, each when there is one", () => {
+    desktop.value = false;
+    expect(authHeaders()).toEqual({});
+    csrfCookie("token");
+    expect(authHeaders()).toEqual({ "x-csrf-token": "token" });
+    setSessionSecret("c2VjcmV0");
+    expect(authHeaders()).toEqual({ "x-csrf-token": "token", "x-rim-session-secret": "c2VjcmV0" });
   });
 });

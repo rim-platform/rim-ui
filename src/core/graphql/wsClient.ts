@@ -2,6 +2,7 @@ import { createClient } from "graphql-ws";
 
 import { getApiOrigin, getWsEndpoint } from "./config";
 import { readEdgeRefusal, useEdgeStore, type EdgeRefusal } from "./edgeRefusals";
+import { sessionSecret } from "./sessionSecret";
 import { isSessionEndedClose } from "./subscriptionErrors";
 
 type ConnectionListener = () => void;
@@ -164,6 +165,12 @@ export const wsClient = createClient({
   // Use a function so the URL is resolved on each connection attempt,
   // allowing it to react to environment or origin changes at reconnect time.
   url: () => getWsEndpoint(),
+
+  // An unkept session's WebSocket opens only with the session secret.
+  connectionParams: () => {
+    const secret = sessionSecret();
+    return secret ? { sessionSecret: secret } : {};
+  },
 
   // Reconnect automatically — never give up.
   retryAttempts: Infinity,

@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { csrfHeader } from "../../../core/graphql/csrf";
+import { authHeaders } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
 import { ATTACHMENT_FIELDS } from "../../../graphql/fragments/message";
@@ -145,7 +145,7 @@ export async function uploadFileRest(
     method: "POST",
     body: formData,
     credentials: "include",
-    headers: csrfHeader(),
+    headers: authHeaders(),
   });
 
   if (!res.ok) {

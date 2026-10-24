@@ -7,6 +7,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
+import { sessionSecretHeader } from "./sessionSecret";
 
 const CSRF_COOKIE = "rim_csrf";
 /** The request header the CSRF token travels in. */
@@ -30,4 +31,12 @@ export function csrfToken(): string | undefined {
 export function csrfHeader(): Record<string, string> {
   const token = csrfToken();
   return token ? { [CSRF_HEADER]: token } : {};
+}
+
+/**
+ * The headers a request to this app's server that is not a plain GET adds: the CSRF token and
+ * the session secret, each when there is one.
+ */
+export function authHeaders(): Record<string, string> {
+  return { ...csrfHeader(), ...sessionSecretHeader() };
 }

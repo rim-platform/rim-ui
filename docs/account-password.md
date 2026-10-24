@@ -20,6 +20,9 @@ says where the client's half lives.
 | `src/core/accountVault/` | The web app's account lock: the derivations and AES-256-GCM wraps byte for byte as `rim_opaque` makes them (`crypto.ts`), the wraps of each account's data key (`dkWraps.ts`), the vault that holds the unlocked account's keys in memory and seals records under them (`accountVault.ts`, `sealedRecords.ts`), and the account's sealed small values (`sealedStorage.ts`) |
 | `src/features/auth/runtime/accountUnlock.ts` | The web app's unlocks after a login, a signup, the recovery phrase and a kept session, and the lock at sign-out |
 | `src/features/auth/runtime/unlockGate.ts` | Whether the signed-in account is unlocked; the app's shell renders nothing that reads its data until it is |
+| `src/core/graphql/sessionSecret.ts` | The session secret of an unkept session, in memory only |
+| `src/features/auth/runtime/reloadWindow.ts` | The web app's reload window |
+| `src/features/auth/api/sessionKeys.ts` | `sessionKeepKey`, `setReloadKey` and `reloadSession` |
 
 ## The desktop's account lock
 
@@ -65,7 +68,32 @@ keyed `[endpoint, principalId]`: `{passwordWrap, recoveryWrap?, keepWrap?}`, eac
 | `unlockWithRecovery(endpoint, principalId, entropy)` | Opens the recovery wrap; `false` when there is none or the phrase does not open it |
 | `keepUnlocked(keepKey)`, `unlockKept(endpoint, principalId, keepKey)` | "Keep me signed in": the server holds the keep key with the session, and the browser keeps the keep wrap |
 | `unlockKeptOnDesktop(endpoint, principalId)` | `account_unlock_kept`; the webview gets the store key alone |
-| `lockAccount()` | Sign-out: the keys leave memory, the encrypted store closes, the sealed stores go back to their initial state, and the keep wrap goes |
+| `holdSession({sessionSecret, keepKey})` | After a sign-in or signup: holds the session secret and keeps it for a reload, or wraps the data key under the keep key |
+| `lockAccount()` | Sign-out: the keys leave memory, the session secret and what the tab kept for a reload go, the encrypted store closes, the sealed stores go back to their initial state, and the keep wrap goes |
+
+At start the unlock gate opens a kept account without the password: in the web app with the
+keep key `sessionKeepKey` returns, on the desktop with `account_unlock_kept`.
+
+### The session secret and the reload window
+
+A session signed in without "Keep me signed in" gets a session secret (32 bytes, base64url),
+which the app holds in memory only. The GraphQL client sends it in `X-RIM-Session-Secret` on
+every request, the WebSocket in its `connection_init` payload as `sessionSecret`, and every
+upload or other request that is not a plain GET adds it through `authHeaders()`. Without it the
+server treats a request as anonymous and closes the WebSocket with 4401, which signs out. Plain
+GETs of files stay cookie-only. A session the desktop opens directly at another server is kept
+with its keep key held by the app (`keepSignedIn` and `keepKeyHeld`), so it needs no secret, and
+this server's secret never goes there.
+
+A reload loses both the data key and the secret. While the account is unlocked, the tab keeps
+them in `sessionStorage` under `rim:reload:<endpoint>`: base64url of `nonce ‖ ciphertext ‖ tag`,
+AES-256-GCM under a reload key `setReloadKey` makes, authenticating the storage key, of
+`{v: 1, principalId, dataKey, sessionSecret}`. At start, before it asks the server who is signed
+in, the page calls `reloadSession`, which needs the cookie and the CSRF token but not the secret,
+opens the stored value with the `reloadKey` it returns, seals it again under `nextReloadKey` and
+unlocks the account. The server answers once, within 60 seconds of the session's WebSocket
+closing; after that, after a browser restart or in a copied profile, it answers nothing, the
+stored value goes and the account is locked.
 
 ### What the data key seals in the browser
 

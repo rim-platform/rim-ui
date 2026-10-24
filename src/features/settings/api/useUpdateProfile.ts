@@ -3,7 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getApiOrigin } from "../../../core/graphql/config";
-import { csrfHeader } from "../../../core/graphql/csrf";
+import { authHeaders } from "../../../core/graphql/csrf";
 import { UpdateMyProfileInput } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
@@ -72,7 +72,7 @@ export async function uploadAvatar(file: Blob): Promise<string> {
     method: "POST",
     body: formData,
     credentials: "include",
-    headers: csrfHeader(),
+    headers: authHeaders(),
   });
 
   if (!res.ok) {
