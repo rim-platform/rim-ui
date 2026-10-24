@@ -36,9 +36,40 @@ account is unlocked. The secret vault (`secret-vault.md`) keeps its wraps:
 | `account_unlock_after_signup(handle, principal, share, recoveryEntropy?, keep)` | A new data key, wrapped under the unlock key, and under the recovery phrase when its entropy is given |
 | `account_unlock_kept(principal)` | Opens the keep wrap without the server, or null |
 | `account_unlock_with_recovery(principal, entropy)` | Opens the recovery wrap, or null |
-| `account_lock(principal)` | Drops the data key, closes the account's message cache databases and wipes the cache key held in memory |
+| `account_lock(principal)` | Drops the data key and closes the account's message cache databases, which hold the only copies of their keys in memory |
 | `account_forget_keep(principal)` | Deletes the keep key and the keep wrap |
 
 Every unlock returns `{webStoreKey, startedEmpty}`: the key that seals the webview's IndexedDB
 records of the account, and whether the data key is new. A handle lasts two minutes and serves
 one unlock.
+
+After each unlock command, the account's key identity record and pending device links are
+sealed under the data key if they were not yet (below).
+
+## What the data key seals on the desktop
+
+Each sealed value is AES-256-GCM (`rim_opaque::seal`) under a store key derived from the data
+key, with the secret vault record's name as associated data, so a value copied under another
+name does not open. While the account is locked, nothing below opens, and a command that needs it
+answers `LOCKED`.
+
+| Vault record | Store key | What is sealed |
+|---|---|---|
+| `key-identity-v1:<principal id>` | "desktop vault" | The identity key, a pending one, the backup key, the recovery kit's entropy and the keys a recovery replaced, in one `sealed` field. The device key, the device's id and name, and whether the server and the person confirmed the keys stay under the vault key alone: signing in signs a proof with the device key before the server returns the share the data key needs |
+| `device-link-v1:<link id>` | "desktop vault" | The whole pending link, as `{principalId, sealed}` |
+| `message-cache-key-v1:<file stem>` | "cache key" | The account's message cache key (`local-message-cache.md`) |
+| `plugin-setting-v1:<plugin>:<account>:<key>` | "desktop vault" | The secret setting's value, after `sealed-v1:` (`secret-vault.md`) |
+
+- A signup, a recovery or a new device of a device link writes its keys before the account's
+  first unlock. Those fields stay under the vault key alone until the unlock that follows, which
+  seals them; so are records written before the data key existed.
+- Locked, the key identity commands that need only the device key still answer: the sign-in
+  list, signing in, device requests and delegations, MLS statements, settling with the server,
+  revoking this device. Those that need the sealed fields answer `LOCKED`: the recovery kit,
+  syncing the key log, rotation, profile cards, plugin manifests, confirming a device link, the
+  identity key backup.
+- When the data key is new (the account started empty on this device), what was sealed under the
+  earlier one no longer opens: the record keeps its device key and loses the rest, and the
+  message cache starts over.
+- The key identity index, the history archive keys, the AI provider keys and the offline session
+  record are the app's and stay under the vault key alone.

@@ -582,6 +582,7 @@ mod tests {
                 std::path::Path::new("/nonexistent"),
             )),
             account: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            key_principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         }
     }
@@ -711,6 +712,7 @@ mod tests {
                 std::path::Path::new("/nonexistent"),
             )),
             account: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            key_principal: std::sync::Arc::new(std::sync::Mutex::new(None)),
             chat_relay: std::sync::Arc::new(crate::plugin_host::chat_relay::ChatRelay::default()),
         };
         let manifest = test_manifest("dev.example.test", "main.sh");

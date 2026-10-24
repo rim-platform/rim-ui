@@ -46,6 +46,20 @@ impl SecretStore for MemoryStore {
     }
 }
 
+impl AccountLock {
+    /// An account lock over a secret store in memory, with nothing unlocked: for other
+    /// modules' tests.
+    pub(crate) fn in_memory() -> Self {
+        Self::new(Arc::new(MemoryStore::default()))
+    }
+
+    /// Unlocks `principal_id` with `data_key` as an unlock command would: for other modules'
+    /// tests.
+    pub(crate) fn unlock_for_tests(&self, principal_id: &str, data_key: [u8; 32]) {
+        self.hold(principal_id, Zeroizing::new(data_key), false);
+    }
+}
+
 impl MemoryStore {
     fn has(&self, name: &str) -> bool {
         self.0.lock().unwrap().contains_key(name)
@@ -481,5 +495,49 @@ fn errors_serialize_as_kind_and_message() {
     assert_eq!(
         serde_json::to_value(AccountLockError::NeedsRecovery).unwrap()["kind"],
         "NEEDS_RECOVERY"
+    );
+}
+
+#[test]
+fn records_seal_under_the_data_key_and_open_only_while_unlocked() {
+    let (device, _) = device();
+    let name = format!("key-identity-v1:{PRINCIPAL}");
+    assert!(matches!(
+        device.seal_record(PRINCIPAL, StoreKeyLabel::DesktopVault, &name, b"secret"),
+        Err(AccountLockError::Locked)
+    ));
+
+    device.unlock_for_tests(PRINCIPAL, [4; 32]);
+    let sealed = device
+        .seal_record(PRINCIPAL, StoreKeyLabel::DesktopVault, &name, b"secret")
+        .unwrap();
+    assert!(!sealed.contains("secret"));
+    let opened = device
+        .open_record(PRINCIPAL, StoreKeyLabel::DesktopVault, &name, &sealed)
+        .unwrap();
+    assert_eq!(opened.as_slice(), b"secret");
+    // Bound to the record's name and to the label.
+    assert!(device
+        .open_record(PRINCIPAL, StoreKeyLabel::DesktopVault, "other", &sealed)
+        .is_err());
+    assert!(device
+        .open_record(PRINCIPAL, StoreKeyLabel::CacheKey, &name, &sealed)
+        .is_err());
+    // Another data key does not open it.
+    device.unlock_for_tests(PRINCIPAL, [5; 32]);
+    assert!(matches!(
+        device.open_record(PRINCIPAL, StoreKeyLabel::DesktopVault, &name, &sealed),
+        Err(AccountLockError::Crypto(_))
+    ));
+
+    assert!(device.lock_account(PRINCIPAL));
+    assert!(!device.is_unlocked(PRINCIPAL));
+    assert!(matches!(
+        device.open_record(PRINCIPAL, StoreKeyLabel::DesktopVault, &name, &sealed),
+        Err(AccountLockError::Locked)
+    ));
+    assert_eq!(
+        serde_json::to_value(AccountLockError::Locked).unwrap()["kind"],
+        "LOCKED"
     );
 }

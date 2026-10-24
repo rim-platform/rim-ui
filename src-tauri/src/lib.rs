@@ -52,15 +52,23 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             let vault = Arc::new(secret_store::SecretVault::open(&app_data_dir));
-            let plugin_state = plugin_host::init(&app_data_dir, vault.clone());
+            let account_lock = account_lock::init(vault.clone());
+            let key_identity = key_identity::init(vault.clone(), account_lock.clone());
+            let plugin_state =
+                plugin_host::init(&app_data_dir, vault.clone(), account_lock.clone());
             plugin_host::forward_to_ui(app.handle().clone(), &plugin_state);
             app.manage(plugin_state);
 
-            app.manage(message_cache::init(&app_data_dir, vault.clone()));
+            app.manage(message_cache::init(
+                &app_data_dir,
+                vault.clone(),
+                account_lock.clone(),
+                key_identity.clone(),
+            ));
             app.manage(history_archive::init(&app_data_dir, vault.clone()));
             app.manage(offline_session::init(vault.clone()));
-            app.manage(key_identity::init(vault.clone()));
-            app.manage(account_lock::init(vault.clone()));
+            app.manage(key_identity);
+            app.manage(account_lock);
             app.manage(e2ee::attachment_state());
             app.manage(relay::direct::DirectState::default());
             app.manage(relay::pow::PowState::default());

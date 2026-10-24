@@ -1133,6 +1133,12 @@ pub async fn plugin_set_principal(
             .as_ref()
             .map(|u| Principal::provisional(&u.user_id, &u.display_name).principal_id);
     }
+    if let Ok(mut key_principal) = state.key_principal.lock() {
+        *key_principal = user
+            .as_ref()
+            .and_then(SignedInUser::key_principal_id)
+            .map(str::to_string);
+    }
     runtime::set_principal(&state, user.as_ref().map(SignedInUser::principal)).await;
     if switched {
         runtime::announce_remapped(&state).await;

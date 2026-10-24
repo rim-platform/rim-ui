@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::feed::{ChangesRequest, ChangesStatus, ConversationChanges, MessageChange};
-use super::key::{CacheKey, KeySource};
+use super::key::{AccountKey, CacheKey, KeySource};
 use super::search::{LocalSearchPage, LocalSearchQuery};
 use super::store::{CacheStore, TimelineCursor, TimelinePage};
 use super::{AccountId, CacheError, MessageCacheState};
@@ -19,8 +19,19 @@ pub(crate) const WS: &str = "ws-1";
 pub(crate) struct FixedKey([u8; 32]);
 
 impl KeySource for FixedKey {
-    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
-        Ok(CacheKey::from_bytes(self.0))
+    fn load_or_create(&self, _account: &AccountId) -> Result<AccountKey, CacheError> {
+        Ok(AccountKey {
+            principal_id: "rimp1_test".into(),
+            key: CacheKey::from_bytes(self.0),
+        })
+    }
+
+    fn is_unlocked(&self, _principal_id: &str) -> bool {
+        true
+    }
+
+    fn forget(&self, _account: &AccountId) -> Result<(), CacheError> {
+        Ok(())
     }
 }
 
@@ -1310,11 +1321,19 @@ fn the_search_index_holds_no_plaintext_on_disk() {
 struct UnavailableKey(Arc<Mutex<u32>>);
 
 impl KeySource for UnavailableKey {
-    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
+    fn load_or_create(&self, _account: &AccountId) -> Result<AccountKey, CacheError> {
         *self.0.lock().unwrap() += 1;
         Err(CacheError::Key(
             "keyring read failed: the keyring is locked".into(),
         ))
+    }
+
+    fn is_unlocked(&self, _principal_id: &str) -> bool {
+        true
+    }
+
+    fn forget(&self, _account: &AccountId) -> Result<(), CacheError> {
+        Ok(())
     }
 }
 
@@ -1403,55 +1422,199 @@ fn mls_group_state_lives_in_the_cache_and_follows_its_transactions() {
     );
 }
 
-/// A key source that counts its reads.
-struct CountingKey(Arc<Mutex<usize>>);
+/// A key source whose accounts are the principals `rimp1_<user id>`, unlocked as `unlocked`
+/// says, counting its reads.
+#[derive(Default)]
+struct LockableKey {
+    unlocked: Mutex<Vec<String>>,
+    reads: Mutex<usize>,
+}
 
-impl KeySource for CountingKey {
-    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
-        *self.0.lock().unwrap() += 1;
-        Ok(CacheKey::from_bytes([3; 32]))
+impl LockableKey {
+    fn set(&self, principal_id: &str, unlocked: bool) {
+        let mut list = self.unlocked.lock().unwrap();
+        list.retain(|p| p != principal_id);
+        if unlocked {
+            list.push(principal_id.to_string());
+        }
+    }
+}
+
+impl KeySource for Arc<LockableKey> {
+    fn load_or_create(&self, account: &AccountId) -> Result<AccountKey, CacheError> {
+        *self.reads.lock().unwrap() += 1;
+        let principal_id = format!("rimp1_{}", account.user_id);
+        if !self.is_unlocked(&principal_id) {
+            return Err(CacheError::Locked);
+        }
+        Ok(AccountKey {
+            principal_id,
+            key: CacheKey::from_bytes([3; 32]),
+        })
+    }
+
+    fn is_unlocked(&self, principal_id: &str) -> bool {
+        self.unlocked
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p == principal_id)
+    }
+
+    fn forget(&self, _account: &AccountId) -> Result<(), CacheError> {
+        Ok(())
     }
 }
 
 #[test]
-fn closing_an_account_reopens_it_and_a_forgotten_key_is_read_again() {
+fn a_locked_account_s_cache_refuses_and_reopens_after_the_unlock() {
     let dir = tempfile::tempdir().unwrap();
-    let reads = Arc::new(Mutex::new(0));
-    let state = MessageCacheState::new(
-        dir.path().to_path_buf(),
-        Box::new(CountingKey(reads.clone())),
-    );
+    let keys = Arc::new(LockableKey::default());
+    let state = MessageCacheState::new(dir.path().to_path_buf(), Box::new(keys.clone()));
     let alice = account("alice");
     let bob = account("bob");
 
+    let Err(err) = state.store(&alice) else {
+        panic!("a locked account's cache opened");
+    };
+    assert_eq!(err.code(), "LOCKED");
+    // A locked account is not a key failure: nothing is remembered.
+    keys.set("rimp1_alice", true);
+    keys.set("rimp1_bob", true);
     let first = state.store(&alice).unwrap();
     let bobs = state.store(&bob).unwrap();
     assert!(Arc::ptr_eq(&first, &state.store(&alice).unwrap()));
-    assert_eq!(*reads.lock().unwrap(), 1);
+    assert_eq!(*keys.reads.lock().unwrap(), 3);
 
-    state.close(&alice);
-    state.forget_key();
-    assert!(state.key.lock().unwrap().is_none());
+    // Locked again: the open database is closed, not served; the other account's stays.
+    keys.set("rimp1_alice", false);
+    assert!(matches!(state.store(&alice), Err(CacheError::Locked)));
+    assert!(!state
+        .stores
+        .lock()
+        .unwrap()
+        .contains_key(&alice.file_name()));
+    assert!(Arc::ptr_eq(&bobs, &state.store(&bob).unwrap()));
+
+    keys.set("rimp1_alice", true);
     let reopened = state.store(&alice).unwrap();
     assert!(!Arc::ptr_eq(&first, &reopened));
+
+    state.close_principal("rimp1_alice");
+    assert!(!state
+        .stores
+        .lock()
+        .unwrap()
+        .contains_key(&alice.file_name()));
     assert!(Arc::ptr_eq(&bobs, &state.store(&bob).unwrap()));
-    assert_eq!(*reads.lock().unwrap(), 2);
-}
-
-/// A key source that always fails.
-struct NoKey;
-
-impl KeySource for NoKey {
-    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
-        Err(CacheError::Key("locked".into()))
-    }
+    state.close_principal("rimp1_bob");
+    assert!(state.stores.lock().unwrap().is_empty());
 }
 
 #[test]
-fn a_forgotten_key_keeps_a_remembered_failure() {
+fn each_account_s_key_is_sealed_under_its_data_key_in_the_vault() {
+    use crate::account_lock::AccountLock;
+    use crate::key_identity::store::MemorySecretStore;
+    use crate::key_identity::{Challenge, KeyIdentityState, ServerAccount};
+    use crate::secret_store::SecretVault;
+
     let dir = tempfile::tempdir().unwrap();
-    let state = MessageCacheState::new(dir.path().to_path_buf(), Box::new(NoKey));
-    assert!(state.store(&account("alice")).is_err());
-    state.forget_key();
-    assert!(matches!(state.key.lock().unwrap().as_ref(), Some(Err(_))));
+    let vault = Arc::new(SecretVault::for_tests(dir.path()));
+    vault.write("message-cache-key-v1", "old key").unwrap();
+    let lock = AccountLock::in_memory();
+    let keys = KeyIdentityState::with_lock(Arc::new(MemorySecretStore::default()), lock.clone());
+    let state = MessageCacheState::new(
+        dir.path().join("cache"),
+        Box::new(super::key::VaultKeySource {
+            vault: vault.clone(),
+            account_lock: lock.clone(),
+            keys: keys.clone(),
+        }),
+    );
+    let alice = account("alice");
+
+    // No keys on this device for the account: nothing can unlock its cache.
+    assert!(matches!(state.store(&alice), Err(CacheError::Locked)));
+    let draft = keys.begin_enrollment("Laptop").unwrap();
+    keys.sign_enrollment(
+        &draft.draft_id,
+        &ServerAccount {
+            endpoint: alice.endpoint.clone(),
+            user_id: alice.user_id.clone(),
+            username: "alice".into(),
+        },
+        &Challenge {
+            challenge_id: "00000000-0000-0000-0000-000000000009".into(),
+            nonce: "bm9uY2U".into(),
+        },
+    )
+    .unwrap();
+    let principal = draft.principal_id.clone();
+    assert!(matches!(state.store(&alice), Err(CacheError::Locked)));
+
+    lock.unlock_for_tests(&principal, [8; 32]);
+    {
+        let store = state.store(&alice).unwrap();
+        let store = store.lock().unwrap();
+        store
+            .conn
+            .execute_batch("CREATE TABLE kept (v TEXT); INSERT INTO kept VALUES ('here');")
+            .unwrap();
+    }
+    let name = format!("message-cache-key-v1:{}", alice.file_stem());
+    let sealed = vault.read(&name).unwrap().unwrap();
+    assert!(lock
+        .open_record(
+            &principal,
+            rim_opaque::StoreKeyLabel::CacheKey,
+            &name,
+            &sealed
+        )
+        .is_ok());
+    assert!(lock
+        .open_record(
+            &principal,
+            rim_opaque::StoreKeyLabel::DesktopVault,
+            &name,
+            &sealed
+        )
+        .is_err());
+    // The one key per installation is gone.
+    assert!(vault.read("message-cache-key-v1").unwrap().is_none());
+
+    // Locked: the cache refuses, and the sealed key does not open.
+    lock.lock_account(&principal);
+    assert!(matches!(state.store(&alice), Err(CacheError::Locked)));
+
+    // Unlocked again with the same data key: the same database.
+    lock.unlock_for_tests(&principal, [8; 32]);
+    let kept: String = state
+        .store(&alice)
+        .unwrap()
+        .lock()
+        .unwrap()
+        .conn
+        .query_row("SELECT v FROM kept", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(kept, "here");
+
+    // A new data key (the account started empty here): a new key, and the database is made
+    // again.
+    state.close_principal(&principal);
+    lock.unlock_for_tests(&principal, [9; 32]);
+    let store = state.store(&alice).unwrap();
+    assert!(store
+        .lock()
+        .unwrap()
+        .conn
+        .query_row("SELECT v FROM kept", [], |row| row.get::<_, String>(0))
+        .is_err());
+    assert_ne!(
+        vault.read(&name).unwrap().unwrap().as_str(),
+        sealed.as_str()
+    );
+
+    // Removing the account's cache removes its key.
+    state.remove(&alice).unwrap();
+    assert!(vault.read(&name).unwrap().is_none());
 }
