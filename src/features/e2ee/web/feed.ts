@@ -16,6 +16,7 @@ import type {
   ConversationChangesStatus,
   MessageChangesInput,
 } from "../../../core/graphql/generated/schema-types";
+import { b64, sha256, utf8 } from "../../key-identity/browser/bytes";
 import { logger } from "../../../core/logger";
 import type {
   CacheSyncStep,
@@ -236,6 +237,42 @@ class EntryRow {
     };
   }
 
+  /** Refreshes server metadata for a cached message whose verified ciphertext is unchanged. */
+  async refreshMetadata(): Promise<boolean> {
+    const stored = await readRow(this.work, this.entry.id);
+    if (
+      stored?.e2eeState !== "decrypted" ||
+      stored.conversationId !== this.conversationId ||
+      stored.workspaceId !== this.workspaceId ||
+      stored.threadId !== this.entry.threadId ||
+      stored.authorId !== this.entry.authorId
+    )
+      return false;
+    const facts = stored.payload.e2ee as Json | undefined;
+    const current: Json = {
+      ...this.facts("decrypted"),
+      ciphertextHash: await this.ciphertextHash(),
+    };
+    if (
+      !facts ||
+      !Object.keys(current).every((key) => facts[key] === current[key]) ||
+      facts.senderPrincipalId !== this.entry.author?.principalId
+    )
+      return false;
+    const content = parseContent(typeof facts.content === "string" ? facts.content : null);
+    if (!content) return false;
+    await this.write(
+      stored.text,
+      contentPayload(this.base(), this.change.message as unknown as Json, content, facts),
+      "decrypted",
+    );
+    return true;
+  }
+
+  async ciphertextHash(): Promise<string> {
+    return b64(await sha256(utf8(this.encryption.ciphertext ?? "")));
+  }
+
   async placeholder(): Promise<Handled> {
     await this.write(null, { ...this.base(), e2ee: this.facts("undecryptable") }, "placeholder");
     return "done";
@@ -256,6 +293,7 @@ class EntryRow {
     }
     const e2ee = {
       ...this.facts("decrypted"),
+      ciphertextHash: await this.ciphertextHash(),
       senderDeviceId: message.sender.deviceId,
       senderPrincipalId: message.sender.principalId,
       frankingKey: message.frankingKey,
@@ -281,7 +319,11 @@ class EntryRow {
     const facts = stored?.payload.e2ee as Json | undefined;
     const content = parseContent(typeof facts?.content === "string" ? facts.content : null);
     if (!readable || !facts || !content) return this.placeholder();
-    const e2ee = { ...facts, ...this.facts("decrypted") };
+    const e2ee = {
+      ...facts,
+      ...this.facts("decrypted"),
+      ciphertextHash: await this.ciphertextHash(),
+    };
     const payload = contentPayload(
       this.base(),
       this.change.message as unknown as Json,
@@ -467,6 +509,7 @@ export class FeedApplier {
       encryption,
       version,
     );
+    if (await row.refreshMetadata()) return "done";
     return this.entry(conversationId, entry, encryption, row, state, input);
   }
 

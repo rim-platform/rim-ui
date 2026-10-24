@@ -22,7 +22,7 @@ describe("uploadFileRest", () => {
       ),
     );
 
-    const err = await uploadFileRest(file, "tok", "att-1").catch((e: unknown) => e);
+    const err = await uploadFileRest(file, "tok", "att-1", "ws-1").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(FeatureDisabledError);
     expect((err as FeatureDisabledError).feature).toBe("attachments");
   });
@@ -32,11 +32,13 @@ describe("uploadFileRest", () => {
       http.post("*/api/files/upload", () => HttpResponse.json({ error: "nope" }, { status: 403 })),
     );
 
-    await expect(uploadFileRest(file, "tok", "att-1")).rejects.toThrow(/Upload failed: 403/);
+    await expect(uploadFileRest(file, "tok", "att-1", "ws-1")).rejects.toThrow(
+      /Upload failed: 403/,
+    );
   });
 
   it("resolves on success", async () => {
     server.use(http.post("*/api/files/upload", () => new HttpResponse(null, { status: 204 })));
-    await expect(uploadFileRest(file, "tok", "att-1")).resolves.toBeUndefined();
+    await expect(uploadFileRest(file, "tok", "att-1", "ws-1")).resolves.toBeUndefined();
   });
 });

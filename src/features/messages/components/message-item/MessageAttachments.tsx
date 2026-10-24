@@ -10,6 +10,8 @@ import { IsolatedMenu } from "../../../../shared/ui/contextMenu/IsolatedMenu";
 import { followLink } from "../../../../shared/ui/contextMenu/menuActions";
 import { useContextMenu } from "../../../../shared/ui/contextMenu/useContextMenu";
 import { useDeleteAttachmentMutation } from "../../api/useAttachments";
+import { downloadAttachment, useRemoteAttachment } from "../../api/attachmentDownloads";
+import { useRelayStore } from "../../../relay/state/useRelayStore";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { AUTO_MEDIA_BYTES, DownloadedMedia } from "./DownloadedMedia";
 import { InlineMedia } from "./InlineMedia";
@@ -29,6 +31,7 @@ export const MessageAttachments = memo(function MessageAttachments({
   serverId?: string;
 }) {
   const baseUrl = getApiOrigin();
+  const remote = useRelayStore((state) => Boolean(serverId && state.spaces[serverId]));
   const deleteAttachment = useDeleteAttachmentMutation();
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
   const contextMenu = useContextMenu();
@@ -102,6 +105,16 @@ export const MessageAttachments = memo(function MessageAttachments({
     );
   }
 
+  async function saveRemote(att: MessageAttachment) {
+    try {
+      const url = URL.createObjectURL(await downloadAttachment(serverId, att.id));
+      followLink(url, att.filename);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch {
+      toast.error("Failed to download attachment");
+    }
+  }
+
   /**
    * A file attachment's menu: Open and Download once it is uploaded, Delete attachment when
    * its upload failed. An attachment still uploading has none, so the message's menu opens.
@@ -113,14 +126,17 @@ export const MessageAttachments = memo(function MessageAttachments({
   ): DropdownMenuItem[] {
     const items: DropdownMenuItem[] = [];
     if (downloadUrl) {
-      items.push(
-        { id: "open-attachment", label: "Open", onSelect: () => followLink(downloadUrl) },
-        {
-          id: "download-attachment",
-          label: "Download",
-          onSelect: () => followLink(downloadUrl, att.filename),
-        },
-      );
+      if (!remote)
+        items.push({
+          id: "open-attachment",
+          label: "Open",
+          onSelect: () => followLink(downloadUrl),
+        });
+      items.push({
+        id: "download-attachment",
+        label: "Download",
+        onSelect: () => (remote ? void saveRemote(att) : followLink(downloadUrl, att.filename)),
+      });
     }
     if (canDelete) {
       items.push({
@@ -152,6 +168,10 @@ export const MessageAttachments = memo(function MessageAttachments({
               url={downloadUrl}
               filename={att.filename}
               sizeBytes={att.sizeBytes}
+              serverId={serverId}
+              attachmentId={att.id}
+              contentType={att.contentType}
+              remote={remote}
             />
           );
         }
@@ -167,7 +187,12 @@ export const MessageAttachments = memo(function MessageAttachments({
               )}
             >
               <a
-                href={canDownload ? downloadUrl : undefined}
+                href={canDownload ? (remote ? "#" : downloadUrl) : undefined}
+                onClick={(event) => {
+                  if (!remote || !canDownload) return;
+                  event.preventDefault();
+                  void saveRemote(att);
+                }}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={cn(
@@ -227,15 +252,25 @@ function AttachmentMedia({
   url,
   filename,
   sizeBytes,
+  serverId,
+  attachmentId,
+  contentType,
+  remote,
 }: {
   kind: MediaKind;
   url: string;
   filename: string;
   sizeBytes: number;
+  serverId?: string;
+  attachmentId: string;
+  contentType: string;
+  remote: boolean;
 }) {
   const [requested, setRequested] = useState(sizeBytes <= AUTO_MEDIA_BYTES);
-  const media = useServerMedia(url, requested);
-  if (!loadsAsBlob(url)) {
+  const local = useServerMedia(remote ? null : url, requested);
+  const hosted = useRemoteAttachment(serverId, attachmentId, contentType, remote && requested);
+  const media = remote ? hosted : local;
+  if (!remote && !loadsAsBlob(url)) {
     return (
       <div className="w-fit max-w-full">
         <InlineMedia kind={kind} src={url} filename={filename} />

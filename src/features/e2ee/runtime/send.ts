@@ -16,10 +16,9 @@ import type { MessageAuthor, MessageItem } from "../../../core/types/messages";
 import { hostOf } from "../../relay/state/useRelayStore";
 import { asResponse, remoteFetch } from "../../relay/transport/remoteFetch";
 import {
-  createAttachment,
-  finalizeAttachment,
-  uploadFileRest,
-} from "../../messages/api/useAttachments";
+  uploadAttachments,
+  type AttachmentUploadBatch,
+} from "../../messages/api/attachmentUploads";
 import {
   editEncryptedMessage,
   fetchConversationGroup,
@@ -64,6 +63,19 @@ export class EncryptedSendError extends Error {
     this.name = "EncryptedSendError";
     this.code = code;
     this.unsentBody = unsentBody;
+  }
+}
+
+/** The encrypted message was delivered, but its opaque files still need uploading. */
+export class EncryptedUploadError extends Error {
+  constructor(
+    readonly batch: AttachmentUploadBatch,
+    cause?: unknown,
+  ) {
+    super("Message sent, but some files could not be uploaded. Retry the files below.", {
+      cause,
+    });
+    this.name = "EncryptedUploadError";
   }
 }
 
@@ -160,36 +172,6 @@ async function deliver(
     graphqlErrorCode(lastError),
     settled.unsentBody,
   );
-}
-
-async function uploadEncrypted(
-  workspaceId: string,
-  conversationId: string,
-  messageId: string,
-  blobs: { blob: Uint8Array; blobSha256: string }[],
-) {
-  for (const { blob, blobSha256 } of blobs) {
-    const ticket = await createAttachment({
-      serverId: workspaceId,
-      conversationId,
-      messageId,
-      filename: "encrypted",
-      contentType: "application/octet-stream",
-      sizeBytes: blob.byteLength,
-      blobSha256,
-    });
-    const file = new File([blob as BlobPart], "encrypted", { type: "application/octet-stream" });
-    await uploadFileRest(
-      file,
-      ticket.createAttachment.uploadToken,
-      ticket.createAttachment.attachmentId,
-      workspaceId,
-    );
-    await finalizeAttachment({
-      attachmentId: ticket.createAttachment.attachmentId,
-      serverId: workspaceId,
-    });
-  }
 }
 
 /**
@@ -301,7 +283,22 @@ export async function sendEncrypted(
         forwardedFromMessageId: o.forwardedFromMessageId,
       }),
     ).finally(() => invalidateTimeline(workspaceId, conversationId));
-    await uploadEncrypted(workspaceId, conversationId, message.id, [...files, ...forwarded]);
+    const batch: AttachmentUploadBatch = {
+      workspaceId,
+      conversationId,
+      messageId: message.id,
+      files: [...files, ...forwarded].map(({ blob, blobSha256 }, index) => ({
+        file: new File([blob as BlobPart], "encrypted", { type: "application/octet-stream" }),
+        blobSha256,
+        displayName: draft.files?.[index]?.name ?? "Forwarded file",
+      })),
+    };
+    try {
+      await uploadAttachments(batch);
+    } catch (err) {
+      logger.warn("[RIM:e2ee] attachment upload failed:", err);
+      throw new EncryptedUploadError(batch, err);
+    }
     invalidateTimeline(workspaceId, conversationId);
     return message.id;
   });

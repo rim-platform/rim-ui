@@ -20,6 +20,7 @@ use rim_mls::{
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 use super::group::{
     apply_commit, conversation_group, load_state, pin, save_state, CommitInput, CommitStep,
@@ -231,6 +232,9 @@ impl<'a> Decryptor<'a> {
             encryption,
             version,
         };
+        if row.refresh_metadata(tx)? {
+            return Ok(Handled::Done);
+        }
         let incarnation = encryption.incarnation;
 
         if incarnation < state.incarnation || (incarnation == state.incarnation && state.removed) {
@@ -534,6 +538,51 @@ struct RowFacts<'r> {
 }
 
 impl RowFacts<'_> {
+    /// Refreshes server metadata for a cached message whose verified ciphertext is unchanged.
+    fn refresh_metadata(&self, tx: &Transaction<'_>) -> Result<bool, CacheError> {
+        let cached: Option<(Option<String>, String)> = tx.query_row(
+            "SELECT text, payload FROM message WHERE id = ?1 AND conversation_id = ?2 \
+             AND workspace_id = ?3 AND thread_id IS ?4 AND author_id = ?5 AND e2ee_state = 'decrypted'",
+            params![self.entry.id, self.conversation_id, self.workspace_id, self.entry.thread_id, self.entry.author_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?;
+        let Some((text, payload)) = cached else {
+            return Ok(false);
+        };
+        let payload: Value = serde_json::from_str(&payload)?;
+        let Some(facts) = payload.get("e2ee").and_then(Value::as_object) else {
+            return Ok(false);
+        };
+        if !self
+            .envelope_facts("decrypted")
+            .iter()
+            .all(|(key, value)| facts.get(key) == Some(value))
+            || facts.get("senderPrincipalId").and_then(Value::as_str)
+                != self
+                    .entry
+                    .author
+                    .as_ref()
+                    .and_then(|author| author.principal_id.as_deref())
+        {
+            return Ok(false);
+        }
+        let Some(content) = facts
+            .get("content")
+            .and_then(Value::as_str)
+            .and_then(|content| MessageContent::parse(content.as_bytes()).ok())
+        else {
+            return Ok(false);
+        };
+        let payload = content_payload(
+            self.base_payload(),
+            &self.change.message,
+            &content,
+            facts.clone(),
+        );
+        self.write(tx, text, payload, "decrypted")?;
+        Ok(true)
+    }
+
     fn write(
         &self,
         tx: &Transaction<'_>,
@@ -592,6 +641,16 @@ impl RowFacts<'_> {
             json!(self.encryption.franking_key_id),
         );
         e2ee.insert("sentAtUs".into(), json!(self.encryption.sent_at_us));
+        e2ee.insert(
+            "ciphertextHash".into(),
+            json!(b64(&Sha256::digest(
+                self.encryption
+                    .ciphertext
+                    .as_deref()
+                    .unwrap_or_default()
+                    .as_bytes()
+            ))),
+        );
         e2ee
     }
 

@@ -29,7 +29,7 @@ const FINALIZE_ATTACHMENT_MUTATION = gql`
   ${ATTACHMENT_FIELDS}
 `;
 
-interface UploadTicket {
+export interface UploadTicket {
   attachmentId: string;
   uploadToken: string;
   expiresAt: string | null;
@@ -115,12 +115,12 @@ export async function uploadFileRest(
   file: File,
   uploadToken: string,
   attachmentId: string,
-  workspaceId?: string,
+  workspaceId: string,
 ): Promise<void> {
   const uploadUrl = getApiOrigin() + "/api/files/upload";
 
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", file, file.name);
   formData.append("upload_token", uploadToken);
   formData.append("attachment_id", attachmentId);
 

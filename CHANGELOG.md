@@ -103,6 +103,14 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Fixed
 
+- Failed message sends retain the draft and selected files. If the message arrives but its
+  files fail to upload, **Retry files** resumes the unfinished uploads without sending the
+  message again. Retries remain available when returning to the conversation while the account
+  stays unlocked; reloading the app or locking the account discards the retained files.
+- Plaintext attachments upload to and download from the workspace's host, including inline
+  media. Unsupported or oversized selected files are rejected before sending the message.
+- Encrypted attachments wait for upload completion before loading inline, and cached messages
+  receive attachment metadata updates without consuming their decryption key again.
 - Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
 - Refresh member pictures, message authors and the signed-in profile when a profile update arrives from another session.
 - **Upgrade:** update the server before this client: message queries now require the workspace

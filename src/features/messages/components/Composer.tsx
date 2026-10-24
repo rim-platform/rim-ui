@@ -2,11 +2,9 @@ import { useState, useRef, useEffect, useMemo } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
-import {
-  useCreateAttachmentMutation,
-  useFinalizeAttachmentMutation,
-  uploadFileRest,
-} from "../api/useAttachments";
+import { useAttachmentUploads } from "../api/useAttachmentUploads";
+import { attachmentProblem } from "../api/attachmentTypes";
+import { AttachmentRetries } from "./AttachmentRetries";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
@@ -26,9 +24,7 @@ import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
 import {
   graphqlErrorCode,
   graphqlErrorMessage,
-  RATE_LIMITED,
   retryAfterSeconds,
-  TIMED_OUT,
 } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { slowModeWaitMessage } from "../../conversations/api/useSlowMode";
@@ -51,7 +47,7 @@ import {
 import { FilePreviewBar } from "./FilePreviewBar";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { SendBlock } from "../../e2ee/hooks/useE2eeConversation";
-import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
+import { EncryptedSendError, EncryptedUploadError, sendEncrypted } from "../../e2ee/runtime/send";
 import { replaceMentions, toPrincipalMentions } from "../../e2ee/utils/content";
 import {
   startDirectMessage,
@@ -123,6 +119,10 @@ function MessageComposer(props: ComposerProps) {
   // Where the unsent text is kept: the conversation, or a key of the draft's own.
   const textKey = props.draft ? directDraftKey(props.draft.target) : props.conversationId;
   const [text, setText] = useState("");
+  const textKeyRef = useRef(textKey);
+  textKeyRef.current = textKey;
+  const submitting = useRef(false);
+  const [isSending, setIsSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const pendingFilesRef = useRef(pendingFiles);
   pendingFilesRef.current = pendingFiles;
@@ -137,8 +137,7 @@ function MessageComposer(props: ComposerProps) {
   const mentionMapRef = useRef<Map<string, string>>(new Map());
   const qc = useQueryClient();
   const send = useSendMessageMutation();
-  const createAttachment = useCreateAttachmentMutation();
-  const finalizeAttachment = useFinalizeAttachmentMutation();
+  const uploads = useAttachmentUploads(workspaceId, conversationId);
   // `draftStore` is a module-level Zustand store reference — it is stable across
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
@@ -199,10 +198,11 @@ function MessageComposer(props: ComposerProps) {
         textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
       }
     }
+    const input = textareaRef.current;
     return () => {
       // Flush any pending debounced save when switching away
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      draftStore.getState().setDraft(textKey, textareaRef.current?.value ?? "");
+      draftStore.getState().setDraft(textKey, input?.value ?? saved);
     };
     // draftStore is a stable module-level reference and does not need to be a dependency.
   }, [textKey]);
@@ -221,11 +221,10 @@ function MessageComposer(props: ComposerProps) {
 
   /**
    * Shows the server's message for a failed send. An archived (or no longer visible)
-   * conversation also refetches, so the composer flips to the archived bar. A rate limit
-   * (slow mode, or the server's message and request limits) and a timeout give the text back,
-   * since the message never left.
+   * conversation also refetches, so the composer flips to the archived bar. Unsent drafts stay
+   * in the composer until the server accepts the message.
    */
-  function handleSendError(err: unknown, fallback: string, unsentText?: string) {
+  function handleSendError(err: unknown, fallback: string) {
     if (reportFeatureDisabled(err, qc)) return;
     const code = graphqlErrorCode(err);
     const waitSeconds = retryAfterSeconds(err);
@@ -238,9 +237,6 @@ function MessageComposer(props: ComposerProps) {
     if (noteTimedOutError(workspaceId, err)) {
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
     }
-    if (unsentText !== undefined && (code === RATE_LIMITED || code === TIMED_OUT)) {
-      restoreText(unsentText);
-    }
     if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {
       refetchConversation();
     }
@@ -251,11 +247,6 @@ function MessageComposer(props: ComposerProps) {
     if (byteCap === null || utf8Bytes(sent) <= byteCap) return false;
     toast.error(limitReachedText(byteCap, "bytes of text per message"));
     return true;
-  }
-
-  function restoreText(value: string) {
-    setText((current) => (current ? current : value));
-    draftStore.getState().setDraft(textKey, value);
   }
 
   /** Records a sent message: lifts the typing throttle and starts any slow-mode wait. */
@@ -271,8 +262,28 @@ function MessageComposer(props: ComposerProps) {
   }
 
   async function handleSubmit() {
+    if (submitting.current) return;
+    submitting.current = true;
+    setIsSending(true);
+    try {
+      await submit();
+    } finally {
+      submitting.current = false;
+      setIsSending(false);
+    }
+  }
+
+  async function submit() {
     if (timedOutUntil || offline) return;
+    for (const { file } of pendingFiles) {
+      const problem = attachmentProblem(file, Boolean(encryption || draft?.encrypted));
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+    }
     const unsentText = text;
+    draftStore.getState().setDraft(textKey, unsentText);
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
 
@@ -362,10 +373,7 @@ function MessageComposer(props: ComposerProps) {
       const sent = encrypted
         ? await submitEncrypted(unsentText, trimmed, id)
         : await submitPlain(unsentText, trimmed, id);
-      if (!sent) {
-        restoreText(unsentText);
-        return;
-      }
+      if (!sent) return;
       openStarted(composerDraft.target, spaceId, id);
     } finally {
       startingRef.current = false;
@@ -384,91 +392,60 @@ function MessageComposer(props: ComposerProps) {
     else useShellStore.getState().setSelectedConversationId(id, options);
   }
 
-  /** Clears the composer once a message leaves: its text, files and saved draft. */
-  function clearSent() {
-    pendingFiles.forEach((pf) => {
-      if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
+  /** Clears only the delivered draft; newer text and file selections remain. */
+  function clearSent(sentText: string, sentFiles: PendingFile[]) {
+    if (draftStore.getState().getDraft(textKey) === sentText)
+      draftStore.getState().clearDraft(textKey);
+    sentFiles.forEach(({ previewUrl }) => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
     });
-    // Sending a message counts as catching up — dismiss any "New messages" divider
-    if (conversationId) useUnreadStore.getState().clearWatermark(conversationId);
-    setText("");
-    setPendingFiles([]);
-    mentionMapRef.current = new Map();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    draftStore.getState().clearDraft(textKey);
-    if (textareaRef.current) {
+    setPendingFiles((current) => current.filter((file) => !sentFiles.includes(file)));
+    if (textKeyRef.current !== textKey) return;
+    if (textareaRef.current?.value === sentText) {
+      setText("");
+      mentionMapRef.current = new Map();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      draftStore.getState().clearDraft(textKey);
       textareaRef.current.style.height = "auto";
     }
+    if (conversationId) useUnreadStore.getState().clearWatermark(conversationId);
   }
 
-  /** Send in plaintext, then attach any files. Returns whether the message went out. */
+  /** Sends plaintext once; file failures retain an upload retry for the delivered message. */
   async function submitPlain(unsentText: string, trimmed: string, target: string) {
     let processed = trimmed ? replaceShortcodes(trimmed) : "";
     processed = replaceMentions(processed, mentionsToSend(), (userId) => `<@${userId}>`);
     if (refuseOverByteCap(processed)) return false;
-    const filesToUpload = pendingFiles.map((pf) => pf.file);
-    clearSent();
-
-    if (filesToUpload.length === 0) {
-      // No files — simple send
-      try {
-        await send.mutateAsync({ workspaceId, conversationId: target, text: processed });
-      } catch (err) {
-        handleSendError(err, "Failed to send message", unsentText);
-        return false;
-      }
-      noteSent();
-      textareaRef.current?.focus();
-      return true;
-    }
-
-    // With files: send message first, then attach files
-    setIsUploading(true);
-    let sent = false;
+    const selected = pendingFiles;
+    let messageId: string;
     try {
-      const sendResult = await send.mutateAsync({
+      const result = await send.mutateAsync({
         workspaceId,
         conversationId: target,
         text: processed,
       });
-      const messageId = sendResult.sendMessage.id;
-      sent = true;
-      noteSent();
-
-      // Upload each file
-      for (const file of filesToUpload) {
-        const ticket = await createAttachment.mutateAsync({
-          serverId: workspaceId,
-          conversationId: target,
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-          messageId,
-        });
-
-        await uploadFileRest(
-          file,
-          ticket.createAttachment.uploadToken,
-          ticket.createAttachment.attachmentId,
-        );
-
-        await finalizeAttachment.mutateAsync({
-          attachmentId: ticket.createAttachment.attachmentId,
-          serverId: workspaceId,
-        });
-      }
-      // Refresh messages to update attachment status from PENDING -> READY
-      qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, target) });
+      messageId = result.sendMessage.id;
     } catch (err) {
-      handleSendError(err, "Failed to upload attachment");
-      // The REST upload answers 409 (no GraphQL code) when the conversation was archived
-      // in the meantime; refetching lets the archived bar take over if so.
-      refetchConversation(target);
-    } finally {
-      setIsUploading(false);
-      textareaRef.current?.focus();
+      handleSendError(err, "Failed to send message");
+      return false;
     }
-    return sent;
+    clearSent(unsentText, selected);
+    noteSent();
+    if (selected.length > 0) {
+      setIsUploading(true);
+      try {
+        await uploads.run({
+          workspaceId,
+          conversationId: target,
+          messageId,
+          files: selected.map(({ file }) => ({ file })),
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    }
+    textareaRef.current?.focus();
+    return true;
   }
 
   /**
@@ -482,8 +459,8 @@ function MessageComposer(props: ComposerProps) {
     const text = trimmed ? replaceShortcodes(trimmed) : "";
     const body = toPrincipalMentions(text, mentionsToSend(), principalOf);
     if (refuseOverByteCap(body)) return false;
-    const files = pendingFiles.map((pf) => pf.file);
-    clearSent();
+    const selected = pendingFiles;
+    const files = selected.map((pf) => pf.file);
 
     const me = members.find((m) => m.userId === currentUserId);
     setIsUploading(files.length > 0);
@@ -499,15 +476,22 @@ function MessageComposer(props: ComposerProps) {
           principalId: me?.principalId ?? null,
         },
       });
+      clearSent(unsentText, selected);
       noteSent();
       return true;
     } catch (err) {
+      if (err instanceof EncryptedUploadError) {
+        clearSent(unsentText, selected);
+        noteSent();
+        uploads.remember(err.batch);
+        if (!reportFeatureDisabled(err.cause, qc)) toast.error(err.message);
+        return true;
+      }
       const fallback = "Failed to send the encrypted message";
       if (err instanceof EncryptedSendError) {
         toast.error(err.message || fallback);
-        restoreText(unsentText);
       } else {
-        handleSendError(err, fallback, unsentText);
+        handleSendError(err, fallback);
       }
       return false;
     } finally {
@@ -582,6 +566,7 @@ function MessageComposer(props: ComposerProps) {
         blockedUntil={slowModeBlockedUntil}
         exempt={isModerator}
       />
+      <AttachmentRetries uploads={uploads} />
       <FilePreviewBar pendingFiles={pendingFiles} onRemove={removeFile} />
 
       {attachments && (
@@ -608,7 +593,7 @@ function MessageComposer(props: ComposerProps) {
           onSubmit={() => void handleSubmit()}
           onKeystroke={handleKeystroke}
           saveDraftDebounced={saveDraftDebounced}
-          isSubmitting={send.isPending || isStarting}
+          isSubmitting={isSending || isStarting}
           isUploading={isUploading}
           canSubmit={!offline && !!(text.trim() || pendingFiles.length > 0)}
           textareaRef={textareaRef}

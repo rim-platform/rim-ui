@@ -17,7 +17,7 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
-import { E2eeCommandError, e2eeCommands } from "../api/e2eeCommands";
+import { E2eeCommandError, e2eeCommands, encryptAttachment } from "../api/e2eeCommands";
 import { webE2eeCommands as commands, closeStores } from "./webCommands";
 import { lockVault } from "../../../core/accountVault/accountVault";
 import { unlockTestVault } from "../../../test/accountVault";
@@ -120,6 +120,43 @@ describe("the web backend against a simulated server", () => {
     // The same entry again is skipped; the key it used is gone either way.
     expect((await bob.sync(s))[0]?.decrypted ?? []).toEqual([]);
     expect((await bob.timeline()).map((m) => m.text)).toEqual(["hi bob"]);
+  });
+
+  it("refreshes attachment metadata without decrypting the same ciphertext twice", async () => {
+    const { s, alice, bob } = await aliceAndBob();
+    const blob = await encryptAttachment(new Uint8Array([1, 2, 3]), "photo.png", "image/png");
+    const out = await commands.encryptMessage(alice.account, WS, CONVERSATION, {
+      body: "a picture",
+      attachments: [blob.blobSha256],
+      authorId: alice.userId,
+      author: alice.author(),
+    });
+    expect(s.deliver(alice, out)).not.toBeNull();
+    await bob.sync(s);
+    expect((await bob.row(out.messageId))?.attachments).toMatchObject([
+      { status: "PENDING_UPLOAD", filename: "photo.png" },
+    ]);
+    s.tamper(out.messageId, (message) => {
+      message.hasAttachments = true;
+      message.attachments = [
+        {
+          id: "att-ready",
+          blobSha256: blob.blobSha256,
+          status: "READY",
+          filename: "encrypted",
+          contentType: "application/octet-stream",
+          sizeBytes: blob.blob.length,
+        },
+      ];
+    });
+    await bob.sync(s);
+    expect(await bob.row(out.messageId)).toMatchObject({
+      text: "a picture",
+      e2ee: { status: "decrypted" },
+      attachments: [
+        { id: "att-ready", filename: "photo.png", contentType: "image/png", status: "READY" },
+      ],
+    });
   });
 
   it("keeps every record sealed, and reads nothing while the account is locked", async () => {

@@ -233,6 +233,13 @@ export function applyWorkspaceEvent(
     case "MessageUpdated": {
       const updated = messageFromEvent(event.message);
 
+      void qc.invalidateQueries({
+        queryKey: queryKeys.messages(workspaceId, event.conversation_id),
+      });
+      void qc.invalidateQueries({
+        queryKey: ["pinnedMessages", workspaceId, event.conversation_id],
+      });
+
       if (event.message.thread_id) {
         // Thread message — invalidate thread queries
         qc.invalidateQueries({
