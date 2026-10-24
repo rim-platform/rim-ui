@@ -465,7 +465,8 @@ pub(super) fn open_keyed(path: &Path, key: &CacheKey) -> Result<Connection, Cach
     Ok(conn)
 }
 
-fn remove_database_files(path: &Path) -> Result<(), CacheError> {
+/// Delete a database file and its `-wal` and `-shm` files; missing ones are skipped.
+pub(super) fn remove_database_files(path: &Path) -> Result<(), CacheError> {
     for suffix in ["", "-wal", "-shm"] {
         let mut name = path.as_os_str().to_owned();
         name.push(suffix);

@@ -122,6 +122,16 @@ export function removePendingRemoteJoin(host: string, workspaceId: string): void
 }
 
 /**
+ * Forget every pending request of `account`, an account removed from this device.
+ *
+ * @param account - The account's key, `endpoint|principalId`.
+ */
+export function forgetPendingRemoteJoins(account: string): void {
+  write(account, []);
+  changed();
+}
+
+/**
  * Be told when a request is kept or forgotten.
  *
  * @returns A function that stops telling `listener`.

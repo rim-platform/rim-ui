@@ -103,6 +103,28 @@ export function committed(tx: IDBTransaction): Promise<void> {
   });
 }
 
+/**
+ * Delete every record of the account (`endpoint`, `principalId`) from every store, in one
+ * transaction.
+ *
+ * @param endpoint - The endpoint as the store keeps it, as `storedEndpoint` writes it.
+ */
+export async function deleteAccount(endpoint: string, principalId: string): Promise<void> {
+  const names = Object.keys(KEY_PATHS) as StoreName[];
+  const tx = (await database()).transaction(names, "readwrite");
+  const finished = committed(tx);
+  const account = IDBKeyRange.only([endpoint, principalId]);
+  await Promise.all(
+    names.map(async (name) => {
+      const store = tx.objectStore(name);
+      for (const key of await done(store.index(BY_ACCOUNT).getAllKeys(account))) {
+        store.delete(key);
+      }
+    }),
+  );
+  await finished;
+}
+
 /** The key of a record of `store`, from its key path. */
 export function keyOf(store: StoreName, value: Record<string, unknown>): IDBValidKey {
   return KEY_PATHS[store].map((field) => value[field] as IDBValidKey);

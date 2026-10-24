@@ -53,8 +53,7 @@ export function useLoginMutation() {
   });
 }
 
-export function useLogoutMutation() {
-  return useMutation({
-    mutationFn: () => graphqlClient.request<LogoutResponse>(LOGOUT_MUTATION),
-  });
+/** End this session on the server. */
+export function logout(): Promise<LogoutResponse> {
+  return graphqlClient.request<LogoutResponse>(LOGOUT_MUTATION);
 }

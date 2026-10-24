@@ -3,7 +3,7 @@
 //!
 //! Database work runs on the blocking pool, never on the main thread.
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use serde::Serialize;
 
@@ -31,6 +31,17 @@ where
     })
     .await
     .map_err(|e| CacheError::Io(format!("cache task failed: {e}")))?
+}
+
+/// Remove the account's cache from this device: close its database and delete its files.
+#[tauri::command]
+pub async fn message_cache_remove_account(
+    app: AppHandle,
+    account: AccountId,
+) -> Result<(), CacheError> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<MessageCacheState>().remove(&account))
+        .await
+        .map_err(|e| CacheError::Io(format!("cache task failed: {e}")))?
 }
 
 /// The user opened a conversation: follow it from now on and remember when it was viewed.

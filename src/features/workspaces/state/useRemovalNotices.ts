@@ -19,6 +19,8 @@ interface RemovalNotices {
   accounts: Record<string, RemovalNotice[]>;
   add: (account: string, notice: RemovalNotice) => void;
   dismiss: (account: string, workspaceId: string) => void;
+  /** Drop every notice of `account`, an account removed from this device. */
+  forget: (account: string) => void;
 }
 
 /** Removal explanations stay visible for their account until explicitly dismissed. */
@@ -47,6 +49,12 @@ export const useRemovalNotices = create<RemovalNotices>()(
             ),
           },
         })),
+      forget: (account) =>
+        set((state) => {
+          const accounts = { ...state.accounts };
+          delete accounts[account];
+          return { accounts };
+        }),
     }),
     { name: "rim-workspace-removals", partialize: (state) => ({ accounts: state.accounts }) },
   ),
