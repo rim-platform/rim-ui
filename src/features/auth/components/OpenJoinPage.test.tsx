@@ -12,14 +12,6 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-vi.mock("../api/useSignupWithInviteMutation", () => ({
-  useSignupWithInviteMutation: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-    error: null,
-  }),
-}));
-
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (
     selector: (s: { workspaceId: string | null; setWorkspaceId: (id: string) => void }) => unknown,
@@ -52,7 +44,7 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
-const desktop = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
@@ -63,11 +55,12 @@ vi.mock("./KeySignupForm");
 
 import { OpenJoinPage } from "./OpenJoinPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
+import { NO_KEYS_HERE_MESSAGE } from "./NoKeysHere";
 
 describe("OpenJoinPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    desktop.value = false;
+    desktop.value = true;
     auth.session = null;
     auth.isHydrating = false;
   });
@@ -88,9 +81,7 @@ describe("OpenJoinPage", () => {
 
     renderPage();
 
-    expect(screen.getByText("Create account")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("yourname")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("password")).toBeInTheDocument();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
   });
 
   it("waits for the session cookie, then sends a signed-in account on to the app", () => {
@@ -98,7 +89,7 @@ describe("OpenJoinPage", () => {
     auth.isHydrating = true;
     const { rerender } = renderPage();
     expect(screen.getByText("Restoring session...")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
 
     auth.isHydrating = false;
@@ -109,7 +100,7 @@ describe("OpenJoinPage", () => {
       </MemoryRouter>,
     );
     expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
-    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
   });
 
   it("renders the signup form with a required invite code when registrationMode is INVITE_ONLY", () => {
@@ -122,7 +113,7 @@ describe("OpenJoinPage", () => {
 
     expect(screen.getByPlaceholderText("Invite code or link")).toBeRequired();
     expect(screen.getByText("Invite code")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("yourname")).toBeInTheDocument();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -143,7 +134,7 @@ describe("OpenJoinPage", () => {
     expect(
       screen.getByText("Could not read how this server creates accounts."),
     ).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
   });
 
   it("renders loading state and does not redirect while isPending", () => {
@@ -159,8 +150,7 @@ describe("OpenJoinPage", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("offers a key signup on the desktop, with no token, and signs the new account in", async () => {
-    desktop.value = true;
+  it("offers a key signup, with no token, and signs the new account in", async () => {
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "OPEN" },
       isPending: false,
@@ -175,8 +165,7 @@ describe("OpenJoinPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
-  it("offers only the key signup in the desktop app when registrationMode is POW", () => {
-    desktop.value = true;
+  it("offers the key signup in the desktop app when registrationMode is POW", () => {
     mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
     renderPage();
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();
@@ -185,6 +174,7 @@ describe("OpenJoinPage", () => {
   });
 
   it("points the web app to the desktop app or an invite when registrationMode is POW", () => {
+    desktop.value = false;
     mockUseServerConfig.mockReturnValue({ data: { registrationMode: "POW" }, isPending: false });
     renderPage();
     expect(
@@ -193,13 +183,16 @@ describe("OpenJoinPage", () => {
     expect(screen.queryByTestId("key-signup")).toBeNull();
   });
 
-  it("does not offer a key signup in the web app", () => {
+  it("says a browser that cannot create keys cannot sign up, with no form", () => {
+    desktop.value = false;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "OPEN" },
       isPending: false,
     });
     renderPage();
-    expect(screen.queryByRole("button", { name: /create account with a key/i })).toBeNull();
+    expect(screen.getByText(NO_KEYS_HERE_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).toBeNull();
+    expect(screen.queryByPlaceholderText("password")).toBeNull();
   });
 
   it("reaches its primary actions by keyboard", async () => {
@@ -209,16 +202,10 @@ describe("OpenJoinPage", () => {
       isPending: false,
     });
     renderPage();
-    const username = screen.getByPlaceholderText("yourname");
-    const email = screen.getByPlaceholderText("you@example.com");
-    const password = screen.getByPlaceholderText("password");
-    await expectReachableByKeyboard(user, [username, email, password]);
-    username.focus();
-    await user.keyboard("alice");
-    email.focus();
-    await user.keyboard("alice@example.com");
-    password.focus();
-    await user.keyboard("password123");
-    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Create account" })]);
+    await expectReachableByKeyboard(user, [
+      screen.getByPlaceholderText("Invite code or link"),
+      screen.getByRole("button", { name: /start key signup/i }),
+      screen.getByRole("button", { name: /finish key signup/i }),
+    ]);
   });
 });

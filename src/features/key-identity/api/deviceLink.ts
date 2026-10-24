@@ -133,7 +133,7 @@ export const DEVICE_LINK_MESSAGES = {
     "Your other device removed this device before it signed in, so its keys were removed from this computer. Start again.",
   rateLimited: "Too many link attempts from this network. Wait a few minutes and try again.",
   malformed: "The server refused the link message as malformed. Update the app and start again.",
-  noKeyIdentity: "This account has no key identity yet. Set up key sign-in first.",
+  noKeyIdentity: "This account has no key identity.",
   notFound: "The server no longer knows this link. Start again.",
   conflict: "The link ended before the answer reached the server. Start again.",
   expired: "The code expired before the link finished. Start again.",

@@ -60,7 +60,7 @@ export interface EnrollmentDraft {
   recoveryPhrase: string[];
 }
 
-/** What `enrollIdentityKey` and `signupWithKey` take. */
+/** What `signupWithKey` takes from a new identity. */
 export interface EnrollmentStatements {
   keyLog: SignedStatementInput[];
   device: SignedStatementInput;
@@ -186,12 +186,6 @@ export interface KeyBackend {
 
   /** Create the identity, recovery and device keys of a new identity, held as a draft. */
   beginEnrollment(deviceName: string): Promise<EnrollmentDraft>;
-  /** Store a draft's keys for `account`, then sign what `enrollIdentityKey` needs. */
-  signEnrollment(
-    draftId: string,
-    account: ServerAccount,
-    challenge: KeyChallenge,
-  ): Promise<EnrollmentStatements>;
   /** Store a draft's keys for a new account `username`, then sign what `signupWithKey` needs. */
   signSignup(
     draftId: string,
@@ -331,8 +325,6 @@ export const tauriKeyBackend: KeyBackend = {
   persistStorage: async () => "persisted",
 
   beginEnrollment: (deviceName) => keyCommand("key_identity_begin_enrollment", { deviceName }),
-  signEnrollment: (draftId, account, challenge) =>
-    keyCommand("key_identity_sign_enrollment", { draftId, account, challenge }),
   signSignup: (draftId, endpoint, username, challenge) =>
     keyCommand("key_identity_sign_signup", { draftId, endpoint, username, challenge }),
   removeDraftKeys: (draftId) => done("key_identity_remove_draft_keys", { draftId }),

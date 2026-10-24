@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -6,7 +6,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { renderWithServerInfo } from "../../../test/serverInfo";
 
 const mockNavigate = vi.fn();
-const mockSignupMutate = vi.fn();
 const mockJoinServerMutate = vi.fn();
 const mockSetSession = vi.fn();
 const mockSetWorkspaceId = vi.fn();
@@ -15,15 +14,6 @@ vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { ...actual, useNavigate: () => mockNavigate };
 });
-
-vi.mock("../api/useSignupWithInviteMutation", () => ({
-  useSignupWithInviteMutation: () => ({
-    mutate: mockSignupMutate,
-    mutateAsync: vi.fn(),
-    isPending: false,
-    error: null,
-  }),
-}));
 
 vi.mock("../../settings/api/useInviteMutations", () => ({
   useJoinServerByInviteMutation: () => ({
@@ -107,7 +97,7 @@ vi.mock("../../workspaces/api/useMyServers", () => ({
   useMyServers: () => myServers,
 }));
 
-const desktop = vi.hoisted(() => ({ value: false }));
+const desktop = vi.hoisted(() => ({ value: true }));
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
@@ -122,6 +112,7 @@ import { expectReachableByKeyboard } from "../../../test/keyboard";
 beforeEach(() => {
   config.mode = "INVITE_ONLY";
   config.isPending = false;
+  desktop.value = true;
 });
 
 describe("JoinPage — no-referrer meta tag", () => {
@@ -190,7 +181,7 @@ describe("JoinPage", () => {
   it("WORKSPACE preview → JoinForm renders with workspace-variant copy", () => {
     renderAtPath("/join/ws-token-abc");
     expect(screen.getByText(/Acme Corp/)).toBeInTheDocument();
-    expect(screen.getByText("Create account")).toBeInTheDocument();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
     // Negation: workspace variant must NOT show the generic instance heading
     expect(screen.queryByText("Create your RIM account")).not.toBeInTheDocument();
   });
@@ -198,48 +189,10 @@ describe("JoinPage", () => {
   it("reaches its primary actions by keyboard", async () => {
     const user = userEvent.setup();
     renderAtPath("/join/ws-token-abc");
-    const username = screen.getByPlaceholderText("yourname");
-    const email = screen.getByPlaceholderText("you@example.com");
-    const password = screen.getByPlaceholderText("password");
-    await expectReachableByKeyboard(user, [username, email, password]);
-    username.focus();
-    await user.keyboard("alice");
-    email.focus();
-    await user.keyboard("alice@example.com");
-    password.focus();
-    await user.keyboard("password123");
-    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Create account" })]);
-  });
-
-  it("workspace token: signup mutation called with workspaceInviteToken on submit", async () => {
-    mockSignupMutate.mockImplementation(
-      (
-        input: unknown,
-        opts: {
-          onSuccess: (d: { signupWithInvite: { userId: string; serverId: string } }) => void;
-        },
-      ) => {
-        opts.onSuccess({ signupWithInvite: { userId: "u1", serverId: "s1" } });
-      },
-    );
-
-    const user = userEvent.setup();
-    renderAtPath("/join/ws-token-abc");
-
-    await user.type(screen.getByPlaceholderText("yourname"), "alice");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
-    await user.type(screen.getByPlaceholderText("password"), "password123");
-    await user.click(screen.getByText("Create account"));
-
-    expect(mockSignupMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: "alice",
-        email: "alice@example.com",
-        password: "password123",
-        workspaceInviteToken: "ws-token-abc",
-      }),
-      expect.any(Object),
-    );
+    await expectReachableByKeyboard(user, [
+      screen.getByRole("button", { name: /start key signup/i }),
+      screen.getByRole("button", { name: /finish key signup/i }),
+    ]);
   });
 
   it("waits for the registration mode before showing the form", () => {
@@ -247,21 +200,14 @@ describe("JoinPage", () => {
     renderAtPath("/join/ws-token-abc");
 
     expect(screen.getByText("Loading invite...")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
   });
 
-  it("workspace token on an open server: signs up with no token", async () => {
+  it("workspace token on an open server: signs up with no token", () => {
     config.mode = "OPEN";
-    const user = userEvent.setup();
     renderAtPath("/join/ws-token-abc");
 
-    await user.type(screen.getByPlaceholderText("yourname"), "alice");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
-    await user.type(screen.getByPlaceholderText("password"), "password123");
-    await user.click(screen.getByText("Create account"));
-
-    expect(mockSignupMutate).toHaveBeenCalledTimes(1);
-    expect(mockSignupMutate.mock.calls[0][0]).not.toHaveProperty("workspaceInviteToken");
+    expect(JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "")).toEqual({});
   });
 
   it("instance token happy path: shows generic copy, no workspace name", () => {
@@ -277,79 +223,6 @@ describe("JoinPage", () => {
 
     expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
     expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
-  });
-
-  it("instance token: setWorkspaceId not called when serverId is null", async () => {
-    mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
-      isPending: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    mockSignupMutate.mockImplementation(
-      (
-        _input: unknown,
-        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: null } }) => void },
-      ) => {
-        opts.onSuccess({ signupWithInvite: { userId: "u2", serverId: null } });
-      },
-    );
-
-    const user = userEvent.setup();
-    renderAtPath("/join/inst-token-abc");
-
-    await user.type(screen.getByPlaceholderText("yourname"), "bob");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "bob@example.com");
-    await user.type(screen.getByPlaceholderText("password"), "password123");
-    await user.click(screen.getByText("Create account"));
-
-    expect(mockSignupMutate).toHaveBeenCalled();
-    expect(mockSetWorkspaceId).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith("/");
-  });
-
-  it("INSTANCE preview → JoinForm renders with instance-variant copy and submits with instanceInviteToken", async () => {
-    mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
-      isPending: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    mockSignupMutate.mockImplementation(
-      (
-        _input: unknown,
-        opts: { onSuccess: (d: { signupWithInvite: { userId: string; serverId: null } }) => void },
-      ) => {
-        opts.onSuccess({ signupWithInvite: { userId: "u-instance", serverId: null } });
-      },
-    );
-
-    const user = userEvent.setup();
-    renderAtPath("/join/inst-token-xyz");
-
-    // Instance variant shows the generic heading, not a workspace name
-    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
-
-    await user.type(screen.getByPlaceholderText("yourname"), "charlie");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "charlie@example.com");
-    await user.type(screen.getByPlaceholderText("password"), "password123");
-    await user.click(screen.getByText("Create account"));
-
-    expect(mockSignupMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: "charlie",
-        email: "charlie@example.com",
-        instanceInviteToken: "inst-token-xyz",
-      }),
-      expect.any(Object),
-    );
-
-    const [input] = mockSignupMutate.mock.calls[0] as [Record<string, unknown>, unknown];
-    expect(Object.prototype.hasOwnProperty.call(input, "workspaceInviteToken")).toBe(false);
   });
 
   it("INVALID_TOKEN error: renders matching copy", () => {
@@ -396,7 +269,7 @@ describe("JoinPage", () => {
     hydration.isHydrating = true;
     const { rerender } = renderAtPath("/join/ws-token-abc");
     expect(screen.getByText("Restoring session...")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("yourname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
 
     hydration.isHydrating = false;
     mockSession = { userId: "existing-user" };
@@ -408,7 +281,7 @@ describe("JoinPage", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("Join workspace")).toBeInTheDocument();
-    expect(screen.queryByText("Create account")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("key-signup")).not.toBeInTheDocument();
   });
 
   it("names the inviter and the workspace owner, signed in or not", () => {
@@ -455,47 +328,6 @@ describe("JoinPage", () => {
     expect(screen.queryByText(/You already belong/)).not.toBeInTheDocument();
   });
 
-  it("optional displayName field is rendered but not required", () => {
-    renderAtPath("/join/ws-token-abc");
-
-    // Display name label is present
-    expect(screen.getByText("Display name (optional)")).toBeInTheDocument();
-    // Helper text is shown
-    expect(screen.getByText("If left blank, your username will be shown.")).toBeInTheDocument();
-    // The email field is present and required
-    expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
-  });
-
-  it("email-bound instance invite: shows the server's refusal of another address", async () => {
-    const refusal = "this invite admits only the email address it was issued for";
-    mockUsePreviewInviteToken.mockReturnValue({
-      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
-      isPending: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    // A graphql-request ClientError: its own message embeds the whole response.
-    const err = Object.assign(new Error(`${refusal}: {"response":{"errors":[]}}`), {
-      response: { errors: [{ message: refusal, extensions: { code: "VALIDATION" } }] },
-    });
-    mockSignupMutate.mockImplementation(
-      (_input: unknown, opts: { onError: (err: unknown) => void }) => opts.onError(err),
-    );
-
-    const user = userEvent.setup();
-    renderAtPath("/join/operator-tok-abc");
-
-    await user.type(screen.getByPlaceholderText("yourname"), "newadmin");
-    await user.type(screen.getByPlaceholderText("you@example.com"), "other@example.com");
-    await user.type(screen.getByPlaceholderText("password"), "password123");
-    await user.click(screen.getByText("Create account"));
-
-    expect(screen.getByText(refusal)).toBeInTheDocument();
-    expect(mockSetSession).not.toHaveBeenCalled();
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
   it("already authenticated with instance token: renders instance-token error copy", () => {
     mockSession = { userId: "existing-user" };
 
@@ -515,16 +347,11 @@ describe("JoinPage", () => {
   });
 });
 
-describe("JoinPage — create account with a key (desktop)", () => {
+describe("JoinPage — create account with a key", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;
-    desktop.value = true;
     mockUsePreviewInviteToken.mockReturnValue({ ...mockPreviewData, refetch: vi.fn() });
-  });
-
-  afterEach(() => {
-    desktop.value = false;
   });
 
   function renderAtPath(path: string) {
@@ -551,7 +378,6 @@ describe("JoinPage — create account with a key (desktop)", () => {
     expect(mockSetSession).toHaveBeenCalledWith({ userId: "user-key" });
     expect(mockSetWorkspaceId).toHaveBeenCalledWith("server-key");
     expect(mockNavigate).toHaveBeenCalledWith("/");
-    expect(mockSignupMutate).not.toHaveBeenCalled();
   });
 
   it("instance token: signs up with instanceInviteToken and lands with no workspace", async () => {

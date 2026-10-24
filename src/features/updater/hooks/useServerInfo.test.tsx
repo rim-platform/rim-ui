@@ -121,24 +121,6 @@ describe("useServerInfo", () => {
     expect(result.current.info?.limits).toEqual(limits);
   });
 
-  it.each([true, false])("reads whether signup requires keys (%s)", async (required) => {
-    server.use(
-      mockGraphQLQuery("ServerInfo", {
-        serverInfo: {
-          version: "0.8.0",
-          apiVersion: CLIENT_API_VERSION,
-          features: [],
-          signupRequiresKeys: required,
-        },
-      }),
-    );
-    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
-
-    expect(result.current.signupRequiresKeys).toBeUndefined();
-    await waitFor(() => expect(result.current.info).toBeDefined());
-    expect(result.current.signupRequiresKeys).toBe(required);
-  });
-
   it("reads the operator's DM settings, and none from a server older than DM policies", async () => {
     server.use(
       mockGraphQLQuery("ServerInfo", {
@@ -171,19 +153,13 @@ describe("useServerInfo", () => {
         }
         return HttpResponse.json({
           data: {
-            serverInfo: {
-              version: "0.8.0",
-              apiVersion: 1,
-              features: [],
-              signupRequiresKeys: true,
-            },
+            serverInfo: { version: "0.8.0", apiVersion: 1, features: [] },
           },
         });
       }),
     );
     const older = renderHook(() => useServerInfo(), { wrapper: TestProviders });
     await waitFor(() => expect(older.result.current.info).toBeDefined());
-    expect(older.result.current.signupRequiresKeys).toBe(true);
     expect(older.result.current.info?.dmInbound).toBeUndefined();
   });
 
@@ -240,38 +216,6 @@ describe("useServerInfo", () => {
     expect(older.result.current.info?.dmInbound).toBe("ANYONE");
     expect(older.result.current.info?.registrationFull).toBeUndefined();
     expect(older.result.current.info?.minimumAge).toBeUndefined();
-  });
-
-  it("reads a server older than the signup policy as taking password signups, with its limits", async () => {
-    const limits = fakeLimits({ workspacesPerUser: 5 });
-    server.use(
-      http.post("*/api", async ({ request }) => {
-        const body = (await request.json()) as { operationName?: string };
-        if (body.operationName === "ServerInfo") {
-          return HttpResponse.json({
-            errors: [{ message: 'Unknown field "signupRequiresKeys" on type "ServerInfo"' }],
-          });
-        }
-        return HttpResponse.json({
-          data: {
-            serverInfo: { version: "0.7.0", apiVersion: 1, features: [], limits },
-          },
-        });
-      }),
-    );
-    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
-
-    await waitFor(() => expect(result.current.info).toBeDefined());
-    expect(result.current.signupRequiresKeys).toBe(false);
-    expect(result.current.limits).toEqual(limits);
-  });
-
-  it("reads an unreachable server as taking password signups", async () => {
-    server.use(http.post("*/api", () => HttpResponse.error()));
-    const { result } = renderHook(() => useServerInfo(), { wrapper: TestProviders });
-
-    await waitFor(() => expect(result.current.unreachable).toBe(true));
-    expect(result.current.signupRequiresKeys).toBe(false);
   });
 
   it("reads a server older than instance limits with its notice and no limits", async () => {

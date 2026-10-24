@@ -11,8 +11,7 @@
  *      are sent. The hook does not synthesize undefined keys.
  *   4. Confirm errors surface through the standard React Query `error` slot.
  *
- * Mocking style mirrors `useSignupWithInviteMutation.test.ts`: the
- * `getGraphqlEndpoint` config is pinned, MSW intercepts the GraphQL POST,
+ * Mocking: the `getGraphqlEndpoint` config is pinned, MSW intercepts the GraphQL POST,
  * and the harness uses `TestProviders` so React Query has a client.
  */
 

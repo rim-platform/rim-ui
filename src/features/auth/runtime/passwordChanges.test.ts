@@ -17,11 +17,6 @@ vi.mock("../../key-identity/api/keyBackend", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../key-identity/api/keyBackend")>()),
   keyCommand,
 }));
-const kit = vi.hoisted(() => ({ unsavedRecoveryKit: vi.fn() }));
-vi.mock("../../key-identity/api/keyIdentity", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../key-identity/api/keyIdentity")>()),
-  ...kit,
-}));
 const signReset = vi.hoisted(() => vi.fn());
 vi.mock("../../key-identity/browser/recoveryKit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../key-identity/browser/recoveryKit")>()),
@@ -33,16 +28,12 @@ const flows = vi.hoisted(() => ({
   changeRewrap: vi.fn(),
 }));
 vi.mock("./opaqueFlows", () => flows);
-const session = vi.hoisted(() => ({ holdSession: vi.fn(), fetchSessionKeepKey: vi.fn() }));
-vi.mock("./accountUnlock", () => ({ holdSession: session.holdSession }));
-vi.mock("../api/sessionKeys", () => ({ fetchSessionKeepKey: session.fetchSessionKeepKey }));
 
 import { WrongPasswordError } from "../api/passwordApi";
-import { changePassword, resetPassword, setFirstPassword } from "./passwordChanges";
+import { changePassword, resetPassword } from "./passwordChanges";
 
 const PRINCIPAL = "rimp1_ada";
 const STATEMENT = { payload: "{}", signature: "ed25519:reset" };
-const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer";
 
 function operation(call: unknown[]): string {
   return /(?:query|mutation)\s+(\w+)/.exec(String(call[0]))?.[1] ?? "";
@@ -84,11 +75,8 @@ beforeEach(() => {
   requestMock.mockReset();
   keyCommand.mockReset();
   signReset.mockReset();
-  kit.unsavedRecoveryKit.mockReset();
   Object.values(flows).forEach((fn) => fn.mockReset());
   desktop.value = false;
-  session.holdSession.mockReset().mockResolvedValue(undefined);
-  session.fetchSessionKeepKey.mockReset().mockResolvedValue(null);
 });
 
 describe("changePassword", () => {
@@ -234,63 +222,5 @@ describe("resetPassword", () => {
       challenge: { challengeId: "c-1", nonce: "n-1" },
     });
     expect(signReset).not.toHaveBeenCalled();
-  });
-});
-
-describe("setFirstPassword", () => {
-  it("registers the password and unlocks with a new data key, under the kit's phrase too", async () => {
-    const registration = fakeRegistration();
-    flows.startRegistration.mockResolvedValue(registration);
-    kit.unsavedRecoveryKit.mockResolvedValue({
-      principalId: PRINCIPAL,
-      recoveryKit: "kit",
-      recoveryPhrase: PHRASE.split(" "),
-    });
-    server({
-      SetPasswordStart: { setPasswordStart: "registration-response" },
-      SetPassword: { setPassword: { serverShare: "share-1" } },
-    });
-
-    await setFirstPassword(PRINCIPAL, "123456", true);
-
-    expect(requestMock.mock.calls[0][1]).toEqual({ registrationRequest: "registration-request" });
-    expect(requestMock.mock.calls[1][1]).toEqual({ registrationUpload: "registration-upload" });
-    expect(registration.unlockAfterSignup).toHaveBeenCalledWith({
-      endpoint: "http://localhost:8080/api",
-      principalId: PRINCIPAL,
-      serverShare: "share-1",
-      recoveryEntropy: expect.any(Uint8Array),
-      keep: true,
-    });
-  });
-
-  it("wraps the data key under the keep key a kept web session holds", async () => {
-    flows.startRegistration.mockResolvedValue(fakeRegistration());
-    kit.unsavedRecoveryKit.mockResolvedValue(null);
-    session.fetchSessionKeepKey.mockResolvedValue("keep-1");
-    server({
-      SetPasswordStart: { setPasswordStart: "registration-response" },
-      SetPassword: { setPassword: { serverShare: "share-1" } },
-    });
-
-    await setFirstPassword(PRINCIPAL, "123456", false);
-
-    expect(session.holdSession).toHaveBeenCalledWith({ sessionSecret: null, keepKey: "keep-1" });
-  });
-
-  it("unlocks without a recovery wrap where the device keeps no kit", async () => {
-    const registration = fakeRegistration();
-    flows.startRegistration.mockResolvedValue(registration);
-    kit.unsavedRecoveryKit.mockResolvedValue(null);
-    server({
-      SetPasswordStart: { setPasswordStart: "registration-response" },
-      SetPassword: { setPassword: { serverShare: "share-1" } },
-    });
-
-    await setFirstPassword(PRINCIPAL, "123456", false);
-
-    expect(registration.unlockAfterSignup).toHaveBeenCalledWith(
-      expect.objectContaining({ recoveryEntropy: null, keep: false }),
-    );
   });
 });

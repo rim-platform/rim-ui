@@ -44,7 +44,6 @@ import {
   removeDraftKeys,
   restoreDraftKeys,
   settledDrafts,
-  signEnrollment,
   signProfileCard,
   signRevocation,
   signSignup,
@@ -194,7 +193,6 @@ export const browserKeyBackend: KeyBackend = {
   persistStorage,
 
   beginEnrollment,
-  signEnrollment,
   signSignup,
   removeDraftKeys,
   restoreDraftKeys,

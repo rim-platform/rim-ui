@@ -175,20 +175,6 @@ const RESET_FINISH = gql`
   }
 `;
 
-const SET_PASSWORD_START = gql`
-  mutation SetPasswordStart($registrationRequest: String!) {
-    setPasswordStart(registrationRequest: $registrationRequest)
-  }
-`;
-
-const SET_PASSWORD = gql`
-  mutation SetPassword($registrationUpload: String!) {
-    setPassword(registrationUpload: $registrationUpload) {
-      serverShare
-    }
-  }
-`;
-
 /**
  * Starts registering the password of a new account.
  *
@@ -310,28 +296,4 @@ export async function passwordResetFinish(
   registrationUpload: string,
 ): Promise<void> {
   await graphqlClient.request(RESET_FINISH, { resetId, registrationUpload });
-}
-
-/**
- * Starts setting a password for a signed-in account that has none.
- *
- * @returns The `RegistrationResponse`.
- */
-export async function setPasswordStart(registrationRequest: string): Promise<string> {
-  const res = await graphqlClient.request<{ setPasswordStart: string }>(SET_PASSWORD_START, {
-    registrationRequest,
-  });
-  return res.setPasswordStart;
-}
-
-/**
- * Finishes setting the password.
- *
- * @returns The account's new server share, in the clear.
- */
-export async function setPassword(registrationUpload: string): Promise<string> {
-  const res = await graphqlClient.request<{ setPassword: { serverShare: string } }>(SET_PASSWORD, {
-    registrationUpload,
-  });
-  return res.setPassword.serverShare;
 }

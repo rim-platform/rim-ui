@@ -7,7 +7,6 @@ import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
 import { RestoringSessionSplash } from "../../features/auth/components/RestoringSession";
-import { SetPasswordScreen } from "../../features/auth/components/SetPasswordScreen";
 import { UnlockScreen } from "../../features/auth/components/UnlockScreen";
 import { useUnlockGate } from "../../features/auth/runtime/unlockGate";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -92,12 +91,10 @@ const MAIN_PANEL_PROPS = {
 
 /**
  * The signed-in app: the session is restored first, then the account's data must be unlocked on
- * this device before anything that reads it runs. An account without a password sees only the
- * screen that sets one.
+ * this device before anything that reads it runs.
  */
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
-  const mustSetPassword = useAuthStore((s) => s.mustSetPassword);
   const { isHydrating } = useSessionHydration();
   useSessionEndedSignOut();
   const gate = useUnlockGate(isHydrating ? null : (session?.userId ?? null));
@@ -130,12 +127,12 @@ export function AppShell() {
     return null;
   }
 
-  if (mustSetPassword || gate === "locked") {
+  if (gate === "locked") {
     return (
       <div className="flex h-screen flex-col bg-rim-void text-rim-text">
         {capabilities.customTitleBar && <TitleBar />}
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          {mustSetPassword ? <SetPasswordScreen /> : <UnlockScreen />}
+          <UnlockScreen />
         </div>
         <ToastContainer />
       </div>

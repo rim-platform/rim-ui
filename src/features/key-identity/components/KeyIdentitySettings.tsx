@@ -5,7 +5,6 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
-import { deviceKeysChanged } from "../../e2ee/runtime/session";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { RevocationFanoutPanel } from "../../relay/components/RevocationFanoutPanel";
 import { followRevocation } from "../../relay/remote/useRevocationStore";
@@ -25,13 +24,18 @@ import {
   rotateIdentityKey,
   settleDeviceKeys,
   syncKeyLog,
+  type KeyAccount,
   type MyKeyIdentity,
 } from "../api/keyIdentity";
 import { BrowserHistoryNotice } from "./BrowserHistoryNotice";
 import { CardRelays } from "./CardRelays";
 import { IdentityKeyBackup } from "./IdentityKeyBackup";
-import { EnrollKeyIdentity, type Me } from "./EnrollKeyIdentity";
 import { LinkDevicePanel } from "./LinkDevicePanel";
+
+/** The signed-in account, with the name its profile card shows. */
+interface Me extends KeyAccount {
+  displayName: string;
+}
 
 function errorText(err: unknown, fallback: string): string {
   return graphqlErrorMessage(err, fallback);
@@ -42,9 +46,9 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 /**
- * Settings > Security: sign in with this device's key instead of a password. Setting it up,
- * the account's devices, identity key rotation and the profile card live here; the keys
- * themselves stay with the key backend (the desktop's Tauri side, or the browser's key store).
+ * Settings > Security: the account's key identity. Its password, its devices, identity key
+ * rotation and the profile card live here; the keys themselves stay with the key backend (the
+ * desktop's Tauri side, or the browser's key store).
  */
 export function KeyIdentitySettings() {
   const { capabilities } = useRuntime();
@@ -57,18 +61,15 @@ export function KeyIdentitySettings() {
   const me: Me | null = user
     ? { userId: user.id, username: user.username, displayName: user.displayName || user.username }
     : null;
-  // Set when this panel enrolled the account, so the overview that replaces the enrollment
-  // says the other sessions were signed out.
-  const [justEnrolled, setJustEnrolled] = useState(false);
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-rim-text">Security</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Sign in with a key kept on this device instead of a password. Your account gets a
-          permanent account id that stays the same when keys change, and a recovery kit gets it back
-          if every device is lost.
+          Your account signs in with a key kept on this device and its password. It has a permanent
+          account id that stays the same when keys change, and a recovery kit gets it back if every
+          device is lost.
         </p>
         <BrowserHistoryNotice className="mt-2" />
       </div>
@@ -86,24 +87,15 @@ export function KeyIdentitySettings() {
           me={me}
           canSign={capabilities.identityKeys}
           canBackUp={capabilities.identityBackup}
-          justEnrolled={justEnrolled}
-        />
-      ) : capabilities.identityKeys ? (
-        <EnrollKeyIdentity
-          me={me}
-          onEnrolled={() => {
-            setJustEnrolled(true);
-            deviceKeysChanged();
-          }}
         />
       ) : (
-        <p className="text-sm text-rim-text-muted">Key sign-in is set up from the desktop app.</p>
+        <p className="text-sm text-rim-text-muted">This account has no key identity.</p>
       )}
     </div>
   );
 }
 
-// ─── An enrolled account ────────────────────────────────────────────────────
+// ─── The account's keys ─────────────────────────────────────────────────────
 
 function KeyIdentityOverview({
   identity,
@@ -111,7 +103,6 @@ function KeyIdentityOverview({
   me,
   canSign,
   canBackUp,
-  justEnrolled,
 }: {
   identity: MyKeyIdentity;
   principalId: string;
@@ -119,7 +110,6 @@ function KeyIdentityOverview({
   canSign: boolean;
   /** The identity key backup in the history archive is offered here. */
   canBackUp: boolean;
-  justEnrolled: boolean;
 }) {
   const qc = useQueryClient();
   const here = useRuntime().platform === "web" ? "browser" : "computer";
@@ -210,15 +200,6 @@ function KeyIdentityOverview({
         {local.error && (
           <p role="alert" className="mt-2 text-xs text-rim-danger">
             {errorText(local.error, `Could not check this ${here}'s keys.`)}
-          </p>
-        )}
-        {justEnrolled && (
-          <p
-            role="status"
-            className="mt-4 border-t border-rim-line pt-4 text-xs text-rim-text-muted"
-          >
-            Every other session of your account was signed out, so from now on only your keys get
-            in.
           </p>
         )}
       </div>

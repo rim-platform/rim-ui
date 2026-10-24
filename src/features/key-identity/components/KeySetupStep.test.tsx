@@ -4,12 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
-import {
-  enrollmentDraft,
-  KEY_ACCOUNT,
-  KEY_PRINCIPAL,
-  localKeyAccount,
-} from "../../../test/keyIdentity";
+import { KEY_ACCOUNT, KEY_PRINCIPAL, localKeyAccount } from "../../../test/keyIdentity";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { KEY_SETUP_LATER_MS, useKeySetupOfferStore } from "../state/keySetupOffer";
 import { useOfferKeySetup } from "..";
@@ -18,18 +13,11 @@ const api = vi.hoisted(() => ({
   listDeviceKeyAccounts: vi.fn(),
   defaultDeviceName: vi.fn(),
   reconcileDeviceKeys: vi.fn(),
-  beginEnrollment: vi.fn(),
-  completeEnrollment: vi.fn(),
-  abandonEnrollment: vi.fn(),
   deviceKeepsRecoveryKit: vi.fn(),
   requestKeyStorage: vi.fn(),
   confirmRecoveryKitSaved: vi.fn(),
 }));
-// `browserIdentity`: in the web app, a browser that can hold an identity key.
-const runtime = vi.hoisted(() => ({
-  platform: "desktop" as "desktop" | "web",
-  browserIdentity: false,
-}));
+const runtime = vi.hoisted(() => ({ platform: "desktop" as "desktop" | "web" }));
 const account = vi.hoisted(() => ({ principalId: null as string | null }));
 const deviceKeysChanged = vi.hoisted(() => vi.fn());
 
@@ -41,7 +29,7 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
     deviceKeyStore: runtime.platform === "web" ? "browser" : "keyring",
     capabilities: {
       deviceKeys: true,
-      identityKeys: runtime.platform === "desktop" || runtime.browserIdentity,
+      identityKeys: runtime.platform === "desktop",
     },
   }),
 }));
@@ -77,16 +65,14 @@ describe("KeySetupStep", () => {
     api.listDeviceKeyAccounts.mockResolvedValue([]);
     api.defaultDeviceName.mockResolvedValue("Laptop");
     api.reconcileDeviceKeys.mockResolvedValue(null);
-    api.abandonEnrollment.mockResolvedValue(undefined);
     api.deviceKeepsRecoveryKit.mockReturnValue(false);
     api.requestKeyStorage.mockResolvedValue("persisted");
     api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
     runtime.platform = "desktop";
-    runtime.browserIdentity = false;
-    account.principalId = null;
+    account.principalId = KEY_PRINCIPAL;
     localStorage.clear();
     useKeySetupOfferStore.setState({ available: null, requested: false });
-    // A password sign-in: a session, and no key for it on this device.
+    // A sign-in to an account with keys on another device, and none for it on this one.
     useAuthStore.setState({ session: { userId: KEY_ACCOUNT.userId } });
   });
 
@@ -94,31 +80,7 @@ describe("KeySetupStep", () => {
     useAuthStore.setState({ session: null });
   });
 
-  it("offers to create the keys after a password sign-in to an account without one, and closes once they are set up", async () => {
-    api.beginEnrollment.mockResolvedValue(enrollmentDraft);
-    api.completeEnrollment.mockResolvedValue(undefined);
-    renderStep();
-
-    expect(stepTitle()).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /create keys/i }));
-    expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
-    await userEvent.click(screen.getByLabelText(/i saved my recovery kit/i));
-    await userEvent.click(screen.getByRole("button", { name: "Set up encryption" }));
-
-    expect(api.completeEnrollment).toHaveBeenCalledWith(
-      enrollmentDraft,
-      expect.objectContaining(KEY_ACCOUNT),
-      "saved",
-    );
-    await waitFor(() => expect(stepTitle()).toBeNull());
-    expect(deviceKeysChanged).toHaveBeenCalledTimes(1);
-  });
-
   it("is not offered to an account whose key this device holds", async () => {
-    account.principalId = KEY_PRINCIPAL;
     api.listDeviceKeyAccounts.mockResolvedValue([localKeyAccount]);
     renderStep();
 
@@ -130,32 +92,34 @@ describe("KeySetupStep", () => {
   it("hides on Later and stays hidden for this account at the next start", async () => {
     const { unmount } = renderStep();
 
-    await userEvent.click(screen.getByRole("button", { name: "Later" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Later" }));
 
     expect(stepTitle()).toBeNull();
     expect(Number(localStorage.getItem(LATER_STORAGE_KEY))).toBeGreaterThan(0);
     unmount();
     renderStep();
+    await waitFor(() => expect(useKeySetupOfferStore.getState().available).toBe("link"));
     expect(stepTitle()).toBeNull();
   });
 
-  it("is offered again once seven days have passed since Later", () => {
+  it("is offered again once seven days have passed since Later", async () => {
     localStorage.setItem(LATER_STORAGE_KEY, String(Date.now() - KEY_SETUP_LATER_MS + 60_000));
     const { unmount } = renderStep();
+    await waitFor(() => expect(useKeySetupOfferStore.getState().available).toBe("link"));
     expect(stepTitle()).toBeNull();
     unmount();
 
     localStorage.setItem(LATER_STORAGE_KEY, String(Date.now() - KEY_SETUP_LATER_MS - 1));
     renderStep();
-    expect(stepTitle()).toBeInTheDocument();
+    expect(await screen.findByText("Set up encryption for this account")).toBeInTheDocument();
   });
 
-  it("comes back within the seven days when useOfferKeySetup asks for it", () => {
+  it("comes back within the seven days when useOfferKeySetup asks for it", async () => {
     localStorage.setItem(LATER_STORAGE_KEY, String(Date.now()));
     renderStep();
     const { result } = renderHook(() => useOfferKeySetup());
+    await waitFor(() => expect(result.current.available).toBe(true));
     expect(stepTitle()).toBeNull();
-    expect(result.current.available).toBe(true);
 
     act(() => result.current.offer());
 
@@ -164,82 +128,31 @@ describe("KeySetupStep", () => {
 
   it("offers to link this browser when the account has keys on another device", async () => {
     runtime.platform = "web";
-    account.principalId = KEY_PRINCIPAL;
     renderStep();
 
     expect(await screen.findByText(/already has keys on another device/i)).toBeInTheDocument();
     expect(screen.getByText(/link this browser to them/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/link code/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /create keys/i })).toBeNull();
-    expect(api.beginEnrollment).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "Later" }));
     expect(stepTitle()).toBeNull();
     expect(localStorage.getItem(LATER_STORAGE_KEY)).not.toBeNull();
   });
 
-  it("creates the keys in a browser that can hold them, enrolls, then shows the kit to save", async () => {
-    runtime.platform = "web";
-    runtime.browserIdentity = true;
-    api.deviceKeepsRecoveryKit.mockReturnValue(true);
-    api.beginEnrollment.mockResolvedValue(enrollmentDraft);
-    api.completeEnrollment.mockResolvedValue(undefined);
-    renderStep();
-
-    expect(screen.getByText(/a key for this browser/i)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
-    );
-    // One step: the keys are made and enrolled before the kit is shown.
-    expect(screen.queryByRole("button", { name: /create keys/i })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Set up encryption" }));
-
-    expect(api.requestKeyStorage).toHaveBeenCalled();
-    expect(api.completeEnrollment).toHaveBeenCalledWith(
-      enrollmentDraft,
-      expect.objectContaining(KEY_ACCOUNT),
-      "later",
-    );
-    expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
-    expect(stepTitle()).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "I saved it" }));
-    expect(api.confirmRecoveryKitSaved).toHaveBeenCalledWith(KEY_PRINCIPAL);
-    await userEvent.click(await screen.findByRole("button", { name: "Done" }));
-    await waitFor(() => expect(stepTitle()).toBeNull());
-  });
-
-  it("is not offered in a browser that cannot hold an identity key to an account without keys", () => {
+  it("says in a browser that encrypted history stays in it", async () => {
     runtime.platform = "web";
     renderStep();
-
-    expect(stepTitle()).toBeNull();
-    expect(useKeySetupOfferStore.getState().available).toBeNull();
-  });
-
-  it("says in a browser that encrypted history stays in it, when linking and when creating keys", async () => {
-    runtime.platform = "web";
-    account.principalId = KEY_PRINCIPAL;
-    const { unmount } = renderStep();
     expect(await screen.findByText(/already has keys on another device/i)).toBeInTheDocument();
     expect(
       screen.getByText(/encrypted messages are kept only in this browser/i),
     ).toBeInTheDocument();
-    unmount();
-
-    account.principalId = null;
-    runtime.browserIdentity = true;
-    renderStep();
-    expect(screen.getByText(/a key for this browser/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/encrypted messages are kept only in this browser/i),
-    ).toBeInTheDocument();
   });
 
-  it("does not show the browser history notice in the desktop app", () => {
+  it("does not show the browser history notice in the desktop app", async () => {
     renderStep();
 
-    expect(stepTitle()).toBeInTheDocument();
+    expect(await screen.findByText("Set up encryption for this account")).toBeInTheDocument();
     expect(screen.queryByText(/kept only in this browser/i)).toBeNull();
   });
 });

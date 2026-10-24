@@ -285,7 +285,7 @@ function RecoverAccountForm({
     >
       <p className="text-sm font-medium text-rim-text">Recover an account</p>
       <p className="text-xs text-rim-text-muted">
-        Paste the recovery kit you saved when you set up key sign-in, or type its 12-word recovery
+        Paste the recovery kit you saved when you created the account, or type its 12-word recovery
         phrase (an older kit has a recovery key starting with RK1- instead). This device becomes the
         account&apos;s new device with a new identity key, and every other device and session of the
         account is signed out.

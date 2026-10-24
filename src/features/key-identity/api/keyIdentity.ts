@@ -24,14 +24,13 @@ import {
 } from "../../../core/graphql/errors";
 import type {
   DeviceKey,
-  EnrollIdentityKeyInput,
   KeyLoginChallenge,
   LoginPayload,
   ProfileCard,
   RotateIdentityKeyInput,
   SignedStatement,
   SignedStatementInput,
-  SignupWithInvitePayloadGql,
+  SignupWithKeyPayload,
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
 import { NeedsRecoveryError } from "../../../core/accountVault/dkWraps";
@@ -41,14 +40,10 @@ import {
   passwordLoginFinish,
   passwordLoginStart,
   passwordRegistrationStart,
-  WrongPasswordError,
 } from "../../auth/api/passwordApi";
 import { signInRequest } from "../../auth/api/signInRequest";
-import { logout } from "../../auth/api/useAuthMutations";
-import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   addRecoveryWrapToUnlocked,
-  hasPasswordWrap,
   holdSession,
   lockAccount,
   type SessionKeys,
@@ -149,7 +144,6 @@ const LOGIN_WITH_KEY_MUTATION = gql`
     ) {
       userId
       csrfToken
-      mustSetPassword
       sessionSecret
       keepKey
     }
@@ -171,17 +165,8 @@ const LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
       keepKeyHeld: $keepKeyHeld
     ) {
       userId
-      mustSetPassword
       sessionSecret
       keepKey
-    }
-  }
-`;
-
-const ENROLL_MUTATION = gql`
-  mutation EnrollIdentityKey($input: EnrollIdentityKeyInput!) {
-    enrollIdentityKey(input: $input) {
-      principalId
     }
   }
 `;
@@ -315,8 +300,8 @@ export async function listDeviceKeyAccounts(): Promise<LocalKeyAccount[]> {
 
 /**
  * Reconcile this device's keys with the server's view of the signed-in account: keys the
- * server shows are confirmed and linked to the account, leftover keys from an enrollment it
- * never accepted are removed.
+ * server shows are confirmed and linked to the account, leftover keys from a signup it never
+ * accepted are removed.
  */
 export async function settleDeviceKeys(
   account: KeyAccount,
@@ -331,8 +316,6 @@ export async function settleDeviceKeys(
  * keys of an account that is enrolled).
  */
 export async function reconcileDeviceKeys(account: KeyAccount): Promise<LocalKeyAccount | null> {
-  // An enrollment in flight may land after the server's answer: its keys are not leftovers.
-  if (enrollmentsInFlight > 0) return null;
   return settleDeviceKeys(account, await serverPrincipalId());
 }
 
@@ -375,8 +358,6 @@ export interface PasswordSignInOptions {
 /** A finished sign-in. */
 export interface PasswordSignInResult {
   userId: string;
-  /** The account has no password yet: the session may only set one. */
-  mustSetPassword: boolean;
   /** What this device kept for the account before no longer opens. */
   startedEmpty: boolean;
 }
@@ -469,8 +450,8 @@ async function holdSessionKeys(keys: SessionKeys): Promise<void> {
  * The session's secret (unkept) is held before anything else is asked of the server, which
  * refuses a request without it; the keep key of a kept web session wraps the data key.
  *
- * @param passwordTicket - The ticket of an accepted password login; without one only an account
- *   without a password, or one of another server, signs in.
+ * @param passwordTicket - The ticket of an accepted password login, which this server's accounts
+ *   need; only an account of another server signs in without one.
  * @param unlocked - Whether the account is unlocked here, so its data key can be kept for a
  *   reload or wrapped under the keep key.
  */
@@ -479,14 +460,14 @@ async function loginWithDeviceKey(
   passwordTicket: string | null,
   keep: boolean,
   unlocked: boolean,
-): Promise<{ userId: string; mustSetPassword: boolean }> {
+): Promise<{ userId: string }> {
   const { challengeId, nonce } = await challenge();
   const proof = await keyBackend().signLogin(getGraphqlEndpoint(), principalId, {
     challengeId,
     nonce,
   });
   const res = await signInRequest<{
-    loginWithKey: Pick<LoginPayload, "userId" | "mustSetPassword" | "sessionSecret" | "keepKey">;
+    loginWithKey: Pick<LoginPayload, "userId" | "sessionSecret" | "keepKey">;
   }>("loginWithKey", LOGIN_WITH_KEY_MUTATION, LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION, {
     proof,
     passwordTicket,
@@ -503,46 +484,7 @@ async function loginWithDeviceKey(
   } catch {
     // The sign-in itself succeeded; the next settle links the keys.
   }
-  const mustSetPassword = res.loginWithKey.mustSetPassword === true;
-  useAuthStore.getState().setMustSetPassword(mustSetPassword);
-  return { userId: res.loginWithKey.userId, mustSetPassword };
-}
-
-/**
- * After a password no account check accepted, on a device that never unlocked the account with
- * a password (it holds no password wrap): signs in with the device key alone, which only an
- * account that has no password yet allows. Any other session that call opens is ended at once,
- * so a wrong password leaves nothing signed in.
- *
- * @returns The sign-in of an account that must set its password, or `null`.
- */
-async function signInWithoutPassword(
-  principalId: string,
-  keep: boolean,
-): Promise<PasswordSignInResult | null> {
-  const unlockedBefore = await hasPasswordWrap(getGraphqlEndpoint(), principalId).catch(
-    (err: unknown) => {
-      logger.warn("[RIM:keys] this device's data key wraps could not be read:", err);
-      return true;
-    },
-  );
-  if (unlockedBefore) return null;
-  let signedIn: { userId: string; mustSetPassword: boolean };
-  try {
-    signedIn = await loginWithDeviceKey(principalId, null, keep, false);
-  } catch (err) {
-    logger.debug("[RIM:keys] no sign-in without a password:", graphqlErrorCode(err));
-    return null;
-  }
-  if (signedIn.mustSetPassword) return { ...signedIn, startedEmpty: false };
-  try {
-    await logout();
-  } catch (err) {
-    logger.warn("[RIM:keys] ending a session the password did not open failed:", err);
-  }
-  lockAccount();
-  useAuthStore.getState().setMustSetPassword(false);
-  return null;
+  return { userId: res.loginWithKey.userId };
 }
 
 /**
@@ -554,8 +496,6 @@ async function signInWithoutPassword(
  *    rewraps;
  * 2. the unlock of this device's data, which may need the recovery phrase or starting empty;
  * 3. `loginWithKey` with the ticket, which sets the session cookie.
- *
- * An account without a password (the session must set one) signs in with the key alone.
  *
  * @throws PasswordLockedError after 10 wrong tries, PasswordWaitError while a wait runs,
  *   WrongPasswordError for a wrong password, SignInCancelled when the person gave up at the
@@ -570,16 +510,7 @@ export async function signInWithPassword(
   const login = await startLogin(entry.password);
   try {
     const started = await passwordLoginStart(principalId, login.request);
-    let finalization: string;
-    try {
-      finalization = await login.finish(started.response);
-    } catch (err) {
-      if (err instanceof WrongPasswordError) {
-        const withoutPassword = await signInWithoutPassword(principalId, entry.keep);
-        if (withoutPassword?.mustSetPassword) return withoutPassword;
-      }
-      throw err;
-    }
+    const finalization = await login.finish(started.response);
     const finished = await passwordLoginFinish(started.loginId, finalization);
     const unlocked = await unlockLogin(
       login,
@@ -592,7 +523,7 @@ export async function signInWithPassword(
       },
       options,
     );
-    let signedIn: { userId: string; mustSetPassword: boolean };
+    let signedIn: { userId: string };
     try {
       signedIn = await loginWithDeviceKey(principalId, finished.ticket, entry.keep, true);
     } catch (err) {
@@ -614,12 +545,6 @@ export async function signInWithPassword(
 
 // ─── Enrollment ─────────────────────────────────────────────────────────────
 
-/**
- * Enrollments sent to the server and not answered yet. While one is in flight, the server
- * saying "not enrolled" proves nothing, so nothing removes keys on that basis.
- */
-let enrollmentsInFlight = 0;
-
 /** Create the keys of a new identity; the result carries its recovery kit. */
 export async function beginEnrollment(deviceName: string): Promise<EnrollmentDraft> {
   return keyBackend().beginEnrollment(deviceName);
@@ -629,30 +554,6 @@ export async function beginEnrollment(deviceName: string): Promise<EnrollmentDra
 async function serverPrincipalId(): Promise<string | null> {
   const { me } = await graphqlClient.request<{ me: MeAccount }>(ME_ACCOUNT_QUERY);
   return me.principalId;
-}
-
-/**
- * Give up on an enrollment (cancelled, or the settings closed). Its keys are removed only when
- * the server says the account is not enrolled with them: if an attempt whose answer was lost
- * did enroll it, the keys are kept, since the password no longer signs in. Without an answer
- * the keys stay, and a later settle cleans them up.
- */
-export async function abandonEnrollment(
-  draft: EnrollmentDraft,
-  account: KeyAccount,
-): Promise<void> {
-  if (enrollmentsInFlight > 0) return;
-  let principalId: string | null;
-  try {
-    principalId = await serverPrincipalId();
-  } catch {
-    return;
-  }
-  if (principalId === draft.principalId) {
-    await settleDeviceKeys(account, principalId);
-  } else {
-    await keyBackend().discardEnrollment(draft.draftId);
-  }
 }
 
 /**
@@ -671,42 +572,6 @@ async function recordKitTiming(draft: EnrollmentDraft, timing: RecoveryKitTiming
     await keyBackend().confirmRecoveryKit(draft.principalId);
   } else if (!keyBackend().keepsRecoveryKit) {
     throw new Error("This device cannot keep the recovery kit. Save it before you continue.");
-  }
-}
-
-/**
- * Enroll the signed-in account with a draft's keys. The keys are stored before the server is
- * asked, so the account never ends up enrolled without them; a failed write stops before the
- * enrollment is sent. A failure leaves the draft in place, so the person can retry with the
- * recovery kit they already saved.
- */
-export async function completeEnrollment(
-  draft: EnrollmentDraft,
-  account: KeyAccount & { displayName: string },
-  recoveryKit: RecoveryKitTiming = "saved",
-): Promise<void> {
-  await recordKitTiming(draft, recoveryKit);
-  const { challengeId, nonce } = await challenge();
-  const statements = await keyBackend().signEnrollment(draft.draftId, serverAccount(account), {
-    challengeId,
-    nonce,
-  });
-  const input: EnrollIdentityKeyInput = statements;
-  enrollmentsInFlight += 1;
-  try {
-    await graphqlClient.request(ENROLL_MUTATION, { input });
-  } catch (err) {
-    // An earlier attempt whose answer was lost may have enrolled the account already.
-    if ((await serverPrincipalId().catch(() => null)) !== draft.principalId) throw err;
-  } finally {
-    enrollmentsInFlight -= 1;
-  }
-  await settleDeviceKeys(account, draft.principalId);
-  // Best-effort: the card can be published later from Settings.
-  try {
-    await publishProfileCard(await fetchMyKeyIdentity(), account.displayName);
-  } catch {
-    // Settings shows the card as not published and offers to publish it.
   }
 }
 
@@ -739,7 +604,7 @@ export interface KeySignupOptions {
 }
 
 /** The new account; `serverId` is set when a workspace invite also joined its workspace. */
-export type KeySignupResult = Pick<SignupWithInvitePayloadGql, "userId"> & {
+export type KeySignupResult = Pick<SignupWithKeyPayload, "userId"> & {
   serverId: string | null;
 };
 
@@ -1029,7 +894,7 @@ async function sendSignup(
   let result: SentSignup;
   signupsInFlight += 1;
   try {
-    const res = await signInRequest<{ signupWithKey: SignupWithInvitePayloadGql }>(
+    const res = await signInRequest<{ signupWithKey: SignupWithKeyPayload }>(
       "signupWithKey",
       SIGNUP_WITH_KEY_MUTATION,
       SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
@@ -1111,12 +976,12 @@ export async function abandonKeySignup(draft: EnrollmentDraft): Promise<void> {
 
 /**
  * After a device-key sign-in failed: remove this device's keys for an account the server has
- * never seen, such as a signup or enrollment whose request never reached it (the app quit, the
- * page closed). Only unconfirmed keys whose principal has no key log on the server go. Returns
- * whether they did.
+ * never seen, such as a signup whose request never reached it (the app quit, the page
+ * closed). Only unconfirmed keys whose principal has no key log on the server go. Returns whether
+ * they did.
  */
 export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Promise<boolean> {
-  if (account.confirmed || signupsInFlight > 0 || enrollmentsInFlight > 0) return false;
+  if (account.confirmed || signupsInFlight > 0) return false;
   if ((await principalTaken(account.principalId)) !== false) return false;
   await keyBackend().forgetUnconfirmed(account.principalId);
   return true;
@@ -1126,7 +991,7 @@ export async function forgetKeysTheServerNeverSaw(account: LocalKeyAccount): Pro
 
 /**
  * Whether this device keeps a new identity's recovery kit until the person confirms saving it:
- * then a signup or enrollment is sent first, with the kit `later`, and the kit shown after.
+ * then a signup is sent first, with the kit `later`, and the kit shown after.
  * Otherwise the kit is saved before anything is sent.
  */
 export function deviceKeepsRecoveryKit(): boolean {

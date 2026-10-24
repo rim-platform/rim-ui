@@ -20,7 +20,6 @@ import type {
   LogStatus,
   RecoveryKitText,
   RecoveryStatements,
-  ServerAccount,
 } from "../api/keyBackend";
 import {
   principalRecords,
@@ -220,15 +219,6 @@ async function signDraft(
     deviceId: draft.deviceId,
   });
   return { keyLog: [draft.inception], device: draft.certificate, proof };
-}
-
-/** Store a draft's keys for the signed-in `account` and sign what `enrollIdentityKey` needs. */
-export function signEnrollment(
-  draftId: string,
-  account: ServerAccount,
-  challenge: KeyChallenge,
-): Promise<EnrollmentStatements> {
-  return signDraft(draftId, account.endpoint, account.userId, account.username, challenge);
 }
 
 /**

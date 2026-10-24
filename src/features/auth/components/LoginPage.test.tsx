@@ -3,17 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
-const mockLoginMutate = vi.fn();
 const mockNavigate = vi.fn();
 const mockSetSession = vi.fn();
-
-vi.mock("../api/useAuthMutations", () => ({
-  useLoginMutation: () => ({
-    mutate: mockLoginMutate,
-    isPending: false,
-    error: null,
-  }),
-}));
 
 vi.mock("../../system/api/useHealthCheck", () => ({
   useHealthCheck: () => ({ isSuccess: true, isError: false, isPending: false }),
@@ -64,9 +55,16 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
-const desktop = vi.hoisted(() => ({ value: false }));
+// Whether this app can create identity keys, and the key store while the browser is probed.
+const keys = vi.hoisted(() => ({
+  value: true,
+  store: "keyring" as "keyring" | "browser" | "checking",
+}));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
-  useRuntime: () => ({ capabilities: { identityKeys: desktop.value } }),
+  useRuntime: () => ({
+    capabilities: { identityKeys: keys.value },
+    deviceKeyStore: keys.store,
+  }),
 }));
 
 // Device key sign-in, device linking and recovery have their own tests; here each renders a
@@ -90,8 +88,8 @@ vi.mock("../../updater/api/serverInfoApi", async () => {
   return { ...actual, fetchServerInfo: () => new Promise(() => {}) };
 });
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LoginPage } from "./LoginPage";
+import { NO_KEYS_HERE_MESSAGE } from "./NoKeysHere";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
   withServerInfo,
@@ -99,12 +97,12 @@ import {
   type FakeServerDetails,
 } from "../../../test/serverInfo";
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
-import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    desktop.value = false;
+    keys.value = true;
+    keys.store = "keyring";
     sessionEnded.value = false;
     needsConnection.value = false;
     keyOptions.value = false;
@@ -124,11 +122,14 @@ describe("LoginPage", () => {
     );
   }
 
-  it("renders the login form with no signup affordances in default state", () => {
+  it("renders the heading and the key ways to sign in, with no password form", () => {
+    keyOptions.value = true;
     renderPage();
     expect(screen.getByRole("heading", { name: "RIM" })).toBeInTheDocument();
     expect(screen.getByText("Sign in to your workspace")).toBeInTheDocument();
-    expect(screen.getByText("Log in")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
   });
 
   it("offers Create account, which takes an invite code, when registrationMode is INVITE_ONLY", () => {
@@ -166,8 +167,7 @@ describe("LoginPage", () => {
     expect(link).toHaveAttribute("href", "/join");
   });
 
-  it("renders the Create account link in the desktop app when registrationMode is POW", () => {
-    desktop.value = true;
+  it("renders the Create account link where this app holds keys when registrationMode is POW", () => {
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "POW" },
       isPending: false,
@@ -177,7 +177,38 @@ describe("LoginPage", () => {
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
   });
 
-  it("points the web app to the desktop app or an invite when registrationMode is POW", () => {
+  it.each(["OPEN", "INVITE_ONLY", "POW"])(
+    "says a browser without keys cannot hold an account, in place of the key ways, on a %s server",
+    (registrationMode) => {
+      keys.value = false;
+      keys.store = "browser";
+      keyOptions.value = true;
+      mockUseServerConfig.mockReturnValue({
+        data: { registrationMode },
+        isPending: false,
+        isError: false,
+      });
+      renderPage();
+      expect(screen.getByText(NO_KEYS_HERE_MESSAGE)).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Sign in with a key" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Device key sign-in" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/^No account\?/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows the key ways to sign in while the browser is still probed", () => {
+    keys.value = false;
+    keys.store = "checking";
+    keyOptions.value = true;
+    renderPage();
+    expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
+    expect(screen.queryByText(NO_KEYS_HERE_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it("points to the desktop app or an invite on a POW server while the browser is probed", () => {
+    keys.value = false;
+    keys.store = "checking";
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "POW" },
       isPending: false,
@@ -189,27 +220,6 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
   });
-
-  it.each(["OPEN", "INVITE_ONLY"])(
-    "points a browser without keys to the desktop app on a %s server that takes key signups only",
-    (registrationMode) => {
-      mockUseServerConfig.mockReturnValue({
-        data: { registrationMode },
-        isPending: false,
-        isError: false,
-      });
-      const { unmount } = renderPage({}, { signupRequiresKeys: true });
-      expect(screen.getByText(/signs up new accounts with a key/i)).toHaveTextContent(
-        /RIM desktop app/,
-      );
-      expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
-      unmount();
-
-      desktop.value = true;
-      renderPage({}, { signupRequiresKeys: true });
-      expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
-    },
-  );
 
   it("hides the Create account link while registrationMode is loading — defaults to invite-only", () => {
     mockUseServerConfig.mockReturnValue({
@@ -224,57 +234,16 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
   });
 
-  it("calls login mutation on submit and navigates on success", async () => {
-    mockLoginMutate.mockImplementation(
-      (_: unknown, opts: { onSuccess: (d: { login: { userId: string } }) => void }) => {
-        opts.onSuccess({ login: { userId: "user-123" } });
-      },
-    );
-
+  it("reaches the key ways to sign in and Create account by keyboard", async () => {
+    keyOptions.value = true;
     const user = userEvent.setup();
     renderPage();
-
-    await user.type(screen.getByPlaceholderText("owner"), "admin");
-    await user.type(screen.getByPlaceholderText("password"), "pass123");
-    await user.click(screen.getByText("Log in"));
-
-    expect(mockLoginMutate).toHaveBeenCalledWith(
-      { username: "admin", password: "pass123" },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
-    );
-    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
-  });
-
-  it("renders the Forgot password? link", () => {
-    renderPage();
-    expect(screen.getByText("Forgot password?")).toBeInTheDocument();
-  });
-
-  it("leaves out the Forgot password? link while the server sends no email", () => {
-    renderPage({ email: { state: ServerFeatureState.UNAVAILABLE, reason: "no SMTP" } });
-    expect(screen.getByText("Log in")).toBeInTheDocument();
-    expect(screen.queryByText("Forgot password?")).not.toBeInTheDocument();
-  });
-
-  it("reaches its primary actions by keyboard and signs in with Enter", async () => {
-    const user = userEvent.setup();
-    renderPage();
-    const username = screen.getByPlaceholderText("owner");
-    const password = screen.getByPlaceholderText("password");
     await expectReachableByKeyboard(user, [
-      username,
-      password,
-      screen.getByRole("link", { name: "Forgot password?" }),
+      screen.getByRole("button", { name: "Device key sign-in" }),
+      screen.getByRole("button", { name: "Link this device" }),
+      screen.getByRole("button", { name: "Recover an account" }),
+      screen.getByRole("link", { name: "Create account" }),
     ]);
-
-    username.focus();
-    await user.keyboard("alice");
-    password.focus();
-    await user.keyboard("secret");
-    await expectReachableByKeyboard(user, [screen.getByRole("button", { name: "Log in" })]);
-    password.focus();
-    await user.keyboard("{Enter}");
-    expect(mockLoginMutate).toHaveBeenCalled();
   });
 
   it("shows the server's instance notice at the top, as plain text", () => {
@@ -290,10 +259,11 @@ describe("LoginPage", () => {
   });
 
   it("says the server is full instead of offering Create account", () => {
+    keyOptions.value = true;
     renderPage({}, { registrationFull: true });
     expect(screen.getByText("This server is full")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument();
-    expect(screen.getByText("Log in")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
   });
 
   it("shows the server's abuse contact, and none without one", () => {
@@ -324,69 +294,19 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("leads with the key ways to sign in and folds the password form on a key-only server", async () => {
+  it("offers the key ways to sign in in a card of their own", () => {
     keyOptions.value = true;
-    const user = userEvent.setup();
-    renderPage({}, { signupRequiresKeys: true });
+    renderPage();
 
-    const keys = screen.getByRole("region", { name: "Sign in with a key" });
-    expect(keys).toContainElement(screen.getByRole("button", { name: "Device key sign-in" }));
-    expect(keys).toContainElement(screen.getByRole("button", { name: "Link this device" }));
-    expect(keys).toContainElement(screen.getByRole("button", { name: "Recover an account" }));
-    expect(screen.getByPlaceholderText("password")).not.toBeVisible();
-    expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
-
-    const toggle = screen.getByRole("button", { name: "Sign in with a password (older accounts)" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const form = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
-    expect(form).toContainElement(screen.getByPlaceholderText("password"));
-
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByPlaceholderText("owner")).toBeVisible();
-    expect(screen.getByPlaceholderText("password")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Forgot password?" })).toBeVisible();
-
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByPlaceholderText("password")).not.toBeVisible();
+    const card = screen.getByRole("region", { name: "Sign in with a key" });
+    expect(card).toContainElement(screen.getByRole("button", { name: "Device key sign-in" }));
+    expect(card).toContainElement(screen.getByRole("button", { name: "Link this device" }));
+    expect(card).toContainElement(screen.getByRole("button", { name: "Recover an account" }));
   });
 
-  it("leaves the key card empty on a key-only server where no key way renders", () => {
-    renderPage({}, { signupRequiresKeys: true });
+  it("leaves the key card empty where no key way renders", () => {
+    renderPage();
     expect(screen.getByLabelText("Sign in with a key")).toBeEmptyDOMElement();
-    expect(
-      screen.getByRole("button", { name: "Sign in with a password (older accounts)" }),
-    ).toBeInTheDocument();
-  });
-
-  it.each([
-    ["takes passwords", false],
-    ["has not said yet", undefined],
-  ])("shows the password form first when the server %s", (_, signupRequiresKeys) => {
-    keyOptions.value = true;
-    if (signupRequiresKeys === undefined) {
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(
-        <MemoryRouter initialEntries={["/login"]}>
-          <LoginPage />
-        </MemoryRouter>,
-        {
-          wrapper: ({ children }) => (
-            <QueryClientProvider client={client}>{children}</QueryClientProvider>
-          ),
-        },
-      );
-    } else {
-      renderPage({}, { signupRequiresKeys });
-    }
-    expect(screen.getByPlaceholderText("password")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Log in" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Sign in with a key" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Sign in with a password (older accounts)" }),
-    ).not.toBeInTheDocument();
   });
 
   it("says the session ended when the server ended it, and nothing otherwise", () => {

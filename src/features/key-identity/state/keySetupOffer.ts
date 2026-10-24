@@ -9,10 +9,10 @@ import { create } from "zustand";
 export const KEY_SETUP_LATER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * The step this account has here: `enroll` creates its identity on this device, `link` links
- * this device to the identity it has on another one.
+ * The step this account has here: `link` links this device to the identity it has on another
+ * one.
  */
-export type KeySetupKind = "enroll" | "link";
+export type KeySetupKind = "link";
 
 function laterKey(userId: string): string {
   return `rim.keySetup.later.${userId}`;
