@@ -14,12 +14,10 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../test/mocks/server";
 import { fakeServerInfo, renderWithServerInfo } from "../../../test/serverInfo";
 
-const desktop = vi.hoisted(() => ({ value: false }));
-
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
-    deviceKeyStore: desktop.value ? "keyring" : "unsupported",
-    capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value },
+    deviceKeyStore: "keyring",
+    capabilities: { deviceKeys: true, identityKeys: true },
   }),
 }));
 
@@ -31,7 +29,6 @@ vi.mock("../../updater/api/serverInfoApi", async (importOriginal) => ({
 
 // The key form has its own tests; the stand-in is in `__mocks__`.
 vi.mock("./KeySignupForm");
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import { JoinForm } from "./JoinForm";
 import { PUBLIC_LINK_AT_SIGNUP_MESSAGE, REMOTE_INVITE_MESSAGE } from "../api/useInviteCode";
@@ -80,10 +77,6 @@ function previewAnswer(variables: Record<string, unknown>): Response {
 function answer(overrides: Answers = {}) {
   const answers: Answers = {
     PreviewInviteToken: previewAnswer,
-    SignupWithInvite: () =>
-      HttpResponse.json({
-        data: { signupWithInvite: { userId: "user-new", serverId: null, csrfToken: "csrf" } },
-      }),
     JoinServerByInvite: () =>
       HttpResponse.json({ data: { joinServerByInvite: { serverId: "ws-acme" } } }),
     ...overrides,
@@ -102,16 +95,10 @@ function answer(overrides: Answers = {}) {
   );
 }
 
-function renderForm(mode: RegistrationMode, onSuccess = vi.fn(), keyOnly = false) {
+function renderForm(mode: RegistrationMode, onSuccess = vi.fn()) {
   renderWithServerInfo(
     <MemoryRouter>
-      <JoinForm
-        variant="CODE"
-        token={null}
-        registrationMode={mode}
-        keyOnly={keyOnly}
-        onSuccess={onSuccess}
-      />
+      <JoinForm variant="CODE" token={null} registrationMode={mode} onSuccess={onSuccess} />
     </MemoryRouter>,
   );
   return onSuccess;
@@ -126,26 +113,22 @@ async function pasteCode(user: ReturnType<typeof userEvent.setup>, text: string)
   await user.paste(text);
 }
 
-async function fillPasswordSignup(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByPlaceholderText("yourname"), "newbie");
-  await user.type(screen.getByPlaceholderText("you@example.com"), "newbie@example.com");
-  await user.type(screen.getByPlaceholderText("password"), "password123");
+/** The tokens the key form was handed. */
+function keyTokens(): Record<string, unknown> {
+  return JSON.parse(screen.getByTestId("key-signup-tokens").textContent ?? "");
 }
 
-function createAccount(): HTMLElement {
-  return screen.getByRole("button", { name: "Create account" });
+/** Whether the key form may go ahead. */
+function keyReady(): string | null {
+  return screen.getByTestId("key-signup-ready").textContent;
 }
 
-/** The `input` of each signup sent. */
-function signupInputs(): Array<Record<string, unknown>> {
-  return sent
-    .filter((s) => s.operationName === "SignupWithInvite")
-    .map((s) => s.variables.input as Record<string, unknown>);
+function finishSignup(user: ReturnType<typeof userEvent.setup>) {
+  return user.click(screen.getByRole("button", { name: /finish key signup/i }));
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  desktop.value = false;
   sent = [];
   fetchServerInfo.mockImplementation(async () => fakeServerInfo({}, {}));
 });
@@ -160,18 +143,16 @@ describe("the invite code field", () => {
     expect(codeField()).toBeRequired();
     expect(screen.getByText(/creates accounts by invite only/)).toBeInTheDocument();
 
-    await fillPasswordSignup(user);
-    expect(createAccount()).toBeDisabled();
+    expect(keyReady()).toBe("false");
 
     await pasteCode(user, INSTANCE_TOKEN);
     expect(await screen.findByText("Invite to this server.")).toBeInTheDocument();
-    expect(createAccount()).toBeEnabled();
+    expect(keyReady()).toBe("true");
   });
 
   it.each([RegistrationMode.OPEN, RegistrationMode.POW])("is optional on a %s server", (mode) => {
-    desktop.value = mode === RegistrationMode.POW;
     answer();
-    renderForm(mode, vi.fn(), mode === RegistrationMode.POW);
+    renderForm(mode);
 
     expect(screen.getByText("Invite code (optional)")).toBeInTheDocument();
     expect(codeField()).not.toBeRequired();
@@ -183,13 +164,11 @@ describe("the invite code field", () => {
     const onSuccess = renderForm(RegistrationMode.OPEN);
 
     expect(screen.getByText(/the new account joins that workspace/)).toBeInTheDocument();
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    expect(keyReady()).toBe("true");
+    await finishSignup(user);
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-new", null));
-    expect(signupInputs()).toHaveLength(1);
-    expect(signupInputs()[0]).not.toHaveProperty("workspaceInviteToken");
-    expect(signupInputs()[0]).not.toHaveProperty("instanceInviteToken");
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", null));
+    expect(keyTokens()).toEqual({});
     expect(sent.some((s) => s.operationName === "PreviewInviteToken")).toBe(false);
   });
 
@@ -206,12 +185,10 @@ describe("the invite code field", () => {
       token: WORKSPACE_TOKEN,
     });
 
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    await finishSignup(user);
 
+    expect(keyTokens()).toEqual({ workspaceInviteToken: WORKSPACE_TOKEN });
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    expect(signupInputs()[0]).toMatchObject({ workspaceInviteToken: WORKSPACE_TOKEN });
-    expect(signupInputs()[0]).not.toHaveProperty("instanceInviteToken");
   });
 
   it("sends an instance invite as the instance token", async () => {
@@ -221,12 +198,10 @@ describe("the invite code field", () => {
 
     await pasteCode(user, INSTANCE_TOKEN);
     await screen.findByText("Invite to this server.");
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    expect(keyTokens()).toEqual({ instanceInviteToken: INSTANCE_TOKEN });
+    await finishSignup(user);
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-new", null));
-    expect(signupInputs()[0]).toMatchObject({ instanceInviteToken: INSTANCE_TOKEN });
-    expect(signupInputs()[0]).not.toHaveProperty("workspaceInviteToken");
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", null));
   });
 
   it("shows the server's message under the field for a code it does not know", async () => {
@@ -234,27 +209,25 @@ describe("the invite code field", () => {
     answer();
     renderForm(RegistrationMode.INVITE_ONLY);
 
-    await fillPasswordSignup(user);
     await pasteCode(user, "rim_inv_unknown");
 
     expect(await screen.findByText("invalid or unknown token")).toBeInTheDocument();
-    expect(createAccount()).toBeDisabled();
+    expect(keyReady()).toBe("false");
   });
 
   it("shows the server's message under the field when the signup refuses the token", async () => {
     const user = userEvent.setup();
-    answer({ SignupWithInvite: () => refusal("token has expired", "EXPIRED_TOKEN") });
+    answer();
     const onSuccess = renderForm(RegistrationMode.INVITE_ONLY);
 
     await pasteCode(user, INSTANCE_TOKEN);
     await screen.findByText("Invite to this server.");
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    await user.click(screen.getByRole("button", { name: /refuse key signup/i }));
 
     expect(await screen.findByText("token has expired")).toBeInTheDocument();
-    // Once, under the field, and not again in the form's error banner.
+    // Once, under the field.
     expect(screen.getAllByText("token has expired")).toHaveLength(1);
-    expect(createAccount()).toBeDisabled();
+    expect(keyReady()).toBe("false");
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
@@ -263,11 +236,10 @@ describe("the invite code field", () => {
     answer();
     renderForm(RegistrationMode.INVITE_ONLY);
 
-    await fillPasswordSignup(user);
     await pasteCode(user, "rim-invite:1:rims1_x:hash:rim_inv_abc:https://host.example");
 
     expect(screen.getByText(REMOTE_INVITE_MESSAGE)).toBeInTheDocument();
-    expect(createAccount()).toBeDisabled();
+    expect(keyReady()).toBe("false");
   });
 
   it("refuses a workspace's public link, which creates no account, without asking the server", async () => {
@@ -275,11 +247,10 @@ describe("the invite code field", () => {
     answer();
     renderForm(RegistrationMode.INVITE_ONLY);
 
-    await fillPasswordSignup(user);
     await pasteCode(user, "https://rim.example.org/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA");
 
     expect(screen.getByText(PUBLIC_LINK_AT_SIGNUP_MESSAGE)).toBeInTheDocument();
-    expect(createAccount()).toBeDisabled();
+    expect(keyReady()).toBe("false");
     expect(sent.filter((op) => op.operationName === "PreviewInviteToken")).toHaveLength(0);
   });
 });
@@ -292,11 +263,10 @@ describe("an invite code on an open server", () => {
 
     await pasteCode(user, WORKSPACE_TOKEN);
     await screen.findByText("Invite to Acme from Alice. The new account joins it.");
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    expect(keyTokens()).toEqual({});
+    await finishSignup(user);
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-new", "ws-acme"));
-    expect(signupInputs()[0]).not.toHaveProperty("workspaceInviteToken");
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", "ws-acme"));
     const join = sent.find((s) => s.operationName === "JoinServerByInvite");
     expect(join?.variables).toEqual({ input: { inviteToken: WORKSPACE_TOKEN } });
   });
@@ -308,8 +278,7 @@ describe("an invite code on an open server", () => {
 
     await pasteCode(user, WORKSPACE_TOKEN);
     await screen.findByText("Invite to Acme from Alice. The new account joins it.");
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    await finishSignup(user);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Your account is ready");
@@ -317,7 +286,7 @@ describe("an invite code on an open server", () => {
     expect(onSuccess).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(onSuccess).toHaveBeenCalledWith("user-new", null);
+    expect(onSuccess).toHaveBeenCalledWith("user-key", null);
   });
 
   it("says an instance invite is not needed, and sends no token", async () => {
@@ -331,20 +300,15 @@ describe("an invite code on an open server", () => {
         "This server creates accounts without an invite, so this code is not needed.",
       ),
     ).toBeInTheDocument();
-    await fillPasswordSignup(user);
-    await user.click(createAccount());
+    await finishSignup(user);
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-new", null));
-    expect(signupInputs()[0]).not.toHaveProperty("instanceInviteToken");
+    expect(keyTokens()).toEqual({});
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", null));
     expect(sent.some((s) => s.operationName === "JoinServerByInvite")).toBe(false);
   });
 });
 
 describe("the invite code with a key signup", () => {
-  beforeEach(() => {
-    desktop.value = true;
-  });
-
   it("hands the checked token to the key form, which waits for it on an invite-only server", async () => {
     const user = userEvent.setup();
     answer();
@@ -363,7 +327,7 @@ describe("the invite code with a key signup", () => {
   it("hands a pow server's key form the token, in place of the proof-of-work", async () => {
     const user = userEvent.setup();
     answer();
-    renderForm(RegistrationMode.POW, vi.fn(), true);
+    renderForm(RegistrationMode.POW);
 
     expect(screen.getByTestId("key-signup-ready")).toHaveTextContent("true");
     await pasteCode(user, INSTANCE_TOKEN);

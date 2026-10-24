@@ -51,20 +51,6 @@ pub async fn key_identity_begin_enrollment(
     blocking(&state, move |s| s.begin_enrollment(&device_name)).await
 }
 
-/// Store a draft's keys and sign what `enrollIdentityKey` needs over `challenge`.
-#[tauri::command]
-pub async fn key_identity_sign_enrollment(
-    state: State<'_, KeyIdentityState>,
-    draft_id: String,
-    account: ServerAccount,
-    challenge: Challenge,
-) -> Result<EnrollmentStatements, KeyIdentityError> {
-    blocking(&state, move |s| {
-        s.sign_enrollment(&draft_id, &account, &challenge)
-    })
-    .await
-}
-
 /// Store a draft's keys for a new account and sign what `signupWithKey` needs over
 /// `challenge`.
 #[tauri::command]

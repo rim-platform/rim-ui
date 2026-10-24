@@ -789,18 +789,6 @@ export type EditMessageInput = {
   text: Scalars['String']['input'];
 };
 
-export type EnrollIdentityKeyInput = {
-  /** Certificate of the device enrolling; this session becomes its session. */
-  device: SignedStatementInput;
-  /** The whole key log, inception first. */
-  keyLog: Array<SignedStatementInput>;
-  /**
-   * A `login` statement signed by that device over a fresh `keyLoginChallenge`, proving the
-   * caller holds the device key.
-   */
-  proof: SignedStatementInput;
-};
-
 export type ExecuteCommandInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
   commandContext?: InputMaybe<CommandContextInput>;
@@ -945,7 +933,7 @@ export type InstanceAbuseReport = {
 export type InstanceAccount = {
   /** When the account was created. */
   createdAt: Scalars['DateTime']['output'];
-  /** The account's principal (`rimp1_…`); null for an account that never enrolled a key. */
+  /** The account's principal (`rimp1_…`); null for a purged account that never had one. */
   principalId?: Maybe<Scalars['String']['output']>;
   /** The account's user id. */
   userId: Scalars['ID']['output'];
@@ -1000,7 +988,7 @@ export type InstancePrincipalBlock = {
 export type InstancePrincipalBlockOutcome = {
   /** The local account blocked; null when no local account holds the principal. */
   account?: Maybe<InstanceAccount>;
-  /** Whether the account's email is now refused at signup and password login. */
+  /** Whether the account's email is now refused at signup. */
   emailBlocked: Scalars['Boolean']['output'];
   /** How many of the account's sessions were ended. */
   endedSessions: Scalars['Int']['output'];
@@ -1010,7 +998,7 @@ export type InstancePrincipalBlockOutcome = {
   invitees: Array<InstanceAccount>;
   /** False when it was blocked already; its reason was replaced. */
   newlyBlocked: Scalars['Boolean']['output'];
-  /** The principal blocked; null for an account of a cascade that has no key identity. */
+  /** The principal blocked; null for an account of a cascade that never had a key identity. */
   principalId?: Maybe<Scalars['String']['output']>;
   /** The reason recorded; a cascade's accounts carry an "(invited by …)" suffix. */
   reason: Scalars['String']['output'];
@@ -1042,7 +1030,7 @@ export type InviteTokenPreviewGql = {
 
 /** The type of an invite token, used by `InviteTokenPreview`. */
 export enum InviteTokenTypeGql {
-  /** Instance invite: routes to `instanceInviteToken` input on `signupWithInvite`. */
+  /** Instance invite: routes to `instanceInviteToken` input on `signupWithKey`. */
   INSTANCE = 'INSTANCE',
   /** Workspace invite: join-a-workspace flow. */
   WORKSPACE = 'WORKSPACE'
@@ -1144,8 +1132,8 @@ export type JoinServerByInvitePayload = {
 };
 
 /**
- * What this server holds about the signed-in account's key identity. Before the account
- * enrolls a key, `principalId` and `keySeq` are null and the lists are empty.
+ * What this server holds about the signed-in account's key identity. For an account without
+ * one, `principalId` and `keySeq` are null and the lists are empty.
  */
 export type KeyIdentity = {
   /** Every device, revoked ones included, oldest first. */
@@ -1220,12 +1208,7 @@ export type LinkPreview = {
   url: Scalars['String']['output'];
 };
 
-export type LoginInput = {
-  password: Scalars['String']['input'];
-  username: Scalars['String']['input'];
-};
-
-/** Payload returned from `login` and `loginWithKey`. */
+/** Payload returned from `loginWithKey`. */
 export type LoginPayload = {
   /**
    * The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
@@ -1238,11 +1221,6 @@ export type LoginPayload = {
    * otherwise.
    */
   keepKey?: Maybe<Scalars['String']['output']>;
-  /**
-   * The account has no password: this session may only set one (`setPassword`), sign out
-   * and read `me`; everything else answers `FORBIDDEN`.
-   */
-  mustSetPassword: Scalars['Boolean']['output'];
   /**
    * After `loginWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
    * the clear. The client keeps it in memory only and sends it in the
@@ -1680,12 +1658,6 @@ export type Mutation = {
   /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
   editMessage: Message;
-  /**
-   * Bind a key identity to the signed-in account. The calling session becomes the new
-   * device's and every other session of the account ends. Afterwards the password no longer
-   * signs in.
-   */
-  enrollIdentityKey: KeyIdentity;
   executeCommand: CommandResult;
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
@@ -1760,17 +1732,15 @@ export type Mutation = {
    * contacts and blocks on this relay.
    */
   leaveRelay: Scalars['Boolean']['output'];
-  login: LoginPayload;
   /**
-   * Sign in with a `login` statement signed by an enrolled device key. Sets the same session
-   * cookie as `login`.
+   * Sign in with a `login` statement signed by one of the account's device keys. Sets the
+   * session and CSRF cookies.
    *
-   * An account of this server with a password also brings `passwordTicket`, from
-   * `passwordLoginFinish`: single use, valid for 120 seconds, and only for that account.
-   * Without one, or with one that is used, expired or another account's, the answer is
-   * `UNAUTHENTICATED`, as for a wrong proof. An account of this server without a password
-   * signs in with the key alone and gets `mustSetPassword`: its session may only set a
-   * password, sign out and read `me`. Accounts of other servers sign in with the key alone.
+   * An account of this server also brings `passwordTicket`, from `passwordLoginFinish`:
+   * single use, valid for 120 seconds, and only for that account. Without one, with one that
+   * is used, expired or another account's, or for an account without a password, the answer
+   * is `UNAUTHENTICATED`, as for a wrong proof. Accounts of other servers sign in with the
+   * key alone.
    *
    * `keepSignedIn` ("Keep me signed in") sets persistent cookies. Unticked, the cookies last
    * until the browser closes and the session answers only requests that carry
@@ -1926,12 +1896,6 @@ export type Mutation = {
   /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
   /**
-   * `FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
-   * logged instead of sent.
-   */
-  requestPasswordReset: Scalars['Boolean']['output'];
-  resetPassword: Scalars['Boolean']['output'];
-  /**
    * Close an open report as resolved or dismissed (Owner/Moderator; for the direct space,
    * an instance operator). Audited (`admin.resolve_report`).
    */
@@ -1991,18 +1955,6 @@ export type Mutation = {
    */
   setMyWorkspaceDmSetting: MyDmSettings;
   /**
-   * Finish setting a password for the signed-in account with the `RegistrationUpload`.
-   * Lifts the limit from the account's sessions and returns its new server share.
-   * `CONFLICT` when the account has a password.
-   */
-  setPassword: SetPasswordPayload;
-  /**
-   * Start setting a password for the signed-in account, which has none (a session with
-   * `mustSetPassword`): the OPAQUE `RegistrationRequest`, answered with the
-   * `RegistrationResponse`. `CONFLICT` when the account has a password.
-   */
-  setPasswordStart: Scalars['String']['output'];
-  /**
    * Make a new reload key for this session, which was signed in without "Keep me signed
    * in", and return it, 32 bytes as unpadded base64url. The tab seals what it stores in
    * `sessionStorage` under it, right after signing in and after each reload. The server
@@ -2023,27 +1975,15 @@ export type Mutation = {
   setWorkspaceDmPolicy: WorkspaceDmPolicy;
   setWorkspaceState: WorkspaceStateEntryGql;
   /**
-   * Unified signup mutation for all token-based and open-mode registration paths.
-   *
-   * In invite-only mode, exactly one of `instanceInviteToken` or `workspaceInviteToken`
-   * must be supplied.
-   * In open mode, all token fields must be absent.
-   * Refused with `FORBIDDEN` when `serverInfo.signupRequiresKeys` is true: new accounts then
-   * sign up with `signupWithKey`.
-   *
-   * On success, sets session and CSRF cookies via `AuthIntent`.
-   */
-  signupWithInvite: SignupWithInvitePayloadGql;
-  /**
    * Create an account from a key identity and a password: `passwordRegistration` is the
-   * OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration mode
-   * applies as for `signupWithInvite` (exactly one token in invite-only mode, none in open
-   * mode). An instance invite bound to an email address gives the account that address
-   * (`EMAIL_TAKEN` when another account has it); otherwise the account has no email. Signs
-   * the new account in on the device that signed up, setting the same session and CSRF
-   * cookies as `signupWithInvite`, and returns the account's new server share in the clear.
+   * OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration
+   * mode decides the tokens (exactly one in invite-only mode, none in open mode, one token or
+   * `proofOfWork` in pow mode). An instance invite bound to an email address gives the
+   * account that address (`EMAIL_TAKEN` when another account has it); otherwise the account
+   * has no email. Signs the new account in on the device that signed up, setting the session
+   * and CSRF cookies, and returns the account's new server share in the clear.
    */
-  signupWithKey: SignupWithInvitePayloadGql;
+  signupWithKey: SignupWithKeyPayload;
   /**
    * Start linking a new device to the signed-in account. Cancels the account's previous
    * live link. The link lives 10 minutes.
@@ -2373,11 +2313,6 @@ export type MutationEditMessageArgs = {
 };
 
 
-export type MutationEnrollIdentityKeyArgs = {
-  input: EnrollIdentityKeyInput;
-};
-
-
 export type MutationExecuteCommandArgs = {
   input: ExecuteCommandInput;
 };
@@ -2469,11 +2404,6 @@ export type MutationKickMemberArgs = {
 export type MutationLeaveConversationArgs = {
   conversationId: Scalars['ID']['input'];
   serverId: Scalars['ID']['input'];
-};
-
-
-export type MutationLoginArgs = {
-  input: LoginInput;
 };
 
 
@@ -2636,17 +2566,6 @@ export type MutationRequestMlsReaddArgs = {
 };
 
 
-export type MutationRequestPasswordResetArgs = {
-  username: Scalars['String']['input'];
-};
-
-
-export type MutationResetPasswordArgs = {
-  newPassword: Scalars['String']['input'];
-  token: Scalars['String']['input'];
-};
-
-
 export type MutationResolveReportArgs = {
   outcome: ReportOutcome;
   reportId: Scalars['ID']['input'];
@@ -2730,16 +2649,6 @@ export type MutationSetMyWorkspaceDmSettingArgs = {
 };
 
 
-export type MutationSetPasswordArgs = {
-  registrationUpload: Scalars['String']['input'];
-};
-
-
-export type MutationSetPasswordStartArgs = {
-  registrationRequest: Scalars['String']['input'];
-};
-
-
 export type MutationSetSlowModeArgs = {
   conversationId: Scalars['ID']['input'];
   seconds: Scalars['Int']['input'];
@@ -2756,11 +2665,6 @@ export type MutationSetWorkspaceDmPolicyArgs = {
 
 export type MutationSetWorkspaceStateArgs = {
   input: SetWorkspaceStateInput;
-};
-
-
-export type MutationSignupWithInviteArgs = {
-  input: SignupWithInviteInput;
 };
 
 
@@ -3889,8 +3793,7 @@ export enum RegistrationModeGql {
   OPEN = 'OPEN',
   /**
    * `RIM_REGISTRATION_POW_BITS`: `signupWithKey` takes a token or a proof-of-work whose
-   * difficulty the discovery document's `registration.powBits` gives; a password signup
-   * takes a token.
+   * difficulty the discovery document's `registration.powBits` gives.
    */
   POW = 'POW'
 }
@@ -4288,12 +4191,6 @@ export type ServerInfo = {
    */
   registrationFull: Scalars['Boolean']['output'];
   /**
-   * Whether new accounts sign up with a key only: `signupWithInvite` is refused with
-   * `FORBIDDEN` and `signupWithKey` is the signup. Password sign-in of existing accounts
-   * works either way.
-   */
-  signupRequiresKeys: Scalars['Boolean']['output'];
-  /**
    * The terms of service a signup accepts, an absolute http(s) URL; null when the instance
    * has none. A signup sends it back as `acceptedTermsUrl`.
    */
@@ -4388,12 +4285,6 @@ export enum ServerMemberRoleGql {
   OWNER = 'OWNER'
 }
 
-/** What `setPassword` returns. */
-export type SetPasswordPayload = {
-  /** The account's new server share, in the clear. */
-  serverShare: Scalars['String']['output'];
-};
-
 export type SetWorkspaceStateInput = {
   key: Scalars['String']['input'];
   scope: WorkspaceStateScopeGql;
@@ -4418,15 +4309,13 @@ export type SignedStatementInput = {
 };
 
 /**
- * Input for `signupWithInvite`.
- *
- * Exactly one token MUST be set in invite-only mode; all must be absent in
- * open mode. The resolver enforces this with a `Validation` error.
- *
- * `email` is required (max 254 chars, server trims + lowercases, case-insensitive unique).
- * `displayName` is optional; falls back to `username` server-side if absent or blank.
+ * Input for `signupWithKey`: an account created from a key identity and an OPAQUE password.
+ * The registration mode decides the tokens: exactly one of `instanceInviteToken` and
+ * `workspaceInviteToken` in invite-only mode, none in open mode, and in pow mode one token or
+ * `proofOfWork`. The account has no email unless an instance invite bound to an address gives
+ * it that address.
  */
-export type SignupWithInviteInput = {
+export type SignupWithKeyInput = {
   /**
    * The terms of service the person accepted: `serverInfo.termsUrl`, sent back unchanged.
    * Required when the server has terms (`VALIDATION` when missing or different); ignored
@@ -4438,64 +4327,6 @@ export type SignupWithInviteInput = {
    * unchanged once they confirm it. Required when the server has a minimum age
    * (`VALIDATION` when missing or different); ignored when it has none.
    */
-  confirmedMinimumAge?: InputMaybe<Scalars['Int']['input']>;
-  /**
-   * Optional display name, stored without control and invisible format characters and with
-   * whitespace collapsed; at most 64 characters after that. Falls back to `username` when
-   * absent or when nothing visible is left.
-   */
-  displayName?: InputMaybe<Scalars['String']['input']>;
-  /**
-   * Required. The user's email address. Trimmed and lowercased before storage.
-   * Must look like `local@domain.tld` and be at most 254 characters.
-   */
-  email: Scalars['String']['input'];
-  instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
-  password: Scalars['String']['input'];
-  username: Scalars['String']['input'];
-  workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
-};
-
-/**
- * Payload returned from `signupWithInvite` and `signupWithKey`.
- *
- * `server_id` is `Some` only when a `workspaceInviteToken` was used;
- * the instance-invite and open paths land in "no workspaces yet" state.
- */
-export type SignupWithInvitePayloadGql = {
-  /**
-   * The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
-   * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
-   */
-  csrfToken: Scalars['String']['output'];
-  /**
-   * After `signupWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
-   * server holds for this session, unpadded base64url, in the clear. `null` otherwise.
-   */
-  keepKey?: Maybe<Scalars['String']['output']>;
-  serverId?: Maybe<Scalars['ID']['output']>;
-  /**
-   * After `signupWithKey`: the new account's server share, unpadded base64url, in the
-   * clear. `null` for the other signups.
-   */
-  serverShare?: Maybe<Scalars['String']['output']>;
-  /**
-   * After `signupWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
-   * the clear, as `loginWithKey` returns it. `null` for a kept session.
-   */
-  sessionSecret?: Maybe<Scalars['String']['output']>;
-  userId: Scalars['ID']['output'];
-};
-
-/**
- * Input for `signupWithKey`: an account created from a key identity alone, with no password
- * and no email. The tokens follow the same rules as `signupWithInvite`: exactly one in
- * invite-only mode, none in open mode. In pow mode it takes one token or `proofOfWork`.
- */
-export type SignupWithKeyInput = {
-  /** The terms of service the person accepted, as for `signupWithInvite`. */
-  acceptedTermsUrl?: InputMaybe<Scalars['String']['input']>;
-  /** The minimum age the person confirmed reaching, as for `signupWithInvite`. */
   confirmedMinimumAge?: InputMaybe<Scalars['Int']['input']>;
   /** Certificate of the device signing up; the new session belongs to it. */
   device: SignedStatementInput;
@@ -4527,6 +4358,34 @@ export type SignupWithKeyInput = {
   proofOfWork?: InputMaybe<Scalars['String']['input']>;
   username: Scalars['String']['input'];
   workspaceInviteToken?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Payload returned from `signupWithKey`.
+ *
+ * `server_id` is `Some` only when a `workspaceInviteToken` was used; a signup with an instance
+ * invite, a proof-of-work or none lands in "no workspaces yet" state.
+ */
+export type SignupWithKeyPayload = {
+  /**
+   * The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+   * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+   */
+  csrfToken: Scalars['String']['output'];
+  /**
+   * With `keepSignedIn` and without `keepKeyHeld`: the keep key the server holds for this
+   * session, unpadded base64url, in the clear. `null` otherwise.
+   */
+  keepKey?: Maybe<Scalars['String']['output']>;
+  serverId?: Maybe<Scalars['ID']['output']>;
+  /** The new account's server share, unpadded base64url, in the clear. */
+  serverShare?: Maybe<Scalars['String']['output']>;
+  /**
+   * Without `keepSignedIn`: the session secret, unpadded base64url, in the clear, as
+   * `loginWithKey` returns it. `null` for a kept session.
+   */
+  sessionSecret?: Maybe<Scalars['String']['output']>;
+  userId: Scalars['ID']['output'];
 };
 
 export type StartedDeviceLink = {
@@ -4785,8 +4644,8 @@ export type User = {
    */
   instanceOperator: Scalars['Boolean']['output'];
   /**
-   * Key-based principal id (`rimp1_...`) once the account enrolled a key; null before. Plugins
-   * see this id, and the host maps a provisional `rimp0_` id to it once.
+   * Key-based principal id (`rimp1_...`); null only for a purged account that never had one.
+   * Plugins see this id, and the host maps a provisional `rimp0_` id to it once.
    */
   principalId?: Maybe<Scalars['String']['output']>;
   /**

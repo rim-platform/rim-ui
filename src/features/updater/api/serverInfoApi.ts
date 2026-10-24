@@ -13,15 +13,13 @@ export const CLIENT_API_VERSION = 1;
 
 /**
  * What the client knows about the server: `limits` is undefined for a server older than
- * instance limits, which reports none, `signupRequiresKeys` for one older than the signup
- * policy, which takes password signups, the `dm*` settings for one older than DM policies, and
+ * instance limits, which reports none, the `dm*` settings for one older than DM policies, and
  * `registrationFull`, `abuseContact` and `minimumAge` for one older than the account cap and
  * the operator's safety settings.
  */
 export type KnownServerInfo = Omit<
   ServerInfo,
   | "limits"
-  | "signupRequiresKeys"
   | "dmInbound"
   | "dmOutbound"
   | "dmPartners"
@@ -30,7 +28,6 @@ export type KnownServerInfo = Omit<
   | "minimumAge"
 > & {
   limits?: ServerLimits;
-  signupRequiresKeys?: boolean;
   dmInbound?: DmInbound;
   dmOutbound?: DmOutbound;
   dmPartners?: string[];
@@ -70,7 +67,6 @@ const SERVER_INFO_QUERY = gql`
       instanceNotice
       termsUrl
       ${LIMITS_FIELDS}
-      signupRequiresKeys
       dmInbound
       dmOutbound
       dmPartners
@@ -100,7 +96,6 @@ const SERVER_DM_QUERY = gql`
       instanceNotice
       termsUrl
       ${LIMITS_FIELDS}
-      signupRequiresKeys
       dmInbound
       dmOutbound
       dmPartners
@@ -109,26 +104,6 @@ const SERVER_DM_QUERY = gql`
 `;
 
 /** The same without the DM settings, for a server older than DM policies. */
-const SERVER_SIGNUP_QUERY = gql`
-  query ServerInfoWithSignup {
-    serverInfo {
-      version
-      apiVersion
-      features {
-        key
-        state
-        reason
-      }
-      auditRetentionDays
-      instanceNotice
-      termsUrl
-      ${LIMITS_FIELDS}
-      signupRequiresKeys
-    }
-  }
-`;
-
-/** The same without `signupRequiresKeys`, for a server older than the signup policy. */
 const SERVER_LIMITS_QUERY = gql`
   query ServerInfoWithLimits {
     serverInfo {
@@ -205,13 +180,11 @@ function refusedByServer(err: unknown): boolean {
 
 /**
  * The connected server's release version, API version, features, audit retention, instance
- * notice, terms URL, limits, signup policy, DM settings, account cap, abuse contact, minimum
- * age and default workspace; needs no session. Each query a server refuses falls back to the
- * next older one. A server older than the account cap leaves `registrationFull`,
- * `abuseContact`, `minimumAge` and `defaultWorkspace` undefined; one older than DM policies
- * also leaves the `dm*` settings undefined; one older than the signup policy also leaves
- * `signupRequiresKeys` undefined; one older than instance limits also leaves `limits`
- * undefined; one older than the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
+ * notice, terms URL, limits, DM settings, account cap, abuse contact, minimum age and default
+ * workspace; needs no session. Each query a server refuses falls back to the next older one. A
+ * server older than the account cap leaves `registrationFull`, `abuseContact`, `minimumAge` and
+ * `defaultWorkspace` undefined; one older than DM policies also leaves the `dm*` settings
+ * undefined; one older than instance limits also leaves `limits` undefined; one older than the instance notice also leaves `auditRetentionDays`, `instanceNotice` and `termsUrl`
  * undefined (unknown, unlike `null`: rows kept forever, no notice, no terms); one older than
  * `features` runs every feature, so it reads as listing none.
  */
@@ -231,7 +204,6 @@ async function readServerInfo(client: GraphQLClient): Promise<KnownServerInfo> {
   for (const query of [
     SERVER_INFO_QUERY,
     SERVER_DM_QUERY,
-    SERVER_SIGNUP_QUERY,
     SERVER_LIMITS_QUERY,
     SERVER_POLICY_QUERY,
     SERVER_FEATURES_QUERY,

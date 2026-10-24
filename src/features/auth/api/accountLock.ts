@@ -221,13 +221,3 @@ export function accountPasswordCommit(handle: string, principal: string): Promis
 export function accountAddRecoveryWrap(principal: string, entropy: string): Promise<null> {
   return call("account_add_recovery_wrap", { principal, entropy });
 }
-
-/**
- * Whether this device holds a password wrap of the account's data key, which the account's
- * first unlock here with its password writes.
- *
- * @param principal - The account's principal id.
- */
-export function accountHasPasswordWrap(principal: string): Promise<boolean> {
-  return call("account_has_password_wrap", { principal });
-}

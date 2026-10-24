@@ -32,8 +32,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   Security → **Password** changes it; other devices ask for the new one when they next unlock.
   Recovering an account with its kit offers **I know my password** or **Set a new password**. A
   device whose data was locked under a password reset elsewhere asks once for the recovery
-  phrase, or starts empty and keeps signing in with its own key. An account made before
-  passwords existed is asked to set one before anything else. **Upgrade:** this needs a server
+  phrase, or starts empty and keeps signing in with its own key. **Upgrade:** this needs a server
   with account passwords; an expired session no longer signs in again with the device key alone.
 - **Sign out** in the user menu and in Settings → Account now asks what to do with the account
   on this device: **Sign out** keeps it, with its keys, cached messages and settings ready for
@@ -78,8 +77,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   handle, a mention or a search's `from:` takes a whole handle as well as a username, and the
   `from:` suggestions insert it.
 - The sign-in and signup pages show where to report abuse when the server names it, as a link
-  for an https address and as an email address otherwise. A server with a minimum age has both
-  signups, with a key or a password, ask "I am at least N" beside the terms; the account is not
+  for an https address and as an email address otherwise. A server with a minimum age has the
+  signup ask "I am at least N" beside the terms; the account is not
   created without it, and a refusal because the server's age changed unticks the box and says so.
 - A server that holds as many accounts as it takes says "This server is full", with a link to
   running your own server, on the sign-in page, instead of the signup forms, and when the
@@ -101,9 +100,6 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The desktop app no longer shows the webview's own right-click menu (reload, inspect) where
   the app has no menu of its own; text fields, the composer and selected text keep the cut,
   copy and paste menu. A message's context menu also opens with a touch held for half a second.
-- On a server that signs up with keys only, the sign-in page leads with the key ways to sign
-  in (this device, linking with a code, a recovery kit) and folds the password form behind
-  "Sign in with a password (older accounts)", for accounts made before the server went key-only.
 
 ### Fixed
 
@@ -342,11 +338,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   manifest, as a plugin repository commits it, and `rim-plugin-bundle --check` exits 1 naming
   each file when the committed `main.mjs` or `panels/` differ from a fresh build. Bundles no
   longer depend on the folder the bundler runs from.
-- On a server that takes key signups only (rim-server's default from this release), the join
-  pages offer only "Create account with a key". A browser that cannot create keys says so and
-  points to the desktop app instead of showing a password form, and the sign-in page does the
-  same in place of its "Create account" link.
-- A key signup or enrollment creates the account first and shows the recovery kit after it,
+- A key signup creates the account first and shows the recovery kit after it,
   with "I saved it" and "Later", in the web app and the desktop app. Until the kit is
   confirmed, a bar across the app says "Save your recovery kit" and reopens it.
 - Before the web app creates keys, it asks the browser to keep this site's data. When the
@@ -354,8 +346,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   the person accepts.
 - The recovery kit screens suggest linking a second device from Settings > Security.
 - The web app can hold an account's identity in the browser, as non-extractable keys in its
-  own storage: key sign-in set up from Settings > Security, creating an account with a key on
-  the join pages, recovering an account with its recovery kit, replacing the identity key,
+  own storage: creating an account with a key on the join pages, recovering an account with its recovery kit, replacing the identity key,
   removing devices, publishing the profile card, and linking other devices with a code. The
   browser asks to keep its storage so the keys are not evicted, and stops before anything is
   sent when it cannot write them. Plugin manifest signing and the identity key backup in the
@@ -366,11 +357,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - A direct message or group that is not end-to-end encrypted says so: a dialog the first time
   you open it on a device names who has not set up encryption, and a "Not encrypted" mark in the
   conversation header shows it again.
-- After signing in with a password, the app offers "Set up encryption for this account": the
-  desktop app creates the account's keys and shows the recovery kit, and a device of an account
-  that already has keys elsewhere is offered to link to them. "Later" holds it back for seven
-  days, and "Set up encryption" in the "Not encrypted" dialog brings it back. The join form
-  keeps the key as its default and shows the password signup as a smaller link.
+- After signing in on a device that holds none of the account's keys, the app offers "Set up
+  encryption for this account", which links the device to the keys the account has elsewhere.
+  "Later" holds it back for seven days, and "Set up encryption" in the "Not encrypted" dialog
+  brings it back.
 - Message search suggests operator values as you type: `from:` lists workspace members, `in:`
   your channels, `has:` its values, and `before:`/`after:` today's date; ↑/↓ move, Enter, Tab or
   a click inserts, Esc closes the list.
@@ -391,8 +381,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   GitHub release. rim-server's `deploy/compose.yml` runs it.
 - The server's instance notice (GraphQL `ServerInfo.instanceNotice`) shows as a short plain-text
   banner at the top of sign-in, both sign-up forms and Settings, About.
-- On a server with terms of service (`ServerInfo.termsUrl`), sign-up with a password or a key
-  asks for "I accept the terms of use" with a link to them, opened in the system browser on the
+- On a server with terms of service (`ServerInfo.termsUrl`), sign-up asks for "I accept the terms of use" with a link to them, opened in the system browser on the
   desktop and a new tab on the web, and sends the URL back as `acceptedTermsUrl`. A refusal over
   the terms shows at the checkbox. Servers without terms, or older ones, sign up as before.
 - On a server that reports its instance caps (GraphQL `ServerInfo.limits`), the places that
@@ -476,7 +465,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   **Permissions**, **Activity**, **Sign and publish…** and **Uninstall…** moved into that menu.
 - The version starts at 0.0.1, the first public release, which rim-server shares: Settings,
   About and plugins (`hostVersion`) report 0.0.1 instead of 0.1.0.
-- The app carries the RIM brand: the RIM wordmark heads the sign-in, join and password pages,
+- The app carries the RIM brand: the RIM wordmark heads the sign-in and join pages,
   the browser tab shows the RIM icon and the title "RIM", and restoring a session shows the
   bouncing RIM splash, still when the system asks for reduced motion. The desktop window and
   its installers are named "RIM".
@@ -485,9 +474,6 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   have with them, or a draft shown as "New message to <name>" that leaves nothing behind if you
   send nothing. The draft says when the conversation will be end-to-end encrypted. Groups are
   still created at once.
-- After turning on key sign-in, Settings > Security says every other session of the account was
-  signed out, which the server now does at enrollment, instead of offering to sign them out.
-  Account settings keeps "Sign out other sessions".
 - The desktop app keeps a new account's recovery kit in its encrypted secret vault, next to the
   identity key, until you confirm you saved the kit, and then deletes it, as the web app already
   does. A kit you confirm before the account is created is never written, and a recovery with
@@ -524,6 +510,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Removed
 
+- Sign-in and signup with a username and password, the email password reset and "Set up key
+  sign-in": every account signs up with a key and a password. **Upgrade:** needs a server of this
+  release.
 - The decision records left `docs/`, which now holds only pages on how the client works today;
   git history keeps the records.
 - Simple mode: a plugin folder or repository without `rim-plugin.json` no longer installs from

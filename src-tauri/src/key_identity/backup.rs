@@ -294,7 +294,12 @@ mod tests {
             nonce: "bm9uY2U".into(),
         };
         let statements = state
-            .sign_enrollment(&draft.draft_id, &account, &challenge)
+            .sign_signup(
+                &draft.draft_id,
+                &account.endpoint,
+                &account.username,
+                &challenge,
+            )
             .unwrap();
         state
             .settle(&account, Some(draft.principal_id.as_str()))

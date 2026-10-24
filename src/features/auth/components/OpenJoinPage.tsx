@@ -5,8 +5,8 @@
  * the whole invite link, once the server's registration mode is known:
  * - `INVITE_ONLY`: the code is required, and the signup sends it.
  * - `OPEN`: the code is optional; the signup sends no token and the backend rate-limits it.
- * - `POW`, in the desktop app: a relay in pow mode takes a key-only signup with a proof-of-work
- *   or an invite instead, so the form offers only the key, with the code optional.
+ * - `POW`, in the desktop app: a relay in pow mode takes a key signup with a proof-of-work or an
+ *   invite instead, so the code is optional.
  *
  * While the mode loads it shows "Loading...". In the web app on a pow server, or when the mode
  * cannot be read, it says so and redirects to `/login` after 3 seconds.
@@ -112,7 +112,6 @@ export function OpenJoinPage() {
       variant="CODE"
       token={null}
       registrationMode={registrationMode}
-      keyOnly={isPow}
       onSuccess={handleSuccess}
     />
   );

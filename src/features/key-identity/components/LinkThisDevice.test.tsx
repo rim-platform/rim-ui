@@ -72,7 +72,6 @@ describe("LinkThisDevice", () => {
     );
     keys.signInWithPassword.mockResolvedValue({
       userId: "u-alice",
-      mustSetPassword: false,
       startedEmpty: true,
     });
     const onSuccess = vi.fn();

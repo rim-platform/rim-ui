@@ -182,7 +182,6 @@ pub fn run() {
             key_identity::commands::key_identity_accounts,
             key_identity::commands::key_identity_default_device_name,
             key_identity::commands::key_identity_begin_enrollment,
-            key_identity::commands::key_identity_sign_enrollment,
             key_identity::commands::key_identity_sign_signup,
             key_identity::commands::key_identity_remove_draft_keys,
             key_identity::commands::key_identity_restore_draft_keys,
@@ -244,7 +243,6 @@ pub fn run() {
             account_lock::commands::account_password_rewrap,
             account_lock::commands::account_password_commit,
             account_lock::commands::account_add_recovery_wrap,
-            account_lock::commands::account_has_password_wrap,
             updater::updater_status,
         ])
         .build(context)

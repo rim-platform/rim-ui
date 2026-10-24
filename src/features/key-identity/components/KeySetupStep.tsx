@@ -16,15 +16,13 @@ import {
   type KeySetupKind,
 } from "../state/keySetupOffer";
 import { BrowserHistoryNotice } from "./BrowserHistoryNotice";
-import { EnrollKeyIdentity, type Me } from "./EnrollKeyIdentity";
 import { LinkThisDeviceForm } from "./LinkThisDevice";
 
 /**
- * The step this account has on this device: `enroll` when it has no key anywhere and this app
- * can hold an identity key, `link` when it has one elsewhere and this device holds none, `null`
- * otherwise or while unknown.
+ * The step this account has on this device: `link` when it has keys elsewhere and this device
+ * holds none, `null` otherwise or while unknown; with the account's id.
  */
-function useKeySetupKind(): { kind: KeySetupKind | null; me: Me | null } {
+function useKeySetupKind(): { kind: KeySetupKind | null; userId: string | null } {
   const { capabilities } = useRuntime();
   const { data: user } = useCurrentUser();
   const endpoint = getGraphqlEndpoint();
@@ -33,28 +31,22 @@ function useKeySetupKind(): { kind: KeySetupKind | null; me: Me | null } {
     queryFn: listDeviceKeyAccounts,
     enabled: capabilities.deviceKeys,
   });
-  if (!user || !capabilities.deviceKeys) return { kind: null, me: null };
-  const me = {
-    userId: user.id,
-    username: user.username,
-    displayName: user.displayName || user.username,
-  };
-  if (user.principalId === null) return { kind: capabilities.identityKeys ? "enroll" : null, me };
-  if (!user.principalId || !local.data) return { kind: null, me };
+  if (!user || !capabilities.deviceKeys) return { kind: null, userId: null };
+  if (!user.principalId || !local.data) return { kind: null, userId: user.id };
   const holdsKey = local.data.some((a) => a.principalId === user.principalId);
-  return { kind: holdsKey ? null : "link", me };
+  return { kind: holdsKey ? null : "link", userId: user.id };
 }
 
 /**
  * "Set up encryption for this account", offered over the workspace after signing in: an account
- * with no key creates its keys here, an account with keys on another device links this one to
- * them. "Later" holds it back for seven days; `useOfferKeySetup` shows it again sooner.
+ * with keys on another device links this one to them. "Later" holds it back for seven days;
+ * `useOfferKeySetup` shows it again sooner.
  */
 export function KeySetupStep() {
   const userId = useAuthStore((s) => s.session?.userId ?? null);
   const { platform } = useRuntime();
   const qc = useQueryClient();
-  const { kind, me } = useKeySetupKind();
+  const { kind, userId: accountId } = useKeySetupKind();
   const requested = useKeySetupOfferStore((s) => s.requested);
   const setAvailable = useKeySetupOfferStore((s) => s.setAvailable);
   const dismiss = useKeySetupOfferStore((s) => s.dismiss);
@@ -68,7 +60,7 @@ export function KeySetupStep() {
     return () => setAvailable(null);
   }, [kind, setAvailable]);
 
-  if (!userId || !kind || !me || me.userId !== userId) return null;
+  if (!userId || !kind || accountId !== userId) return null;
   const deferred = laterFor === userId || doneFor === userId || keySetupDeferred(userId);
   const open = requested || !deferred;
 
@@ -107,34 +99,16 @@ export function KeySetupStep() {
       maxWidth="max-w-xl"
     >
       <div className="max-h-[75vh] space-y-4 overflow-y-auto">
-        {kind === "enroll" ? (
-          <EnrollKeyIdentity
-            me={me}
-            title="Create your account's keys"
-            intro={
-              <p>
-                Encrypted conversations need a key on every device you use. This creates your
-                account&apos;s identity key, its recovery key and a key for {here}.
-              </p>
-            }
-            finishLabel="Set up encryption"
-            onEnrolled={keysChanged}
-            onLater={later}
-          />
-        ) : (
-          <>
-            <p className="text-sm text-rim-text-muted">
-              Your account already has keys on another device. Link {here} to them to read and send
-              encrypted conversations here; your account keeps its one identity.
-            </p>
-            <LinkThisDeviceForm
-              inBrowser={platform === "web"}
-              onSuccess={linked}
-              onCancel={later}
-              cancelLabel="Later"
-            />
-          </>
-        )}
+        <p className="text-sm text-rim-text-muted">
+          Your account already has keys on another device. Link {here} to them to read and send
+          encrypted conversations here; your account keeps its one identity.
+        </p>
+        <LinkThisDeviceForm
+          inBrowser={platform === "web"}
+          onSuccess={linked}
+          onCancel={later}
+          cancelLabel="Later"
+        />
         <BrowserHistoryNotice />
       </div>
     </Dialog>

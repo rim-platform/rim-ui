@@ -60,7 +60,6 @@ import {
 import { keyBackend, type EnrollmentDraft, type KeyChallenge } from "../api/keyBackend";
 import {
   beginEnrollment,
-  completeEnrollment,
   confirmRecoveryKitSaved,
   listDeviceKeyAccounts,
   recoverDeviceKeys,
@@ -615,7 +614,12 @@ async function holder(): Promise<{
 }> {
   const draft = await browserKeyBackend.beginEnrollment("Firefox on Linux");
   await browserKeyBackend.confirmRecoveryKit(draft.principalId);
-  const signed = await browserKeyBackend.signEnrollment(draft.draftId, ACCOUNT, CHALLENGE);
+  const signed = await browserKeyBackend.signSignup(
+    draft.draftId,
+    ENDPOINT,
+    ACCOUNT.username,
+    CHALLENGE,
+  );
   await browserKeyBackend.settle(ACCOUNT, draft.principalId);
   // The holder's account is unlocked here, as it is while its app runs.
   await unlockTestVault({ endpoint: ENDPOINT, principalId: draft.principalId });
@@ -633,7 +637,7 @@ async function storedFor(principalId: string): Promise<BrowserKeyRecord> {
   return found;
 }
 
-/** A signup's or enrollment's statements, checked as the server checks them. */
+/** A signup's statements, checked as the server checks them. */
 async function checkEnrollment(
   input: { keyLog: Statement[]; device: Statement; proof: Statement },
   principalId: string,
@@ -661,52 +665,6 @@ async function checkEnrollment(
 }
 
 describe("the web app creating an identity", () => {
-  it("enrolls: the keys are stored before enrollIdentityKey and the card lists the device", async () => {
-    const draft = await beginEnrollment("Firefox on Linux");
-    let storedWhileEnrolling: BrowserKeyRecord | undefined;
-    let input: { keyLog: Statement[]; device: Statement; proof: Statement } | undefined;
-    let card: Statement | undefined;
-    serve({
-      KeyLoginChallenge: { keyLoginChallenge: CHALLENGE },
-      EnrollIdentityKey: async (vars: { input: typeof input }) => {
-        storedWhileEnrolling = await storedFor(draft.principalId);
-        input = vars.input;
-        return { enrollIdentityKey: { principalId: draft.principalId } };
-      },
-      MyKeyIdentity: () => ({
-        myKeyIdentity: identityOf(input?.keyLog ?? [], [input?.device as Statement]),
-      }),
-      PublishProfileCard: (vars: { card: Statement }) => {
-        card = vars.card;
-        return { publishProfileCard: { version: 1 } };
-      },
-    });
-
-    await completeEnrollment(draft, { ...ACCOUNT, displayName: "Ada" });
-
-    // Stored before the account's first unlock: unsealed, as made.
-    expect(storedWhileEnrolling?.identity?.privateKey.type).toBe("private");
-    expect(storedWhileEnrolling?.deviceKey?.type).toBe("private");
-    if (!input || !card) throw new Error("the server was not asked");
-    await checkEnrollment(input, draft.principalId);
-    const head = await replay(input.keyLog);
-    expect(storedWhileEnrolling?.identity?.publicKey).toBe(head.identityKey);
-    const published = await verifiedCard(card, head);
-    expect(published.devices).toEqual([await certifiedDevice(input.device, head)]);
-    expect(published.relays).toEqual(["https://relay.example"]);
-    // Saved before sending: no kit secret is kept.
-    expect(storedWhileEnrolling).toMatchObject({ kitConfirmed: true });
-    expect(storedWhileEnrolling?.recoveryEntropy).toBeUndefined();
-    expect(await listDeviceKeyAccounts()).toEqual([
-      expect.objectContaining({
-        principalId: draft.principalId,
-        userId: "user-1",
-        hasIdentityKey: true,
-        confirmed: true,
-      }),
-    ]);
-  });
-
   it("signs up with the kit saved later: the entropy is kept, even across a reload, until confirmed", async () => {
     const draft = await beginEnrollment("Firefox on Linux");
     let storedWhileSigningUp: BrowserKeyRecord | undefined;
@@ -815,18 +773,6 @@ describe("the web app creating an identity", () => {
       globalThis.indexedDB = factory;
     }
     expect(asked).not.toContain("SignupWithKey");
-  });
-
-  it("keeps an in-flight draft's keys when the server does not show them yet", async () => {
-    const draft = await browserKeyBackend.beginEnrollment("Firefox on Linux");
-    await browserKeyBackend.signEnrollment(draft.draftId, ACCOUNT, CHALLENGE);
-    expect(await browserKeyBackend.settle(ACCOUNT, null)).toBeNull();
-    expect(await storedFor(draft.principalId)).toMatchObject({
-      confirmed: false,
-      userId: "user-1",
-    });
-    await browserKeyBackend.discardEnrollment(draft.draftId);
-    expect(await principalRecords(draft.principalId)).toEqual([]);
   });
 });
 

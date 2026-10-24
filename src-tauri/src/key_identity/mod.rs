@@ -144,7 +144,7 @@ impl RecoveryKitText {
     }
 }
 
-/// What `enrollIdentityKey` takes.
+/// What `signupWithKey` takes from a new identity: its key log, device certificate and login proof.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EnrollmentStatements {
@@ -536,24 +536,6 @@ impl KeyIdentityState {
         })
     }
 
-    /// Store a draft's keys for `account` and sign what `enrollIdentityKey` needs. The draft
-    /// stays until the enrollment settles, so a failed attempt can be retried with the same
-    /// keys (the recovery kit already shown belongs to them).
-    pub(crate) fn sign_enrollment(
-        &self,
-        draft_id: &str,
-        account: &ServerAccount,
-        challenge: &Challenge,
-    ) -> Result<EnrollmentStatements> {
-        self.sign_draft(
-            draft_id,
-            &account.endpoint,
-            Some(&account.user_id),
-            &account.username,
-            challenge,
-        )
-    }
-
     /// Store a draft's keys for a new account named `username` on `endpoint` and sign what
     /// `signupWithKey` needs. The account has no user id until the server answers; settling
     /// with the one it returns links the keys to it. A refused attempt removes the keys with
@@ -789,7 +771,7 @@ impl KeyIdentityState {
         server_principal_id: Option<&str>,
     ) -> Result<Option<LocalAccount>> {
         let guard = self.guard()?;
-        // Read under the store lock, after any `sign_enrollment` that got there first: a draft
+        // Read under the store lock, after any `sign_signup` that got there first: a draft
         // still held here may be in flight to the server, so its keys are never leftovers.
         let drafting: Vec<String> = self
             .drafts

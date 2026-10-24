@@ -10,7 +10,7 @@ import { onWsSessionEnded } from "../../../core/graphql/wsClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { logout } from "../api/useAuthMutations";
+import { logout } from "../api/logout";
 import { useAuthStore } from "../state/useAuthStore";
 import { lockAccount } from "./accountUnlock";
 import { removeAccountData, signedInAccount } from "./removeAccountData";

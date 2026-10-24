@@ -50,7 +50,7 @@ import { DeviceKeySignIn, RecoverAccount } from "./DeviceKeySignIn";
 
 const PASSWORD = "correct horse battery";
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer";
-const SIGNED_IN = { userId: "u-alice", mustSetPassword: false, startedEmpty: false };
+const SIGNED_IN = { userId: "u-alice", startedEmpty: false };
 
 /** Opens alice's password prompt and signs in with `password`. */
 async function signInAsAlice(password = PASSWORD) {

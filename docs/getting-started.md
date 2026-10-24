@@ -73,13 +73,6 @@ deletes them, and a private window may not keep them. The encrypted messages a b
 in that browser too, as **Set up encryption for this account** and Settings > Security say there;
 the desktop app's history archive keeps a copy that lasts.
 
-**Password accounts.** Servers take key signups only unless their operator allows passwords. On one
-that does, **Create account with a password** under the key form asks for a username, an email, a
-password of at least 8 characters and an optional display name, under the same **Invite code**
-field. A password account can add a key later in Settings > Security, and after signing in the app
-offers it in **Set up encryption for this account**. A browser that cannot create keys on a
-key-only server shows "This server needs a key signup" and points to the desktop app.
-
 ## Where you land
 
 After signup the app opens one of these:

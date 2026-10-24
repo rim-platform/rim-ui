@@ -29,6 +29,7 @@ vi.mock("../../../core/graphql/config", () => ({
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ platform: "web" }),
 }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(() => Promise.resolve()) }));
 
 import {
   KeyChallengeFailed,
@@ -325,6 +326,19 @@ describe("KeySignupForm", () => {
 
     expect(api.signupWithKey).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
+  });
+
+  it("shows the server's message when an email-bound invite refuses the address", async () => {
+    const user = userEvent.setup();
+    const refusal = "this invite admits only the email address it was issued for";
+    api.signupWithKey.mockRejectedValueOnce(serverError("VALIDATION", refusal));
+    renderForm();
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(screen.queryByText(/"response"/)).toBeNull();
   });
 
   it("offers no retry button for a refusal that is not about the proof-of-work", async () => {
@@ -682,6 +696,27 @@ describe("KeySignupForm", () => {
       expect(screen.getByLabelText("Recovery phrase")).toBeInTheDocument();
     });
 
+    it("links the terms, opening them in a new tab on the web", () => {
+      renderForm(undefined, undefined, { termsUrl: TERMS });
+      const link = screen.getByRole("link", { name: TERMS });
+      expect(link).toHaveAttribute("href", TERMS);
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    });
+
+    it("opens the terms in the system browser on the desktop", async () => {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+      try {
+        const user = userEvent.setup();
+        renderForm(undefined, undefined, { termsUrl: TERMS });
+        await user.click(screen.getByRole("link", { name: TERMS }));
+        await waitFor(() => expect(openUrl).toHaveBeenCalledWith(TERMS));
+      } finally {
+        delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+      }
+    });
+
     it("asks nothing and sends no terms on a server without them", async () => {
       const user = userEvent.setup();
       api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
@@ -727,6 +762,41 @@ describe("KeySignupForm", () => {
         ENTRY,
         expect.anything(),
       );
+    });
+
+    it("asks for the minimum age beside the terms, then sends both back", async () => {
+      const terms = "https://acme.example/api/terms?v=Zx9-a_b";
+      const user = userEvent.setup();
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+      renderForm(undefined, undefined, { termsUrl: terms, minimumAge: 16 });
+      await reachCreate(user);
+      // Terms the server serves itself are linked with their version, and sent back unchanged.
+      expect(screen.getByRole("link", { name: terms })).toHaveAttribute("href", terms);
+      await user.click(screen.getByRole("checkbox", { name: "I accept the terms of use" }));
+
+      expect(screen.getByRole("button", { name: /create keys/i })).toBeDisabled();
+      await user.click(ageBox());
+      await user.click(screen.getByRole("button", { name: /create keys/i }));
+      await screen.findByLabelText("Recovery phrase");
+      await user.click(kitBox());
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.signupWithKey.mock.calls[0][1]).toMatchObject({
+        acceptedTermsUrl: terms,
+        confirmedMinimumAge: 16,
+      });
+    });
+
+    it("asks for no age and sends none on a server without one", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockResolvedValue({ userId: "u-ada", serverId: null });
+      renderForm(undefined, undefined, { minimumAge: null });
+
+      await reachKit(user);
+      expect(screen.queryByRole("checkbox", { name: /i am at least/i })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+      expect(api.signupWithKey.mock.calls[0][1]).not.toHaveProperty("confirmedMinimumAge");
     });
 
     it("shows a refusal over the age at the checkbox, unticks it and rereads the server", async () => {

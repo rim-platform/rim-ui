@@ -10,7 +10,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: () => tauri.desktop,
 }));
 vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: vi.fn() }));
-vi.mock("../api/useAuthMutations", () => ({ logout: vi.fn() }));
+vi.mock("../api/logout", () => ({ logout: vi.fn() }));
 
 import { lockVault, unlockVault } from "../../../core/accountVault/accountVault";
 import {
@@ -33,7 +33,7 @@ import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { allRecords, putRecord } from "../../relay/state/relayDb";
 import { removalAccountKey, useRemovalNotices } from "../../workspaces/state/useRemovalNotices";
-import { logout } from "../api/useAuthMutations";
+import { logout } from "../api/logout";
 import { useAuthStore } from "../state/useAuthStore";
 import { removeAccountData, signedInAccount } from "./removeAccountData";
 import { signOut } from "./signOut";

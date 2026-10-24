@@ -927,22 +927,6 @@ input EditMessageInput {
 	text: String!
 }
 
-input EnrollIdentityKeyInput {
-	"""
-	The whole key log, inception first.
-	"""
-	keyLog: [SignedStatementInput!]!
-	"""
-	Certificate of the device enrolling; this session becomes its session.
-	"""
-	device: SignedStatementInput!
-	"""
-	A `login` statement signed by that device over a fresh `keyLoginChallenge`, proving the
-	caller holds the device key.
-	"""
-	proof: SignedStatementInput!
-}
-
 input ExecuteCommandInput {
 	commandId: String!
 	args: JSON
@@ -1116,7 +1100,7 @@ type InstanceAccount {
 	"""
 	username: String!
 	"""
-	The account's principal (`rimp1_…`); null for an account that never enrolled a key.
+	The account's principal (`rimp1_…`); null for a purged account that never had one.
 	"""
 	principalId: String
 	"""
@@ -1195,7 +1179,7 @@ What blocking one principal or account did.
 """
 type InstancePrincipalBlockOutcome {
 	"""
-	The principal blocked; null for an account of a cascade that has no key identity.
+	The principal blocked; null for an account of a cascade that never had a key identity.
 	"""
 	principalId: String
 	"""
@@ -1223,7 +1207,7 @@ type InstancePrincipalBlockOutcome {
 	"""
 	revokedInvites: Int!
 	"""
-	Whether the account's email is now refused at signup and password login.
+	Whether the account's email is now refused at signup.
 	"""
 	emailBlocked: Boolean!
 	"""
@@ -1269,7 +1253,7 @@ The type of an invite token, used by `InviteTokenPreview`.
 """
 enum InviteTokenTypeGql {
 	"""
-	Instance invite: routes to `instanceInviteToken` input on `signupWithInvite`.
+	Instance invite: routes to `instanceInviteToken` input on `signupWithKey`.
 	"""
 	INSTANCE
 	"""
@@ -1415,8 +1399,8 @@ type JoinServerByInvitePayload {
 }
 
 """
-What this server holds about the signed-in account's key identity. Before the account
-enrolls a key, `principalId` and `keySeq` are null and the lists are empty.
+What this server holds about the signed-in account's key identity. For an account without
+one, `principalId` and `keySeq` are null and the lists are empty.
 """
 type KeyIdentity {
 	principalId: String
@@ -1497,13 +1481,8 @@ type LinkPreview {
 	fetchedAt: DateTime!
 }
 
-input LoginInput {
-	username: String!
-	password: String!
-}
-
 """
-Payload returned from `login` and `loginWithKey`.
+Payload returned from `loginWithKey`.
 """
 type LoginPayload {
 	userId: ID!
@@ -1512,11 +1491,6 @@ type LoginPayload {
 	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
 	"""
 	csrfToken: String!
-	"""
-	The account has no password: this session may only set one (`setPassword`), sign out
-	and read `me`; everything else answers `FORBIDDEN`.
-	"""
-	mustSetPassword: Boolean!
 	"""
 	After `loginWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
 	the clear. The client keeps it in memory only and sends it in the
@@ -1906,7 +1880,6 @@ input MlsWelcomeCursorInput {
 }
 
 type Mutation {
-	login(input: LoginInput!): LoginPayload!
 	logout: Boolean!
 	"""
 	End every session of the signed-in account except this one. Returns how many ended.
@@ -1914,18 +1887,6 @@ type Mutation {
 	logoutOtherSessions: Int!
 	createInvite(input: CreateInviteInput!): CreateInvitePayload!
 	joinServerByInvite(input: JoinServerByInviteInput!): JoinServerByInvitePayload!
-	"""
-	Unified signup mutation for all token-based and open-mode registration paths.
-	
-	In invite-only mode, exactly one of `instanceInviteToken` or `workspaceInviteToken`
-	must be supplied.
-	In open mode, all token fields must be absent.
-	Refused with `FORBIDDEN` when `serverInfo.signupRequiresKeys` is true: new accounts then
-	sign up with `signupWithKey`.
-	
-	On success, sets session and CSRF cookies via `AuthIntent`.
-	"""
-	signupWithInvite(input: SignupWithInviteInput!): SignupWithInvitePayloadGql!
 	sendMessage(input: SendMessageInput!): Message!
 	replyToMessage(input: ReplyToMessageInput!): Message!
 	createConversation(input: CreateConversationInput!): Conversation!
@@ -1988,12 +1949,6 @@ type Mutation {
 	heartbeat(input: HeartbeatInput!): Boolean!
 	muteConversation(input: MuteConversationInput!): Boolean!
 	unmuteConversation(input: UnmuteConversationInput!): Boolean!
-	"""
-	`FEATURE_DISABLED` while the operator has disabled email. Without SMTP the reset mail is
-	logged instead of sent.
-	"""
-	requestPasswordReset(username: String!): Boolean!
-	resetPassword(token: String!, newPassword: String!): Boolean!
 	createCustomEmoji(input: CreateCustomEmojiInput!): CustomEmoji!
 	deleteCustomEmoji(emojiId: ID!): Boolean!
 	createMacro(input: CreateMacroInput!): MacroDef!
@@ -2123,15 +2078,14 @@ type Mutation {
 	"""
 	keyLoginChallenge: KeyLoginChallenge!
 	"""
-	Sign in with a `login` statement signed by an enrolled device key. Sets the same session
-	cookie as `login`.
+	Sign in with a `login` statement signed by one of the account's device keys. Sets the
+	session and CSRF cookies.
 	
-	An account of this server with a password also brings `passwordTicket`, from
-	`passwordLoginFinish`: single use, valid for 120 seconds, and only for that account.
-	Without one, or with one that is used, expired or another account's, the answer is
-	`UNAUTHENTICATED`, as for a wrong proof. An account of this server without a password
-	signs in with the key alone and gets `mustSetPassword`: its session may only set a
-	password, sign out and read `me`. Accounts of other servers sign in with the key alone.
+	An account of this server also brings `passwordTicket`, from `passwordLoginFinish`:
+	single use, valid for 120 seconds, and only for that account. Without one, with one that
+	is used, expired or another account's, or for an account without a password, the answer
+	is `UNAUTHENTICATED`, as for a wrong proof. Accounts of other servers sign in with the
+	key alone.
 	
 	`keepSignedIn` ("Keep me signed in") sets persistent cookies. Unticked, the cookies last
 	until the browser closes and the session answers only requests that carry
@@ -2141,12 +2095,6 @@ type Mutation {
 	session gets the keep key the server holds for it.
 	"""
 	loginWithKey(proof: SignedStatementInput!, passwordTicket: String, keepSignedIn: Boolean!, keepKeyHeld: Boolean!): LoginPayload!
-	"""
-	Bind a key identity to the signed-in account. The calling session becomes the new
-	device's and every other session of the account ends. Afterwards the password no longer
-	signs in.
-	"""
-	enrollIdentityKey(input: EnrollIdentityKeyInput!): KeyIdentity!
 	"""
 	Add a device certified by the current identity key.
 	"""
@@ -2166,14 +2114,14 @@ type Mutation {
 	publishProfileCard(card: SignedStatementInput!): ProfileCard!
 	"""
 	Create an account from a key identity and a password: `passwordRegistration` is the
-	OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration mode
-	applies as for `signupWithInvite` (exactly one token in invite-only mode, none in open
-	mode). An instance invite bound to an email address gives the account that address
-	(`EMAIL_TAKEN` when another account has it); otherwise the account has no email. Signs
-	the new account in on the device that signed up, setting the same session and CSRF
-	cookies as `signupWithInvite`, and returns the account's new server share in the clear.
+	OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration
+	mode decides the tokens (exactly one in invite-only mode, none in open mode, one token or
+	`proofOfWork` in pow mode). An instance invite bound to an email address gives the
+	account that address (`EMAIL_TAKEN` when another account has it); otherwise the account
+	has no email. Signs the new account in on the device that signed up, setting the session
+	and CSRF cookies, and returns the account's new server share in the clear.
 	"""
-	signupWithKey(input: SignupWithKeyInput!): SignupWithInvitePayloadGql!
+	signupWithKey(input: SignupWithKeyInput!): SignupWithKeyPayload!
 	"""
 	Start linking a new device to the signed-in account. Cancels the account's previous
 	live link. The link lives 10 minutes.
@@ -2561,18 +2509,6 @@ type Mutation {
 	expired. Returns `true`.
 	"""
 	passwordResetFinish(resetId: ID!, registrationUpload: String!): Boolean!
-	"""
-	Start setting a password for the signed-in account, which has none (a session with
-	`mustSetPassword`): the OPAQUE `RegistrationRequest`, answered with the
-	`RegistrationResponse`. `CONFLICT` when the account has a password.
-	"""
-	setPasswordStart(registrationRequest: String!): String!
-	"""
-	Finish setting a password for the signed-in account with the `RegistrationUpload`.
-	Lifts the limit from the account's sessions and returns its new server share.
-	`CONFLICT` when the account has a password.
-	"""
-	setPassword(registrationUpload: String!): SetPasswordPayload!
 	"""
 	Make a new reload key for this session, which was signed in without "Keep me signed
 	in", and return it, 32 bytes as unpadded base64url. The tab seals what it stores in
@@ -3415,8 +3351,7 @@ enum RegistrationModeGql {
 	OPEN
 	"""
 	`RIM_REGISTRATION_POW_BITS`: `signupWithKey` takes a token or a proof-of-work whose
-	difficulty the discovery document's `registration.powBits` gives; a password signup
-	takes a token.
+	difficulty the discovery document's `registration.powBits` gives.
 	"""
 	POW
 }
@@ -3896,12 +3831,6 @@ type ServerInfo {
 	"""
 	limits: ServerLimits!
 	"""
-	Whether new accounts sign up with a key only: `signupWithInvite` is refused with
-	`FORBIDDEN` and `signupWithKey` is the signup. Password sign-in of existing accounts
-	works either way.
-	"""
-	signupRequiresKeys: Boolean!
-	"""
 	DMs from people on other servers, and from people here outside the recipient's
 	workspaces (`RIM_DM_INBOUND`): a floor for every account here.
 	"""
@@ -4052,16 +3981,6 @@ enum ServerMemberRoleGql {
 	GUEST
 }
 
-"""
-What `setPassword` returns.
-"""
-type SetPasswordPayload {
-	"""
-	The account's new server share, in the clear.
-	"""
-	serverShare: String!
-}
-
 input SetWorkspaceStateInput {
 	serverId: ID!
 	key: String!
@@ -4088,79 +4007,11 @@ input SignedStatementInput {
 }
 
 """
-Input for `signupWithInvite`.
-
-Exactly one token MUST be set in invite-only mode; all must be absent in
-open mode. The resolver enforces this with a `Validation` error.
-
-`email` is required (max 254 chars, server trims + lowercases, case-insensitive unique).
-`displayName` is optional; falls back to `username` server-side if absent or blank.
-"""
-input SignupWithInviteInput {
-	username: String!
-	"""
-	Required. The user's email address. Trimmed and lowercased before storage.
-	Must look like `local@domain.tld` and be at most 254 characters.
-	"""
-	email: String!
-	"""
-	Optional display name, stored without control and invisible format characters and with
-	whitespace collapsed; at most 64 characters after that. Falls back to `username` when
-	absent or when nothing visible is left.
-	"""
-	displayName: String
-	password: String!
-	instanceInviteToken: String
-	workspaceInviteToken: String
-	"""
-	The terms of service the person accepted: `serverInfo.termsUrl`, sent back unchanged.
-	Required when the server has terms (`VALIDATION` when missing or different); ignored
-	when it has none.
-	"""
-	acceptedTermsUrl: String
-	"""
-	The minimum age the person confirmed reaching: `serverInfo.minimumAge`, sent back
-	unchanged once they confirm it. Required when the server has a minimum age
-	(`VALIDATION` when missing or different); ignored when it has none.
-	"""
-	confirmedMinimumAge: Int
-}
-
-"""
-Payload returned from `signupWithInvite` and `signupWithKey`.
-
-`server_id` is `Some` only when a `workspaceInviteToken` was used;
-the instance-invite and open paths land in "no workspaces yet" state.
-"""
-type SignupWithInvitePayloadGql {
-	userId: ID!
-	serverId: ID
-	"""
-	The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
-	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
-	"""
-	csrfToken: String!
-	"""
-	After `signupWithKey`: the new account's server share, unpadded base64url, in the
-	clear. `null` for the other signups.
-	"""
-	serverShare: String
-	"""
-	After `signupWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
-	the clear, as `loginWithKey` returns it. `null` for a kept session.
-	"""
-	sessionSecret: String
-	"""
-	After `signupWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
-	server holds for this session, unpadded base64url, in the clear. `null` otherwise.
-	"""
-	keepKey: String
-}
-
-"""
-Input for `signupWithKey`: an account created from a key identity alone, with no password
-and no email. The tokens follow the same rules as `signupWithInvite`: exactly one in
-invite-only mode, none in open mode. In pow mode it takes one token or `proofOfWork`.
+Input for `signupWithKey`: an account created from a key identity and an OPAQUE password.
+The registration mode decides the tokens: exactly one of `instanceInviteToken` and
+`workspaceInviteToken` in invite-only mode, none in open mode, and in pow mode one token or
+`proofOfWork`. The account has no email unless an instance invite bound to an address gives
+it that address.
 """
 input SignupWithKeyInput {
 	username: String!
@@ -4196,11 +4047,15 @@ input SignupWithKeyInput {
 	"""
 	proofOfWork: String
 	"""
-	The terms of service the person accepted, as for `signupWithInvite`.
+	The terms of service the person accepted: `serverInfo.termsUrl`, sent back unchanged.
+	Required when the server has terms (`VALIDATION` when missing or different); ignored
+	when it has none.
 	"""
 	acceptedTermsUrl: String
 	"""
-	The minimum age the person confirmed reaching, as for `signupWithInvite`.
+	The minimum age the person confirmed reaching: `serverInfo.minimumAge`, sent back
+	unchanged once they confirm it. Required when the server has a minimum age
+	(`VALIDATION` when missing or different); ignored when it has none.
 	"""
 	confirmedMinimumAge: Int
 	"""
@@ -4211,6 +4066,36 @@ input SignupWithKeyInput {
 	The client holds its own keep key, as for `loginWithKey`.
 	"""
 	keepKeyHeld: Boolean!
+}
+
+"""
+Payload returned from `signupWithKey`.
+
+`server_id` is `Some` only when a `workspaceInviteToken` was used; a signup with an instance
+invite, a proof-of-work or none lands in "no workspaces yet" state.
+"""
+type SignupWithKeyPayload {
+	userId: ID!
+	serverId: ID
+	"""
+	The new session's CSRF token, the value of the `rim_csrf` cookie. A client that cannot
+	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
+	"""
+	csrfToken: String!
+	"""
+	The new account's server share, unpadded base64url, in the clear.
+	"""
+	serverShare: String
+	"""
+	Without `keepSignedIn`: the session secret, unpadded base64url, in the clear, as
+	`loginWithKey` returns it. `null` for a kept session.
+	"""
+	sessionSecret: String
+	"""
+	With `keepSignedIn` and without `keepKeyHeld`: the keep key the server holds for this
+	session, unpadded base64url, in the clear. `null` otherwise.
+	"""
+	keepKey: String
 }
 
 type StartedDeviceLink {
@@ -4460,8 +4345,8 @@ type User {
 	statusText: String
 	bio: String
 	"""
-	Key-based principal id (`rimp1_...`) once the account enrolled a key; null before. Plugins
-	see this id, and the host maps a provisional `rimp0_` id to it once.
+	Key-based principal id (`rimp1_...`); null only for a purged account that never had one.
+	Plugins see this id, and the host maps a provisional `rimp0_` id to it once.
 	"""
 	principalId: String
 	"""

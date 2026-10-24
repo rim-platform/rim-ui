@@ -30,11 +30,11 @@ fn payload_field(statement: &Statement, field: &str) -> serde_json::Value {
     value[field].clone()
 }
 
-/// An enrolled, confirmed account and its key log.
+/// A signed-up, confirmed account and its key log.
 fn enrolled(state: &KeyIdentityState) -> (EnrollmentDraft, EnrollmentStatements) {
     let draft = state.begin_enrollment("Laptop").unwrap();
     let statements = state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .sign_signup(&draft.draft_id, ENDPOINT, "u1-name", &challenge())
         .unwrap();
     state
         .settle(&account("u1"), Some(draft.principal_id.as_str()))
@@ -43,11 +43,11 @@ fn enrolled(state: &KeyIdentityState) -> (EnrollmentDraft, EnrollmentStatements)
 }
 
 #[test]
-fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
+fn a_signup_signs_a_log_a_certificate_and_a_proof_that_verify() {
     let state = self::state();
     let draft = state.begin_enrollment("  Laptop  ").unwrap();
     let statements = state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .sign_signup(&draft.draft_id, ENDPOINT, "u1-name", &challenge())
         .unwrap();
 
     let head = replay(&statements.key_log).unwrap();
@@ -100,21 +100,7 @@ fn enrollment_signs_a_log_a_certificate_and_a_proof_that_verify() {
 }
 
 #[test]
-fn a_retried_enrollment_reuses_the_keys_the_kit_belongs_to() {
-    let state = self::state();
-    let draft = state.begin_enrollment("Laptop").unwrap();
-    let first = state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
-        .unwrap();
-    let second = state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
-        .unwrap();
-    assert_eq!(first.key_log, second.key_log);
-    assert_eq!(first.device, second.device);
-}
-
-#[test]
-fn a_confirmed_enrollment_is_listed_and_survives_a_server_that_forgets_it() {
+fn a_confirmed_account_is_listed_and_survives_a_server_that_forgets_it() {
     let state = self::state();
     let (draft, _) = enrolled(&state);
     let accounts = state.accounts(ENDPOINT).unwrap();
@@ -131,49 +117,13 @@ fn a_confirmed_enrollment_is_listed_and_survives_a_server_that_forgets_it() {
 
     // The draft is finished.
     assert!(matches!(
-        state.sign_enrollment(&draft.draft_id, &account("u1"), &challenge()),
+        state.sign_signup(&draft.draft_id, ENDPOINT, "u1-name", &challenge()),
         Err(KeyIdentityError::NoDraft)
     ));
 
     // A server answering `null` never deletes confirmed keys.
     assert_eq!(state.settle(&account("u1"), None).unwrap(), None);
     assert_eq!(state.accounts(ENDPOINT).unwrap().len(), 1);
-}
-
-#[test]
-fn keys_the_server_never_accepted_are_cleaned_up() {
-    // Refused: the enrollment is discarded.
-    let state = self::state();
-    let draft = state.begin_enrollment("Laptop").unwrap();
-    state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
-        .unwrap();
-    state.discard_enrollment(&draft.draft_id).unwrap();
-    assert!(state.accounts(ENDPOINT).unwrap().is_empty());
-    assert!(matches!(
-        state.record(&draft.principal_id),
-        Err(KeyIdentityError::NoKeys)
-    ));
-
-    // The app quit before the answer, and the server never enrolled it: the next run, which
-    // holds no draft, cleans up.
-    let store = Arc::new(MemorySecretStore::default());
-    let state = KeyIdentityState::new(store.clone());
-    let draft = state.begin_enrollment("Laptop").unwrap();
-    state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
-        .unwrap();
-    let restarted = KeyIdentityState::new(store);
-    assert_eq!(restarted.settle(&account("u1"), None).unwrap(), None);
-    assert!(restarted.accounts(ENDPOINT).unwrap().is_empty());
-
-    // Another account's unconfirmed keys are left alone.
-    let draft = state.begin_enrollment("Laptop").unwrap();
-    state
-        .sign_enrollment(&draft.draft_id, &account("u2"), &challenge())
-        .unwrap();
-    restarted.settle(&account("u1"), None).unwrap();
-    assert_eq!(restarted.accounts(ENDPOINT).unwrap().len(), 1);
 }
 
 #[test]
@@ -390,7 +340,7 @@ fn a_log_for_another_account_is_refused() {
     let (draft, _) = enrolled(&state);
     let other = state.begin_enrollment("Other").unwrap();
     let other_log = state
-        .sign_enrollment(&other.draft_id, &account("u2"), &challenge())
+        .sign_signup(&other.draft_id, ENDPOINT, "u2-name", &challenge())
         .unwrap()
         .key_log;
     assert!(matches!(
@@ -605,25 +555,6 @@ fn device_names_are_trimmed_and_bounded() {
 }
 
 #[test]
-fn a_settle_never_removes_the_keys_of_an_enrollment_still_in_flight() {
-    // The server answered "not enrolled" before the enrollment it is about to accept.
-    let state = self::state();
-    let draft = state.begin_enrollment("Laptop").unwrap();
-    state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
-        .unwrap();
-    assert_eq!(state.settle(&account("u1"), None).unwrap(), None);
-    assert!(state.record(&draft.principal_id).is_ok());
-
-    // The enrollment lands: the keys are there to confirm.
-    let local = state
-        .settle(&account("u1"), Some(draft.principal_id.as_str()))
-        .unwrap()
-        .unwrap();
-    assert!(local.confirmed && local.has_identity_key);
-}
-
-#[test]
 fn a_signup_stores_the_keys_before_the_account_exists_and_settles_with_its_user_id() {
     let state = self::state();
     let draft = state.begin_enrollment("Laptop").unwrap();
@@ -724,7 +655,7 @@ fn signing_a_draft_again_never_downgrades_confirmed_keys() {
     let state = self::state();
     let draft = state.begin_enrollment("Laptop").unwrap();
     state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .sign_signup(&draft.draft_id, ENDPOINT, "u1-name", &challenge())
         .unwrap();
     // The server confirmed the keys while this draft is still held.
     state
@@ -741,7 +672,6 @@ fn signing_a_draft_again_never_downgrades_confirmed_keys() {
     let accounts = state.accounts(ENDPOINT).unwrap();
     assert_eq!(accounts.len(), 1);
     assert!(accounts[0].confirmed);
-    assert_eq!(accounts[0].user_id.as_deref(), Some("u1"));
 
     state.remove_draft_keys(&draft.draft_id).unwrap();
     state.forget_unconfirmed(&draft.principal_id).unwrap();
@@ -927,7 +857,7 @@ fn a_kit_confirmed_before_the_keys_are_stored_is_never_written() {
     state.confirm_recovery_kit(&draft.principal_id).unwrap();
     assert!(state.recovery_kit(&draft.principal_id).unwrap().is_none());
     state
-        .sign_enrollment(&draft.draft_id, &account("u1"), &challenge())
+        .sign_signup(&draft.draft_id, ENDPOINT, "u1-name", &challenge())
         .unwrap();
     assert!(!record_holds_kit(&state, &draft));
     assert_eq!(

@@ -25,7 +25,7 @@ const pluginList = vi.hoisted(() => ({ data: [] as PluginInfo[] }));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
   usePluginList: () => pluginList,
 }));
-vi.mock("../../features/auth/api/useAuthMutations", () => ({
+vi.mock("../../features/auth/api/logout", () => ({
   logout: vi.fn(),
 }));
 vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
