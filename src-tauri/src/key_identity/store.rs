@@ -1,6 +1,20 @@
 //! Where this device keeps its keys: one secret vault record per principal (through
 //! `secret_store`), plus a small index saying which account on which server each principal
 //! signs in to. Memory in tests.
+//!
+//! Each principal's keys are sealed a second time under the account's data key
+//! (`account_lock`, store key "desktop vault", the record's name as associated data): the
+//! device key, the identity key, a pending one, the backup key, the recovery kit's entropy and
+//! the keys a recovery replaced open only while the account is unlocked. What names the keys
+//! stays under the vault key alone: the principal, the device's id and name, and whether the
+//! server and the person confirmed them. A record written while the account is locked (a
+//! signup, recovery or device link, before its first unlock) keeps its keys under the vault key
+//! alone until [`Keys::seal_record`] seals it at the next unlock. Next to the sealed keys, the
+//! record holds the device key's seed wrapped under a key of the server share (`deviceWrap`),
+//! written at each unlock that saw the share: when the account starts over with a new data
+//! key, the device key comes back from it, and only the other keys are lost. Pending device
+//! links are sealed whole and written only while their account is unlocked. The index stays
+//! under the vault key alone: the sign-in screen lists the accounts before any is unlocked.
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -8,13 +22,16 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use rim_opaque::{Key, StoreKeyLabel};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::account_lock::{AccountLock, AccountLockError};
 use crate::secret_store::{SecretVault, VaultError};
 
 use super::device_link::Sealed;
-use super::statement::Statement;
+use super::statement::{SecretKey, Statement};
 use super::KeyIdentityError;
 
 /// Secret name of the account index.
@@ -99,7 +116,8 @@ pub(crate) struct KeyRecord {
     pub(crate) principal_id: String,
     pub(crate) device_id: String,
     pub(crate) device_name: String,
-    /// base64url of the device key seed.
+    /// base64url of the device key seed; empty on a record read locked.
+    #[serde(default, skip_serializing_if = "is_empty")]
     pub(crate) device_seed: Zeroizing<String>,
     /// The identity key, on the device that enrolled it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -131,6 +149,83 @@ pub(crate) struct KeyRecord {
     /// the recovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) replaced: Option<Box<KeyRecord>>,
+    /// The fields of [`SealedFields`] sealed under the account's data key, as stored: set on a
+    /// record read while the account is locked, whose sealed fields then read as absent, and
+    /// written back unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sealed: Option<String>,
+    /// base64url of the device key's seed wrapped under the server share's device key wrap key
+    /// (`rim_opaque::wrap_device_seed`), so a new data key does not lose the device key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) device_wrap: Option<String>,
+}
+
+impl KeyRecord {
+    /// Whether the record's sealed fields did not open: the account is locked.
+    pub(crate) fn is_locked(&self) -> bool {
+        self.sealed.is_some()
+    }
+
+    fn has_sealed_fields(&self) -> bool {
+        !self.device_seed.is_empty()
+            || self.identity_seed.is_some()
+            || self.pending_identity_seed.is_some()
+            || self.backup_key.is_some()
+            || self.recovery_entropy.is_some()
+            || self.replaced.is_some()
+    }
+}
+
+fn is_empty(text: &Zeroizing<String>) -> bool {
+    text.is_empty()
+}
+
+/// The fields of a [`KeyRecord`] that open only while its account is unlocked.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SealedFields {
+    #[serde(default, skip_serializing_if = "is_empty")]
+    device_seed: Zeroizing<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity_seed: Option<Zeroizing<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_identity_seed: Option<Zeroizing<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    backup_key: Option<Zeroizing<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recovery_entropy: Option<Zeroizing<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    replaced: Option<Box<KeyRecord>>,
+}
+
+impl SealedFields {
+    fn take_from(record: &mut KeyRecord) -> Self {
+        Self {
+            device_seed: std::mem::take(&mut record.device_seed),
+            identity_seed: record.identity_seed.take(),
+            pending_identity_seed: record.pending_identity_seed.take(),
+            backup_key: record.backup_key.take(),
+            recovery_entropy: record.recovery_entropy.take(),
+            replaced: record.replaced.take(),
+        }
+    }
+
+    fn put_into(self, record: &mut KeyRecord) {
+        record.device_seed = self.device_seed;
+        record.identity_seed = self.identity_seed;
+        record.pending_identity_seed = self.pending_identity_seed;
+        record.backup_key = self.backup_key;
+        record.recovery_entropy = self.recovery_entropy;
+        record.replaced = self.replaced;
+    }
+}
+
+/// A pending device link as stored: sealed whole under its account's data key.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SealedLink {
+    principal_id: String,
+    sealed: String,
 }
 
 /// Which account on which server a principal signs in to.
@@ -169,43 +264,221 @@ pub(crate) fn same_endpoint(a: &str, b: &str) -> bool {
     a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
 }
 
-/// Typed access to the records and the index.
-pub(crate) struct Keys<'a>(pub(crate) &'a dyn SecretStore);
+fn lock_error(e: AccountLockError) -> KeyIdentityError {
+    match e {
+        AccountLockError::Locked => KeyIdentityError::Locked,
+        other => KeyIdentityError::Crypto(other.to_string()),
+    }
+}
 
-impl Keys<'_> {
+/// Brings back an open record's lost device key from its wrap under `share`, then wraps the
+/// device key under `share` again. Returns whether the record changed.
+fn rewrap_device_seed(record: &mut KeyRecord, share: &Key) -> Result<bool, KeyIdentityError> {
+    let principal_id = record.principal_id.clone();
+    let wrap_key = rim_opaque::device_key_wrap_key(share, &principal_id);
+    let crypto = |e: rim_opaque::Error| KeyIdentityError::Crypto(e.to_string());
+    if record.device_seed.is_empty() {
+        let opened = record.device_wrap.as_deref().map(|wrap| {
+            URL_SAFE_NO_PAD
+                .decode(wrap.trim())
+                .map_err(|e| e.to_string())
+                .and_then(|wrap| {
+                    rim_opaque::unwrap_device_seed(&wrap_key, &principal_id, &wrap)
+                        .map_err(|e| e.to_string())
+                })
+        });
+        match opened {
+            Some(Ok(seed)) => record.device_seed = SecretKey::from_seed(seed).to_text(),
+            Some(Err(e)) => {
+                log::warn!("[key_identity] the device key's wrap did not open: {e}");
+                return Ok(false);
+            }
+            None => return Ok(false),
+        }
+    }
+    let seed = SecretKey::from_text(&record.device_seed)?;
+    let wrap =
+        rim_opaque::wrap_device_seed(&wrap_key, &principal_id, seed.seed()).map_err(crypto)?;
+    record.device_wrap = Some(URL_SAFE_NO_PAD.encode(wrap));
+    Ok(true)
+}
+
+/// Typed access to the records and the index; `lock` holds the data keys that seal them.
+pub(crate) struct Keys<'a> {
+    pub(crate) store: &'a dyn SecretStore,
+    pub(crate) lock: &'a AccountLock,
+}
+
+impl<'a> Keys<'a> {
+    pub(crate) fn new(store: &'a dyn SecretStore, lock: &'a AccountLock) -> Self {
+        Self { store, lock }
+    }
+
+    /// The principal's record, every field open.
+    ///
+    /// # Errors
+    /// [`KeyIdentityError::Locked`] when its sealed fields need the data key and the account is
+    /// locked.
     pub(crate) fn record(&self, principal_id: &str) -> Result<Option<KeyRecord>, KeyIdentityError> {
-        let Some(raw) = self.0.read(&record_name(principal_id))? else {
+        match self.device_record(principal_id)? {
+            Some(record) if record.is_locked() => Err(KeyIdentityError::Locked),
+            other => Ok(other),
+        }
+    }
+
+    /// The principal's record as far as it opens: while the account is locked, a sealed
+    /// record's keys read as absent and [`KeyRecord::is_locked`] says so. Enough for the
+    /// record's plain fields.
+    pub(crate) fn device_record(
+        &self,
+        principal_id: &str,
+    ) -> Result<Option<KeyRecord>, KeyIdentityError> {
+        let name = record_name(principal_id);
+        let Some(raw) = self.store.read(&name)? else {
             return Ok(None);
         };
-        let record: KeyRecord = serde_json::from_str(&raw)
+        let mut record: KeyRecord = serde_json::from_str(&raw)
             .map_err(|e| KeyIdentityError::Keyring(format!("stored keys are not readable: {e}")))?;
+        let Some(sealed) = record.sealed.clone() else {
+            return Ok(Some(record));
+        };
+        let opened =
+            match self
+                .lock
+                .open_record(principal_id, StoreKeyLabel::DesktopVault, &name, &sealed)
+            {
+                Ok(opened) => opened,
+                Err(AccountLockError::Locked) => return Ok(Some(record)),
+                Err(e) => {
+                    // Sealed under an earlier data key: the account started empty on this device,
+                    // so its keys here are gone, and the next write drops them.
+                    log::warn!("[key_identity] the sealed keys of an account do not open: {e}");
+                    record.sealed = None;
+                    return Ok(Some(record));
+                }
+            };
+        let fields: SealedFields = serde_json::from_slice(&opened)
+            .map_err(|e| KeyIdentityError::Keyring(format!("stored keys are not readable: {e}")))?;
+        fields.put_into(&mut record);
+        record.sealed = None;
         Ok(Some(record))
     }
 
+    /// Writes `record`. Its sealed fields are sealed under the account's data key while it is
+    /// unlocked, and kept under the vault key alone while it is locked. A record read locked is
+    /// written back with its sealed fields as they were.
+    ///
+    /// # Errors
+    /// [`KeyIdentityError::Locked`] for a record read locked that was given sealed fields.
     pub(crate) fn put_record(&self, record: &KeyRecord) -> Result<(), KeyIdentityError> {
+        let name = record_name(&record.principal_id);
+        let mut stored = record.clone();
+        if stored.is_locked() {
+            if stored.has_sealed_fields() {
+                return Err(KeyIdentityError::Locked);
+            }
+        } else if stored.has_sealed_fields() && self.lock.is_unlocked(&record.principal_id) {
+            let fields = Zeroizing::new(
+                serde_json::to_vec(&SealedFields::take_from(&mut stored))
+                    .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode keys: {e}")))?,
+            );
+            stored.sealed = Some(
+                self.lock
+                    .seal_record(
+                        &record.principal_id,
+                        StoreKeyLabel::DesktopVault,
+                        &name,
+                        &fields,
+                    )
+                    .map_err(lock_error)?,
+            );
+        }
         let raw = Zeroizing::new(
-            serde_json::to_string(record)
+            serde_json::to_string(&stored)
                 .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode keys: {e}")))?,
         );
-        self.0.write(&record_name(&record.principal_id), &raw)
+        self.store.write(&name, &raw)
+    }
+
+    /// Seals the principal's record under its data key when it holds sealed fields under the
+    /// vault key alone, and its pending device links likewise. Keys a recovery replaced go
+    /// once the server confirmed the record. With the server `share` this unlock saw, the
+    /// device key's wrap under it is written again, and a device key sealed under an earlier
+    /// data key comes back from the wrap; one whose wrap does not open stays lost. Nothing
+    /// happens while the account is locked.
+    pub(crate) fn seal_record(
+        &self,
+        principal_id: &str,
+        share: Option<&Key>,
+    ) -> Result<(), KeyIdentityError> {
+        if !self.lock.is_unlocked(principal_id) {
+            return Ok(());
+        }
+        let raw = self.store.read(&record_name(principal_id))?;
+        let stored = raw
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<KeyRecord>(raw).ok());
+        if let Some(mut record) = self.record(principal_id)? {
+            let plain = stored
+                .as_ref()
+                .is_some_and(|r| !r.is_locked() && r.has_sealed_fields());
+            // Sealed under an earlier data key: what it held did not open.
+            let lost =
+                stored.as_ref().is_some_and(KeyRecord::is_locked) && record.device_seed.is_empty();
+            let stale = record.confirmed && record.replaced.is_some();
+            if stale {
+                record.replaced = None;
+            }
+            let rewrapped = match share {
+                Some(share) => rewrap_device_seed(&mut record, share)?,
+                None => false,
+            };
+            if plain || lost || stale || rewrapped {
+                self.put_record(&record)?;
+            }
+        }
+        for link_id in self.pending_link_ids()? {
+            let Some(raw) = self.store.read(&pending_link_name(&link_id))? else {
+                continue;
+            };
+            if let Ok(link) = serde_json::from_str::<PendingLink>(&raw) {
+                if link.principal_id == principal_id {
+                    self.write_pending_link(&link)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn delete_record(&self, principal_id: &str) -> Result<(), KeyIdentityError> {
-        self.0.delete(&record_name(principal_id))
+        self.store.delete(&record_name(principal_id))
+    }
+
+    /// The principal a signed-in account on `endpoint` belongs to, as far as the index knows.
+    pub(crate) fn principal_of(
+        &self,
+        endpoint: &str,
+        user_id: &str,
+    ) -> Result<Option<String>, KeyIdentityError> {
+        Ok(self
+            .links()?
+            .into_iter()
+            .find(|l| same_endpoint(&l.endpoint, endpoint) && l.user_id.as_deref() == Some(user_id))
+            .map(|l| l.principal_id))
     }
 
     /// The index. An unreadable index is moved aside and read as empty: it holds no secret,
     /// only where keys are used, and the copy keeps what it said for a later repair.
     pub(crate) fn links(&self) -> Result<Vec<AccountLink>, KeyIdentityError> {
-        let Some(raw) = self.0.read(INDEX_NAME)? else {
+        let Some(raw) = self.store.read(INDEX_NAME)? else {
             return Ok(Vec::new());
         };
         match serde_json::from_str(&raw) {
             Ok(links) => Ok(links),
             Err(e) => {
                 log::warn!("[key_identity] account index is not readable, starting over: {e}");
-                self.0.write(UNREADABLE_INDEX_NAME, &raw)?;
-                self.0.delete(INDEX_NAME)?;
+                self.store.write(UNREADABLE_INDEX_NAME, &raw)?;
+                self.store.delete(INDEX_NAME)?;
                 Ok(Vec::new())
             }
         }
@@ -214,18 +487,34 @@ impl Keys<'_> {
     pub(crate) fn put_links(&self, links: &[AccountLink]) -> Result<(), KeyIdentityError> {
         let raw = serde_json::to_string(links)
             .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode index: {e}")))?;
-        self.0.write(INDEX_NAME, &raw)
+        self.store.write(INDEX_NAME, &raw)
     }
 
-    /// The pending device links. One that cannot be read is skipped and kept, so a later
-    /// version can still read it.
+    /// The pending device links of unlocked accounts. One that cannot be read, or whose
+    /// account is locked, is skipped and kept, so a later version or unlock can still read it.
     pub(crate) fn pending_links(&self) -> Result<Vec<PendingLink>, KeyIdentityError> {
         let mut out = Vec::new();
         for link_id in self.pending_link_ids()? {
-            let Some(raw) = self.0.read(&pending_link_name(&link_id))? else {
+            let name = pending_link_name(&link_id);
+            let Some(raw) = self.store.read(&name)? else {
                 continue;
             };
-            match serde_json::from_str(&raw) {
+            let link = match serde_json::from_str::<SealedLink>(&raw) {
+                Ok(sealed) => self
+                    .lock
+                    .open_record(
+                        &sealed.principal_id,
+                        StoreKeyLabel::DesktopVault,
+                        &name,
+                        &sealed.sealed,
+                    )
+                    .map_err(|e| e.to_string())
+                    .and_then(|opened| {
+                        serde_json::from_slice::<PendingLink>(&opened).map_err(|e| e.to_string())
+                    }),
+                Err(_) => serde_json::from_str::<PendingLink>(&raw).map_err(|e| e.to_string()),
+            };
+            match link {
                 Ok(link) => out.push(link),
                 Err(e) => log::warn!("[key_identity] a pending device link is not readable: {e}"),
             }
@@ -233,13 +522,12 @@ impl Keys<'_> {
         Ok(out)
     }
 
-    /// Write a pending link and add it to the list.
+    /// Write a pending link, sealed under its account's data key, and add it to the list.
+    ///
+    /// # Errors
+    /// [`KeyIdentityError::Locked`] while the account is locked.
     pub(crate) fn put_pending_link(&self, link: &PendingLink) -> Result<(), KeyIdentityError> {
-        let raw = Zeroizing::new(
-            serde_json::to_string(link)
-                .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode a link: {e}")))?,
-        );
-        self.0.write(&pending_link_name(&link.link_id), &raw)?;
+        self.write_pending_link(link)?;
         let mut ids = self.pending_link_ids()?;
         if !ids.contains(&link.link_id) {
             ids.push(link.link_id.clone());
@@ -248,9 +536,32 @@ impl Keys<'_> {
         Ok(())
     }
 
+    fn write_pending_link(&self, link: &PendingLink) -> Result<(), KeyIdentityError> {
+        let name = pending_link_name(&link.link_id);
+        let plain = Zeroizing::new(
+            serde_json::to_vec(link)
+                .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode a link: {e}")))?,
+        );
+        let sealed = SealedLink {
+            principal_id: link.principal_id.clone(),
+            sealed: self
+                .lock
+                .seal_record(
+                    &link.principal_id,
+                    StoreKeyLabel::DesktopVault,
+                    &name,
+                    &plain,
+                )
+                .map_err(lock_error)?,
+        };
+        let raw = serde_json::to_string(&sealed)
+            .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode a link: {e}")))?;
+        self.store.write(&name, &raw)
+    }
+
     /// Delete a pending link and drop it from the list.
     pub(crate) fn delete_pending_link(&self, link_id: &str) -> Result<(), KeyIdentityError> {
-        self.0.delete(&pending_link_name(link_id))?;
+        self.store.delete(&pending_link_name(link_id))?;
         let mut ids = self.pending_link_ids()?;
         if ids.iter().any(|id| id == link_id) {
             ids.retain(|id| id != link_id);
@@ -261,7 +572,7 @@ impl Keys<'_> {
 
     /// An unreadable list reads as empty: the records it named stay stored, unused.
     fn pending_link_ids(&self) -> Result<Vec<String>, KeyIdentityError> {
-        let Some(raw) = self.0.read(PENDING_LINKS_NAME)? else {
+        let Some(raw) = self.store.read(PENDING_LINKS_NAME)? else {
             return Ok(Vec::new());
         };
         Ok(serde_json::from_str(&raw).unwrap_or_else(|e| {
@@ -273,7 +584,7 @@ impl Keys<'_> {
     fn put_pending_link_ids(&self, ids: &[String]) -> Result<(), KeyIdentityError> {
         let raw = serde_json::to_string(ids)
             .map_err(|e| KeyIdentityError::Keyring(format!("cannot encode the links: {e}")))?;
-        self.0.write(PENDING_LINKS_NAME, &raw)
+        self.store.write(PENDING_LINKS_NAME, &raw)
     }
 
     /// Delete a principal's keys and every link to them.
@@ -307,13 +618,16 @@ mod tests {
             kit_confirmed: None,
             confirmed: false,
             replaced: None,
+            sealed: None,
+            device_wrap: None,
         }
     }
 
     #[test]
     fn records_and_links_round_trip_and_forget_removes_both() {
         let store = MemorySecretStore::default();
-        let keys = Keys(&store);
+        let lock = AccountLock::in_memory();
+        let keys = Keys::new(&store, &lock);
         keys.put_record(&record("rimp1_a")).unwrap();
         keys.put_links(&[AccountLink {
             endpoint: "http://localhost:8080/api".into(),
@@ -342,7 +656,10 @@ mod tests {
 
         let store = MemorySecretStore::default();
         store.write(INDEX_NAME, "not json").unwrap();
-        assert!(Keys(&store).links().unwrap().is_empty());
+        assert!(Keys::new(&store, &AccountLock::in_memory())
+            .links()
+            .unwrap()
+            .is_empty());
         assert_eq!(
             store
                 .read(UNREADABLE_INDEX_NAME)
@@ -362,7 +679,10 @@ mod tests {
                 r#"{"v":1,"principalId":"rimp1_a","deviceId":"d","deviceName":"Laptop","deviceSeed":"seed","identitySeed":"id","backupKey":"bk","confirmed":true}"#,
             )
             .unwrap();
-        let loaded = Keys(&store).record("rimp1_a").unwrap().unwrap();
+        let loaded = Keys::new(&store, &AccountLock::in_memory())
+            .record("rimp1_a")
+            .unwrap()
+            .unwrap();
         assert!(loaded.recovery_entropy.is_none());
         assert_eq!(loaded.kit_confirmed, None);
         assert!(loaded.confirmed);

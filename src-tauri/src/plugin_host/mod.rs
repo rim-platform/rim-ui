@@ -71,6 +71,10 @@ pub struct PluginHostState {
     /// stores and settings; `None` when nobody is signed in. Arc for the broker
     /// tasks.
     pub account: Arc<Mutex<Option<String>>>,
+    /// The signed-in account's key-based principal id, whose data key seals its
+    /// secret settings; `None` when nobody, or an account without one, is
+    /// signed in. Arc for the settings' secret store.
+    pub key_principal: Arc<Mutex<Option<String>>>,
     /// Local-process plugins' `rim.chat.*` calls on their way to the UI's message
     /// service. Arc for the broker tasks.
     pub chat_relay: Arc<chat_relay::ChatRelay>,
@@ -78,10 +82,11 @@ pub struct PluginHostState {
 
 /// The plugin host: the installed plugins discovered and loaded, their state
 /// read from the app data directory, the enabled ones started, and secret
-/// settings kept in `vault`.
+/// settings kept in `vault`, sealed under the data keys `account_lock` holds.
 pub(crate) fn init(
     app_data_dir: &std::path::Path,
     vault: Arc<crate::secret_store::SecretVault>,
+    account_lock: crate::account_lock::AccountLock,
 ) -> PluginHostState {
     let state_path = state_file_path(app_data_dir);
     let store = PluginStateStore::load(&state_path);
@@ -111,6 +116,12 @@ pub(crate) fn init(
         }
     }
 
+    let key_principal = Arc::new(Mutex::new(None));
+    let secrets = settings::AccountSealedSecrets {
+        vault,
+        account_lock,
+        principal: key_principal.clone(),
+    };
     let plugin_host_state = PluginHostState {
         store: Mutex::new(store),
         manifests: Arc::new(Mutex::new(manifests)),
@@ -125,8 +136,12 @@ pub(crate) fn init(
         pids: Arc::new(Mutex::new(HashMap::new())),
         events: Arc::new(host_events::PluginEvents::new()),
         storage: storage::PluginStorage::new(app_data_dir),
-        settings: Arc::new(settings::PluginSettings::new(app_data_dir, vault)),
+        settings: Arc::new(settings::PluginSettings::new(
+            app_data_dir,
+            Arc::new(secrets),
+        )),
         account: Arc::new(Mutex::new(None)),
+        key_principal,
         chat_relay: Arc::new(chat_relay::ChatRelay::default()),
     };
 
@@ -261,6 +276,7 @@ impl PluginHostState {
                 "/nonexistent",
             ))),
             account: Arc::new(Mutex::new(None)),
+            key_principal: Arc::new(Mutex::new(None)),
             chat_relay: Arc::new(chat_relay::ChatRelay::default()),
         }
     }

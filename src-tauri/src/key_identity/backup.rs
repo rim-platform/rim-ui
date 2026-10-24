@@ -242,6 +242,7 @@ mod tests {
     use super::super::store::{KeyRecord, Keys, MemorySecretStore};
     use super::super::{statement, Challenge, ServerAccount};
     use super::*;
+    use crate::account_lock::AccountLock;
 
     const ENDPOINT: &str = "http://localhost:8080/api";
 
@@ -309,7 +310,7 @@ mod tests {
     /// A device that holds only a device key for `principal_id`.
     fn linked(principal_id: &str) -> KeyIdentityState {
         let store = Arc::new(MemorySecretStore::default());
-        Keys(store.as_ref())
+        Keys::new(store.as_ref(), &AccountLock::in_memory())
             .put_record(&KeyRecord {
                 v: 1,
                 principal_id: principal_id.into(),
@@ -324,6 +325,8 @@ mod tests {
                 kit_confirmed: None,
                 confirmed: true,
                 replaced: None,
+                sealed: None,
+                device_wrap: None,
             })
             .unwrap();
         KeyIdentityState::new(store)
@@ -429,7 +432,7 @@ mod tests {
         let inception = statement::inception(&identity, &recovery.public_key(), &statement::now());
         let principal = statement::principal_id(&inception.payload);
         let log = vec![inception];
-        Keys(store.as_ref())
+        Keys::new(store.as_ref(), &AccountLock::in_memory())
             .put_record(&KeyRecord {
                 v: 1,
                 principal_id: principal.clone(),
@@ -444,6 +447,8 @@ mod tests {
                 kit_confirmed: None,
                 confirmed: true,
                 replaced: None,
+                sealed: None,
+                device_wrap: None,
             })
             .unwrap();
         // Enrolled before the backup existed: no backup key until the kit's key is given.

@@ -7,10 +7,14 @@
 //! - Recovery wrap key: `HKDF-SHA256(ikm = the phrase's 16 bytes, salt =
 //!   "rim.recovery-phrase.v1", info = "data key wrap")`.
 //! - Store keys: `HKDF-SHA256(ikm = data key, salt = "rim.store.v1", info = label)`.
+//! - Device key wrap key: `HKDF-SHA256(ikm = server share, salt = "rim.device-key.v1",
+//!   info = principal id)`; it wraps the device key's seed, so the device keeps its key when
+//!   it starts over with a new data key.
 //!
 //! Every sealed value is `nonce (12) ‖ ciphertext ‖ tag (16)` under a random nonce. A wrap of
 //! the data key authenticates `"rim.dk.v1|<kind>|<principal id>"`, a rewrap of an old unlock
-//! key `"rim.uk-rewrap.v1|<principal id>"`, a transport value nothing.
+//! key `"rim.uk-rewrap.v1|<principal id>"`, a wrap of the device key's seed
+//! `"rim.device-key.v1|<principal id>"`, a transport value nothing.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -35,6 +39,7 @@ const UNLOCK_SALT: &[u8] = b"rim.unlock.v1";
 const RECOVERY_SALT: &[u8] = b"rim.recovery-phrase.v1";
 const RECOVERY_WRAP_INFO: &[u8] = b"data key wrap";
 const STORE_SALT: &[u8] = b"rim.store.v1";
+const DEVICE_KEY_SALT: &[u8] = b"rim.device-key.v1";
 
 /// A 256-bit key, wiped on drop.
 pub type Key = Zeroizing<[u8; KEY_LEN]>;
@@ -144,6 +149,11 @@ pub fn store_key(data_key: &[u8; KEY_LEN], label: StoreKeyLabel) -> Key {
     hkdf(STORE_SALT, data_key, label.as_str().as_bytes())
 }
 
+/// The key that wraps `principal_id`'s device key seed, from the server share.
+pub fn device_key_wrap_key(share: &[u8; KEY_LEN], principal_id: &str) -> Key {
+    hkdf(DEVICE_KEY_SALT, share, principal_id.as_bytes())
+}
+
 /// 32 fresh random bytes: a new data key or keep key.
 ///
 /// # Errors
@@ -214,6 +224,10 @@ fn rewrap_aad(principal_id: &str) -> Vec<u8> {
     format!("rim.uk-rewrap.v1|{principal_id}").into_bytes()
 }
 
+fn device_key_aad(principal_id: &str) -> Vec<u8> {
+    format!("rim.device-key.v1|{principal_id}").into_bytes()
+}
+
 fn key_from(bytes: &[u8], what: &'static str) -> Result<Key> {
     let mut key = Zeroizing::new([0u8; KEY_LEN]);
     if bytes.len() != KEY_LEN {
@@ -278,4 +292,27 @@ pub fn unwrap_rewrap(
 ) -> Result<Key> {
     let opened = open(new_unlock_key, &rewrap_aad(principal_id), rewrap)?;
     key_from(&opened, "unlock key")
+}
+
+/// The wrap of `principal_id`'s device key seed under `key`, from [`device_key_wrap_key`].
+///
+/// # Errors
+///
+/// As [`seal`].
+pub fn wrap_device_seed(
+    key: &[u8; KEY_LEN],
+    principal_id: &str,
+    seed: &[u8; KEY_LEN],
+) -> Result<Vec<u8>> {
+    seal(key, &device_key_aad(principal_id), seed)
+}
+
+/// The device key seed a wrap for `principal_id` holds.
+///
+/// # Errors
+///
+/// As [`open`]; [`Error::Malformed`] when what opened is not 32 bytes.
+pub fn unwrap_device_seed(key: &[u8; KEY_LEN], principal_id: &str, wrap: &[u8]) -> Result<Key> {
+    let opened = open(key, &device_key_aad(principal_id), wrap)?;
+    key_from(&opened, "device key seed")
 }

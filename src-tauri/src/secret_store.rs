@@ -1,4 +1,4 @@
-//! The app's secrets: the message cache key, the history archive keys and cloud refresh
+//! The app's secrets: the message cache keys, the history archive keys and cloud refresh
 //! tokens, the offline session record, the key identity records and pending device links, the
 //! AI provider keys, and the secret settings of plugins.
 //!
@@ -851,6 +851,13 @@ mod tests {
                 return Err("the keyring is locked".into());
             }
             Ok(())
+        }
+    }
+
+    impl SecretVault {
+        /// A vault in `dir` keyed from a credential store in memory, for other modules' tests.
+        pub(crate) fn for_tests(dir: &Path) -> Self {
+            Self::new(dir, Box::new(MemoryKeyring::default()))
         }
     }
 

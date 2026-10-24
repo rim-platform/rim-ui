@@ -7,6 +7,7 @@ use std::sync::Arc;
 use zeroize::Zeroizing;
 
 use super::*;
+use crate::account_lock::AccountLock;
 use crate::history_archive::tests::Device;
 use crate::key_identity::recovery_kit;
 use crate::key_identity::statement::{self, SecretKey};
@@ -57,7 +58,7 @@ impl Computer {
 
     /// Keys for `principal` with no identity key, as device linking leaves them.
     fn link(&self, principal: &str) {
-        Keys(self.store.as_ref())
+        Keys::new(self.store.as_ref(), &AccountLock::in_memory())
             .put_record(&record(principal, None))
             .unwrap();
     }
@@ -78,6 +79,8 @@ fn record(principal: &str, identity: Option<&SecretKey>) -> KeyRecord {
         kit_confirmed: None,
         confirmed: true,
         replaced: None,
+        sealed: None,
+        device_wrap: None,
     }
 }
 
@@ -293,7 +296,7 @@ fn an_account_with_a_v1_kit_turns_the_backup_on_with_its_rk1_key() {
     let inception = statement::inception(&identity, &recovery.public_key(), &statement::now());
     let principal = statement::principal_id(&inception.payload);
     let log = vec![inception];
-    Keys(a.store.as_ref())
+    Keys::new(a.store.as_ref(), &AccountLock::in_memory())
         .put_record(&record(&principal, Some(&identity)))
         .unwrap();
     a.archive.connect(folder.path());

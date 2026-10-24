@@ -165,6 +165,10 @@ fn the_derivations_produce_the_agreed_bytes() {
         hex(store_key(&data_key, StoreKeyLabel::CacheKey).as_ref()),
         STORE_CACHE
     );
+    assert_eq!(
+        hex(device_key_wrap_key(&share, PRINCIPAL).as_ref()),
+        DEVICE_KEY_WRAP_KEY
+    );
 }
 
 const TRANSPORT_SERVER_SHARE: &str =
@@ -177,6 +181,8 @@ const RECOVERY_WRAP_KEY: &str = "7e1bf5365264e430df3d5af3bfd7024f5de77b80ac230bb
 const STORE_WEB: &str = "d07ad1cdb29904ad5a2622f9cc73e3a50dd68665dd37bfaad0a4faec8602c7d4";
 const STORE_DESKTOP: &str = "1f47f41e0089a665d54210b245f9a3ac9869389bd29cd72ae7d8cfeb9a5a2909";
 const STORE_CACHE: &str = "b91473b9602d84232943862cc27d82623df6bfbcd596930c36ee7bae9eaf26d2";
+const DEVICE_KEY_WRAP_KEY: &str =
+    "5065f83739e596250f269046b2a99f7979778d012df018c89b7b703b445dcd2c";
 
 #[test]
 fn transport_labels_parse_only_the_three_names() {
@@ -238,6 +244,31 @@ fn a_data_key_wrap_is_bound_to_its_kind_and_principal() {
     assert_eq!(
         open(&key, aad.as_bytes(), &wrap).unwrap().as_slice(),
         &data_key[..]
+    );
+}
+
+#[test]
+fn a_device_seed_wrap_opens_only_with_its_share_and_principal() {
+    let share = [0x33u8; KEY_LEN];
+    let seed = random_key().unwrap();
+    let key = device_key_wrap_key(&share, PRINCIPAL);
+    let wrap = wrap_device_seed(&key, PRINCIPAL, &seed).unwrap();
+    assert_eq!(*unwrap_device_seed(&key, PRINCIPAL, &wrap).unwrap(), *seed);
+    let other_share = device_key_wrap_key(&[0x34u8; KEY_LEN], PRINCIPAL);
+    assert_eq!(
+        unwrap_device_seed(&other_share, PRINCIPAL, &wrap).err(),
+        Some(Error::Unauthentic)
+    );
+    assert_eq!(
+        unwrap_device_seed(&key, "rimp1_someone_else", &wrap).err(),
+        Some(Error::Unauthentic)
+    );
+    // The key is bound to the principal as well as the AAD.
+    assert_ne!(*device_key_wrap_key(&share, "rimp1_someone_else"), *key);
+    let aad = format!("rim.device-key.v1|{PRINCIPAL}");
+    assert_eq!(
+        open(&key, aad.as_bytes(), &wrap).unwrap().as_slice(),
+        &seed[..]
     );
 }
 
