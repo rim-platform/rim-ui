@@ -149,6 +149,9 @@ describe("switching to a relay in pow registration mode", () => {
       device: CERT,
       proofOfWork: "AAAAAAAAkaM",
       passwordRegistration: "registration-upload",
+      // Kept, with the keep key this app holds, as the direct sign-in is.
+      keepSignedIn: true,
+      keepKeyHeld: true,
     });
     // The password is registered there, and the data key wrapped under that relay's share.
     expect(lock.opaqueRegistrationStart).toHaveBeenCalledWith(PASSWORD.password);

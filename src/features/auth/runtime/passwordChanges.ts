@@ -6,6 +6,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 
 import { toB64 } from "../../../core/accountVault/crypto";
+import { sessionSecret } from "../../../core/graphql/sessionSecret";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import type { SignedStatementInput } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
@@ -23,6 +24,8 @@ import {
   setPassword,
   setPasswordStart,
 } from "../api/passwordApi";
+import { fetchSessionKeepKey } from "../api/sessionKeys";
+import { holdSession } from "./accountUnlock";
 import { changeRewrap, startLogin, startRegistration } from "./opaqueFlows";
 
 /**
@@ -120,7 +123,8 @@ export async function resetPassword(
  * device with a new data key: wrapped under the password and, while this device keeps the
  * recovery kit, under the recovery phrase.
  *
- * @param keep - Whether the account stays signed in on this device.
+ * @param keep - Whether the account stays signed in on the desktop, which keeps its own keep
+ *   key; in the web app the session's sign-in chose it.
  */
 export async function setFirstPassword(
   principalId: string,
@@ -144,6 +148,12 @@ export async function setFirstPassword(
       serverShare,
       recoveryEntropy,
       keep,
+    });
+    // The session was signed in kept or not before the password existed: an unkept one is kept
+    // for a reload, and a kept web session wraps the data key under its keep key.
+    await holdSession({
+      sessionSecret: sessionSecret(),
+      keepKey: isTauri() ? null : await fetchSessionKeepKey(),
     });
   } finally {
     registration.close();

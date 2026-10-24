@@ -89,7 +89,7 @@ export function SetPasswordScreen() {
             problem={problem}
             disabled={busy}
           />
-          <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
+          {isTauri() && <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />}
         </>
       )}
       {error && (

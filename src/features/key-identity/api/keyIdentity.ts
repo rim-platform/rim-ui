@@ -26,6 +26,7 @@ import type {
   DeviceKey,
   EnrollIdentityKeyInput,
   KeyLoginChallenge,
+  LoginPayload,
   ProfileCard,
   RotateIdentityKeyInput,
   SignedStatement,
@@ -46,7 +47,9 @@ import { signInRequest } from "../../auth/api/signInRequest";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   addRecoveryWrapToUnlocked,
+  holdSession,
   lockAccount,
+  type SessionKeys,
   unlockWithRecovery,
   unlockWithRecoveryOnDesktop,
 } from "../../auth/runtime/accountUnlock";
@@ -130,20 +133,45 @@ const CHALLENGE_MUTATION = gql`
 `;
 
 const LOGIN_WITH_KEY_MUTATION = gql`
-  mutation LoginWithKey($proof: SignedStatementInput!, $passwordTicket: String) {
-    loginWithKey(proof: $proof, passwordTicket: $passwordTicket) {
+  mutation LoginWithKey(
+    $proof: SignedStatementInput!
+    $passwordTicket: String
+    $keepSignedIn: Boolean!
+    $keepKeyHeld: Boolean!
+  ) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: $keepSignedIn
+      keepKeyHeld: $keepKeyHeld
+    ) {
       userId
       csrfToken
       mustSetPassword
+      sessionSecret
+      keepKey
     }
   }
 `;
 
-/** The same without `csrfToken` and `mustSetPassword`, for a server older than them. */
+/** The same without `csrfToken`, for a server older than it. */
 const LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
-  mutation LoginWithKeyWithoutCsrfToken($proof: SignedStatementInput!, $passwordTicket: String) {
-    loginWithKey(proof: $proof, passwordTicket: $passwordTicket) {
+  mutation LoginWithKeyWithoutCsrfToken(
+    $proof: SignedStatementInput!
+    $passwordTicket: String
+    $keepSignedIn: Boolean!
+    $keepKeyHeld: Boolean!
+  ) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: $keepSignedIn
+      keepKeyHeld: $keepKeyHeld
+    ) {
       userId
+      mustSetPassword
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -163,6 +191,8 @@ const SIGNUP_WITH_KEY_MUTATION = gql`
       serverId
       csrfToken
       serverShare
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -174,6 +204,8 @@ const SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
       userId
       serverId
       serverShare
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -416,17 +448,35 @@ async function unlockLogin(
 }
 
 /**
+ * Holds what a sign-in or signup returned for its session. A keep wrap that could not be written
+ * only means the password is asked for at the next start.
+ */
+async function holdSessionKeys(keys: SessionKeys): Promise<void> {
+  try {
+    await holdSession(keys);
+  } catch (err) {
+    logger.warn("[RIM:keys] keeping this device signed in failed:", err);
+  }
+}
+
+/**
  * Signs in with this device's key for `principalId`: a fresh challenge, signed by the key
  * backend, sent to `loginWithKey`, which sets the session cookie. A revoked device fails with
  * the server's `FORBIDDEN`.
  *
+ * The session's secret (unkept) is held before anything else is asked of the server, which
+ * refuses a request without it; the keep key of a kept web session wraps the data key.
+ *
  * @param passwordTicket - The ticket of an accepted password login; without one only an account
  *   without a password, or one of another server, signs in.
+ * @param unlocked - Whether the account is unlocked here, so its data key can be kept for a
+ *   reload or wrapped under the keep key.
  */
 async function loginWithDeviceKey(
   principalId: string,
   passwordTicket: string | null,
   keep: boolean,
+  unlocked: boolean,
 ): Promise<{ userId: string; mustSetPassword: boolean }> {
   const { challengeId, nonce } = await challenge();
   const proof = await keyBackend().signLogin(getGraphqlEndpoint(), principalId, {
@@ -434,11 +484,15 @@ async function loginWithDeviceKey(
     nonce,
   });
   const res = await signInRequest<{
-    loginWithKey: { userId: string; mustSetPassword?: boolean };
+    loginWithKey: Pick<LoginPayload, "userId" | "mustSetPassword" | "sessionSecret" | "keepKey">;
   }>("loginWithKey", LOGIN_WITH_KEY_MUTATION, LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION, {
     proof,
     passwordTicket,
-    ...keepSignedInArguments(keep),
+    ...keepSignedInArguments(keep, isTauri()),
+  });
+  await holdSessionKeys({
+    sessionSecret: res.loginWithKey.sessionSecret,
+    keepKey: unlocked ? res.loginWithKey.keepKey : null,
   });
   // Best-effort: link the keys to the account now that the server named it.
   try {
@@ -464,7 +518,7 @@ async function signInWithoutPassword(
   keep: boolean,
 ): Promise<PasswordSignInResult | null> {
   try {
-    const signedIn = await loginWithDeviceKey(principalId, null, keep);
+    const signedIn = await loginWithDeviceKey(principalId, null, keep, false);
     return { ...signedIn, startedEmpty: false };
   } catch (err) {
     logger.debug("[RIM:keys] no sign-in without a password:", graphqlErrorCode(err));
@@ -521,7 +575,7 @@ export async function signInWithPassword(
     );
     let signedIn: { userId: string; mustSetPassword: boolean };
     try {
-      signedIn = await loginWithDeviceKey(principalId, finished.ticket, entry.keep);
+      signedIn = await loginWithDeviceKey(principalId, finished.ticket, entry.keep, true);
     } catch (err) {
       lockAccount();
       throw err;
@@ -641,11 +695,18 @@ export async function completeEnrollment(
 
 /**
  * What the join page fills in for `signupWithKey`: the name and the page's token, if any. The
- * password's OPAQUE `RegistrationUpload` is made by {@link signupWithKey} itself.
+ * password's OPAQUE `RegistrationUpload` and the "Keep me signed in" arguments are always sent:
+ * {@link signupWithKey} makes them from the password it is given.
  */
 export type KeySignupFields = Omit<
   SignupWithKeyInput,
-  "keyLog" | "device" | "proof" | "proofOfWork" | "passwordRegistration"
+  | "keyLog"
+  | "device"
+  | "proof"
+  | "proofOfWork"
+  | "passwordRegistration"
+  | "keepSignedIn"
+  | "keepKeyHeld"
 >;
 
 /** How a signup reports and stops the proof-of-work a relay in `pow` mode asks for. */
@@ -872,6 +933,7 @@ export async function signupWithKey(
     });
     // A signup found only after its answer was lost is signed in and unlocked already.
     if (result.taken) return { userId: result.userId, serverId: result.serverId };
+    let unlocked = false;
     if (result.serverShare) {
       try {
         await registration.unlockAfterSignup({
@@ -881,11 +943,16 @@ export async function signupWithKey(
           recoveryEntropy: await draftEntropy(draft),
           keep: entry.keep,
         });
+        unlocked = true;
       } catch (err) {
         // The account exists and the session is set: the app asks for the password to unlock.
         logger.warn("[RIM:keys] unlocking the new account failed:", err);
       }
     }
+    await holdSessionKeys({
+      sessionSecret: result.sessionSecret,
+      keepKey: unlocked ? result.keepKey : null,
+    });
     // Best-effort from here: the account exists and the session is set. A later sign-in links
     // the keys.
     try {
@@ -900,6 +967,15 @@ export async function signupWithKey(
   }
 }
 
+/** What a sent signup answered, or that it was found taken and signed in to. */
+type SentSignup = KeySignupResult & {
+  /** The new account's server share, in the clear. */
+  serverShare: string | null;
+  sessionSecret: string | null;
+  keepKey: string | null;
+  taken: boolean;
+};
+
 /**
  * Sends a signup with its password registration. A signup the server took although no answer
  * said so is finished by signing in ({@link finishTakenSignup}) and comes back `taken`.
@@ -909,7 +985,7 @@ async function sendSignup(
   sent: KeySignupFields,
   entry: PasswordEntry,
   extra: Pick<SignupWithKeyInput, "passwordRegistration" | "proofOfWork">,
-): Promise<KeySignupResult & { serverShare: string | null; taken: boolean }> {
+): Promise<SentSignup> {
   let challengeId: string;
   let nonce: string;
   try {
@@ -925,20 +1001,27 @@ async function sendSignup(
     { challengeId, nonce },
   );
   sentSignups.set(draft.draftId, sent);
-  const input: SignupWithKeyInput = { ...sent, ...statements, ...extra };
-  let result: KeySignupResult & { serverShare: string | null; taken: boolean };
+  const input: SignupWithKeyInput = {
+    ...sent,
+    ...statements,
+    ...extra,
+    ...keepSignedInArguments(entry.keep, isTauri()),
+  };
+  let result: SentSignup;
   signupsInFlight += 1;
   try {
     const res = await signInRequest<{ signupWithKey: SignupWithInvitePayloadGql }>(
       "signupWithKey",
       SIGNUP_WITH_KEY_MUTATION,
       SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
-      { input, ...keepSignedInArguments(entry.keep) },
+      { input },
     );
     result = {
       userId: res.signupWithKey.userId,
       serverId: res.signupWithKey.serverId ?? null,
       serverShare: res.signupWithKey.serverShare ?? null,
+      sessionSecret: res.signupWithKey.sessionSecret ?? null,
+      keepKey: res.signupWithKey.keepKey ?? null,
       taken: false,
     };
   } catch (err) {
@@ -951,7 +1034,13 @@ async function sendSignup(
         .catch(() => undefined);
     }
     if (!taken) throw err;
-    return { ...(await finishTakenSignup(draft, entry)), serverShare: null, taken: true };
+    return {
+      ...(await finishTakenSignup(draft, entry)),
+      serverShare: null,
+      sessionSecret: null,
+      keepKey: null,
+      taken: true,
+    };
   } finally {
     signupsInFlight -= 1;
   }

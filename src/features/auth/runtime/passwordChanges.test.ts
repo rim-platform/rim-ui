@@ -33,6 +33,9 @@ const flows = vi.hoisted(() => ({
   changeRewrap: vi.fn(),
 }));
 vi.mock("./opaqueFlows", () => flows);
+const session = vi.hoisted(() => ({ holdSession: vi.fn(), fetchSessionKeepKey: vi.fn() }));
+vi.mock("./accountUnlock", () => ({ holdSession: session.holdSession }));
+vi.mock("../api/sessionKeys", () => ({ fetchSessionKeepKey: session.fetchSessionKeepKey }));
 
 import { WrongPasswordError } from "../api/passwordApi";
 import { changePassword, resetPassword, setFirstPassword } from "./passwordChanges";
@@ -84,6 +87,8 @@ beforeEach(() => {
   kit.unsavedRecoveryKit.mockReset();
   Object.values(flows).forEach((fn) => fn.mockReset());
   desktop.value = false;
+  session.holdSession.mockReset().mockResolvedValue(undefined);
+  session.fetchSessionKeepKey.mockReset().mockResolvedValue(null);
 });
 
 describe("changePassword", () => {
@@ -257,6 +262,20 @@ describe("setFirstPassword", () => {
       recoveryEntropy: expect.any(Uint8Array),
       keep: true,
     });
+  });
+
+  it("wraps the data key under the keep key a kept web session holds", async () => {
+    flows.startRegistration.mockResolvedValue(fakeRegistration());
+    kit.unsavedRecoveryKit.mockResolvedValue(null);
+    session.fetchSessionKeepKey.mockResolvedValue("keep-1");
+    server({
+      SetPasswordStart: { setPasswordStart: "registration-response" },
+      SetPassword: { setPassword: { serverShare: "share-1" } },
+    });
+
+    await setFirstPassword(PRINCIPAL, "123456", false);
+
+    expect(session.holdSession).toHaveBeenCalledWith({ sessionSecret: null, keepKey: "keep-1" });
   });
 
   it("unlocks without a recovery wrap where the device keeps no kit", async () => {

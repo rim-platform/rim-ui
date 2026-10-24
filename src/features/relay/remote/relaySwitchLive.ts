@@ -212,11 +212,7 @@ export function liveDeps(displayName: string, password: PasswordEntry): SwitchDe
         const signedIn = await directRequest<{ loginWithKey: { userId: string } }>(
           serverId,
           LOGIN_WITH_KEY_MUTATION,
-          {
-            proof: await challenge(serverId),
-            passwordTicket: finished.ticket,
-            ...keepSignedInArguments(password.keep),
-          },
+          { proof: await challenge(serverId), passwordTicket: finished.ticket },
         );
         return signedIn.loginWithKey.userId;
       }
@@ -257,9 +253,10 @@ export function liveDeps(displayName: string, password: PasswordEntry): SwitchDe
           device: device.certificate,
           proof: await challenge(serverId),
           passwordRegistration: upload,
+          // Kept with the keep key held by this app, as the direct sign-in is.
+          ...keepSignedInArguments(true, true),
           ...(proofOfWork && { proofOfWork }),
         },
-        ...keepSignedInArguments(password.keep),
       });
       const share = created.signupWithKey.serverShare;
       if (!share) throw new Error("The new relay did not answer the account's server share.");

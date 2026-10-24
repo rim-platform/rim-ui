@@ -25,6 +25,7 @@ const flows = vi.hoisted(() => ({ startLogin: vi.fn(), startRegistration: vi.fn(
 vi.mock("../../auth/runtime/opaqueFlows", () => flows);
 const unlocks = vi.hoisted(() => ({
   addRecoveryWrapToUnlocked: vi.fn(),
+  holdSession: vi.fn(),
   lockAccount: vi.fn(),
   unlockWithRecovery: vi.fn(),
   unlockWithRecoveryOnDesktop: vi.fn(),
@@ -185,13 +186,20 @@ beforeEach(() => {
   flows.startRegistration.mockImplementation(async () => registration);
   Object.values(unlocks).forEach((fn) => fn.mockReset());
   unlocks.addRecoveryWrapToUnlocked.mockResolvedValue(undefined);
+  unlocks.holdSession.mockResolvedValue(undefined);
 });
 
 describe("signInWithPassword", () => {
   const signedIn = {
     KeyLoginChallenge: CHALLENGE,
     LoginWithKey: {
-      loginWithKey: { userId: "user-1", csrfToken: "tok-key-login", mustSetPassword: false },
+      loginWithKey: {
+        userId: "user-1",
+        csrfToken: "tok-key-login",
+        mustSetPassword: false,
+        sessionSecret: "secret-1",
+        keepKey: null,
+      },
     },
     MeKeyAccount: ME(PRINCIPAL),
   };
@@ -233,7 +241,18 @@ describe("signInWithPassword", () => {
     expect(login.unlock.mock.invocationCallOrder[0]).toBeLessThan(
       invokeMock.mock.invocationCallOrder[signed],
     );
-    expect(requestMock.mock.calls[3][1]).toEqual({ proof: STATEMENT, passwordTicket: "ticket-1" });
+    // The desktop holds its own keep key; this sign-in is not kept.
+    expect(requestMock.mock.calls[3][1]).toEqual({
+      proof: STATEMENT,
+      passwordTicket: "ticket-1",
+      keepSignedIn: false,
+      keepKeyHeld: true,
+    });
+    // The session secret is held before the next request, which needs it.
+    expect(unlocks.holdSession).toHaveBeenCalledWith({ sessionSecret: "secret-1", keepKey: null });
+    expect(unlocks.holdSession.mock.invocationCallOrder[0]).toBeLessThan(
+      requestMock.mock.invocationCallOrder[4],
+    );
     expect(useAuthStore.getState().csrfToken).toBe("tok-key-login");
     expect(invokeMock).toHaveBeenCalledWith("key_identity_settle", {
       account: { endpoint: ENDPOINT, userId: "user-1", username: "ada" },
@@ -241,6 +260,23 @@ describe("signInWithPassword", () => {
     });
     expect(login.close).toHaveBeenCalled();
     expect(unlocks.lockAccount).not.toHaveBeenCalled();
+  });
+
+  it("wraps the data key under a kept session's keep key, once the account is unlocked", async () => {
+    backend(
+      {
+        ...signedIn,
+        LoginWithKey: { loginWithKey: { userId: "user-1", keepKey: "keep-1" } },
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await signInWithPassword(PRINCIPAL, { ...PASSWORD, keep: true });
+    const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
+    expect(keyLogin?.[1]).toMatchObject({ keepSignedIn: true });
+    expect(unlocks.holdSession).toHaveBeenCalledWith({
+      sessionSecret: undefined,
+      keepKey: "keep-1",
+    });
   });
 
   it("says when the account must set a password", async () => {
@@ -303,7 +339,12 @@ describe("signInWithPassword", () => {
       startedEmpty: false,
     });
     const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
-    expect(keyLogin?.[1]).toEqual({ proof: STATEMENT, passwordTicket: null });
+    expect(keyLogin?.[1]).toEqual({
+      proof: STATEMENT,
+      passwordTicket: null,
+      keepSignedIn: false,
+      keepKeyHeld: true,
+    });
   });
 
   it("tells a locked password and a wait apart", async () => {
@@ -618,8 +659,11 @@ describe("signupWithKey", () => {
         device: STATEMENT,
         proof: STATEMENT,
         passwordRegistration: "registration-upload",
+        keepSignedIn: false,
+        keepKeyHeld: true,
       },
     });
+    expect(unlocks.holdSession).toHaveBeenCalledWith({ sessionSecret: null, keepKey: null });
     // The password is registered first, and the new account unlocked once the server took it.
     expect(flows.startRegistration).toHaveBeenCalledWith(PASSWORD.password);
     expect(requestMock.mock.calls[0]).toEqual([

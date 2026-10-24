@@ -242,8 +242,12 @@ then wraps this device's data key under the new unlock key. `resetPassword` sign
 new password with `passwordResetStart` and `passwordResetFinish`; the sign-in that follows adds
 the recovery wrap on this device.
 
-"Keep me signed in" starts ticked in the desktop app and unticked in a browser. On the desktop it
-writes the keep wrap at the unlock. `keepSignedInArguments` in `passwordApi.ts` is where it goes
-to `loginWithKey` and `signupWithKey`; it carries nothing while the server takes no argument for
-it. An expired session goes to the sign-in screen: nothing signs in again with the device key
-alone.
+"Keep me signed in" starts ticked in the desktop app and unticked in a browser. Every
+`loginWithKey` and `signupWithKey` sends it as `keepSignedIn`, with `keepKeyHeld` true in the
+desktop app, which writes its own keep wrap at the unlock, and false in the web app
+(`keepSignedInArguments` in `passwordApi.ts`). What the server answers goes to `holdSession` once
+the account is unlocked: the session secret of an unkept session is held before any other
+request, and a kept web session's keep key wraps the data key. A first password set by a session
+that signed in with the key alone holds the session the same way, reading a kept web session's
+keep key from `sessionKeepKey`. An expired session goes to the sign-in screen: nothing signs in
+again with the device key alone.

@@ -34,16 +34,18 @@ export const appServer: GraphqlRequest = (document, variables) =>
   graphqlClient.request(document, variables);
 
 /**
- * The arguments that carry "Keep me signed in" to `loginWithKey` and `signupWithKey`. The server
- * takes none yet, so a kept session differs only on this device: on the desktop its data key
- * stays wrapped under a keep key in the secret vault.
+ * The "Keep me signed in" arguments of `loginWithKey` and `signupWithKey`: whether the session is
+ * kept, and whether this app holds its keep key itself (the desktop, in its secret vault) or the
+ * server holds it for the session (the web app).
  *
  * @param keep - Whether the person ticked "Keep me signed in".
- * @returns The extra variables, spread into the mutation's variables.
+ * @param desktop - Whether this is the desktop app.
  */
-export function keepSignedInArguments(keep: boolean): Record<string, never> {
-  void keep;
-  return {};
+export function keepSignedInArguments(
+  keep: boolean,
+  desktop: boolean,
+): { keepSignedIn: boolean; keepKeyHeld: boolean } {
+  return { keepSignedIn: keep, keepKeyHeld: desktop };
 }
 
 /** Too many wrong passwords: only a reset with the recovery phrase opens the account again. */
