@@ -269,6 +269,15 @@ fn key(text: &Zeroizing<String>) -> Result<SecretKey> {
     SecretKey::from_text(text)
 }
 
+/// The device key of an open record. A record whose keys were sealed under an earlier data key
+/// has none left.
+fn device_key(record: &KeyRecord) -> Result<SecretKey> {
+    if record.device_seed.is_empty() {
+        return Err(KeyIdentityError::NoKeys);
+    }
+    key(&record.device_seed)
+}
+
 fn local_account(link: &AccountLink, record: &KeyRecord) -> LocalAccount {
     LocalAccount {
         principal_id: record.principal_id.clone(),
@@ -388,8 +397,7 @@ impl KeyIdentityState {
             .ok_or(KeyIdentityError::NoKeys)
     }
 
-    /// The record as far as it opens while the account is locked: its device key and plain
-    /// fields.
+    /// The record as far as it opens while the account is locked: its plain fields.
     fn device_record(&self, principal_id: &str) -> Result<KeyRecord> {
         self.keys()
             .device_record(principal_id)?
@@ -815,9 +823,9 @@ impl KeyIdentityState {
         let audience = audience(endpoint)?;
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
-        let device_seed = key(&record.device_seed)?;
+        let device_seed = device_key(&record)?;
         Ok(statement::login(
             &device_seed,
             &statement::LoginInput {
@@ -839,10 +847,10 @@ impl KeyIdentityState {
     ) -> Result<Statement> {
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
         statement::device_request(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             principal_id,
             &record.device_id,
             request,
@@ -858,10 +866,10 @@ impl KeyIdentityState {
     ) -> Result<Statement> {
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
         statement::delegation(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             principal_id,
             &record.device_id,
             input,
@@ -883,10 +891,10 @@ impl KeyIdentityState {
         }
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
         Ok(statement::login(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             &statement::LoginInput {
                 challenge_id: &challenge.challenge_id,
                 nonce: &challenge.nonce,
@@ -901,12 +909,9 @@ impl KeyIdentityState {
     pub(crate) fn device(&self, principal_id: &str) -> Result<(String, String)> {
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
-        Ok((
-            record.device_id.clone(),
-            key(&record.device_seed)?.public_key(),
-        ))
+        Ok((record.device_id.clone(), device_key(&record)?.public_key()))
     }
 
     /// Sign an end-to-end encryption statement with this device's key: an `mls-key` statement
@@ -929,7 +934,7 @@ impl KeyIdentityState {
         };
         let record = {
             let _guard = self.guard()?;
-            self.device_record(principal_id)?
+            self.record(principal_id)?
         };
         let fields: serde_json::Value = serde_json::from_str(&payload)
             .map_err(|_| KeyIdentityError::Invalid("the statement is not JSON".into()))?;
@@ -941,7 +946,7 @@ impl KeyIdentityState {
                 "the statement is not about this device".into(),
             ));
         }
-        Ok(key(&record.device_seed)?.sign(context, payload))
+        Ok(device_key(&record)?.sign(context, payload))
     }
 
     /// Verify the server's key log for `principal_id`, settle a pending rotation against it,
@@ -997,10 +1002,10 @@ impl KeyIdentityState {
     ) -> Result<Statement> {
         let head = Self::head(principal_id, log)?;
         let _guard = self.guard()?;
-        let record = self.device_record(principal_id)?;
+        let record = self.record(principal_id)?;
         let now = statement::now();
         if record.device_id == device_id {
-            let device_seed = key(&record.device_seed)?;
+            let device_seed = device_key(&record)?;
             return Ok(statement::revocation(
                 &device_seed,
                 true,

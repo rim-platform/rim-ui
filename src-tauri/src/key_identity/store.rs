@@ -2,14 +2,14 @@
 //! `secret_store`), plus a small index saying which account on which server each principal
 //! signs in to. Memory in tests.
 //!
-//! Each principal's record is sealed a second time under the account's data key
-//! (`account_lock`, store key "desktop vault", the record's name as associated data), except
-//! what signing in needs before the data key can be had: the device key, the device's id and
-//! name, and whether the server and the person confirmed the keys. The identity key, a pending
-//! one, the backup key, the recovery kit's entropy and the keys a recovery replaced open only
-//! while the account is unlocked. A record written while the account is locked (a signup,
-//! recovery or device link, before its first unlock) keeps them under the vault key alone
-//! until [`Keys::seal_record`] seals it at the next unlock. Pending device links are sealed
+//! Each principal's keys are sealed a second time under the account's data key
+//! (`account_lock`, store key "desktop vault", the record's name as associated data): the
+//! device key, the identity key, a pending one, the backup key, the recovery kit's entropy and
+//! the keys a recovery replaced open only while the account is unlocked. What names the keys
+//! stays under the vault key alone: the principal, the device's id and name, and whether the
+//! server and the person confirmed them. A record written while the account is locked (a
+//! signup, recovery or device link, before its first unlock) keeps its keys under the vault key
+//! alone until [`Keys::seal_record`] seals it at the next unlock. Pending device links are sealed
 //! whole and written only while their account is unlocked. The index stays under the vault
 //! key alone: the sign-in screen lists the accounts before any is unlocked.
 
@@ -112,7 +112,8 @@ pub(crate) struct KeyRecord {
     pub(crate) principal_id: String,
     pub(crate) device_id: String,
     pub(crate) device_name: String,
-    /// base64url of the device key seed.
+    /// base64url of the device key seed; empty on a record read locked.
+    #[serde(default, skip_serializing_if = "is_empty")]
     pub(crate) device_seed: Zeroizing<String>,
     /// The identity key, on the device that enrolled it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,7 +159,8 @@ impl KeyRecord {
     }
 
     fn has_sealed_fields(&self) -> bool {
-        self.identity_seed.is_some()
+        !self.device_seed.is_empty()
+            || self.identity_seed.is_some()
             || self.pending_identity_seed.is_some()
             || self.backup_key.is_some()
             || self.recovery_entropy.is_some()
@@ -166,10 +168,16 @@ impl KeyRecord {
     }
 }
 
+fn is_empty(text: &Zeroizing<String>) -> bool {
+    text.is_empty()
+}
+
 /// The fields of a [`KeyRecord`] that open only while its account is unlocked.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SealedFields {
+    #[serde(default, skip_serializing_if = "is_empty")]
+    device_seed: Zeroizing<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     identity_seed: Option<Zeroizing<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -185,6 +193,7 @@ struct SealedFields {
 impl SealedFields {
     fn take_from(record: &mut KeyRecord) -> Self {
         Self {
+            device_seed: std::mem::take(&mut record.device_seed),
             identity_seed: record.identity_seed.take(),
             pending_identity_seed: record.pending_identity_seed.take(),
             backup_key: record.backup_key.take(),
@@ -194,6 +203,7 @@ impl SealedFields {
     }
 
     fn put_into(self, record: &mut KeyRecord) {
+        record.device_seed = self.device_seed;
         record.identity_seed = self.identity_seed;
         record.pending_identity_seed = self.pending_identity_seed;
         record.backup_key = self.backup_key;
@@ -277,8 +287,8 @@ impl<'a> Keys<'a> {
     }
 
     /// The principal's record as far as it opens: while the account is locked, a sealed
-    /// record's sealed fields read as absent and [`KeyRecord::is_locked`] says so. Enough for
-    /// the device key and the record's plain fields.
+    /// record's keys read as absent and [`KeyRecord::is_locked`] says so. Enough for the
+    /// record's plain fields.
     pub(crate) fn device_record(
         &self,
         principal_id: &str,
@@ -301,7 +311,7 @@ impl<'a> Keys<'a> {
                 Err(AccountLockError::Locked) => return Ok(Some(record)),
                 Err(e) => {
                     // Sealed under an earlier data key: the account started empty on this device,
-                    // so the sealed fields are gone, and the next write drops them.
+                    // so its keys here are gone, and the next write drops them.
                     log::warn!("[key_identity] the sealed keys of an account do not open: {e}");
                     record.sealed = None;
                     return Ok(Some(record));

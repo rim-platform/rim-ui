@@ -521,11 +521,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 ### Security
 
 - On the desktop, what the app keeps for an account opens only while that account is unlocked:
-  its identity key, backup key and recovery phrase, its pending device links, its message cache
-  and its plugins' secret settings are sealed under the account's own data key. An account that
-  is not kept signed in on the computer no longer opens offline; the sign-in screen says that
-  signing in needs a connection to the server. The message cache is rebuilt from the server once,
-  under a new key per account.
+  its device key, identity key, backup key and recovery phrase, its pending device links, its
+  message cache and its plugins' secret settings are sealed under the account's own data key. An
+  account that is not kept signed in on the computer no longer opens offline; the sign-in screen
+  says that signing in needs a connection to the server. The message cache is rebuilt from the
+  server once, under a new key per account.
 - A server's discovery document is accepted only when its server-to-server endpoint is the
   origin it was fetched from or a path under it. Before, a longer host that merely started the
   same passed, so another server's document replayed at `https://host.exam` could be pinned

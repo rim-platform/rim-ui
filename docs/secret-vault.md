@@ -6,8 +6,8 @@ pending device links, the AI provider keys, and the secret settings of plugins. 
 key that opens the file. The code is `src-tauri/src/secret_store.rs`.
 
 What the vault keeps for one account is sealed a second time under that account's data key, and
-opens only while the account is unlocked: its key identity record (but for the device key and the
-fields sign-in needs), its pending device links, its message cache keys and its plugins' secret
+opens only while the account is unlocked: the keys of its key identity record (its names stay
+readable, for the sign-in list), its pending device links, its message cache keys and its plugins' secret
 settings (`account-password.md`, "What the data key seals"). The history archive keys, AI provider
 keys, the offline session record and the key identity index are the app's, not an account's, and
 stay under the vault key alone.

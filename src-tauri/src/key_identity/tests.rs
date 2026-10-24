@@ -1472,26 +1472,30 @@ fn stored_record(store: &MemorySecretStore, principal_id: &str) -> serde_json::V
 }
 
 #[test]
-fn an_unlock_seals_the_identity_key_and_a_locked_account_still_signs_in() {
+fn an_unlock_seals_the_keys_and_a_locked_account_answers_locked() {
     let store = Arc::new(MemorySecretStore::default());
     let state = KeyIdentityState::new(store.clone());
-    // A signup writes its keys before the account's first unlock: under the vault key only.
+    // A signup writes its keys before the account's first unlock: under the vault key only, and
+    // usable as before.
     let (draft, statements) = enrolled(&state);
     let principal = draft.principal_id.as_str();
     let stored = stored_record(&store, principal);
-    assert!(stored.get("identitySeed").is_some() && stored.get("sealed").is_none());
+    assert!(stored.get("deviceSeed").is_some() && stored.get("sealed").is_none());
+    state.sign_login(ENDPOINT, principal, &challenge()).unwrap();
 
     state.account_lock().unlock_for_tests(principal, [3; 32]);
     state.seal_at_rest(principal).unwrap();
     let stored = stored_record(&store, principal);
     let raw = serde_json::to_string(&stored).unwrap();
-    let identity_seed = state.record(principal).unwrap().identity_seed.unwrap();
+    let opened = state.record(principal).unwrap();
+    let identity_seed = opened.identity_seed.clone().unwrap();
     assert!(!raw.contains(identity_seed.as_str()));
-    for field in ["identitySeed", "backupKey", "recoveryEntropy"] {
+    assert!(!raw.contains(opened.device_seed.as_str()));
+    for field in ["deviceSeed", "identitySeed", "backupKey", "recoveryEntropy"] {
         assert!(stored.get(field).is_none(), "{field} left in the clear");
     }
     for field in [
-        "deviceSeed",
+        "principalId",
         "deviceId",
         "deviceName",
         "confirmed",
@@ -1501,14 +1505,20 @@ fn an_unlock_seals_the_identity_key_and_a_locked_account_still_signs_in() {
     }
     assert!(state.recovery_kit(principal).unwrap().is_some());
 
-    // After a restart the account is locked: the device key signs in, the sealed keys refuse.
+    // After a restart the account is locked: it is listed, and every key refuses.
     let restarted = KeyIdentityState::new(store.clone());
-    let proof = restarted
-        .sign_login(ENDPOINT, principal, &challenge())
-        .unwrap();
-    assert_eq!(payload_field(&proof, "principalId"), principal);
-    assert_eq!(restarted.accounts(ENDPOINT).unwrap().len(), 1);
-    assert!(!restarted.accounts(ENDPOINT).unwrap()[0].has_identity_key);
+    let listed = restarted.accounts(ENDPOINT).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].device_id, opened.device_id);
+    assert!(!listed[0].has_identity_key);
+    assert!(matches!(
+        restarted.sign_login(ENDPOINT, principal, &challenge()),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.device(principal),
+        Err(KeyIdentityError::Locked)
+    ));
     assert!(matches!(
         restarted.recovery_kit(principal),
         Err(KeyIdentityError::Locked)
@@ -1540,6 +1550,10 @@ fn an_unlock_seals_the_identity_key_and_a_locked_account_still_signs_in() {
     restarted
         .account_lock()
         .unlock_for_tests(principal, [3; 32]);
+    let proof = restarted
+        .sign_login(ENDPOINT, principal, &challenge())
+        .unwrap();
+    assert_eq!(payload_field(&proof, "principalId"), principal);
     assert_eq!(
         restarted
             .record(principal)
@@ -1558,12 +1572,12 @@ fn an_unlock_seals_the_identity_key_and_a_locked_account_still_signs_in() {
     restarted.confirm_recovery_kit(principal).unwrap();
     // Written while unlocked: sealed at once.
     let stored = stored_record(&store, principal);
-    assert!(stored.get("sealed").is_some() && stored.get("identitySeed").is_none());
+    assert!(stored.get("sealed").is_some() && stored.get("deviceSeed").is_none());
     assert_eq!(stored["kitConfirmed"], true);
 }
 
 #[test]
-fn keys_sealed_under_an_earlier_data_key_are_gone_but_the_device_key_stays() {
+fn keys_sealed_under_an_earlier_data_key_are_gone() {
     let store = Arc::new(MemorySecretStore::default());
     let state = KeyIdentityState::new(store.clone());
     let (draft, _) = enrolled(&state);
@@ -1577,10 +1591,12 @@ fn keys_sealed_under_an_earlier_data_key_are_gone_but_the_device_key_stays() {
         .account_lock()
         .unlock_for_tests(principal, [4; 32]);
     let record = restarted.record(principal).unwrap();
-    assert!(record.identity_seed.is_none() && record.backup_key.is_none());
-    restarted
-        .sign_login(ENDPOINT, principal, &challenge())
-        .unwrap();
+    assert!(record.device_seed.is_empty() && record.identity_seed.is_none());
+    assert!(record.confirmed);
+    assert!(matches!(
+        restarted.sign_login(ENDPOINT, principal, &challenge()),
+        Err(KeyIdentityError::NoKeys)
+    ));
 }
 
 #[test]

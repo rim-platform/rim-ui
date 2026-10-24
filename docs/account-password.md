@@ -55,7 +55,7 @@ answers `LOCKED`.
 
 | Vault record | Store key | What is sealed |
 |---|---|---|
-| `key-identity-v1:<principal id>` | "desktop vault" | The identity key, a pending one, the backup key, the recovery kit's entropy and the keys a recovery replaced, in one `sealed` field. The device key, the device's id and name, and whether the server and the person confirmed the keys stay under the vault key alone: signing in signs a proof with the device key before the server returns the share the data key needs |
+| `key-identity-v1:<principal id>` | "desktop vault" | The device key, the identity key, a pending one, the backup key, the recovery kit's entropy and the keys a recovery replaced, in one `sealed` field. What names the keys stays under the vault key alone, for the sign-in list: the principal, the device's id and name, and whether the server and the person confirmed the keys |
 | `device-link-v1:<link id>` | "desktop vault" | The whole pending link, as `{principalId, sealed}` |
 | `message-cache-key-v1:<file stem>` | "cache key" | The account's message cache key (`local-message-cache.md`) |
 | `plugin-setting-v1:<plugin>:<account>:<key>` | "desktop vault" | The secret setting's value, after `sealed-v1:` (`secret-vault.md`) |
@@ -63,13 +63,15 @@ answers `LOCKED`.
 - A signup, a recovery or a new device of a device link writes its keys before the account's
   first unlock. Those fields stay under the vault key alone until the unlock that follows, which
   seals them; so are records written before the data key existed.
-- Locked, the key identity commands that need only the device key still answer: the sign-in
-  list, signing in, device requests and delegations, MLS statements, settling with the server,
-  revoking this device. Those that need the sealed fields answer `LOCKED`: the recovery kit,
-  syncing the key log, rotation, profile cards, plugin manifests, confirming a device link, the
-  identity key backup.
+- Until then those commands work as before. Once sealed, a locked account's record answers only
+  the sign-in list and settling with the server; every command that uses a key answers `LOCKED`:
+  signing in and the login proof for another server, device requests and delegations, this
+  device's id and key, MLS statements, revoking a device, the recovery kit, syncing the key log,
+  rotation, profile cards, plugin manifests, confirming a device link and the identity key
+  backup. A sign-in therefore unlocks the account before it signs its proof.
 - When the data key is new (the account started empty on this device), what was sealed under the
-  earlier one no longer opens: the record keeps its device key and loses the rest, and the
+  earlier one no longer opens: the record keeps its names and loses its keys, the device key
+  included, so this device signs in again only after recovery or a new device link, and the
   message cache starts over.
 - The key identity index, the history archive keys, the AI provider keys and the offline session
   record are the app's and stay under the vault key alone.
