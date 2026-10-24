@@ -80,6 +80,7 @@ fn record(principal: &str, identity: Option<&SecretKey>) -> KeyRecord {
         confirmed: true,
         replaced: None,
         sealed: None,
+        device_wrap: None,
     }
 }
 

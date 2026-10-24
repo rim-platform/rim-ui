@@ -326,6 +326,7 @@ mod tests {
                 confirmed: true,
                 replaced: None,
                 sealed: None,
+                device_wrap: None,
             })
             .unwrap();
         KeyIdentityState::new(store)
@@ -447,6 +448,7 @@ mod tests {
                 confirmed: true,
                 replaced: None,
                 sealed: None,
+                device_wrap: None,
             })
             .unwrap();
         // Enrolled before the backup existed: no backup key until the kit's key is given.

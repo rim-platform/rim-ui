@@ -942,6 +942,7 @@ impl KeyIdentityState {
             confirmed: false,
             replaced: None,
             sealed: None,
+            device_wrap: None,
         })?;
         let mut links = keys.links()?;
         links.retain(|l| {

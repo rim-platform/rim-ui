@@ -182,6 +182,10 @@ pub(crate) struct Unlocked {
     /// The data key is new: what the device kept for the account under an earlier one no
     /// longer opens.
     pub(crate) started_empty: bool,
+    /// The server share this unlock opened, which wraps the device key; never sent to the
+    /// webview.
+    #[serde(skip)]
+    pub(crate) share: Option<Key>,
 }
 
 /// Where one OPAQUE flow is.
@@ -445,6 +449,7 @@ impl AccountLock {
         Unlocked {
             web_store_key: Zeroizing::new(b64(web_store_key.as_ref())),
             started_empty,
+            share: None,
         }
     }
 
@@ -516,7 +521,10 @@ impl AccountLock {
         )?);
         self.set_keep(principal_id, &data_key, &mut wraps, keep)?;
         self.put_wraps(principal_id, &wraps)?;
-        Ok(self.hold(principal_id, data_key, started_empty))
+        Ok(Unlocked {
+            share: Some(share),
+            ..self.hold(principal_id, data_key, started_empty)
+        })
     }
 
     /// Unlocks a new account after its signup registered the password: a new data key wrapped
@@ -563,7 +571,10 @@ impl AccountLock {
         }
         self.set_keep(principal_id, &data_key, &mut wraps, keep)?;
         self.put_wraps(principal_id, &wraps)?;
-        Ok(self.hold(principal_id, data_key, true))
+        Ok(Unlocked {
+            share: Some(share),
+            ..self.hold(principal_id, data_key, true)
+        })
     }
 
     /// Unlocks a kept account with its keep key, without the server. `None` when the account

@@ -541,3 +541,142 @@ fn records_seal_under_the_data_key_and_open_only_while_unlocked() {
         "LOCKED"
     );
 }
+
+mod device_key {
+    use super::*;
+    use crate::account_lock::commands::seal_after_unlock;
+    use crate::key_identity::statement::SecretKey;
+    use crate::key_identity::store::{
+        KeyRecord, Keys, MemorySecretStore, SecretStore as KeySecretStore,
+    };
+    use crate::key_identity::{Challenge, KeyIdentityError, KeyIdentityState};
+
+    const ENDPOINT: &str = "http://localhost:8080/api";
+
+    fn challenge() -> Challenge {
+        Challenge {
+            challenge_id: "00000000-0000-0000-0000-000000000009".into(),
+            nonce: "bm9uY2U".into(),
+        }
+    }
+
+    /// The key identity of [`PRINCIPAL`] on `device`, written before its first unlock, and its
+    /// device key.
+    fn key_identity(device: &AccountLock) -> (KeyIdentityState, Arc<MemorySecretStore>, SecretKey) {
+        let store = Arc::new(MemorySecretStore::default());
+        let seed = SecretKey::generate().unwrap();
+        Keys::new(store.as_ref(), device)
+            .put_record(&KeyRecord {
+                v: 1,
+                principal_id: PRINCIPAL.into(),
+                device_id: uuid::Uuid::now_v7().to_string(),
+                device_name: "Laptop".into(),
+                device_seed: seed.to_text(),
+                identity_seed: Some(SecretKey::generate().unwrap().to_text()),
+                pending_identity_seed: None,
+                pending_identity_seq: None,
+                backup_key: None,
+                recovery_entropy: None,
+                kit_confirmed: Some(true),
+                confirmed: true,
+                replaced: None,
+                sealed: None,
+                device_wrap: None,
+            })
+            .unwrap();
+        (
+            KeyIdentityState::with_lock(store.clone(), device.clone()),
+            store,
+            seed,
+        )
+    }
+
+    fn stored(store: &MemorySecretStore) -> serde_json::Value {
+        let raw = store
+            .read(&format!("key-identity-v1:{PRINCIPAL}"))
+            .unwrap()
+            .unwrap();
+        serde_json::from_str(&raw).unwrap()
+    }
+
+    fn device_wrap(store: &MemorySecretStore) -> String {
+        stored(store)["deviceWrap"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn after_a_reset_elsewhere_starting_empty_keeps_the_device_key() {
+        let mut server = Server::new();
+        let (device, _) = device();
+        let (keys, store, seed) = key_identity(&device);
+
+        let signed_up = signup(&mut server, &device, "old password", false);
+        assert_eq!(*signed_up.share.clone().unwrap(), server.share);
+        assert!(serde_json::to_value(&signed_up)
+            .unwrap()
+            .get("share")
+            .is_none());
+        seal_after_unlock(&keys, PRINCIPAL, signed_up.share.as_ref());
+        let after_signup = stored(&store);
+        assert!(after_signup.get("deviceSeed").is_none());
+        assert!(after_signup.get("sealed").is_some());
+        let first_wrap = device_wrap(&store);
+
+        // Each login's unlock wraps the device key again under the share.
+        device.lock_account(PRINCIPAL);
+        let (handle, sealed) = server.login(&device, "old password").unwrap();
+        let unlocked = device
+            .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
+            .unwrap();
+        seal_after_unlock(&keys, PRINCIPAL, unlocked.share.as_ref());
+        let refreshed = device_wrap(&store);
+        assert_ne!(refreshed, first_wrap);
+        let wrap_key = rim_opaque::device_key_wrap_key(&server.share, PRINCIPAL);
+        let opened = rim_opaque::unwrap_device_seed(&wrap_key, PRINCIPAL, &unb64(&refreshed));
+        assert_eq!(&*opened.unwrap(), seed.seed());
+
+        // A reset on another device: the password wrap no longer opens, and this device starts
+        // empty. The device key comes back from its wrap; the identity key is gone.
+        device.lock_account(PRINCIPAL);
+        let (other_device, _) = super::device();
+        server.register(&other_device, "new password");
+        let (handle, sealed) = server.login(&device, "new password").unwrap();
+        assert!(matches!(
+            device.unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false),
+            Err(AccountLockError::NeedsRecovery)
+        ));
+        let unlocked = device
+            .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, true)
+            .unwrap();
+        assert!(unlocked.started_empty);
+        seal_after_unlock(&keys, PRINCIPAL, unlocked.share.as_ref());
+
+        assert_eq!(keys.device(PRINCIPAL).unwrap().1, seed.public_key());
+        keys.sign_login(ENDPOINT, PRINCIPAL, &challenge()).unwrap();
+        let record = Keys::new(store.as_ref(), &device)
+            .record(PRINCIPAL)
+            .unwrap()
+            .unwrap();
+        assert!(record.identity_seed.is_none());
+        assert!(stored(&store).get("deviceSeed").is_none(), "sealed again");
+    }
+
+    #[test]
+    fn a_device_key_whose_wrap_does_not_open_is_lost() {
+        let mut server = Server::new();
+        let (device, _) = device();
+        let (keys, store, _) = key_identity(&device);
+        let signed_up = signup(&mut server, &device, "password", false);
+        seal_after_unlock(&keys, PRINCIPAL, signed_up.share.as_ref());
+
+        // A new data key, and another share: the wrap does not open.
+        device.unlock_for_tests(PRINCIPAL, [9; 32]);
+        seal_after_unlock(&keys, PRINCIPAL, Some(&Zeroizing::new([8; 32])));
+        assert!(matches!(
+            keys.sign_login(ENDPOINT, PRINCIPAL, &challenge()),
+            Err(KeyIdentityError::NoKeys)
+        ));
+        // The dead keys are dropped, the wrap is kept.
+        assert!(stored(&store).get("sealed").is_none());
+        assert!(stored(&store).get("deviceWrap").is_some());
+    }
+}

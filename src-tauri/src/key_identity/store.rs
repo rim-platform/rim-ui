@@ -9,9 +9,12 @@
 //! stays under the vault key alone: the principal, the device's id and name, and whether the
 //! server and the person confirmed them. A record written while the account is locked (a
 //! signup, recovery or device link, before its first unlock) keeps its keys under the vault key
-//! alone until [`Keys::seal_record`] seals it at the next unlock. Pending device links are sealed
-//! whole and written only while their account is unlocked. The index stays under the vault
-//! key alone: the sign-in screen lists the accounts before any is unlocked.
+//! alone until [`Keys::seal_record`] seals it at the next unlock. Next to the sealed keys, the
+//! record holds the device key's seed wrapped under a key of the server share (`deviceWrap`),
+//! written at each unlock that saw the share: when the account starts over with a new data
+//! key, the device key comes back from it, and only the other keys are lost. Pending device
+//! links are sealed whole and written only while their account is unlocked. The index stays
+//! under the vault key alone: the sign-in screen lists the accounts before any is unlocked.
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -19,7 +22,8 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use rim_opaque::StoreKeyLabel;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use rim_opaque::{Key, StoreKeyLabel};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -27,7 +31,7 @@ use crate::account_lock::{AccountLock, AccountLockError};
 use crate::secret_store::{SecretVault, VaultError};
 
 use super::device_link::Sealed;
-use super::statement::Statement;
+use super::statement::{SecretKey, Statement};
 use super::KeyIdentityError;
 
 /// Secret name of the account index.
@@ -150,6 +154,10 @@ pub(crate) struct KeyRecord {
     /// written back unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) sealed: Option<String>,
+    /// base64url of the device key's seed wrapped under the server share's device key wrap key
+    /// (`rim_opaque::wrap_device_seed`), so a new data key does not lose the device key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) device_wrap: Option<String>,
 }
 
 impl KeyRecord {
@@ -263,6 +271,38 @@ fn lock_error(e: AccountLockError) -> KeyIdentityError {
     }
 }
 
+/// Brings back an open record's lost device key from its wrap under `share`, then wraps the
+/// device key under `share` again. Returns whether the record changed.
+fn rewrap_device_seed(record: &mut KeyRecord, share: &Key) -> Result<bool, KeyIdentityError> {
+    let principal_id = record.principal_id.clone();
+    let wrap_key = rim_opaque::device_key_wrap_key(share, &principal_id);
+    let crypto = |e: rim_opaque::Error| KeyIdentityError::Crypto(e.to_string());
+    if record.device_seed.is_empty() {
+        let opened = record.device_wrap.as_deref().map(|wrap| {
+            URL_SAFE_NO_PAD
+                .decode(wrap.trim())
+                .map_err(|e| e.to_string())
+                .and_then(|wrap| {
+                    rim_opaque::unwrap_device_seed(&wrap_key, &principal_id, &wrap)
+                        .map_err(|e| e.to_string())
+                })
+        });
+        match opened {
+            Some(Ok(seed)) => record.device_seed = SecretKey::from_seed(seed).to_text(),
+            Some(Err(e)) => {
+                log::warn!("[key_identity] the device key's wrap did not open: {e}");
+                return Ok(false);
+            }
+            None => return Ok(false),
+        }
+    }
+    let seed = SecretKey::from_text(&record.device_seed)?;
+    let wrap =
+        rim_opaque::wrap_device_seed(&wrap_key, &principal_id, seed.seed()).map_err(crypto)?;
+    record.device_wrap = Some(URL_SAFE_NO_PAD.encode(wrap));
+    Ok(true)
+}
+
 /// Typed access to the records and the index; `lock` holds the data keys that seal them.
 pub(crate) struct Keys<'a> {
     pub(crate) store: &'a dyn SecretStore,
@@ -362,22 +402,38 @@ impl<'a> Keys<'a> {
 
     /// Seals the principal's record under its data key when it holds sealed fields under the
     /// vault key alone, and its pending device links likewise. Keys a recovery replaced go
-    /// once the server confirmed the record. Nothing happens while the account is locked.
-    pub(crate) fn seal_record(&self, principal_id: &str) -> Result<(), KeyIdentityError> {
+    /// once the server confirmed the record. With the server `share` this unlock saw, the
+    /// device key's wrap under it is written again, and a device key sealed under an earlier
+    /// data key comes back from the wrap; one whose wrap does not open stays lost. Nothing
+    /// happens while the account is locked.
+    pub(crate) fn seal_record(
+        &self,
+        principal_id: &str,
+        share: Option<&Key>,
+    ) -> Result<(), KeyIdentityError> {
         if !self.lock.is_unlocked(principal_id) {
             return Ok(());
         }
         let raw = self.store.read(&record_name(principal_id))?;
-        let plain = raw.as_deref().is_some_and(|raw| {
-            serde_json::from_str::<KeyRecord>(raw)
-                .is_ok_and(|r| !r.is_locked() && r.has_sealed_fields())
-        });
+        let stored = raw
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<KeyRecord>(raw).ok());
         if let Some(mut record) = self.record(principal_id)? {
+            let plain = stored
+                .as_ref()
+                .is_some_and(|r| !r.is_locked() && r.has_sealed_fields());
+            // Sealed under an earlier data key: what it held did not open.
+            let lost =
+                stored.as_ref().is_some_and(KeyRecord::is_locked) && record.device_seed.is_empty();
             let stale = record.confirmed && record.replaced.is_some();
             if stale {
                 record.replaced = None;
             }
-            if plain || stale {
+            let rewrapped = match share {
+                Some(share) => rewrap_device_seed(&mut record, share)?,
+                None => false,
+            };
+            if plain || lost || stale || rewrapped {
                 self.put_record(&record)?;
             }
         }
@@ -563,6 +619,7 @@ mod tests {
             confirmed: false,
             replaced: None,
             sealed: None,
+            device_wrap: None,
         }
     }
 
