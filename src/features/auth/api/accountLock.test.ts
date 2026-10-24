@@ -7,8 +7,11 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
 }));
 
 import {
+  accountAddRecoveryWrap,
   accountForgetKeep,
   accountLock,
+  accountPasswordCommit,
+  accountPasswordRewrap,
   accountUnlockAfterLogin,
   accountUnlockAfterSignup,
   accountUnlockKept,
@@ -36,6 +39,9 @@ describe("account lock commands", () => {
     await accountUnlockWithRecovery("rimp1_a", "entropy");
     await accountLock("rimp1_a");
     await accountForgetKeep("rimp1_a");
+    await accountPasswordRewrap("h3", "sealed", "h4", "rimp1_a");
+    await accountPasswordCommit("h4", "rimp1_a");
+    await accountAddRecoveryWrap("rimp1_a", "entropy");
 
     expect(safeInvokeMock.mock.calls).toEqual([
       ["opaque_registration_start", { password: "pw" }],
@@ -61,6 +67,17 @@ describe("account lock commands", () => {
       ["account_unlock_with_recovery", { principal: "rimp1_a", entropy: "entropy" }],
       ["account_lock", { principal: "rimp1_a" }],
       ["account_forget_keep", { principal: "rimp1_a" }],
+      [
+        "account_password_rewrap",
+        {
+          loginHandle: "h3",
+          sealedShare: "sealed",
+          registrationHandle: "h4",
+          principal: "rimp1_a",
+        },
+      ],
+      ["account_password_commit", { handle: "h4", principal: "rimp1_a" }],
+      ["account_add_recovery_wrap", { principal: "rimp1_a", entropy: "entropy" }],
     ]);
   });
 

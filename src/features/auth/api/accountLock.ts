@@ -177,3 +177,47 @@ export function accountLock(principal: string): Promise<null> {
 export function accountForgetKeep(principal: string): Promise<null> {
   return call("account_forget_keep", { principal });
 }
+
+/**
+ * Makes the rewrap of a password change.
+ *
+ * @param loginHandle - A finished login with the current password.
+ * @param sealedShare - The server share that login's `passwordLoginFinish` sealed.
+ * @param registrationHandle - The finished registration of the new password; it keeps the new
+ *   unlock key for {@link accountPasswordCommit}.
+ * @param principal - The account's principal id.
+ * @returns The rewrap to send with `passwordChangeFinish`.
+ */
+export function accountPasswordRewrap(
+  loginHandle: string,
+  sealedShare: string,
+  registrationHandle: string,
+  principal: string,
+): Promise<{ rewrap: string }> {
+  return call("account_password_rewrap", {
+    loginHandle,
+    sealedShare,
+    registrationHandle,
+    principal,
+  });
+}
+
+/**
+ * Finishes a password change the server took: the data key is wrapped under the new unlock key.
+ *
+ * @param handle - The registration handle of {@link accountPasswordRewrap}.
+ * @param principal - The account's principal id.
+ */
+export function accountPasswordCommit(handle: string, principal: string): Promise<null> {
+  return call("account_password_commit", { handle, principal });
+}
+
+/**
+ * Wraps the unlocked account's data key under its recovery phrase too.
+ *
+ * @param principal - The account's principal id.
+ * @param entropy - The phrase's 16 bytes, base64url.
+ */
+export function accountAddRecoveryWrap(principal: string, entropy: string): Promise<null> {
+  return call("account_add_recovery_wrap", { principal, entropy });
+}

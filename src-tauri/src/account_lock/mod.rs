@@ -173,6 +173,14 @@ pub(crate) struct LoginFinish {
     pub(crate) finalization: String,
 }
 
+/// What a password change's rewrap gives the webview: the old unlock key sealed under the new
+/// one, base64url, for `passwordChangeFinish`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Rewrap {
+    pub(crate) rewrap: String,
+}
+
 /// An unlocked account, as the webview sees it.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -204,6 +212,12 @@ enum Stage {
     LoggedIn {
         export_key: OpaqueKey,
         session_key: OpaqueKey,
+    },
+    /// A password change whose rewrap is made: the new unlock key, to wrap the data key under
+    /// once the server took the change.
+    Rewrapped {
+        principal_id: String,
+        unlock_key: Key,
     },
 }
 
@@ -527,10 +541,12 @@ impl AccountLock {
         })
     }
 
-    /// Unlocks a new account after its signup registered the password: a new data key wrapped
-    /// under the unlock key of the registration's export key and `share` (the server share,
+    /// Unlocks an account after a signup registered its password: its data key wrapped under
+    /// the unlock key of the registration's export key and `share` (the server share,
     /// base64url, in the clear), plus the recovery wrap when the recovery phrase's entropy
-    /// (base64url of its 16 bytes) is given. Replaces any wraps the account had here.
+    /// (base64url of its 16 bytes) is given. A new account gets a new data key and loses any
+    /// wraps it had here; an account unlocked already (signing up at another server) keeps its
+    /// data key and its recovery wrap.
     pub(crate) fn unlock_after_signup(
         &self,
         handle_id: &str,
@@ -547,9 +563,19 @@ impl AccountLock {
             return Err(AccountLockError::NoHandle);
         };
         let unlock_key = rim_opaque::derive_unlock_key(&export_key, &share, principal_id);
-        let data_key = rim_opaque::random_key()?;
+        let held = self.data_key(principal_id);
+        let started_empty = held.is_none();
+        let data_key = match held {
+            Some(data_key) => data_key,
+            None => rim_opaque::random_key()?,
+        };
 
         let _guard = lock(&self.records);
+        let kept_recovery = if started_empty {
+            None
+        } else {
+            self.wraps(principal_id)?.and_then(|w| w.recovery_wrap)
+        };
         let mut wraps = DataKeyWraps {
             password_wrap: b64(&rim_opaque::wrap_data_key(
                 &unlock_key,
@@ -557,7 +583,7 @@ impl AccountLock {
                 principal_id,
                 &data_key,
             )?),
-            recovery_wrap: None,
+            recovery_wrap: kept_recovery,
             keep_wrap: None,
         };
         if let Some(entropy) = entropy {
@@ -573,7 +599,7 @@ impl AccountLock {
         self.put_wraps(principal_id, &wraps)?;
         Ok(Unlocked {
             share: Some(share),
-            ..self.hold(principal_id, data_key, true)
+            ..self.hold(principal_id, data_key, started_empty)
         })
     }
 
@@ -626,6 +652,116 @@ impl AccountLock {
             Ok(data_key) => Ok(Some(self.hold(principal_id, data_key, false))),
             Err(_) => Ok(None),
         }
+    }
+
+    /// Makes the rewrap of a password change: the old unlock key, from the export key of the
+    /// finished login under `login_handle` and the server share it sealed (`sealed_share`),
+    /// sealed under the new one, from the export key of the finished registration under
+    /// `registration_handle` and the same share. The login handle is spent; the registration
+    /// handle keeps the new unlock key for [`Self::password_commit`].
+    pub(crate) fn password_rewrap(
+        &self,
+        login_handle: &str,
+        sealed_share: &str,
+        registration_handle: &str,
+        principal_id: &str,
+    ) -> Result<Rewrap> {
+        check_principal(principal_id)?;
+        let Stage::LoggedIn {
+            export_key: old_export,
+            session_key,
+        } = self.take_handle(login_handle)?.stage
+        else {
+            return Err(AccountLockError::NoHandle);
+        };
+        let registration = self.take_handle(registration_handle)?;
+        let expires = registration.expires;
+        let Stage::Registered {
+            export_key: new_export,
+        } = registration.stage
+        else {
+            return Err(AccountLockError::NoHandle);
+        };
+        let transport = rim_opaque::transport_key(&session_key, TransportLabel::ServerShare);
+        let share = rim_opaque::open(&transport, &[], &unb64(sealed_share, "the server share")?)
+            .map_err(|_| AccountLockError::Crypto("the server share did not open".into()))?;
+        let share = key_of(&share, "the server share")?;
+        let old_key = rim_opaque::derive_unlock_key(&old_export, &share, principal_id);
+        let new_key = rim_opaque::derive_unlock_key(&new_export, &share, principal_id);
+        let rewrap = b64(&rim_opaque::rewrap_unlock_key(
+            &new_key,
+            &old_key,
+            principal_id,
+        )?);
+        self.put_handle(
+            registration_handle.to_string(),
+            Stage::Rewrapped {
+                principal_id: principal_id.to_string(),
+                unlock_key: new_key,
+            },
+            expires,
+        );
+        Ok(Rewrap { rewrap })
+    }
+
+    /// Finishes a password change the server took: wraps the account's data key under the new
+    /// unlock key [`Self::password_rewrap`] left under `handle`.
+    ///
+    /// # Errors
+    /// [`AccountLockError::Locked`] while the account is locked, [`AccountLockError::NoHandle`]
+    /// for a handle of another stage or account.
+    pub(crate) fn password_commit(&self, handle_id: &str, principal_id: &str) -> Result<()> {
+        check_principal(principal_id)?;
+        let Stage::Rewrapped {
+            principal_id: changed,
+            unlock_key,
+        } = self.take_handle(handle_id)?.stage
+        else {
+            return Err(AccountLockError::NoHandle);
+        };
+        if changed != principal_id {
+            return Err(AccountLockError::NoHandle);
+        }
+        let data_key = self
+            .data_key(principal_id)
+            .ok_or(AccountLockError::Locked)?;
+        let _guard = lock(&self.records);
+        let mut wraps = self.wraps(principal_id)?.unwrap_or_default();
+        wraps.password_wrap = b64(&rim_opaque::wrap_data_key(
+            &unlock_key,
+            WrapKind::Password,
+            principal_id,
+            &data_key,
+        )?);
+        self.put_wraps(principal_id, &wraps)
+    }
+
+    /// Wraps the unlocked account's data key under its recovery phrase too (`entropy`,
+    /// base64url of its 16 bytes), on a device that now holds the phrase.
+    ///
+    /// # Errors
+    /// [`AccountLockError::Locked`] while the account is locked, [`AccountLockError::Invalid`]
+    /// when the device has no wraps for it.
+    pub(crate) fn add_recovery_wrap(&self, principal_id: &str, entropy: &str) -> Result<()> {
+        check_principal(principal_id)?;
+        let entropy = entropy_of(entropy)?;
+        let data_key = self
+            .data_key(principal_id)
+            .ok_or(AccountLockError::Locked)?;
+        let _guard = lock(&self.records);
+        let Some(mut wraps) = self.wraps(principal_id)? else {
+            return Err(AccountLockError::Invalid(
+                "this device has no data key wraps for the account".into(),
+            ));
+        };
+        let recovery_key = rim_opaque::recovery_wrap_key(&entropy);
+        wraps.recovery_wrap = Some(b64(&rim_opaque::wrap_data_key(
+            &recovery_key,
+            WrapKind::Recovery,
+            principal_id,
+            &data_key,
+        )?));
+        self.put_wraps(principal_id, &wraps)
     }
 
     /// Drops the account's data key from memory. Returns whether it was unlocked.

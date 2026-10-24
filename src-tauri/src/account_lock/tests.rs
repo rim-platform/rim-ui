@@ -680,3 +680,106 @@ mod device_key {
         assert!(stored(&store).get("deviceWrap").is_some());
     }
 }
+
+#[test]
+fn a_password_change_rewraps_the_old_unlock_key_and_this_devices_data_key() {
+    let mut server = Server::new();
+    let (device, store) = device();
+    signup(&mut server, &device, "old password", false);
+    let data_key = device.data_key(PRINCIPAL).unwrap();
+    let old_key = server.unlock_key(&device, "old password");
+
+    let (login, sealed) = server.login(&device, "old password").unwrap();
+    let registration = server.register(&device, "new password");
+    let rewrap = device
+        .password_rewrap(&login, &sealed, &registration, PRINCIPAL)
+        .unwrap()
+        .rewrap;
+    let new_key = server.unlock_key(&device, "new password");
+    assert_eq!(
+        *rim_opaque::unwrap_rewrap(&new_key, PRINCIPAL, &unb64(&rewrap)).unwrap(),
+        *old_key
+    );
+    let password_wrap = || unb64(&store.wraps().password_wrap);
+    assert!(
+        rim_opaque::unwrap_data_key(&old_key, WrapKind::Password, PRINCIPAL, &password_wrap())
+            .is_ok(),
+        "nothing changes here before the server takes the change"
+    );
+
+    device.password_commit(&registration, PRINCIPAL).unwrap();
+    assert_eq!(
+        *rim_opaque::unwrap_data_key(&new_key, WrapKind::Password, PRINCIPAL, &password_wrap())
+            .unwrap(),
+        *data_key
+    );
+    assert!(
+        store.wraps().recovery_wrap.is_some(),
+        "the recovery wrap stays"
+    );
+    assert!(matches!(
+        device.password_commit(&registration, PRINCIPAL),
+        Err(AccountLockError::NoHandle)
+    ));
+
+    let (login, sealed) = server.login(&device, "new password").unwrap();
+    let registration = server.register(&device, "newer password");
+    device
+        .password_rewrap(&login, &sealed, &registration, PRINCIPAL)
+        .unwrap();
+    assert!(matches!(
+        device.password_commit(&registration, "rimp1_other"),
+        Err(AccountLockError::NoHandle)
+    ));
+}
+
+#[test]
+fn a_signup_elsewhere_keeps_the_unlocked_data_key_and_its_recovery_wrap() {
+    let mut server = Server::new();
+    let (device, store) = device();
+    signup(&mut server, &device, "password", false);
+    let data_key = device.data_key(PRINCIPAL).unwrap();
+    let recovery_wrap = store.wraps().recovery_wrap;
+
+    let mut elsewhere = Server::new();
+    elsewhere.share = [8; 32];
+    let handle = elsewhere.register(&device, "password");
+    let unlocked = device
+        .unlock_after_signup(&handle, PRINCIPAL, &b64(&elsewhere.share), None, true)
+        .unwrap();
+    assert!(!unlocked.started_empty);
+    assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
+    assert_eq!(store.wraps().recovery_wrap, recovery_wrap);
+    assert!(store.wraps().keep_wrap.is_some());
+
+    device.lock_account(PRINCIPAL);
+    let (handle, sealed) = elsewhere.login(&device, "password").unwrap();
+    device
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
+        .unwrap();
+    assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
+}
+
+#[test]
+fn the_recovery_phrase_wraps_the_unlocked_data_key() {
+    let mut server = Server::new();
+    let (device, store) = device();
+    let handle = server.register(&device, "password");
+    device
+        .unlock_after_signup(&handle, PRINCIPAL, &b64(&server.share), None, false)
+        .unwrap();
+    assert!(store.wraps().recovery_wrap.is_none());
+    let data_key = device.data_key(PRINCIPAL).unwrap();
+
+    device.add_recovery_wrap(PRINCIPAL, &b64(&ENTROPY)).unwrap();
+    device.lock_account(PRINCIPAL);
+    assert!(matches!(
+        device.add_recovery_wrap(PRINCIPAL, &b64(&ENTROPY)),
+        Err(AccountLockError::Locked)
+    ));
+    device
+        .unlock_with_recovery(PRINCIPAL, &b64(&ENTROPY))
+        .unwrap()
+        .unwrap();
+    assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
+}

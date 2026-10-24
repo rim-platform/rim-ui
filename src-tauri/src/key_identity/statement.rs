@@ -30,6 +30,7 @@ pub(crate) mod context {
     pub(crate) const PLUGIN_MANIFEST: &[u8] = b"rim.plugin-manifest.v1\0";
     pub(crate) const DEVICE_REQUEST: &[u8] = b"rim.device-request.v1\0";
     pub(crate) const DELEGATION: &[u8] = b"rim.delegation.v1\0";
+    pub(crate) const PASSWORD_RESET: &[u8] = b"rim.password-reset.v1\0";
 }
 
 const PRINCIPAL_DOMAIN: &[u8] = b"rim.principal.v1\0";
@@ -350,6 +351,18 @@ struct Login<'a> {
     device_id: &'a str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PasswordReset<'a> {
+    v: u8,
+    #[serde(rename = "type")]
+    kind: &'a str,
+    principal_id: &'a str,
+    challenge_id: &'a str,
+    nonce: &'a str,
+    audience: &'a str,
+}
+
 fn json<T: Serialize>(value: &T) -> String {
     // Serializing these plain structs cannot fail.
     serde_json::to_string(value).unwrap_or_default()
@@ -488,6 +501,28 @@ pub(crate) fn login(device: &SecretKey, input: &LoginInput<'_>) -> Statement {
         device_id: input.device_id,
     });
     device.sign(context::LOGIN, payload)
+}
+
+/// What a password reset says: the account, a `passwordResetChallenge` and the server it is for.
+pub(crate) struct PasswordResetInput<'a> {
+    pub(crate) principal_id: &'a str,
+    pub(crate) challenge_id: &'a str,
+    pub(crate) nonce: &'a str,
+    pub(crate) audience: &'a str,
+}
+
+/// A password reset signed by the recovery key: proves the person holds the recovery phrase,
+/// so the server lets them register a new password. Always version 2.
+pub(crate) fn password_reset(recovery: &SecretKey, input: &PasswordResetInput<'_>) -> Statement {
+    let payload = json(&PasswordReset {
+        v: WRITE_VERSION,
+        kind: "password-reset",
+        principal_id: input.principal_id,
+        challenge_id: input.challenge_id,
+        nonce: input.nonce,
+        audience: input.audience,
+    });
+    recovery.sign(context::PASSWORD_RESET, payload)
 }
 
 /// What a device request says: a request to a space hosted elsewhere, for `host`.
@@ -1470,5 +1505,25 @@ mod tests {
         assert!(SecretKey::from_text(&text).unwrap() == key);
         assert!(SecretKey::from_text("ed25519:AAAA").is_err());
         assert!(SecretKey::from_text(&text.replace("ed25519:", "mldsa:")).is_err());
+    }
+
+    #[test]
+    fn a_password_reset_is_signed_by_the_recovery_key_for_its_own_purpose() {
+        let reset = password_reset(
+            &key(101),
+            &PasswordResetInput {
+                principal_id: PRINCIPAL,
+                challenge_id: "00000000-0000-0000-0000-000000000009",
+                nonce: "bm9uY2U",
+                audience: "localhost:8080",
+            },
+        );
+        assert_eq!(
+            reset.payload,
+            r#"{"v":2,"type":"password-reset","principalId":"rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0","challengeId":"00000000-0000-0000-0000-000000000009","nonce":"bm9uY2U","audience":"localhost:8080"}"#
+        );
+        assert!(verify(&reset, context::PASSWORD_RESET, RECOVERY, 2));
+        assert!(!verify(&reset, context::LOGIN, RECOVERY, 2));
+        assert!(!verify(&reset, context::PASSWORD_RESET, IDENTITY, 2));
     }
 }

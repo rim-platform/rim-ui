@@ -1628,3 +1628,21 @@ fn pending_links_are_sealed_and_written_only_while_unlocked() {
     assert!(stored.get("secret").is_none() && stored.get("answer").is_none());
     assert!(!raw.contains(&answer.device_id));
 }
+
+#[test]
+fn a_password_reset_is_signed_by_the_phrase_recovery_key() {
+    let entropy = [5u8; recovery_kit::PHRASE_ENTROPY_LEN];
+    let recovery = recovery_kit::phrase_key(&entropy).unwrap().public_key();
+    let principal = "rimp1_txDLbnipi5i3kCJtJwBOUixzv_MY8OnU0mcy--Tyje0";
+    let reset =
+        sign_password_reset(ENDPOINT, principal, &statement::b64(&entropy), &challenge()).unwrap();
+    assert!(verify(&reset, context::PASSWORD_RESET, &recovery, 2));
+    assert_eq!(payload_field(&reset, "type"), "password-reset");
+    assert_eq!(payload_field(&reset, "audience"), "localhost:8080");
+    assert_eq!(payload_field(&reset, "principalId"), principal);
+
+    assert!(matches!(
+        sign_password_reset(ENDPOINT, principal, "AAAA", &challenge()),
+        Err(KeyIdentityError::Invalid(_))
+    ));
+}

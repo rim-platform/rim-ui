@@ -295,6 +295,18 @@ pub async fn key_identity_begin_recovery(
     .await
 }
 
+/// Sign a `password-reset` statement over `challenge` with the recovery key of the phrase whose
+/// 16 bytes `entropy` holds (base64url), for the server at `endpoint`.
+#[tauri::command]
+pub async fn key_identity_sign_password_reset(
+    endpoint: String,
+    principal_id: String,
+    entropy: Zeroizing<String>,
+    challenge: Challenge,
+) -> Result<Statement, KeyIdentityError> {
+    super::sign_password_reset(&endpoint, &principal_id, &entropy, &challenge)
+}
+
 /// Undo a recovery the server refused, putting back any keys it replaced.
 #[tauri::command]
 pub async fn key_identity_discard_recovery(

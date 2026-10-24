@@ -219,6 +219,45 @@ pub(crate) fn audience(endpoint: &str) -> Result<String> {
     Ok(authority.to_ascii_lowercase())
 }
 
+/// A `password-reset` statement for `principal_id` over a `passwordResetChallenge`, signed by
+/// the recovery key of the phrase whose 16 bytes `entropy` holds (base64url), for the server at
+/// `endpoint`. The server checks that the key is its key log head's recovery key.
+///
+/// # Errors
+/// [`KeyIdentityError::Invalid`] when `entropy` is not 16 bytes of base64url or `endpoint` is not
+/// an absolute URL.
+pub(crate) fn sign_password_reset(
+    endpoint: &str,
+    principal_id: &str,
+    entropy: &str,
+    challenge: &Challenge,
+) -> Result<Statement> {
+    let audience = audience(endpoint)?;
+    let bytes =
+        Zeroizing::new(statement::unb64(entropy.trim()).map_err(|_| {
+            KeyIdentityError::Invalid("the recovery entropy is not base64url".into())
+        })?);
+    let mut phrase: recovery_kit::PhraseEntropy =
+        Zeroizing::new([0u8; recovery_kit::PHRASE_ENTROPY_LEN]);
+    if bytes.len() != phrase.len() {
+        return Err(KeyIdentityError::Invalid(format!(
+            "the recovery entropy must be {} bytes",
+            recovery_kit::PHRASE_ENTROPY_LEN
+        )));
+    }
+    phrase.copy_from_slice(&bytes);
+    let recovery = recovery_kit::phrase_key(&phrase)?;
+    Ok(statement::password_reset(
+        &recovery,
+        &statement::PasswordResetInput {
+            principal_id,
+            challenge_id: &challenge.challenge_id,
+            nonce: &challenge.nonce,
+            audience: &audience,
+        },
+    ))
+}
+
 /// A server id as issued: `rims1_` and 32 bytes of unpadded base64url.
 pub(crate) fn valid_server_id(text: &str) -> bool {
     text.strip_prefix("rims1_")
