@@ -787,16 +787,6 @@ impl AccountLock {
         lock(&self.unlocked).get(principal_id).cloned()
     }
 
-    /// Whether this device holds a password wrap of the account's data key: the account has
-    /// been unlocked here with its password, so it has one.
-    pub(crate) fn has_password_wrap(&self, principal_id: &str) -> Result<bool> {
-        check_principal(principal_id)?;
-        let _guard = lock(&self.records);
-        Ok(self
-            .wraps(principal_id)?
-            .is_some_and(|wraps| !wraps.password_wrap.is_empty()))
-    }
-
     /// Whether the account is unlocked.
     pub(crate) fn is_unlocked(&self, principal_id: &str) -> bool {
         lock(&self.unlocked).contains_key(principal_id)

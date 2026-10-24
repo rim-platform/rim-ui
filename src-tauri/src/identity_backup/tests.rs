@@ -84,7 +84,7 @@ fn record(principal: &str, identity: Option<&SecretKey>) -> KeyRecord {
     }
 }
 
-/// Enroll on `computer`; returns the principal, the key log and the recovery phrase.
+/// Sign up on `computer`; returns the principal, the key log and the recovery phrase.
 fn enroll(computer: &Computer) -> (String, Vec<Statement>, String) {
     let draft = computer.keys.begin_enrollment("Laptop").unwrap();
     let server = ServerAccount {
@@ -98,7 +98,12 @@ fn enroll(computer: &Computer) -> (String, Vec<Statement>, String) {
     };
     let statements = computer
         .keys
-        .sign_enrollment(&draft.draft_id, &server, &challenge)
+        .sign_signup(
+            &draft.draft_id,
+            &server.endpoint,
+            &server.username,
+            &challenge,
+        )
         .unwrap();
     computer
         .keys

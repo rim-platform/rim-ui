@@ -1536,17 +1536,23 @@ fn each_account_s_key_is_sealed_under_its_data_key_in_the_vault() {
     // No keys on this device for the account: nothing can unlock its cache.
     assert!(matches!(state.store(&alice), Err(CacheError::Locked)));
     let draft = keys.begin_enrollment("Laptop").unwrap();
-    keys.sign_enrollment(
+    keys.sign_signup(
         &draft.draft_id,
+        &alice.endpoint,
+        "alice",
+        &Challenge {
+            challenge_id: "00000000-0000-0000-0000-000000000009".into(),
+            nonce: "bm9uY2U".into(),
+        },
+    )
+    .unwrap();
+    keys.settle(
         &ServerAccount {
             endpoint: alice.endpoint.clone(),
             user_id: alice.user_id.clone(),
             username: "alice".into(),
         },
-        &Challenge {
-            challenge_id: "00000000-0000-0000-0000-000000000009".into(),
-            nonce: "bm9uY2U".into(),
-        },
+        Some(draft.principal_id.as_str()),
     )
     .unwrap();
     let principal = draft.principal_id.clone();
