@@ -275,7 +275,7 @@ once per opening) and shows:
 ## Trying it with two desktops
 
 Needs rim-server with the e2ee server work (S4-1) merged and running locally, and two accounts
-that signed in with device keys (key-only signup or enrollment, `docs/device-linking-desktop.md`).
+that signed in with device keys (a key signup, `docs/device-linking-desktop.md`).
 
 1. Run the server and export its schema: `curl -s http://localhost:8080/api/sdl > schema.graphql
    && npm run codegen`.

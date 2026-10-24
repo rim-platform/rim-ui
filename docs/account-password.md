@@ -20,9 +20,9 @@ says where the client's half lives.
 | `src/core/accountVault/` | The web app's account lock: the derivations and AES-256-GCM wraps byte for byte as `rim_opaque` makes them (`crypto.ts`), the wraps of each account's data key (`dkWraps.ts`), the vault that holds the unlocked account's keys in memory and seals records under them (`accountVault.ts`, `sealedRecords.ts`), and the account's sealed small values (`sealedStorage.ts`) |
 | `src/features/auth/runtime/accountUnlock.ts` | The web app's unlocks after a login, a signup, the recovery phrase and a kept session, and the lock at sign-out |
 | `src/features/auth/runtime/unlockGate.ts` | Whether the signed-in account is unlocked; the app's shell renders nothing that reads its data until it is |
-| `src/features/auth/api/passwordApi.ts` | The password's GraphQL calls (registration, login, change, reset, a first password), and the errors a sign-in reads: `PasswordLockedError`, `PasswordWaitError`, `WrongPasswordError` |
+| `src/features/auth/api/passwordApi.ts` | The password's GraphQL calls (registration, login, change, reset), and the errors a sign-in reads: `PasswordLockedError`, `PasswordWaitError`, `WrongPasswordError` |
 | `src/features/auth/runtime/opaqueFlows.ts` | One shape for the OPAQUE flows on either platform: `startRegistration` and `startLogin` run the WebAssembly module in the web app and the desktop's commands behind a handle, then serve the unlock or a password change's rewrap |
-| `src/features/auth/runtime/passwordChanges.ts` | Changing the password, resetting it with the recovery phrase, and setting the first password of an account that has none |
+| `src/features/auth/runtime/passwordChanges.ts` | Changing the password and resetting it with the recovery phrase |
 | `src/features/key-identity/api/keyIdentity.ts` | `signInWithPassword` and `signupWithKey`, the password and the device key together |
 | `src/features/auth/password.ts`, `src/features/auth/components/Password*.tsx` | The PIN and passphrase rules and the screens that ask for the password |
 | `src/core/graphql/sessionSecret.ts` | The session secret of an unkept session, in memory only |
@@ -222,15 +222,10 @@ device key signs, so the keys sealed under the data key are open when it does:
 5. `keyLoginChallenge`, the device proof and `loginWithKey` with the ticket. A failure here locks
    the account again.
 
-When the OPAQUE finish fails on a device that holds no password wrap of the account
-(`hasPasswordWrap`, `account_has_password_wrap`: it never unlocked the account with a password),
-the device key alone is tried, with the same "Keep me signed in" arguments. A server account
-without a password answers `mustSetPassword`, and the app then shows only the screen that sets
-one (`setPasswordStart` and `setPassword`, then the unlock with a new data key). Any other
-session that call opens is logged out and the account locked at once, and the sign-in says
-"Wrong password". With `options.recoveryEntropy` (the
-person typed the phrase already, while recovering or resetting) the phrase opens the data when it
-needs it, and the data key is wrapped under it afterwards.
+When the OPAQUE finish fails, the sign-in says "Wrong password" and nothing is signed or sent
+after `passwordLoginStart`: every account of this server needs the ticket. With
+`options.recoveryEntropy` (the person typed the phrase already, while recovering or resetting)
+the phrase opens the data when it needs it, and the data key is wrapped under it afterwards.
 
 `signupWithKey` registers the password first (`passwordRegistrationStart`, the OPAQUE finish, the
 upload in `signupWithKey`'s `passwordRegistration`) and then unlocks the new account with a new
@@ -250,10 +245,8 @@ the recovery wrap on this device.
 desktop app, which writes its own keep wrap at the unlock, and false in the web app
 (`keepSignedInArguments` in `passwordApi.ts`). What the server answers goes to `holdSession` once
 the account is unlocked: the session secret of an unkept session is held before any other
-request, and a kept web session's keep key wraps the data key. A first password set by a session
-that signed in with the key alone holds the session the same way, reading a kept web session's
-keep key from `sessionKeepKey`. An expired session goes to the sign-in screen: nothing signs in
-again with the device key alone.
+request, and a kept web session's keep key wraps the data key. An expired session goes to the
+sign-in screen: nothing signs in again with the device key alone.
 
 ### Switching relays
 

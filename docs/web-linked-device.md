@@ -3,9 +3,9 @@
 As a linked device, the web app holds no identity key. It gets a device key of its own by pasting
 a link code shown on the desktop app (Settings > Security > Link a device), and signs in with that
 key; linking other devices, revoking and rotating stay with the device that holds the identity
-key. The web app can also hold an identity of its own: it signs up with a key, enrolls a password
-account and recovers an account with its recovery kit, keeps the identity key as a non-extractable
-WebCrypto key in IndexedDB, and shows "Link a device" while it holds that key. The contract is
+key. The web app can also hold an identity of its own: it signs up with a key and recovers an
+account with its recovery kit, keeps the identity key as a non-extractable WebCrypto key in
+IndexedDB, and shows "Link a device" while it holds that key. The contract is
 `../rim-server/docs/specs/device-linking-v1.md` ("Web client", "Channel cryptography", "Client
 rules — New device", appendix A) and `../rim-server/docs/specs/key-identity-v1.md`;
 `device-linking-desktop.md` describes the desktop side.
@@ -117,8 +117,8 @@ a `web` offer. Revoke a browser you no longer use from the desktop's device list
 
 ## Trying it against a desktop old device
 
-1. Run the server and the desktop app against it; on the desktop, sign in, set up key sign-in in
-   Settings > Security, and choose "Link a device".
+1. Run the server and the desktop app against it; on the desktop, sign up or sign in, and choose
+   "Link a device" in Settings > Security.
 2. Run the web app (`npm run dev`) with `VITE_GRAPHQL_ENDPOINT` set to the same endpoint the
    desktop uses (the code carries it and the browser refuses another), in a browser with WebCrypto
    Ed25519 (current Chrome, Firefox or Safari). The server's CORS settings must allow the dev

@@ -51,7 +51,7 @@ Two computers (or two OS users, each with its own secret vault), the same server
 both can reach (a shared folder, the same Google Drive, Dropbox or OneDrive account, the same S3
 bucket, or the same backup endpoint):
 
-1. On computer A, sign in and set up key sign-in in Settings > Security. Save the recovery kit.
+1. On computer A, sign up and save the recovery kit.
 2. On A, set up the history archive in Settings > History. Back in Settings > Security,
    "Identity key backup" says the archive holds a copy.
 3. Link computer B from A ("Link a device"), and on B join the same archive with its passphrase

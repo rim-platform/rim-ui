@@ -82,7 +82,7 @@ Both instances must use the same server (the code carries the endpoint and the n
 another), and each needs its own secret vault and credential store entry, so run them as two OS
 users or on two machines:
 
-1. On the first, sign in, set up key sign-in in Settings > Security, and choose "Link a device".
+1. On the first, sign up or sign in, and choose "Link a device" in Settings > Security.
 2. On the second, open the sign-in screen, choose "Link this device with its code", paste the
    code, and keep the fingerprint in view.
 3. On the first, compare the fingerprint, adjust the name, and confirm. The second signs in; the

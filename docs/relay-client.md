@@ -7,8 +7,8 @@ and checked here against the host's key, pinned on first use. The contract is ri
 `docs/specs/server-to-server-v1.md`; this document says how the desktop and the web app
 implement their side of it.
 
-Everything here switches on when the server answers `relayInfo`. A server without it, or an
-account without a principal id (no key sign-in yet), runs exactly as before.
+Everything here switches on when the server answers `relayInfo`. A server without it runs exactly
+as before.
 
 ## What lives where
 
@@ -408,9 +408,8 @@ another account or another relay.
 
 - **Where the person signs up.** In `pow` mode the login page links to `/join` wherever the app
   can hold keys (the desktop app, and a browser with WebCrypto Ed25519 and IndexedDB), and that
-  page offers only "Create account with a key" (a password signup takes a token there). A
-  browser that cannot hold keys says to use the desktop app or an invite. An invite
-  link's page is unchanged, and its token skips the proof.
+  page offers the key signup. A browser that cannot hold keys says to use the desktop app or an
+  invite. An invite link's page is unchanged, and its token skips the proof.
 - **When.** `signupWithKey` (`key-identity/api/keyIdentity.ts`) reads this server's discovery
   document first (fetched from the transport origin and verified against the identity origin,
   "This server's address" above; `pow/proofOfWork.ts` `readRegistration`), and in `pow` mode
