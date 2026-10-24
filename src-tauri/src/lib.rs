@@ -1,3 +1,4 @@
+mod account_lock;
 mod agent_proxy;
 mod e2ee;
 mod history_archive;
@@ -59,6 +60,7 @@ pub fn run() {
             app.manage(history_archive::init(&app_data_dir, vault.clone()));
             app.manage(offline_session::init(vault.clone()));
             app.manage(key_identity::init(vault.clone()));
+            app.manage(account_lock::init(vault.clone()));
             app.manage(e2ee::attachment_state());
             app.manage(relay::direct::DirectState::default());
             app.manage(relay::pow::PowState::default());
@@ -220,6 +222,16 @@ pub fn run() {
             key_identity::commands::key_identity_link_offer,
             key_identity::commands::key_identity_link_open_answer,
             key_identity::commands::key_identity_link_accept,
+            account_lock::commands::opaque_registration_start,
+            account_lock::commands::opaque_registration_finish,
+            account_lock::commands::opaque_login_start,
+            account_lock::commands::opaque_login_finish,
+            account_lock::commands::account_unlock_after_login,
+            account_lock::commands::account_unlock_after_signup,
+            account_lock::commands::account_unlock_kept,
+            account_lock::commands::account_unlock_with_recovery,
+            account_lock::commands::account_lock,
+            account_lock::commands::account_forget_keep,
             updater::updater_status,
         ])
         .build(context)

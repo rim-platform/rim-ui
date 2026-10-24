@@ -6,6 +6,7 @@ src-tauri/gen
 src/core/graphql/generated
 sdk/plugin-sdk/src/generated
 src/features/e2ee/wasm
+src/features/auth/opaque/wasm
 package-lock.json
 schema.graphql
 *.md

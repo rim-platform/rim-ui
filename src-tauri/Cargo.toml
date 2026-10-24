@@ -88,6 +88,8 @@ bip39 = { version = "2.2", default-features = false, features = ["zeroize"] }
 aes-gcm = "0.10"
 # End-to-end encryption (crates/rim_mls): MLS groups for DMs and private groups.
 rim_mls = { path = "crates/rim_mls" }
+# The account password (src/account_lock): OPAQUE and the wraps of each account's data key.
+rim_opaque = { path = "crates/rim_opaque" }
 
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
@@ -99,6 +101,9 @@ jsonschema = { version = "0.58", default-features = false }
 # A small blocking HTTP server: the fake Google Drive and Dropbox the archive's cloud providers
 # are tested against.
 tiny_http = "0.12"
+# The OPAQUE server the account lock's tests sign in against.
+opaque-ke = { version = "4.0.1", default-features = false, features = ["ristretto255", "argon2"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 
 # The browser build of `rim_mls` (`crates/rim_mls_wasm`, `npm run build:wasm`): smaller than
@@ -112,4 +117,12 @@ codegen-units = 1
 # The signup proof-of-work (src/relay/pow.rs) hashes millions of times: optimized even in
 # development builds, so a signup there takes seconds, not minutes.
 [profile.dev.package.sha2]
+opt-level = 3
+
+# Argon2id at the account password's cost (64 MiB, 3 passes, crates/rim_opaque) takes many
+# seconds unoptimized: optimized in development and test builds too.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
 opt-level = 3
