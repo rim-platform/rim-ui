@@ -1,27 +1,30 @@
 //! The shared OPAQUE test vector, `vectors/opaque-v1.json`: one registration and one login of
-//! the RIM suite, every message drawn from one seeded RNG. The server runs the same replay over
-//! the same file, so both sides prove they speak the same suite byte for byte.
+//! the RIM suite, every message drawn from one seeded RNG. The server replays the same file, so
+//! both sides prove they speak the same suite byte for byte.
 //!
-//! The randomness is `ChaCha20Rng::from_seed(seed)` (`rand_chacha` 0.3), one stream drawn by
-//! these calls in this order:
-//! 1. `ServerSetup::<RimOpaque>::new`
+//! The randomness is one `ChaCha20Rng::from_seed([7; 32])` (`rand_chacha` 0.3), drawn by these
+//! calls in this order:
+//! 1. `ServerSetup::new`
 //! 2. `ClientRegistration::start(password)`
-//! 3. `ServerRegistration::start(setup, request, credential identifier)` (draws nothing)
+//! 3. `ServerRegistration::start(setup, request, credential id)`
 //! 4. `ClientRegistration::finish(password, response, default parameters)`
-//! 5. `ClientLogin::start(password)`
-//! 6. `ServerLogin::start(setup, record, request, credential identifier, context)`
-//! 7. `ClientLogin::finish(password, response, context)`
-//! 8. `ServerLogin::finish(finalization, context)` (draws nothing)
+//! 5. `ServerRegistration::finish(upload)`: the password file
+//! 6. `ClientLogin::start(password)`
+//! 7. `ServerLogin::start(setup, password file, request, credential id, context)`
+//! 8. `ClientLogin::finish(password, response, context)`
+//! 9. `ServerLogin::finish(finalization, context)`
 //!
-//! Bytes are lowercase hex. The file is `serde_json::to_string_pretty` of [`Vector`] plus a
-//! newline. `RIM_WRITE_OPAQUE_VECTORS=1 cargo test -p rim_opaque --test vectors` rewrites it.
+//! The context is `rim-opaque-v1`. Byte values are unpadded base64url, the seed is hex. The file
+//! is `serde_json::to_string_pretty` of [`Vector`] plus a newline;
+//! `cargo test -p rim_opaque --test vectors -- --ignored` rewrites it.
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use opaque_ke::{
-    RegistrationRequest, RegistrationUpload, ServerLogin, ServerLoginParameters,
-    ServerRegistration, ServerSetup,
+    CredentialFinalization, CredentialRequest, RegistrationRequest, RegistrationUpload,
+    ServerLogin, ServerLoginParameters, ServerRegistration, ServerSetup,
 };
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -33,53 +36,58 @@ wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 const FILE: &str = include_str!("vectors/opaque-v1.json");
 
-const SEED: [u8; 32] = [
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-];
+const SEED: [u8; 32] = [7; 32];
 const PASSWORD: &str = "correct horse battery staple";
-const CREDENTIAL_IDENTIFIER: &str = "rimp1_gCe9rL-U8tJXIPz_3ZZlu1yhaGJ6cv7zXgpTQjg9FUI";
+const CREDENTIAL_ID: &str = "rimp1_vectortest";
 
 /// The vector file.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Vector {
-    /// The suite, in words.
+    /// The suite's name, which is also the login context.
     suite: String,
-    /// The login context, as UTF-8.
-    context: String,
-    /// The 32-byte `ChaCha20Rng` seed.
+    /// The 32-byte `ChaCha20Rng` seed, hex.
     seed: String,
     /// The password, as UTF-8.
     password: String,
-    /// The credential identifier (the principal id), as UTF-8.
-    credential_identifier: String,
+    /// The credential identifier, as UTF-8.
+    credential_id: String,
     server_setup: String,
     registration_request: String,
     registration_response: String,
     registration_upload: String,
+    registration_export_key: String,
+    password_file: String,
     credential_request: String,
     credential_response: String,
     credential_finalization: String,
-    /// The export key, the same from the registration and the login.
-    export_key: String,
-    /// The session key, the same on both sides.
-    session_key: String,
+    login_export_key: String,
+    client_session_key: String,
+    server_session_key: String,
+}
+
+fn b64(bytes: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn unb64(text: &str) -> Vec<u8> {
+    URL_SAFE_NO_PAD.decode(text).unwrap()
 }
 
 /// Runs the registration and the login from the seed, the client through this crate.
-fn generate(seed: [u8; 32], password: &str, credential_identifier: &str) -> Vector {
+fn generate(seed: [u8; 32], password: &str, credential_id: &str) -> Vector {
     let mut rng = ChaCha20Rng::from_seed(seed);
-    let password_bytes = password.as_bytes();
-    let id = credential_identifier.as_bytes();
-    let context = ServerLoginParameters {
+    let pw = password.as_bytes();
+    let id = credential_id.as_bytes();
+    let parameters = || ServerLoginParameters {
         context: Some(LOGIN_CONTEXT),
-        ..Default::default()
+        identifiers: Default::default(),
     };
 
     let setup = ServerSetup::<RimOpaque>::new(&mut rng);
 
     let (registration, registration_request) =
-        ClientRegistrationFlow::start_with_rng(&mut rng, password_bytes).unwrap();
+        ClientRegistrationFlow::start_with_rng(&mut rng, pw).unwrap();
     let registration_response = ServerRegistration::<RimOpaque>::start(
         &setup,
         RegistrationRequest::deserialize(&registration_request).unwrap(),
@@ -90,59 +98,52 @@ fn generate(seed: [u8; 32], password: &str, credential_identifier: &str) -> Vect
     .serialize()
     .to_vec();
     let (registration_upload, registration_export_key) = registration
-        .finish_with_rng(&mut rng, password_bytes, &registration_response)
+        .finish_with_rng(&mut rng, pw, &registration_response)
         .unwrap();
-    let record = ServerRegistration::<RimOpaque>::finish(
+    let password_file = ServerRegistration::<RimOpaque>::finish(
         RegistrationUpload::deserialize(&registration_upload).unwrap(),
     );
 
-    let (login, credential_request) =
-        ClientLoginFlow::start_with_rng(&mut rng, password_bytes).unwrap();
+    let (login, credential_request) = ClientLoginFlow::start_with_rng(&mut rng, pw).unwrap();
     let server = ServerLogin::start(
         &mut rng,
         &setup,
-        Some(record),
-        opaque_ke::CredentialRequest::deserialize(&credential_request).unwrap(),
+        Some(password_file.clone()),
+        CredentialRequest::deserialize(&credential_request).unwrap(),
         id,
-        context.clone(),
+        parameters(),
     )
     .unwrap();
     let credential_response = server.message.serialize().to_vec();
     let finished = login
-        .finish_with_rng(&mut rng, password_bytes, &credential_response)
+        .finish_with_rng(&mut rng, pw, &credential_response)
         .unwrap();
     let server_session_key = server
         .state
         .finish(
-            opaque_ke::CredentialFinalization::deserialize(&finished.finalization).unwrap(),
-            context,
+            CredentialFinalization::deserialize(&finished.finalization).unwrap(),
+            parameters(),
         )
         .unwrap()
         .session_key;
 
-    assert_eq!(*registration_export_key, *finished.export_key);
-    assert_eq!(
-        finished.session_key.as_slice(),
-        server_session_key.as_slice()
-    );
-
     Vector {
-        suite: "OPRF ristretto255-SHA512; 3DH ristretto255 with SHA-512; KSF Argon2id v19 \
-                m=65536 t=3 p=4 with a zero salt"
-            .into(),
-        context: String::from_utf8(LOGIN_CONTEXT.to_vec()).unwrap(),
-        seed: hex::encode(seed),
+        suite: String::from_utf8(LOGIN_CONTEXT.to_vec()).unwrap(),
+        seed: seed.iter().map(|b| format!("{b:02x}")).collect(),
         password: password.into(),
-        credential_identifier: credential_identifier.into(),
-        server_setup: hex::encode(setup.serialize()),
-        registration_request: hex::encode(registration_request),
-        registration_response: hex::encode(registration_response),
-        registration_upload: hex::encode(registration_upload),
-        credential_request: hex::encode(credential_request),
-        credential_response: hex::encode(credential_response),
-        credential_finalization: hex::encode(&finished.finalization),
-        export_key: hex::encode(finished.export_key.as_slice()),
-        session_key: hex::encode(finished.session_key.as_slice()),
+        credential_id: credential_id.into(),
+        server_setup: b64(&setup.serialize()),
+        registration_request: b64(&registration_request),
+        registration_response: b64(&registration_response),
+        registration_upload: b64(&registration_upload),
+        registration_export_key: b64(registration_export_key.as_ref()),
+        password_file: b64(&password_file.serialize()),
+        credential_request: b64(&credential_request),
+        credential_response: b64(&credential_response),
+        credential_finalization: b64(&finished.finalization),
+        login_export_key: b64(finished.export_key.as_ref()),
+        client_session_key: b64(finished.session_key.as_ref()),
+        server_session_key: b64(&server_session_key),
     }
 }
 
@@ -151,65 +152,56 @@ fn file_text(vector: &Vector) -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn write_requested() -> bool {
-    std::env::var_os("RIM_WRITE_OPAQUE_VECTORS").is_some_and(|v| v == "1")
-}
-
-#[cfg(target_arch = "wasm32")]
-fn write_requested() -> bool {
-    false
+#[test]
+#[ignore = "rewrites the vector file"]
+fn generate_the_vector() {
+    std::fs::write(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors/opaque-v1.json"),
+        file_text(&generate(SEED, PASSWORD, CREDENTIAL_ID)),
+    )
+    .unwrap();
 }
 
 #[test]
 fn the_vector_replays() {
-    if write_requested() {
-        let generated = generate(SEED, PASSWORD, CREDENTIAL_IDENTIFIER);
-        #[cfg(not(target_arch = "wasm32"))]
-        std::fs::write(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors/opaque-v1.json"),
-            file_text(&generated),
-        )
-        .unwrap();
-        return;
-    }
     let stored: Vector = serde_json::from_str(FILE).unwrap();
-    let seed: [u8; 32] = hex::decode(&stored.seed).unwrap().try_into().unwrap();
-    let replayed = generate(seed, &stored.password, &stored.credential_identifier);
+    assert_eq!(stored.seed, "07".repeat(32));
+    let replayed = generate(SEED, &stored.password, &stored.credential_id);
     assert_eq!(replayed, stored);
     assert_eq!(
         file_text(&replayed),
         FILE,
         "the file is byte for byte the generator's"
     );
+    assert_eq!(replayed.registration_export_key, replayed.login_export_key);
+    assert_eq!(replayed.client_session_key, replayed.server_session_key);
 }
 
 #[test]
-fn the_client_alone_reproduces_the_login() {
+fn the_client_alone_reproduces_its_messages_and_keys() {
     let stored: Vector = serde_json::from_str(FILE).unwrap();
-    let response = hex::decode(&stored.credential_response).unwrap();
+    let pw = stored.password.as_bytes();
 
-    // The client's draws, without the server's: the same stream, skipping what the server took.
-    let seed: [u8; 32] = hex::decode(&stored.seed).unwrap().try_into().unwrap();
-    let mut rng = ChaCha20Rng::from_seed(seed);
+    // The client's draws from the same stream, skipping the server's.
+    let mut rng = ChaCha20Rng::from_seed(SEED);
     let _ = ServerSetup::<RimOpaque>::new(&mut rng);
-    let (registration, _) =
-        ClientRegistrationFlow::start_with_rng(&mut rng, stored.password.as_bytes()).unwrap();
-    let registration_response = hex::decode(&stored.registration_response).unwrap();
-    let (upload, _) = registration
-        .finish_with_rng(&mut rng, stored.password.as_bytes(), &registration_response)
+    let (registration, request) = ClientRegistrationFlow::start_with_rng(&mut rng, pw).unwrap();
+    assert_eq!(b64(&request), stored.registration_request);
+    let (upload, export_key) = registration
+        .finish_with_rng(&mut rng, pw, &unb64(&stored.registration_response))
         .unwrap();
-    assert_eq!(hex::encode(upload), stored.registration_upload);
+    assert_eq!(b64(&upload), stored.registration_upload);
+    assert_eq!(b64(export_key.as_ref()), stored.registration_export_key);
 
-    let (login, request) =
-        ClientLoginFlow::start_with_rng(&mut rng, stored.password.as_bytes()).unwrap();
-    assert_eq!(hex::encode(request), stored.credential_request);
-    let finished = login.finish(stored.password.as_bytes(), &response).unwrap();
+    let (login, request) = ClientLoginFlow::start_with_rng(&mut rng, pw).unwrap();
+    assert_eq!(b64(&request), stored.credential_request);
+    let finished = login
+        .finish(pw, &unb64(&stored.credential_response))
+        .unwrap();
+    assert_eq!(b64(&finished.finalization), stored.credential_finalization);
+    assert_eq!(b64(finished.export_key.as_ref()), stored.login_export_key);
     assert_eq!(
-        hex::encode(finished.export_key.as_slice()),
-        stored.export_key
-    );
-    assert_eq!(
-        hex::encode(finished.session_key.as_slice()),
-        stored.session_key
+        b64(finished.session_key.as_ref()),
+        stored.client_session_key
     );
 }

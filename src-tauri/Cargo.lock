@@ -4959,9 +4959,9 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
+ "base64 0.22.1",
  "generic-array",
  "getrandom 0.2.17",
- "hex",
  "hkdf 0.12.4",
  "opaque-ke",
  "rand_chacha 0.3.1",
