@@ -22,8 +22,12 @@ onVaultLock(() =>
   })),
 );
 
-/** Upload retries retain their files and parent message until completed or explicitly dismissed. */
-export function useAttachmentUploads(workspaceId: string, conversationId?: string) {
+/**
+ * Upload retries retain their files and parent message until completed or explicitly dismissed.
+ *
+ * @returns The retained batches of `conversationId` alone; none for a composer without one.
+ */
+export function useAttachmentUploads(workspaceId: string, conversationId: string | undefined) {
   const qc = useQueryClient();
   const { failed, busy, generation } = useAttachmentUploadStore();
 
@@ -70,9 +74,7 @@ export function useAttachmentUploads(workspaceId: string, conversationId?: strin
 
   return {
     failed: failed.filter(
-      (batch) =>
-        batch.workspaceId === workspaceId &&
-        (!conversationId || batch.conversationId === conversationId),
+      (batch) => batch.workspaceId === workspaceId && batch.conversationId === conversationId,
     ),
     busy,
     run,

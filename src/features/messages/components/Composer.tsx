@@ -484,7 +484,7 @@ function MessageComposer(props: ComposerProps) {
         clearSent(unsentText, selected);
         noteSent();
         uploads.remember(err.batch);
-        toast.error(err.message);
+        if (!reportFeatureDisabled(err.cause, qc)) toast.error(err.message);
         return true;
       }
       const fallback = "Failed to send the encrypted message";

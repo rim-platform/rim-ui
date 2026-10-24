@@ -51,3 +51,21 @@ it("drops files on account lock and ignores a late upload failure", async () => 
   expect(result.current.failed).toEqual([]);
   expect(result.current.busy).toEqual([]);
 });
+
+it("lists only the batches of its own conversation", () => {
+  const client = createTestQueryClient();
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const file = new File(["text"], "notes.txt");
+  useAttachmentUploadStore.setState({
+    failed: [
+      { workspaceId: "workspace", conversationId: "one", messageId: "a", files: [{ file }] },
+      { workspaceId: "workspace", conversationId: "two", messageId: "b", files: [{ file }] },
+    ],
+  });
+  const own = renderHook(() => useAttachmentUploads("workspace", "one"), { wrapper });
+  expect(own.result.current.failed.map((batch) => batch.messageId)).toEqual(["a"]);
+  const draft = renderHook(() => useAttachmentUploads("workspace", undefined), { wrapper });
+  expect(draft.result.current.failed).toEqual([]);
+});

@@ -68,8 +68,13 @@ export class EncryptedSendError extends Error {
 
 /** The encrypted message was delivered, but its opaque files still need uploading. */
 export class EncryptedUploadError extends Error {
-  constructor(readonly batch: AttachmentUploadBatch) {
-    super("Message sent, but some files could not be uploaded. Retry the files below.");
+  constructor(
+    readonly batch: AttachmentUploadBatch,
+    cause?: unknown,
+  ) {
+    super("Message sent, but some files could not be uploaded. Retry the files below.", {
+      cause,
+    });
     this.name = "EncryptedUploadError";
   }
 }
@@ -290,8 +295,9 @@ export async function sendEncrypted(
     };
     try {
       await uploadAttachments(batch);
-    } catch {
-      throw new EncryptedUploadError(batch);
+    } catch (err) {
+      logger.warn("[RIM:e2ee] attachment upload failed:", err);
+      throw new EncryptedUploadError(batch, err);
     }
     invalidateTimeline(workspaceId, conversationId);
     return message.id;
