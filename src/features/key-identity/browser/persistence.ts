@@ -32,16 +32,27 @@ export async function persistStorage(): Promise<StoragePersistence> {
   return answer;
 }
 
-let queue: Promise<unknown> = Promise.resolve();
+const queues = new Map<string, Promise<unknown>>();
 
 /**
- * Run `task` alone: across tabs with the Web Locks API where the browser has it, in this page
- * otherwise. A task must not wait on another serialized task.
+ * Run `task` alone among the tasks of lock `name`: across tabs with the Web Locks API where the
+ * browser has it, in this page otherwise. A task must not wait on another task of the same lock.
+ */
+export function exclusive<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (locks?.request) return locks.request(name, task);
+  const run = (queues.get(name) ?? Promise.resolve()).then(task, task);
+  queues.set(
+    name,
+    run.catch(() => undefined),
+  );
+  return run;
+}
+
+/**
+ * Run `task` alone among the key store's work, as {@link exclusive} does. A task must not wait
+ * on another serialized task.
  */
 export function serialized<T>(task: () => Promise<T>): Promise<T> {
-  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  if (locks?.request) return locks.request("rim-key-identity", task);
-  const run = queue.then(task, task);
-  queue = run.catch(() => undefined);
-  return run;
+  return exclusive("rim-key-identity", task);
 }

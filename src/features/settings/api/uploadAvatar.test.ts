@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { http, HttpResponse } from "msw";
 
 import { server } from "../../../test/mocks/server";
+import { setSessionSecret } from "../../../core/graphql/sessionSecret";
 import { FeatureDisabledError } from "../../../core/serverFeatures";
 import { uploadAvatar } from "./useUpdateProfile";
 
@@ -46,5 +47,22 @@ describe("uploadAvatar", () => {
     );
 
     await expect(uploadAvatar(image)).resolves.toBe("/api/files/avatars/u1/avatar.png");
+  });
+
+  it("sends the session secret of an unkept session with the upload", async () => {
+    let secret: string | null = null;
+    server.use(
+      http.post("*/api/files/avatar", ({ request }) => {
+        secret = request.headers.get("x-rim-session-secret");
+        return HttpResponse.json({ url: "/api/files/avatars/u1/avatar.png" });
+      }),
+    );
+    setSessionSecret("c2VjcmV0");
+    try {
+      await uploadAvatar(image);
+    } finally {
+      setSessionSecret(null);
+    }
+    expect(secret).toBe("c2VjcmV0");
   });
 });

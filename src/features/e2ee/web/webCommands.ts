@@ -115,7 +115,7 @@ function me(account: WebAccount): DeviceRefView {
 /** This browser's device key, which signs `mls-key` statements and re-add requests. */
 async function deviceKey(account: WebAccount): Promise<CryptoKey> {
   const stored = await keyRecord(account.endpoint, account.principalId);
-  if (!stored?.confirmed) {
+  if (!stored?.confirmed || !stored.deviceKey) {
     throw new E2eeCommandError("E2EE_DEVICE_KEY", "this browser holds no device key for it");
   }
   return stored.deviceKey;

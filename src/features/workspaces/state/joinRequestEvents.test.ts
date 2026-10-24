@@ -30,6 +30,7 @@ import {
 } from "../../relay/remote/pendingRemoteJoins";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { handleRemoteJoinDecided } from "./joinRequestEvents";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const HOST = "rims1_host";
 const entry: PendingRemoteJoin = {
@@ -54,9 +55,10 @@ function decided(outcome: Decided["outcome"], workspaceId = "ws-acme"): Decided 
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
-  localStorage.clear();
+  // Pending requests are kept sealed with the unlocked account's other values.
+  await unlockTestVault();
   // This account's own id is not the one the host knows the person by.
   useAuthStore.setState({ session: { userId: "u-local" } });
   useNotificationSettingsStore.setState({ enabled: true, soundEnabled: true });
@@ -80,7 +82,6 @@ beforeEach(() => {
 afterEach(() => {
   useAuthStore.setState({ session: null });
   useRelayStore.getState().reset();
-  localStorage.clear();
 });
 
 describe("handleRemoteJoinDecided", () => {

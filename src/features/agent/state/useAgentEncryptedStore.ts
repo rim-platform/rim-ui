@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
 /** The warning shown before the agent may read an encrypted conversation. */
 export const AGENT_ENCRYPTED_WARNING =
@@ -27,9 +29,14 @@ export const useAgentEncryptedStore = create<AgentEncryptedState>()(
           return { allowed: next };
         }),
     }),
-    { name: "rim-agent-encrypted" },
+    {
+      name: "rim-agent-encrypted",
+      storage: createJSONStorage(() => sealedStateStorage),
+      skipHydration: true,
+    },
   ),
 );
+registerSealedStore(useAgentEncryptedStore);
 
 /** Whether the agent may use the encrypted conversation `conversationId`. */
 export function agentAllowedIn(conversationId: string): boolean {

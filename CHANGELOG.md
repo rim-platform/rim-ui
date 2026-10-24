@@ -538,3 +538,16 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   no permission prompt could approve it.
 
 [Unreleased]: https://github.com/rim-platform/rim-ui/commits/master
+
+### Security
+
+- The web app keeps each account's data in the browser encrypted under a key that only the
+  account's password, its recovery phrase or a kept session opens: its keys, encrypted messages,
+  relay state, web plugins' data, drafts, removal notices, pending join requests and the agent's
+  conversations. Until the account is unlocked the app shows nothing of it, and signing out locks
+  it again. **Upgrade:** the web app drops what earlier versions kept in the browser, keys
+  included; an account used in a browser before signs in there again after recovering it with
+  its recovery phrase or linking the browser as a new device.
+- A web session signed in without "Keep me signed in" lasts until the browser closes and opens
+  nothing without a secret the tab holds in memory, so a session cookie left in the browser is
+  worthless; reloading the page within a minute keeps the account open.

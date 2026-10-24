@@ -1,11 +1,17 @@
 /**
- * Join requests this account filed at other servers through a workspace's public link, kept in
- * this browser per account until the decision arrives or the request expires. The relay item
- * that carries the decision is let through, and handled, only while its request is kept here.
+ * Join requests this account filed at other servers through a workspace's public link, kept
+ * sealed with the account's other values until the decision arrives or the request expires. The
+ * relay item that carries the decision is let through, and handled, only while its request is
+ * kept here.
  */
 
 import { useSyncExternalStore } from "react";
 
+import {
+  readSealedItem,
+  removeSealedItem,
+  writeSealedItem,
+} from "../../../core/accountVault/sealedStorage";
 import { accountKey } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
 
@@ -45,7 +51,7 @@ function isEntry(value: unknown): value is PendingRemoteJoin {
 
 function read(account: string): PendingRemoteJoin[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey(account)) ?? "[]");
+    const parsed: unknown = JSON.parse(readSealedItem(storageKey(account)) ?? "[]");
     return Array.isArray(parsed) ? parsed.filter(isEntry) : [];
   } catch {
     return [];
@@ -53,12 +59,8 @@ function read(account: string): PendingRemoteJoin[] {
 }
 
 function write(account: string, entries: PendingRemoteJoin[]): void {
-  try {
-    if (entries.length === 0) localStorage.removeItem(storageKey(account));
-    else localStorage.setItem(storageKey(account), JSON.stringify(entries));
-  } catch {
-    // Without storage the request is not kept, and its decision is not taken here.
-  }
+  if (entries.length === 0) removeSealedItem(storageKey(account));
+  else writeSealedItem(storageKey(account), JSON.stringify(entries));
 }
 
 function changed(): void {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
@@ -8,6 +9,7 @@ import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceS
 import { useShellStore } from "../state/useShellStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 import type { PluginInfo } from "../../features/plugins/types";
+import { createTestQueryClient } from "../../test/utils";
 
 // ── Side-effect / data hooks used directly by AppShell / WorkspaceShell ──
 // Mocked as no-ops so this test exercises only the render tree and the
@@ -28,6 +30,8 @@ vi.mock("../../features/offline/runtime/useOfflineReconnect", () => ({
   useOfflineReconnect: () => {},
 }));
 vi.mock("../../features/auth/runtime/signOut", () => ({ useSessionEndedSignOut: () => {} }));
+const gate = vi.hoisted(() => ({ state: "unlocked" as "opening" | "unlocked" | "locked" }));
+vi.mock("../../features/auth/runtime/unlockGate", () => ({ useUnlockGate: () => gate.state }));
 vi.mock("../../features/conversations/api/useUnreadCounts", () => ({
   useUnreadCounts: () => {},
 }));
@@ -157,6 +161,10 @@ vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
 }));
 
 import { AppShell } from "./AppShell";
+
+beforeEach(() => {
+  gate.state = "unlocked";
+});
 
 function renderShell() {
   return render(
@@ -319,5 +327,41 @@ describe("AppShell — plugin panels and conversation navigation", () => {
 
     expect(screen.getByTestId("plugin-slot-notes")).toBeInTheDocument();
     expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
+  });
+});
+
+describe("AppShell — the unlock gate", () => {
+  beforeEach(() => {
+    useWorkspaceEventsMock.mockClear();
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("asks for the password while the account is locked, and runs nothing that reads its data", () => {
+    gate.state = "locked";
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter>
+          <RuntimeProvider>
+            <AppShell />
+          </RuntimeProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "This account is locked" })).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+    expect(useWorkspaceEventsMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the splash while it opens a kept account", () => {
+    gate.state = "opening";
+    renderShell();
+    expect(screen.getByRole("status")).toHaveTextContent("Restoring session...");
+    expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
 import { getApiOrigin } from "../../../core/graphql/config";
 
@@ -56,9 +58,15 @@ export const useRemovalNotices = create<RemovalNotices>()(
           return { accounts };
         }),
     }),
-    { name: "rim-workspace-removals", partialize: (state) => ({ accounts: state.accounts }) },
+    {
+      name: "rim-workspace-removals",
+      partialize: (state) => ({ accounts: state.accounts }),
+      storage: createJSONStorage(() => sealedStateStorage),
+      skipHydration: true,
+    },
   ),
 );
+registerSealedStore(useRemovalNotices);
 
 export function removalMessage(notice: RemovalNotice): string {
   const name = notice.workspaceName ?? "this workspace";

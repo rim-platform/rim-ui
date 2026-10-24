@@ -57,7 +57,16 @@ import {
   type Offer,
   type Sealed,
 } from "./channel";
-import { pendingLinks, principalRecords, record, update, type BrowserKeyRecord } from "./keyStore";
+import {
+  pendingLinks,
+  principalRecords,
+  record,
+  signingKey,
+  update,
+  type BrowserKeyRecord,
+} from "./keyStore";
+import { sealKeysAtUnlock } from "./sealAtRest";
+import { unlockTestVault } from "../../../test/accountVault";
 import { base32, concat, sha256, utf8 } from "./bytes";
 import { formatKit, phraseWords } from "./recoveryKit";
 import {
@@ -265,10 +274,15 @@ describe("the web app as a linked device", () => {
       userId: "user-1",
       username: "ada",
     });
-    expect(saved.deviceKey.type).toBe("private");
-    expect(saved.deviceKey.extractable).toBe(false);
-    expect(saved.deviceKey.algorithm.name).toBe("Ed25519");
-    await expect(crypto.subtle.exportKey("pkcs8", saved.deviceKey)).rejects.toThrow();
+    // Unsealed until the account's first unlock in this browser, which seals it.
+    expect(signingKey(saved).type).toBe("private");
+    expect(signingKey(saved).extractable).toBe(true);
+    await unlockTestVault({ endpoint: ENDPOINT, principalId: PRINCIPAL });
+    await sealKeysAtUnlock(ENDPOINT, PRINCIPAL, null);
+    const sealed = signingKey((await stored()) as BrowserKeyRecord);
+    expect(sealed.extractable).toBe(false);
+    expect(sealed.algorithm.name).toBe("Ed25519");
+    await expect(crypto.subtle.exportKey("pkcs8", sealed)).rejects.toThrow();
 
     expect(await listDeviceKeyAccounts()).toEqual([
       {
@@ -557,6 +571,9 @@ async function holder(): Promise<{
   await browserKeyBackend.confirmRecoveryKit(draft.principalId);
   const signed = await browserKeyBackend.signEnrollment(draft.draftId, ACCOUNT, CHALLENGE);
   await browserKeyBackend.settle(ACCOUNT, draft.principalId);
+  // The holder's account is unlocked here, as it is while its app runs.
+  await unlockTestVault({ endpoint: ENDPOINT, principalId: draft.principalId });
+  await sealKeysAtUnlock(ENDPOINT, draft.principalId, null);
   return {
     draft,
     principalId: draft.principalId,
@@ -621,8 +638,9 @@ describe("the web app creating an identity", () => {
 
     await completeEnrollment(draft, { ...ACCOUNT, displayName: "Ada" });
 
-    expect(storedWhileEnrolling?.identity?.privateKey.extractable).toBe(false);
-    expect(storedWhileEnrolling?.deviceKey.extractable).toBe(false);
+    // Stored before the account's first unlock: unsealed, as made.
+    expect(storedWhileEnrolling?.identity?.privateKey.type).toBe("private");
+    expect(storedWhileEnrolling?.deviceKey?.type).toBe("private");
     if (!input || !card) throw new Error("the server was not asked");
     await checkEnrollment(input, draft.principalId);
     const head = await replay(input.keyLog);
@@ -815,7 +833,7 @@ describe("the web app recovering an account", () => {
     expect(JSON.parse((device as Statement).payload)).toMatchObject({ keySeq: 1 });
     const kept = await storedFor(principalId);
     expect(kept.identity?.publicKey).toBe(head.identityKey);
-    expect(kept.identity?.privateKey.extractable).toBe(false);
+    expect(kept.identity?.privateKey.type).toBe("private");
     expect(kept).toMatchObject({ confirmed: true, userId: "user-1", kitConfirmed: true });
   });
 
@@ -1100,6 +1118,9 @@ describe("the web app as the old device of a link", () => {
 
     vi.resetModules();
     const reloaded = (await import("./browserKeyBackend")).browserKeyBackend;
+    // The reloaded page unlocks the account again before it resumes the link.
+    const vault = await import("../../../core/accountVault/accountVault");
+    await vault.unlockVault({ endpoint: ENDPOINT, principalId }, new Uint8Array(32).fill(7));
     expect(await reloaded.linkPending("http://localhost:8080/api/")).toEqual([
       { linkId: LINK_ID, principalId, deviceId: NEW_DEVICE_ID, deviceKey: answer.deviceKey },
     ]);

@@ -1,11 +1,15 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it } from "vitest";
 
+import { readSealedItem, writeSealedItem } from "../../../core/accountVault/sealedStorage";
+import { unlockTestVault } from "../../../test/accountVault";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { removalAccountKey, useRemovalNotices } from "../state/useRemovalNotices";
 import { RemovalNotices } from "./RemovalNotices";
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The notices are kept sealed with the unlocked account's other values.
+  await unlockTestVault();
   useRemovalNotices.setState({ accounts: {} });
   useAuthStore.setState({ session: { userId: "alice" } });
 });
@@ -17,9 +21,9 @@ it("keeps the readable removal reason across reload until dismissal", async () =
     cause: "ban",
     reason: "Please respect other members.",
   });
-  const stored = localStorage.getItem("rim-workspace-removals");
+  const stored = readSealedItem("rim-workspace-removals");
   useRemovalNotices.setState({ accounts: {} });
-  localStorage.setItem("rim-workspace-removals", stored!);
+  writeSealedItem("rim-workspace-removals", stored!);
   await act(() => useRemovalNotices.persist.rehydrate());
   render(<RemovalNotices />);
   expect(screen.getByText("You were banned from Lobby")).toBeInTheDocument();

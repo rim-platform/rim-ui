@@ -21,6 +21,7 @@ import {
 } from "./webPluginHost";
 import type { SessionPort } from "./pluginSession";
 import { RpcError } from "./rpc";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const realImmediate = setImmediate;
 
@@ -280,6 +281,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
+
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
 
 describe("web plugin frames", () => {
   it("creates the frame, sends the init on the first load, and runs the spec's plugin", async () => {

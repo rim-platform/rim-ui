@@ -10,6 +10,9 @@ import {
   usePendingRemoteJoins,
   type PendingRemoteJoin,
 } from "./pendingRemoteJoins";
+import { lockVault } from "../../../core/accountVault/accountVault";
+import { readSealedItem, writeSealedItem } from "../../../core/accountVault/sealedStorage";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const NOW = Date.UTC(2026, 9, 24);
 const DAY = 24 * 60 * 60 * 1000;
@@ -41,20 +44,21 @@ function signIn(principalId = "rimp1_me") {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  localStorage.clear();
   signIn();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   useRelayStore.getState().reset();
-  localStorage.clear();
 });
+
+// The requests are kept sealed with the unlocked account's other values.
+beforeEach(() => unlockTestVault());
 
 describe("pending remote join requests", () => {
   it("keeps a request per account and finds it by host and workspace", () => {
     addPendingRemoteJoin(entry());
-    expect(JSON.parse(localStorage.getItem(KEY) ?? "[]")).toEqual([entry()]);
+    expect(JSON.parse(readSealedItem(KEY) ?? "[]")).toEqual([entry()]);
     expect(pendingRemoteJoinAt("rims1_host", "ws-acme")).toEqual(entry());
     expect(pendingRemoteJoinAt("rims1_other", "ws-acme")).toBeNull();
     expect(pendingRemoteJoinAt("rims1_host", "ws-other")).toBeNull();
@@ -77,7 +81,7 @@ describe("pending remote join requests", () => {
     removePendingRemoteJoin("rims1_host", "ws-acme");
     expect(listPendingRemoteJoins().map((e) => e.joinRequestId)).toEqual(["jr-2"]);
     removePendingRemoteJoin("rims1_host", "ws-beta");
-    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(readSealedItem(KEY)).toBeNull();
   });
 
   it("drops expired requests when read", () => {
@@ -86,35 +90,28 @@ describe("pending remote join requests", () => {
     vi.setSystemTime(NOW + DAY);
     expect(pendingRemoteJoinAt("rims1_host", "ws-acme")).toBeNull();
     expect(listPendingRemoteJoins().map((e) => e.joinRequestId)).toEqual(["jr-2"]);
-    expect(JSON.parse(localStorage.getItem(KEY) ?? "[]")).toHaveLength(1);
+    expect(JSON.parse(readSealedItem(KEY) ?? "[]")).toHaveLength(1);
   });
 
   it("reads unreadable storage as no requests", () => {
-    localStorage.setItem(KEY, "not json");
+    writeSealedItem(KEY, "not json");
     expect(listPendingRemoteJoins()).toEqual([]);
-    localStorage.setItem(KEY, JSON.stringify([{ hostServerId: 1 }, entry()]));
+    writeSealedItem(KEY, JSON.stringify([{ hostServerId: 1 }, entry()]));
     expect(listPendingRemoteJoins()).toEqual([entry()]);
   });
 
-  it("keeps nothing and throws nothing when storage refuses", () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("quota");
-    });
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("denied");
-    });
+  it("keeps nothing and throws nothing while the account is locked", () => {
+    lockVault();
     expect(() => addPendingRemoteJoin(entry())).not.toThrow();
     expect(listPendingRemoteJoins()).toEqual([]);
     expect(pendingRemoteJoinAt("rims1_host", "ws-acme")).toBeNull();
-    setItem.mockRestore();
-    getItem.mockRestore();
   });
 
   it("keeps nothing without a signed-in account", () => {
     useRelayStore.getState().reset();
     addPendingRemoteJoin(entry());
     expect(listPendingRemoteJoins()).toEqual([]);
-    expect(localStorage.length).toBe(0);
+    expect(readSealedItem(KEY)).toBeNull();
   });
 
   it("re-renders its readers when a request is kept or forgotten", () => {

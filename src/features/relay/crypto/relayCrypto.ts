@@ -7,7 +7,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 
 import { keyCommand } from "../../key-identity/api/keyBackend";
-import { record } from "../../key-identity/browser/keyStore";
+import { record, signingKey } from "../../key-identity/browser/keyStore";
 import {
   replay,
   signLogin,
@@ -168,7 +168,7 @@ export const browserRelayCrypto: RelayCrypto = {
   async signDeviceRequest(endpoint, principalId, fields) {
     const found = await record(endpoint, principalId);
     if (!found) throw new Error("this browser has no keys for that account");
-    return signInBrowser(found.deviceKey, { ...fields, principalId, deviceId: found.deviceId });
+    return signInBrowser(signingKey(found), { ...fields, principalId, deviceId: found.deviceId });
   },
   async verifyCard(principalId, keyLog, card) {
     const head = await replay(keyLog);
@@ -181,7 +181,7 @@ export const browserRelayCrypto: RelayCrypto = {
   async signDelegation(endpoint, principalId, fields) {
     const found = await record(endpoint, principalId);
     if (!found) throw new Error("this browser has no keys for that account");
-    return signDelegationInBrowser(found.deviceKey, {
+    return signDelegationInBrowser(signingKey(found), {
       ...fields,
       principalId,
       deviceId: found.deviceId,
@@ -191,7 +191,7 @@ export const browserRelayCrypto: RelayCrypto = {
     if (!/^rims1_[A-Za-z0-9_-]{43}$/.test(serverId)) throw new Error("not a server id");
     const found = await record(endpoint, principalId);
     if (!found) throw new Error("this browser has no keys for that account");
-    return signLogin(found.deviceKey, {
+    return signLogin(signingKey(found), {
       challengeId: challenge.challengeId,
       nonce: challenge.nonce,
       audience: serverId,

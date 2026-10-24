@@ -37,7 +37,8 @@ export const PHRASE_ENTROPY_LEN = 16;
 /** Words in a recovery phrase. */
 export const PHRASE_WORDS = 12;
 
-const PKCS8_ED25519_PREFIX = Uint8Array.from([
+/** The pkcs8 encoding of an Ed25519 private key, before its 32-byte seed. */
+export const PKCS8_ED25519_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
 ]);
 

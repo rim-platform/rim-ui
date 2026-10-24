@@ -7,11 +7,12 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { webChatCache } from "../../plugins/chat/appMessageService";
 import type { PluginReadScope } from "../../plugins/chat/chatTypes";
 import { createMessageService } from "../../plugins/chat/messageService";
-import { committed, database } from "./db";
+import { committed, database, readRecord, seal, type StoreName } from "./db";
 import { principalMentions } from "./pluginView";
 import { timestampUs } from "./messageRows";
 import { closeStores } from "./webCommands";
 import type { WebAccount } from "./webAccount";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const WS = vectors.workspaceId;
 const CONV = vectors.conversationId;
@@ -60,21 +61,33 @@ function follow(conversationId: string, complete: boolean) {
   };
 }
 
-/** The store holding the vector's encrypted group, with this browser in its group. */
-async function load(extra: (tx: IDBTransaction) => void = () => {}) {
+/**
+ * The store holding the vector's encrypted group, with this browser in its group, and the
+ * `extra` records; each record is sealed as the store keeps it.
+ */
+async function load(extra: [StoreName, object][] = []) {
+  const records: [StoreName, object][] = [
+    ...vectors.rows.map((row): [StoreName, object] => ["messages", stored(row)]),
+    ["sync", follow(CONV, true)],
+    [
+      "groups",
+      {
+        endpoint: account.endpoint,
+        principalId: account.principalId,
+        workspaceId: WS,
+        conversationId: CONV,
+        incarnation: 1,
+      },
+    ],
+    ...extra,
+  ];
+  const sealed = await Promise.all(
+    records.map(async ([store, record]) => [store, await seal(store, record)] as const),
+  );
   const db = await database();
   const tx = db.transaction(["messages", "sync", "groups"], "readwrite");
   const done = committed(tx);
-  for (const row of vectors.rows) tx.objectStore("messages").put(stored(row));
-  tx.objectStore("sync").put(follow(CONV, true));
-  tx.objectStore("groups").put({
-    endpoint: account.endpoint,
-    principalId: account.principalId,
-    workspaceId: WS,
-    conversationId: CONV,
-    incarnation: 1,
-  });
-  extra(tx);
+  for (const [store, record] of sealed) tx.objectStore(store).put(record);
   await done;
 }
 
@@ -87,6 +100,8 @@ beforeEach(async () => {
   globalThis.indexedDB = new IDBFactory();
   closeStores();
   useAuthStore.getState().setSession({ userId: account.userId });
+  // The store is sealed under the unlocked account.
+  await unlockTestVault();
   await load();
 });
 
@@ -151,10 +166,10 @@ describe("plugins reading the web app's encrypted store", () => {
     const copy = { ...vectors.rows[0], id: "0192f000-0000-7000-8000-0000000000f1" };
     globalThis.indexedDB = new IDBFactory();
     closeStores();
-    await load((tx) => {
-      tx.objectStore("messages").put(stored(copy, plain));
-      tx.objectStore("sync").put(follow(plain, true));
-    });
+    await load([
+      ["messages", stored(copy, plain)],
+      ["sync", follow(plain, true)],
+    ]);
     const cache = webChatCache(account);
     const page = await cache.list(WS, plain, null, null, plainReader);
     expect(page?.messages.map((m) => [m.id, m.encrypted])).toEqual([[copy.id, false]]);
@@ -203,14 +218,12 @@ describe("plugins reading the web app's encrypted store", () => {
         vectors.listMessages.grantedCapabilities,
       ),
     ).rejects.toMatchObject({ data: { reason: "notCached" } });
-    const db = await database();
-    const record = await new Promise((resolve) => {
-      const request = db
-        .transaction("sync")
-        .objectStore("sync")
-        .get([account.endpoint, account.principalId, WS, other]);
-      request.onsuccess = () => resolve(request.result);
-    });
+    const record = await readRecord(await database(), "sync", [
+      account.endpoint,
+      account.principalId,
+      WS,
+      other,
+    ]);
     expect(record).toMatchObject({ conversationId: other, complete: false });
   });
 

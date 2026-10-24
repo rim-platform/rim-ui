@@ -6,7 +6,17 @@
 // (`settings`); the web app keeps no secret settings.
 // Bundles are hashed again at every start; a damaged or evicted one is fetched
 // again from its link and must hash the same.
+// Installs, storage and settings are sealed under the signed-in account's data
+// key (the account vault): their keys and an install's bundle hash stay plain,
+// the rest is sealed. Bundles and principal ids are public and stay plain.
 
+import {
+  openRecord,
+  openRecords,
+  sealRecord,
+  type SealedStore,
+} from "../../../core/accountVault/sealedRecords";
+import { exclusive } from "../../key-identity/browser/persistence";
 import { EMPTY_AUDIT, withEncryptedReads, withGrant } from "../audit";
 import {
   sameNetworkOrigins,
@@ -34,12 +44,40 @@ import { ErrorCode, RpcError, type PrincipalMapping } from "./rpc";
 import { webPluginHost } from "./webPluginHost";
 
 const DB_NAME = "rim-plugins";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const BUNDLES = "bundles";
 const INSTALLS = "installs";
 const STORAGE = "storage";
 const PRINCIPAL_IDS = "principalIds";
 const SETTINGS = "settings";
+
+/** Where each sealed store's records live, by store name. */
+const SEALED: Record<string, SealedStore> = {
+  [INSTALLS]: {
+    db: DB_NAME,
+    store: INSTALLS,
+    keyPath: ["account", "pluginId"],
+    plain: ["account", "pluginId", "bundleSha256"],
+  },
+  [STORAGE]: {
+    db: DB_NAME,
+    store: STORAGE,
+    keyPath: ["pluginId", "account", "key"],
+    plain: ["pluginId", "account", "key"],
+  },
+  [SETTINGS]: {
+    db: DB_NAME,
+    store: SETTINGS,
+    keyPath: ["pluginId", "account", "key"],
+    plain: ["pluginId", "account", "key"],
+  },
+};
+
+/** The record as `store` keeps it: sealed for a sealed store. */
+async function sealed(store: string, value: object): Promise<unknown> {
+  const where = SEALED[store] as SealedStore | undefined;
+  return where ? sealRecord(where, value) : value;
+}
 
 /** Largest `rim.storage` store: key lengths plus the values' JSON text, in bytes. */
 export const MAX_STORE_BYTES = 1024 * 1024;
@@ -120,6 +158,12 @@ function database(): Promise<IDBDatabase> {
       if (event.oldVersion < 2) {
         db.createObjectStore(SETTINGS, { keyPath: ["pluginId", "account", "key"] });
       }
+      if (event.oldVersion >= 1 && event.oldVersion < 3) {
+        // Written unsealed: dropped rather than carried over.
+        for (const name of [INSTALLS, STORAGE, SETTINGS]) {
+          request.transaction?.objectStore(name).clear();
+        }
+      }
     };
     request.onsuccess = () => {
       const db = request.result;
@@ -154,14 +198,25 @@ function committed(tx: IDBTransaction): Promise<void> {
   });
 }
 
+/** The record under `key`; in a sealed store, `undefined` too when it does not open. */
 async function read<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
   const tx = (await database()).transaction(store, "readonly");
-  return done(tx.objectStore(store).get(key) as IDBRequest<T | undefined>);
+  const found: unknown = await done(tx.objectStore(store).get(key));
+  const where = SEALED[store] as SealedStore | undefined;
+  if (!where || found === undefined) return found as T | undefined;
+  return (await openRecord<T>(where, found)) ?? undefined;
 }
 
-async function write(store: string, value: unknown): Promise<void> {
+/** The records of `store` in `range` that open under the unlocked account. */
+async function readAll<T>(store: string, range?: IDBKeyRange): Promise<T[]> {
+  const tx = (await database()).transaction(store, "readonly");
+  return openRecords<T>(SEALED[store], await done(tx.objectStore(store).getAll(range)));
+}
+
+async function write(store: string, value: object): Promise<void> {
+  const stored = await sealed(store, value);
   const tx = (await database()).transaction(store, "readwrite");
-  tx.objectStore(store).put(value);
+  tx.objectStore(store).put(stored);
   await committed(tx);
 }
 
@@ -264,12 +319,8 @@ export class BrowserPluginStore implements PluginServices {
 
   async list(): Promise<PluginInfo[]> {
     if (this.account === null) return [];
-    const tx = (await database()).transaction(INSTALLS, "readonly");
     const range = IDBKeyRange.bound([this.account, ""], [this.account, "￿"]);
-    const records = await done(
-      tx.objectStore(INSTALLS).getAll(range) as IDBRequest<InstallRecord[]>,
-    );
-    return records.map(toPluginInfo);
+    return (await readAll<InstallRecord>(INSTALLS, range)).map(toPluginInfo);
   }
 
   enable(pluginId: string): Promise<void> {
@@ -410,9 +461,10 @@ export class BrowserPluginStore implements PluginServices {
       // An update keeps the plugin's history; a fresh install starts its own.
       ...(existing?.audit ? { audit: existing.audit } : {}),
     };
+    const stored = await sealed(INSTALLS, record);
     const tx = (await database()).transaction([BUNDLES, INSTALLS], "readwrite");
     tx.objectStore(BUNDLES).put({ sha256, bytes } satisfies StoredBundle);
-    tx.objectStore(INSTALLS).put(record);
+    tx.objectStore(INSTALLS).put(stored);
     await committed(tx);
     return {
       plugin_id: manifest.plugin_id,
@@ -472,33 +524,30 @@ export class BrowserPluginStore implements PluginServices {
 
   async storageSet(pluginId: string, key: string, value: unknown): Promise<void> {
     const account = this.storageAccount(key);
-    const db = await database();
-    const tx = db.transaction(STORAGE, "readwrite");
-    const store = tx.objectStore(STORAGE);
     if (value === null) {
-      store.delete([pluginId, account, key]);
+      const tx = (await database()).transaction(STORAGE, "readwrite");
+      tx.objectStore(STORAGE).delete([pluginId, account, key]);
       await committed(tx);
       return;
     }
     const json = JSON.stringify(value);
-    const entries = await done(
-      store.getAll(storageRange(pluginId, account)) as IDBRequest<StorageRecord[]>,
-    );
-    let bytes = encoder.encode(key).length + encoder.encode(json).length;
-    for (const entry of entries) {
-      if (entry.key !== key)
-        bytes += encoder.encode(entry.key).length + encoder.encode(entry.json).length;
-    }
-    if (bytes > MAX_STORE_BYTES) {
-      tx.abort();
-      throw new RpcError(
-        ErrorCode.INVALID_PARAMS,
-        `the plugin's store would exceed ${MAX_STORE_BYTES} bytes`,
-        { reason: "quota" },
-      );
-    }
-    store.put({ pluginId, account, key, json } satisfies StorageRecord);
-    await committed(tx);
+    // One write of a plugin's store at a time, so the size check sees what the others wrote.
+    await exclusive(`rim-plugins:${pluginId}\n${account}`, async () => {
+      const entries = await readAll<StorageRecord>(STORAGE, storageRange(pluginId, account));
+      let bytes = encoder.encode(key).length + encoder.encode(json).length;
+      for (const entry of entries) {
+        if (entry.key !== key)
+          bytes += encoder.encode(entry.key).length + encoder.encode(entry.json).length;
+      }
+      if (bytes > MAX_STORE_BYTES) {
+        throw new RpcError(
+          ErrorCode.INVALID_PARAMS,
+          `the plugin's store would exceed ${MAX_STORE_BYTES} bytes`,
+          { reason: "quota" },
+        );
+      }
+      await write(STORAGE, { pluginId, account, key, json } satisfies StorageRecord);
+    });
   }
 
   private storageAccount(key: string): string {
@@ -517,12 +566,7 @@ export class BrowserPluginStore implements PluginServices {
   }
 
   private async savedSettings(pluginId: string, account: string): Promise<Record<string, unknown>> {
-    const tx = (await database()).transaction(SETTINGS, "readonly");
-    const entries = await done(
-      tx.objectStore(SETTINGS).getAll(storageRange(pluginId, account)) as IDBRequest<
-        SettingRecord[]
-      >,
-    );
+    const entries = await readAll<SettingRecord>(SETTINGS, storageRange(pluginId, account));
     return Object.fromEntries(entries.map((e) => [e.key, JSON.parse(e.json) as unknown]));
   }
 
@@ -573,19 +617,24 @@ export class BrowserPluginStore implements PluginServices {
       if (reason !== null) throw new PluginSettingsError(`${key} ${reason}`, key);
       checked.push([setting, value]);
     }
+    const puts = await Promise.all(
+      checked
+        .filter(([, value]) => value !== null)
+        .map(([setting, value]) =>
+          sealed(SETTINGS, {
+            pluginId,
+            account,
+            key: setting.key,
+            json: JSON.stringify(value),
+          } satisfies SettingRecord),
+        ),
+    );
     const tx = (await database()).transaction(SETTINGS, "readwrite");
     const store = tx.objectStore(SETTINGS);
     for (const [setting, value] of checked) {
       if (value === null) store.delete([pluginId, account, setting.key]);
-      else {
-        store.put({
-          pluginId,
-          account,
-          key: setting.key,
-          json: JSON.stringify(value),
-        } satisfies SettingRecord);
-      }
     }
+    for (const put of puts) store.put(put);
     await committed(tx);
     onPluginSettingsSaved(pluginId);
   }
@@ -625,10 +674,9 @@ export class BrowserPluginStore implements PluginServices {
     return resolvedPluginSettings(pluginId, this.account);
   }
 
+  /** An install of `pluginId` that opens under the unlocked account. */
   private async anyInstall(pluginId: string): Promise<InstallRecord | undefined> {
-    const tx = (await database()).transaction(INSTALLS, "readonly");
-    const records = await done(tx.objectStore(INSTALLS).getAll() as IDBRequest<InstallRecord[]>);
-    return records.find((r) => r.pluginId === pluginId);
+    return (await readAll<InstallRecord>(INSTALLS)).find((r) => r.pluginId === pluginId);
   }
 
   async checkAiConsent(pluginId: string, commandId: string): Promise<void> {

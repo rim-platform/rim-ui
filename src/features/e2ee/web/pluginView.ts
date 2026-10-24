@@ -17,7 +17,7 @@ import type {
 } from "../../plugins/chat/chatTypes";
 import { isKeyPrincipalId, provisionalPrincipalId } from "../../plugins/web/principal";
 import { ErrorCode, RpcError } from "../../plugins/web/rpc";
-import { BY_ACCOUNT, BY_TIME, done } from "./db";
+import { BY_ACCOUNT, BY_TIME, readIndex, readRecord } from "./db";
 import type { MessageRow } from "./messageRows";
 import type { WebAccount } from "./webAccount";
 
@@ -102,9 +102,7 @@ async function conversationRows(
   conversationId: string,
 ): Promise<MessageRow[]> {
   const prefix = [account.endpoint, account.principalId, workspaceId, conversationId];
-  const tx = db.transaction("messages", "readonly");
-  const index = tx.objectStore("messages").index(BY_TIME);
-  return (await done(index.getAll(IDBKeyRange.bound(prefix, [...prefix, []])))) as MessageRow[];
+  return readIndex<MessageRow>(db, "messages", BY_TIME, IDBKeyRange.bound(prefix, [...prefix, []]));
 }
 
 /** Whether `conversationId` is end-to-end encrypted, as far as this browser knows. */
@@ -116,9 +114,8 @@ export async function conversationEncrypted(
   scope: PluginReadScope,
 ): Promise<boolean> {
   if (scope.knownEncrypted.includes(conversationId)) return true;
-  const tx = db.transaction("groups", "readonly");
   const key = [account.endpoint, account.principalId, workspaceId, conversationId];
-  if (await done(tx.objectStore("groups").get(key))) return true;
+  if (await readRecord(db, "groups", key)) return true;
   const rows = await conversationRows(db, account, workspaceId, conversationId);
   return rows.some((r) => r.e2eeState !== null);
 }
@@ -152,12 +149,12 @@ export async function pluginMessages(
   scope: PluginReadScope,
 ): Promise<PluginMessagePage | null> {
   await checkReadable(db, account, workspaceId, conversationId, scope);
-  const tx = db.transaction("sync", "readonly");
-  const sync = (await done(
-    tx
-      .objectStore("sync")
-      .get([account.endpoint, account.principalId, workspaceId, conversationId]),
-  )) as { complete?: boolean } | undefined;
+  const sync = await readRecord<{ complete?: boolean }>(db, "sync", [
+    account.endpoint,
+    account.principalId,
+    workspaceId,
+    conversationId,
+  ]);
   if (sync?.complete !== true) return null;
 
   let rows = await conversationRows(db, account, workspaceId, conversationId);
@@ -188,10 +185,11 @@ export async function pluginMessage(
   messageId: string,
   scope: PluginReadScope,
 ): Promise<PluginChatMessage | null> {
-  const tx = db.transaction("messages", "readonly");
-  const row = (await done(
-    tx.objectStore("messages").get([account.endpoint, account.principalId, messageId]),
-  )) as MessageRow | undefined;
+  const row = await readRecord<MessageRow>(db, "messages", [
+    account.endpoint,
+    account.principalId,
+    messageId,
+  ]);
   if (!row || row.workspaceId !== workspaceId || !readable(row)) return null;
   await checkReadable(db, account, workspaceId, row.conversationId, scope);
   return project(row);
@@ -217,13 +215,12 @@ export async function pluginSearch(
     conversationId !== null
       ? await conversationRows(db, account, workspaceId, conversationId)
       : (
-          (await done(
-            db
-              .transaction("messages", "readonly")
-              .objectStore("messages")
-              .index(BY_ACCOUNT)
-              .getAll(IDBKeyRange.only([account.endpoint, account.principalId])),
-          )) as MessageRow[]
+          await readIndex<MessageRow>(
+            db,
+            "messages",
+            BY_ACCOUNT,
+            IDBKeyRange.only([account.endpoint, account.principalId]),
+          )
         ).filter((r) => r.workspaceId === workspaceId);
   const needle = query.toLowerCase();
   const hits = rows

@@ -6,12 +6,24 @@
  * stages its own records; then everything it changed, MLS entries and records alike, is written
  * in one IndexedDB transaction. Only when that transaction completes is the engine's journal
  * kept and the operation's result used; if it fails, or the operation throws, the journal is
- * rolled back and nothing is written. So a message is decrypted once and its plaintext stored
+ * rolled back and nothing is written. Records are sealed before the transaction opens and
+ * opened after their reads finish (`db.ts`). So a message is decrypted once and its plaintext stored
  * together, and nothing is sent before the state that produced it is stored.
  */
 
 import { serialize } from "../runtime/serialize";
-import { BY_ACCOUNT, committed, database, done, keyOf, keyText, type StoreName } from "./db";
+import {
+  BY_ACCOUNT,
+  committed,
+  database,
+  done,
+  keyOf,
+  keyText,
+  seal,
+  unseal,
+  unsealAll,
+  type StoreName,
+} from "./db";
 import { isTrap, noteTrap, type MlsEngine, type MlsModule } from "./mlsModule";
 import type { WebAccount } from "./webAccount";
 
@@ -46,7 +58,7 @@ export class Work {
     const staged = this.staged.get(store)?.get(keyText(key));
     if (staged) return staged.value as T | undefined;
     const tx = this.db.transaction(store, "readonly");
-    return (await done(tx.objectStore(store).get(key))) as T | undefined;
+    return unseal<T>(store, await done(tx.objectStore(store).get(key)));
   }
 
   /**
@@ -61,7 +73,10 @@ export class Work {
     filter: (record: T) => boolean,
   ): Promise<T[]> {
     const tx = this.db.transaction(store, "readonly");
-    const found = (await done(tx.objectStore(store).index(index).getAll(range))) as T[];
+    const found = await unsealAll<T>(
+      store,
+      await done(tx.objectStore(store).index(index).getAll(range)),
+    );
     const byKey = new Map<string, T>();
     for (const record of found) {
       byKey.set(keyText(keyOf(store, record as Record<string, unknown>)), record);
@@ -108,25 +123,30 @@ export class Work {
     const stores = new Set<StoreName>(this.staged.keys());
     if (changes.length > 0) stores.add("mls");
     if (stores.size === 0) return;
+    const { endpoint, principalId } = this.account;
+    const writes: { store: StoreName; key: IDBValidKey; value: unknown }[] = [];
+    for (const [store, table] of this.staged) {
+      for (const { key, value } of table.values()) {
+        writes.push({
+          store,
+          key,
+          value: value === undefined ? undefined : await seal(store, value as object),
+        });
+      }
+    }
+    for (const { label, key, value } of changes) {
+      const sealed =
+        value === null
+          ? undefined
+          : await seal("mls", { endpoint, principalId, label, key, value } satisfies StoredEntry);
+      writes.push({ store: "mls", key: [endpoint, principalId, label, key], value: sealed });
+    }
     const tx = this.db.transaction([...stores], "readwrite");
     const finished = committed(tx);
     try {
-      for (const [store, table] of this.staged) {
-        const os = tx.objectStore(store);
-        for (const { key, value } of table.values()) {
-          if (value === undefined) os.delete(key);
-          else os.put(value);
-        }
-      }
-      const { endpoint, principalId } = this.account;
-      const mls = changes.length > 0 ? tx.objectStore("mls") : null;
-      for (const change of changes) {
-        if (change.value === null) {
-          mls?.delete([endpoint, principalId, change.label, change.key]);
-        } else {
-          const { label, key, value } = change;
-          mls?.put({ endpoint, principalId, label, key, value } satisfies StoredEntry);
-        }
+      for (const { store, key, value } of writes) {
+        if (value === undefined) tx.objectStore(store).delete(key);
+        else tx.objectStore(store).put(value);
       }
     } catch (err) {
       tx.abort();
@@ -152,12 +172,15 @@ export class WebStore {
   static async open(account: WebAccount, mls: MlsModule): Promise<WebStore> {
     const db = await database();
     const tx = db.transaction("mls", "readonly");
-    const entries = (await done(
-      tx
-        .objectStore("mls")
-        .index(BY_ACCOUNT)
-        .getAll(IDBKeyRange.only([account.endpoint, account.principalId])),
-    )) as StoredEntry[];
+    const entries = await unsealAll<StoredEntry>(
+      "mls",
+      await done(
+        tx
+          .objectStore("mls")
+          .index(BY_ACCOUNT)
+          .getAll(IDBKeyRange.only([account.endpoint, account.principalId])),
+      ),
+    );
     const engine = new mls.Engine(
       JSON.stringify(entries.map(({ label, key, value }) => ({ label, key, value }))),
     );

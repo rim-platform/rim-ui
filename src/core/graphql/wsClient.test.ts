@@ -10,6 +10,7 @@ vi.mock("graphql-ws", () => ({
 }));
 
 import { useEdgeStore } from "./edgeRefusals";
+import { setSessionSecret } from "./sessionSecret";
 import {
   onWsConnected,
   onWsDisconnected,
@@ -51,6 +52,17 @@ describe("wsClient", () => {
       expect(typeof unsub).toBe("function");
       unsub();
     });
+  });
+});
+
+describe("the session secret", () => {
+  afterEach(() => setSessionSecret(null));
+
+  it("opens the socket with the session secret of an unkept session, and with nothing else", async () => {
+    const params = options.connectionParams as () => unknown;
+    expect(await params()).toEqual({});
+    setSessionSecret("c2VjcmV0");
+    expect(await params()).toEqual({ sessionSecret: "c2VjcmV0" });
   });
 });
 

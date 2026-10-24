@@ -1,7 +1,7 @@
 // Pasted links to a bundle: `https://host/path/name.rimbundle#sha256=<64 hex>`.
 // The fragment pins the bytes: the link installs only a bundle with that hash.
 
-import { csrfHeader } from "../../../core/graphql/csrf";
+import { authHeaders } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import type { AppPlatform } from "../../../core/runtime/runtime";
 import { featureDisabledFromResponse } from "../../../core/serverFeatures";
@@ -66,7 +66,7 @@ export async function fetchBundle(
       ...(external
         ? {
             method: "POST",
-            headers: { "content-type": "application/json", ...csrfHeader() },
+            headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify({ url, sha256 }),
           }
         : {}),

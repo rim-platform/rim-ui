@@ -1232,6 +1232,24 @@ export type LoginPayload = {
    * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
    */
   csrfToken: Scalars['String']['output'];
+  /**
+   * After `loginWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
+   * server holds for this session, 32 bytes as unpadded base64url, in the clear. `null`
+   * otherwise.
+   */
+  keepKey?: Maybe<Scalars['String']['output']>;
+  /**
+   * The account has no password: this session may only set one (`setPassword`), sign out
+   * and read `me`; everything else answers `FORBIDDEN`.
+   */
+  mustSetPassword: Scalars['Boolean']['output'];
+  /**
+   * After `loginWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
+   * the clear. The client keeps it in memory only and sends it in the
+   * `X-RIM-Session-Secret` header of every request and in the WebSocket's
+   * `connection_init` payload as `sessionSecret`. `null` for a kept session.
+   */
+  sessionSecret?: Maybe<Scalars['String']['output']>;
   userId: Scalars['ID']['output'];
 };
 
@@ -1746,6 +1764,20 @@ export type Mutation = {
   /**
    * Sign in with a `login` statement signed by an enrolled device key. Sets the same session
    * cookie as `login`.
+   *
+   * An account of this server with a password also brings `passwordTicket`, from
+   * `passwordLoginFinish`: single use, valid for 120 seconds, and only for that account.
+   * Without one, or with one that is used, expired or another account's, the answer is
+   * `UNAUTHENTICATED`, as for a wrong proof. An account of this server without a password
+   * signs in with the key alone and gets `mustSetPassword`: its session may only set a
+   * password, sign out and read `me`. Accounts of other servers sign in with the key alone.
+   *
+   * `keepSignedIn` ("Keep me signed in") sets persistent cookies. Unticked, the cookies last
+   * until the browser closes and the session answers only requests that carry
+   * `sessionSecret` (returned here) in the `X-RIM-Session-Secret` header; plain file
+   * downloads, `reloadSession` and `logout` excepted. A kept session of a client that holds
+   * its own keep key (`keepKeyHeld`, the desktop app) gets no `keepKey`; a web client's kept
+   * session gets the keep key the server holds for it.
    */
   loginWithKey: LoginPayload;
   logout: Scalars['Boolean']['output'];
@@ -1759,6 +1791,63 @@ export type Mutation = {
    */
   markNotificationsRead: Scalars['Int']['output'];
   muteConversation: Scalars['Boolean']['output'];
+  /**
+   * Finish a password change: the `CredentialFinalization` for the current password, the
+   * `RegistrationUpload` for the new one, and the rewrap (the previous unlock key sealed
+   * under the new one) for the account's other devices. Keeps the server share, keeps the
+   * newest three rewraps, and ends every other session of the account. `UNAUTHENTICATED`
+   * when the current password does not verify or the login is unknown or expired.
+   */
+  passwordChangeFinish: PasswordChanged;
+  /**
+   * Start changing the signed-in account's password: the OPAQUE `CredentialRequest` for the
+   * current password and the `RegistrationRequest` for the new one. Counts as a try, as for
+   * `passwordLoginStart`. `NOT_FOUND` when the account has no password.
+   */
+  passwordChangeStart: PasswordChangeStart;
+  /**
+   * Finish a password login with the OPAQUE `CredentialFinalization`. On success the tries
+   * are cleared, and the answer carries a single-use ticket for `loginWithKey` (valid for
+   * 120 seconds), the account's server share sealed under the login's transport key, and its
+   * rewraps. The login id is used once, whatever the outcome. No session needed. Every
+   * refusal is `UNAUTHENTICATED`: an unknown, used or expired login, or a wrong password.
+   */
+  passwordLoginFinish: PasswordLoginFinish;
+  /**
+   * Start a password login, before `passwordLoginFinish`: the OPAQUE `CredentialRequest` for
+   * `principalId`. Every start counts as a wrong try until a login finishes: tries 1 to 3
+   * are free, the 4th to the 9th make the next one wait (`RATE_LIMITED` with
+   * `retryAfterSeconds`), and the 10th locks the password (`PASSWORD_LOCKED`) until a reset
+   * with the recovery phrase. A principal without a password here gets an answer of the same
+   * shape that no password finishes. No session needed.
+   */
+  passwordLoginStart: PasswordLoginStart;
+  /**
+   * Start registering the password of a new account, before `signupWithKey`: the OPAQUE
+   * `RegistrationRequest` for `principalId`, answered with the `RegistrationResponse`. No
+   * session needed. `CONFLICT` when an account of this server has the principal;
+   * `RATE_LIMITED` when the address asks too often.
+   */
+  passwordRegistrationStart: Scalars['String']['output'];
+  /**
+   * Issue a single-use challenge, valid for 120 seconds, for a `password-reset` statement
+   * signed by the recovery key. No session needed.
+   */
+  passwordResetChallenge: KeyLoginChallenge;
+  /**
+   * Finish a password reset with the `RegistrationUpload` for the new password. Keeps the
+   * server share, deletes the rewraps, clears the tries and the lock, and ends every session
+   * of the account. No session needed. `UNAUTHENTICATED` when the reset is unknown, used or
+   * expired. Returns `true`.
+   */
+  passwordResetFinish: Scalars['Boolean']['output'];
+  /**
+   * Start a password reset: a `password-reset` statement over a `passwordResetChallenge`,
+   * signed by the recovery key of the account's key log head, and the
+   * `RegistrationRequest` for the new password. No session needed. `UNAUTHENTICATED` for
+   * any statement that does not verify, deliberately not told apart.
+   */
+  passwordResetStart: PasswordResetStart;
   pinMessage: Scalars['Boolean']['output'];
   /** Publish a profile card signed by the current identity key. */
   publishProfileCard: ProfileCard;
@@ -1767,6 +1856,15 @@ export type Mutation = {
    * The settings stay. Owner only, with the refusals of `updatePublicJoinLink`.
    */
   reissuePublicJoinLink: PublicJoinLink;
+  /**
+   * After a reload, hand this session's tab the reload key its stored data is sealed under,
+   * and a new one the server keeps instead. It needs the session cookie and the CSRF header,
+   * but not the session secret, which the tab lost in the reload. It answers once, and only
+   * while the session is unkept and no WebSocket of it is open, within 60 seconds of its
+   * WebSocket closing; otherwise `UNAUTHENTICATED`, and the account is locked on this
+   * device.
+   */
+  reloadSession: ReloadSessionPayload;
   /**
    * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
    * join, with the workspace `inviteToken` names (the invite is not used), or the workspace,
@@ -1893,6 +1991,26 @@ export type Mutation = {
    */
   setMyWorkspaceDmSetting: MyDmSettings;
   /**
+   * Finish setting a password for the signed-in account with the `RegistrationUpload`.
+   * Lifts the limit from the account's sessions and returns its new server share.
+   * `CONFLICT` when the account has a password.
+   */
+  setPassword: SetPasswordPayload;
+  /**
+   * Start setting a password for the signed-in account, which has none (a session with
+   * `mustSetPassword`): the OPAQUE `RegistrationRequest`, answered with the
+   * `RegistrationResponse`. `CONFLICT` when the account has a password.
+   */
+  setPasswordStart: Scalars['String']['output'];
+  /**
+   * Make a new reload key for this session, which was signed in without "Keep me signed
+   * in", and return it, 32 bytes as unpadded base64url. The tab seals what it stores in
+   * `sessionStorage` under it, right after signing in and after each reload. The server
+   * keeps only this key; the previous one stops opening anything. `UNAUTHENTICATED` for a
+   * kept session.
+   */
+  setReloadKey: Scalars['String']['output'];
+  /**
    * Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
    * Audited (`chat.set_slow_mode`).
    */
@@ -1917,12 +2035,13 @@ export type Mutation = {
    */
   signupWithInvite: SignupWithInvitePayloadGql;
   /**
-   * Create an account from a key identity alone, with no password. The registration mode
+   * Create an account from a key identity and a password: `passwordRegistration` is the
+   * OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration mode
    * applies as for `signupWithInvite` (exactly one token in invite-only mode, none in open
    * mode). An instance invite bound to an email address gives the account that address
    * (`EMAIL_TAKEN` when another account has it); otherwise the account has no email. Signs
    * the new account in on the device that signed up, setting the same session and CSRF
-   * cookies as `signupWithInvite`.
+   * cookies as `signupWithInvite`, and returns the account's new server share in the clear.
    */
   signupWithKey: SignupWithInvitePayloadGql;
   /**
@@ -2359,6 +2478,9 @@ export type MutationLoginArgs = {
 
 
 export type MutationLoginWithKeyArgs = {
+  keepKeyHeld: Scalars['Boolean']['input'];
+  keepSignedIn: Scalars['Boolean']['input'];
+  passwordTicket?: InputMaybe<Scalars['String']['input']>;
   proof: SignedStatementInput;
 };
 
@@ -2382,6 +2504,55 @@ export type MutationMarkNotificationsReadArgs = {
 
 export type MutationMuteConversationArgs = {
   input: MuteConversationInput;
+};
+
+
+export type MutationPasswordChangeFinishArgs = {
+  credentialFinalization: Scalars['String']['input'];
+  loginId: Scalars['ID']['input'];
+  registrationUpload: Scalars['String']['input'];
+  rewrap: Scalars['String']['input'];
+};
+
+
+export type MutationPasswordChangeStartArgs = {
+  credentialRequest: Scalars['String']['input'];
+  registrationRequest: Scalars['String']['input'];
+};
+
+
+export type MutationPasswordLoginFinishArgs = {
+  credentialFinalization: Scalars['String']['input'];
+  loginId: Scalars['ID']['input'];
+};
+
+
+export type MutationPasswordLoginStartArgs = {
+  principalId: Scalars['String']['input'];
+  request: Scalars['String']['input'];
+};
+
+
+export type MutationPasswordRegistrationStartArgs = {
+  principalId: Scalars['String']['input'];
+  request: Scalars['String']['input'];
+};
+
+
+export type MutationPasswordResetChallengeArgs = {
+  principalId: Scalars['String']['input'];
+};
+
+
+export type MutationPasswordResetFinishArgs = {
+  registrationUpload: Scalars['String']['input'];
+  resetId: Scalars['ID']['input'];
+};
+
+
+export type MutationPasswordResetStartArgs = {
+  registrationRequest: Scalars['String']['input'];
+  statement: SignedStatementInput;
 };
 
 
@@ -2556,6 +2727,16 @@ export type MutationSetMyDmSettingsArgs = {
 export type MutationSetMyWorkspaceDmSettingArgs = {
   members: DmMembers;
   workspaceId: Scalars['ID']['input'];
+};
+
+
+export type MutationSetPasswordArgs = {
+  registrationUpload: Scalars['String']['input'];
+};
+
+
+export type MutationSetPasswordStartArgs = {
+  registrationRequest: Scalars['String']['input'];
 };
 
 
@@ -2825,6 +3006,53 @@ export enum PageDir {
 export type PageInfo = {
   hasNext: Scalars['Boolean']['output'];
   hasPrev: Scalars['Boolean']['output'];
+};
+
+/** The server's answer to `passwordChangeStart`. */
+export type PasswordChangeStart = {
+  /** The OPAQUE `CredentialResponse` for the current password. */
+  credentialResponse: Scalars['String']['output'];
+  /** Pass to `passwordChangeFinish`. Valid for 120 seconds. */
+  loginId: Scalars['ID']['output'];
+  /** The OPAQUE `RegistrationResponse` for the new password. */
+  registrationResponse: Scalars['String']['output'];
+};
+
+/** A finished password change. */
+export type PasswordChanged = {
+  changedAt: Scalars['DateTime']['output'];
+};
+
+/** A finished password login. */
+export type PasswordLoginFinish = {
+  /** The account's rewraps, newest first. */
+  rewraps: Array<Scalars['String']['output']>;
+  /**
+   * The account's server share, AES-256-GCM sealed under the login's transport key for
+   * "server share": unpadded base64url of the 12-byte nonce, the ciphertext and the tag.
+   */
+  serverShare: Scalars['String']['output'];
+  /**
+   * Pass to `loginWithKey` as `passwordTicket`: single use, valid for 120 seconds, for this
+   * account only.
+   */
+  ticket: Scalars['String']['output'];
+};
+
+/** The server's answer to `passwordLoginStart`. */
+export type PasswordLoginStart = {
+  /** Pass to `passwordLoginFinish` with the credential finalization. Valid for 120 seconds. */
+  loginId: Scalars['ID']['output'];
+  /** The OPAQUE `CredentialResponse`. */
+  response: Scalars['String']['output'];
+};
+
+/** The server's answer to `passwordResetStart`. */
+export type PasswordResetStart = {
+  /** The OPAQUE `RegistrationResponse` for the new password. */
+  registrationResponse: Scalars['String']['output'];
+  /** Pass to `passwordResetFinish`. Valid for 120 seconds, once. */
+  resetId: Scalars['ID']['output'];
 };
 
 export type PinMessageInput = {
@@ -3269,6 +3497,13 @@ export type Query = {
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
   /**
+   * The keep key the server holds for this session, 32 bytes as unpadded base64url, in the
+   * clear: what a web client signed in with "Keep me signed in" opens its data key with at
+   * start. `null` for a session signed in without it, and for one whose client holds its
+   * own keep key.
+   */
+  sessionKeepKey?: Maybe<Scalars['String']['output']>;
+  /**
    * The current `seq` of each named event stream of a space hosted here that the caller can
    * see; streams the caller cannot see are left out.
    */
@@ -3681,6 +3916,17 @@ export type RelayItem = {
 export type RelayItemPage = {
   hasMore: Scalars['Boolean']['output'];
   items: Array<RelayItem>;
+};
+
+/** The reload keys `reloadSession` hands a tab that reloaded. */
+export type ReloadSessionPayload = {
+  /**
+   * The reload key the server now holds instead, 32 bytes: the tab seals its data again
+   * under it.
+   */
+  nextReloadKey: Scalars['String']['output'];
+  /** The reload key the tab's stored data is sealed under, 32 bytes. */
+  reloadKey: Scalars['String']['output'];
 };
 
 /**
@@ -4142,6 +4388,12 @@ export enum ServerMemberRoleGql {
   OWNER = 'OWNER'
 }
 
+/** What `setPassword` returns. */
+export type SetPasswordPayload = {
+  /** The account's new server share, in the clear. */
+  serverShare: Scalars['String']['output'];
+};
+
 export type SetWorkspaceStateInput = {
   key: Scalars['String']['input'];
   scope: WorkspaceStateScopeGql;
@@ -4216,7 +4468,22 @@ export type SignupWithInvitePayloadGql = {
    * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
    */
   csrfToken: Scalars['String']['output'];
+  /**
+   * After `signupWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
+   * server holds for this session, unpadded base64url, in the clear. `null` otherwise.
+   */
+  keepKey?: Maybe<Scalars['String']['output']>;
   serverId?: Maybe<Scalars['ID']['output']>;
+  /**
+   * After `signupWithKey`: the new account's server share, unpadded base64url, in the
+   * clear. `null` for the other signups.
+   */
+  serverShare?: Maybe<Scalars['String']['output']>;
+  /**
+   * After `signupWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
+   * the clear, as `loginWithKey` returns it. `null` for a kept session.
+   */
+  sessionSecret?: Maybe<Scalars['String']['output']>;
   userId: Scalars['ID']['output'];
 };
 
@@ -4239,8 +4506,17 @@ export type SignupWithKeyInput = {
    */
   displayName?: InputMaybe<Scalars['String']['input']>;
   instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
+  /** The client holds its own keep key, as for `loginWithKey`. */
+  keepKeyHeld: Scalars['Boolean']['input'];
+  /** "Keep me signed in", as for `loginWithKey`. */
+  keepSignedIn: Scalars['Boolean']['input'];
   /** The whole key log, inception first. */
   keyLog: Array<SignedStatementInput>;
+  /**
+   * The OPAQUE `RegistrationUpload` of the account's password, unpadded base64url,
+   * registered for this principal with `passwordRegistrationStart`.
+   */
+  passwordRegistration: Scalars['String']['input'];
   /** A `login` statement signed by that device over a fresh `keyLoginChallenge`. */
   proof: SignedStatementInput;
   /**

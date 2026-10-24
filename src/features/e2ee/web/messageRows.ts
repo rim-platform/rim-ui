@@ -8,7 +8,7 @@
  */
 
 import type { MessageItem } from "../../../core/types/messages";
-import { BY_THREAD, BY_TIME, done } from "./db";
+import { BY_THREAD, BY_TIME, readIndex, readRecord, unsealAll } from "./db";
 import type { Work } from "./store";
 import type { WebAccount } from "./webAccount";
 
@@ -207,31 +207,48 @@ export async function timeline(
   limit: number,
 ): Promise<{ items: MessageItem[]; hasOlder: boolean }> {
   const prefix = [account.endpoint, account.principalId, workspaceId, conversationId];
-  const upper = before ? [...prefix, before.sentAtUs, before.id] : [...prefix, []];
-  const range = IDBKeyRange.bound(prefix, upper, false, true);
-  const tx = db.transaction("messages", "readonly");
-  const index = tx.objectStore("messages").index(BY_TIME);
+  let upper: IDBValidKey = before ? [...prefix, before.sentAtUs, before.id] : [...prefix, []];
   const want = Math.min(Math.max(limit, 1), 200);
   const items: MessageItem[] = [];
-  let hasOlder = false;
-  await new Promise<void>((resolve, reject) => {
+  for (;;) {
+    const batch = await newestOutsideThreads(
+      db,
+      IDBKeyRange.bound(prefix, upper, false, true),
+      want + 1,
+    );
+    for (const row of await unsealAll<MessageRow>("messages", batch.rows)) {
+      if (row.isDeleted) continue;
+      if (items.length === want) return { items: items.reverse(), hasOlder: true };
+      items.push(render(row));
+    }
+    if (batch.last === null) return { items: items.reverse(), hasOlder: false };
+    upper = batch.last;
+  }
+}
+
+/**
+ * Up to `count` stored rows outside threads within `range` of the timeline index, newest
+ * first, still sealed, and the index key of the last row read; `null` once the range is read to
+ * its start.
+ */
+function newestOutsideThreads(
+  db: IDBDatabase,
+  range: IDBKeyRange,
+  count: number,
+): Promise<{ rows: unknown[]; last: IDBValidKey | null }> {
+  const index = db.transaction("messages", "readonly").objectStore("messages").index(BY_TIME);
+  const rows: unknown[] = [];
+  return new Promise((resolve, reject) => {
     const request = index.openCursor(range, "prev");
     request.onerror = () => reject(request.error ?? new Error("timeline read failed"));
     request.onsuccess = () => {
       const cursor = request.result;
-      if (!cursor) return resolve();
-      const row = cursor.value as MessageRow;
-      if (row.threadId === null && !row.isDeleted) {
-        if (items.length === want) {
-          hasOlder = true;
-          return resolve();
-        }
-        items.push(render(row));
-      }
+      if (!cursor) return resolve({ rows, last: null });
+      if ((cursor.value as { threadId: string | null }).threadId === null) rows.push(cursor.value);
+      if (rows.length === count) return resolve({ rows, last: cursor.key });
       cursor.continue();
     };
   });
-  return { items: items.reverse(), hasOlder };
 }
 
 /** A thread's live replies (at most 500, oldest first), after its root message when given. */
@@ -249,13 +266,12 @@ export async function thread(
     if (root) items.push(root);
   }
   const prefix = [account.endpoint, account.principalId, workspaceId, conversationId, threadId];
-  const tx = db.transaction("messages", "readonly");
-  const rows = (await done(
-    tx
-      .objectStore("messages")
-      .index(BY_THREAD)
-      .getAll(IDBKeyRange.bound(prefix, [...prefix, []])),
-  )) as MessageRow[];
+  const rows = await readIndex<MessageRow>(
+    db,
+    "messages",
+    BY_THREAD,
+    IDBKeyRange.bound(prefix, [...prefix, []]),
+  );
   for (const row of rows.filter((r) => !r.isDeleted).slice(0, 500)) items.push(render(row));
   return items;
 }
@@ -266,8 +282,6 @@ export async function message(
   account: WebAccount,
   id: string,
 ): Promise<MessageItem | null> {
-  const tx = db.transaction("messages", "readonly");
-  const row = (await done(tx.objectStore("messages").get(rowKey(account, id)))) as
-    MessageRow | undefined;
+  const row = await readRecord<MessageRow>(db, "messages", rowKey(account, id));
   return row ? render(row) : null;
 }
