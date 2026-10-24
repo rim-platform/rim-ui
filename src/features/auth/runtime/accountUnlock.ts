@@ -38,6 +38,7 @@ import {
   setKeepWrap,
   wrapsAfterSignup,
 } from "../../../core/accountVault/dkWraps";
+import { setSessionSecret } from "../../../core/graphql/sessionSecret";
 import { logger } from "../../../core/logger";
 import { closeStores } from "../../e2ee/web/webCommands";
 import { setWebStoreAccount } from "../../e2ee/web/webAccount";
@@ -53,6 +54,7 @@ import {
   type UnlockedAccount,
 } from "../api/accountLock";
 import { loadOpaque } from "../opaque/opaqueModule";
+import { clearReloadWindow, keepForReload } from "./reloadWindow";
 
 /** What an unlock after a password login takes. */
 export interface LoginUnlock {
@@ -423,15 +425,42 @@ export async function keepUnlocked(keepKey: Uint8Array): Promise<void> {
   }
 }
 
+/** What a sign-in or signup returned for the session it started. */
+export interface SessionKeys {
+  /** The session secret of a session signed in without "Keep me signed in". */
+  sessionSecret?: string | null;
+  /** The keep key the server holds for a kept web session. */
+  keepKey?: string | null;
+}
+
 /**
- * Locks the signed-in account: its keys leave memory, the encrypted store closes and forgets its
- * account, and the stores sealed under it go back to their initial state. On the desktop its
- * data key leaves the desktop's memory too; in the web app the keep wrap goes, so a keep key the
- * server forgets cannot be replayed.
+ * Holds what a sign-in or signup returned, once the account is unlocked: the session secret,
+ * kept for a reload too, or the keep key, which then wraps the data key.
+ */
+export async function holdSession({ sessionSecret, keepKey }: SessionKeys): Promise<void> {
+  if (sessionSecret) {
+    setSessionSecret(sessionSecret);
+    if (!isTauri()) {
+      await keepForReload().catch((err: unknown) =>
+        logger.warn("[RIM:auth] keeping the session for a reload failed:", err),
+      );
+    }
+  }
+  if (keepKey) await keepUnlocked(fromB64(keepKey, "the keep key"));
+}
+
+/**
+ * Locks the signed-in account: its keys leave memory, the session secret and what the tab kept
+ * for a reload go, the encrypted store closes and forgets its account, and the stores sealed
+ * under it go back to their initial state. On the desktop its data key leaves the desktop's
+ * memory too; in the web app the keep wrap goes, so a keep key the server forgets cannot be
+ * replayed.
  */
 export function lockAccount(): void {
   const account = vaultAccount();
   lockVault();
+  setSessionSecret(null);
+  clearReloadWindow();
   closeStores();
   setWebStoreAccount(null);
   if (account && isTauri()) {

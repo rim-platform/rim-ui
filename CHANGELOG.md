@@ -560,3 +560,6 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   it again. **Upgrade:** the web app drops what earlier versions kept in the browser, keys
   included; an account used in a browser before signs in there again after recovering it with
   its recovery phrase or linking the browser as a new device.
+- A web session signed in without "Keep me signed in" lasts until the browser closes and opens
+  nothing without a secret the tab holds in memory, so a session cookie left in the browser is
+  worthless; reloading the page within a minute keeps the account open.

@@ -12,6 +12,13 @@ vi.mock("../../key-identity/api/keyBackend", () => ({
 }));
 const kept = vi.hoisted(() => vi.fn());
 vi.mock("../api/accountLock", () => ({ accountUnlockKept: kept }));
+const keepKey = vi.hoisted(() => vi.fn());
+vi.mock("../api/sessionKeys", () => ({ fetchSessionKeepKey: keepKey }));
+const unlockKept = vi.hoisted(() => vi.fn());
+vi.mock("./accountUnlock", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./accountUnlock")>()),
+  unlockKept,
+}));
 
 import {
   lockVault,
@@ -29,6 +36,8 @@ beforeEach(() => {
   lockVault();
   tauri.desktop = false;
   accounts.mockResolvedValue([{ principalId: "rimp1_me", userId: "user-1" }]);
+  keepKey.mockResolvedValue(null);
+  unlockKept.mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -36,11 +45,28 @@ afterEach(() => {
 });
 
 describe("the unlock gate", () => {
-  it("waits for the password in the web app", async () => {
+  it("waits for the password in the web app when the session is not kept", async () => {
     const { result } = renderHook(() => useUnlockGate("user-1"));
     expect(result.current).toBe("opening");
     await waitFor(() => expect(result.current).toBe("locked"));
+    expect(keepKey).toHaveBeenCalledTimes(1);
+    expect(unlockKept).not.toHaveBeenCalled();
     expect(kept).not.toHaveBeenCalled();
+  });
+
+  it("opens a kept web session with the keep key the server holds for it", async () => {
+    keepKey.mockResolvedValue(toB64(new Uint8Array(32).fill(5)));
+    let used: Uint8Array | null = null;
+    unlockKept.mockImplementation(
+      async (endpoint: string, principalId: string, key: Uint8Array) => {
+        used = new Uint8Array(key);
+        await unlockVault({ endpoint, principalId }, DATA_KEY);
+        return principalId === "rimp1_me";
+      },
+    );
+    const { result } = renderHook(() => useUnlockGate("user-1"));
+    await waitFor(() => expect(result.current).toBe("unlocked"));
+    expect(used).toEqual(new Uint8Array(32).fill(5));
   });
 
   it("opens a kept account on the desktop with the store key the desktop hands over", async () => {

@@ -2,7 +2,9 @@
  * The unlock gate: whether the signed-in account's data is open on this device. A session alone
  * opens nothing; the account's data opens with its data key, which the password, the recovery
  * phrase or a kept session unlocks. When the vault is locked at start, the gate tries the ways
- * that need no password: on the desktop, a kept account opens without the server.
+ * that need no password: a kept account opens with the keep key, which the server holds for a
+ * web session and the desktop holds itself. A reload within its window has already unlocked
+ * the account while the session was restored (`reloadWindow`).
  */
 
 import { useEffect, useState } from "react";
@@ -11,8 +13,10 @@ import { isTauri } from "@tauri-apps/api/core";
 import { useAccountVault } from "../../../core/accountVault/accountVault";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { logger } from "../../../core/logger";
+import { fromB64 } from "../../../core/accountVault/crypto";
 import { keyBackend } from "../../key-identity/api/keyBackend";
-import { unlockKeptOnDesktop } from "./accountUnlock";
+import { fetchSessionKeepKey } from "../api/sessionKeys";
+import { unlockKept, unlockKeptOnDesktop } from "./accountUnlock";
 
 /** Where the gate is: trying to open without a password, open, or waiting for one. */
 export type UnlockGateState = "opening" | "unlocked" | "locked";
@@ -36,7 +40,14 @@ async function openWithoutPassword(endpoint: string, userId: string): Promise<bo
   const principalId = await principalOf(endpoint, userId);
   if (!principalId) return false;
   if (isTauri()) return unlockKeptOnDesktop(endpoint, principalId);
-  return false;
+  const keepKey = await fetchSessionKeepKey();
+  if (!keepKey) return false;
+  const key = fromB64(keepKey, "the keep key");
+  try {
+    return await unlockKept(endpoint, principalId, key);
+  } finally {
+    key.fill(0);
+  }
 }
 
 /**

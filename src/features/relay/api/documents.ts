@@ -309,11 +309,18 @@ export const KEY_LOGIN_CHALLENGE_MUTATION = gql`
 
 /**
  * Sent to a server directly, with a proof whose audience is that server's id, and the ticket of
- * a password login when the account is that server's own.
+ * a password login when the account is that server's own. The session there is kept, with the
+ * keep key held by this app: it needs no session secret, and the server holds no keep key for
+ * it.
  */
 export const LOGIN_WITH_KEY_MUTATION = gql`
   mutation LoginWithKey($proof: SignedStatementInput!, $passwordTicket: String) {
-    loginWithKey(proof: $proof, passwordTicket: $passwordTicket) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: true
+      keepKeyHeld: true
+    ) {
       userId
     }
   }

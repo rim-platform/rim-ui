@@ -5,6 +5,7 @@ import { server } from "../../test/mocks/server";
 import { isServerUnreachable } from "../../features/messages/api/messageCache";
 import { createGraphqlClient, graphqlClient } from "./client";
 import { useEdgeStore } from "./edgeRefusals";
+import { setSessionSecret } from "./sessionSecret";
 import {
   AddressBlockedError,
   graphqlErrorCode,
@@ -46,6 +47,27 @@ describe("createGraphqlClient", () => {
       vi.unstubAllEnvs();
     }
     expect(url).toBe(`${window.location.origin}/api`);
+  });
+});
+
+describe("the session secret", () => {
+  afterEach(() => setSessionSecret(null));
+
+  it("goes in X-RIM-Session-Secret of every request while held, and not otherwise", async () => {
+    const seen: (string | null)[] = [];
+    server.use(
+      http.post("*/api", ({ request }) => {
+        seen.push(request.headers.get("x-rim-session-secret"));
+        return HttpResponse.json({ data: { __typename: "Query" } });
+      }),
+    );
+    const client = createGraphqlClient();
+    await client.request("query Ping { __typename }");
+    setSessionSecret("c2VjcmV0");
+    await client.request("query Ping { __typename }");
+    setSessionSecret(null);
+    await client.request("query Ping { __typename }");
+    expect(seen).toEqual([null, "c2VjcmV0", null]);
   });
 });
 

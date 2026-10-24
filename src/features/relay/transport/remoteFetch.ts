@@ -9,7 +9,7 @@
 
 import { GraphQLClient } from "graphql-request";
 
-import { csrfHeader } from "../../../core/graphql/csrf";
+import { authHeaders } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { utf8 } from "../../key-identity/browser/bytes";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -86,7 +86,7 @@ async function attempt(
   });
   const headers: Record<string, string> = deviceRequestHeaders(signed);
   if (request.contentType) headers["Content-Type"] = request.contentType;
-  if (request.method === "POST") Object.assign(headers, csrfHeader());
+  if (request.method === "POST") Object.assign(headers, authHeaders());
 
   let res: Response;
   try {
