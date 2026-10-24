@@ -29,8 +29,14 @@ vi.mock("react-router-dom", async () => {
 });
 
 // Not hydrating, no existing session
+const needsConnection = vi.hoisted(() => ({ value: false }));
 vi.mock("../api/useSessionHydration", () => ({
-  useSessionHydration: () => ({ isHydrating: false, isAuthenticated: false }),
+  NEEDS_CONNECTION_MESSAGE: "Signing in needs a connection to the server",
+  useSessionHydration: () => ({
+    isHydrating: false,
+    isAuthenticated: false,
+    needsConnection: needsConnection.value,
+  }),
 }));
 
 // Auth store: always null session to avoid redirect-to-login side effects.
@@ -100,6 +106,7 @@ describe("LoginPage", () => {
     vi.clearAllMocks();
     desktop.value = false;
     sessionEnded.value = false;
+    needsConnection.value = false;
     keyOptions.value = false;
     mockUseServerConfig.mockReturnValue({
       data: { registrationMode: "INVITE_ONLY" },
@@ -390,5 +397,13 @@ describe("LoginPage", () => {
     sessionEnded.value = true;
     renderPage();
     expect(screen.getByRole("status")).toHaveTextContent("Your session ended. Sign in again.");
+  });
+
+  it("says signing in needs the server while an account that is not kept starts offline", () => {
+    needsConnection.value = true;
+    renderPage();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Signing in needs a connection to the server",
+    );
   });
 });

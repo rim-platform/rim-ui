@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { ClientError } from "graphql-request";
 
 import { AddressBlockedError } from "../../../core/graphql/errors";
@@ -11,6 +11,8 @@ const requestMock = vi.fn();
 const loadSessionRecordMock = vi.fn<() => Promise<SessionRecord | null>>();
 const saveSessionRecordMock = vi.fn<(record: SessionRecord) => Promise<void>>();
 const resumeWithDeviceKeyMock = vi.fn<(userId: string) => Promise<string | null>>();
+const listDeviceKeyAccountsMock = vi.fn<() => Promise<{ principalId: string; userId: string }[]>>();
+const accountUnlockKeptMock = vi.fn<(principal: string) => Promise<unknown>>();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -22,6 +24,10 @@ vi.mock("../../offline/api/offlineSession", () => ({
 
 vi.mock("../../key-identity/api/keyIdentity", () => ({
   resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
+  listDeviceKeyAccounts: () => listDeviceKeyAccountsMock(),
+}));
+vi.mock("./accountLock", () => ({
+  accountUnlockKept: (principal: string) => accountUnlockKeptMock(principal),
 }));
 
 import { useSessionHydration } from "./useSessionHydration";
@@ -65,6 +71,10 @@ describe("useSessionHydration", () => {
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
     saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
     resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
+    listDeviceKeyAccountsMock
+      .mockReset()
+      .mockResolvedValue([{ principalId: "rimp1_alice", userId: "alice" }]);
+    accountUnlockKeptMock.mockReset().mockResolvedValue(null);
     useAuthStore.setState({ session: null, csrfToken: null });
     useOfflineStore.setState({ offline: false });
   });
@@ -116,7 +126,7 @@ describe("useSessionHydration", () => {
     });
   });
 
-  it("opens the recorded account offline, with its CSRF token, when the server cannot be reached", async () => {
+  it("opens a kept account offline, unlocked with its keep key and with its CSRF token, when the server cannot be reached", async () => {
     loadSessionRecordMock.mockResolvedValue({
       state: "signedIn",
       endpoint,
@@ -124,15 +134,56 @@ describe("useSessionHydration", () => {
       csrfToken: "tok-alice",
     });
     requestMock.mockRejectedValue(networkDown());
+    accountUnlockKeptMock.mockResolvedValue({ webStoreKey: "k", startedEmpty: false });
 
     const result = await hydrate();
 
+    expect(accountUnlockKeptMock).toHaveBeenCalledWith("rimp1_alice");
     expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.needsConnection).toBe(false);
     expect(useAuthStore.getState()).toMatchObject({
       session: { userId: "alice" },
       csrfToken: "tok-alice",
     });
     expect(useOfflineStore.getState().offline).toBe(true);
+  });
+
+  it("keeps an account that is not kept on sign-in offline, and signs in once the server answers", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
+    requestMock.mockRejectedValue(networkDown());
+
+    const result = await hydrate();
+
+    expect(accountUnlockKeptMock).toHaveBeenCalledWith("rimp1_alice");
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.needsConnection).toBe(true);
+    expect(useOfflineStore.getState().offline).toBe(false);
+
+    // Still unreachable: it keeps waiting.
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    expect(result.current.needsConnection).toBe(true);
+
+    requestMock.mockResolvedValue({ me: { id: "alice" } });
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(result.current.needsConnection).toBe(false);
+    expect(useOfflineStore.getState().offline).toBe(false);
+  });
+
+  it("keeps an account without keys on this device on sign-in offline", async () => {
+    loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "bob" });
+    requestMock.mockRejectedValue(networkDown());
+
+    const result = await hydrate();
+
+    expect(accountUnlockKeptMock).not.toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.needsConnection).toBe(true);
   });
 
   it("stays signed out when the server refuses the cookie, whatever the record says", async () => {
