@@ -58,6 +58,9 @@ pub(crate) enum AccountLockError {
     /// the account opens only with the recovery phrase, or the person chooses to start empty.
     #[error("this device's data for the account needs the recovery phrase")]
     NeedsRecovery,
+    /// The account's data key is not in memory: nothing it seals opens until an unlock.
+    #[error("this account is locked on this computer; sign in to unlock it")]
+    Locked,
     #[error("{0}")]
     Invalid(String),
     #[error("key storage: {0}")]
@@ -72,6 +75,7 @@ impl AccountLockError {
             Self::WrongPassword => "WRONG_PASSWORD",
             Self::NoHandle => "NO_HANDLE",
             Self::NeedsRecovery => "NEEDS_RECOVERY",
+            Self::Locked => "LOCKED",
             Self::Invalid(_) => "INVALID",
             Self::Vault(_) => "VAULT",
             Self::Crypto(_) => "CRYPTO",
@@ -178,6 +182,10 @@ pub(crate) struct Unlocked {
     /// The data key is new: what the device kept for the account under an earlier one no
     /// longer opens.
     pub(crate) started_empty: bool,
+    /// The server share this unlock opened, which wraps the device key; never sent to the
+    /// webview.
+    #[serde(skip)]
+    pub(crate) share: Option<Key>,
 }
 
 /// Where one OPAQUE flow is.
@@ -441,6 +449,7 @@ impl AccountLock {
         Unlocked {
             web_store_key: Zeroizing::new(b64(web_store_key.as_ref())),
             started_empty,
+            share: None,
         }
     }
 
@@ -512,7 +521,10 @@ impl AccountLock {
         )?);
         self.set_keep(principal_id, &data_key, &mut wraps, keep)?;
         self.put_wraps(principal_id, &wraps)?;
-        Ok(self.hold(principal_id, data_key, started_empty))
+        Ok(Unlocked {
+            share: Some(share),
+            ..self.hold(principal_id, data_key, started_empty)
+        })
     }
 
     /// Unlocks a new account after its signup registered the password: a new data key wrapped
@@ -559,7 +571,10 @@ impl AccountLock {
         }
         self.set_keep(principal_id, &data_key, &mut wraps, keep)?;
         self.put_wraps(principal_id, &wraps)?;
-        Ok(self.hold(principal_id, data_key, true))
+        Ok(Unlocked {
+            share: Some(share),
+            ..self.hold(principal_id, data_key, true)
+        })
     }
 
     /// Unlocks a kept account with its keep key, without the server. `None` when the account
@@ -631,9 +646,54 @@ impl AccountLock {
         Ok(())
     }
 
-    #[cfg(test)]
+    /// The account's data key, while it is unlocked.
     pub(crate) fn data_key(&self, principal_id: &str) -> Option<Key> {
         lock(&self.unlocked).get(principal_id).cloned()
+    }
+
+    /// Whether the account is unlocked.
+    pub(crate) fn is_unlocked(&self, principal_id: &str) -> bool {
+        lock(&self.unlocked).contains_key(principal_id)
+    }
+
+    /// Seals `plaintext` under the account's store key for `label` (AES-256-GCM, `aad` the
+    /// record's name): base64url of `nonce ‖ ciphertext ‖ tag`.
+    ///
+    /// # Errors
+    /// [`AccountLockError::Locked`] while the account is locked.
+    pub(crate) fn seal_record(
+        &self,
+        principal_id: &str,
+        label: StoreKeyLabel,
+        aad: &str,
+        plaintext: &[u8],
+    ) -> Result<String> {
+        let data_key = self
+            .data_key(principal_id)
+            .ok_or(AccountLockError::Locked)?;
+        let key = rim_opaque::store_key(&data_key, label);
+        Ok(b64(&rim_opaque::seal(&key, aad.as_bytes(), plaintext)?))
+    }
+
+    /// Opens what [`Self::seal_record`] sealed under the same `label` and `aad`.
+    ///
+    /// # Errors
+    /// [`AccountLockError::Locked`] while the account is locked, and
+    /// [`AccountLockError::Crypto`] when it does not open: another data key, another name, or
+    /// damage.
+    pub(crate) fn open_record(
+        &self,
+        principal_id: &str,
+        label: StoreKeyLabel,
+        aad: &str,
+        sealed: &str,
+    ) -> Result<Zeroizing<Vec<u8>>> {
+        let data_key = self
+            .data_key(principal_id)
+            .ok_or(AccountLockError::Locked)?;
+        let key = rim_opaque::store_key(&data_key, label);
+        rim_opaque::open(&key, aad.as_bytes(), &unb64(sealed, "a sealed record")?)
+            .map_err(|_| AccountLockError::Crypto("a sealed record did not open".into()))
     }
 }
 

@@ -1,9 +1,16 @@
 # Secret vault
 
-The desktop app keeps its secrets in one encrypted file: the message cache key, the history
+The desktop app keeps its secrets in one encrypted file: the message cache keys, the history
 archive keys and cloud refresh tokens, the offline session record, the key identity records and
 pending device links, the AI provider keys, and the secret settings of plugins. The OS credential store holds a single entry, the
 key that opens the file. The code is `src-tauri/src/secret_store.rs`.
+
+What the vault keeps for one account is sealed a second time under that account's data key, and
+opens only while the account is unlocked: the keys of its key identity record (its names stay
+readable, for the sign-in list), its pending device links, its message cache keys and its plugins' secret
+settings (`account-password.md`, "What the data key seals"). The history archive keys, AI provider
+keys, the offline session record and the key identity index are the app's, not an account's, and
+stay under the vault key alone.
 
 Keeping the secrets out of the credential store lifts its size limit (Windows Credential Manager
 takes about 2.5 KB per credential, and `keyring` stores strings as UTF-16) and asks a Linux
@@ -52,6 +59,12 @@ one record, `plugin-setting-v1:<plugin id>:<account>:<key>`, where the account i
 account's provisional principal id (`rimp0_…`), which stays the same when the account switches to
 a key-based id. The settings form only asks whether the record exists; its value goes to no
 screen.
+
+- The value is `sealed-v1:` and the base64url of `nonce ‖ ciphertext ‖ tag`, AES-256-GCM under
+  the signed-in account's data key (store key "desktop vault", the record's name as associated
+  data). It reads and writes only while that account is unlocked; an account without a key-based
+  id, or a locked one, answers as a vault that does not open (below). A value stored before the
+  sealing reads as it is and is sealed then.
 
 - Saving the field writes the record, clearing it deletes it.
 - **Reset to defaults** deletes the plugin's records of the signed-in account, and uninstalling

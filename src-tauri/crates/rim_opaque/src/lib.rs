@@ -24,9 +24,9 @@ use rand_core::{CryptoRng, OsRng, RngCore};
 use zeroize::{Zeroize, Zeroizing};
 
 pub use keys::{
-    derive_unlock_key, open, random_key, recovery_wrap_key, rewrap_unlock_key, seal, store_key,
-    transport_key, unwrap_data_key, unwrap_rewrap, wrap_data_key, Key, StoreKeyLabel,
-    TransportLabel, WrapKind, KEY_LEN,
+    derive_unlock_key, device_key_wrap_key, open, random_key, recovery_wrap_key, rewrap_unlock_key,
+    seal, store_key, transport_key, unwrap_data_key, unwrap_device_seed, unwrap_rewrap,
+    wrap_data_key, wrap_device_seed, Key, StoreKeyLabel, TransportLabel, WrapKind, KEY_LEN,
 };
 
 /// The context both sides bind every login to.

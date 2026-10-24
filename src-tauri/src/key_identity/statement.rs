@@ -75,9 +75,8 @@ impl SecretKey {
         Self { seed }
     }
 
-    /// The raw seed, for writing a version 1 recovery kit in tests; outside tests this device
-    /// does not write one.
-    #[cfg(test)]
+    /// The raw seed: for the device key's wrap under the server share, and for writing a
+    /// version 1 recovery kit in tests.
     pub(crate) fn seed(&self) -> &[u8; 32] {
         &self.seed
     }

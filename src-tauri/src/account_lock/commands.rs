@@ -1,11 +1,18 @@
 //! Tauri commands of the account lock. They run on the blocking pool: an OPAQUE finish runs
 //! Argon2id at 64 MiB, and the wraps live in the secret vault file.
+//!
+//! Each unlock then seals under the data key what the device keeps for the account under the
+//! vault key alone: its key identity record and pending device links. An unlock after a login
+//! or signup also wraps the device key under the server share it saw, and brings back a device
+//! key that a new data key lost.
 
 use tauri::State;
 
+use rim_opaque::Key;
+
 use super::{AccountLock, AccountLockError, FlowStart, LoginFinish, RegistrationFinish, Unlocked};
 use crate::key_identity::KeyIdentityState;
-use crate::message_cache::{AccountId, MessageCacheState};
+use crate::message_cache::MessageCacheState;
 
 async fn blocking<T, F>(state: &State<'_, AccountLock>, f: F) -> Result<T, AccountLockError>
 where
@@ -16,6 +23,52 @@ where
     tauri::async_runtime::spawn_blocking(move || f(state))
         .await
         .map_err(|e| AccountLockError::Crypto(format!("account lock task failed: {e}")))?
+}
+
+/// What an unlock returns, with the server share it opened, if any.
+trait UnlockOutcome {
+    fn share(&self) -> Option<&Key>;
+}
+
+impl UnlockOutcome for Unlocked {
+    fn share(&self) -> Option<&Key> {
+        self.share.as_ref()
+    }
+}
+
+impl UnlockOutcome for Option<Unlocked> {
+    fn share(&self) -> Option<&Key> {
+        self.as_ref().and_then(|unlocked| unlocked.share.as_ref())
+    }
+}
+
+/// Seals `principal`'s records under the data key an unlock just held, wrapping the device key
+/// under the server `share` when the unlock saw it. A record that cannot be sealed stays as it
+/// was and is sealed at a later unlock.
+pub(crate) fn seal_after_unlock(keys: &KeyIdentityState, principal: &str, share: Option<&Key>) {
+    if let Err(e) = keys.seal_at_rest(principal, share) {
+        log::warn!("[account_lock] could not seal an account's keys at its unlock: {e}");
+    }
+}
+
+/// Runs the unlock `f` on the blocking pool, then [`seal_after_unlock`].
+async fn unlocking<T, F>(
+    state: &State<'_, AccountLock>,
+    keys: &State<'_, KeyIdentityState>,
+    principal: String,
+    f: F,
+) -> Result<T, AccountLockError>
+where
+    T: UnlockOutcome + Send + 'static,
+    F: FnOnce(AccountLock) -> Result<T, AccountLockError> + Send + 'static,
+{
+    let keys = keys.inner().clone();
+    blocking(state, move |s| {
+        let unlocked = f(s)?;
+        seal_after_unlock(&keys, &principal, unlocked.share());
+        Ok(unlocked)
+    })
+    .await
 }
 
 /// Start registering `password`: a handle and the `RegistrationRequest`, base64url.
@@ -65,9 +118,11 @@ pub async fn opaque_login_finish(
 /// login's transport key, `rewraps` the server's rewraps of older unlock keys, `keep` whether
 /// the account stays signed in on this device, `startEmpty` whether to start over here when
 /// nothing opens although the device holds a recovery wrap (otherwise `NEEDS_RECOVERY`).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn account_unlock_after_login(
     state: State<'_, AccountLock>,
+    keys: State<'_, KeyIdentityState>,
     handle: String,
     principal: String,
     sealed_share: String,
@@ -75,7 +130,7 @@ pub async fn account_unlock_after_login(
     keep: bool,
     start_empty: bool,
 ) -> Result<Unlocked, AccountLockError> {
-    blocking(&state, move |s| {
+    unlocking(&state, &keys, principal.clone(), move |s| {
         s.unlock_after_login(
             &handle,
             &principal,
@@ -94,13 +149,14 @@ pub async fn account_unlock_after_login(
 #[tauri::command]
 pub async fn account_unlock_after_signup(
     state: State<'_, AccountLock>,
+    keys: State<'_, KeyIdentityState>,
     handle: String,
     principal: String,
     share: String,
     recovery_entropy: Option<String>,
     keep: bool,
 ) -> Result<Unlocked, AccountLockError> {
-    blocking(&state, move |s| {
+    unlocking(&state, &keys, principal.clone(), move |s| {
         s.unlock_after_signup(
             &handle,
             &principal,
@@ -116,9 +172,13 @@ pub async fn account_unlock_after_signup(
 #[tauri::command]
 pub async fn account_unlock_kept(
     state: State<'_, AccountLock>,
+    keys: State<'_, KeyIdentityState>,
     principal: String,
 ) -> Result<Option<Unlocked>, AccountLockError> {
-    blocking(&state, move |s| s.unlock_kept(&principal)).await
+    unlocking(&state, &keys, principal.clone(), move |s| {
+        s.unlock_kept(&principal)
+    })
+    .await
 }
 
 /// Unlock `principal` with its recovery phrase's 16 bytes (base64url), or null when this
@@ -126,35 +186,26 @@ pub async fn account_unlock_kept(
 #[tauri::command]
 pub async fn account_unlock_with_recovery(
     state: State<'_, AccountLock>,
+    keys: State<'_, KeyIdentityState>,
     principal: String,
     entropy: String,
 ) -> Result<Option<Unlocked>, AccountLockError> {
-    blocking(&state, move |s| {
+    unlocking(&state, &keys, principal.clone(), move |s| {
         s.unlock_with_recovery(&principal, &entropy)
     })
     .await
 }
 
-/// Lock `principal`: drop its data key, close its message cache databases and wipe the cache
-/// key held in memory.
+/// Lock `principal`: drop its data key and close its message cache databases, which hold the
+/// only copies of their keys in memory.
 #[tauri::command]
 pub async fn account_lock(
     state: State<'_, AccountLock>,
     cache: State<'_, MessageCacheState>,
-    keys: State<'_, KeyIdentityState>,
     principal: String,
 ) -> Result<(), AccountLockError> {
-    let keys = keys.inner().clone();
-    let lookup = principal.clone();
-    let users = tauri::async_runtime::spawn_blocking(move || keys.signed_in_users(&lookup))
-        .await
-        .map_err(|e| AccountLockError::Vault(format!("account lock task failed: {e}")))?
-        .map_err(|e| AccountLockError::Vault(e.to_string()))?;
     state.lock_account(&principal);
-    for (endpoint, user_id) in users {
-        cache.close(&AccountId { endpoint, user_id });
-    }
-    cache.forget_key();
+    cache.close_principal(&principal);
     Ok(())
 }
 

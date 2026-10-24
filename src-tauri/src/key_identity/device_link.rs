@@ -621,7 +621,7 @@ impl KeyIdentityState {
         let link_id_bytes = parse_link_id(link_id)?;
         {
             let _guard = self.guard()?;
-            self.record(principal_id)?;
+            self.device_record(principal_id)?;
         }
         let code = LinkCode::generate(link_id_bytes, endpoint)?;
         let started = IssuedCode {
@@ -920,7 +920,7 @@ impl KeyIdentityState {
     ) -> Result<LinkedDevice> {
         let _guard = self.guard()?;
         let keys = self.keys();
-        if keys.record(&claim.principal_id)?.is_some() {
+        if keys.device_record(&claim.principal_id)?.is_some() {
             return Err(KeyIdentityError::Invalid(
                 "this computer already holds keys for that account: sign in with them, or \
                  remove them from the sign-in screen first"
@@ -941,6 +941,8 @@ impl KeyIdentityState {
             kit_confirmed: None,
             confirmed: false,
             replaced: None,
+            sealed: None,
+            device_wrap: None,
         })?;
         let mut links = keys.links()?;
         links.retain(|l| {

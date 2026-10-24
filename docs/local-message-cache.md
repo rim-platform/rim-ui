@@ -10,14 +10,22 @@ cannot be reached. The web app has no cache and behaves as before.
   builds a vendored OpenSSL). Files live in `<app data>/message-cache/`, one per account, named
   after a hash of (GraphQL endpoint, user id). The account is also written inside the file, so a
   database is never served to another account.
-- One random 256-bit key per installation, stored in the secret vault (`message-cache-key-v1`, see
-  `secret-vault.md`), whose own key is in the OS credential store (on Linux the desktop keyring
-  service, see below). All key handling is in `key.rs`; key identity re-wraps this key under the
-  device key. If the key is lost, the unreadable files are deleted and the cache refills from the
-  server. If the vault cannot be opened, every cache call fails softly, the timeline reads from
-  the server, and the app says once per run that the local cache is off and why. The failure is
-  kept until the app restarts, so a locked keyring's unlock prompt, once dismissed, is not shown
-  again on every cache call.
+- One random 256-bit key per account, stored in the secret vault as
+  `message-cache-key-v1:<file stem>` (the hash the database file is named after, see
+  `secret-vault.md`) and sealed there a second time under the account's data key
+  (`account-password.md`, "What the data key seals"). The account is found through the key
+  identity index, by endpoint and user id. Its cache opens only while the account is unlocked:
+  while it is locked every cache call answers `LOCKED` and the timeline reads from the server.
+  Locking the account closes its databases, which hold the only copies of the key in memory. The
+  key is made at the first open after an unlock; an account without keys on this device has no
+  data key, so its cache stays shut. All key handling is in `key.rs`.
+- If the key is lost or new (a cache from before the per-account keys, or an account that started
+  empty on this device), the unreadable files are deleted and the cache refills from the server;
+  the one key per installation the caches used before (`message-cache-key-v1`) is deleted once
+  an account's key is made. If the vault cannot be opened, every cache call fails softly, the
+  timeline reads from the server, and the app says once per run that the local cache is off and
+  why. The failure is kept until the app restarts, so a locked keyring's unlock prompt, once
+  dismissed, is not shown again on every cache call.
 - On Linux the credential store is the Secret Service (GNOME Keyring, KWallet, KeePassXC) over
   D-Bus. With none running, or with the keyring locked, the cache stays off with an error that
   says so; nothing falls back to a store that would not survive a reboot.
@@ -97,8 +105,11 @@ A user who signed in on this device before can open the app without a connection
   cache key, see `secret-vault.md`): which
   account was signed in to which server, or that the user signed out. No token is stored; the
   session stays in the webview's cookie. When the startup session check cannot reach the
-  server, the recorded account opens offline. When the server answers that the session is no
-  longer valid, the app goes to sign-in as before.
+  server, the recorded account opens offline if it is kept signed in on this device: its keep
+  key unlocks it without the server (`account_unlock_kept`). An account that is not kept stays on
+  sign-in, which says "Signing in needs a connection to the server", and the server is asked
+  again until it answers. When the server answers that the session is no longer valid, the app
+  goes to sign-in as before.
 - Snapshots (`message_cache/snapshot.rs`, schema v4) keep the last server answer of the
   signed-in user, the workspace list, and each workspace's joined channels, DMs and members in
   the same encrypted database. Each answer is saved; a query the server cannot be reached for

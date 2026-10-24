@@ -973,6 +973,11 @@ fn old_device() -> OldDevice {
     let store = Arc::new(MemorySecretStore::default());
     let state = KeyIdentityState::new(store.clone());
     let (draft, statements) = enrolled(&state);
+    // Signed in: the account is unlocked, so its pending links can be sealed.
+    state
+        .account_lock()
+        .unlock_for_tests(&draft.principal_id, [3; 32]);
+    state.seal_at_rest(&draft.principal_id, None).unwrap();
     let started = state
         .begin_link(&draft.principal_id, ENDPOINT, LINK_ID)
         .unwrap();
@@ -1021,7 +1026,8 @@ fn fresh_offer() -> Offer {
 }
 
 fn nothing_stored(store: &MemorySecretStore) -> bool {
-    let keys = store::Keys(store);
+    let lock = AccountLock::in_memory();
+    let keys = store::Keys::new(store, &lock);
     keys.links().unwrap().is_empty() && keys.pending_links().unwrap().is_empty()
 }
 
@@ -1058,7 +1064,7 @@ fn a_device_links_end_to_end_and_signs_in_with_its_own_key() {
         answer
     );
     // The pending record is in the keyring before `addDeviceKey`.
-    let pending = store::Keys(old.store.as_ref()).pending_links().unwrap();
+    let pending = old.state.keys().pending_links().unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].device_id, answer.device_id);
     assert_eq!(pending[0].certificate, answer.certificate);
@@ -1093,10 +1099,7 @@ fn a_device_links_end_to_end_and_signs_in_with_its_own_key() {
     ));
 
     old.state.end_link(LINK_ID).unwrap();
-    assert!(store::Keys(old.store.as_ref())
-        .pending_links()
-        .unwrap()
-        .is_empty());
+    assert!(old.state.keys().pending_links().unwrap().is_empty());
 }
 
 #[test]
@@ -1161,10 +1164,7 @@ fn the_old_device_refuses_and_reports_bad_offers() {
 
     // Nothing to confirm after a refusal.
     assert!(old.state.confirm_link(LINK_ID, &old.key_log, "x").is_err());
-    assert!(store::Keys(old.store.as_ref())
-        .pending_links()
-        .unwrap()
-        .is_empty());
+    assert!(old.state.keys().pending_links().unwrap().is_empty());
 }
 
 #[test]
@@ -1218,6 +1218,11 @@ fn a_confirmed_link_resumes_after_a_restart_with_the_same_certificate() {
     assert!(old.state.pending_links(ENDPOINT).unwrap().is_empty());
 
     let restarted = KeyIdentityState::new(old.store.clone());
+    // Sealed under the account's data key: nothing to resume until the account is unlocked.
+    assert!(restarted.pending_links(ENDPOINT).unwrap().is_empty());
+    restarted
+        .account_lock()
+        .unlock_for_tests(&old.principal_id, [3; 32]);
     assert!(restarted
         .pending_links("https://other.example/api")
         .unwrap()
@@ -1455,4 +1460,171 @@ fn a_device_request_names_this_device_and_verifies_under_its_key() {
         state.sign_device_request("rimp1_someone-else", &request),
         Err(KeyIdentityError::NoKeys)
     ));
+}
+
+/// The stored JSON of `principal_id`'s record.
+fn stored_record(store: &MemorySecretStore, principal_id: &str) -> serde_json::Value {
+    let raw = store
+        .read(&format!("key-identity-v1:{principal_id}"))
+        .unwrap()
+        .unwrap();
+    serde_json::from_str(&raw).unwrap()
+}
+
+#[test]
+fn an_unlock_seals_the_keys_and_a_locked_account_answers_locked() {
+    let store = Arc::new(MemorySecretStore::default());
+    let state = KeyIdentityState::new(store.clone());
+    // A signup writes its keys before the account's first unlock: under the vault key only, and
+    // usable as before.
+    let (draft, statements) = enrolled(&state);
+    let principal = draft.principal_id.as_str();
+    let stored = stored_record(&store, principal);
+    assert!(stored.get("deviceSeed").is_some() && stored.get("sealed").is_none());
+    state.sign_login(ENDPOINT, principal, &challenge()).unwrap();
+
+    state.account_lock().unlock_for_tests(principal, [3; 32]);
+    state.seal_at_rest(principal, None).unwrap();
+    let stored = stored_record(&store, principal);
+    let raw = serde_json::to_string(&stored).unwrap();
+    let opened = state.record(principal).unwrap();
+    let identity_seed = opened.identity_seed.clone().unwrap();
+    assert!(!raw.contains(identity_seed.as_str()));
+    assert!(!raw.contains(opened.device_seed.as_str()));
+    for field in ["deviceSeed", "identitySeed", "backupKey", "recoveryEntropy"] {
+        assert!(stored.get(field).is_none(), "{field} left in the clear");
+    }
+    for field in [
+        "principalId",
+        "deviceId",
+        "deviceName",
+        "confirmed",
+        "sealed",
+    ] {
+        assert!(stored.get(field).is_some(), "{field} missing");
+    }
+    assert!(state.recovery_kit(principal).unwrap().is_some());
+
+    // After a restart the account is locked: it is listed, and every key refuses.
+    let restarted = KeyIdentityState::new(store.clone());
+    let listed = restarted.accounts(ENDPOINT).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].device_id, opened.device_id);
+    assert!(!listed[0].has_identity_key);
+    assert!(matches!(
+        restarted.sign_login(ENDPOINT, principal, &challenge()),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.device(principal),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.recovery_kit(principal),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.confirm_recovery_kit(principal),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.sync_log(principal, &statements.key_log),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert!(matches!(
+        restarted.begin_rotation(principal, &statements.key_log),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert_eq!(
+        serde_json::to_value(KeyIdentityError::Locked).unwrap()["kind"],
+        "LOCKED"
+    );
+    // Settling while locked keeps the sealed keys as they were.
+    restarted
+        .settle(&account("u1"), Some(principal))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_record(&store, principal)["sealed"], stored["sealed"]);
+
+    // Unlocked with the same data key, everything opens again.
+    restarted
+        .account_lock()
+        .unlock_for_tests(principal, [3; 32]);
+    let proof = restarted
+        .sign_login(ENDPOINT, principal, &challenge())
+        .unwrap();
+    assert_eq!(payload_field(&proof, "principalId"), principal);
+    assert_eq!(
+        restarted
+            .record(principal)
+            .unwrap()
+            .identity_seed
+            .unwrap()
+            .as_str(),
+        identity_seed.as_str()
+    );
+    assert!(
+        restarted
+            .sync_log(principal, &statements.key_log)
+            .unwrap()
+            .holds_identity_key
+    );
+    restarted.confirm_recovery_kit(principal).unwrap();
+    // Written while unlocked: sealed at once.
+    let stored = stored_record(&store, principal);
+    assert!(stored.get("sealed").is_some() && stored.get("deviceSeed").is_none());
+    assert_eq!(stored["kitConfirmed"], true);
+}
+
+#[test]
+fn keys_sealed_under_an_earlier_data_key_are_gone() {
+    let store = Arc::new(MemorySecretStore::default());
+    let state = KeyIdentityState::new(store.clone());
+    let (draft, _) = enrolled(&state);
+    let principal = draft.principal_id.as_str();
+    state.account_lock().unlock_for_tests(principal, [3; 32]);
+    state.seal_at_rest(principal, None).unwrap();
+
+    // The account started empty here: a new data key.
+    let restarted = KeyIdentityState::new(store.clone());
+    restarted
+        .account_lock()
+        .unlock_for_tests(principal, [4; 32]);
+    let record = restarted.record(principal).unwrap();
+    assert!(record.device_seed.is_empty() && record.identity_seed.is_none());
+    assert!(record.confirmed);
+    assert!(matches!(
+        restarted.sign_login(ENDPOINT, principal, &challenge()),
+        Err(KeyIdentityError::NoKeys)
+    ));
+}
+
+#[test]
+fn pending_links_are_sealed_and_written_only_while_unlocked() {
+    let old = old_device();
+    let new = KeyIdentityState::new(Arc::new(MemorySecretStore::default()));
+    let sent = new.offer_link(ENDPOINT, &old.code, "Phone").unwrap();
+    old.review(&sent.offer).unwrap();
+
+    old.state.account_lock().lock_account(&old.principal_id);
+    assert!(matches!(
+        old.state.confirm_link(LINK_ID, &old.key_log, "Phone"),
+        Err(KeyIdentityError::Locked)
+    ));
+    old.state
+        .account_lock()
+        .unlock_for_tests(&old.principal_id, [3; 32]);
+    let answer = old
+        .state
+        .confirm_link(LINK_ID, &old.key_log, "Phone")
+        .unwrap();
+    let raw = old
+        .store
+        .read(&format!("device-link-v1:{LINK_ID}"))
+        .unwrap()
+        .unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(stored["principalId"], old.principal_id.as_str());
+    assert!(stored.get("secret").is_none() && stored.get("answer").is_none());
+    assert!(!raw.contains(&answer.device_id));
 }
