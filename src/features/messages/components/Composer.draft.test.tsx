@@ -37,6 +37,7 @@ vi.mock("../hooks/useTypingIndicator", () => ({
 vi.mock("../../e2ee/runtime/send", () => ({
   sendEncrypted,
   EncryptedSendError: class extends Error {},
+  EncryptedUploadError: class extends Error {},
 }));
 vi.mock("../../e2ee/runtime/session", () => session);
 vi.mock("../../e2ee/runtime/groups", () => groups);

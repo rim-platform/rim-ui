@@ -1,3 +1,7 @@
+import { http, HttpResponse } from "msw";
+import { server } from "../../../test/mocks/server";
+import { useAttachmentUploadStore } from "../api/useAttachmentUploads";
+import { useDraftStore } from "../state/useDraftStore";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -404,6 +408,7 @@ describe("Composer — offline", () => {
 
 describe("Composer — attachments switch", () => {
   beforeEach(() => {
+    useAttachmentUploadStore.setState({ failed: [], busy: [] });
     requestMock.mockReset();
     vi.mocked(toast.error).mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
@@ -414,7 +419,7 @@ describe("Composer — attachments switch", () => {
   });
 
   function renderWith(features: FakeFeatures = {}) {
-    render(
+    return render(
       <QueryClientProvider client={serverInfoQueryClient(features)}>
         <Composer workspaceId="ws-1" conversationId="conv-1" />
       </QueryClientProvider>,
@@ -444,6 +449,91 @@ describe("Composer — attachments switch", () => {
 
     dropFile("notes.txt");
     expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  it("keeps text, its saved draft and selected files when sending fails", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => {
+        throw new Error("network unavailable");
+      },
+    });
+    const view = renderWith();
+    const textbox = await screen.findByRole("textbox");
+    dropFile("notes.txt");
+    fireEvent.change(textbox, { target: { value: "keep this draft" } });
+    fireEvent.submit(textbox.closest("form")!);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(textbox).toHaveValue("keep this draft");
+    expect(useDraftStore.getState().getDraft("conv-1")).toBe("keep this draft");
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    view.unmount();
+    renderWith();
+    expect(await screen.findByRole("textbox")).toHaveValue("keep this draft");
+  });
+
+  it("retries failed files without resending the delivered message", async () => {
+    let ticketAttempts = 0;
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "delivered" } }),
+      "mutation CreateAttachment": () => {
+        if (ticketAttempts++ === 0) throw new Error("disconnected");
+        return { createAttachment: { attachmentId: "att-1", uploadToken: "token" } };
+      },
+      "mutation FinalizeAttachment": () => ({
+        finalizeAttachment: { id: "att-1", status: "READY" },
+      }),
+    });
+    server.use(http.post("*/api/files/upload", () => new HttpResponse(null, { status: 204 })));
+    const view = renderWith();
+    const textbox = await screen.findByRole("textbox");
+    dropFile("notes.txt");
+    fireEvent.change(textbox, { target: { value: "file for you" } });
+    fireEvent.submit(textbox.closest("form")!);
+    await screen.findByRole("button", { name: "Retry files" });
+    expect(textbox).toHaveValue("");
+    view.unmount();
+    renderWith();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry files" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Retry files" })).not.toBeInTheDocument(),
+    );
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1);
+    expect(callsTo(requestMock, "mutation CreateAttachment")).toHaveLength(2);
+    expect(callsTo(requestMock, "mutation FinalizeAttachment")).toHaveLength(1);
+  });
+
+  it("blocks unsupported files before creating a message", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "unexpected" } }),
+    });
+    renderWith();
+    const textbox = await screen.findByRole("textbox");
+    dropFile("program.exe");
+    fireEvent.submit(textbox.closest("form")!);
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("unsupported")),
+    );
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
+    expect(screen.getByText("program.exe")).toBeInTheDocument();
+  });
+
+  it("submits once and preserves text entered while that send is pending", async () => {
+    let deliver!: (value: unknown) => void;
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () =>
+        new Promise((resolve) => {
+          deliver = resolve;
+        }),
+    });
+    renderWith();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "first message" } });
+    fireEvent.submit(textbox.closest("form")!);
+    fireEvent.submit(textbox.closest("form")!);
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
+    fireEvent.change(textbox, { target: { value: "next draft" } });
+    await act(async () => deliver({ sendMessage: { id: "delivered" } }));
+    expect(textbox).toHaveValue("next draft");
   });
 
   it("says attachments are switched off when the server refuses the upload", async () => {

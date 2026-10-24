@@ -82,6 +82,25 @@ describe("EncryptedAttachments", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:decrypted-image/png");
   });
 
+  it("waits for the upload before fetching and decrypting inline media", async () => {
+    const { rerender } = renderAttachments([attachment({ status: "PENDING_UPLOAD" })]);
+    expect(decryptAttachment).not.toHaveBeenCalled();
+    rerender(
+      <EncryptedAttachments
+        messageId="msg-1"
+        serverId="ws-1"
+        conversationId="conv-1"
+        attachments={[attachment()]}
+        hasText
+      />,
+    );
+    expect(await screen.findByAltText("photo.png")).toHaveAttribute(
+      "src",
+      "blob:decrypted-image/png",
+    );
+    expect(decryptAttachment).toHaveBeenCalledTimes(1);
+  });
+
   it("plays a decrypted video from its object URL", async () => {
     const { container } = renderAttachments([
       attachment({ filename: "clip.mp4", contentType: "video/mp4" }),

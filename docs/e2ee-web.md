@@ -100,6 +100,9 @@ the staged records are written in **one IndexedDB transaction**. Only when it co
 journal kept (`keep`) and the result returned; if the operation throws or the transaction fails,
 the journal is rolled back (`rollback`) and nothing is written. So:
 
+- attachment metadata for an already decrypted message refreshes from its verified cached
+  content only when its ciphertext hash, receipt, epoch and sender still match. The desktop
+  cache applies the same rule, so a later upload completion needs no second decryption;
 - a message is decrypted once, together with storing its plaintext: a failed write leaves both
   undone, and the entry decrypts on the next sync;
 - no envelope is sent and no Commit submitted before the state that produced it is stored, and

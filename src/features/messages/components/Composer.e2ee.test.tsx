@@ -29,6 +29,7 @@ vi.mock("../hooks/useTypingIndicator", () => ({
 vi.mock("../../e2ee/runtime/send", () => ({
   sendEncrypted,
   EncryptedSendError: class extends Error {},
+  EncryptedUploadError: class extends Error {},
 }));
 
 import { Composer } from "./Composer";

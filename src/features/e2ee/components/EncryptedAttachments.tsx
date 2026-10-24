@@ -73,7 +73,8 @@ function EncryptedMedia({
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!requested) return;
+    if (!requested || attachment.status !== "READY") return;
+    setFailed(false);
     let revoked = false;
     let created: string | null = null;
     openAttachment(props, attachment)
@@ -92,7 +93,7 @@ function EncryptedMedia({
     };
     // The attachment is identified by its hash; the props object changes every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requested, attachment.blobSha256, attachment.id]);
+  }, [requested, attachment.blobSha256, attachment.id, attachment.status]);
   return (
     <DownloadedMedia
       kind={kind}

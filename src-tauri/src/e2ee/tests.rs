@@ -825,6 +825,22 @@ fn appendix_a3_attachment_round_trip() {
     let (_, _, payload) = bob.row(&out.message_id);
     assert_eq!(payload["attachments"][0]["filename"], "hello.txt");
     assert_eq!(payload["attachments"][0]["blobSha256"], json!(hash));
+    assert_eq!(payload["attachments"][0]["status"], "PENDING_UPLOAD");
+    server.counter += 1;
+    let (version, message) = server.messages.get_mut(&out.message_id).unwrap();
+    *version = server.counter;
+    message["hasAttachments"] = json!(true);
+    message["attachments"] = json!([{
+        "id": "att-ready", "blobSha256": hash, "status": "READY",
+        "filename": "encrypted", "contentType": "application/octet-stream", "sizeBytes": encrypted.blob.len(),
+    }]);
+    bob.sync(&server);
+    let (text, state, refreshed) = bob.row(&out.message_id);
+    assert_eq!(text.as_deref(), Some("a file"));
+    assert_eq!(state.as_deref(), Some("decrypted"));
+    assert_eq!(refreshed["attachments"][0]["id"], "att-ready");
+    assert_eq!(refreshed["attachments"][0]["status"], "READY");
+    assert_eq!(refreshed["attachments"][0]["filename"], "hello.txt");
     let found = bob.run(|tx, _| super::attachment::attachment_entry(tx, &out.message_id, &hash));
     let plaintext = rim_mls::decrypt_attachment(&found, &encrypted.blob).unwrap();
     assert_eq!(plaintext.as_slice(), b"hello, attachment\n");
