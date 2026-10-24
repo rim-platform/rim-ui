@@ -47,12 +47,15 @@
 # RUSTSEC-2026-0369 — Unix permissions applied through symlinks without confining the target.
 #
 # RUSTSEC-2026-0387 — timing variability in `crypto-bigint` 0.5.5 operations meant to be
-# constant-time. The crate comes only through `elliptic-curve` 0.13 (`p256`, `p384`) of
-# `openmls_rust_crypto` 0.6, which is a dev-dependency of `crates/rim_mls`: its tests use it as
-# a second MLS provider. It is in neither the desktop app nor the web MLS module (`cargo tree
-# -e normal,build -i crypto-bigint` is empty for every target). The fix, `crypto-bigint` 0.7,
-# needs `elliptic-curve` 0.14, which no `openmls_rust_crypto` release uses yet. Drop this once
-# it does, or once `rim_mls` tests no longer use that provider.
+# constant-time. It comes through `elliptic-curve` 0.13 in two places:
+# - `opaque-ke` 4.0 and `voprf` 0.5 of `crates/rim_opaque`, in the desktop app and the web
+#   OPAQUE module, for `elliptic-curve`'s generic group traits. The suite is ristretto255,
+#   whose arithmetic is `curve25519-dalek`'s; no NIST curve is enabled, so no secret reaches
+#   `crypto-bigint`'s integer types.
+# - `p256` and `p384` of `openmls_rust_crypto` 0.6, a dev-dependency of `crates/rim_mls` that
+#   its tests use as a second MLS provider; that one is in neither the app nor a module.
+# The fix, `crypto-bigint` 0.7, needs `elliptic-curve` 0.14, which neither `opaque-ke` 4.0 nor
+# `openmls_rust_crypto` 0.6 uses yet. Drop this once both move.
 [advisories]
 ignore = [
     "RUSTSEC-2026-0329",
