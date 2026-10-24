@@ -1233,10 +1233,23 @@ export type LoginPayload = {
    */
   csrfToken: Scalars['String']['output'];
   /**
+   * After `loginWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
+   * server holds for this session, 32 bytes as unpadded base64url, in the clear. `null`
+   * otherwise.
+   */
+  keepKey?: Maybe<Scalars['String']['output']>;
+  /**
    * The account has no password: this session may only set one (`setPassword`), sign out
    * and read `me`; everything else answers `FORBIDDEN`.
    */
   mustSetPassword: Scalars['Boolean']['output'];
+  /**
+   * After `loginWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
+   * the clear. The client keeps it in memory only and sends it in the
+   * `X-RIM-Session-Secret` header of every request and in the WebSocket's
+   * `connection_init` payload as `sessionSecret`. `null` for a kept session.
+   */
+  sessionSecret?: Maybe<Scalars['String']['output']>;
   userId: Scalars['ID']['output'];
 };
 
@@ -1758,6 +1771,13 @@ export type Mutation = {
    * `UNAUTHENTICATED`, as for a wrong proof. An account of this server without a password
    * signs in with the key alone and gets `mustSetPassword`: its session may only set a
    * password, sign out and read `me`. Accounts of other servers sign in with the key alone.
+   *
+   * `keepSignedIn` ("Keep me signed in") sets persistent cookies. Unticked, the cookies last
+   * until the browser closes and the session answers only requests that carry
+   * `sessionSecret` (returned here) in the `X-RIM-Session-Secret` header; plain file
+   * downloads, `reloadSession` and `logout` excepted. A kept session of a client that holds
+   * its own keep key (`keepKeyHeld`, the desktop app) gets no `keepKey`; a web client's kept
+   * session gets the keep key the server holds for it.
    */
   loginWithKey: LoginPayload;
   logout: Scalars['Boolean']['output'];
@@ -1836,6 +1856,15 @@ export type Mutation = {
    * The settings stay. Owner only, with the refusals of `updatePublicJoinLink`.
    */
   reissuePublicJoinLink: PublicJoinLink;
+  /**
+   * After a reload, hand this session's tab the reload key its stored data is sealed under,
+   * and a new one the server keeps instead. It needs the session cookie and the CSRF header,
+   * but not the session secret, which the tab lost in the reload. It answers once, and only
+   * while the session is unkept and no WebSocket of it is open, within 60 seconds of its
+   * WebSocket closing; otherwise `UNAUTHENTICATED`, and the account is locked on this
+   * device.
+   */
+  reloadSession: ReloadSessionPayload;
   /**
    * Pin the host at `hostOrigin` as `hostServerId` and fetch a login challenge from it for a
    * join, with the workspace `inviteToken` names (the invite is not used), or the workspace,
@@ -1973,6 +2002,14 @@ export type Mutation = {
    * `RegistrationResponse`. `CONFLICT` when the account has a password.
    */
   setPasswordStart: Scalars['String']['output'];
+  /**
+   * Make a new reload key for this session, which was signed in without "Keep me signed
+   * in", and return it, 32 bytes as unpadded base64url. The tab seals what it stores in
+   * `sessionStorage` under it, right after signing in and after each reload. The server
+   * keeps only this key; the previous one stops opening anything. `UNAUTHENTICATED` for a
+   * kept session.
+   */
+  setReloadKey: Scalars['String']['output'];
   /**
    * Set a channel's slow mode, in seconds (0 to 21600; 0 turns it off). Owner/Moderator.
    * Audited (`chat.set_slow_mode`).
@@ -2441,6 +2478,8 @@ export type MutationLoginArgs = {
 
 
 export type MutationLoginWithKeyArgs = {
+  keepKeyHeld: Scalars['Boolean']['input'];
+  keepSignedIn: Scalars['Boolean']['input'];
   passwordTicket?: InputMaybe<Scalars['String']['input']>;
   proof: SignedStatementInput;
 };
@@ -3458,6 +3497,13 @@ export type Query = {
   serverInfo: ServerInfo;
   serverMembers: Array<ServerMember>;
   /**
+   * The keep key the server holds for this session, 32 bytes as unpadded base64url, in the
+   * clear: what a web client signed in with "Keep me signed in" opens its data key with at
+   * start. `null` for a session signed in without it, and for one whose client holds its
+   * own keep key.
+   */
+  sessionKeepKey?: Maybe<Scalars['String']['output']>;
+  /**
    * The current `seq` of each named event stream of a space hosted here that the caller can
    * see; streams the caller cannot see are left out.
    */
@@ -3870,6 +3916,17 @@ export type RelayItem = {
 export type RelayItemPage = {
   hasMore: Scalars['Boolean']['output'];
   items: Array<RelayItem>;
+};
+
+/** The reload keys `reloadSession` hands a tab that reloaded. */
+export type ReloadSessionPayload = {
+  /**
+   * The reload key the server now holds instead, 32 bytes: the tab seals its data again
+   * under it.
+   */
+  nextReloadKey: Scalars['String']['output'];
+  /** The reload key the tab's stored data is sealed under, 32 bytes. */
+  reloadKey: Scalars['String']['output'];
 };
 
 /**
@@ -4411,12 +4468,22 @@ export type SignupWithInvitePayloadGql = {
    * read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
    */
   csrfToken: Scalars['String']['output'];
+  /**
+   * After `signupWithKey` with `keepSignedIn` and without `keepKeyHeld`: the keep key the
+   * server holds for this session, unpadded base64url, in the clear. `null` otherwise.
+   */
+  keepKey?: Maybe<Scalars['String']['output']>;
   serverId?: Maybe<Scalars['ID']['output']>;
   /**
    * After `signupWithKey`: the new account's server share, unpadded base64url, in the
    * clear. `null` for the other signups.
    */
   serverShare?: Maybe<Scalars['String']['output']>;
+  /**
+   * After `signupWithKey` without `keepSignedIn`: the session secret, unpadded base64url, in
+   * the clear, as `loginWithKey` returns it. `null` for a kept session.
+   */
+  sessionSecret?: Maybe<Scalars['String']['output']>;
   userId: Scalars['ID']['output'];
 };
 
@@ -4439,6 +4506,10 @@ export type SignupWithKeyInput = {
    */
   displayName?: InputMaybe<Scalars['String']['input']>;
   instanceInviteToken?: InputMaybe<Scalars['String']['input']>;
+  /** The client holds its own keep key, as for `loginWithKey`. */
+  keepKeyHeld: Scalars['Boolean']['input'];
+  /** "Keep me signed in", as for `loginWithKey`. */
+  keepSignedIn: Scalars['Boolean']['input'];
   /** The whole key log, inception first. */
   keyLog: Array<SignedStatementInput>;
   /**

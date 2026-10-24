@@ -436,13 +436,20 @@ export async function completeEnrollment(
 
 /**
  * What the join page fills in for `signupWithKey`: the name, the page's token, if any, and the
- * password's OPAQUE `RegistrationUpload`, without which the server refuses the signup.
+ * password's OPAQUE `RegistrationUpload` with the "Keep me signed in" choice, without which the
+ * server refuses the signup.
  */
 export type KeySignupFields = Omit<
   SignupWithKeyInput,
-  "keyLog" | "device" | "proof" | "proofOfWork" | "passwordRegistration"
+  | "keyLog"
+  | "device"
+  | "proof"
+  | "proofOfWork"
+  | "passwordRegistration"
+  | "keepSignedIn"
+  | "keepKeyHeld"
 > &
-  Partial<Pick<SignupWithKeyInput, "passwordRegistration">>;
+  Partial<Pick<SignupWithKeyInput, "passwordRegistration" | "keepSignedIn" | "keepKeyHeld">>;
 
 /** How a signup reports and stops the proof-of-work a relay in `pow` mode asks for. */
 export interface KeySignupOptions {
