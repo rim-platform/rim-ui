@@ -434,11 +434,15 @@ export async function completeEnrollment(
 
 // ─── Key-only signup ────────────────────────────────────────────────────────
 
-/** What the join page fills in for `signupWithKey`: the name and the page's token, if any. */
+/**
+ * What the join page fills in for `signupWithKey`: the name, the page's token, if any, and the
+ * password's OPAQUE `RegistrationUpload`, without which the server refuses the signup.
+ */
 export type KeySignupFields = Omit<
   SignupWithKeyInput,
-  "keyLog" | "device" | "proof" | "proofOfWork"
->;
+  "keyLog" | "device" | "proof" | "proofOfWork" | "passwordRegistration"
+> &
+  Partial<Pick<SignupWithKeyInput, "passwordRegistration">>;
 
 /** How a signup reports and stops the proof-of-work a relay in `pow` mode asks for. */
 export interface KeySignupOptions {
@@ -648,7 +652,11 @@ export async function signupWithKey(
     { challengeId, nonce },
   );
   sentSignups.set(draft.draftId, sent);
-  const input: SignupWithKeyInput = { ...sent, ...statements, ...(proofOfWork && { proofOfWork }) };
+  const input: Partial<SignupWithKeyInput> = {
+    ...sent,
+    ...statements,
+    ...(proofOfWork && { proofOfWork }),
+  };
   let result: KeySignupResult;
   signupsInFlight += 1;
   try {

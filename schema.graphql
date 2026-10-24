@@ -1512,6 +1512,11 @@ type LoginPayload {
 	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
 	"""
 	csrfToken: String!
+	"""
+	The account has no password: this session may only set one (`setPassword`), sign out
+	and read `me`; everything else answers `FORBIDDEN`.
+	"""
+	mustSetPassword: Boolean!
 }
 
 type MacroDef {
@@ -2107,8 +2112,15 @@ type Mutation {
 	"""
 	Sign in with a `login` statement signed by an enrolled device key. Sets the same session
 	cookie as `login`.
+	
+	An account of this server with a password also brings `passwordTicket`, from
+	`passwordLoginFinish`: single use, valid for 120 seconds, and only for that account.
+	Without one, or with one that is used, expired or another account's, the answer is
+	`UNAUTHENTICATED`, as for a wrong proof. An account of this server without a password
+	signs in with the key alone and gets `mustSetPassword`: its session may only set a
+	password, sign out and read `me`. Accounts of other servers sign in with the key alone.
 	"""
-	loginWithKey(proof: SignedStatementInput!): LoginPayload!
+	loginWithKey(proof: SignedStatementInput!, passwordTicket: String): LoginPayload!
 	"""
 	Bind a key identity to the signed-in account. The calling session becomes the new
 	device's and every other session of the account ends. Afterwards the password no longer
@@ -2133,12 +2145,13 @@ type Mutation {
 	"""
 	publishProfileCard(card: SignedStatementInput!): ProfileCard!
 	"""
-	Create an account from a key identity alone, with no password. The registration mode
+	Create an account from a key identity and a password: `passwordRegistration` is the
+	OPAQUE `RegistrationUpload` registered with `passwordRegistrationStart`. The registration mode
 	applies as for `signupWithInvite` (exactly one token in invite-only mode, none in open
 	mode). An instance invite bound to an email address gives the account that address
 	(`EMAIL_TAKEN` when another account has it); otherwise the account has no email. Signs
 	the new account in on the device that signed up, setting the same session and CSRF
-	cookies as `signupWithInvite`.
+	cookies as `signupWithInvite`, and returns the account's new server share in the clear.
 	"""
 	signupWithKey(input: SignupWithKeyInput!): SignupWithInvitePayloadGql!
 	"""
@@ -2471,6 +2484,75 @@ type Mutation {
 	Moderators only, with the refusals of `acceptJoinRequest` other than the join checks.
 	"""
 	declineJoinRequest(serverId: ID!, requestId: ID!): JoinRequest!
+	"""
+	Start registering the password of a new account, before `signupWithKey`: the OPAQUE
+	`RegistrationRequest` for `principalId`, answered with the `RegistrationResponse`. No
+	session needed. `CONFLICT` when an account of this server has the principal;
+	`RATE_LIMITED` when the address asks too often.
+	"""
+	passwordRegistrationStart(principalId: String!, request: String!): String!
+	"""
+	Start a password login, before `passwordLoginFinish`: the OPAQUE `CredentialRequest` for
+	`principalId`. Every start counts as a wrong try until a login finishes: tries 1 to 3
+	are free, the 4th to the 9th make the next one wait (`RATE_LIMITED` with
+	`retryAfterSeconds`), and the 10th locks the password (`PASSWORD_LOCKED`) until a reset
+	with the recovery phrase. A principal without a password here gets an answer of the same
+	shape that no password finishes. No session needed.
+	"""
+	passwordLoginStart(principalId: String!, request: String!): PasswordLoginStart!
+	"""
+	Finish a password login with the OPAQUE `CredentialFinalization`. On success the tries
+	are cleared, and the answer carries a single-use ticket for `loginWithKey` (valid for
+	120 seconds), the account's server share sealed under the login's transport key, and its
+	rewraps. The login id is used once, whatever the outcome. No session needed. Every
+	refusal is `UNAUTHENTICATED`: an unknown, used or expired login, or a wrong password.
+	"""
+	passwordLoginFinish(loginId: ID!, credentialFinalization: String!): PasswordLoginFinish!
+	"""
+	Start changing the signed-in account's password: the OPAQUE `CredentialRequest` for the
+	current password and the `RegistrationRequest` for the new one. Counts as a try, as for
+	`passwordLoginStart`. `NOT_FOUND` when the account has no password.
+	"""
+	passwordChangeStart(credentialRequest: String!, registrationRequest: String!): PasswordChangeStart!
+	"""
+	Finish a password change: the `CredentialFinalization` for the current password, the
+	`RegistrationUpload` for the new one, and the rewrap (the previous unlock key sealed
+	under the new one) for the account's other devices. Keeps the server share, keeps the
+	newest three rewraps, and ends every other session of the account. `UNAUTHENTICATED`
+	when the current password does not verify or the login is unknown or expired.
+	"""
+	passwordChangeFinish(loginId: ID!, credentialFinalization: String!, registrationUpload: String!, rewrap: String!): PasswordChanged!
+	"""
+	Issue a single-use challenge, valid for 120 seconds, for a `password-reset` statement
+	signed by the recovery key. No session needed.
+	"""
+	passwordResetChallenge(principalId: String!): KeyLoginChallenge!
+	"""
+	Start a password reset: a `password-reset` statement over a `passwordResetChallenge`,
+	signed by the recovery key of the account's key log head, and the
+	`RegistrationRequest` for the new password. No session needed. `UNAUTHENTICATED` for
+	any statement that does not verify, deliberately not told apart.
+	"""
+	passwordResetStart(statement: SignedStatementInput!, registrationRequest: String!): PasswordResetStart!
+	"""
+	Finish a password reset with the `RegistrationUpload` for the new password. Keeps the
+	server share, deletes the rewraps, clears the tries and the lock, and ends every session
+	of the account. No session needed. `UNAUTHENTICATED` when the reset is unknown, used or
+	expired. Returns `true`.
+	"""
+	passwordResetFinish(resetId: ID!, registrationUpload: String!): Boolean!
+	"""
+	Start setting a password for the signed-in account, which has none (a session with
+	`mustSetPassword`): the OPAQUE `RegistrationRequest`, answered with the
+	`RegistrationResponse`. `CONFLICT` when the account has a password.
+	"""
+	setPasswordStart(registrationRequest: String!): String!
+	"""
+	Finish setting a password for the signed-in account with the `RegistrationUpload`.
+	Lifts the limit from the account's sessions and returns its new server share.
+	`CONFLICT` when the account has a password.
+	"""
+	setPassword(registrationUpload: String!): SetPasswordPayload!
 }
 
 input MuteConversationInput {
@@ -2630,6 +2712,79 @@ enum PageDir {
 type PageInfo {
 	hasNext: Boolean!
 	hasPrev: Boolean!
+}
+
+"""
+The server's answer to `passwordChangeStart`.
+"""
+type PasswordChangeStart {
+	"""
+	Pass to `passwordChangeFinish`. Valid for 120 seconds.
+	"""
+	loginId: ID!
+	"""
+	The OPAQUE `CredentialResponse` for the current password.
+	"""
+	credentialResponse: String!
+	"""
+	The OPAQUE `RegistrationResponse` for the new password.
+	"""
+	registrationResponse: String!
+}
+
+"""
+A finished password change.
+"""
+type PasswordChanged {
+	changedAt: DateTime!
+}
+
+"""
+A finished password login.
+"""
+type PasswordLoginFinish {
+	"""
+	Pass to `loginWithKey` as `passwordTicket`: single use, valid for 120 seconds, for this
+	account only.
+	"""
+	ticket: String!
+	"""
+	The account's server share, AES-256-GCM sealed under the login's transport key for
+	"server share": unpadded base64url of the 12-byte nonce, the ciphertext and the tag.
+	"""
+	serverShare: String!
+	"""
+	The account's rewraps, newest first.
+	"""
+	rewraps: [String!]!
+}
+
+"""
+The server's answer to `passwordLoginStart`.
+"""
+type PasswordLoginStart {
+	"""
+	Pass to `passwordLoginFinish` with the credential finalization. Valid for 120 seconds.
+	"""
+	loginId: ID!
+	"""
+	The OPAQUE `CredentialResponse`.
+	"""
+	response: String!
+}
+
+"""
+The server's answer to `passwordResetStart`.
+"""
+type PasswordResetStart {
+	"""
+	Pass to `passwordResetFinish`. Valid for 120 seconds, once.
+	"""
+	resetId: ID!
+	"""
+	The OPAQUE `RegistrationResponse` for the new password.
+	"""
+	registrationResponse: String!
 }
 
 input PinMessageInput {
@@ -3838,6 +3993,16 @@ enum ServerMemberRoleGql {
 	GUEST
 }
 
+"""
+What `setPassword` returns.
+"""
+type SetPasswordPayload {
+	"""
+	The account's new server share, in the clear.
+	"""
+	serverShare: String!
+}
+
 input SetWorkspaceStateInput {
 	serverId: ID!
 	key: String!
@@ -3916,6 +4081,11 @@ type SignupWithInvitePayloadGql {
 	read that cookie keeps it in memory and sends it in the `X-CSRF-Token` header.
 	"""
 	csrfToken: String!
+	"""
+	After `signupWithKey`: the new account's server share, unpadded base64url, in the
+	clear. `null` for the other signups.
+	"""
+	serverShare: String
 }
 
 """
@@ -3943,6 +4113,11 @@ input SignupWithKeyInput {
 	A `login` statement signed by that device over a fresh `keyLoginChallenge`.
 	"""
 	proof: SignedStatementInput!
+	"""
+	The OPAQUE `RegistrationUpload` of the account's password, unpadded base64url,
+	registered for this principal with `passwordRegistrationStart`.
+	"""
+	passwordRegistration: String!
 	instanceInviteToken: String
 	workspaceInviteToken: String
 	"""
