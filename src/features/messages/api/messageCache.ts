@@ -149,6 +149,16 @@ async function invokeCache<T>(command: string, args: Record<string, unknown>): P
   return null;
 }
 
+/**
+ * Remove the desktop cache of `account` from this device: its database is closed and deleted.
+ *
+ * @throws Error with the Tauri side's message when the files could not be deleted.
+ */
+export async function removeCachedAccount(account: CacheAccount): Promise<void> {
+  const result = await safeInvoke<null>("message_cache_remove_account", { account });
+  if (!result.ok) throw new Error(result.error.message);
+}
+
 /** Follow a conversation from now on (the user opened it). */
 export async function trackConversation(
   account: CacheAccount,

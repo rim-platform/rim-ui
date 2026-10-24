@@ -611,6 +611,55 @@ fn accounts_never_share_a_database() {
 }
 
 #[test]
+fn removing_an_account_closes_and_deletes_only_its_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path(), 1);
+    let mut feed = MockFeed::new(1000);
+    feed.send_many("c1", 2);
+    for user in ["alice", "bob"] {
+        let store = open(&state, user);
+        let mut store = store.lock().unwrap();
+        store.track(WS, "c1", 1).unwrap();
+        sync(&mut store, &mut feed, None);
+    }
+    let files_of = |user: &str| -> Vec<String> {
+        let stem = account(user).file_stem();
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(&stem))
+            .collect()
+    };
+    assert!(files_of("alice").iter().any(|name| name.ends_with(".db")));
+
+    state.remove(&account("alice")).unwrap();
+
+    assert!(files_of("alice").is_empty());
+    assert!(!files_of("bob").is_empty());
+    assert!(open(&state, "bob")
+        .lock()
+        .unwrap()
+        .timeline(WS, "c1", None, 10)
+        .unwrap()
+        .is_some());
+    // Opened again, the account starts from an empty cache.
+    assert!(open(&state, "alice")
+        .lock()
+        .unwrap()
+        .timeline(WS, "c1", None, 10)
+        .unwrap()
+        .is_none());
+    // An account without files, or removed twice, is not an error.
+    state.remove(&account("carol")).unwrap();
+    state.remove(&account("alice")).unwrap();
+    state.remove(&account("alice")).unwrap();
+    assert!(matches!(
+        state.remove(&account(" ")),
+        Err(CacheError::Invalid(_))
+    ));
+}
+
+#[test]
 fn the_database_files_hold_no_plaintext() {
     let dir = tempfile::tempdir().unwrap();
     let state = state(dir.path(), 1);

@@ -114,6 +114,7 @@ pub fn run() {
             agent_proxy::set_provider_key,
             agent_proxy::clear_provider_key,
             agent_proxy::is_provider_key_configured,
+            message_cache::commands::message_cache_remove_account,
             message_cache::commands::message_cache_track,
             message_cache::commands::message_cache_sync_begin,
             message_cache::commands::message_cache_sync_apply,

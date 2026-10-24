@@ -147,6 +147,38 @@ export async function deleteRecord(store: RelayStore, key: IDBValidKey): Promise
   await finished;
 }
 
+/** The stores keyed by account first. */
+const ACCOUNT_STORES: RelayStore[] = ["spaces", "streams", "aliases", "meta", "delegations"];
+
+/**
+ * Delete every record of `account` and the request seqs `deviceId` signed, in one transaction.
+ * The pinned servers stay: they are not any account's.
+ *
+ * @param account - The account's key, `endpoint|principalId`.
+ * @param deviceId - The account's device on this app, or `null` when it has none here.
+ */
+export async function deleteAccountRecords(
+  account: string,
+  deviceId: string | null,
+): Promise<void> {
+  const stores: [RelayStore, string][] = ACCOUNT_STORES.map((store) => [store, account]);
+  if (deviceId !== null) stores.push(["requestSeq", deviceId]);
+  const tx = (await database()).transaction(
+    stores.map(([store]) => store),
+    "readwrite",
+  );
+  const finished = committed(tx);
+  await Promise.all(
+    stores.map(async ([name, first]) => {
+      const store = tx.objectStore(name);
+      for (const key of await done(store.getAllKeys())) {
+        if ((key as IDBValidKey[])[0] === first) store.delete(key);
+      }
+    }),
+  );
+  await finished;
+}
+
 /**
  * Read a record, change it and write it back in one transaction: `change` gets the stored
  * value (or `null`) and returns the one to write, or `null` to leave it.

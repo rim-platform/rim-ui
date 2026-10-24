@@ -168,6 +168,24 @@ impl MessageCacheState {
         Ok(store)
     }
 
+    /// Close the account's database and delete its files (`.db`, `-wal`, `-shm`). Work already
+    /// running on it finishes first; files that are not there are not an error.
+    ///
+    /// # Errors
+    ///
+    /// [`CacheError::Invalid`] for an account without an endpoint or user id, and
+    /// [`CacheError::Io`] when a file cannot be deleted.
+    pub(crate) fn remove(&self, account: &AccountId) -> Result<(), CacheError> {
+        account.validate()?;
+        let file_name = account.file_name();
+        // Held until the files are gone, so no call opens the database again in between.
+        let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = stores.remove(&file_name) {
+            let _running = store.lock().unwrap_or_else(|e| e.into_inner());
+        }
+        store::remove_database_files(&self.dir.join(&file_name))
+    }
+
     /// The key is read from the secret vault once per run. Callers hold the `stores` lock, so
     /// two first opens cannot each create a different key. A failure is kept for the run too:
     /// on Linux a locked keyring answers the vault key's read with an unlock prompt, and a
