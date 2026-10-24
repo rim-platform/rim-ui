@@ -36,7 +36,6 @@ import {
   logStatements,
   publishProfileCard,
   revokeDevice,
-  signInWithDeviceKey,
   type MyKeyIdentity,
 } from "./keyIdentity";
 
@@ -288,6 +287,12 @@ export interface LinkNewDeviceOptions extends PollOptions {
   onOffered?: (offer: { linkId: string; fingerprint: string }) => void;
 }
 
+/**
+ * Signs the newly linked device in to `principalId`, asking for the account password: resolves
+ * with the user id once signed in. A revoked device rejects with the server's `FORBIDDEN`.
+ */
+export type LinkedSignIn = (principalId: string) => Promise<string>;
+
 /** Send the sealed offer, resending the same bytes when only the network failed. */
 async function sendOffer(sent: SentOffer): Promise<void> {
   for (let attempt = 1; ; attempt++) {
@@ -329,9 +334,10 @@ function awaitAnswer(linkId: string, options: PollOptions): Promise<SealedMessag
 }
 
 /**
- * Link this computer with a code from another device of the account, and sign in with the new
- * device key. Returns the account's user id. `onOffered` gets the
- * fingerprint to show while the person confirms on the other device.
+ * Link this computer with a code from another device of the account, then sign in with the
+ * account password and the new device key through `signIn`, which asks for the password. Returns
+ * the account's user id. `onOffered` gets the fingerprint to show while the person confirms on
+ * the other device.
  *
  * Nothing is stored until the certificate verifies against the account's key log; any failure
  * before then cancels the link and drops the key.
@@ -339,6 +345,7 @@ function awaitAnswer(linkId: string, options: PollOptions): Promise<SealedMessag
 export async function linkNewDevice(
   code: string,
   deviceName: string,
+  signIn: LinkedSignIn,
   options: LinkNewDeviceOptions = {},
 ): Promise<string> {
   const backend = keyBackend();
@@ -374,7 +381,7 @@ export async function linkNewDevice(
   // The keys are stored: from here on a failure keeps them for the next sign-in.
   let userId: string;
   try {
-    userId = await signInWithDeviceKey(principalId);
+    userId = await signIn(principalId);
   } catch (err) {
     if (graphqlErrorCode(err) === "FORBIDDEN") {
       await forgetDeviceKeys(principalId).catch(() => undefined);

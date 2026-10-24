@@ -23,6 +23,18 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- Every account has a password: a PIN of at least 6 digits or a passphrase of at least 12
+  characters, chosen at signup and checked with OPAQUE, so the server never sees it. Signing in
+  from the sign-in screen's account list asks for it, with **Keep me signed in** (ticked in the
+  desktop app, unticked in a browser), and so do linking a device, the locked screen of an
+  account whose session is still open, and switching relays. Wrong tries wait from the 4th and
+  lock the password at the 10th, until **Use your recovery phrase** sets a new one. Settings →
+  Security → **Password** changes it; other devices ask for the new one when they next unlock.
+  Recovering an account with its kit offers **I know my password** or **Set a new password**. A
+  device whose data was locked under a password reset elsewhere asks once for the recovery
+  phrase, or starts empty and keeps signing in with its own key. An account made before
+  passwords existed is asked to set one before anything else. **Upgrade:** this needs a server
+  with account passwords; an expired session no longer signs in again with the device key alone.
 - **Sign out** in the user menu and in Settings → Account now asks what to do with the account
   on this device: **Sign out** keeps it, with its keys, cached messages and settings ready for
   the next sign-in, and **Sign out and remove from this device** deletes its keys, its encrypted

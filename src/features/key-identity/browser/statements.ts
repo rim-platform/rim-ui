@@ -27,6 +27,7 @@ export const CONTEXT = {
   pluginManifest: utf8("rim.plugin-manifest.v1\0"),
   mlsKey: utf8("rim.mls-key.v1\0"),
   mlsReadd: utf8("rim.mls-readd.v1\0"),
+  passwordReset: utf8("rim.password-reset.v1\0"),
 } as const;
 
 const PRINCIPAL_DOMAIN = utf8("rim.principal.v1\0");
@@ -217,6 +218,35 @@ export function signLogin(deviceKey: CryptoKey, input: LoginInput): Promise<Stat
     deviceId: input.deviceId,
   });
   return sign(deviceKey, CONTEXT.login, payload);
+}
+
+// ─── Password reset ─────────────────────────────────────────────────────────
+
+/** What a password reset names: the account, a `passwordResetChallenge` and the server. */
+export interface PasswordResetInput {
+  principalId: string;
+  challengeId: string;
+  nonce: string;
+  audience: string;
+}
+
+/**
+ * A version 2 password reset, signed by the recovery key: it proves the person holds the
+ * recovery phrase, so the server lets them register a new password.
+ */
+export function signPasswordReset(
+  recoveryKey: CryptoKey,
+  input: PasswordResetInput,
+): Promise<Statement> {
+  const payload = JSON.stringify({
+    v: WRITE_VERSION,
+    type: "password-reset",
+    principalId: input.principalId,
+    challengeId: input.challengeId,
+    nonce: input.nonce,
+    audience: input.audience,
+  });
+  return sign(recoveryKey, CONTEXT.passwordReset, payload);
 }
 
 // ─── Key log, certificates, revocations, cards ──────────────────────────────

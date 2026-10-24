@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { SignOutDialog } from "../../auth/components/SignOutDialog";
 import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
-import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { AccountDeletionSection } from "../../account-deletion/components/AccountDeletionSection";
 
 interface AccountSettingsProps {
@@ -79,22 +78,6 @@ export function AccountSettings({
         <div className="mt-4">
           <SignOutOtherSessions description="Ends every other session of your account, on other devices and browsers. This one stays signed in." />
         </div>
-      </section>
-
-      <hr className="border-rim-line my-6" />
-
-      {/* Security */}
-      <section>
-        <h3 className="text-sm font-medium text-rim-text mb-2">Security</h3>
-        <HoverTooltip content={<span className="text-xs text-rim-text-muted">Coming soon</span>}>
-          <button
-            type="button"
-            disabled
-            className="rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted opacity-50 cursor-not-allowed"
-          >
-            Change password
-          </button>
-        </HoverTooltip>
       </section>
 
       <hr className="border-rim-line my-6" />

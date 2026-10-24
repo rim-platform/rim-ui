@@ -4,8 +4,38 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientError } from "graphql-request";
 
 const requestMock = vi.fn();
+/** The server's side of a password registration and login, answered before `requestMock`. */
+function passwordAnswer(document: unknown): unknown {
+  const name = /(?:query|mutation)\s+(\w+)/.exec(String(document))?.[1];
+  if (name === "PasswordRegistrationStart") return { passwordRegistrationStart: "response" };
+  if (name === "PasswordLoginStart") {
+    return { passwordLoginStart: { loginId: "login-1", response: "response" } };
+  }
+  if (name === "PasswordLoginFinish") {
+    return { passwordLoginFinish: { ticket: "ticket-1", serverShare: "share", rewraps: [] } };
+  }
+  return undefined;
+}
 vi.mock("../../../core/graphql/client", () => ({
-  graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
+  graphqlClient: {
+    request: async (...args: unknown[]) => passwordAnswer(args[0]) ?? requestMock(...args),
+  },
+}));
+// The password's OPAQUE flows and the unlock stand in for the WebAssembly module: these tests
+// are about the keys, which sign while they are not sealed yet.
+vi.mock("../../auth/runtime/opaqueFlows", () => ({
+  startLogin: async () => ({
+    request: "request",
+    finish: async () => "finalization",
+    unlock: async () => ({ startedEmpty: false }),
+    close: () => undefined,
+  }),
+  startRegistration: async () => ({
+    request: "request",
+    finish: async () => "upload",
+    unlockAfterSignup: async () => ({ startedEmpty: true }),
+    close: () => undefined,
+  }),
 }));
 // The server is known by another origin than the page it serves, unless a test makes that
 // origin unreadable.
@@ -33,8 +63,8 @@ import {
   completeEnrollment,
   confirmRecoveryKitSaved,
   listDeviceKeyAccounts,
-  recoverAccount,
-  signInWithDeviceKey,
+  recoverDeviceKeys,
+  signInWithPassword,
   signupWithKey,
   unsavedRecoveryKit,
   type MyKeyIdentity,
@@ -221,8 +251,16 @@ function oldDevice(options: OldDeviceOptions = {}) {
 
 const sleep = vi.fn(async () => undefined);
 
+/** The password every sign-in and signup here uses. */
+const PASSWORD = { password: "correct horse battery", keep: false };
+
+/** Signs in with the password and this browser's key, as the sign-in screen does. */
+async function signInWithKey(principalId: string): Promise<string> {
+  return (await signInWithPassword(principalId, PASSWORD)).userId;
+}
+
 async function link(): Promise<string> {
-  return linkNewDevice(CODE, "Firefox on Linux", { sleep });
+  return linkNewDevice(CODE, "Firefox on Linux", signInWithKey, { sleep });
 }
 
 async function stored(): Promise<BrowserKeyRecord | null> {
@@ -244,7 +282,10 @@ describe("the web app as a linked device", () => {
   it("links with a pasted code, stores a non-extractable key, and signs in with it", async () => {
     const onOffered = vi.fn();
     const server = oldDevice();
-    const userId = await linkNewDevice(CODE, "Firefox on Linux", { sleep, onOffered });
+    const userId = await linkNewDevice(CODE, "Firefox on Linux", signInWithKey, {
+      sleep,
+      onOffered,
+    });
 
     expect(userId).toBe("user-1");
     const offer = server.offer as OpenedOffer;
@@ -296,7 +337,7 @@ describe("the web app as a linked device", () => {
       },
     ]);
     // The stored key signs in again later.
-    expect(await signInWithDeviceKey(PRINCIPAL)).toBe("user-1");
+    expect(await signInWithKey(PRINCIPAL)).toBe("user-1");
   });
 
   it("cancels and stores nothing when the certificate names another device", async () => {
@@ -347,6 +388,7 @@ describe("the web app as a linked device", () => {
     const err = await linkNewDevice(
       CODE.replace(ENDPOINT, "https://rim.example/api"),
       "Firefox on Linux",
+      signInWithKey,
       { sleep },
     ).catch((e: unknown) => e);
     expect((err as Error).message).toContain("this code is for another server");
@@ -356,9 +398,12 @@ describe("the web app as a linked device", () => {
   it("takes a code naming the endpoint the server is known by, and keeps the keys for the page's", async () => {
     oldDevice();
     await expect(
-      linkNewDevice(CODE.replace(ENDPOINT, "https://relay.example/api"), "Firefox on Linux", {
-        sleep,
-      }),
+      linkNewDevice(
+        CODE.replace(ENDPOINT, "https://relay.example/api"),
+        "Firefox on Linux",
+        signInWithKey,
+        { sleep },
+      ),
     ).resolves.toBe("user-1");
     expect(await stored()).not.toBeNull();
   });
@@ -369,6 +414,7 @@ describe("the web app as a linked device", () => {
     const err = await linkNewDevice(
       CODE.replace(ENDPOINT, "https://relay.example/api"),
       "Firefox on Linux",
+      signInWithKey,
       { sleep },
     ).catch((e: unknown) => e);
     expect((err as Error).message).toContain("this code is for another server");
@@ -676,11 +722,9 @@ describe("the web app creating an identity", () => {
       MyKeyIdentity: new Error("card later"),
     });
 
-    await signupWithKey(
-      draft,
-      { username: " ada ", instanceInviteToken: "invite" },
-      { recoveryKit: "later" },
-    );
+    await signupWithKey(draft, { username: " ada ", instanceInviteToken: "invite" }, PASSWORD, {
+      recoveryKit: "later",
+    });
 
     expect(storedWhileSigningUp).toMatchObject({ kitConfirmed: false, username: "ada" });
     expect(storedWhileSigningUp?.recoveryEntropy).toHaveLength(16);
@@ -717,11 +761,13 @@ describe("the web app creating an identity", () => {
     });
     const fields = { username: "ada", instanceInviteToken: "invite" };
 
-    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBeInstanceOf(ClientError);
     expect(await principalRecords(draft.principalId)).toEqual([]);
 
     refuse = false;
-    await expect(signupWithKey(draft, fields)).resolves.toMatchObject({ userId: "user-1" });
+    await expect(signupWithKey(draft, fields, PASSWORD)).resolves.toMatchObject({
+      userId: "user-1",
+    });
     expect(sent).toHaveLength(2);
     expect(sent[1]).toBe(sent[0]);
     expect(await storedFor(draft.principalId)).toMatchObject({ confirmed: true });
@@ -750,7 +796,7 @@ describe("the web app creating an identity", () => {
     });
 
     await expect(
-      signupWithKey(draft, { username: "ada", instanceInviteToken: "invite" }),
+      signupWithKey(draft, { username: "ada", instanceInviteToken: "invite" }, PASSWORD),
     ).resolves.toEqual({ userId: "user-1", serverId: null });
     expect(await storedFor(draft.principalId)).toMatchObject({ confirmed: true, userId: "user-1" });
   });
@@ -763,7 +809,7 @@ describe("the web app creating an identity", () => {
     delete globalThis.indexedDB;
     try {
       await expect(
-        signupWithKey(draft, { username: "ada", instanceInviteToken: "invite" }),
+        signupWithKey(draft, { username: "ada", instanceInviteToken: "invite" }, PASSWORD),
       ).rejects.toThrow("this browser cannot store keys");
     } finally {
       globalThis.indexedDB = factory;
@@ -822,7 +868,9 @@ describe("the web app recovering an account", () => {
       MeKeyAccount: { me: { ...ME, principalId } },
     });
 
-    await expect(recoverAccount(kit, null, "Firefox on Linux")).resolves.toBe("user-1");
+    await expect(
+      recoverDeviceKeys(kit, null, "Firefox on Linux").then(signInWithKey),
+    ).resolves.toBe("user-1");
 
     const head = await replay(log);
     expect(head).toMatchObject({
@@ -859,7 +907,7 @@ describe("the web app recovering an account", () => {
       RotateIdentityKey: serverError("FORBIDDEN"),
     });
 
-    await expect(recoverAccount(kit, principalId, "Firefox on Linux")).rejects.toBeInstanceOf(
+    await expect(recoverDeviceKeys(kit, principalId, "Firefox on Linux")).rejects.toBeInstanceOf(
       ClientError,
     );
     expect(await storedFor(principalId)).toMatchObject({

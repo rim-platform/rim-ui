@@ -31,7 +31,10 @@ vi.mock("../../features/offline/runtime/useOfflineReconnect", () => ({
 }));
 vi.mock("../../features/auth/runtime/signOut", () => ({ useSessionEndedSignOut: () => {} }));
 const gate = vi.hoisted(() => ({ state: "unlocked" as "opening" | "unlocked" | "locked" }));
-vi.mock("../../features/auth/runtime/unlockGate", () => ({ useUnlockGate: () => gate.state }));
+vi.mock("../../features/auth/runtime/unlockGate", () => ({
+  useUnlockGate: () => gate.state,
+  principalOf: async () => "rimp1_alice",
+}));
 vi.mock("../../features/conversations/api/useUnreadCounts", () => ({
   useUnreadCounts: () => {},
 }));
@@ -342,7 +345,7 @@ describe("AppShell — the unlock gate", () => {
     useWorkspaceStore.setState({ workspaceId: null });
   });
 
-  it("asks for the password while the account is locked, and runs nothing that reads its data", () => {
+  it("asks for the password while the account is locked, and runs nothing that reads its data", async () => {
     gate.state = "locked";
     render(
       <QueryClientProvider client={createTestQueryClient()}>
@@ -354,8 +357,32 @@ describe("AppShell — the unlock gate", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByRole("heading", { name: "This account is locked" })).toBeInTheDocument();
+    expect(await screen.findByLabelText(/^password$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unlock" })).toBeInTheDocument();
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
     expect(useWorkspaceEventsMock).not.toHaveBeenCalled();
+  });
+
+  it("shows only the screen that sets a password while the account has none", async () => {
+    gate.state = "unlocked";
+    useAuthStore.setState({ mustSetPassword: true });
+    try {
+      render(
+        <QueryClientProvider client={createTestQueryClient()}>
+          <MemoryRouter>
+            <RuntimeProvider>
+              <AppShell />
+            </RuntimeProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      expect(screen.getByRole("heading", { name: "Set a password" })).toBeInTheDocument();
+      expect(await screen.findByLabelText("Passphrase")).toBeInTheDocument();
+      expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+      expect(useWorkspaceEventsMock).not.toHaveBeenCalled();
+    } finally {
+      useAuthStore.setState({ mustSetPassword: false });
+    }
   });
 
   it("shows the splash while it opens a kept account", () => {

@@ -12,6 +12,7 @@ import {
   parseRecoverySecret,
   phraseRecoveryKey,
   phraseWords,
+  signPasswordReset,
 } from "./recoveryKit";
 import { CONTEXT, sign, verify } from "./statements";
 
@@ -128,5 +129,26 @@ describe("reading a pasted kit", () => {
     expect((await parseKit(kit, ` ${other} `)).principalId).toBe(other);
     await expect(parseKit(PHRASE, "")).rejects.toThrow(/has no account id/);
     await expect(parseKit(PHRASE, "rimp1_short")).rejects.toThrow(/rimp1_ and 43 more/);
+  });
+});
+
+describe("signPasswordReset", () => {
+  it("signs a password-reset statement with the phrase's recovery key, for this purpose only", async () => {
+    const entropy = new Uint8Array(16).fill(9);
+    const statement = await signPasswordReset("https://rim.example/api", "rimp1_ada", entropy, {
+      challengeId: "c-1",
+      nonce: "bm9uY2U",
+    });
+    expect(JSON.parse(statement.payload)).toEqual({
+      v: 2,
+      type: "password-reset",
+      principalId: "rimp1_ada",
+      challengeId: "c-1",
+      nonce: "bm9uY2U",
+      audience: "rim.example",
+    });
+    const { publicKey } = await phraseRecoveryKey(entropy);
+    expect(await verify(statement, CONTEXT.passwordReset, publicKey, 2)).toBe(true);
+    expect(await verify(statement, CONTEXT.login, publicKey, 2)).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { isTauri } from "@tauri-apps/api/core";
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import {
@@ -38,7 +39,9 @@ import { useSignupTerms } from "../api/useSignupTerms";
 import { useSignupMinimumAge } from "../api/useMinimumAge";
 import { isRegistrationFull, REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
 import { checkDisplayName } from "../displayName";
+import { EMPTY_NEW_PASSWORD, keepSignedInByDefault, newPasswordProblem } from "../password";
 import { JoinField } from "./JoinField";
+import { KeepSignedInCheckbox, NewPasswordFields } from "./PasswordFields";
 import { MinimumAgeConfirmation } from "./MinimumAgeConfirmation";
 import { TermsAcceptance } from "./TermsAcceptance";
 
@@ -169,8 +172,9 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
 }
 
 /**
- * Creates an account from a key kept on this device, with no password and no email: the person
- * picks a username and the account is created with new keys. Where this device keeps the
+ * Creates an account from a key kept on this device and a password, with no email: the person
+ * picks a username and a password (a PIN or a passphrase, typed twice, and whether to stay
+ * signed in), and the account is created with new keys. Where this device keeps the
  * recovery kit until it is confirmed, the account is created first and the kit shown after;
  * elsewhere the person saves the kit before the account is created. Before any key is made the
  * browser is asked to keep this site's data, and a refusal needs the person's go-ahead. On a
@@ -196,6 +200,9 @@ export function KeySignupForm({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [deviceName, setDeviceName] = useState("");
+  const [password, setPassword] = useState(EMPTY_NEW_PASSWORD);
+  const [passwordProblem, setPasswordProblem] = useState<string | null>(null);
+  const [keep, setKeep] = useState(() => keepSignedInByDefault(isTauri()));
   const [draft, setDraft] = useState<EnrollmentDraft | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -284,6 +291,7 @@ export function KeySignupForm({
             ...terms.fields,
             ...age.fields,
           },
+          { password: password.password, keep },
           {
             onProofOfWork: (bits) => setProving({ bits, startedAt: Date.now() }),
             signal: stop.signal,
@@ -317,6 +325,12 @@ export function KeySignupForm({
       setDisplayNameError(nameError);
       return;
     }
+    // The password is checked when the account is about to be created.
+    if (draft || kitAfter) {
+      const problem = newPasswordProblem(password);
+      setPasswordProblem(problem);
+      if (problem) return;
+    }
     working(true);
     try {
       if (draft) {
@@ -338,7 +352,7 @@ export function KeySignupForm({
     working(true);
     try {
       // An attempt that failed here may have created the account after all: then it is opened.
-      const found = await discardKeySignup(current);
+      const found = await discardKeySignup(current, { password: password.password, keep });
       if (found) {
         accountCreated(found);
         return;
@@ -359,8 +373,10 @@ export function KeySignupForm({
     terms.satisfied &&
     age.satisfied &&
     (draft
-      ? (kitAfter || saved) && username.trim().length > 0
-      : username.trim().length > 0 && deviceName.trim().length > 0);
+      ? (kitAfter || saved) && username.trim().length > 0 && password.password.length > 0
+      : username.trim().length > 0 &&
+        deviceName.trim().length > 0 &&
+        (!kitAfter || password.password.length > 0));
 
   if (created && draft) {
     return (
@@ -381,8 +397,8 @@ export function KeySignupForm({
   return (
     <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
       <p className="text-sm text-rim-text-muted">
-        No password and no email: this device keeps a key that signs you in, and a recovery kit gets
-        the account back if you lose it.
+        No email: this device keeps a key that signs you in together with your password, and a
+        recovery kit gets the account back if you lose it.
       </p>
       <JoinField
         label="Username"
@@ -419,6 +435,16 @@ export function KeySignupForm({
       {draft && !kitAfter && (
         <SaveRecoveryKit draft={draft} saved={saved} onSavedChange={setSaved} />
       )}
+      <NewPasswordFields
+        value={password}
+        onChange={(value) => {
+          setPassword(value);
+          setPasswordProblem(null);
+        }}
+        problem={passwordProblem}
+        disabled={busy}
+      />
+      <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
       <TermsAcceptance terms={terms} disabled={busy} />
       <MinimumAgeConfirmation age={age} disabled={busy} />
       {proving && (

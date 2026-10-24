@@ -20,6 +20,8 @@
 
 import { BIP39_ENGLISH } from "./bip39English";
 import { concat, sameBytes, sha256, utf8 } from "./bytes";
+import { audience } from "./naming";
+import { signPasswordReset as signReset, type Statement } from "./statements";
 
 const PRINCIPAL_PREFIX = "rimp1_";
 /** A principal id: the prefix and 43 base64url characters. */
@@ -194,6 +196,29 @@ async function keyFromSeed(seed: Uint8Array): Promise<RecoveryKey> {
 /** The recovery key a phrase's entropy stands for. */
 export async function phraseRecoveryKey(entropy: Uint8Array): Promise<RecoveryKey> {
   return keyFromSeed(await phraseSeed(entropy));
+}
+
+/**
+ * A `password-reset` statement for `principalId` over a `passwordResetChallenge`, signed by the
+ * recovery key of a phrase's entropy, for the server at `endpoint`.
+ *
+ * @param entropy - The phrase's 16 bytes.
+ * @param challenge - The challenge `passwordResetChallenge` issued.
+ * @returns The signed statement.
+ */
+export async function signPasswordReset(
+  endpoint: string,
+  principalId: string,
+  entropy: Uint8Array,
+  challenge: { challengeId: string; nonce: string },
+): Promise<Statement> {
+  const { privateKey } = await phraseRecoveryKey(entropy);
+  return signReset(privateKey, {
+    principalId,
+    challengeId: challenge.challengeId,
+    nonce: challenge.nonce,
+    audience: audience(endpoint),
+  });
 }
 
 // ─── Version 1: the RK1- recovery key ───────────────────────────────────────

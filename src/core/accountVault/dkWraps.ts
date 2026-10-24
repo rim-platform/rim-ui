@@ -274,6 +274,26 @@ export function addRecoveryWrap(
 }
 
 /**
+ * Wraps the account's data key under a new unlock key, after a password change the server took.
+ * The other wraps stay.
+ */
+export function replacePasswordWrap(
+  endpoint: string,
+  principalId: string,
+  unlockKey: Uint8Array,
+  dataKey: Uint8Array,
+): Promise<void> {
+  return changing(async () => {
+    const stored = await readWraps(endpoint, principalId);
+    if (!stored) throw new Error("this browser has no data key wraps for that account");
+    await putWraps({
+      ...stored,
+      passwordWrap: await wrap(unlockKey, "password", principalId, dataKey),
+    });
+  });
+}
+
+/**
  * Opens the account's data key with the keep key of its kept session.
  *
  * @returns The data key, or `null` when the account is not kept here or the key does not open it.

@@ -101,10 +101,23 @@ function argsOf(command: string): unknown {
 
 const sleep = vi.fn(async () => undefined);
 
+/**
+ * The password prompt's sign-in, as the page wires it: the device key signs a proof and the
+ * server answers with the user id.
+ */
+const signIn = vi.fn(async (principalId: string) => {
+  await invokeMock("key_identity_sign_login", { principalId });
+  const res = (await requestMock("mutation LoginWithKey { loginWithKey { userId } }", {})) as {
+    loginWithKey: { userId: string };
+  };
+  return res.loginWithKey.userId;
+});
+
 beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
   sleep.mockClear();
+  signIn.mockClear();
 });
 
 describe("pollDelay", () => {
@@ -158,7 +171,9 @@ describe("linkNewDevice", () => {
     newDeviceBackend();
     const onOffered = vi.fn();
 
-    await expect(linkNewDevice(CODE, "Laptop", { sleep, onOffered })).resolves.toBe("user-1");
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep, onOffered })).resolves.toBe(
+      "user-1",
+    );
 
     expect(argsOf("key_identity_link_offer")).toEqual({
       endpoint: ENDPOINT,
@@ -179,6 +194,7 @@ describe("linkNewDevice", () => {
     expect(order.indexOf("key_identity_link_accept")).toBeLessThan(
       order.indexOf("key_identity_sign_login"),
     );
+    expect(signIn).toHaveBeenCalledWith(PRINCIPAL);
     expect(requests().filter((r) => r === "CompleteDeviceLink")).toHaveLength(1);
     expect(requests()).not.toContain("CancelDeviceLink");
   });
@@ -187,7 +203,7 @@ describe("linkNewDevice", () => {
     newDeviceBackend({
       SendDeviceLinkOffer: inTurn(new TypeError("fetch failed"), { sendDeviceLinkOffer: true }),
     });
-    await linkNewDevice(CODE, "Laptop", { sleep });
+    await linkNewDevice(CODE, "Laptop", signIn, { sleep });
     const offers = requestMock.mock.calls.filter((c) => operation(c) === "SendDeviceLinkOffer");
     expect(offers).toHaveLength(2);
     expect(offers[1][1]).toEqual(offers[0][1]);
@@ -198,7 +214,7 @@ describe("linkNewDevice", () => {
       {},
       { key_identity_link_offer: new Error("this code is for another server (https://x)") },
     );
-    const err = await linkNewDevice(CODE, "Laptop", { sleep }).catch((e: unknown) => e);
+    const err = await linkNewDevice(CODE, "Laptop", signIn, { sleep }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DeviceLinkError);
     expect((err as Error).message).toContain("another server");
     expect(requestMock).not.toHaveBeenCalled();
@@ -206,7 +222,7 @@ describe("linkNewDevice", () => {
 
   it("does not cancel when the limiter refuses the offer", async () => {
     newDeviceBackend({ SendDeviceLinkOffer: serverError("RATE_LIMITED") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
       DEVICE_LINK_MESSAGES.rateLimited,
     );
     expect(requests()).not.toContain("CancelDeviceLink");
@@ -220,14 +236,14 @@ describe("linkNewDevice", () => {
         { query: "" },
       ),
     });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
       DEVICE_LINK_MESSAGES.failed,
     );
   });
 
   it("says the code is used up when the server refuses the offer", async () => {
     newDeviceBackend({ SendDeviceLinkOffer: serverError("UNAUTHENTICATED") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
       DEVICE_LINK_MESSAGES.codeUnusable,
     );
     expect(commands()).toContain("key_identity_link_end");
@@ -236,7 +252,7 @@ describe("linkNewDevice", () => {
 
   it("drops the keys when the link ends before an answer", async () => {
     newDeviceBackend({ DeviceLinkAnswer: serverError("UNAUTHENTICATED") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
       DEVICE_LINK_MESSAGES.linkEnded,
     );
     expect(argsOf("key_identity_link_end")).toEqual({ linkId: LINK_ID });
@@ -252,7 +268,9 @@ describe("linkNewDevice", () => {
         ),
       },
     );
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(/did not verify/);
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
+      /did not verify/,
+    );
     expect(requests()).toContain("CancelDeviceLink");
     expect(commands()).toContain("key_identity_link_end");
     expect(commands()).not.toContain("key_identity_link_accept");
@@ -268,14 +286,16 @@ describe("linkNewDevice", () => {
         ),
       },
     );
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(/did not verify/);
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
+      /did not verify/,
+    );
     expect(requests()).toContain("CancelDeviceLink");
     expect(requests()).not.toContain("KeyLoginChallenge");
   });
 
   it("removes the keys when the other device revoked this one before it signed in", async () => {
     newDeviceBackend({ LoginWithKey: serverError("FORBIDDEN") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
       DEVICE_LINK_MESSAGES.revoked,
     );
     expect(argsOf("key_identity_forget")).toEqual({ principalId: PRINCIPAL });
@@ -283,13 +303,15 @@ describe("linkNewDevice", () => {
 
   it("keeps the keys when signing in fails otherwise", async () => {
     newDeviceBackend({ LoginWithKey: serverError("RATE_LIMITED") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).rejects.toThrow(/device is linked/);
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).rejects.toThrow(
+      /device is linked/,
+    );
     expect(commands()).not.toContain("key_identity_forget");
   });
 
   it("tries completeDeviceLink twice at most and succeeds anyway", async () => {
     newDeviceBackend({ CompleteDeviceLink: serverError("CONFLICT") });
-    await expect(linkNewDevice(CODE, "Laptop", { sleep })).resolves.toBe("user-1");
+    await expect(linkNewDevice(CODE, "Laptop", signIn, { sleep })).resolves.toBe("user-1");
     expect(requests().filter((r) => r === "CompleteDeviceLink")).toHaveLength(2);
   });
 
@@ -297,7 +319,7 @@ describe("linkNewDevice", () => {
     newDeviceBackend({ DeviceLinkAnswer: { deviceLinkAnswer: null } });
     const controller = new AbortController();
     const abortingSleep = vi.fn(async () => controller.abort());
-    const err = await linkNewDevice(CODE, "Laptop", {
+    const err = await linkNewDevice(CODE, "Laptop", signIn, {
       sleep: abortingSleep,
       signal: controller.signal,
     }).catch((e: unknown) => e);

@@ -20,12 +20,21 @@ import {
   vaultHolds,
   type VaultAccount,
 } from "../../../core/accountVault/accountVault";
-import { fromB64, KEY_LEN, openTransport } from "../../../core/accountVault/crypto";
 import {
+  fromB64,
+  KEY_LEN,
+  openTransport,
+  rewrapUnlockKey,
+  toB64,
+} from "../../../core/accountVault/crypto";
+import {
+  addRecoveryWrap,
   dropKeepWrap,
+  NeedsRecoveryError,
   openAfterLogin,
   openKept,
   openWithRecovery,
+  replacePasswordWrap,
   setKeepWrap,
   wrapsAfterSignup,
 } from "../../../core/accountVault/dkWraps";
@@ -34,7 +43,15 @@ import { closeStores } from "../../e2ee/web/webCommands";
 import { setWebStoreAccount } from "../../e2ee/web/webAccount";
 import { storedEndpoint } from "../../key-identity/browser/keyStore";
 import { sealKeysAtUnlock } from "../../key-identity/browser/sealAtRest";
-import { accountUnlockKept } from "../api/accountLock";
+import {
+  accountAddRecoveryWrap,
+  accountLock,
+  accountUnlockAfterLogin,
+  accountUnlockAfterSignup,
+  accountUnlockKept,
+  accountUnlockWithRecovery,
+  type UnlockedAccount,
+} from "../api/accountLock";
 import { loadOpaque } from "../opaque/opaqueModule";
 
 /** What an unlock after a password login takes. */
@@ -218,6 +235,177 @@ export async function unlockKeptOnDesktop(endpoint: string, principalId: string)
   return true;
 }
 
+/** Holds the store key the desktop handed over for an unlocked account. */
+async function holdDesktop(endpoint: string, principalId: string, unlocked: UnlockedAccount) {
+  await unlockVaultWithStoreKey(
+    accountOf(endpoint, principalId),
+    fromB64(unlocked.webStoreKey, "the store key"),
+  );
+  return { startedEmpty: unlocked.startedEmpty };
+}
+
+/** Whether a desktop command failed with `code`. */
+function desktopCode(err: unknown, code: string): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { kind?: unknown }).kind === "backend_error" &&
+    (err as { code?: unknown }).code === code
+  );
+}
+
+/**
+ * Unlocks the account on the desktop after its password login was accepted, as
+ * {@link unlockAfterLogin} does in the browser.
+ *
+ * @param handle - The desktop's handle of the finished login.
+ * @param keep - Whether the account stays signed in on this device.
+ * @throws NeedsRecoveryError as {@link unlockAfterLogin}; the handle stays usable.
+ */
+export async function unlockAfterLoginOnDesktop(
+  handle: string,
+  input: Omit<LoginUnlock, "exportKey" | "sessionKey"> & { keep: boolean },
+): Promise<Unlocked> {
+  let unlocked: UnlockedAccount;
+  try {
+    unlocked = await accountUnlockAfterLogin(
+      handle,
+      input.principalId,
+      input.serverShare,
+      input.rewraps,
+      input.keep,
+      input.startEmpty ?? false,
+    );
+  } catch (err) {
+    if (desktopCode(err, "NEEDS_RECOVERY")) throw new NeedsRecoveryError();
+    throw err;
+  }
+  return holdDesktop(input.endpoint, input.principalId, unlocked);
+}
+
+/**
+ * Unlocks the account on the desktop after a signup registered its password, as
+ * {@link unlockAfterSignup} does in the browser. An account unlocked already keeps its data key.
+ *
+ * @param handle - The desktop's handle of the finished registration.
+ * @param keep - Whether the account stays signed in on this device.
+ */
+export async function unlockAfterSignupOnDesktop(
+  handle: string,
+  input: Omit<SignupUnlock, "exportKey"> & { keep: boolean },
+): Promise<Unlocked> {
+  const unlocked = await accountUnlockAfterSignup(
+    handle,
+    input.principalId,
+    input.serverShare,
+    input.recoveryEntropy ? toB64(input.recoveryEntropy) : null,
+    input.keep,
+  );
+  return holdDesktop(input.endpoint, input.principalId, unlocked);
+}
+
+/**
+ * Unlocks the account on the desktop with its recovery phrase, as {@link unlockWithRecovery}
+ * does in the browser.
+ *
+ * @returns Whether it unlocked.
+ */
+export async function unlockWithRecoveryOnDesktop(
+  endpoint: string,
+  principalId: string,
+  entropy: Uint8Array,
+): Promise<boolean> {
+  const unlocked = await accountUnlockWithRecovery(principalId, toB64(entropy));
+  if (!unlocked) return false;
+  await holdDesktop(endpoint, principalId, unlocked);
+  return true;
+}
+
+/**
+ * Wraps the unlocked account's data key under its recovery phrase too, on a device that now
+ * holds the phrase.
+ *
+ * @param entropy - The phrase's 16 bytes.
+ * @throws VaultLockedError while nothing is unlocked.
+ */
+export async function addRecoveryWrapToUnlocked(entropy: Uint8Array): Promise<void> {
+  const account = vaultAccount();
+  if (!account) throw new Error("no account is unlocked on this device");
+  if (isTauri()) {
+    await accountAddRecoveryWrap(account.principalId, toB64(entropy));
+    return;
+  }
+  const dataKey = vaultDataKey();
+  if (!dataKey) throw new Error("no account is unlocked in this browser");
+  try {
+    await addRecoveryWrap(account.endpoint, account.principalId, dataKey, entropy);
+  } finally {
+    dataKey.fill(0);
+  }
+}
+
+/** What a password change's rewrap takes in the browser. */
+export interface ChangeRewrap {
+  principalId: string;
+  /** The export key of a login with the current password. */
+  oldExportKey: Uint8Array;
+  /** That login's session key. */
+  sessionKey: Uint8Array;
+  /** That login's `serverShare`, sealed under its transport key. */
+  serverShare: string;
+  /** The export key of the new password's registration. */
+  newExportKey: Uint8Array;
+}
+
+/**
+ * Makes the rewrap of a password change in the browser: the old unlock key sealed under the new
+ * one, both from the server share the login opened.
+ *
+ * @returns The rewrap (base64url) for `passwordChangeFinish`, and the new unlock key for
+ *   {@link commitPasswordChange}, which the caller wipes.
+ */
+export async function passwordChangeRewrap(
+  input: ChangeRewrap,
+): Promise<{ rewrap: string; newUnlockKey: Uint8Array }> {
+  const opaque = await loadOpaque();
+  const transport = opaque.transportKey(input.sessionKey, "server share");
+  let share: Uint8Array;
+  try {
+    share = share32(await openTransport(transport, input.serverShare));
+  } finally {
+    transport.fill(0);
+  }
+  try {
+    const oldKey = opaque.unlockKey(input.oldExportKey, share, input.principalId);
+    const newUnlockKey = opaque.unlockKey(input.newExportKey, share, input.principalId);
+    try {
+      const rewrap = toB64(await rewrapUnlockKey(newUnlockKey, oldKey, input.principalId));
+      return { rewrap, newUnlockKey };
+    } finally {
+      oldKey.fill(0);
+    }
+  } finally {
+    share.fill(0);
+  }
+}
+
+/**
+ * Wraps the unlocked account's data key under the new unlock key, once the server took the
+ * password change.
+ *
+ * @throws VaultLockedError while nothing is unlocked.
+ */
+export async function commitPasswordChange(newUnlockKey: Uint8Array): Promise<void> {
+  const account = vaultAccount();
+  const dataKey = vaultDataKey();
+  if (!account || !dataKey) throw new Error("no account is unlocked in this browser");
+  try {
+    await replacePasswordWrap(account.endpoint, account.principalId, newUnlockKey, dataKey);
+  } finally {
+    dataKey.fill(0);
+  }
+}
+
 /**
  * Keeps the unlocked account signed in on this browser: wraps its data key under the keep key
  * its kept session holds at the server.
@@ -237,15 +425,20 @@ export async function keepUnlocked(keepKey: Uint8Array): Promise<void> {
 
 /**
  * Locks the signed-in account: its keys leave memory, the encrypted store closes and forgets its
- * account, and the stores sealed under it go back to their initial state. In the web app the
- * keep wrap goes too, so a keep key the server forgets cannot be replayed.
+ * account, and the stores sealed under it go back to their initial state. On the desktop its
+ * data key leaves the desktop's memory too; in the web app the keep wrap goes, so a keep key the
+ * server forgets cannot be replayed.
  */
 export function lockAccount(): void {
   const account = vaultAccount();
   lockVault();
   closeStores();
   setWebStoreAccount(null);
-  if (account && !isTauri()) {
+  if (account && isTauri()) {
+    accountLock(account.principalId).catch((err: unknown) =>
+      logger.warn("[RIM:auth] locking the account on this computer failed:", err),
+    );
+  } else if (account) {
     dropKeepWrap(account.endpoint, account.principalId).catch((err: unknown) =>
       logger.warn("[RIM:auth] dropping the keep wrap failed:", err),
     );

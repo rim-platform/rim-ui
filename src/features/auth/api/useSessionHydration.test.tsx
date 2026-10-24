@@ -10,7 +10,6 @@ import { useAuthStore } from "../state/useAuthStore";
 const requestMock = vi.fn();
 const loadSessionRecordMock = vi.fn<() => Promise<SessionRecord | null>>();
 const saveSessionRecordMock = vi.fn<(record: SessionRecord) => Promise<void>>();
-const resumeWithDeviceKeyMock = vi.fn<(userId: string) => Promise<string | null>>();
 const listDeviceKeyAccountsMock = vi.fn<() => Promise<{ principalId: string; userId: string }[]>>();
 const accountUnlockKeptMock = vi.fn<(principal: string) => Promise<unknown>>();
 
@@ -23,7 +22,6 @@ vi.mock("../../offline/api/offlineSession", () => ({
 }));
 
 vi.mock("../../key-identity/api/keyIdentity", () => ({
-  resumeWithDeviceKey: (userId: string) => resumeWithDeviceKeyMock(userId),
   listDeviceKeyAccounts: () => listDeviceKeyAccountsMock(),
 }));
 vi.mock("./accountLock", () => ({
@@ -70,7 +68,6 @@ describe("useSessionHydration", () => {
     requestMock.mockReset();
     loadSessionRecordMock.mockReset().mockResolvedValue(null);
     saveSessionRecordMock.mockReset().mockResolvedValue(undefined);
-    resumeWithDeviceKeyMock.mockReset().mockResolvedValue(null);
     listDeviceKeyAccountsMock
       .mockReset()
       .mockResolvedValue([{ principalId: "rimp1_alice", userId: "alice" }]);
@@ -206,17 +203,17 @@ describe("useSessionHydration", () => {
     expect(saveSessionRecordMock).toHaveBeenCalledWith({ state: "signedOut", endpoint });
   });
 
-  it("signs in again with this device's key when the server refuses the session", async () => {
+  it("stays on sign-in, where the password signs in again, when the server refuses the session", async () => {
     loadSessionRecordMock.mockResolvedValue({ state: "signedIn", endpoint, userId: "alice" });
     requestMock.mockRejectedValue(unauthenticated());
-    resumeWithDeviceKeyMock.mockResolvedValue("alice");
 
     const result = await hydrate();
 
-    expect(resumeWithDeviceKeyMock).toHaveBeenCalledWith("alice");
-    expect(result.current.isAuthenticated).toBe(true);
-    expect(useAuthStore.getState().session).toEqual({ userId: "alice" });
-    expect(saveSessionRecordMock).not.toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().session).toBeNull();
+    // Nothing signs in without the password: requests stop at the refused one.
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(saveSessionRecordMock).toHaveBeenCalledWith({ state: "signedOut", endpoint });
   });
 
   it("keeps the record when the server fails for another reason", async () => {
@@ -237,7 +234,6 @@ describe("useSessionHydration", () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(useOfflineStore.getState().offline).toBe(false);
     expect(saveSessionRecordMock).not.toHaveBeenCalled();
-    expect(resumeWithDeviceKeyMock).not.toHaveBeenCalled();
   });
 
   it("stays signed out offline without a record (never signed in on this device)", async () => {

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Check, Circle, Loader2 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
+import { KeepSignedInCheckbox, PasswordInput } from "../../auth/components/PasswordFields";
+import { keepSignedInByDefault } from "../../auth/password";
 import type { MyKeyIdentity } from "../../key-identity/api/keyIdentity";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { SWITCH_STEPS } from "../remote/relaySwitch";
@@ -22,7 +24,8 @@ const inputClass =
 /**
  * Settings > Security > "Switch relays": move to another relay in six steps, with progress,
  * resumable after a restart. Workspaces, history and keys stay where they are; only the server
- * that carries this person's traffic changes.
+ * that carries this person's traffic changes. The account password is asked for each run: the
+ * new relay checks it, or registers it with the account it opens there.
  */
 export function RelaySwitchPanel({
   identity,
@@ -38,6 +41,8 @@ export function RelaySwitchPanel({
   const [origin, setOrigin] = useState("");
   const [username, setUsername] = useState("");
   const [goesAway, setGoesAway] = useState(false);
+  const [password, setPassword] = useState("");
+  const [keep, setKeep] = useState(() => keepSignedInByDefault(true));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,13 +64,22 @@ export function RelaySwitchPanel({
         username: username.trim() || user?.username || "",
         oldGoesAway: goesAway,
       });
-      void continueSwitch(fresh, displayName);
+      void continueSwitch(fresh, displayName, { password, keep });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   const done = state !== null && state.step >= SWITCH_STEPS.length;
+  const passwordFields = (
+    <div className="space-y-2">
+      <PasswordInput label="Your password" value={password} onChange={setPassword} />
+      <p className="text-xs text-rim-text-faint">
+        The new relay checks it, or sets it for the account it opens there.
+      </p>
+      <KeepSignedInCheckbox checked={keep} onChange={setKeep} />
+    </div>
+  );
   return (
     <section className="space-y-3 rounded-lg border border-rim-line bg-rim-panel p-4">
       <p className="text-sm font-medium text-rim-text">Switch relays</p>
@@ -102,7 +116,8 @@ export function RelaySwitchPanel({
             />
             This relay is going away: continue its direct messages on the new one
           </label>
-          <Button size="sm" onClick={() => void start()} disabled={!origin.trim()}>
+          {passwordFields}
+          <Button size="sm" onClick={() => void start()} disabled={!origin.trim() || !password}>
             Switch relays
           </Button>
         </div>
@@ -136,6 +151,7 @@ export function RelaySwitchPanel({
               {state.error}
             </p>
           )}
+          {!done && !running && passwordFields}
           {done ? (
             onNewRelay(state) ? (
               <p className="text-xs text-rim-text-muted">
@@ -153,7 +169,8 @@ export function RelaySwitchPanel({
               <Button
                 size="sm"
                 isLoading={running}
-                onClick={() => void continueSwitch(state, displayName)}
+                disabled={!password}
+                onClick={() => void continueSwitch(state, displayName, { password, keep })}
               >
                 {state.step === 0 && !state.error ? "Start" : "Continue"}
               </Button>
