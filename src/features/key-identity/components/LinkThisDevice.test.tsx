@@ -5,10 +5,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { createTestQueryClient } from "../../../test/utils";
-import type { LinkNewDeviceOptions } from "../api/deviceLink";
+import type { LinkedSignIn, LinkNewDeviceOptions } from "../api/deviceLink";
 
 const api = vi.hoisted(() => ({ linkNewDevice: vi.fn() }));
-const keys = vi.hoisted(() => ({ defaultDeviceName: vi.fn() }));
+const keys = vi.hoisted(() => ({ defaultDeviceName: vi.fn(), signInWithPassword: vi.fn() }));
 const runtime = vi.hoisted(() => ({
   platform: "desktop",
   deviceKeyStore: "keyring",
@@ -59,16 +59,22 @@ describe("LinkThisDevice", () => {
     keys.defaultDeviceName.mockResolvedValue("Laptop");
   });
 
-  it("shows the fingerprint while waiting, then signs in", async () => {
-    let finish!: (userId: string) => void;
+  it("shows the fingerprint while waiting, then asks for the password and signs in", async () => {
+    let answer!: () => void;
     api.linkNewDevice.mockImplementation(
-      (_code: string, _name: string, options: LinkNewDeviceOptions) => {
+      async (_code: string, _name: string, signIn: LinkedSignIn, options: LinkNewDeviceOptions) => {
         options.onOffered?.({ linkId: "l", fingerprint: "QSFX-VHMA" });
-        return new Promise<string>((resolve) => {
-          finish = resolve;
+        await new Promise<void>((resolve) => {
+          answer = resolve;
         });
+        return signIn("rimp1_alice");
       },
     );
+    keys.signInWithPassword.mockResolvedValue({
+      userId: "u-alice",
+      mustSetPassword: false,
+      startedEmpty: true,
+    });
     const onSuccess = vi.fn();
     wrap(<LinkThisDevice onSuccess={onSuccess} />);
 
@@ -77,13 +83,47 @@ describe("LinkThisDevice", () => {
     expect(api.linkNewDevice).toHaveBeenCalledWith(
       CODE,
       "Laptop",
+      expect.any(Function),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(await screen.findByLabelText("Fingerprint")).toHaveTextContent("QSFX-VHMA");
     expect(screen.getByText(/confirm this code on your other device/i)).toBeInTheDocument();
 
-    finish("u-alice");
+    // The other device answered: the account's password signs this device in.
+    answer();
+    expect(await screen.findByText(/enter the account's password/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/^password$/i), "correct horse battery");
+    await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(keys.signInWithPassword).toHaveBeenCalledWith(
+      "rimp1_alice",
+      { password: "correct horse battery", keep: false },
+      expect.anything(),
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
+  });
+
+  it("ends the link's sign-in when the person cancels the password prompt", async () => {
+    let failure: unknown = null;
+    api.linkNewDevice.mockImplementation(
+      async (_code: string, _name: string, signIn: LinkedSignIn) => {
+        try {
+          return await signIn("rimp1_alice");
+        } catch (err) {
+          failure = err;
+          throw new DeviceLinkError("failed", "This device is linked, but signing in failed.");
+        }
+      },
+    );
+    const onSuccess = vi.fn();
+    wrap(<LinkThisDevice onSuccess={onSuccess} />);
+
+    await openAndSubmit();
+    await userEvent.click(await screen.findByRole("button", { name: /^cancel$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/signing in failed/);
+    expect(failure).toBeInstanceOf(Error);
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   it("explains a code that was used up", async () => {
@@ -103,7 +143,7 @@ describe("LinkThisDevice", () => {
   it("aborts the link when cancelled while waiting", async () => {
     let signal: AbortSignal | undefined;
     api.linkNewDevice.mockImplementation(
-      (_code: string, _name: string, options: LinkNewDeviceOptions) => {
+      (_code: string, _name: string, _signIn: LinkedSignIn, options: LinkNewDeviceOptions) => {
         signal = options.signal;
         return new Promise((_resolve, reject) =>
           options.signal?.addEventListener("abort", () => reject(new DeviceLinkError("aborted"))),
@@ -127,7 +167,7 @@ describe("LinkThisDevice", () => {
   it("links a browser, saying its keys are weaker and that a reload abandons the link", async () => {
     Object.assign(runtime, { platform: "web", deviceKeyStore: "browser" });
     api.linkNewDevice.mockImplementation(
-      (_code: string, _name: string, options: LinkNewDeviceOptions) => {
+      (_code: string, _name: string, _signIn: LinkedSignIn, options: LinkNewDeviceOptions) => {
         options.onOffered?.({ linkId: "l", fingerprint: "QSFX-VHMA" });
         return new Promise<string>(() => undefined);
       },

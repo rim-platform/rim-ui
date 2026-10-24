@@ -197,6 +197,24 @@ export async function unwrapDataKey(
   return key32(await open(key, dataKeyAad(kind, principalId), wrap));
 }
 
+function rewrapAad(principalId: string) {
+  return utf8(`rim.uk-rewrap.v1|${principalId}`);
+}
+
+/**
+ * The rewrap a password change leaves at the server: the old unlock key sealed under the new
+ * one, so a device whose data key is still wrapped under the old key can open it.
+ *
+ * @returns `nonce ‖ ciphertext ‖ tag`.
+ */
+export function rewrapUnlockKey(
+  newUnlockKey: Uint8Array,
+  oldUnlockKey: Uint8Array,
+  principalId: string,
+): Promise<Uint8Array> {
+  return seal(newUnlockKey, rewrapAad(principalId), oldUnlockKey);
+}
+
 /**
  * The old unlock key a rewrap holds, opened with the unlock key after the change.
  *
@@ -207,7 +225,7 @@ export async function unwrapRewrap(
   principalId: string,
   rewrap: Uint8Array,
 ): Promise<Uint8Array> {
-  return key32(await open(newUnlockKey, utf8(`rim.uk-rewrap.v1|${principalId}`), rewrap));
+  return key32(await open(newUnlockKey, rewrapAad(principalId), rewrap));
 }
 
 /** The key of the recovery wrap, from a recovery phrase's entropy. */

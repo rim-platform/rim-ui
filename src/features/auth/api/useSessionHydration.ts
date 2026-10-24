@@ -8,7 +8,7 @@ import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { AddressBlockedError, isSessionRefused } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { retryWithBackoff } from "../../../shared/utils/retryWithBackoff";
-import { listDeviceKeyAccounts, resumeWithDeviceKey } from "../../key-identity/api/keyIdentity";
+import { listDeviceKeyAccounts } from "../../key-identity/api/keyIdentity";
 import { isServerUnreachable } from "../../messages/api/messageCache";
 import {
   loadSessionRecord,
@@ -70,8 +70,8 @@ async function unlockKept(userId: string): Promise<boolean> {
  * signed in on this device: its keep key unlocks it without the server. An account that is
  * not kept stays on sign-in with `needsConnection` set, and the server is asked again until it
  * answers. Either way the recorded CSRF token for that account goes back into the auth store.
- * When the server refuses the recorded account's session and this device holds that account's
- * key, the app signs in again with the key.
+ * When the server refuses the recorded account's session, the app stays on sign-in, where the
+ * account's password signs in again.
  */
 export function useSessionHydration() {
   const session = useAuthStore((s) => s.session);
@@ -122,15 +122,8 @@ export function useSessionHydration() {
               setNeedsConnection(true);
             }
           } else if (isSessionRefused(err)) {
-            // The cookie is gone or expired. With a device key for that account, sign in again
-            // with it; otherwise the account needs signing in, offline too.
-            const userId = await resumeWithDeviceKey(record.userId);
-            if (cancelled) return;
-            if (userId) {
-              setSession({ userId });
-            } else {
-              void saveSessionRecord({ state: "signedOut", endpoint: record.endpoint });
-            }
+            // The cookie is gone or expired: the account needs signing in, offline too.
+            void saveSessionRecord({ state: "signedOut", endpoint: record.endpoint });
           }
         }
       } finally {

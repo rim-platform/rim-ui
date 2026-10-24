@@ -10,7 +10,9 @@ use tauri::State;
 
 use rim_opaque::Key;
 
-use super::{AccountLock, AccountLockError, FlowStart, LoginFinish, RegistrationFinish, Unlocked};
+use super::{
+    AccountLock, AccountLockError, FlowStart, LoginFinish, RegistrationFinish, Rewrap, Unlocked,
+};
 use crate::key_identity::KeyIdentityState;
 use crate::message_cache::MessageCacheState;
 
@@ -216,4 +218,57 @@ pub async fn account_forget_keep(
     principal: String,
 ) -> Result<(), AccountLockError> {
     blocking(&state, move |s| s.forget_keep(&principal)).await
+}
+
+/// Make the rewrap of a password change for `principal`: `loginHandle` is a finished login with
+/// the current password and `sealedShare` the server share it sealed, `registrationHandle` the
+/// finished registration of the new password. Returns the rewrap for `passwordChangeFinish`.
+#[tauri::command]
+pub async fn account_password_rewrap(
+    state: State<'_, AccountLock>,
+    login_handle: String,
+    sealed_share: String,
+    registration_handle: String,
+    principal: String,
+) -> Result<Rewrap, AccountLockError> {
+    blocking(&state, move |s| {
+        s.password_rewrap(
+            &login_handle,
+            &sealed_share,
+            &registration_handle,
+            &principal,
+        )
+    })
+    .await
+}
+
+/// Finish a password change the server took: wrap `principal`'s data key under the new unlock
+/// key the rewrap left under `handle`.
+#[tauri::command]
+pub async fn account_password_commit(
+    state: State<'_, AccountLock>,
+    handle: String,
+    principal: String,
+) -> Result<(), AccountLockError> {
+    blocking(&state, move |s| s.password_commit(&handle, &principal)).await
+}
+
+/// Wrap the unlocked `principal`'s data key under its recovery phrase too: `entropy` is the
+/// phrase's 16 bytes, base64url.
+#[tauri::command]
+pub async fn account_add_recovery_wrap(
+    state: State<'_, AccountLock>,
+    principal: String,
+    entropy: String,
+) -> Result<(), AccountLockError> {
+    blocking(&state, move |s| s.add_recovery_wrap(&principal, &entropy)).await
+}
+
+/// Whether this device holds a password wrap of `principal`'s data key.
+#[tauri::command]
+pub async fn account_has_password_wrap(
+    state: State<'_, AccountLock>,
+    principal: String,
+) -> Result<bool, AccountLockError> {
+    blocking(&state, move |s| s.has_password_wrap(&principal)).await
 }

@@ -16,6 +16,7 @@ import { useServerOrigin } from "../../relay/state/serverOrigin";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { ChangePassword } from "../../auth/components/ChangePassword";
 import {
   fetchMyKeyIdentity,
   profileCardIsStale,
@@ -221,6 +222,8 @@ function KeyIdentityOverview({
           </p>
         )}
       </div>
+
+      {canSign && local.data?.deviceId && <ChangePassword principalId={principalId} />}
 
       <section className="rounded-lg border border-rim-line bg-rim-panel p-4">
         <p className="text-sm font-medium text-rim-text">Devices</p>

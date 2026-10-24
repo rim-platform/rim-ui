@@ -29,9 +29,13 @@ import {
   type BrowserKeyRecord,
 } from "../../key-identity/browser/keyStore";
 import {
+  addRecoveryWrapToUnlocked,
+  commitPasswordChange,
+  hasPasswordWrap,
   holdSession,
   keepUnlocked,
   lockAccount,
+  passwordChangeRewrap,
   unlockAfterLogin,
   unlockAfterSignup,
   unlockKept,
@@ -89,7 +93,7 @@ async function sealedShare(sessionKey: Uint8Array): Promise<string> {
   return toB64(await seal(transport, new Uint8Array(), SHARE));
 }
 
-async function login(exportKey: Uint8Array, startEmpty = false) {
+async function login(exportKey: Uint8Array, startEmpty = false, rewraps: string[] = []) {
   const sessionKey = random(64);
   return unlockAfterLogin({
     endpoint: ENDPOINT,
@@ -97,7 +101,7 @@ async function login(exportKey: Uint8Array, startEmpty = false) {
     exportKey,
     sessionKey,
     serverShare: await sealedShare(sessionKey),
-    rewraps: [],
+    rewraps,
     startEmpty,
   });
 }
@@ -233,6 +237,45 @@ describe("unlocking an account in the web app", () => {
     expect(isVaultUnlocked()).toBe(false);
   });
 
+  it("a password change leaves a rewrap that opens the old wrap, and rewraps this browser's data key", async () => {
+    const before = random(64);
+    const after = random(64);
+    await signUp(before);
+    const sessionKey = random(64);
+    const { rewrap, newUnlockKey } = await passwordChangeRewrap({
+      principalId: PRINCIPAL,
+      oldExportKey: before,
+      sessionKey,
+      serverShare: await sealedShare(sessionKey),
+      newExportKey: after,
+    });
+
+    // A device still wrapped under the old password opens with the new one and the rewrap.
+    lockAccount();
+    expect(await login(after, false, [rewrap])).toEqual({ startedEmpty: false });
+    expect(await signsAsDevice(await record(ENDPOINT, PRINCIPAL))).toBe(true);
+
+    // The device that changed it wraps its data key under the new unlock key at once.
+    await commitPasswordChange(newUnlockKey);
+    lockAccount();
+    expect(await login(after)).toEqual({ startedEmpty: false });
+    lockAccount();
+    await expect(login(before)).rejects.toBeInstanceOf(NeedsRecoveryError);
+  });
+
+  it("adds the recovery wrap to the unlocked account once this browser holds the phrase", async () => {
+    await signUp(random(64), null);
+    expect((await readWraps(ENDPOINT, PRINCIPAL))?.recoveryWrap).toBeUndefined();
+
+    await addRecoveryWrapToUnlocked(ENTROPY);
+    lockAccount();
+    expect(await unlockWithRecovery(ENDPOINT, PRINCIPAL, ENTROPY)).toBe(true);
+    expect(await signsAsDevice(await record(ENDPOINT, PRINCIPAL))).toBe(true);
+
+    lockAccount();
+    await expect(addRecoveryWrapToUnlocked(ENTROPY)).rejects.toThrow(/no account is unlocked/);
+  });
+
   it("holds an unkept session's secret, keeps it for a reload, and forgets both at sign-out", async () => {
     await signUp(random(64), null);
     await holdSession({ sessionSecret: "c2VjcmV0", keepKey: null });
@@ -251,5 +294,11 @@ describe("unlocking an account in the web app", () => {
     expect(sessionSecret()).toBeNull();
     lockVault();
     expect(await unlockKept(ENDPOINT, PRINCIPAL, keepKey)).toBe(true);
+  });
+
+  it("tells a browser that unlocked the account with its password from one that never did", async () => {
+    expect(await hasPasswordWrap(ENDPOINT, PRINCIPAL)).toBe(false);
+    await signUp(random(64));
+    expect(await hasPasswordWrap(ENDPOINT, PRINCIPAL)).toBe(true);
   });
 });

@@ -96,13 +96,24 @@ function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
   });
 }
 
-/** Fill in the name, create the keys and tick "I saved it". */
+/** The password every signup here chooses: a passphrase, unticked "Keep me signed in". */
+const PASSWORD = "correct horse battery";
+const ENTRY = { password: PASSWORD, keep: false };
+
+/** Choose the passphrase, typed twice. */
+function typePassword() {
+  fireEvent.change(screen.getByLabelText("Passphrase"), { target: { value: PASSWORD } });
+  fireEvent.change(screen.getByLabelText("Passphrase again"), { target: { value: PASSWORD } });
+}
+
+/** Fill in the name and the password, create the keys and tick "I saved it". */
 async function reachKit(user: ReturnType<typeof userEvent.setup>, username = "ada") {
   await waitFor(() => expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"));
   await user.type(screen.getByLabelText(/^username/i), username);
+  typePassword();
   await user.click(screen.getByRole("button", { name: /create keys/i }));
   await screen.findByLabelText("Recovery phrase");
-  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("checkbox", { name: /saved my recovery kit/i }));
 }
 
 describe("KeySignupForm", () => {
@@ -118,7 +129,7 @@ describe("KeySignupForm", () => {
     api.confirmRecoveryKitSaved.mockResolvedValue(undefined);
   });
 
-  it("asks for a username, an optional display name and this device's name, with no password or email", async () => {
+  it("asks for a username, an optional display name, this device's name and a password, with no email", async () => {
     renderForm();
 
     expect(screen.getByLabelText(/^username/i)).toBeInTheDocument();
@@ -126,7 +137,10 @@ describe("KeySignupForm", () => {
     await waitFor(() =>
       expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
     );
-    expect(screen.queryByLabelText(/password/i)).toBeNull();
+    expect(screen.getByRole("radio", { name: /PIN/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Passphrase/ })).toBeChecked();
+    expect(screen.getByText(/your recovery phrase resets it/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /keep me signed in/i })).not.toBeChecked();
     expect(screen.queryByLabelText(/email/i)).toBeNull();
     // A username is needed before any key is made.
     expect(screen.getByRole("button", { name: /create keys/i })).toBeDisabled();
@@ -143,6 +157,7 @@ describe("KeySignupForm", () => {
     await user.clear(screen.getByLabelText(/name of this device/i));
     await user.type(screen.getByLabelText(/name of this device/i), "Work laptop");
     await user.type(screen.getByLabelText(/^username/i), "ada");
+    typePassword();
     await user.click(screen.getByRole("button", { name: /create keys/i }));
 
     expect(api.beginEnrollment).toHaveBeenCalledWith("Work laptop");
@@ -154,13 +169,14 @@ describe("KeySignupForm", () => {
 
     const create = screen.getByRole("button", { name: /^create account$/i });
     expect(create).toBeDisabled();
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("checkbox", { name: /saved my recovery kit/i }));
     expect(create).toBeEnabled();
     await user.click(create);
 
     expect(api.signupWithKey).toHaveBeenCalledWith(
       draft,
       { username: "ada", instanceInviteToken: "inst-tok" },
+      ENTRY,
       expect.objectContaining({ recoveryKit: "saved" }),
     );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
@@ -185,6 +201,7 @@ describe("KeySignupForm", () => {
     expect(api.signupWithKey).toHaveBeenCalledWith(
       draft,
       { username: "ada", displayName: "Ada L.", workspaceInviteToken: "ws-tok" },
+      ENTRY,
       expect.anything(),
     );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-1"));
@@ -226,6 +243,7 @@ describe("KeySignupForm", () => {
     expect(api.signupWithKey).toHaveBeenLastCalledWith(
       draft,
       { username: "ada2", instanceInviteToken: "inst-tok" },
+      ENTRY,
       expect.anything(),
     );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", null));
@@ -236,7 +254,7 @@ describe("KeySignupForm", () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
       api.signupWithKey.mockImplementationOnce(
-        (_draft: unknown, _fields: unknown, options: KeySignupOptions) =>
+        (_draft: unknown, _fields: unknown, _entry: unknown, options: KeySignupOptions) =>
           new Promise((_resolve, reject) => {
             options.onProofOfWork?.(24);
             options.signal?.addEventListener("abort", () => reject(new PowCancelled()));
@@ -383,7 +401,7 @@ describe("KeySignupForm", () => {
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: /discard keys/i }));
 
-    expect(api.discardKeySignup).toHaveBeenCalledWith(draft);
+    expect(api.discardKeySignup).toHaveBeenCalledWith(draft, ENTRY);
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(await screen.findByRole("button", { name: /create keys/i })).toBeInTheDocument();
@@ -464,6 +482,7 @@ describe("KeySignupForm", () => {
         expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
       );
       await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
       expect(screen.queryByRole("button", { name: /create keys/i })).toBeNull();
       await user.click(screen.getByRole("button", { name: /^create account$/i }));
     }
@@ -477,6 +496,7 @@ describe("KeySignupForm", () => {
       expect(api.signupWithKey).toHaveBeenCalledWith(
         draft,
         { username: "ada", instanceInviteToken: "inst-tok" },
+        ENTRY,
         expect.objectContaining({ recoveryKit: "later" }),
       );
       expect(await screen.findByText("Your account is ready.")).toBeInTheDocument();
@@ -496,6 +516,40 @@ describe("KeySignupForm", () => {
       expect(onSuccess).toHaveBeenCalledWith("u-ada", null);
       expect(onBusyChange).toHaveBeenLastCalledWith(false);
       expect(api.abandonKeySignup).not.toHaveBeenCalled();
+    });
+
+    it("checks the password before the account is created, and sends the keep choice", async () => {
+      const user = userEvent.setup();
+      renderForm();
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+      await user.click(screen.getByRole("radio", { name: /PIN/ }));
+      const create = screen.getByRole("button", { name: /^create account$/i });
+
+      fireEvent.change(screen.getByLabelText("PIN"), { target: { value: "12345" } });
+      fireEvent.change(screen.getByLabelText("PIN again"), { target: { value: "12345" } });
+      await user.click(create);
+      expect(screen.getByText("A PIN has at least 6 digits.")).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText("PIN"), { target: { value: "123456" } });
+      fireEvent.change(screen.getByLabelText("PIN again"), { target: { value: "123465" } });
+      await user.click(create);
+      expect(screen.getByText("The two entries do not match.")).toBeInTheDocument();
+      expect(api.beginEnrollment).not.toHaveBeenCalled();
+      expect(api.signupWithKey).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByLabelText("PIN again"), { target: { value: "123456" } });
+      await user.click(screen.getByRole("checkbox", { name: /keep me signed in/i }));
+      await user.click(create);
+
+      expect(api.signupWithKey).toHaveBeenCalledWith(
+        draft,
+        { username: "ada", instanceInviteToken: "inst-tok" },
+        { password: "123456", keep: true },
+        expect.objectContaining({ recoveryKit: "later" }),
+      );
     });
 
     it("opens the account on Later without confirming the kit", async () => {
@@ -525,6 +579,7 @@ describe("KeySignupForm", () => {
       expect(api.signupWithKey).toHaveBeenLastCalledWith(
         draft,
         expect.objectContaining({ username: "ada2" }),
+        ENTRY,
         expect.objectContaining({ recoveryKit: "later" }),
       );
       expect(await screen.findByText("Your account is ready.")).toBeInTheDocument();
@@ -583,6 +638,7 @@ describe("KeySignupForm", () => {
         expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
       );
       await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
 
       expect(screen.getByRole("link", { name: TERMS })).toHaveAttribute("href", TERMS);
       expect(screen.getByRole("button", { name: /create keys/i })).toBeDisabled();
@@ -595,6 +651,7 @@ describe("KeySignupForm", () => {
       expect(api.signupWithKey).toHaveBeenCalledWith(
         draft,
         { username: "ada", instanceInviteToken: "inst-tok", acceptedTermsUrl: TERMS },
+        ENTRY,
         expect.anything(),
       );
     });
@@ -612,6 +669,7 @@ describe("KeySignupForm", () => {
         expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
       );
       await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
       await user.click(termsBox());
       await user.click(screen.getByRole("button", { name: /create keys/i }));
       await screen.findByLabelText("Recovery phrase");
@@ -630,8 +688,8 @@ describe("KeySignupForm", () => {
       renderForm(undefined, undefined, { termsUrl: null });
 
       await reachKit(user);
-      // Only the recovery kit's checkbox.
-      expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+      // No terms to accept.
+      expect(screen.queryByRole("checkbox", { name: /terms/i })).toBeNull();
       await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
       expect(api.signupWithKey.mock.calls[0][1]).not.toHaveProperty("acceptedTermsUrl");
@@ -647,6 +705,7 @@ describe("KeySignupForm", () => {
         expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
       );
       await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
     }
 
     it("keeps Create keys disabled until the age is confirmed, then sends it", async () => {
@@ -665,6 +724,7 @@ describe("KeySignupForm", () => {
       expect(api.signupWithKey).toHaveBeenCalledWith(
         draft,
         { username: "ada", instanceInviteToken: "inst-tok", confirmedMinimumAge: 16 },
+        ENTRY,
         expect.anything(),
       );
     });

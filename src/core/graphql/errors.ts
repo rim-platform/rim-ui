@@ -71,6 +71,9 @@ export function isSchemaRefusal(err: unknown): boolean {
   });
 }
 
+/** Too many wrong passwords: only a reset with the recovery phrase opens the account again. */
+export const PASSWORD_LOCKED = "PASSWORD_LOCKED";
+
 /** The request carried no valid session (an absent, expired or revoked cookie). */
 export const UNAUTHENTICATED = "UNAUTHENTICATED";
 

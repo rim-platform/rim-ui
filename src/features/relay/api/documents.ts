@@ -308,23 +308,33 @@ export const KEY_LOGIN_CHALLENGE_MUTATION = gql`
 `;
 
 /**
- * Sent to a server directly, with a proof whose audience is that server's id. The session there
- * is kept, with the keep key held by this app: it needs no session secret, and the server holds
- * no keep key for it.
+ * Sent to a server directly, with a proof whose audience is that server's id, and the ticket of
+ * a password login when the account is that server's own. The session there is kept, with the
+ * keep key held by this app: it needs no session secret, and the server holds no keep key for
+ * it.
  */
 export const LOGIN_WITH_KEY_MUTATION = gql`
-  mutation LoginWithKey($proof: SignedStatementInput!) {
-    loginWithKey(proof: $proof, keepSignedIn: true, keepKeyHeld: true) {
+  mutation LoginWithKey($proof: SignedStatementInput!, $passwordTicket: String) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: true
+      keepKeyHeld: true
+    ) {
       userId
     }
   }
 `;
 
-/** Sent to a new relay directly, to open an account there with this identity. */
+/**
+ * Sent to a new relay directly, to open an account there with this identity and the account
+ * password; it answers the new account's server share.
+ */
 export const SIGNUP_WITH_KEY_MUTATION = gql`
   mutation SignupWithKey($input: SignupWithKeyInput!) {
     signupWithKey(input: $input) {
       userId
+      serverShare
     }
   }
 `;

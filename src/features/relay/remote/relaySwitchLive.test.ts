@@ -14,6 +14,17 @@ vi.mock("../pow/proofOfWork", async (importOriginal) => ({
   solveProofOfWork,
 }));
 
+// The desktop's account lock: the OPAQUE flows and the unlocks run on the Tauri side.
+const lock = vi.hoisted(() => ({
+  opaqueLoginStart: vi.fn(),
+  opaqueLoginFinish: vi.fn(),
+  opaqueRegistrationStart: vi.fn(),
+  opaqueRegistrationFinish: vi.fn(),
+  accountUnlockAfterLogin: vi.fn(),
+  accountUnlockAfterSignup: vi.fn(),
+}));
+vi.mock("../../auth/api/accountLock", () => lock);
+
 const identity = vi.hoisted(() => ({ value: null as unknown }));
 vi.mock("../../key-identity/api/keyIdentity", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../key-identity/api/keyIdentity")>()),
@@ -47,16 +58,31 @@ function serveDiscovery(descriptor: { payload: string; signature: string }) {
   setDirectTransport({ discovery: async () => document } as unknown as DirectTransport);
 }
 
+const PASSWORD = { password: "correct horse battery", keep: true };
+
 /** The new relay has no account for this identity yet and takes the signup. */
 function answerSignup() {
   directRequest.mockImplementation(async (_serverId: string, doc: string) => {
     const name = /(?:query|mutation)\s+(\w+)/.exec(String(doc))?.[1];
+    if (name === "PasswordLoginStart") {
+      return { passwordLoginStart: { loginId: "login-1", response: "fake-response" } };
+    }
+    if (name === "PasswordRegistrationStart") {
+      return { passwordRegistrationStart: "registration-response" };
+    }
     if (name === "KeyLoginChallenge") {
       return { keyLoginChallenge: { challengeId: "c-1", nonce: "n-1" } };
     }
-    if (name === "LoginWithKey") throw new Error("no account");
-    if (name === "SignupWithKey") return { signupWithKey: { userId: "u-new" } };
+    if (name === "SignupWithKey") {
+      return { signupWithKey: { userId: "u-new", serverShare: "share-new" } };
+    }
     throw new Error(`unexpected ${name}`);
+  });
+  // No password finishes a login for a principal the relay has no account for.
+  lock.opaqueLoginFinish.mockRejectedValue({
+    kind: "backend_error",
+    code: "WRONG_PASSWORD",
+    message: "the password is wrong",
   });
 }
 
@@ -66,6 +92,15 @@ function signupInput(): Record<string, unknown> | undefined {
 }
 
 beforeEach(() => {
+  Object.values(lock).forEach((fn) => fn.mockReset());
+  lock.opaqueLoginStart.mockResolvedValue({ handle: "h-login", request: "credential-request" });
+  lock.opaqueRegistrationStart.mockResolvedValue({
+    handle: "h-registration",
+    request: "registration-request",
+  });
+  lock.opaqueRegistrationFinish.mockResolvedValue({ upload: "registration-upload" });
+  lock.accountUnlockAfterLogin.mockResolvedValue({ webStoreKey: "k", startedEmpty: false });
+  lock.accountUnlockAfterSignup.mockResolvedValue({ webStoreKey: "k", startedEmpty: false });
   globalThis.indexedDB = new IDBFactory();
   resetPinCache();
   directRequest.mockReset();
@@ -97,7 +132,7 @@ describe("switching to a relay in pow registration mode", () => {
     serveDiscovery(powVectors.powDescriptor);
     answerSignup();
     solveProofOfWork.mockResolvedValue("AAAAAAAAkaM");
-    const deps = liveDeps("Ada");
+    const deps = liveDeps("Ada", PASSWORD);
 
     const checked = await deps.checkNew(RELAY_ORIGIN);
     expect(checked.serverId).toBe(vectors.relay.serverId);
@@ -113,7 +148,24 @@ describe("switching to a relay in pow registration mode", () => {
       keyLog: [INCEPTION],
       device: CERT,
       proofOfWork: "AAAAAAAAkaM",
+      passwordRegistration: "registration-upload",
+      // Kept, with the keep key this app holds, as the direct sign-in is.
+      keepSignedIn: true,
+      keepKeyHeld: true,
     });
+    // The password is registered there, and the data key wrapped under that relay's share.
+    expect(lock.opaqueRegistrationStart).toHaveBeenCalledWith(PASSWORD.password);
+    expect(lock.opaqueRegistrationFinish).toHaveBeenCalledWith(
+      "h-registration",
+      "registration-response",
+    );
+    expect(lock.accountUnlockAfterSignup).toHaveBeenCalledWith(
+      "h-registration",
+      "rimp1_ada",
+      "share-new",
+      null,
+      true,
+    );
   });
 
   it("sends no proof to a relay in another mode", async () => {
@@ -125,7 +177,7 @@ describe("switching to a relay in pow registration mode", () => {
     });
     setDirectTransport({ discovery: async () => document } as unknown as DirectTransport);
     answerSignup();
-    const deps = liveDeps("Ada");
+    const deps = liveDeps("Ada", PASSWORD);
 
     const checked = await deps.checkNew("https://host.example");
     await deps.enterNew(checked.serverId, "ada");
@@ -143,12 +195,78 @@ describe("switching to a relay in pow registration mode", () => {
     });
     setDirectTransport({ discovery: async () => document } as unknown as DirectTransport);
     answerSignup();
-    const deps = liveDeps("Ada");
+    const deps = liveDeps("Ada", PASSWORD);
 
     const checked = await deps.checkNew(RELAY_ORIGIN);
     await expect(deps.enterNew(checked.serverId, "ada")).rejects.toThrow(/full/);
 
     expect(solveProofOfWork).not.toHaveBeenCalled();
+    expect(signupInput()).toBeUndefined();
+  });
+});
+
+describe("entering a relay that has the account", () => {
+  it("checks the password there before the device proof, and wraps the data key under its share", async () => {
+    serveDiscovery(powVectors.powDescriptor);
+    directRequest.mockImplementation(async (_serverId: string, doc: string) => {
+      const name = /(?:query|mutation)\s+(\w+)/.exec(String(doc))?.[1];
+      if (name === "PasswordLoginStart") {
+        return { passwordLoginStart: { loginId: "login-1", response: "credential-response" } };
+      }
+      if (name === "PasswordLoginFinish") {
+        return {
+          passwordLoginFinish: { ticket: "ticket-1", serverShare: "sealed", rewraps: ["rw"] },
+        };
+      }
+      if (name === "KeyLoginChallenge") {
+        return { keyLoginChallenge: { challengeId: "c-1", nonce: "n-1" } };
+      }
+      if (name === "LoginWithKey") return { loginWithKey: { userId: "u-there" } };
+      throw new Error(`unexpected ${name}`);
+    });
+    lock.opaqueLoginFinish.mockResolvedValue({ finalization: "finalization" });
+    const deps = liveDeps("Ada", PASSWORD);
+
+    const checked = await deps.checkNew(RELAY_ORIGIN);
+    await expect(deps.enterNew(checked.serverId, "ada")).resolves.toBe("u-there");
+
+    expect(lock.accountUnlockAfterLogin).toHaveBeenCalledWith(
+      "h-login",
+      "rimp1_ada",
+      "sealed",
+      ["rw"],
+      true,
+    );
+    const login = directRequest.mock.calls.find((c) => /LoginWithKey/.test(String(c[1])));
+    expect(login?.[2]).toEqual({ proof: PROOF, passwordTicket: "ticket-1" });
+    expect(lock.accountUnlockAfterLogin.mock.invocationCallOrder[0]).toBeLessThan(
+      directRequest.mock.invocationCallOrder[directRequest.mock.calls.indexOf(login!)],
+    );
+    expect(lock.opaqueRegistrationStart).not.toHaveBeenCalled();
+  });
+
+  it("says the password is wrong when the relay holds the account under another one", async () => {
+    serveDiscovery(powVectors.powDescriptor);
+    answerSignup();
+    const answer = directRequest.getMockImplementation()!;
+    directRequest.mockImplementation(async (serverId: string, doc: string) => {
+      if (/PasswordRegistrationStart/.test(String(doc))) {
+        const { ClientError } = await import("graphql-request");
+        throw new ClientError(
+          {
+            status: 200,
+            headers: new Headers(),
+            errors: [{ message: "taken", extensions: { code: "CONFLICT" } }],
+          },
+          { query: "" },
+        );
+      }
+      return answer(serverId, doc);
+    });
+    const deps = liveDeps("Ada", PASSWORD);
+
+    const checked = await deps.checkNew(RELAY_ORIGIN);
+    await expect(deps.enterNew(checked.serverId, "ada")).rejects.toThrow("Wrong password");
     expect(signupInput()).toBeUndefined();
   });
 });

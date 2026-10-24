@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { FORBIDDEN, graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { PasswordSignInForm } from "../../auth/components/PasswordSignIn";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
-import { defaultDeviceName } from "../api/keyIdentity";
+import { defaultDeviceName, SignInCancelled } from "../api/keyIdentity";
 import { BrowserKeyNotice } from "./BrowserKeyNotice";
 import { Fingerprint } from "./Fingerprint";
 
@@ -71,6 +72,12 @@ export function LinkThisDeviceForm({
   const [busy, setBusy] = useState(false);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The linked account waiting for its password, and how its sign-in ends.
+  const [asking, setAsking] = useState<{
+    principalId: string;
+    done: (userId: string) => void;
+    fail: (err: unknown) => void;
+  } | null>(null);
   const flow = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -92,10 +99,28 @@ export function LinkThisDeviceForm({
     setError(null);
     setFingerprint(null);
     try {
-      const userId = await linkNewDevice(code, deviceName, {
-        signal: controller.signal,
-        onOffered: (offer) => setFingerprint(offer.fingerprint),
-      });
+      const userId = await linkNewDevice(
+        code,
+        deviceName,
+        (principalId) =>
+          new Promise<string>((resolve, reject) => {
+            setAsking({
+              principalId,
+              done: (id) => {
+                setAsking(null);
+                resolve(id);
+              },
+              fail: (err) => {
+                setAsking(null);
+                reject(err);
+              },
+            });
+          }),
+        {
+          signal: controller.signal,
+          onOffered: (offer) => setFingerprint(offer.fingerprint),
+        },
+      );
       onSuccess(userId);
     } catch (err) {
       if (err instanceof DeviceLinkError && err.reason === "aborted") return;
@@ -122,6 +147,27 @@ export function LinkThisDeviceForm({
     flow.current = null;
     setBusy(false);
     setFingerprint(null);
+  }
+
+  if (asking) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-rim-text-muted">
+          {here} is linked. Enter the account&apos;s password to sign in.
+        </p>
+        <PasswordSignInForm
+          principalId={asking.principalId}
+          accountLabel="your account"
+          onSignedIn={(result) => asking.done(result.userId)}
+          onCancel={() => asking.fail(new SignInCancelled())}
+          onFailure={async (err) => {
+            if (graphqlErrorCode(err) !== FORBIDDEN) return false;
+            asking.fail(err);
+            return true;
+          }}
+        />
+      </div>
+    );
   }
 
   if (busy) {

@@ -2,19 +2,39 @@
  * The relay switch wired to the app (desktop only: it signs cards with the identity key and
  * holds a session with the new relay on the Tauri side), its saved state, and what is left to
  * do once the app runs on the new relay: successors of conversations homed on the old one.
+ *
+ * At the new relay the account password signs in, or is registered with the signup there, and
+ * the account's data key is wrapped under the unlock key that relay's server share gives.
  */
 
 import { create } from "zustand";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getGraphqlEndpoint, setRelayEndpoint } from "../../../core/graphql/config";
-import { graphqlErrorCode } from "../../../core/graphql/errors";
+import { CONFLICT, graphqlErrorCode } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
+import {
+  accountUnlockAfterLogin,
+  accountUnlockAfterSignup,
+  opaqueLoginFinish,
+  opaqueLoginStart,
+  opaqueRegistrationFinish,
+  opaqueRegistrationStart,
+} from "../../auth/api/accountLock";
+import {
+  keepSignedInArguments,
+  passwordLoginFinish,
+  passwordLoginStart,
+  passwordRegistrationStart,
+  WrongPasswordError,
+  type GraphqlRequest,
+} from "../../auth/api/passwordApi";
 import { keyBackend } from "../../key-identity/api/keyBackend";
 import {
   fetchMyKeyIdentity,
   keyLogStatements,
   signProfileCard,
+  type PasswordEntry,
 } from "../../key-identity/api/keyIdentity";
 import type { Statement } from "../../key-identity/browser/statements";
 import { fetchServerMembers } from "../../workspaces/api/useServerMembers";
@@ -117,8 +137,16 @@ async function carryOver(from: string, to: string): Promise<void> {
   }
 }
 
-/** What a switch needs, wired to this app; exported for its tests. */
-export function liveDeps(displayName: string): SwitchDeps {
+/** Whether a desktop command failed with `code`. */
+function commandFailed(err: unknown, code: string): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === code;
+}
+
+/**
+ * What a switch needs, wired to this app; exported for its tests. `password` signs in at the
+ * new relay, or is registered there with the signup.
+ */
+export function liveDeps(displayName: string, password: PasswordEntry): SwitchDeps {
   const account = signedInAccount();
   const crypto = relayCrypto();
   const transport = directTransport();
@@ -158,15 +186,35 @@ export function liveDeps(displayName: string): SwitchDeps {
     },
     openNew: (serverId, endpoints) => transport.open(serverId, endpoints),
     async enterNew(serverId, username) {
+      const send: GraphqlRequest = (document, variables) =>
+        directRequest(serverId, document, variables);
+      // The password first, then the device proof: the login answers the ticket the proof
+      // needs and the share the data key is wrapped under. A principal with no account there
+      // gets an answer no password finishes.
+      const login = await opaqueLoginStart(password.password);
+      const started = await passwordLoginStart(account.principalId, login.request, send);
+      let finalization: string | null = null;
       try {
+        finalization = (await opaqueLoginFinish(login.handle, started.response)).finalization;
+      } catch (err) {
+        if (!commandFailed(err, "WRONG_PASSWORD")) throw err;
+        logger.debug("[RIM:relay] no account with this password on the new relay yet");
+      }
+      if (finalization) {
+        const finished = await passwordLoginFinish(started.loginId, finalization, send);
+        await accountUnlockAfterLogin(
+          login.handle,
+          account.principalId,
+          finished.serverShare,
+          finished.rewraps,
+          password.keep,
+        );
         const signedIn = await directRequest<{ loginWithKey: { userId: string } }>(
           serverId,
           LOGIN_WITH_KEY_MUTATION,
-          { proof: await challenge(serverId) },
+          { proof: await challenge(serverId), passwordTicket: finished.ticket },
         );
         return signedIn.loginWithKey.userId;
-      } catch (err) {
-        logger.debug("[RIM:relay] no account on the new relay yet:", graphqlErrorCode(err));
       }
       const identity = await fetchMyKeyIdentity();
       const device = identity.devices.find((d) => d.deviceId === account.deviceId);
@@ -185,19 +233,39 @@ export function liveDeps(displayName: string): SwitchDeps {
               bits: registration.powBits,
             })
           : undefined;
-      const created = await directRequest<{ signupWithKey: { userId: string } }>(
-        serverId,
-        SIGNUP_WITH_KEY_MUTATION,
-        {
-          input: {
-            username,
-            displayName,
-            keyLog,
-            device: device.certificate,
-            proof: await challenge(serverId),
-            ...(proofOfWork && { proofOfWork }),
-          },
+      const opaque = await opaqueRegistrationStart(password.password);
+      let response: string;
+      try {
+        response = await passwordRegistrationStart(account.principalId, opaque.request, send);
+      } catch (err) {
+        // The account is there, so the password did not finish its login.
+        if (graphqlErrorCode(err) === CONFLICT) throw new WrongPasswordError();
+        throw err;
+      }
+      const { upload } = await opaqueRegistrationFinish(opaque.handle, response);
+      const created = await directRequest<{
+        signupWithKey: { userId: string; serverShare: string | null };
+      }>(serverId, SIGNUP_WITH_KEY_MUTATION, {
+        input: {
+          username,
+          displayName,
+          keyLog,
+          device: device.certificate,
+          proof: await challenge(serverId),
+          passwordRegistration: upload,
+          // Kept with the keep key held by this app, as the direct sign-in is.
+          ...keepSignedInArguments(true, true),
+          ...(proofOfWork && { proofOfWork }),
         },
+      });
+      const share = created.signupWithKey.serverShare;
+      if (!share) throw new Error("The new relay did not answer the account's server share.");
+      await accountUnlockAfterSignup(
+        opaque.handle,
+        account.principalId,
+        share,
+        null,
+        password.keep,
       );
       return created.signupWithKey.userId;
     },
@@ -319,15 +387,19 @@ export async function beginSwitch(fields: {
   };
 }
 
-/** Run (or continue) a switch; progress lands in `useRelaySwitchStore`. */
+/**
+ * Run (or continue) a switch; progress lands in `useRelaySwitchStore`. `password` is the account
+ * password, which the new relay checks or registers.
+ */
 export async function continueSwitch(
   state: SwitchState,
   displayName: string,
+  password: PasswordEntry,
 ): Promise<SwitchState> {
   const store = useRelaySwitchStore.getState();
   store.setRunning(true);
   try {
-    return await runSwitch(state, liveDeps(displayName), (s) =>
+    return await runSwitch(state, liveDeps(displayName, password), (s) =>
       useRelaySwitchStore.getState().set(s),
     );
   } finally {

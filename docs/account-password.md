@@ -20,6 +20,11 @@ says where the client's half lives.
 | `src/core/accountVault/` | The web app's account lock: the derivations and AES-256-GCM wraps byte for byte as `rim_opaque` makes them (`crypto.ts`), the wraps of each account's data key (`dkWraps.ts`), the vault that holds the unlocked account's keys in memory and seals records under them (`accountVault.ts`, `sealedRecords.ts`), and the account's sealed small values (`sealedStorage.ts`) |
 | `src/features/auth/runtime/accountUnlock.ts` | The web app's unlocks after a login, a signup, the recovery phrase and a kept session, and the lock at sign-out |
 | `src/features/auth/runtime/unlockGate.ts` | Whether the signed-in account is unlocked; the app's shell renders nothing that reads its data until it is |
+| `src/features/auth/api/passwordApi.ts` | The password's GraphQL calls (registration, login, change, reset, a first password), and the errors a sign-in reads: `PasswordLockedError`, `PasswordWaitError`, `WrongPasswordError` |
+| `src/features/auth/runtime/opaqueFlows.ts` | One shape for the OPAQUE flows on either platform: `startRegistration` and `startLogin` run the WebAssembly module in the web app and the desktop's commands behind a handle, then serve the unlock or a password change's rewrap |
+| `src/features/auth/runtime/passwordChanges.ts` | Changing the password, resetting it with the recovery phrase, and setting the first password of an account that has none |
+| `src/features/key-identity/api/keyIdentity.ts` | `signInWithPassword` and `signupWithKey`, the password and the device key together |
+| `src/features/auth/password.ts`, `src/features/auth/components/Password*.tsx` | The PIN and passphrase rules and the screens that ask for the password |
 | `src/core/graphql/sessionSecret.ts` | The session secret of an unkept session, in memory only |
 | `src/features/auth/runtime/reloadWindow.ts` | The web app's reload window |
 | `src/features/auth/api/sessionKeys.ts` | `sessionKeepKey`, `setReloadKey` and `reloadSession` |
@@ -39,11 +44,15 @@ account is unlocked. The secret vault (`secret-vault.md`) keeps its wraps:
 | `opaque_registration_start(password)`, `opaque_registration_finish(handle, response)` | A registration; the finish returns the upload and keeps the export key under the handle |
 | `opaque_login_start(password)`, `opaque_login_finish(handle, response)` | A login; the finish returns the finalization and keeps the export key and the session key. A wrong password is `WRONG_PASSWORD` and ends the handle |
 | `account_unlock_after_login(handle, principal, sealedShare, rewraps, keep, startEmpty)` | Opens the server share with the transport key, derives the unlock key and opens the password wrap, directly or through the rewraps (then wraps it under the current key), or takes the data key the recovery phrase just unlocked. When nothing opens and the device holds a recovery wrap, it answers `NEEDS_RECOVERY`, changes nothing and keeps the handle: the app offers the recovery phrase (`account_unlock_with_recovery`, then this call again) or starting empty (this call with `startEmpty`). With no recovery wrap, or with `startEmpty`, the account starts over with a new data key (`startedEmpty`). `keep` writes the keep wrap; without it, any keep wrap goes |
-| `account_unlock_after_signup(handle, principal, share, recoveryEntropy?, keep)` | A new data key, wrapped under the unlock key, and under the recovery phrase when its entropy is given |
+| `account_unlock_after_signup(handle, principal, share, recoveryEntropy?, keep)` | A new data key, wrapped under the unlock key, and under the recovery phrase when its entropy is given. An account unlocked already (it signs up at the relay it switches to) keeps its data key and its recovery wrap |
 | `account_unlock_kept(principal)` | Opens the keep wrap without the server, or null |
 | `account_unlock_with_recovery(principal, entropy)` | Opens the recovery wrap, or null |
 | `account_lock(principal)` | Drops the data key and closes the account's message cache databases, which hold the only copies of their keys in memory |
 | `account_forget_keep(principal)` | Deletes the keep key and the keep wrap |
+| `account_password_rewrap(loginHandle, sealedShare, registrationHandle, principal)` | A password change's rewrap: the old unlock key, from a finished login with the current password and the share it sealed, sealed under the new one, from the finished registration of the new password. The registration handle keeps the new unlock key |
+| `account_password_commit(handle, principal)` | Once the server took the change: wraps the unlocked account's data key under the new unlock key the rewrap left under `handle` |
+| `account_add_recovery_wrap(principal, entropy)` | Wraps the unlocked account's data key under its recovery phrase too, on a device that now holds the phrase |
+| `key_identity_sign_password_reset(endpoint, principalId, entropy, challenge)` | A `password-reset` statement over a `passwordResetChallenge`, signed by the recovery key of the phrase's 16 bytes (base64url), for the server at `endpoint` |
 
 Every unlock returns `{webStoreKey, startedEmpty}`: the key that seals the webview's IndexedDB
 records of the account, and whether the data key is new. A handle lasts two minutes and serves
@@ -122,6 +131,10 @@ keyed `[endpoint, principalId]`: `{passwordWrap, recoveryWrap?, keepWrap?}`, eac
 | `unlockWithRecovery(endpoint, principalId, entropy)` | Opens the recovery wrap; `false` when there is none or the phrase does not open it |
 | `keepUnlocked(keepKey)`, `unlockKept(endpoint, principalId, keepKey)` | "Keep me signed in": the server holds the keep key with the session, and the browser keeps the keep wrap |
 | `unlockKeptOnDesktop(endpoint, principalId)` | `account_unlock_kept`; the webview gets the store key alone |
+| `lockAccount()` | Sign-out: the keys leave memory, the encrypted store closes, the sealed stores go back to their initial state, and the keep wrap goes. On the desktop it also runs `account_lock` |
+| `unlockAfterLoginOnDesktop`, `unlockAfterSignupOnDesktop`, `unlockWithRecoveryOnDesktop` | The desktop's commands of the same unlocks, with the store key they hand over put in the vault |
+| `addRecoveryWrapToUnlocked(entropy)` | Wraps the unlocked account's data key under its recovery phrase too |
+| `passwordChangeRewrap(...)`, `commitPasswordChange(newUnlockKey)` | A password change's rewrap in the browser, and the wrap under the new unlock key once the server took it |
 | `holdSession({sessionSecret, keepKey})` | After a sign-in or signup: holds the session secret and keeps it for a reload, or wraps the data key under the keep key |
 | `lockAccount()` | Sign-out: the keys leave memory, the session secret and what the tab kept for a reload go, the encrypted store closes, the sealed stores go back to their initial state, and the keep wrap goes |
 
@@ -192,3 +205,61 @@ a new device link.
   and a change to its plain fields (settling with the server) writes the sealed field back
   unchanged.
 
+## The password at sign-in, signup and after
+
+`signInWithPassword(principalId, {password, keep}, options)` checks the password before the
+device key signs, so the keys sealed under the data key are open when it does:
+
+1. `passwordLoginStart` (the server counts a try: `RATE_LIMITED` with `retryAfterSeconds` reads as
+   `PasswordWaitError`, "Try again in N minutes", and `PASSWORD_LOCKED` as `PasswordLockedError`);
+2. the OPAQUE finish on this device, where a wrong password stops (`WrongPasswordError`);
+3. `passwordLoginFinish`, which answers a single-use ticket, the sealed server share and the
+   rewraps;
+4. the unlock. When this device's data needs the recovery phrase, `options.onNeedsRecovery` asks
+   the person for the phrase (`unlockWithRecovery`, then the unlock again) or to start empty
+   (the unlock with `startEmpty`: the cached data and every key but the device key go, and the
+   device keeps signing in through its device key wrap);
+5. `keyLoginChallenge`, the device proof and `loginWithKey` with the ticket. A failure here locks
+   the account again.
+
+When the OPAQUE finish fails on a device that holds no password wrap of the account
+(`hasPasswordWrap`, `account_has_password_wrap`: it never unlocked the account with a password),
+the device key alone is tried, with the same "Keep me signed in" arguments. A server account
+without a password answers `mustSetPassword`, and the app then shows only the screen that sets
+one (`setPasswordStart` and `setPassword`, then the unlock with a new data key). Any other
+session that call opens is logged out and the account locked at once, and the sign-in says
+"Wrong password". With `options.recoveryEntropy` (the
+person typed the phrase already, while recovering or resetting) the phrase opens the data when it
+needs it, and the data key is wrapped under it afterwards.
+
+`signupWithKey` registers the password first (`passwordRegistrationStart`, the OPAQUE finish, the
+upload in `signupWithKey`'s `passwordRegistration`) and then unlocks the new account with a new
+data key, wrapped under the draft's recovery phrase too. A signup whose answer was lost signs in
+with the same password.
+
+`changePassword` logs in with the current password once to open the server share, which both
+unlock keys need, then runs `passwordChangeStart` and `passwordChangeFinish` with the rewrap, and
+then wraps this device's data key under the new unlock key. `resetPassword` signs a
+`password-reset` statement with the recovery key of the phrase (`signPasswordReset` in
+`browser/recoveryKit.ts`, or `key_identity_sign_password_reset` on the desktop) and registers the
+new password with `passwordResetStart` and `passwordResetFinish`; the sign-in that follows adds
+the recovery wrap on this device.
+
+"Keep me signed in" starts ticked in the desktop app and unticked in a browser. Every
+`loginWithKey` and `signupWithKey` sends it as `keepSignedIn`, with `keepKeyHeld` true in the
+desktop app, which writes its own keep wrap at the unlock, and false in the web app
+(`keepSignedInArguments` in `passwordApi.ts`). What the server answers goes to `holdSession` once
+the account is unlocked: the session secret of an unkept session is held before any other
+request, and a kept web session's keep key wraps the data key. A first password set by a session
+that signed in with the key alone holds the session the same way, reading a kept web session's
+keep key from `sessionKeepKey`. An expired session goes to the sign-in screen: nothing signs in
+again with the device key alone.
+
+### Switching relays
+
+The relay switch checks the password at the new relay, or registers it there with the signup,
+and wraps the desktop's data key under the unlock key the new relay's share gives as soon as it
+enters the new relay. The password wrap under the old relay's share is replaced then. A switch
+abandoned after that step therefore leaves an account that is not kept signed in on the
+computer needing its recovery phrase (or starting empty) at its next sign-in at the old relay; a
+kept account still opens with its keep wrap.

@@ -220,6 +220,7 @@ pub fn run() {
             key_identity::commands::key_identity_verify_plugin_manifest,
             key_identity::commands::key_identity_begin_recovery,
             key_identity::commands::key_identity_discard_recovery,
+            key_identity::commands::key_identity_sign_password_reset,
             key_identity::commands::key_identity_forget,
             key_identity::commands::key_identity_link_begin,
             key_identity::commands::key_identity_link_review_offer,
@@ -240,6 +241,10 @@ pub fn run() {
             account_lock::commands::account_unlock_with_recovery,
             account_lock::commands::account_lock,
             account_lock::commands::account_forget_keep,
+            account_lock::commands::account_password_rewrap,
+            account_lock::commands::account_password_commit,
+            account_lock::commands::account_add_recovery_wrap,
+            account_lock::commands::account_has_password_wrap,
             updater::updater_status,
         ])
         .build(context)

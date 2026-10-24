@@ -19,6 +19,23 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: () => true,
 }));
 
+// The password's OPAQUE flows and the unlocks stand in for the WebAssembly module and the
+// desktop's account lock: these tests check what is asked of them, in which order.
+const flows = vi.hoisted(() => ({ startLogin: vi.fn(), startRegistration: vi.fn() }));
+vi.mock("../../auth/runtime/opaqueFlows", () => flows);
+const unlocks = vi.hoisted(() => ({
+  addRecoveryWrapToUnlocked: vi.fn(),
+  hasPasswordWrap: vi.fn(),
+  holdSession: vi.fn(),
+  lockAccount: vi.fn(),
+  unlockWithRecovery: vi.fn(),
+  unlockWithRecoveryOnDesktop: vi.fn(),
+}));
+vi.mock("../../auth/runtime/accountUnlock", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../auth/runtime/accountUnlock")>()),
+  ...unlocks,
+}));
+
 // A backend a test puts in place of the platform's, such as one that keeps no recovery kit.
 const backendOverride = vi.hoisted(() => ({ value: null as KeyBackend | null }));
 vi.mock("./keyBackend", async (importOriginal) => {
@@ -26,6 +43,12 @@ vi.mock("./keyBackend", async (importOriginal) => {
   return { ...actual, keyBackend: () => backendOverride.value ?? actual.keyBackend() };
 });
 
+import { NeedsRecoveryError } from "../../../core/accountVault/dkWraps";
+import {
+  PasswordLockedError,
+  PasswordWaitError,
+  WrongPasswordError,
+} from "../../auth/api/passwordApi";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { tauriKeyBackend, type KeyBackend } from "./keyBackend";
 import {
@@ -41,11 +64,11 @@ import {
   proofOfWorkRefused,
   profileCardRelays,
   reconcileDeviceKeys,
-  recoverAccount,
+  recoverDeviceKeys,
   RegistrationClosed,
   RegistrationUnreadable,
-  resumeWithDeviceKey,
-  signInWithDeviceKey,
+  SignInCancelled,
+  signInWithPassword,
   signupWithKey,
   unsavedRecoveryKit,
   type EnrollmentDraft,
@@ -77,10 +100,11 @@ function serverError(code: string) {
  * variables or args; an Error answer is thrown.
  */
 function backend(server: Record<string, unknown>, tauri: Record<string, unknown> = {}) {
+  const answers: Record<string, unknown> = { ...PASSWORD_ANSWERS, ...server };
   requestMock.mockImplementation(async (doc: unknown, vars: unknown) => {
     const name = operation([doc]);
-    if (!(name in server)) throw new Error(`unexpected request ${name}`);
-    const answer = server[name];
+    if (!(name in answers)) throw new Error(`unexpected request ${name}`);
+    const answer = answers[name];
     const value = typeof answer === "function" ? answer(vars) : answer;
     if (value instanceof Error) throw value;
     return value;
@@ -99,6 +123,45 @@ function backend(server: Record<string, unknown>, tauri: Record<string, unknown>
   });
 }
 
+/** The server's side of a password registration and login, unless a test says otherwise. */
+const PASSWORD_ANSWERS = {
+  PasswordRegistrationStart: { passwordRegistrationStart: "registration-response" },
+  PasswordLoginStart: {
+    passwordLoginStart: { loginId: "login-1", response: "credential-response" },
+  },
+  PasswordLoginFinish: {
+    passwordLoginFinish: { ticket: "ticket-1", serverShare: "sealed-share", rewraps: ["rw-1"] },
+  },
+};
+
+/** The password a test signs in or up with. */
+const PASSWORD = { password: "correct horse battery", keep: false };
+
+/** A started OPAQUE login whose steps the test can check. */
+function fakeLogin(
+  overrides: Partial<{
+    finish: () => Promise<string>;
+    unlock: (input: unknown) => Promise<{ startedEmpty: boolean }>;
+  }> = {},
+) {
+  return {
+    request: "credential-request",
+    finish: vi.fn(overrides.finish ?? (async () => "credential-finalization")),
+    unlock: vi.fn(overrides.unlock ?? (async () => ({ startedEmpty: false }))),
+    close: vi.fn(),
+  };
+}
+
+/** A started OPAQUE registration whose steps the test can check. */
+function fakeRegistration() {
+  return {
+    request: "registration-request",
+    finish: vi.fn(async () => "registration-upload"),
+    unlockAfterSignup: vi.fn(async () => ({ startedEmpty: true })),
+    close: vi.fn(),
+  };
+}
+
 const CHALLENGE = { keyLoginChallenge: { challengeId: "c-1", nonce: "n-1" } };
 const ME = (principalId: string | null) => ({
   me: { id: "user-1", username: "ada", displayName: "Ada", principalId },
@@ -108,89 +171,306 @@ function commands(): string[] {
   return invokeMock.mock.calls.map((call) => call[0] as string);
 }
 
+let login: ReturnType<typeof fakeLogin>;
+let registration: ReturnType<typeof fakeRegistration>;
+
 beforeEach(() => {
   requestMock.mockReset();
   invokeMock.mockReset();
-  useAuthStore.setState({ csrfToken: null });
+  useAuthStore.setState({ csrfToken: null, mustSetPassword: false });
   backendOverride.value = null;
+  login = fakeLogin();
+  registration = fakeRegistration();
+  flows.startLogin.mockReset();
+  flows.startLogin.mockImplementation(async () => login);
+  flows.startRegistration.mockReset();
+  flows.startRegistration.mockImplementation(async () => registration);
+  Object.values(unlocks).forEach((fn) => fn.mockReset());
+  unlocks.addRecoveryWrapToUnlocked.mockResolvedValue(undefined);
+  unlocks.holdSession.mockResolvedValue(undefined);
+  // A device that has not unlocked the account with a password yet, unless a test says so.
+  unlocks.hasPasswordWrap.mockResolvedValue(false);
 });
 
-describe("signInWithDeviceKey", () => {
-  it("signs a fresh challenge on the Tauri side and links the keys to the account", async () => {
-    backend(
-      {
-        KeyLoginChallenge: CHALLENGE,
-        LoginWithKey: { loginWithKey: { userId: "user-1", csrfToken: "tok-key-login" } },
-        MeKeyAccount: ME(PRINCIPAL),
+describe("signInWithPassword", () => {
+  const signedIn = {
+    KeyLoginChallenge: CHALLENGE,
+    LoginWithKey: {
+      loginWithKey: {
+        userId: "user-1",
+        csrfToken: "tok-key-login",
+        mustSetPassword: false,
+        sessionSecret: "secret-1",
+        keepKey: null,
       },
-      { key_identity_sign_login: STATEMENT },
-    );
+    },
+    MeKeyAccount: ME(PRINCIPAL),
+  };
 
-    await expect(signInWithDeviceKey(PRINCIPAL)).resolves.toBe("user-1");
-    expect(useAuthStore.getState().csrfToken).toBe("tok-key-login");
-    expect(invokeMock).toHaveBeenCalledWith("key_identity_sign_login", {
+  it("checks the password, unlocks, then signs the device proof that carries the ticket", async () => {
+    backend(signedIn, { key_identity_sign_login: STATEMENT });
+
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).resolves.toEqual({
+      userId: "user-1",
+      mustSetPassword: false,
+      startedEmpty: false,
+    });
+    expect(flows.startLogin).toHaveBeenCalledWith(PASSWORD.password);
+    expect(requestMock.mock.calls.map(operation)).toEqual([
+      "PasswordLoginStart",
+      "PasswordLoginFinish",
+      "KeyLoginChallenge",
+      "LoginWithKey",
+      "MeKeyAccount",
+    ]);
+    expect(requestMock.mock.calls[0][1]).toEqual({
+      principalId: PRINCIPAL,
+      request: "credential-request",
+    });
+    expect(login.finish).toHaveBeenCalledWith("credential-response");
+    expect(requestMock.mock.calls[1][1]).toEqual({
+      loginId: "login-1",
+      credentialFinalization: "credential-finalization",
+    });
+    expect(login.unlock).toHaveBeenCalledWith({
       endpoint: ENDPOINT,
       principalId: PRINCIPAL,
-      challenge: { challengeId: "c-1", nonce: "n-1" },
+      serverShare: "sealed-share",
+      rewraps: ["rw-1"],
+      keep: false,
     });
-    const login = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
-    expect(login?.[1]).toEqual({ proof: STATEMENT });
+    // The device key signs only once the account's keys are open.
+    const signed = invokeMock.mock.calls.findIndex((c) => c[0] === "key_identity_sign_login");
+    expect(login.unlock.mock.invocationCallOrder[0]).toBeLessThan(
+      invokeMock.mock.invocationCallOrder[signed],
+    );
+    // The desktop holds its own keep key; this sign-in is not kept.
+    expect(requestMock.mock.calls[3][1]).toEqual({
+      proof: STATEMENT,
+      passwordTicket: "ticket-1",
+      keepSignedIn: false,
+      keepKeyHeld: true,
+    });
+    // The session secret is held before the next request, which needs it.
+    expect(unlocks.holdSession).toHaveBeenCalledWith({ sessionSecret: "secret-1", keepKey: null });
+    expect(unlocks.holdSession.mock.invocationCallOrder[0]).toBeLessThan(
+      requestMock.mock.invocationCallOrder[4],
+    );
+    expect(useAuthStore.getState().csrfToken).toBe("tok-key-login");
     expect(invokeMock).toHaveBeenCalledWith("key_identity_settle", {
       account: { endpoint: ENDPOINT, userId: "user-1", username: "ada" },
       principalId: PRINCIPAL,
     });
+    expect(login.close).toHaveBeenCalled();
+    expect(unlocks.lockAccount).not.toHaveBeenCalled();
   });
 
-  it("passes on a revoked device's FORBIDDEN", async () => {
+  it("wraps the data key under a kept session's keep key, once the account is unlocked", async () => {
+    backend(
+      {
+        ...signedIn,
+        LoginWithKey: { loginWithKey: { userId: "user-1", keepKey: "keep-1" } },
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await signInWithPassword(PRINCIPAL, { ...PASSWORD, keep: true });
+    const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
+    expect(keyLogin?.[1]).toMatchObject({ keepSignedIn: true });
+    expect(unlocks.holdSession).toHaveBeenCalledWith({
+      sessionSecret: undefined,
+      keepKey: "keep-1",
+    });
+  });
+
+  it("says when the account must set a password", async () => {
+    backend(
+      {
+        ...signedIn,
+        LoginWithKey: { loginWithKey: { userId: "user-1", mustSetPassword: true } },
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).resolves.toMatchObject({
+      mustSetPassword: true,
+    });
+    expect(useAuthStore.getState().mustSetPassword).toBe(true);
+  });
+
+  it("passes on a revoked device's FORBIDDEN and locks the account again", async () => {
     backend(
       { KeyLoginChallenge: CHALLENGE, LoginWithKey: serverError("FORBIDDEN") },
       { key_identity_sign_login: STATEMENT },
     );
-    await expect(signInWithDeviceKey(PRINCIPAL)).rejects.toBeInstanceOf(ClientError);
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(ClientError);
+    expect(unlocks.lockAccount).toHaveBeenCalled();
   });
-});
 
-describe("resumeWithDeviceKey", () => {
-  const local = {
-    principalId: PRINCIPAL,
-    userId: "user-1",
-    username: "ada",
-    deviceId: "d-1",
-    deviceName: "Laptop",
-    hasIdentityKey: true,
-    confirmed: true,
-  };
+  const wrongPassword = () =>
+    fakeLogin({
+      finish: async () => {
+        throw new WrongPasswordError();
+      },
+    });
 
-  it("signs in again with the key of the recorded account", async () => {
+  it("stops at a wrong password on a device that unlocked the account before, signing nothing", async () => {
+    login = wrongPassword();
+    unlocks.hasPasswordWrap.mockResolvedValue(true);
+    backend({}, { key_identity_sign_login: STATEMENT });
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      WrongPasswordError,
+    );
+    expect(unlocks.hasPasswordWrap).toHaveBeenCalledWith(ENDPOINT, PRINCIPAL);
+    expect(requestMock.mock.calls.map(operation)).toEqual(["PasswordLoginStart"]);
+    expect(commands()).not.toContain("key_identity_sign_login");
+    expect(login.unlock).not.toHaveBeenCalled();
+  });
+
+  it("stops at a wrong password when the device key alone is refused too", async () => {
+    login = wrongPassword();
+    backend(
+      { KeyLoginChallenge: CHALLENGE, LoginWithKey: serverError("UNAUTHENTICATED") },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      WrongPasswordError,
+    );
+    expect(requestMock.mock.calls.map(operation)).not.toContain("PasswordLoginFinish");
+    expect(requestMock.mock.calls.map(operation)).not.toContain("Logout");
+    expect(login.unlock).not.toHaveBeenCalled();
+  });
+
+  it("ends a session the device key alone opened for an account that needs no new password", async () => {
+    login = wrongPassword();
     backend(
       {
         KeyLoginChallenge: CHALLENGE,
-        LoginWithKey: { loginWithKey: { userId: "user-1" } },
+        LoginWithKey: {
+          loginWithKey: { userId: "user-1", mustSetPassword: false, sessionSecret: "s-1" },
+        },
         MeKeyAccount: ME(PRINCIPAL),
+        Logout: { logout: true },
       },
-      { key_identity_accounts: [local], key_identity_sign_login: STATEMENT },
+      { key_identity_sign_login: STATEMENT },
     );
-    await expect(resumeWithDeviceKey("user-1")).resolves.toBe("user-1");
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      WrongPasswordError,
+    );
+    const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
+    expect(keyLogin?.[1]).toMatchObject({ keepSignedIn: false, keepKeyHeld: true });
+    expect(requestMock.mock.calls.map(operation)).toContain("Logout");
+    expect(unlocks.lockAccount).toHaveBeenCalled();
+    expect(useAuthStore.getState().mustSetPassword).toBe(false);
   });
 
-  it("gives up without a key for that account, or when the sign-in fails", async () => {
-    backend({}, { key_identity_accounts: [local] });
-    await expect(resumeWithDeviceKey("user-2")).resolves.toBeNull();
-    expect(requestMock).not.toHaveBeenCalled();
-
-    backend(
-      { KeyLoginChallenge: CHALLENGE, LoginWithKey: serverError("FORBIDDEN") },
-      { key_identity_accounts: [local], key_identity_sign_login: STATEMENT },
-    );
-    await expect(resumeWithDeviceKey("user-1")).resolves.toBeNull();
-  });
-
-  it("is a no-op in the web app", async () => {
-    invokeMock.mockResolvedValue({
-      ok: false,
-      error: { kind: "ipc_unavailable", message: "no tauri" },
+  it("signs an account without a password in with the key alone, to set one", async () => {
+    login = fakeLogin({
+      finish: async () => {
+        throw new WrongPasswordError();
+      },
     });
-    await expect(resumeWithDeviceKey("user-1")).resolves.toBeNull();
+    backend(
+      {
+        ...signedIn,
+        LoginWithKey: { loginWithKey: { userId: "user-1", mustSetPassword: true } },
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).resolves.toEqual({
+      userId: "user-1",
+      mustSetPassword: true,
+      startedEmpty: false,
+    });
+    const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
+    expect(keyLogin?.[1]).toEqual({
+      proof: STATEMENT,
+      passwordTicket: null,
+      keepSignedIn: false,
+      keepKeyHeld: true,
+    });
+  });
+
+  it("tells a locked password and a wait apart", async () => {
+    backend({ PasswordLoginStart: serverError("PASSWORD_LOCKED") });
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      PasswordLockedError,
+    );
+
+    requestMock.mockReset();
+    requestMock.mockRejectedValue(
+      new ClientError(
+        {
+          status: 200,
+          headers: new Headers(),
+          errors: [
+            { message: "wait", extensions: { code: "RATE_LIMITED", retryAfterSeconds: 290 } },
+          ],
+        },
+        { query: "" },
+      ),
+    );
+    const wait = await signInWithPassword(PRINCIPAL, PASSWORD).catch((err: unknown) => err);
+    expect(wait).toBeInstanceOf(PasswordWaitError);
+    expect((wait as Error).message).toBe("Try again in 5 minutes");
+    expect(login.finish).not.toHaveBeenCalled();
+  });
+
+  it("asks for the recovery phrase, again when it does not open, or starts empty", async () => {
+    let unlockCalls = 0;
+    login = fakeLogin({
+      unlock: async () => {
+        unlockCalls += 1;
+        if (unlockCalls < 3) throw new NeedsRecoveryError();
+        return { startedEmpty: true };
+      },
+    });
+    unlocks.unlockWithRecoveryOnDesktop.mockResolvedValue(false);
+    backend(signedIn, { key_identity_sign_login: STATEMENT });
+    const entropy = new Uint8Array(16).fill(4);
+    const onNeedsRecovery = vi
+      .fn()
+      .mockResolvedValueOnce({ entropy })
+      .mockResolvedValueOnce("startEmpty");
+
+    await expect(
+      signInWithPassword(PRINCIPAL, PASSWORD, { onNeedsRecovery }),
+    ).resolves.toMatchObject({ startedEmpty: true });
+    expect(onNeedsRecovery.mock.calls).toEqual([[false], [true]]);
+    expect(unlocks.unlockWithRecoveryOnDesktop).toHaveBeenCalledWith(ENDPOINT, PRINCIPAL, entropy);
+    expect(login.unlock.mock.calls[2][0]).toMatchObject({ startEmpty: true });
+    expect(unlocks.addRecoveryWrapToUnlocked).not.toHaveBeenCalled();
+  });
+
+  it("gives up, signing nothing, when the person cancels at the recovery phrase", async () => {
+    login = fakeLogin({
+      unlock: async () => {
+        throw new NeedsRecoveryError();
+      },
+    });
+    backend({});
+    await expect(
+      signInWithPassword(PRINCIPAL, PASSWORD, { onNeedsRecovery: async () => null }),
+    ).rejects.toBeInstanceOf(SignInCancelled);
+    expect(requestMock.mock.calls.map(operation)).not.toContain("LoginWithKey");
+  });
+
+  it("uses a phrase the person entered already, and wraps the data key under it", async () => {
+    let unlockCalls = 0;
+    login = fakeLogin({
+      unlock: async () => {
+        unlockCalls += 1;
+        if (unlockCalls === 1) throw new NeedsRecoveryError();
+        return { startedEmpty: false };
+      },
+    });
+    unlocks.unlockWithRecoveryOnDesktop.mockResolvedValue(true);
+    backend(signedIn, { key_identity_sign_login: STATEMENT });
+    const entropy = new Uint8Array(16).fill(5);
+    const onNeedsRecovery = vi.fn();
+
+    await signInWithPassword(PRINCIPAL, PASSWORD, { recoveryEntropy: entropy, onNeedsRecovery });
+    expect(onNeedsRecovery).not.toHaveBeenCalled();
+    expect(unlocks.unlockWithRecoveryOnDesktop).toHaveBeenCalledWith(ENDPOINT, PRINCIPAL, entropy);
+    expect(unlocks.addRecoveryWrapToUnlocked).toHaveBeenCalledWith(entropy);
   });
 });
 
@@ -379,7 +659,14 @@ describe("signupWithKey", () => {
     },
   };
   const fields = { username: " ada ", displayName: "Ada", workspaceInviteToken: "ws-tok" };
-  const created = { signupWithKey: { userId: "user-1", serverId: "srv-1", csrfToken: "tok-key" } };
+  const created = {
+    signupWithKey: {
+      userId: "user-1",
+      serverId: "srv-1",
+      csrfToken: "tok-key",
+      serverShare: "share-1",
+    },
+  };
   const LOG = { keyLog: [{ seq: 0, statement: STATEMENT }] };
 
   it("stores and signs the draft's keys, creates the account, keeps its csrfToken, settles and publishes the card", async () => {
@@ -393,7 +680,7 @@ describe("signupWithKey", () => {
       { key_identity_sign_signup: statements, key_identity_sign_profile_card: STATEMENT },
     );
 
-    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+    await expect(signupWithKey(draft, fields, PASSWORD)).resolves.toEqual({
       userId: "user-1",
       serverId: "srv-1",
     });
@@ -413,8 +700,27 @@ describe("signupWithKey", () => {
         keyLog: [STATEMENT],
         device: STATEMENT,
         proof: STATEMENT,
+        passwordRegistration: "registration-upload",
+        keepSignedIn: false,
+        keepKeyHeld: true,
       },
     });
+    expect(unlocks.holdSession).toHaveBeenCalledWith({ sessionSecret: null, keepKey: null });
+    // The password is registered first, and the new account unlocked once the server took it.
+    expect(flows.startRegistration).toHaveBeenCalledWith(PASSWORD.password);
+    expect(requestMock.mock.calls[0]).toEqual([
+      expect.stringContaining("PasswordRegistrationStart"),
+      { principalId: PRINCIPAL, request: "registration-request" },
+    ]);
+    expect(registration.finish).toHaveBeenCalledWith("registration-response");
+    expect(registration.unlockAfterSignup).toHaveBeenCalledWith({
+      endpoint: ENDPOINT,
+      principalId: PRINCIPAL,
+      serverShare: "share-1",
+      recoveryEntropy: null,
+      keep: false,
+    });
+    expect(registration.close).toHaveBeenCalled();
     expect(invokeMock).toHaveBeenCalledWith("key_identity_settle", {
       account: { endpoint: ENDPOINT, userId: "user-1", username: "ada" },
       principalId: PRINCIPAL,
@@ -438,7 +744,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements, key_identity_settle: new Error("keyring locked") },
     );
-    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+    await expect(signupWithKey(draft, fields, PASSWORD)).resolves.toEqual({
       userId: "user-1",
       serverId: "srv-1",
     });
@@ -446,7 +752,7 @@ describe("signupWithKey", () => {
 
   it("marks a failed challenge, before anything is signed or sent", async () => {
     backend({ KeyLoginChallenge: serverError("RATE_LIMITED") });
-    const failure = await signupWithKey(draft, fields).catch((err: unknown) => err);
+    const failure = await signupWithKey(draft, fields, PASSWORD).catch((err: unknown) => err);
     expect(failure).toBeInstanceOf(KeyChallengeFailed);
     expect((failure as KeyChallengeFailed).reason).toBeInstanceOf(ClientError);
     expect(commands()).toEqual(["key_identity_confirm_recovery_kit"]);
@@ -454,7 +760,7 @@ describe("signupWithKey", () => {
 
   it("leaves a kit saved later unconfirmed", async () => {
     backend({ KeyLoginChallenge: serverError("RATE_LIMITED") });
-    const failure = await signupWithKey(draft, fields, { recoveryKit: "later" }).catch(
+    const failure = await signupWithKey(draft, fields, PASSWORD, { recoveryKit: "later" }).catch(
       (err: unknown) => err,
     );
     expect(failure).toBeInstanceOf(KeyChallengeFailed);
@@ -470,7 +776,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements },
     );
-    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBeInstanceOf(ClientError);
     expect(commands()).toEqual([
       "key_identity_confirm_recovery_kit",
       "key_identity_sign_signup",
@@ -499,7 +805,7 @@ describe("signupWithKey", () => {
       },
     );
     // The server id is not known here: the caller has the invite's preview.
-    await expect(signupWithKey(draft, fields)).resolves.toEqual({
+    await expect(signupWithKey(draft, fields, PASSWORD)).resolves.toEqual({
       userId: "user-1",
       serverId: null,
     });
@@ -529,7 +835,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements, key_identity_sign_login: STATEMENT },
     );
-    await expect(signupWithKey(draft, fields)).rejects.toBe(refused);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBe(refused);
     expect(commands()).not.toContain("key_identity_remove_draft_keys");
     expect(commands()).not.toContain("key_identity_discard_enrollment");
     expect(commands()).not.toContain("key_identity_forget_unconfirmed");
@@ -544,7 +850,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements },
     );
-    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(TypeError);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBeInstanceOf(TypeError);
     expect(commands()).toEqual(["key_identity_confirm_recovery_kit", "key_identity_sign_signup"]);
   });
 
@@ -558,7 +864,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements },
     );
-    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(TypeError);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBeInstanceOf(TypeError);
     expect(commands()).toContain("key_identity_remove_draft_keys");
 
     // The server committed it later: discarding finds the account and opens it.
@@ -573,7 +879,10 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_login: STATEMENT },
     );
-    await expect(discardKeySignup(draft)).resolves.toEqual({ userId: "user-1", serverId: null });
+    await expect(discardKeySignup(draft, PASSWORD)).resolves.toEqual({
+      userId: "user-1",
+      serverId: null,
+    });
     expect(commands()).toEqual([
       "key_identity_restore_draft_keys",
       "key_identity_sign_login",
@@ -583,12 +892,12 @@ describe("signupWithKey", () => {
 
   it("discarding removes the keys only when no account here holds them", async () => {
     backend({ KeyLog: { keyLog: [] } });
-    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    await expect(discardKeySignup(draft, PASSWORD)).resolves.toBeNull();
     expect(commands()).toEqual(["key_identity_discard_enrollment"]);
 
     invokeMock.mockClear();
     backend({ KeyLog: new TypeError("Failed to fetch") });
-    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    await expect(discardKeySignup(draft, PASSWORD)).resolves.toBeNull();
     expect(commands()).toEqual([]);
   });
 
@@ -607,7 +916,7 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements },
     );
-    await expect(signupWithKey(draft, fields)).rejects.toBeInstanceOf(ClientError);
+    await expect(signupWithKey(draft, fields, PASSWORD)).rejects.toBeInstanceOf(ClientError);
     invokeMock.mockClear();
     backend({ KeyLog: LOG });
     await abandonKeySignup(draft);
@@ -630,13 +939,13 @@ describe("signupWithKey", () => {
       },
       { key_identity_sign_signup: statements },
     );
-    const signingUp = signupWithKey(draft, fields);
+    const signingUp = signupWithKey(draft, fields, PASSWORD);
     await vi.waitFor(() =>
       expect(requestMock.mock.calls.some((c) => operation(c) === "SignupWithKey")).toBe(true),
     );
 
     await abandonKeySignup(draft);
-    await expect(discardKeySignup(draft)).resolves.toBeNull();
+    await expect(discardKeySignup(draft, PASSWORD)).resolves.toBeNull();
     expect(
       await forgetKeysTheServerNeverSaw({ ...LOCAL_UNCONFIRMED, principalId: PRINCIPAL }),
     ).toBe(false);
@@ -717,7 +1026,9 @@ describe("signupWithKey on a relay in pow registration mode", () => {
     });
     const onProofOfWork = vi.fn();
 
-    await expect(signupWithKey(draft, { username: "ada" }, { onProofOfWork })).resolves.toEqual({
+    await expect(
+      signupWithKey(draft, { username: "ada" }, PASSWORD, { onProofOfWork }),
+    ).resolves.toEqual({
       userId: "user-1",
       serverId: null,
     });
@@ -743,8 +1054,12 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       "relay_solve_pow",
       "key_identity_sign_signup",
     ]);
-    // The proof is found before the challenge is asked for, so it cannot expire meanwhile.
-    expect(requestMock.mock.calls.map(operation)[0]).toBe("KeyLoginChallenge");
+    // The proof is found before the password is registered and the challenge is asked for,
+    // so neither can expire meanwhile.
+    expect(requestMock.mock.calls.map(operation).slice(0, 2)).toEqual([
+      "PasswordRegistrationStart",
+      "KeyLoginChallenge",
+    ]);
     expect(invokeMock.mock.invocationCallOrder[3]).toBeLessThan(
       requestMock.mock.invocationCallOrder[0],
     );
@@ -760,9 +1075,9 @@ describe("signupWithKey on a relay in pow registration mode", () => {
     });
     const onProofOfWork = vi.fn();
 
-    await expect(signupWithKey(draft, { username: "ada" }, { onProofOfWork })).rejects.toThrow(
-      RegistrationClosed,
-    );
+    await expect(
+      signupWithKey(draft, { username: "ada" }, PASSWORD, { onProofOfWork }),
+    ).rejects.toThrow(RegistrationClosed);
 
     expect(onProofOfWork).not.toHaveBeenCalled();
     expect(commands()).not.toContain("relay_solve_pow");
@@ -777,7 +1092,7 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       key_identity_sign_signup: statements,
       key_identity_sign_profile_card: STATEMENT,
     });
-    await signupWithKey(draft, { username: "ada", ...token });
+    await signupWithKey(draft, { username: "ada", ...token }, PASSWORD);
     expect(commands().filter((c) => c.startsWith("relay_"))).toEqual([]);
     expect(sentInput()).toEqual(expect.objectContaining(token));
     expect(sentInput()).not.toHaveProperty("proofOfWork");
@@ -805,7 +1120,7 @@ describe("signupWithKey on a relay in pow registration mode", () => {
         key_identity_sign_profile_card: STATEMENT,
       },
     );
-    await signupWithKey(draft, { username: "ada" });
+    await signupWithKey(draft, { username: "ada" }, PASSWORD);
     expect(commands()).not.toContain("relay_solve_pow");
     expect(sentInput()).not.toHaveProperty("proofOfWork");
   });
@@ -824,7 +1139,7 @@ describe("signupWithKey on a relay in pow registration mode", () => {
           key_identity_sign_signup: statements,
         },
       );
-      await expect(signupWithKey(draft, { username: "ada" })).rejects.toBeInstanceOf(
+      await expect(signupWithKey(draft, { username: "ada" }, PASSWORD)).rejects.toBeInstanceOf(
         RegistrationUnreadable,
       );
       expect(commands()).not.toContain("key_identity_sign_signup");
@@ -842,19 +1157,23 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       key_identity_sign_profile_card: STATEMENT,
     };
     backend(server(serverError("CONFLICT")), tauri);
-    await expect(signupWithKey(draft, { username: "ada" })).rejects.toBeInstanceOf(ClientError);
+    await expect(signupWithKey(draft, { username: "ada" }, PASSWORD)).rejects.toBeInstanceOf(
+      ClientError,
+    );
     expect(sentInput(0)).toMatchObject({ proofOfWork: "nonce-1" });
 
     const refused = serverError("VALIDATION");
     refused.response.errors![0].message =
       "proofOfWork does not have the required leading zero bits";
     backend(server(refused), tauri);
-    await expect(signupWithKey(draft, { username: "ada2" })).rejects.toBeInstanceOf(ClientError);
+    await expect(signupWithKey(draft, { username: "ada2" }, PASSWORD)).rejects.toBeInstanceOf(
+      ClientError,
+    );
     expect(sentInput(1)).toMatchObject({ proofOfWork: "nonce-1" });
     expect(solved).toBe(1);
 
     backend(server(), tauri);
-    await signupWithKey(draft, { username: "ada2" });
+    await signupWithKey(draft, { username: "ada2" }, PASSWORD);
     expect(sentInput(2)).toMatchObject({ proofOfWork: "nonce-2" });
     expect(solved).toBe(2);
   });
@@ -866,7 +1185,7 @@ describe("signupWithKey on a relay in pow registration mode", () => {
       relay_solve_pow: null,
     });
     const stop = new AbortController();
-    const signup = signupWithKey(draft, { username: "ada" }, { signal: stop.signal });
+    const signup = signupWithKey(draft, { username: "ada" }, PASSWORD, { signal: stop.signal });
     stop.abort();
     await expect(signup).rejects.toBeInstanceOf(PowCancelled);
     expect(commands()).not.toContain("key_identity_sign_signup");
@@ -912,7 +1231,7 @@ describe("forgetKeysTheServerNeverSaw", () => {
   });
 });
 
-describe("recoverAccount", () => {
+describe("recoverDeviceKeys", () => {
   const ENTRY = { payload: '{"type":"rotate","seq":1}', signature: "ed25519:r" };
   const recovery = { principalId: PRINCIPAL, deviceId: "d-new", entry: ENTRY, device: STATEMENT };
   const before = { keyLog: [{ seq: 0, statement: STATEMENT }] };
@@ -924,19 +1243,17 @@ describe("recoverAccount", () => {
   };
   const kit = `RIM recovery kit (v1)\nAccount id: ${PRINCIPAL}\nRecovery key: RK1-AAAA`;
 
-  it("reads the public log, rotates with the recovery key and signs in with the new device", async () => {
+  it("reads the public log and rotates with the recovery key, leaving the sign-in to the password", async () => {
     backend(
       {
         KeyLog: { keyLog: [{ seq: 0, statement: STATEMENT }] },
         RotateIdentityKey: { rotateIdentityKey: { principalId: PRINCIPAL, keySeq: 1 } },
-        KeyLoginChallenge: CHALLENGE,
-        LoginWithKey: { loginWithKey: { userId: "user-1" } },
-        MeKeyAccount: ME(PRINCIPAL),
       },
-      { key_identity_begin_recovery: recovery, key_identity_sign_login: STATEMENT },
+      { key_identity_begin_recovery: recovery },
     );
 
-    await expect(recoverAccount(kit, null, "New laptop")).resolves.toBe("user-1");
+    await expect(recoverDeviceKeys(kit, null, "New laptop")).resolves.toBe(PRINCIPAL);
+    expect(requestMock.mock.calls.map(operation)).not.toContain("LoginWithKey");
     expect(requestMock.mock.calls.find((c) => operation(c) === "KeyLog")?.[1]).toEqual({
       principalId: PRINCIPAL,
     });
@@ -956,7 +1273,7 @@ describe("recoverAccount", () => {
       { KeyLog: before, RotateIdentityKey: serverError("VALIDATION") },
       { key_identity_begin_recovery: recovery },
     );
-    await expect(recoverAccount(kit, null, "New")).rejects.toBeInstanceOf(ClientError);
+    await expect(recoverDeviceKeys(kit, null, "New")).rejects.toBeInstanceOf(ClientError);
     expect(invokeMock).toHaveBeenCalledWith("key_identity_discard_recovery", {
       principalId: PRINCIPAL,
       deviceId: "d-new",
@@ -964,19 +1281,16 @@ describe("recoverAccount", () => {
     expect(commands()).not.toContain("key_identity_forget");
   });
 
-  it("signs in when the rotation landed although its answer was an error", async () => {
+  it("goes on when the rotation landed although its answer was an error", async () => {
     let logReads = 0;
     backend(
       {
         KeyLog: () => (logReads++ === 0 ? before : after),
         RotateIdentityKey: serverError("INTERNAL"),
-        KeyLoginChallenge: CHALLENGE,
-        LoginWithKey: { loginWithKey: { userId: "user-1" } },
-        MeKeyAccount: ME(PRINCIPAL),
       },
-      { key_identity_begin_recovery: recovery, key_identity_sign_login: STATEMENT },
+      { key_identity_begin_recovery: recovery },
     );
-    await expect(recoverAccount(kit, null, "New")).resolves.toBe("user-1");
+    await expect(recoverDeviceKeys(kit, null, "New")).resolves.toBe(PRINCIPAL);
     expect(commands()).not.toContain("key_identity_discard_recovery");
   });
 
@@ -989,18 +1303,18 @@ describe("recoverAccount", () => {
       },
       { key_identity_begin_recovery: recovery },
     );
-    await expect(recoverAccount(kit, null, "New")).rejects.toBeInstanceOf(TypeError);
+    await expect(recoverDeviceKeys(kit, null, "New")).rejects.toBeInstanceOf(TypeError);
     expect(commands()).not.toContain("key_identity_discard_recovery");
     expect(commands()).not.toContain("key_identity_forget");
   });
 
   it("needs an account id and passes on a bad kit", async () => {
-    await expect(recoverAccount("RK1-AAAA", null, "New")).rejects.toThrow(/account id/);
+    await expect(recoverDeviceKeys("RK1-AAAA", null, "New")).rejects.toThrow(/account id/);
     backend(
       { KeyLog: { keyLog: [] } },
       { key_identity_begin_recovery: new Error("this recovery key has a typo") },
     );
-    await expect(recoverAccount("RK1-AAAA", PRINCIPAL, "New")).rejects.toThrow(/typo/);
+    await expect(recoverDeviceKeys("RK1-AAAA", PRINCIPAL, "New")).rejects.toThrow(/typo/);
   });
 });
 

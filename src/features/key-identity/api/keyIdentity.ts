@@ -1,6 +1,7 @@
 /**
- * Key identity: enrolling the account's key, creating an account from a key alone, signing in
- * with this device's key, devices, identity rotation, the profile card and recovery.
+ * Key identity: enrolling the account's key, creating an account from a key and a password,
+ * signing in with the password and this device's key, devices, identity rotation, the profile
+ * card and recovery.
  *
  * The keys live with the key backend (`keyBackend`): on the Tauri side on the desktop, where they
  * never reach the webview, and as non-extractable WebCrypto keys in the web app. This module
@@ -10,10 +11,12 @@
  */
 
 import { gql } from "graphql-request";
+import { isTauri } from "@tauri-apps/api/core";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import {
+  CONFLICT,
   FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
@@ -23,6 +26,7 @@ import type {
   DeviceKey,
   EnrollIdentityKeyInput,
   KeyLoginChallenge,
+  LoginPayload,
   ProfileCard,
   RotateIdentityKeyInput,
   SignedStatement,
@@ -30,8 +34,28 @@ import type {
   SignupWithInvitePayloadGql,
   SignupWithKeyInput,
 } from "../../../core/graphql/generated/schema-types";
+import { NeedsRecoveryError } from "../../../core/accountVault/dkWraps";
 import { logger } from "../../../core/logger";
+import {
+  keepSignedInArguments,
+  passwordLoginFinish,
+  passwordLoginStart,
+  passwordRegistrationStart,
+  WrongPasswordError,
+} from "../../auth/api/passwordApi";
 import { signInRequest } from "../../auth/api/signInRequest";
+import { logout } from "../../auth/api/useAuthMutations";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import {
+  addRecoveryWrapToUnlocked,
+  hasPasswordWrap,
+  holdSession,
+  lockAccount,
+  type SessionKeys,
+  unlockWithRecovery,
+  unlockWithRecoveryOnDesktop,
+} from "../../auth/runtime/accountUnlock";
+import { startLogin, startRegistration, type PasswordLogin } from "../../auth/runtime/opaqueFlows";
 import { fetchRegistrationMode } from "../../auth/api/useServerConfig";
 import { RegistrationMode } from "../../auth/types";
 import { MAX_CARD_RELAYS } from "../../relay/contacts/contactLink";
@@ -41,6 +65,7 @@ import {
   type RelayRegistration,
 } from "../../relay/pow/proofOfWork";
 import { serverOrigin } from "../../relay/state/serverOrigin";
+import { parseRecoveryPhrase } from "../browser/recoveryKit";
 import {
   keyBackend,
   type EnrollmentDraft,
@@ -110,19 +135,45 @@ const CHALLENGE_MUTATION = gql`
 `;
 
 const LOGIN_WITH_KEY_MUTATION = gql`
-  mutation LoginWithKey($proof: SignedStatementInput!) {
-    loginWithKey(proof: $proof) {
+  mutation LoginWithKey(
+    $proof: SignedStatementInput!
+    $passwordTicket: String
+    $keepSignedIn: Boolean!
+    $keepKeyHeld: Boolean!
+  ) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: $keepSignedIn
+      keepKeyHeld: $keepKeyHeld
+    ) {
       userId
       csrfToken
+      mustSetPassword
+      sessionSecret
+      keepKey
     }
   }
 `;
 
 /** The same without `csrfToken`, for a server older than it. */
 const LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
-  mutation LoginWithKeyWithoutCsrfToken($proof: SignedStatementInput!) {
-    loginWithKey(proof: $proof) {
+  mutation LoginWithKeyWithoutCsrfToken(
+    $proof: SignedStatementInput!
+    $passwordTicket: String
+    $keepSignedIn: Boolean!
+    $keepKeyHeld: Boolean!
+  ) {
+    loginWithKey(
+      proof: $proof
+      passwordTicket: $passwordTicket
+      keepSignedIn: $keepSignedIn
+      keepKeyHeld: $keepKeyHeld
+    ) {
       userId
+      mustSetPassword
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -141,6 +192,9 @@ const SIGNUP_WITH_KEY_MUTATION = gql`
       userId
       serverId
       csrfToken
+      serverShare
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -151,6 +205,9 @@ const SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION = gql`
     signupWithKey(input: $input) {
       userId
       serverId
+      serverShare
+      sessionSecret
+      keepKey
     }
   }
 `;
@@ -289,23 +346,156 @@ export async function defaultDeviceName(): Promise<string> {
 
 // ─── Sign-in ────────────────────────────────────────────────────────────────
 
+/** The password the person typed, and whether they ticked "Keep me signed in". */
+export interface PasswordEntry {
+  password: string;
+  keep: boolean;
+}
+
 /**
- * Sign in with this device's key for `principalId`: a fresh challenge, signed by the key
- * backend, sent to `loginWithKey`, which sets the session cookie. Returns the account's user id.
- * A revoked device fails with the server's `FORBIDDEN`.
+ * How a sign-in goes on when this device's data for the account opens only with the recovery
+ * phrase: unlock it with the phrase's 16 bytes, or start empty on this device.
  */
-export async function signInWithDeviceKey(principalId: string): Promise<string> {
+export type RecoveryChoice = { entropy: Uint8Array } | "startEmpty";
+
+/** What a sign-in with the password may be given besides the password. */
+export interface PasswordSignInOptions {
+  /**
+   * The recovery phrase's 16 bytes, when the person entered the phrase already: it opens this
+   * device's data when that needs it, and the data key is wrapped under it afterwards.
+   */
+  recoveryEntropy?: Uint8Array;
+  /**
+   * Asked when this device's data needs the recovery phrase; `wrongPhrase` says the last phrase
+   * did not open it. Resolving `null` gives up the sign-in.
+   */
+  onNeedsRecovery?: (wrongPhrase: boolean) => Promise<RecoveryChoice | null>;
+}
+
+/** A finished sign-in. */
+export interface PasswordSignInResult {
+  userId: string;
+  /** The account has no password yet: the session may only set one. */
+  mustSetPassword: boolean;
+  /** What this device kept for the account before no longer opens. */
+  startedEmpty: boolean;
+}
+
+/** The person gave up a sign-in when asked for the recovery phrase. */
+export class SignInCancelled extends Error {
+  constructor() {
+    super("The sign-in was cancelled.");
+    this.name = "SignInCancelled";
+  }
+}
+
+/** The 16 bytes of a recovery phrase given as its words. */
+export function phraseEntropy(words: string[]): Promise<Uint8Array> {
+  return parseRecoveryPhrase(words.join(" "));
+}
+
+/** The 16 bytes of a draft's recovery phrase, or `null` when its words do not read. */
+async function draftEntropy(draft: EnrollmentDraft): Promise<Uint8Array | null> {
+  try {
+    return await phraseEntropy(draft.recoveryPhrase);
+  } catch (err) {
+    logger.warn("[RIM:keys] the draft's recovery phrase could not be read:", err);
+    return null;
+  }
+}
+
+/**
+ * Unlocks the account with the recovery phrase on this platform.
+ *
+ * @returns Whether the phrase opened this device's data.
+ */
+function unlockWithPhrase(endpoint: string, principalId: string, entropy: Uint8Array) {
+  return isTauri()
+    ? unlockWithRecoveryOnDesktop(endpoint, principalId, entropy)
+    : unlockWithRecovery(endpoint, principalId, entropy);
+}
+
+/**
+ * Unlocks after an accepted login, asking for the recovery phrase or starting empty when this
+ * device's data needs the phrase.
+ */
+async function unlockLogin(
+  login: PasswordLogin,
+  input: Parameters<PasswordLogin["unlock"]>[0],
+  options: PasswordSignInOptions,
+): Promise<{ startedEmpty: boolean }> {
+  let known = options.recoveryEntropy ?? null;
+  let wrongPhrase = false;
+  let next = input;
+  for (;;) {
+    try {
+      return await login.unlock(next);
+    } catch (err) {
+      if (!(err instanceof NeedsRecoveryError)) throw err;
+    }
+    let choice: RecoveryChoice | null;
+    if (known) {
+      choice = { entropy: known };
+      known = null;
+    } else {
+      choice = (await options.onNeedsRecovery?.(wrongPhrase)) ?? null;
+    }
+    if (choice === null) throw new SignInCancelled();
+    if (choice === "startEmpty") {
+      next = { ...next, startEmpty: true };
+      continue;
+    }
+    wrongPhrase = !(await unlockWithPhrase(input.endpoint, input.principalId, choice.entropy));
+  }
+}
+
+/**
+ * Holds what a sign-in or signup returned for its session. A keep wrap that could not be written
+ * only means the password is asked for at the next start.
+ */
+async function holdSessionKeys(keys: SessionKeys): Promise<void> {
+  try {
+    await holdSession(keys);
+  } catch (err) {
+    logger.warn("[RIM:keys] keeping this device signed in failed:", err);
+  }
+}
+
+/**
+ * Signs in with this device's key for `principalId`: a fresh challenge, signed by the key
+ * backend, sent to `loginWithKey`, which sets the session cookie. A revoked device fails with
+ * the server's `FORBIDDEN`.
+ *
+ * The session's secret (unkept) is held before anything else is asked of the server, which
+ * refuses a request without it; the keep key of a kept web session wraps the data key.
+ *
+ * @param passwordTicket - The ticket of an accepted password login; without one only an account
+ *   without a password, or one of another server, signs in.
+ * @param unlocked - Whether the account is unlocked here, so its data key can be kept for a
+ *   reload or wrapped under the keep key.
+ */
+async function loginWithDeviceKey(
+  principalId: string,
+  passwordTicket: string | null,
+  keep: boolean,
+  unlocked: boolean,
+): Promise<{ userId: string; mustSetPassword: boolean }> {
   const { challengeId, nonce } = await challenge();
   const proof = await keyBackend().signLogin(getGraphqlEndpoint(), principalId, {
     challengeId,
     nonce,
   });
-  const res = await signInRequest<{ loginWithKey: { userId: string } }>(
-    "loginWithKey",
-    LOGIN_WITH_KEY_MUTATION,
-    LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
-    { proof },
-  );
+  const res = await signInRequest<{
+    loginWithKey: Pick<LoginPayload, "userId" | "mustSetPassword" | "sessionSecret" | "keepKey">;
+  }>("loginWithKey", LOGIN_WITH_KEY_MUTATION, LOGIN_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION, {
+    proof,
+    passwordTicket,
+    ...keepSignedInArguments(keep, isTauri()),
+  });
+  await holdSessionKeys({
+    sessionSecret: res.loginWithKey.sessionSecret,
+    keepKey: unlocked ? res.loginWithKey.keepKey : null,
+  });
   // Best-effort: link the keys to the account now that the server named it.
   try {
     const { me } = await graphqlClient.request<{ me: MeAccount }>(ME_ACCOUNT_QUERY);
@@ -313,24 +503,112 @@ export async function signInWithDeviceKey(principalId: string): Promise<string> 
   } catch {
     // The sign-in itself succeeded; the next settle links the keys.
   }
-  return res.loginWithKey.userId;
+  const mustSetPassword = res.loginWithKey.mustSetPassword === true;
+  useAuthStore.getState().setMustSetPassword(mustSetPassword);
+  return { userId: res.loginWithKey.userId, mustSetPassword };
 }
 
 /**
- * Sign in again, without asking the person, as the account `userId` was signed in to: used
- * when a cold start or a reconnect finds the session cookie gone or expired. Returns the user
- * id, or `null` when this device holds no key for that account or the key sign-in fails (a
- * revoked device, for instance), so the caller falls back to the sign-in screen.
+ * After a password no account check accepted, on a device that never unlocked the account with
+ * a password (it holds no password wrap): signs in with the device key alone, which only an
+ * account that has no password yet allows. Any other session that call opens is ended at once,
+ * so a wrong password leaves nothing signed in.
+ *
+ * @returns The sign-in of an account that must set its password, or `null`.
  */
-export async function resumeWithDeviceKey(userId: string): Promise<string | null> {
-  const account = (await listDeviceKeyAccounts()).find((a) => a.userId === userId);
-  if (!account) return null;
+async function signInWithoutPassword(
+  principalId: string,
+  keep: boolean,
+): Promise<PasswordSignInResult | null> {
+  const unlockedBefore = await hasPasswordWrap(getGraphqlEndpoint(), principalId).catch(
+    (err: unknown) => {
+      logger.warn("[RIM:keys] this device's data key wraps could not be read:", err);
+      return true;
+    },
+  );
+  if (unlockedBefore) return null;
+  let signedIn: { userId: string; mustSetPassword: boolean };
   try {
-    const signedIn = await signInWithDeviceKey(account.principalId);
-    return signedIn === userId ? signedIn : null;
+    signedIn = await loginWithDeviceKey(principalId, null, keep, false);
   } catch (err) {
-    logger.warn("[RIM:keys] signing in with this device's key failed:", err);
+    logger.debug("[RIM:keys] no sign-in without a password:", graphqlErrorCode(err));
     return null;
+  }
+  if (signedIn.mustSetPassword) return { ...signedIn, startedEmpty: false };
+  try {
+    await logout();
+  } catch (err) {
+    logger.warn("[RIM:keys] ending a session the password did not open failed:", err);
+  }
+  lockAccount();
+  useAuthStore.getState().setMustSetPassword(false);
+  return null;
+}
+
+/**
+ * Signs in with the account password and this device's key, in that order, so the keys sealed
+ * under the account's data key open before the device key signs:
+ *
+ * 1. the OPAQUE login: `passwordLoginStart` (a try), the password checked on this device, then
+ *    `passwordLoginFinish`, which answers a sign-in ticket, the sealed server share and the
+ *    rewraps;
+ * 2. the unlock of this device's data, which may need the recovery phrase or starting empty;
+ * 3. `loginWithKey` with the ticket, which sets the session cookie.
+ *
+ * An account without a password (the session must set one) signs in with the key alone.
+ *
+ * @throws PasswordLockedError after 10 wrong tries, PasswordWaitError while a wait runs,
+ *   WrongPasswordError for a wrong password, SignInCancelled when the person gave up at the
+ *   recovery phrase, and the server's `FORBIDDEN` for a revoked device.
+ */
+export async function signInWithPassword(
+  principalId: string,
+  entry: PasswordEntry,
+  options: PasswordSignInOptions = {},
+): Promise<PasswordSignInResult> {
+  const endpoint = getGraphqlEndpoint();
+  const login = await startLogin(entry.password);
+  try {
+    const started = await passwordLoginStart(principalId, login.request);
+    let finalization: string;
+    try {
+      finalization = await login.finish(started.response);
+    } catch (err) {
+      if (err instanceof WrongPasswordError) {
+        const withoutPassword = await signInWithoutPassword(principalId, entry.keep);
+        if (withoutPassword?.mustSetPassword) return withoutPassword;
+      }
+      throw err;
+    }
+    const finished = await passwordLoginFinish(started.loginId, finalization);
+    const unlocked = await unlockLogin(
+      login,
+      {
+        endpoint,
+        principalId,
+        serverShare: finished.serverShare,
+        rewraps: finished.rewraps,
+        keep: entry.keep,
+      },
+      options,
+    );
+    let signedIn: { userId: string; mustSetPassword: boolean };
+    try {
+      signedIn = await loginWithDeviceKey(principalId, finished.ticket, entry.keep, true);
+    } catch (err) {
+      lockAccount();
+      throw err;
+    }
+    if (options.recoveryEntropy) {
+      try {
+        await addRecoveryWrapToUnlocked(options.recoveryEntropy);
+      } catch (err) {
+        logger.warn("[RIM:keys] wrapping the data key under the recovery phrase failed:", err);
+      }
+    }
+    return { ...signedIn, startedEmpty: unlocked.startedEmpty };
+  } finally {
+    login.close();
   }
 }
 
@@ -435,9 +713,9 @@ export async function completeEnrollment(
 // ─── Key-only signup ────────────────────────────────────────────────────────
 
 /**
- * What the join page fills in for `signupWithKey`: the name, the page's token, if any, and the
- * password's OPAQUE `RegistrationUpload` with the "Keep me signed in" choice, without which the
- * server refuses the signup.
+ * What the join page fills in for `signupWithKey`: the name and the page's token, if any. The
+ * password's OPAQUE `RegistrationUpload` and the "Keep me signed in" arguments are always sent:
+ * {@link signupWithKey} makes them from the password it is given.
  */
 export type KeySignupFields = Omit<
   SignupWithKeyInput,
@@ -448,8 +726,7 @@ export type KeySignupFields = Omit<
   | "passwordRegistration"
   | "keepSignedIn"
   | "keepKeyHeld"
-> &
-  Partial<Pick<SignupWithKeyInput, "passwordRegistration" | "keepSignedIn" | "keepKeyHeld">>;
+>;
 
 /** How a signup reports and stops the proof-of-work a relay in `pow` mode asks for. */
 export interface KeySignupOptions {
@@ -609,29 +886,40 @@ async function publishFirstCard(fields: KeySignupFields): Promise<void> {
 
 /**
  * Finish a signup the server took although no answer said so: store the draft's keys again (a
- * failed attempt may have removed them), sign in with the device key, which links the keys to
- * the account, and publish the profile card. The server id is `null`: the answer that named it
+ * failed attempt may have removed them), sign in with the password and the device key, which
+ * links the keys to the account, and publish the profile card. The server id is `null`: the answer that named it
  * was lost and the invite token is used up, so the caller fills in the workspace of the invite
  * it previewed.
  */
-async function finishTakenSignup(draft: EnrollmentDraft): Promise<KeySignupResult> {
+async function finishTakenSignup(
+  draft: EnrollmentDraft,
+  entry: PasswordEntry,
+): Promise<KeySignupResult> {
   const fields = sentSignups.get(draft.draftId);
   if (fields) {
     await keyBackend().restoreDraftKeys(draft.draftId, getGraphqlEndpoint(), fields.username);
   }
-  const userId = await signInWithDeviceKey(draft.principalId);
+  const entropy = await draftEntropy(draft);
+  const { userId } = await signInWithPassword(
+    draft.principalId,
+    entry,
+    entropy ? { recoveryEntropy: entropy } : {},
+  );
   if (fields) await publishFirstCard(fields);
   sentSignups.delete(draft.draftId);
   return { userId, serverId: null };
 }
 
 /**
- * Create an account from a draft's keys alone, with no password and no email. The keys are
- * stored before `signupWithKey` is sent, so an account the server created never ends up
- * without them. When it fails, the key log says whether the account exists: if not, the keys
- * go and the draft stays, so a retry uses the same keys and the saved recovery kit; if an
- * earlier attempt whose answer was lost created it, this device signs in with its key; with no
- * answer either way the keys stay for a later sign-in. The server sets the session cookie.
+ * Create an account from a draft's keys and a password, with no email. The password is
+ * registered first (`passwordRegistrationStart`, then the OPAQUE upload goes with the signup).
+ * The keys are stored before `signupWithKey` is sent, so an account the server created never
+ * ends up without them. When it fails, the key log says whether the account exists: if not, the
+ * keys go and the draft stays, so a retry uses the same keys and the saved recovery kit; if an
+ * earlier attempt whose answer was lost created it, this device signs in with the password and
+ * its key; with no answer either way the keys stay for a later sign-in. The server sets the
+ * session cookie, and the new account is unlocked on this device with a new data key, wrapped
+ * under the password and the draft's recovery phrase.
  *
  * Without a token, on a relay in `pow` registration mode, the proof-of-work is found first,
  * before the challenge is fetched, so the challenge does not expire while it runs.
@@ -639,11 +927,84 @@ async function finishTakenSignup(draft: EnrollmentDraft): Promise<KeySignupResul
 export async function signupWithKey(
   draft: EnrollmentDraft,
   fields: KeySignupFields,
+  entry: PasswordEntry,
   options: KeySignupOptions = {},
 ): Promise<KeySignupResult> {
   const sent: KeySignupFields = { ...fields, username: fields.username.trim() };
   await recordKitTiming(draft, options.recoveryKit ?? "saved");
   const proofOfWork = await proofOfWorkFor(draft, sent, options);
+  const registration = await startRegistration(entry.password);
+  try {
+    let response: string;
+    try {
+      response = await passwordRegistrationStart(draft.principalId, registration.request);
+    } catch (err) {
+      // An earlier attempt whose answer was lost created the account: sign in to it.
+      if (graphqlErrorCode(err) === CONFLICT && (await principalTaken(draft.principalId))) {
+        return await finishTakenSignup(draft, entry);
+      }
+      throw err;
+    }
+    const passwordRegistration = await registration.finish(response);
+    const result = await sendSignup(draft, sent, entry, {
+      passwordRegistration,
+      ...(proofOfWork && { proofOfWork }),
+    });
+    // A signup found only after its answer was lost is signed in and unlocked already.
+    if (result.taken) return { userId: result.userId, serverId: result.serverId };
+    let unlocked = false;
+    if (result.serverShare) {
+      try {
+        await registration.unlockAfterSignup({
+          endpoint: getGraphqlEndpoint(),
+          principalId: draft.principalId,
+          serverShare: result.serverShare,
+          recoveryEntropy: await draftEntropy(draft),
+          keep: entry.keep,
+        });
+        unlocked = true;
+      } catch (err) {
+        // The account exists and the session is set: the app asks for the password to unlock.
+        logger.warn("[RIM:keys] unlocking the new account failed:", err);
+      }
+    }
+    await holdSessionKeys({
+      sessionSecret: result.sessionSecret,
+      keepKey: unlocked ? result.keepKey : null,
+    });
+    // Best-effort from here: the account exists and the session is set. A later sign-in links
+    // the keys.
+    try {
+      await settleDeviceKeys({ userId: result.userId, username: sent.username }, draft.principalId);
+    } catch (err) {
+      logger.warn("[RIM:keys] linking the keys after signup failed:", err);
+    }
+    await publishFirstCard(sent);
+    return { userId: result.userId, serverId: result.serverId };
+  } finally {
+    registration.close();
+  }
+}
+
+/** What a sent signup answered, or that it was found taken and signed in to. */
+type SentSignup = KeySignupResult & {
+  /** The new account's server share, in the clear. */
+  serverShare: string | null;
+  sessionSecret: string | null;
+  keepKey: string | null;
+  taken: boolean;
+};
+
+/**
+ * Sends a signup with its password registration. A signup the server took although no answer
+ * said so is finished by signing in ({@link finishTakenSignup}) and comes back `taken`.
+ */
+async function sendSignup(
+  draft: EnrollmentDraft,
+  sent: KeySignupFields,
+  entry: PasswordEntry,
+  extra: Pick<SignupWithKeyInput, "passwordRegistration" | "proofOfWork">,
+): Promise<SentSignup> {
   let challengeId: string;
   let nonce: string;
   try {
@@ -659,12 +1020,13 @@ export async function signupWithKey(
     { challengeId, nonce },
   );
   sentSignups.set(draft.draftId, sent);
-  const input: Partial<SignupWithKeyInput> = {
+  const input: SignupWithKeyInput = {
     ...sent,
     ...statements,
-    ...(proofOfWork && { proofOfWork }),
+    ...extra,
+    ...keepSignedInArguments(entry.keep, isTauri()),
   };
-  let result: KeySignupResult;
+  let result: SentSignup;
   signupsInFlight += 1;
   try {
     const res = await signInRequest<{ signupWithKey: SignupWithInvitePayloadGql }>(
@@ -673,7 +1035,14 @@ export async function signupWithKey(
       SIGNUP_WITH_KEY_WITHOUT_CSRF_TOKEN_MUTATION,
       { input },
     );
-    result = { userId: res.signupWithKey.userId, serverId: res.signupWithKey.serverId ?? null };
+    result = {
+      userId: res.signupWithKey.userId,
+      serverId: res.signupWithKey.serverId ?? null,
+      serverShare: res.signupWithKey.serverShare ?? null,
+      sessionSecret: res.signupWithKey.sessionSecret ?? null,
+      keepKey: res.signupWithKey.keepKey ?? null,
+      taken: false,
+    };
   } catch (err) {
     // A refused nonce is searched for again, against the relay's discovery document as it is.
     if (proofOfWorkRefused(err)) proofs.delete(draft.draftId);
@@ -684,20 +1053,18 @@ export async function signupWithKey(
         .catch(() => undefined);
     }
     if (!taken) throw err;
-    return await finishTakenSignup(draft);
+    return {
+      ...(await finishTakenSignup(draft, entry)),
+      serverShare: null,
+      sessionSecret: null,
+      keepKey: null,
+      taken: true,
+    };
   } finally {
     signupsInFlight -= 1;
   }
   sentSignups.delete(draft.draftId);
   proofs.delete(draft.draftId);
-  // Best-effort from here: the account exists and the session is set. A later sign-in links
-  // the keys.
-  try {
-    await settleDeviceKeys({ userId: result.userId, username: sent.username }, draft.principalId);
-  } catch (err) {
-    logger.warn("[RIM:keys] linking the keys after signup failed:", err);
-  }
-  await publishFirstCard(sent);
   return result;
 }
 
@@ -719,11 +1086,15 @@ async function discardUnlessTaken(draft: EnrollmentDraft): Promise<boolean | nul
 /**
  * The person discards a signup draft. Its keys go only when the server holds no account with
  * them. If an attempt the client saw fail created the account after all, the account gets its
- * keys back and this device signs in to it: the result is that account, else `null`.
+ * keys back and this device signs in to it with the password the signup registered: the result
+ * is that account, else `null`.
  */
-export async function discardKeySignup(draft: EnrollmentDraft): Promise<KeySignupResult | null> {
+export async function discardKeySignup(
+  draft: EnrollmentDraft,
+  entry: PasswordEntry,
+): Promise<KeySignupResult | null> {
   if ((await discardUnlessTaken(draft)) !== true) return null;
-  return finishTakenSignup(draft);
+  return finishTakenSignup(draft, entry);
 }
 
 /**
@@ -933,12 +1304,14 @@ export function accountIdInKit(kit: string): string | null {
 
 /**
  * Take an account back with its recovery kit, signed out, after losing every device: read the
- * account's public key log, sign a recovery rotation and a new device with the key backend,
- * send them, and sign in with the new device key. The server signs out every other device.
- * `kit` is a whole kit of either version, a bare 12-word phrase or a bare `RK1-` key; the key
- * backend reads it. Returns the account's user id.
+ * account's public key log, sign a recovery rotation and a new device with the key backend, and
+ * send them. The server signs out every other device. `kit` is a whole kit of either version, a
+ * bare 12-word phrase or a bare `RK1-` key; the key backend reads it. This device then signs in
+ * with the password ({@link signInWithPassword}).
+ *
+ * @returns The account's principal id.
  */
-export async function recoverAccount(
+export async function recoverDeviceKeys(
   kit: string,
   accountId: string | null,
   deviceName: string,
@@ -984,5 +1357,5 @@ export async function recoverAccount(
       throw err;
     }
   }
-  return signInWithDeviceKey(statements.principalId);
+  return statements.principalId;
 }
