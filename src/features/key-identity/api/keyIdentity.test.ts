@@ -25,6 +25,7 @@ const flows = vi.hoisted(() => ({ startLogin: vi.fn(), startRegistration: vi.fn(
 vi.mock("../../auth/runtime/opaqueFlows", () => flows);
 const unlocks = vi.hoisted(() => ({
   addRecoveryWrapToUnlocked: vi.fn(),
+  hasPasswordWrap: vi.fn(),
   holdSession: vi.fn(),
   lockAccount: vi.fn(),
   unlockWithRecovery: vi.fn(),
@@ -187,6 +188,8 @@ beforeEach(() => {
   Object.values(unlocks).forEach((fn) => fn.mockReset());
   unlocks.addRecoveryWrapToUnlocked.mockResolvedValue(undefined);
   unlocks.holdSession.mockResolvedValue(undefined);
+  // A device that has not unlocked the account with a password yet, unless a test says so.
+  unlocks.hasPasswordWrap.mockResolvedValue(false);
 });
 
 describe("signInWithPassword", () => {
@@ -302,13 +305,28 @@ describe("signInWithPassword", () => {
     expect(unlocks.lockAccount).toHaveBeenCalled();
   });
 
-  it("stops at a wrong password, after the try the server counted", async () => {
-    login = fakeLogin({
+  const wrongPassword = () =>
+    fakeLogin({
       finish: async () => {
         throw new WrongPasswordError();
       },
     });
-    // The device key alone is refused: the account has a password.
+
+  it("stops at a wrong password on a device that unlocked the account before, signing nothing", async () => {
+    login = wrongPassword();
+    unlocks.hasPasswordWrap.mockResolvedValue(true);
+    backend({}, { key_identity_sign_login: STATEMENT });
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      WrongPasswordError,
+    );
+    expect(unlocks.hasPasswordWrap).toHaveBeenCalledWith(ENDPOINT, PRINCIPAL);
+    expect(requestMock.mock.calls.map(operation)).toEqual(["PasswordLoginStart"]);
+    expect(commands()).not.toContain("key_identity_sign_login");
+    expect(login.unlock).not.toHaveBeenCalled();
+  });
+
+  it("stops at a wrong password when the device key alone is refused too", async () => {
+    login = wrongPassword();
     backend(
       { KeyLoginChallenge: CHALLENGE, LoginWithKey: serverError("UNAUTHENTICATED") },
       { key_identity_sign_login: STATEMENT },
@@ -317,7 +335,31 @@ describe("signInWithPassword", () => {
       WrongPasswordError,
     );
     expect(requestMock.mock.calls.map(operation)).not.toContain("PasswordLoginFinish");
+    expect(requestMock.mock.calls.map(operation)).not.toContain("Logout");
     expect(login.unlock).not.toHaveBeenCalled();
+  });
+
+  it("ends a session the device key alone opened for an account that needs no new password", async () => {
+    login = wrongPassword();
+    backend(
+      {
+        KeyLoginChallenge: CHALLENGE,
+        LoginWithKey: {
+          loginWithKey: { userId: "user-1", mustSetPassword: false, sessionSecret: "s-1" },
+        },
+        MeKeyAccount: ME(PRINCIPAL),
+        Logout: { logout: true },
+      },
+      { key_identity_sign_login: STATEMENT },
+    );
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(
+      WrongPasswordError,
+    );
+    const keyLogin = requestMock.mock.calls.find((c) => operation(c) === "LoginWithKey");
+    expect(keyLogin?.[1]).toMatchObject({ keepSignedIn: false, keepKeyHeld: true });
+    expect(requestMock.mock.calls.map(operation)).toContain("Logout");
+    expect(unlocks.lockAccount).toHaveBeenCalled();
+    expect(useAuthStore.getState().mustSetPassword).toBe(false);
   });
 
   it("signs an account without a password in with the key alone, to set one", async () => {

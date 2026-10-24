@@ -783,3 +783,13 @@ fn the_recovery_phrase_wraps_the_unlocked_data_key() {
         .unwrap();
     assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
 }
+
+#[test]
+fn a_password_wrap_is_there_once_the_account_unlocked_with_its_password() {
+    let mut server = Server::new();
+    let (device, _) = device();
+    assert!(!device.has_password_wrap(PRINCIPAL).unwrap());
+    signup(&mut server, &device, "password", false);
+    assert!(device.has_password_wrap(PRINCIPAL).unwrap());
+    assert!(!device.has_password_wrap("rimp1_other").unwrap());
+}

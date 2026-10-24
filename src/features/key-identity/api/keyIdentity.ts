@@ -44,9 +44,11 @@ import {
   WrongPasswordError,
 } from "../../auth/api/passwordApi";
 import { signInRequest } from "../../auth/api/signInRequest";
+import { logout } from "../../auth/api/useAuthMutations";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   addRecoveryWrapToUnlocked,
+  hasPasswordWrap,
   holdSession,
   lockAccount,
   type SessionKeys,
@@ -507,23 +509,40 @@ async function loginWithDeviceKey(
 }
 
 /**
- * After a password no account check accepted: signs in with the device key alone, which only an
- * account that has no password yet allows. The key signs only while its record is not sealed,
- * so this is tried only on a device that never unlocked the account.
+ * After a password no account check accepted, on a device that never unlocked the account with
+ * a password (it holds no password wrap): signs in with the device key alone, which only an
+ * account that has no password yet allows. Any other session that call opens is ended at once,
+ * so a wrong password leaves nothing signed in.
  *
- * @returns The sign-in, or `null` when the key does not sign here or the server refuses it.
+ * @returns The sign-in of an account that must set its password, or `null`.
  */
 async function signInWithoutPassword(
   principalId: string,
   keep: boolean,
 ): Promise<PasswordSignInResult | null> {
+  const unlockedBefore = await hasPasswordWrap(getGraphqlEndpoint(), principalId).catch(
+    (err: unknown) => {
+      logger.warn("[RIM:keys] this device's data key wraps could not be read:", err);
+      return true;
+    },
+  );
+  if (unlockedBefore) return null;
+  let signedIn: { userId: string; mustSetPassword: boolean };
   try {
-    const signedIn = await loginWithDeviceKey(principalId, null, keep, false);
-    return { ...signedIn, startedEmpty: false };
+    signedIn = await loginWithDeviceKey(principalId, null, keep, false);
   } catch (err) {
     logger.debug("[RIM:keys] no sign-in without a password:", graphqlErrorCode(err));
     return null;
   }
+  if (signedIn.mustSetPassword) return { ...signedIn, startedEmpty: false };
+  try {
+    await logout();
+  } catch (err) {
+    logger.warn("[RIM:keys] ending a session the password did not open failed:", err);
+  }
+  lockAccount();
+  useAuthStore.getState().setMustSetPassword(false);
+  return null;
 }
 
 /**

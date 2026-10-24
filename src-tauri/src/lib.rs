@@ -244,6 +244,7 @@ pub fn run() {
             account_lock::commands::account_password_rewrap,
             account_lock::commands::account_password_commit,
             account_lock::commands::account_add_recovery_wrap,
+            account_lock::commands::account_has_password_wrap,
             updater::updater_status,
         ])
         .build(context)

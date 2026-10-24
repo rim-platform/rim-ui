@@ -263,3 +263,12 @@ pub async fn account_add_recovery_wrap(
 ) -> Result<(), AccountLockError> {
     blocking(&state, move |s| s.add_recovery_wrap(&principal, &entropy)).await
 }
+
+/// Whether this device holds a password wrap of `principal`'s data key.
+#[tauri::command]
+pub async fn account_has_password_wrap(
+    state: State<'_, AccountLock>,
+    principal: String,
+) -> Result<bool, AccountLockError> {
+    blocking(&state, move |s| s.has_password_wrap(&principal)).await
+}

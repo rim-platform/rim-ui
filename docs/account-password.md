@@ -222,10 +222,13 @@ device key signs, so the keys sealed under the data key are open when it does:
 5. `keyLoginChallenge`, the device proof and `loginWithKey` with the ticket. A failure here locks
    the account again.
 
-When the OPAQUE finish fails on a device whose key still signs without an unlock (it never
-unlocked the account), the device key alone is tried: a server account without a password
-answers `mustSetPassword`, and the app then shows only the screen that sets one (`setPasswordStart`
-and `setPassword`, then the unlock with a new data key). With `options.recoveryEntropy` (the
+When the OPAQUE finish fails on a device that holds no password wrap of the account
+(`hasPasswordWrap`, `account_has_password_wrap`: it never unlocked the account with a password),
+the device key alone is tried, with the same "Keep me signed in" arguments. A server account
+without a password answers `mustSetPassword`, and the app then shows only the screen that sets
+one (`setPasswordStart` and `setPassword`, then the unlock with a new data key). Any other
+session that call opens is logged out and the account locked at once, and the sign-in says
+"Wrong password". With `options.recoveryEntropy` (the
 person typed the phrase already, while recovering or resetting) the phrase opens the data when it
 needs it, and the data key is wrapped under it afterwards.
 
@@ -251,3 +254,12 @@ request, and a kept web session's keep key wraps the data key. A first password 
 that signed in with the key alone holds the session the same way, reading a kept web session's
 keep key from `sessionKeepKey`. An expired session goes to the sign-in screen: nothing signs in
 again with the device key alone.
+
+### Switching relays
+
+The relay switch checks the password at the new relay, or registers it there with the signup,
+and wraps the desktop's data key under the unlock key the new relay's share gives as soon as it
+enters the new relay. The password wrap under the old relay's share is replaced then. A switch
+abandoned after that step therefore leaves an account that is not kept signed in on the
+computer needing its recovery phrase (or starting empty) at its next sign-in at the old relay; a
+kept account still opens with its keep wrap.

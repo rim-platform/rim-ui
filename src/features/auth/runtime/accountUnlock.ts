@@ -34,6 +34,7 @@ import {
   openAfterLogin,
   openKept,
   openWithRecovery,
+  readWraps,
   replacePasswordWrap,
   setKeepWrap,
   wrapsAfterSignup,
@@ -46,6 +47,7 @@ import { storedEndpoint } from "../../key-identity/browser/keyStore";
 import { sealKeysAtUnlock } from "../../key-identity/browser/sealAtRest";
 import {
   accountAddRecoveryWrap,
+  accountHasPasswordWrap,
   accountLock,
   accountUnlockAfterLogin,
   accountUnlockAfterSignup,
@@ -423,6 +425,15 @@ export async function keepUnlocked(keepKey: Uint8Array): Promise<void> {
   } finally {
     dataKey.fill(0);
   }
+}
+
+/**
+ * Whether this device holds a password wrap of the account's data key: the account was unlocked
+ * here with its password at least once.
+ */
+export async function hasPasswordWrap(endpoint: string, principalId: string): Promise<boolean> {
+  if (isTauri()) return accountHasPasswordWrap(principalId);
+  return Boolean((await readWraps(endpoint, principalId))?.passwordWrap);
 }
 
 /** What a sign-in or signup returned for the session it started. */

@@ -31,6 +31,7 @@ import {
 import {
   addRecoveryWrapToUnlocked,
   commitPasswordChange,
+  hasPasswordWrap,
   holdSession,
   keepUnlocked,
   lockAccount,
@@ -293,5 +294,11 @@ describe("unlocking an account in the web app", () => {
     expect(sessionSecret()).toBeNull();
     lockVault();
     expect(await unlockKept(ENDPOINT, PRINCIPAL, keepKey)).toBe(true);
+  });
+
+  it("tells a browser that unlocked the account with its password from one that never did", async () => {
+    expect(await hasPasswordWrap(ENDPOINT, PRINCIPAL)).toBe(false);
+    await signUp(random(64));
+    expect(await hasPasswordWrap(ENDPOINT, PRINCIPAL)).toBe(true);
   });
 });
