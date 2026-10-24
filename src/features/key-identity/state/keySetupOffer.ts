@@ -37,6 +37,15 @@ export function deferKeySetup(userId: string, now: number = Date.now()): void {
   }
 }
 
+/** Forget the "Later" of an account removed from this device. */
+export function forgetKeySetupDeferral(userId: string): void {
+  try {
+    localStorage.removeItem(laterKey(userId));
+  } catch {
+    // Storage unavailable: there is nothing kept to forget.
+  }
+}
+
 interface KeySetupOfferState {
   /** The step this account has on this device, `null` when none or not known yet. */
   available: KeySetupKind | null;

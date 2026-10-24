@@ -337,6 +337,32 @@ export class BrowserPluginStore implements PluginServices {
     await committed(tx);
   }
 
+  /**
+   * Remove every install, `rim.storage` entry and saved setting of `account`, an account
+   * removed from this browser, and the bundles no other install uses.
+   */
+  async removeAccount(account: string): Promise<void> {
+    const tx = (await database()).transaction([INSTALLS, STORAGE, SETTINGS, BUNDLES], "readwrite");
+    const finished = committed(tx);
+    const installs = tx.objectStore(INSTALLS);
+    const all = await done(installs.getAll() as IDBRequest<InstallRecord[]>);
+    const mine = all.filter((r) => r.account === account);
+    for (const r of mine) installs.delete([account, r.pluginId]);
+    const kept = new Set(all.filter((r) => r.account !== account).map((r) => r.bundleSha256));
+    for (const sha256 of new Set(mine.map((r) => r.bundleSha256))) {
+      if (!kept.has(sha256)) tx.objectStore(BUNDLES).delete(sha256);
+    }
+    await Promise.all(
+      [STORAGE, SETTINGS].map(async (name) => {
+        const store = tx.objectStore(name);
+        for (const key of await done(store.getAllKeys())) {
+          if ((key as IDBValidKey[])[1] === account) store.delete(key);
+        }
+      }),
+    );
+    await finished;
+  }
+
   async installBundle({
     bytes,
     sha256,

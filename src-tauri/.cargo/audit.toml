@@ -45,6 +45,14 @@
 # RUSTSEC-2026-0367 — SUID/SGID bits preserved on extraction.
 # RUSTSEC-2026-0368 — symbolic links with targets outside the destination directory.
 # RUSTSEC-2026-0369 — Unix permissions applied through symlinks without confining the target.
+#
+# RUSTSEC-2026-0387 — timing variability in `crypto-bigint` 0.5.5 operations meant to be
+# constant-time. The crate comes only through `elliptic-curve` 0.13 (`p256`, `p384`) of
+# `openmls_rust_crypto` 0.6, which is a dev-dependency of `crates/rim_mls`: its tests use it as
+# a second MLS provider. It is in neither the desktop app nor the web MLS module (`cargo tree
+# -e normal,build -i crypto-bigint` is empty for every target). The fix, `crypto-bigint` 0.7,
+# needs `elliptic-curve` 0.14, which no `openmls_rust_crypto` release uses yet. Drop this once
+# it does, or once `rim_mls` tests no longer use that provider.
 [advisories]
 ignore = [
     "RUSTSEC-2026-0329",
@@ -53,4 +61,5 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0387",
 ]
