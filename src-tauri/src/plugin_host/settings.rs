@@ -6,8 +6,10 @@
 //! same when the account switches to a key-based id. Non-secret values are a
 //! JSON file under the app data directory, named by a hash of that id; each
 //! secret value is a secret vault record named
-//! `plugin-setting-v1:<plugin id>:<account>:<key>`. Nothing is synced, and
-//! uninstalling the plugin deletes both.
+//! `plugin-setting-v1:<plugin id>:<account>:<key>`, sealed under the signed-in
+//! account's data key ([`AccountSealedSecrets`]), so it opens only while the
+//! account is unlocked. Nothing is synced, and uninstalling the plugin deletes
+//! both.
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -16,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
+use crate::account_lock::AccountLock;
 use crate::plugin_host::manifest::{PluginManifest, SettingSchema};
 use crate::plugin_host::runtime;
 use crate::plugin_host::validation::setting_value_error;
@@ -52,6 +55,86 @@ impl SettingSecrets for SecretVault {
 
     fn delete_prefixed(&self, prefix: &str) -> Result<(), String> {
         SecretVault::delete_prefixed(self, prefix).map_err(|e| e.to_string())
+    }
+}
+
+/// How a sealed secret setting starts, before the base64url of `nonce ‖
+/// ciphertext ‖ tag`. A value without it was stored before the sealing.
+const SEALED_PREFIX: &str = "sealed-v1:";
+
+/// Secret settings in the secret vault, each sealed under the data key of the
+/// account signed in now (store key "desktop vault", the record's name as
+/// associated data). They read and write only while that account is unlocked;
+/// deleting needs no key. A value stored before the sealing is read as it is
+/// and sealed then.
+pub(crate) struct AccountSealedSecrets {
+    pub(crate) vault: Arc<dyn SettingSecrets>,
+    pub(crate) account_lock: AccountLock,
+    /// The signed-in account's key-based principal id, whose data key seals
+    /// the values; `None` when nobody, or an account without one, is signed in.
+    pub(crate) principal: Arc<Mutex<Option<String>>>,
+}
+
+impl AccountSealedSecrets {
+    fn principal(&self) -> Result<String, String> {
+        self.principal
+            .lock()
+            .ok()
+            .and_then(|p| p.clone())
+            .ok_or_else(|| "the signed-in account has no keys on this computer".to_string())
+    }
+
+    fn seal(&self, principal: &str, name: &str, value: &str) -> Result<String, String> {
+        self.account_lock
+            .seal_record(
+                principal,
+                rim_opaque::StoreKeyLabel::DesktopVault,
+                name,
+                value.as_bytes(),
+            )
+            .map(|sealed| format!("{SEALED_PREFIX}{sealed}"))
+            .map_err(|e| e.to_string())
+    }
+}
+
+impl SettingSecrets for AccountSealedSecrets {
+    fn read(&self, name: &str) -> Result<Option<Zeroizing<String>>, String> {
+        let Some(stored) = self.vault.read(name)? else {
+            return Ok(None);
+        };
+        let principal = self.principal()?;
+        let Some(sealed) = stored.strip_prefix(SEALED_PREFIX) else {
+            if self.account_lock.is_unlocked(&principal) {
+                self.vault
+                    .write(name, &self.seal(&principal, name, &stored)?)?;
+            }
+            return Ok(Some(stored));
+        };
+        let opened = self
+            .account_lock
+            .open_record(
+                &principal,
+                rim_opaque::StoreKeyLabel::DesktopVault,
+                name,
+                sealed,
+            )
+            .map_err(|e| e.to_string())?;
+        String::from_utf8(opened.to_vec())
+            .map(|text| Some(Zeroizing::new(text)))
+            .map_err(|_| "a sealed setting is not text".to_string())
+    }
+
+    fn write(&self, name: &str, value: &str) -> Result<(), String> {
+        let principal = self.principal()?;
+        self.vault.write(name, &self.seal(&principal, name, value)?)
+    }
+
+    fn delete(&self, name: &str) -> Result<(), String> {
+        self.vault.delete(name)
+    }
+
+    fn delete_prefixed(&self, prefix: &str) -> Result<(), String> {
+        self.vault.delete_prefixed(prefix)
     }
 }
 
@@ -1051,5 +1134,79 @@ mod tests {
         let values = settings.values(PLUGIN, &newer, A).unwrap();
         assert_eq!(values["refresh_seconds"], json!(10));
         assert!(!values.contains_key("context"));
+    }
+
+    #[test]
+    fn secret_settings_are_sealed_under_the_signed_in_account_s_data_key() {
+        const PRINCIPAL: &str = "rimp1_gCe9rL-U8tJXIPz_3ZZlu1yhaGJ6cv7zXgpTQjg9FUI";
+        let dir = TempDir::new().unwrap();
+        let vault = Arc::new(MemorySecrets::default());
+        let account_lock = AccountLock::in_memory();
+        let principal = Arc::new(Mutex::new(None));
+        let settings = PluginSettings::new(
+            dir.path(),
+            Arc::new(AccountSealedSecrets {
+                vault: vault.clone(),
+                account_lock: account_lock.clone(),
+                principal: principal.clone(),
+            }),
+        );
+        let name = secret_name(PLUGIN, A.unwrap(), "api_token");
+        let save = |token: &str| {
+            settings.save(
+                PLUGIN,
+                &schema(),
+                A,
+                &changes(json!({ "api_token": token })),
+            )
+        };
+
+        // An account without keys here, or a locked one, keeps no secret setting.
+        assert!(matches!(
+            save("t0k3n"),
+            Err(SettingsError::SecretsLocked(_))
+        ));
+        *principal.lock().unwrap() = Some(PRINCIPAL.into());
+        assert!(matches!(
+            save("t0k3n"),
+            Err(SettingsError::SecretsLocked(_))
+        ));
+
+        account_lock.unlock_for_tests(PRINCIPAL, [6; 32]);
+        save("t0k3n").unwrap();
+        let stored = vault.read(&name).unwrap().unwrap();
+        assert!(stored.starts_with(SEALED_PREFIX) && !stored.contains("t0k3n"));
+        assert_eq!(
+            settings.values(PLUGIN, &schema(), A).unwrap()["api_token"],
+            json!("t0k3n")
+        );
+
+        account_lock.lock_account(PRINCIPAL);
+        assert!(matches!(
+            settings.values(PLUGIN, &schema(), A),
+            Err(SettingsError::SecretsLocked(_))
+        ));
+        let form = settings.form_state(PLUGIN, &schema(), A).unwrap();
+        assert!(form.secrets_error.is_some());
+        // Deleting needs no key.
+        settings.reset(PLUGIN, &schema(), A).unwrap();
+        assert!(vault.read(&name).unwrap().is_none());
+
+        // A value stored before the sealing reads as it is, and is sealed while unlocked.
+        vault.write(&name, "old").unwrap();
+        account_lock.unlock_for_tests(PRINCIPAL, [6; 32]);
+        assert_eq!(
+            settings.values(PLUGIN, &schema(), A).unwrap()["api_token"],
+            json!("old")
+        );
+        assert!(vault
+            .read(&name)
+            .unwrap()
+            .unwrap()
+            .starts_with(SEALED_PREFIX));
+        assert_eq!(
+            settings.values(PLUGIN, &schema(), A).unwrap()["api_token"],
+            json!("old")
+        );
     }
 }

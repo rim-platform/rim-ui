@@ -46,7 +46,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { InstanceNotice } from "../../updater/components/InstanceNotice";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useAuthStore } from "../state/useAuthStore";
-import { useSessionHydration } from "../api/useSessionHydration";
+import { NEEDS_CONNECTION_MESSAGE, useSessionHydration } from "../api/useSessionHydration";
 import { useServerConfig } from "../api/useServerConfig";
 import { SESSION_ENDED_MESSAGE } from "../runtime/signOut";
 import { RegistrationMode } from "../types";
@@ -68,7 +68,7 @@ import { RegistrationFullNotice } from "./RegistrationFullNotice";
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isHydrating } = useSessionHydration();
+  const { isHydrating, needsConnection } = useSessionHydration();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const { data: serverConfig } = useServerConfig();
@@ -139,6 +139,15 @@ export function LoginPage() {
               think this is a mistake.
             </p>
           </div>
+        )}
+
+        {needsConnection && (
+          <p
+            role="status"
+            className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text"
+          >
+            {NEEDS_CONNECTION_MESSAGE}
+          </p>
         )}
 
         {sessionEnded && (

@@ -46,7 +46,7 @@ answer, and writes the **pending link** record before the webview sends `addDevi
 
 | Secret vault record | Holds |
 |---|---|
-| `device-link-v1:<link id>` | link id, secret, endpoint, principal id, device id and key, certificate, sealed answer (resent byte for byte) |
+| `device-link-v1:<link id>` | `{principalId, sealed}`: the link id, secret, endpoint, principal id, device id and key, certificate and sealed answer (resent byte for byte), sealed under the account's data key, so the record is written only while the account is unlocked and a locked account's links wait for its unlock (`account-password.md`) |
 | `device-links-v1` | the list of link ids that have a record |
 
 The record is removed when the link ends `CONSUMED`, or once a link that ended `CANCELLED` or

@@ -37,6 +37,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::account_lock::AccountLock;
 use crate::secret_store::SecretVault;
 use statement::{KeyHead, RotationSigner, SecretKey, Statement};
 use store::{same_endpoint, AccountLink, KeyRecord, Keys, SecretStore};
@@ -57,6 +58,9 @@ pub(crate) enum KeyIdentityError {
     NoDraft,
     #[error("this device link is no longer open on this computer; start again")]
     NoLink,
+    /// The account is locked on this computer, and what was asked needs its sealed keys.
+    #[error("this account is locked on this computer; sign in to unlock it")]
+    Locked,
 }
 
 impl KeyIdentityError {
@@ -69,6 +73,7 @@ impl KeyIdentityError {
             Self::NoIdentityKey => "NO_IDENTITY_KEY",
             Self::NoDraft => "NO_DRAFT",
             Self::NoLink => "NO_LINK",
+            Self::Locked => "LOCKED",
         }
     }
 }
@@ -264,6 +269,15 @@ fn key(text: &Zeroizing<String>) -> Result<SecretKey> {
     SecretKey::from_text(text)
 }
 
+/// The device key of an open record. A record whose keys were sealed under an earlier data key
+/// has none left.
+fn device_key(record: &KeyRecord) -> Result<SecretKey> {
+    if record.device_seed.is_empty() {
+        return Err(KeyIdentityError::NoKeys);
+    }
+    key(&record.device_seed)
+}
+
 fn local_account(link: &AccountLink, record: &KeyRecord) -> LocalAccount {
     LocalAccount {
         principal_id: record.principal_id.clone(),
@@ -329,6 +343,8 @@ struct Draft {
 #[derive(Clone)]
 pub(crate) struct KeyIdentityState {
     store: Arc<dyn SecretStore>,
+    /// The data keys that seal each principal's record.
+    account_lock: AccountLock,
     drafts: Arc<Mutex<HashMap<String, Draft>>>,
     /// Device links this run takes part in, by link id: their secrets, and a new device's key
     /// until its certificate verifies.
@@ -337,22 +353,36 @@ pub(crate) struct KeyIdentityState {
     lock: Arc<Mutex<()>>,
 }
 
-pub(crate) fn init(vault: Arc<SecretVault>) -> KeyIdentityState {
-    KeyIdentityState::new(Arc::new(store::VaultSecretStore(vault)))
+pub(crate) fn init(vault: Arc<SecretVault>, account_lock: AccountLock) -> KeyIdentityState {
+    KeyIdentityState::with_lock(Arc::new(store::VaultSecretStore(vault)), account_lock)
 }
 
 impl KeyIdentityState {
-    pub(crate) fn new(store: Arc<dyn SecretStore>) -> Self {
+    /// Keys in `store`, sealed under the data keys `account_lock` holds.
+    pub(crate) fn with_lock(store: Arc<dyn SecretStore>, account_lock: AccountLock) -> Self {
         Self {
             store,
+            account_lock,
             drafts: Arc::new(Mutex::new(HashMap::new())),
             links: Arc::new(Mutex::new(HashMap::new())),
             lock: Arc::new(Mutex::new(())),
         }
     }
 
+    /// Keys in `store`, with nothing unlocked, for tests.
+    #[cfg(test)]
+    pub(crate) fn new(store: Arc<dyn SecretStore>) -> Self {
+        Self::with_lock(store, AccountLock::in_memory())
+    }
+
+    /// The account lock whose data keys seal the records, for tests.
+    #[cfg(test)]
+    pub(crate) fn account_lock(&self) -> &AccountLock {
+        &self.account_lock
+    }
+
     fn keys(&self) -> Keys<'_> {
-        Keys(self.store.as_ref())
+        Keys::new(self.store.as_ref(), &self.account_lock)
     }
 
     fn guard(&self) -> Result<std::sync::MutexGuard<'_, ()>> {
@@ -367,17 +397,32 @@ impl KeyIdentityState {
             .ok_or(KeyIdentityError::NoKeys)
     }
 
-    /// The servers and user ids `principal_id` signs in to on this device, as far as the index
-    /// knows them (a link without a user id yet is left out).
-    pub(crate) fn signed_in_users(&self, principal_id: &str) -> Result<Vec<(String, String)>> {
+    /// The record as far as it opens while the account is locked: its plain fields.
+    fn device_record(&self, principal_id: &str) -> Result<KeyRecord> {
+        self.keys()
+            .device_record(principal_id)?
+            .ok_or(KeyIdentityError::NoKeys)
+    }
+
+    /// Seal the principal's record and pending device links under its data key, now that the
+    /// account is unlocked: what a signup, recovery or device link wrote before the unlock,
+    /// and records from before the data key existed. With the server `share` the unlock saw,
+    /// the device key's wrap under it is refreshed, and a device key a new data key lost
+    /// comes back from it.
+    pub(crate) fn seal_at_rest(
+        &self,
+        principal_id: &str,
+        share: Option<&rim_opaque::Key>,
+    ) -> Result<()> {
         let _guard = self.guard()?;
-        Ok(self
-            .keys()
-            .links()?
-            .into_iter()
-            .filter(|link| link.principal_id == principal_id)
-            .filter_map(|link| Some((link.endpoint, link.user_id?)))
-            .collect())
+        self.keys().seal_record(principal_id, share)
+    }
+
+    /// The principal the account `user_id` on `endpoint` signs in with on this device, as far
+    /// as the index knows.
+    pub(crate) fn principal_of(&self, endpoint: &str, user_id: &str) -> Result<Option<String>> {
+        let _guard = self.guard()?;
+        self.keys().principal_of(endpoint, user_id)
     }
 
     /// Accounts on `endpoint` this device can sign in to.
@@ -388,7 +433,7 @@ impl KeyIdentityState {
             if !same_endpoint(&link.endpoint, endpoint) {
                 continue;
             }
-            if let Some(record) = self.keys().record(&link.principal_id)? {
+            if let Some(record) = self.keys().device_record(&link.principal_id)? {
                 out.push(local_account(&link, &record));
             }
         }
@@ -546,7 +591,7 @@ impl KeyIdentityState {
         let draft = self.draft(draft_id)?;
         let keys = self.keys();
         let confirmed = keys
-            .record(&draft.principal_id)?
+            .device_record(&draft.principal_id)?
             .is_some_and(|r| r.confirmed);
         keys.put_record(&KeyRecord {
             v: 1,
@@ -565,6 +610,8 @@ impl KeyIdentityState {
             kit_confirmed: Some(draft.recovery_entropy.is_none()),
             confirmed,
             replaced: None,
+            sealed: None,
+            device_wrap: None,
         })?;
         let mut links = keys.links()?;
         let same = |l: &AccountLink| {
@@ -677,6 +724,12 @@ impl KeyIdentityState {
     pub(crate) fn forget_unconfirmed(&self, principal_id: &str) -> Result<()> {
         let _guard = self.guard()?;
         let keys = self.keys();
+        if keys
+            .device_record(principal_id)?
+            .is_none_or(|r| r.confirmed)
+        {
+            return Ok(());
+        }
         match keys.record(principal_id)? {
             Some(record) if !record.confirmed => match record.replaced {
                 Some(previous) => keys.put_record(&previous),
@@ -711,7 +764,8 @@ impl KeyIdentityState {
         let mut result = None;
 
         if let Some(principal_id) = server_principal_id {
-            if let Some(mut record) = keys.record(principal_id)? {
+            // A record read locked keeps any replaced keys sealed; they go at its next sealing.
+            if let Some(mut record) = keys.device_record(principal_id)? {
                 if !record.confirmed || record.replaced.is_some() {
                     record.confirmed = true;
                     record.replaced = None;
@@ -742,7 +796,7 @@ impl KeyIdentityState {
             if !same_account {
                 continue;
             }
-            match keys.record(&link.principal_id)? {
+            match keys.device_record(&link.principal_id)? {
                 Some(record) if record.confirmed => {}
                 _ => stale.push(link.principal_id.clone()),
             }
@@ -778,7 +832,7 @@ impl KeyIdentityState {
             let _guard = self.guard()?;
             self.record(principal_id)?
         };
-        let device_seed = key(&record.device_seed)?;
+        let device_seed = device_key(&record)?;
         Ok(statement::login(
             &device_seed,
             &statement::LoginInput {
@@ -803,7 +857,7 @@ impl KeyIdentityState {
             self.record(principal_id)?
         };
         statement::device_request(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             principal_id,
             &record.device_id,
             request,
@@ -822,7 +876,7 @@ impl KeyIdentityState {
             self.record(principal_id)?
         };
         statement::delegation(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             principal_id,
             &record.device_id,
             input,
@@ -847,7 +901,7 @@ impl KeyIdentityState {
             self.record(principal_id)?
         };
         Ok(statement::login(
-            &key(&record.device_seed)?,
+            &device_key(&record)?,
             &statement::LoginInput {
                 challenge_id: &challenge.challenge_id,
                 nonce: &challenge.nonce,
@@ -864,10 +918,7 @@ impl KeyIdentityState {
             let _guard = self.guard()?;
             self.record(principal_id)?
         };
-        Ok((
-            record.device_id.clone(),
-            key(&record.device_seed)?.public_key(),
-        ))
+        Ok((record.device_id.clone(), device_key(&record)?.public_key()))
     }
 
     /// Sign an end-to-end encryption statement with this device's key: an `mls-key` statement
@@ -902,7 +953,7 @@ impl KeyIdentityState {
                 "the statement is not about this device".into(),
             ));
         }
-        Ok(key(&record.device_seed)?.sign(context, payload))
+        Ok(device_key(&record)?.sign(context, payload))
     }
 
     /// Verify the server's key log for `principal_id`, settle a pending rotation against it,
@@ -961,7 +1012,7 @@ impl KeyIdentityState {
         let record = self.record(principal_id)?;
         let now = statement::now();
         if record.device_id == device_id {
-            let device_seed = key(&record.device_seed)?;
+            let device_seed = device_key(&record)?;
             return Ok(statement::revocation(
                 &device_seed,
                 true,
@@ -1088,8 +1139,10 @@ impl KeyIdentityState {
         }
 
         let _guard = self.guard()?;
-        let existing = self.keys().record(&principal_id)?;
-        if let Some(mut record) = existing.clone() {
+        // Keys of a locked account: whether they hold the identity key cannot be seen, and
+        // the keys they replaced stay sealed in them.
+        let existing = self.keys().device_record(&principal_id)?;
+        if let Some(mut record) = existing.clone().filter(|r| !r.is_locked()) {
             if identity_at_head(&mut record, &head)?.0.is_some() {
                 return Err(KeyIdentityError::Invalid(
                     "this computer still holds the account's identity key: sign in with it \
@@ -1152,6 +1205,8 @@ impl KeyIdentityState {
             kit_confirmed: Some(true),
             confirmed: false,
             replaced,
+            sealed: None,
+            device_wrap: None,
         })?;
         let mut links = keys.links()?;
         if !links

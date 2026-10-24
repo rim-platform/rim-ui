@@ -7,7 +7,8 @@
 //!
 //! - One database file per account, named after a hash of (server endpoint, user id), and the
 //!   account is recorded inside it, so two accounts never share a cache.
-//! - One cache key per installation, in the secret vault ([`key`]).
+//! - One cache key per account, in the secret vault sealed under the account's data key
+//!   ([`key`]): a locked account's cache does not open.
 //! - Deleted messages stay as tombstones without text or attachments.
 //! - An FTS5 index over the cached text, inside the same encrypted file, serves local search
 //!   ([`search`]).
@@ -36,14 +37,19 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::account_lock::AccountLock;
+use crate::key_identity::KeyIdentityState;
 use crate::secret_store::SecretVault;
-use key::{CacheKey, KeySource, VaultKeySource};
+use key::{KeySource, VaultKeySource};
 pub(crate) use store::CacheStore;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CacheError {
     #[error("cache key unavailable: {0}")]
     Key(String),
+    /// The account is locked: its cache opens after the next unlock.
+    #[error("this account is locked on this computer; its cache opens once it is unlocked")]
+    Locked,
     #[error("cache database error: {0}")]
     Db(#[from] rusqlite::Error),
     #[error("cache file is not readable with this key")]
@@ -67,6 +73,7 @@ impl CacheError {
     pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::Key(_) => "CACHE_KEY",
+            Self::Locked => "LOCKED",
             Self::Db(_) | Self::Unreadable | Self::Schema(_) | Self::Io(_) | Self::Json(_) => {
                 "CACHE_STORAGE"
             }
@@ -128,13 +135,20 @@ impl AccountId {
     }
 }
 
-/// Tauri-managed state: the open databases, one per account, opened on first use.
+/// An open database and the principal whose data key sealed its key.
+struct OpenStore {
+    principal_id: String,
+    store: Arc<Mutex<CacheStore>>,
+}
+
+/// Tauri-managed state: the open databases, one per account, opened on first use while the
+/// account is unlocked.
 pub(crate) struct MessageCacheState {
     dir: PathBuf,
     key_source: Box<dyn KeySource>,
-    /// The key, or why it could not be had, as read from the secret vault the first time.
-    key: Mutex<Option<Result<CacheKey, String>>>,
-    stores: Mutex<HashMap<String, Arc<Mutex<CacheStore>>>>,
+    /// Why the secret vault could not give a key, once it failed.
+    key_failure: Mutex<Option<String>>,
+    stores: Mutex<HashMap<String, OpenStore>>,
 }
 
 impl MessageCacheState {
@@ -142,29 +156,44 @@ impl MessageCacheState {
         Self {
             dir,
             key_source,
-            key: Mutex::new(None),
+            key_failure: Mutex::new(None),
             stores: Mutex::new(HashMap::new()),
         }
     }
 
     /// The account's database, opening (and creating) it on first use.
+    ///
+    /// # Errors
+    ///
+    /// [`CacheError::Locked`] while the account is locked: a database open since its unlock
+    /// is closed instead of served.
     pub(crate) fn store(&self, account: &AccountId) -> Result<Arc<Mutex<CacheStore>>, CacheError> {
         account.validate()?;
         let file_name = account.file_name();
         let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(store) = stores.get(&file_name) {
-            return Ok(store.clone());
+        if let Some(open) = stores.get(&file_name) {
+            if self.key_source.is_unlocked(&open.principal_id) {
+                return Ok(open.store.clone());
+            }
+            stores.remove(&file_name);
+            return Err(CacheError::Locked);
         }
 
         std::fs::create_dir_all(&self.dir).map_err(|e| CacheError::Io(e.to_string()))?;
         restrict_dir_permissions(&self.dir);
-        let key = self.key()?;
+        let key = self.key(account)?;
         let store = Arc::new(Mutex::new(CacheStore::open(
             &self.dir.join(&file_name),
-            &key,
+            &key.key,
             account,
         )?));
-        stores.insert(file_name, store.clone());
+        stores.insert(
+            file_name,
+            OpenStore {
+                principal_id: key.principal_id,
+                store: store.clone(),
+            },
+        );
         Ok(store)
     }
 
@@ -180,52 +209,59 @@ impl MessageCacheState {
         let file_name = account.file_name();
         // Held until the files are gone, so no call opens the database again in between.
         let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(store) = stores.remove(&file_name) {
-            let _running = store.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(open) = stores.remove(&file_name) {
+            let _running = open.store.lock().unwrap_or_else(|e| e.into_inner());
         }
-        store::remove_database_files(&self.dir.join(&file_name))
+        store::remove_database_files(&self.dir.join(&file_name))?;
+        if let Err(e) = self.key_source.forget(account) {
+            log::warn!("[message_cache] could not delete a removed cache's key: {e}");
+        }
+        Ok(())
     }
 
-    /// The key is read from the secret vault once per run. Callers hold the `stores` lock, so
-    /// two first opens cannot each create a different key. A failure is kept for the run too:
-    /// on Linux a locked keyring answers the vault key's read with an unlock prompt, and a
+    /// The account's key, read when its database opens. Callers hold the `stores` lock, so two
+    /// first opens cannot each create a different key. A secret vault failure is kept for the
+    /// run: on Linux a locked keyring answers the vault key's read with an unlock prompt, and a
     /// dismissed one must not come back on every cache call. The cache stays off until the app
-    /// restarts.
-    fn key(&self) -> Result<CacheKey, CacheError> {
-        let mut key = self.key.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(known) = key.as_ref() {
-            return known.clone().map_err(CacheError::Key);
+    /// restarts. A locked account is not a failure: its cache opens after the unlock.
+    fn key(&self, account: &AccountId) -> Result<key::AccountKey, CacheError> {
+        let mut failure = self.key_failure.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(reason) = failure.as_ref() {
+            return Err(CacheError::Key(reason.clone()));
         }
-        let loaded = match self.key_source.load_or_create() {
-            Err(CacheError::Key(reason)) => Err(reason),
-            other => Ok(other?),
-        };
-        *key = Some(loaded.clone());
-        loaded.map_err(CacheError::Key)
+        match self.key_source.load_or_create(account) {
+            Err(CacheError::Key(reason)) => {
+                *failure = Some(reason.clone());
+                Err(CacheError::Key(reason))
+            }
+            other => other,
+        }
     }
 
-    /// Closes the account's database: the next call opens it again. An operation still running
-    /// on it keeps its connection until it ends.
-    pub(crate) fn close(&self, account: &AccountId) {
+    /// Closes every database of `principal_id`, and with them the only copies of their keys in
+    /// memory: the next call opens one again, if the account is unlocked. An operation still
+    /// running on one keeps its connection until it ends.
+    pub(crate) fn close_principal(&self, principal_id: &str) {
         let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
-        stores.remove(&account.file_name());
-    }
-
-    /// Wipes the key read from the secret vault, so the next database open reads it again. A
-    /// failure to read it stays remembered: it holds no secret.
-    pub(crate) fn forget_key(&self) {
-        let mut key = self.key.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(key.as_ref(), Some(Ok(_))) {
-            *key = None;
-        }
+        stores.retain(|_, open| open.principal_id != principal_id);
     }
 }
 
-/// The cache lives in `<app data>/message-cache/`, its key in the secret vault.
-pub(crate) fn init(app_data_dir: &Path, vault: Arc<SecretVault>) -> MessageCacheState {
+/// The cache lives in `<app data>/message-cache/`, each account's key in the secret vault
+/// under that account's data key.
+pub(crate) fn init(
+    app_data_dir: &Path,
+    vault: Arc<SecretVault>,
+    account_lock: AccountLock,
+    keys: KeyIdentityState,
+) -> MessageCacheState {
     MessageCacheState::new(
         app_data_dir.join("message-cache"),
-        Box::new(VaultKeySource(vault)),
+        Box::new(VaultKeySource {
+            vault,
+            account_lock,
+            keys,
+        }),
     )
 }
 
