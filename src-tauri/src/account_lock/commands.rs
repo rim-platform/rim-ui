@@ -63,7 +63,8 @@ pub async fn opaque_login_finish(
 
 /// Unlock `principal` after a login: `sealedShare` is the server share sealed under the
 /// login's transport key, `rewraps` the server's rewraps of older unlock keys, `keep` whether
-/// the account stays signed in on this device.
+/// the account stays signed in on this device, `startEmpty` whether to start over here when
+/// nothing opens although the device holds a recovery wrap (otherwise `NEEDS_RECOVERY`).
 #[tauri::command]
 pub async fn account_unlock_after_login(
     state: State<'_, AccountLock>,
@@ -72,9 +73,17 @@ pub async fn account_unlock_after_login(
     sealed_share: String,
     rewraps: Vec<String>,
     keep: bool,
+    start_empty: bool,
 ) -> Result<Unlocked, AccountLockError> {
     blocking(&state, move |s| {
-        s.unlock_after_login(&handle, &principal, &sealed_share, &rewraps, keep)
+        s.unlock_after_login(
+            &handle,
+            &principal,
+            &sealed_share,
+            &rewraps,
+            keep,
+            start_empty,
+        )
     })
     .await
 }

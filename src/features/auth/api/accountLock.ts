@@ -88,6 +88,9 @@ export function opaqueLoginFinish(
  * @param sealedShare - The server share, sealed under the login's transport key.
  * @param rewraps - The server's rewraps of older unlock keys.
  * @param keep - Whether the account stays signed in on this device.
+ * @param startEmpty - Whether to start over on this device when nothing opens although it holds
+ *   a recovery wrap. Without it that case rejects with `NEEDS_RECOVERY` and the handle stays
+ *   usable: unlock with the recovery phrase, then call again, or call again with `startEmpty`.
  */
 export function accountUnlockAfterLogin(
   handle: string,
@@ -95,8 +98,16 @@ export function accountUnlockAfterLogin(
   sealedShare: string,
   rewraps: string[],
   keep: boolean,
+  startEmpty = false,
 ): Promise<UnlockedAccount> {
-  return call("account_unlock_after_login", { handle, principal, sealedShare, rewraps, keep });
+  return call("account_unlock_after_login", {
+    handle,
+    principal,
+    sealedShare,
+    rewraps,
+    keep,
+    startEmpty,
+  });
 }
 
 /**

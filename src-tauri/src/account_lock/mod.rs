@@ -54,6 +54,10 @@ pub(crate) enum AccountLockError {
     /// The handle expired, was used, or never existed.
     #[error("this sign-in step expired or already finished; start again")]
     NoHandle,
+    /// No wrap opens with this login, and the device holds a recovery wrap: what it kept for
+    /// the account opens only with the recovery phrase, or the person chooses to start empty.
+    #[error("this device's data for the account needs the recovery phrase")]
+    NeedsRecovery,
     #[error("{0}")]
     Invalid(String),
     #[error("key storage: {0}")]
@@ -67,6 +71,7 @@ impl AccountLockError {
         match self {
             Self::WrongPassword => "WRONG_PASSWORD",
             Self::NoHandle => "NO_HANDLE",
+            Self::NeedsRecovery => "NEEDS_RECOVERY",
             Self::Invalid(_) => "INVALID",
             Self::Vault(_) => "VAULT",
             Self::Crypto(_) => "CRYPTO",
@@ -441,9 +446,15 @@ impl AccountLock {
 
     /// Unlocks `principal_id` after a login: opens the server share with the session key,
     /// derives the unlock key, and opens the password wrap with it, or with an older unlock key
-    /// one of `rewraps` holds (and then wraps it under the current one). With no wrap that
-    /// opens, the account starts over with a new data key. `keep` writes the keep wrap; without
-    /// it, any keep wrap is removed.
+    /// one of `rewraps` holds (and then wraps it under the current one). A data key the recovery
+    /// phrase already unlocked ([`Self::unlock_with_recovery`]) is used when no wrap opens.
+    /// `keep` writes the keep wrap; without it, any keep wrap is removed.
+    ///
+    /// # Errors
+    /// [`AccountLockError::NeedsRecovery`] when nothing opens, the device holds a recovery wrap
+    /// and `start_empty` is false; the handle stays usable, for a call after the recovery phrase
+    /// or with `start_empty`. With `start_empty`, or with no recovery wrap, the account starts
+    /// over here with a new data key.
     pub(crate) fn unlock_after_login(
         &self,
         handle_id: &str,
@@ -451,9 +462,11 @@ impl AccountLock {
         sealed_share: &str,
         rewraps: &[String],
         keep: bool,
+        start_empty: bool,
     ) -> Result<Unlocked> {
         check_principal(principal_id)?;
         let handle = self.take_handle(handle_id)?;
+        let expires = handle.expires;
         let Stage::LoggedIn {
             export_key,
             session_key,
@@ -472,11 +485,24 @@ impl AccountLock {
         let opened = match &stored {
             Some(wraps) => open_password_wrap(&unlock_key, principal_id, wraps, rewraps),
             None => None,
-        };
+        }
+        .or_else(|| lock(&self.unlocked).get(principal_id).cloned());
+        let holds_recovery = stored.as_ref().is_some_and(|w| w.recovery_wrap.is_some());
+        if opened.is_none() && holds_recovery && !start_empty {
+            self.put_handle(
+                handle_id.to_string(),
+                Stage::LoggedIn {
+                    export_key,
+                    session_key,
+                },
+                expires,
+            );
+            return Err(AccountLockError::NeedsRecovery);
+        }
         let started_empty = opened.is_none();
-        let (data_key, mut wraps) = match (opened, stored) {
-            (Some(data_key), Some(wraps)) => (data_key, wraps),
-            _ => (rim_opaque::random_key()?, DataKeyWraps::default()),
+        let (data_key, mut wraps) = match opened {
+            Some(data_key) => (data_key, stored.unwrap_or_default()),
+            None => (rim_opaque::random_key()?, DataKeyWraps::default()),
         };
         wraps.password_wrap = b64(&rim_opaque::wrap_data_key(
             &unlock_key,

@@ -44,7 +44,14 @@ describe("account lock commands", () => {
       ["opaque_login_finish", { handle: "h2", response: "resp" }],
       [
         "account_unlock_after_login",
-        { handle: "h2", principal: "rimp1_a", sealedShare: "sealed", rewraps: ["r1"], keep: true },
+        {
+          handle: "h2",
+          principal: "rimp1_a",
+          sealedShare: "sealed",
+          rewraps: ["r1"],
+          keep: true,
+          startEmpty: false,
+        },
       ],
       [
         "account_unlock_after_signup",

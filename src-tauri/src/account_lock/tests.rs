@@ -195,7 +195,7 @@ fn a_signup_then_a_login_open_the_same_data_key() {
 
     let (handle, sealed) = server.login(&device, "first password").unwrap();
     let unlocked = device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
         .unwrap();
     assert!(!unlocked.started_empty);
     assert_eq!(*unlocked.web_store_key, *signed_up.web_store_key);
@@ -224,7 +224,7 @@ fn a_handle_serves_once_in_its_own_stage_and_expires() {
     let (device, _) = device();
     let handle = server.register(&device, "password");
     assert!(matches!(
-        device.unlock_after_login(&handle, PRINCIPAL, "AAAA", &[], false),
+        device.unlock_after_login(&handle, PRINCIPAL, "AAAA", &[], false, false),
         Err(AccountLockError::NoHandle)
     ));
     assert!(matches!(
@@ -258,7 +258,7 @@ fn a_share_sealed_under_another_key_does_not_unlock() {
     let (handle, _) = server.login(&device, "password").unwrap();
     let forged = rim_opaque::seal(&[1; 32], &[], &server.share).unwrap();
     assert!(matches!(
-        device.unlock_after_login(&handle, PRINCIPAL, &b64(&forged), &[], false),
+        device.unlock_after_login(&handle, PRINCIPAL, &b64(&forged), &[], false, false),
         Err(AccountLockError::Crypto(_))
     ));
 }
@@ -272,14 +272,14 @@ fn a_login_without_wraps_starts_empty() {
     let (device, store) = device();
     let (handle, sealed) = server.login(&device, "password").unwrap();
     let unlocked = device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
         .unwrap();
     assert!(unlocked.started_empty);
     assert!(store.wraps().recovery_wrap.is_none());
 
     let (handle, sealed) = server.login(&device, "password").unwrap();
     let again = device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
         .unwrap();
     assert!(!again.started_empty);
     assert_eq!(*again.web_store_key, *unlocked.web_store_key);
@@ -306,7 +306,7 @@ fn rewraps_open_a_wrap_from_before_two_password_changes() {
 
     let (handle, sealed) = server.login(&device, "password three").unwrap();
     let unlocked = device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &rewraps, false)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &rewraps, false, false)
         .unwrap();
     assert!(!unlocked.started_empty);
     assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
@@ -320,7 +320,7 @@ fn rewraps_open_a_wrap_from_before_two_password_changes() {
     let (handle, sealed) = server.login(&device, "password three").unwrap();
     assert!(
         !device
-            .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false)
+            .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
             .unwrap()
             .started_empty
     );
@@ -346,12 +346,12 @@ fn a_kept_account_opens_without_the_server_until_the_keep_is_forgotten() {
 
     let (handle, sealed) = server.login(&device, "password").unwrap();
     device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], true)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], true, false)
         .unwrap();
     assert!(device.unlock_kept(PRINCIPAL).unwrap().is_some());
     let (handle, sealed) = server.login(&device, "password").unwrap();
     device
-        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false)
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
         .unwrap();
     assert!(
         device.unlock_kept(PRINCIPAL).unwrap().is_none(),
@@ -405,9 +405,81 @@ fn the_recovery_phrase_opens_the_recovery_wrap() {
 }
 
 #[test]
+fn after_a_reset_elsewhere_the_recovery_phrase_keeps_the_devices_data() {
+    let mut server = Server::new();
+    let (device, store) = device();
+    signup(&mut server, &device, "old password", false);
+    let data_key = device.data_key(PRINCIPAL).unwrap();
+    device.lock_account(PRINCIPAL);
+    let (other_device, _) = self::device();
+    server.register(&other_device, "new password");
+
+    let (handle, sealed) = server.login(&device, "new password").unwrap();
+    assert!(matches!(
+        device.unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false),
+        Err(AccountLockError::NeedsRecovery)
+    ));
+    assert!(device.data_key(PRINCIPAL).is_none(), "nothing is unlocked");
+    assert!(store.wraps().recovery_wrap.is_some(), "nothing is replaced");
+
+    device
+        .unlock_with_recovery(PRINCIPAL, &b64(&ENTROPY))
+        .unwrap()
+        .unwrap();
+    let unlocked = device
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
+        .unwrap();
+    assert!(!unlocked.started_empty);
+    assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
+    assert!(
+        store.wraps().recovery_wrap.is_some(),
+        "the recovery wrap stays"
+    );
+
+    device.lock_account(PRINCIPAL);
+    let (handle, sealed) = server.login(&device, "new password").unwrap();
+    let again = device
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
+        .unwrap();
+    assert!(!again.started_empty, "the new password's wrap opens now");
+    assert_eq!(*device.data_key(PRINCIPAL).unwrap(), *data_key);
+}
+
+#[test]
+fn after_a_reset_elsewhere_starting_empty_replaces_the_wraps() {
+    let mut server = Server::new();
+    let (device, store) = device();
+    signup(&mut server, &device, "old password", false);
+    let old_key = device.data_key(PRINCIPAL).unwrap();
+    device.lock_account(PRINCIPAL);
+    let (other_device, _) = self::device();
+    server.register(&other_device, "new password");
+
+    let (handle, sealed) = server.login(&device, "new password").unwrap();
+    assert!(matches!(
+        device.unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false),
+        Err(AccountLockError::NeedsRecovery)
+    ));
+    let unlocked = device
+        .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, true)
+        .unwrap();
+    assert!(unlocked.started_empty);
+    assert_ne!(*device.data_key(PRINCIPAL).unwrap(), *old_key);
+    assert!(store.wraps().recovery_wrap.is_none());
+    assert!(matches!(
+        device.unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, true),
+        Err(AccountLockError::NoHandle)
+    ));
+}
+
+#[test]
 fn errors_serialize_as_kind_and_message() {
     assert_eq!(
         serde_json::to_value(AccountLockError::WrongPassword).unwrap(),
         serde_json::json!({ "kind": "WRONG_PASSWORD", "message": "the password is wrong" })
+    );
+    assert_eq!(
+        serde_json::to_value(AccountLockError::NeedsRecovery).unwrap()["kind"],
+        "NEEDS_RECOVERY"
     );
 }
