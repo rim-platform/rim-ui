@@ -26,7 +26,7 @@ vi.mock("../../features/plugins/api/usePluginList", () => ({
   usePluginList: () => pluginList,
 }));
 vi.mock("../../features/auth/api/useAuthMutations", () => ({
-  useLogoutMutation: () => ({ isPending: false, mutate: vi.fn() }),
+  logout: vi.fn(),
 }));
 vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: () => null,
@@ -96,6 +96,19 @@ describe("SideRail — keyboard", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(avatar).toHaveFocus();
+  });
+
+  it("asks whether to keep the account before signing out", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SideRail />);
+    await user.click(screen.getByRole("button", { name: "User menu" }));
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Sign out" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sign out and remove from this device" }),
+    ).toBeInTheDocument();
   });
 });
 

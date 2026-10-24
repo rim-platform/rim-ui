@@ -1,12 +1,9 @@
 import { useState } from "react";
 
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
-import { useLogoutMutation } from "../../auth/api/useAuthMutations";
+import { SignOutDialog } from "../../auth/components/SignOutDialog";
 import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
-import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useShellStore } from "../../../shell/state/useShellStore";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
-import { Dialog } from "../../../shared/ui/Dialog";
 import { AccountDeletionSection } from "../../account-deletion/components/AccountDeletionSection";
 
 interface AccountSettingsProps {
@@ -20,23 +17,7 @@ export function AccountSettings({
   onNavigateToWorkspace,
 }: AccountSettingsProps) {
   const { data: user, isPending: userLoading } = useCurrentUser();
-  const logoutMutation = useLogoutMutation();
-  const clearSession = useAuthStore((s) => s.clearSession);
-  const resetShell = useShellStore((s) => s.reset);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
-
-  async function handleLogout() {
-    setShowSignOutDialog(false);
-    setLoggingOut(true);
-    try {
-      await logoutMutation.mutateAsync();
-    } catch {
-      // Logout may fail if the session is already expired — still clear local state
-    }
-    clearSession();
-    resetShell();
-  }
 
   if (userLoading) {
     return <p className="text-sm text-rim-text-muted">Loading account...</p>;
@@ -124,10 +105,9 @@ export function AccountSettings({
         <button
           type="button"
           onClick={() => setShowSignOutDialog(true)}
-          disabled={loggingOut}
-          className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-4 py-2 text-sm font-medium text-rim-danger transition hover:bg-rim-danger/20 disabled:opacity-50"
+          className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-4 py-2 text-sm font-medium text-rim-danger transition hover:bg-rim-danger/20"
         >
-          {loggingOut ? "Signing out..." : "Sign out"}
+          Sign out...
         </button>
       </section>
 
@@ -141,25 +121,7 @@ export function AccountSettings({
         </>
       )}
 
-      <Dialog open={showSignOutDialog} onClose={() => setShowSignOutDialog(false)} title="Sign out">
-        <p className="text-sm text-rim-text-muted mb-4">Are you sure you want to sign out?</p>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setShowSignOutDialog(false)}
-            className="rounded-lg border border-rim-line px-4 py-2 text-sm text-rim-text transition hover:bg-white/5"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-4 py-2 text-sm font-medium text-rim-danger transition hover:bg-rim-danger/20"
-          >
-            Sign out
-          </button>
-        </div>
-      </Dialog>
+      <SignOutDialog open={showSignOutDialog} onClose={() => setShowSignOutDialog(false)} />
     </div>
   );
 }

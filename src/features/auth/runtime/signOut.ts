@@ -1,5 +1,5 @@
 /**
- * Leaving the signed-in state on this client: after a sign-out from the user menu, a session the
+ * Leaving the signed-in state on this client: after a sign-out the person chose, a session the
  * server refused, or a WebSocket the server closed because the session ended.
  */
 
@@ -10,7 +10,9 @@ import { onWsSessionEnded } from "../../../core/graphql/wsClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { logout } from "../api/useAuthMutations";
 import { useAuthStore } from "../state/useAuthStore";
+import { removeAccountData, signedInAccount } from "./removeAccountData";
 
 /** What sign-in says after the server ended the session. */
 export const SESSION_ENDED_MESSAGE = "Your session ended. Sign in again.";
@@ -33,6 +35,28 @@ export function signOutLocally(
   useWorkspaceStore.getState().clearWorkspaceId();
   useShellStore.getState().reset();
   queryClient.clear();
+}
+
+/**
+ * The person signs out: the session ends on the server, then {@link signOutLocally}. A logout
+ * the server refuses or never hears still signs out here. Without `remove` the account stays on
+ * this device, its keys and cached data ready for the next sign-in; with it, everything the
+ * account left here is deleted once signed out ({@link removeAccountData}).
+ *
+ * @param queryClient - The app's query cache, emptied on the way out.
+ */
+export async function signOut(
+  queryClient: QueryClient,
+  { remove = false }: { remove?: boolean } = {},
+): Promise<void> {
+  const account = remove ? signedInAccount() : null;
+  try {
+    await logout();
+  } catch {
+    // An expired session or an unreachable server: signed out here all the same.
+  }
+  signOutLocally(queryClient);
+  if (account) await removeAccountData(account);
 }
 
 /** While mounted, a WebSocket the server closed because the session ended signs out. */

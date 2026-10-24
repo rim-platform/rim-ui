@@ -1,12 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Inbox, LogOut, Search, Settings, Sparkles } from "lucide-react";
 
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
-import { useLogoutMutation } from "../../features/auth/api/useAuthMutations";
-import { signOutLocally } from "../../features/auth/runtime/signOut";
+import { SignOutDialog } from "../../features/auth/components/SignOutDialog";
 import { runningPluginPanels } from "../../features/plugins/pluginPanels";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
@@ -153,8 +151,7 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [statusPosition, setStatusPosition] = useState<{ x: number; y: number } | null>(null);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
-  const logout = useLogoutMutation();
-  const queryClient = useQueryClient();
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   function handleAvatarClick(e: React.MouseEvent) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -165,13 +162,8 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
   }
 
   function handleSignOut() {
-    if (logout.isPending) return;
     setMenuPosition(null);
-    logout.mutate(undefined, {
-      onSuccess: () => signOutLocally(queryClient),
-      // Still clear local state — user wanted to log out
-      onError: () => signOutLocally(queryClient),
-    });
+    setSignOutOpen(true);
   }
 
   function handleSettings() {
@@ -216,7 +208,7 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
             },
             {
               id: "signout",
-              label: logout.isPending ? "Signing out..." : "Sign out",
+              label: "Sign out...",
               icon: <LogOut className="h-4 w-4" />,
               danger: true,
               onSelect: handleSignOut,
@@ -228,6 +220,8 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
       {statusPosition && (
         <StatusDropdown position={statusPosition} onClose={() => setStatusPosition(null)} />
       )}
+
+      <SignOutDialog open={signOutOpen} onClose={() => setSignOutOpen(false)} />
     </div>
   );
 }

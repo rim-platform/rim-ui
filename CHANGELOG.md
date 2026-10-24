@@ -23,6 +23,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ### Added
 
+- **Sign out** in the user menu and in Settings → Account now asks what to do with the account
+  on this device: **Sign out** keeps it, with its keys, cached messages and settings ready for
+  the next sign-in, and **Sign out and remove from this device** deletes its keys, its encrypted
+  messages and message cache, its relay state and its web plugins' data from this device, with
+  every unsent draft kept here.
+
 - A workspace's Owner can turn on one permanent public link in Settings → Workspace → **Public
   link**, after a warning: join directly or ask to join, as a Member or a Guest, with the link to
   copy, joins of the last 24 hours and 7 days, and **Issue a new link** to end the old one. Off
