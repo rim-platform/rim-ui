@@ -12,12 +12,18 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: vi.fn() }));
 vi.mock("../api/useAuthMutations", () => ({ logout: vi.fn() }));
 
+import { lockVault, unlockVault } from "../../../core/accountVault/accountVault";
+import {
+  flushSealedStorage,
+  readSealedItem,
+  writeSealedItem,
+} from "../../../core/accountVault/sealedStorage";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { toast } from "../../../shared/toast";
 import { createTestQueryClient } from "../../../test/utils";
 import { committed, database, done } from "../../e2ee/web/db";
-import { insert, records } from "../../key-identity/browser/keyStore";
+import { insert, records, storedEndpoint } from "../../key-identity/browser/keyStore";
 import { deferKeySetup, keySetupDeferred } from "../../key-identity/state/keySetupOffer";
 import { useDraftStore } from "../../messages/state/useDraftStore";
 import { sha256Hex, writeBundle } from "../../plugins/web/bundle";
@@ -60,8 +66,17 @@ async function deviceKey(): Promise<CryptoKey> {
   return pair.privateKey;
 }
 
+/** Unlock `a` in this browser, as its sign-in does; each account has its own data key. */
+async function unlock(a: Account): Promise<void> {
+  await unlockVault(
+    { endpoint: storedEndpoint(ENDPOINT), principalId: a.principalId },
+    new Uint8Array(32).fill(a === ALICE ? 1 : 2),
+  );
+}
+
 /** Leave something of `a` in every store this app keeps per account. */
 async function seed(a: Account): Promise<void> {
+  // Written before the account's first unlock, as a link or signup writes it.
   await insert({
     v: 1,
     endpoint: ENDPOINT,
@@ -73,6 +88,7 @@ async function seed(a: Account): Promise<void> {
     userId: a.userId,
     username: a.userId,
   });
+  await unlock(a);
 
   const db = await database();
   const tx = db.transaction(["mls", "accounts", "pins"], "readwrite");
@@ -108,15 +124,19 @@ async function seed(a: Account): Promise<void> {
   await plugins.storageSet(PLUGIN, "note", "hello");
   await plugins.settingsSave(PLUGIN, { folder: a.userId });
 
-  localStorage.setItem(`rim:remote-join-requests:${relayKey(a)}`, "[]");
+  writeSealedItem(`rim:remote-join-requests:${relayKey(a)}`, "[]");
   useRemovalNotices
     .getState()
     .add(removalAccountKey(a.userId), { workspaceId: "ws", cause: "kick" });
+  useDraftStore.getState().setDraft("c1", "half a thought");
   deferKeySetup(a.userId);
+  await flushSealedStorage();
+  lockVault();
 }
 
-/** Which stores still hold something of `a`. */
+/** Which stores still hold something of `a`, read with the account unlocked. */
 async function held(a: Account) {
+  await unlock(a);
   const db = await database();
   const tx = db.transaction(["mls", "accounts", "pins"], "readonly");
   const e2ee = await Promise.all(
@@ -143,8 +163,9 @@ async function held(a: Account) {
     plugin: installed,
     pluginStorage: installed && (await plugins.storageGet(PLUGIN, "note")) === "hello",
     pluginSettings: installed && (await plugins.settingsGet(PLUGIN)).values.folder === a.userId,
-    joinRequests: localStorage.getItem(`rim:remote-join-requests:${relayKey(a)}`) !== null,
+    joinRequests: readSealedItem(`rim:remote-join-requests:${relayKey(a)}`) !== null,
     removalNotices: removalAccountKey(a.userId) in useRemovalNotices.getState().accounts,
+    drafts: useDraftStore.getState().drafts.c1 === "half a thought",
     keySetupLater: keySetupDeferred(a.userId),
   };
 }
@@ -160,17 +181,17 @@ const ALL_HELD = {
   pluginSettings: true,
   joinRequests: true,
   removalNotices: true,
+  drafts: true,
   keySetupLater: true,
 };
 const NONE_HELD = Object.fromEntries(Object.keys(ALL_HELD).map((k) => [k, false]));
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
+  lockVault();
   localStorage.clear();
   tauri.desktop = false;
   vi.spyOn(webPluginHost, "settingsChanged").mockImplementation(() => undefined);
-  useRemovalNotices.setState({ accounts: {} });
-  useDraftStore.setState({ drafts: { c1: "half a thought" } });
   useAuthStore.setState({ session: { userId: ALICE.userId }, sessionEnded: false });
   useRelayStore.getState().reset();
 });
@@ -186,16 +207,16 @@ describe("removeAccountData", () => {
     await seed(ALICE);
     await seed(BOB);
     expect(await held(ALICE)).toEqual(ALL_HELD);
+    lockVault();
 
     await removeAccountData({ endpoint: ENDPOINT, userId: ALICE.userId, relay: null });
 
     expect(await held(ALICE)).toEqual(NONE_HELD);
     expect(await held(BOB)).toEqual(ALL_HELD);
-    expect(useDraftStore.getState().drafts).toEqual({});
-    expect(localStorage.getItem("rim-drafts")).toBeNull();
   });
 
   it("removes the relay's principal for the account even without a key in this browser", async () => {
+    await unlock(ALICE);
     await putRecord("spaces", {
       account: relayKey(ALICE),
       spaceId: "s",
@@ -258,26 +279,29 @@ describe("removeAccountData", () => {
     expect(vi.mocked(safeInvoke).mock.calls.map(([command]) => command)).toContain(
       "offline_session_save",
     );
-    expect(useDraftStore.getState().drafts).toEqual({});
     expect(warning).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("signOut", () => {
-  it("keeps the account on this device unless asked to remove it", async () => {
+  it("keeps the account on this device, locked, unless asked to remove it", async () => {
     await seed(ALICE);
+    await unlock(ALICE);
+    expect(useDraftStore.getState().drafts).toEqual({ c1: "half a thought" });
     vi.mocked(logout).mockResolvedValue({ logout: true });
 
     await signOut(createTestQueryClient());
 
     expect(logout).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().session).toBeNull();
+    // Locked: what is sealed under the account leaves memory.
+    expect(useDraftStore.getState().drafts).toEqual({});
     expect(await held(ALICE)).toEqual(ALL_HELD);
-    expect(useDraftStore.getState().drafts).toEqual({ c1: "half a thought" });
   });
 
   it("removes the account once signed out, even when the server refuses the logout", async () => {
     await seed(ALICE);
+    await unlock(ALICE);
     vi.mocked(logout).mockRejectedValue(new Error("unauthenticated"));
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(["me"], { id: ALICE.userId });

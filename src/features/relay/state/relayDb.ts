@@ -11,13 +11,25 @@
  * - `meta`: per account, small values such as the last relay item applied.
  * - `delegations`: per account and workspace elsewhere, the delegation this device signed for
  *   the relay, and when it expires.
+ *
+ * Every store but `servers`, whose pins are public and the app's, is sealed under the signed-in
+ * account's data key (the account vault): a record's key fields stay plain and the rest is
+ * sealed. Records that do not open under the unlocked account read as absent, and reading or
+ * writing a sealed store while locked throws `VaultLockedError`.
  */
 
+import {
+  openRecord,
+  openRecords,
+  sealRecord,
+  type SealedStore,
+} from "../../../core/accountVault/sealedRecords";
+import { exclusive } from "../../key-identity/browser/persistence";
 import type { Statement } from "../../key-identity/browser/statements";
 import type { ServerRotationSigner } from "../crypto/serverStatements";
 
 const DB_NAME = "rim-relay";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export type RelayStore =
   "servers" | "spaces" | "requestSeq" | "streams" | "aliases" | "meta" | "delegations";
@@ -31,6 +43,24 @@ const KEY_PATHS: Record<RelayStore, string | string[]> = {
   meta: ["account", "name"],
   delegations: ["account", "workspaceId"],
 };
+
+/** Where each sealed store's records live; `null` for the plain `servers`. */
+function sealedStore(store: RelayStore): SealedStore | null {
+  if (store === "servers") return null;
+  const keyPath = KEY_PATHS[store];
+  return { db: DB_NAME, store, keyPath, plain: typeof keyPath === "string" ? [keyPath] : keyPath };
+}
+
+function toStored<T>(store: RelayStore, value: T): Promise<unknown> | T {
+  const where = sealedStore(store);
+  return where ? sealRecord(where, value as object) : value;
+}
+
+async function fromStored<T>(store: RelayStore, stored: unknown): Promise<T | null> {
+  if (stored === undefined || stored === null) return null;
+  const where = sealedStore(store);
+  return where ? openRecord<T>(where, stored) : (stored as T);
+}
 
 /** A server pinned on first use. */
 export interface ServerPin {
@@ -83,10 +113,13 @@ function database(): Promise<IDBDatabase> {
   if (opened?.factory === factory) return opened.db;
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       for (const [name, keyPath] of Object.entries(KEY_PATHS)) {
         if (!request.result.objectStoreNames.contains(name)) {
           request.result.createObjectStore(name, { keyPath });
+        } else if (event.oldVersion < 3 && name !== "servers") {
+          // Written unsealed: dropped rather than carried over.
+          request.transaction?.objectStore(name).clear();
         }
       }
     };
@@ -125,18 +158,22 @@ function committed(tx: IDBTransaction): Promise<void> {
 
 export async function getRecord<T>(store: RelayStore, key: IDBValidKey): Promise<T | null> {
   const tx = (await database()).transaction(store, "readonly");
-  return ((await done(tx.objectStore(store).get(key))) as T | undefined) ?? null;
+  return fromStored<T>(store, await done(tx.objectStore(store).get(key)));
 }
 
+/** Every record of `store` that opens under the unlocked account. */
 export async function allRecords<T>(store: RelayStore): Promise<T[]> {
   const tx = (await database()).transaction(store, "readonly");
-  return (await done(tx.objectStore(store).getAll())) as T[];
+  const stored = await done(tx.objectStore(store).getAll());
+  const where = sealedStore(store);
+  return where ? openRecords<T>(where, stored) : (stored as T[]);
 }
 
 export async function putRecord<T>(store: RelayStore, value: T): Promise<void> {
+  const stored = await toStored(store, value);
   const tx = (await database()).transaction(store, "readwrite");
   const finished = committed(tx);
-  tx.objectStore(store).put(value);
+  tx.objectStore(store).put(stored);
   await finished;
 }
 
@@ -180,20 +217,19 @@ export async function deleteAccountRecords(
 }
 
 /**
- * Read a record, change it and write it back in one transaction: `change` gets the stored
- * value (or `null`) and returns the one to write, or `null` to leave it.
+ * Read a record, change it and write it back, one change of the store at a time across this
+ * origin's tabs: `change` gets the stored value (or `null`) and returns the one to write, or
+ * `null` to leave it.
  */
-export async function updateRecord<T>(
+export function updateRecord<T>(
   store: RelayStore,
   key: IDBValidKey,
   change: (current: T | null) => T | null,
 ): Promise<T | null> {
-  const tx = (await database()).transaction(store, "readwrite");
-  const finished = committed(tx);
-  const objects = tx.objectStore(store);
-  const current = ((await done(objects.get(key))) as T | undefined) ?? null;
-  const next = change(current);
-  if (next !== null) objects.put(next);
-  await finished;
-  return next ?? current;
+  return exclusive(`rim-relay:${store}`, async () => {
+    const current = await getRecord<T>(store, key);
+    const next = change(current);
+    if (next !== null) await putRecord(store, next);
+    return next ?? current;
+  });
 }

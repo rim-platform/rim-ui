@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
 export type AgentStatus = "idle" | "streaming" | "done" | "error";
 
@@ -222,11 +224,14 @@ export const useAgentStore = create<AgentState>()(
       name: "rim-agent-store",
       partialize: (state) => ({
         // Only persist the most recent 5 conversations to avoid unbounded
-        // localStorage growth (up to 20 conversations x 100 messages each).
+        // storage growth (up to 20 conversations x 100 messages each).
         conversations: state.conversations.slice(0, 5),
         activeConversationId: state.activeConversationId,
         settings: state.settings,
       }),
+      storage: createJSONStorage(() => sealedStateStorage),
+      skipHydration: true,
     },
   ),
 );
+registerSealedStore(useAgentStore);

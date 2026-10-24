@@ -19,6 +19,7 @@ import type { DirectoryInput } from "../api/e2eeCommands";
 import { applyCommit, emptyState } from "./groupState";
 import type { MlsEngine } from "./mlsModule";
 import { webE2eeCommands as commands, closeStores } from "./webCommands";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const principals: TestPrincipal[] = [];
 const server = { current: new TestServer() };
@@ -89,6 +90,9 @@ function directory(devices: TestDevice[], members = devices): DirectoryInput {
     principals: devices.map((d) => d.principal.directory()),
   };
 }
+
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
 
 describe("the web backend against a misbehaving server", () => {
   it("finding 1: a conversation stays pinned as encrypted, through forget and the feed", async () => {

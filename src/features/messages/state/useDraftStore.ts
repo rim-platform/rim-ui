@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
 interface DraftState {
   drafts: Record<string, string>;
@@ -30,6 +32,11 @@ export const useDraftStore = create<DraftState>()(
           return { drafts: next };
         }),
     }),
-    { name: "rim-drafts" },
+    {
+      name: "rim-drafts",
+      storage: createJSONStorage(() => sealedStateStorage),
+      skipHydration: true,
+    },
   ),
 );
+registerSealedStore(useDraftStore);

@@ -3,9 +3,10 @@
  * recovery kit kept until the person confirms they saved it, and the work only the identity key
  * does (device certificates, revocations, profile cards, rotation), plus recovery with a kit.
  *
- * Keys are non-extractable WebCrypto Ed25519 keys. A draft holds a new identity's keys in this
- * page's memory until they are signed for the server; they are written to IndexedDB before the
- * request that uses them is sent, so an account the server takes never ends up without its keys.
+ * Keys are WebCrypto Ed25519 keys, sealed under the account's data key in the key store
+ * (`keyStore`). A draft holds a new identity's keys in this page's memory until they are signed
+ * for the server; they are written to IndexedDB before the request that uses them is sent, so an
+ * account the server takes never ends up without its keys.
  * The recovery key is derived from the kit's secret when it is needed and never stored; the
  * kit's 16 entropy bytes stay in the account's record only until the person confirms the kit.
  */
@@ -27,6 +28,7 @@ import {
   storedEndpoint,
   update,
   updatePrincipal,
+  signingKey,
   type BrowserKeyRecord,
   type StoredKey,
 } from "./keyStore";
@@ -80,9 +82,13 @@ interface Draft {
 
 const drafts = new Map<string, Draft>();
 
-/** A fresh non-extractable Ed25519 key and its tagged public key. */
+/**
+ * A fresh Ed25519 key and its tagged public key. It is extractable so that the key store can
+ * wrap it under the account's data key; once wrapped it is only ever unwrapped as
+ * non-extractable.
+ */
 async function generateKey(): Promise<StoredKey> {
-  const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, false, [
+  const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
     "sign",
     "verify",
   ])) as CryptoKeyPair;
@@ -403,7 +409,7 @@ export async function signRevocation(
   return serialized(async () => {
     const own = await holderRecord(principalId);
     if (own.deviceId === deviceId) {
-      return signRevoke(own.deviceKey, true, principalId, deviceId, now());
+      return signRevoke(signingKey(own), true, principalId, deviceId, now());
     }
     const { identity } = await heldIdentity(principalId, head);
     return signRevoke(identity, false, principalId, deviceId, now());

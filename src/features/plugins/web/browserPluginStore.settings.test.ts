@@ -10,6 +10,8 @@ import { sha256Hex, writeBundle } from "./bundle";
 import * as storeModule from "./browserPluginStore";
 import { BrowserPluginStore } from "./browserPluginStore";
 import { webPluginHost } from "./webPluginHost";
+import { lockVault, VaultLockedError } from "../../../core/accountVault/accountVault";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const encoder = new TextEncoder();
 const PLUGIN = "dev.example.pods";
@@ -62,6 +64,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
 
 describe("browser plugin settings", () => {
   it("lists the schema and keeps saved values per account, merged with defaults", async () => {
@@ -225,5 +230,33 @@ describe("browser plugin settings", () => {
     expect(await store.mappings()).toEqual([{ from: "rimp0_old", to: "rimk1_new" }]);
     await store.settingsSave(PLUGIN, { context: "c" });
     expect((await store.settingsGet(PLUGIN)).values).toEqual({ context: "c" });
+  });
+
+  it("keeps installs, storage and settings sealed, and the bundle plain", async () => {
+    const store = await installed("rimp0_a");
+    await store.settingsSave(PLUGIN, { context: "secret-context" });
+    await store.storageSet(PLUGIN, "note", "secret-note");
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("rim-plugins");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const all = (name: string) =>
+      new Promise<Record<string, unknown>[]>((resolve) => {
+        const request = db.transaction(name).objectStore(name).getAll();
+        request.onsuccess = () => resolve(request.result as Record<string, unknown>[]);
+      });
+    const [install] = await all("installs");
+    expect(Object.keys(install).sort()).toEqual(["account", "bundleSha256", "data", "pluginId"]);
+    const sealed = JSON.stringify([install, ...(await all("settings")), ...(await all("storage"))]);
+    expect(sealed).not.toContain("secret-");
+    expect(sealed).not.toContain("Lists pods");
+    expect(await all("bundles")).toHaveLength(1);
+    db.close();
+
+    lockVault();
+    await expect(store.list()).rejects.toBeInstanceOf(VaultLockedError);
+    await unlockTestVault();
+    expect(await store.storageGet(PLUGIN, "note")).toBe("secret-note");
   });
 });

@@ -6,6 +6,8 @@
 
 import { isTauri } from "@tauri-apps/api/core";
 
+import { deleteWraps } from "../../../core/accountVault/dkWraps";
+import { deleteSealedAccount } from "../../../core/accountVault/sealedStorage";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
@@ -15,7 +17,6 @@ import { keyBackend } from "../../key-identity/api/keyBackend";
 import { storedEndpoint } from "../../key-identity/browser/keyStore";
 import { forgetKeySetupDeferral } from "../../key-identity/state/keySetupOffer";
 import { removeCachedAccount } from "../../messages/api/messageCache";
-import { useDraftStore } from "../../messages/state/useDraftStore";
 import { saveSessionRecord } from "../../offline/api/offlineSession";
 import { browserPluginStore } from "../../plugins/web/browserPluginStore";
 import { provisionalPrincipalId } from "../../plugins/web/principal";
@@ -69,7 +70,7 @@ async function principalsOf(account: DeviceAccount): Promise<Map<string, string 
 /**
  * Delete everything `account` left on this device. Every part is attempted even when another
  * fails; a failure is logged and, once all are done, told to the person in one warning.
- * Drafts go entirely, since they are not kept per account.
+ * Drafts, removal notices and the account's other small values go with its sealed values.
  *
  * @param account - The account, as {@link signedInAccount} read it before signing out.
  */
@@ -83,8 +84,13 @@ export async function removeAccountData(account: DeviceAccount): Promise<void> {
     const relayAccount = `${relayEndpoint}|${principalId}`;
     parts.push(["keys", () => keyBackend().forget(principalId)]);
     if (!desktop) {
+      parts.push(["data key", () => deleteWraps(endpoint, principalId)]);
       parts.push(["encrypted store", () => deleteAccount(storedEndpoint(endpoint), principalId)]);
     }
+    parts.push([
+      "account values",
+      () => deleteSealedAccount(storedEndpoint(endpoint), principalId),
+    ]);
     parts.push(["relay state", () => deleteAccountRecords(relayAccount, deviceId)]);
     parts.push(["pending join requests", () => forgetPendingRemoteJoins(relayAccount)]);
   }
@@ -102,13 +108,6 @@ export async function removeAccountData(account: DeviceAccount): Promise<void> {
     () => useRemovalNotices.getState().forget(removalAccountKey(userId)),
   ]);
   parts.push(["key setup choice", () => forgetKeySetupDeferral(userId)]);
-  parts.push([
-    "drafts",
-    () => {
-      useDraftStore.setState({ drafts: {} });
-      return useDraftStore.persist.clearStorage();
-    },
-  ]);
 
   let failed = false;
   for (const [what, remove] of parts) {

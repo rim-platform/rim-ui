@@ -7,6 +7,8 @@ import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useSessionHydration } from "../../features/auth/api/useSessionHydration";
 import { useSessionEndedSignOut } from "../../features/auth/runtime/signOut";
 import { RestoringSessionSplash } from "../../features/auth/components/RestoringSession";
+import { UnlockScreen } from "../../features/auth/components/UnlockScreen";
+import { useUnlockGate } from "../../features/auth/runtime/unlockGate";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { usePendingPublicLinkReturn } from "../../features/auth/hooks/usePendingPublicLinkReturn";
 import { useWorkspaceEvents } from "../../core/events/useWorkspaceEvents";
@@ -87,24 +89,18 @@ const MAIN_PANEL_PROPS = {
   onFocus: () => useShellStore.getState().setFocusedSurface("mainSurface"),
 } as const;
 
+/**
+ * The signed-in app: the session is restored first, then the account's data must be unlocked on
+ * this device before anything that reads it runs.
+ */
 export function AppShell() {
   const session = useAuthStore((s) => s.session);
   const { isHydrating } = useSessionHydration();
-  useOfflineReconnect();
   useSessionEndedSignOut();
-  useResumeDeviceLinks();
-  useRelayRuntime();
-  useDirectSpaceRuntime();
-  useUnreadEventHandler();
-  usePluginPrincipalSync();
-  usePluginChatRelay();
-  useWebPluginRuntime();
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const gate = useUnlockGate(isHydrating ? null : (session?.userId ?? null));
   const { capabilities } = useRuntime();
   const navigate = useNavigate();
   const location = useLocation();
-  // Where the app lands after sign-in or signup: back to a public link left for it.
-  usePendingPublicLinkReturn(!isHydrating && session !== null);
 
   useEffect(() => {
     if (!isHydrating && !session) {
@@ -115,7 +111,7 @@ export function AppShell() {
     }
   }, [isHydrating, session, navigate, location.pathname, location.search]);
 
-  if (isHydrating) {
+  if (isHydrating || (session && gate === "opening")) {
     return (
       <div className="flex h-screen flex-col bg-rim-void text-rim-text">
         {capabilities.customTitleBar && <TitleBar />}
@@ -130,6 +126,36 @@ export function AppShell() {
     // Redirect is in-flight via useEffect; render nothing to avoid flash.
     return null;
   }
+
+  if (gate === "locked") {
+    return (
+      <div className="flex h-screen flex-col bg-rim-void text-rim-text">
+        {capabilities.customTitleBar && <TitleBar />}
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <UnlockScreen />
+        </div>
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  return <UnlockedShell />;
+}
+
+/** The app once the account is unlocked: the runtimes that read its data, and the workspace. */
+function UnlockedShell() {
+  useOfflineReconnect();
+  useResumeDeviceLinks();
+  useRelayRuntime();
+  useDirectSpaceRuntime();
+  useUnreadEventHandler();
+  usePluginPrincipalSync();
+  usePluginChatRelay();
+  useWebPluginRuntime();
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const { capabilities } = useRuntime();
+  // Where the app lands after sign-in or signup: back to a public link left for it.
+  usePendingPublicLinkReturn(true);
 
   if (!workspaceId) {
     return (

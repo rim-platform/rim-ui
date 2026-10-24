@@ -1,10 +1,10 @@
 /**
- * The web app's key backend: keys are non-extractable WebCrypto Ed25519 keys kept in IndexedDB.
- * The browser signs in with its device key, becomes a new device through a pasted link code,
- * and can hold the identity: create one for enrollment or key-only signup, keep its recovery kit
- * until the person confirms it, link other devices, revoke them, rotate, publish the profile
- * card, and recover an account with its kit (`identityKeys`, `oldDeviceLink`). It never signs
- * plugin manifests and keeps no identity key backup.
+ * The web app's key backend: keys are WebCrypto Ed25519 keys kept in IndexedDB, sealed under
+ * the account's data key (`keyStore`). The browser signs in with its device key, becomes a new
+ * device through a pasted link code, and can hold the identity: create one for enrollment or
+ * key-only signup, keep its recovery kit until the person confirms it, link other devices, revoke
+ * them, rotate, publish the profile card, and recover an account with its kit (`identityKeys`,
+ * `oldDeviceLink`). It never signs plugin manifests and keeps no identity key backup.
  *
  * A link in progress as the new device lives only in this page's memory (the link secret and
  * the new device key), so a reload abandons it; nothing is stored until the answer's
@@ -55,6 +55,7 @@ import {
   record,
   records,
   removeWhere,
+  signingKey,
   storedEndpoint,
   update,
   type BrowserKeyRecord,
@@ -141,7 +142,7 @@ export const browserKeyBackend: KeyBackend = {
   async signLogin(endpoint, principalId, challenge: KeyChallenge) {
     const found = await record(endpoint, principalId);
     if (!found) throw new Error("this browser has no keys for that account");
-    return signLogin(found.deviceKey, {
+    return signLogin(signingKey(found), {
       challengeId: challenge.challengeId,
       nonce: challenge.nonce,
       audience: audience(endpoint),
@@ -223,7 +224,8 @@ export const browserKeyBackend: KeyBackend = {
     if (named !== here && (!knownAs || named !== storedEndpoint(absoluteEndpoint(knownAs)))) {
       throw new Error(`this code is for another server (${code.endpoint}); this app uses ${here}`);
     }
-    const deviceKey = (await crypto.subtle.generateKey({ name: "Ed25519" }, false, [
+    // Extractable so that the key store can seal it at the account's first unlock.
+    const deviceKey = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
       "sign",
       "verify",
     ])) as CryptoKeyPair;

@@ -15,6 +15,7 @@ import { resetPinCache } from "../state/serverPins";
 import { useRelayStore } from "../state/useRelayStore";
 import { RelayFailure, remoteFetch, replayHighestSeq, sendGraphql } from "./remoteFetch";
 import { seqAfter } from "./requestSeq";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const HOST = vectors.host.serverId;
 const DEVICE = vectors.device;
@@ -116,6 +117,9 @@ afterEach(() => {
   setSpaceRouter(null);
   useRelayStore.getState().reset();
 });
+
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
 
 describe("remoteFetch", () => {
   it("sends a device-signed request and returns the host-verified answer", async () => {

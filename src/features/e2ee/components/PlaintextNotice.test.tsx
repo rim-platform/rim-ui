@@ -10,6 +10,8 @@ vi.mock("../../conversations/api/useConversation", () => ({
   useConversation: () => ({ data: conversation.current }),
 }));
 
+import { writeSealedItem } from "../../../core/accountVault/sealedStorage";
+import { unlockTestVault } from "../../../test/accountVault";
 import { renderWithProviders } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
@@ -50,9 +52,10 @@ function openDm({
 }
 
 describe("PlaintextNotice", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     conversationId = `dm-${++seq}`;
-    localStorage.clear();
+    // Dismissals are kept sealed with the account's other values.
+    await unlockTestVault();
     useAuthStore.setState({ session: { userId: "me" } });
   });
 
@@ -85,13 +88,13 @@ describe("PlaintextNotice", () => {
   });
 
   it("stays closed for a conversation dismissed in an earlier session", () => {
-    localStorage.setItem("rim.e2ee.plaintextNoticeSeen", JSON.stringify([`me/${conversationId}`]));
+    writeSealedItem("rim.e2ee.plaintextNoticeSeen", JSON.stringify([`me/${conversationId}`]));
     openDm();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows again for another account on this device", () => {
-    localStorage.setItem(
+    writeSealedItem(
       "rim.e2ee.plaintextNoticeSeen",
       JSON.stringify([`someone-else/${conversationId}`]),
     );

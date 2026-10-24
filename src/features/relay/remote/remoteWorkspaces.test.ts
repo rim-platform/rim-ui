@@ -45,6 +45,7 @@ vi.mock("../state/spaces", async (importOriginal) => ({
 import { useRelayStore } from "../state/useRelayStore";
 import { listPendingRemoteJoins } from "./pendingRemoteJoins";
 import { joinAsMember, joinWithPublicLink, previewPublicLink } from "./remoteWorkspaces";
+import { unlockTestVault } from "../../../test/accountVault";
 
 const LINK = "https://host.example/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
 const TOKEN = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
@@ -91,6 +92,9 @@ afterEach(() => {
   useRelayStore.getState().reset();
   localStorage.clear();
 });
+
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
 
 describe("a public link of another server", () => {
   it("is looked up by pinning the server at its origin and asking for a challenge", async () => {

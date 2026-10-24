@@ -19,6 +19,9 @@ vi.mock("../../../core/graphql/client", () => ({
 
 import { E2eeCommandError, e2eeCommands } from "../api/e2eeCommands";
 import { webE2eeCommands as commands, closeStores } from "./webCommands";
+import { lockVault } from "../../../core/accountVault/accountVault";
+import { unlockTestVault } from "../../../test/accountVault";
+import { database, done } from "./db";
 
 function operation(doc: unknown): string {
   return /(?:query|mutation)\s+(\w+)/.exec(String(doc))?.[1] ?? "";
@@ -49,8 +52,8 @@ beforeEach(() => {
   });
 });
 
-/** Make the write of the first record in `state` fail, as a full disk would. */
-function failWriteOf(state: string) {
+/** Make the next write of a message row fail, as a full disk would. */
+function failNextRowWrite() {
   const original = IDBObjectStore.prototype.put;
   let failed = false;
   return vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
@@ -58,7 +61,7 @@ function failWriteOf(state: string) {
     value: unknown,
     key?: IDBValidKey,
   ) {
-    if (!failed && (value as { e2eeState?: string }).e2eeState === state) {
+    if (!failed && this.name === "messages") {
       failed = true;
       throw new DOMException("the disk is full", "QuotaExceededError");
     }
@@ -97,6 +100,9 @@ async function send(s: TestServer, from: TestDevice, body: string) {
   return out.messageId;
 }
 
+// The stores these tests use are sealed under the unlocked account.
+beforeEach(() => unlockTestVault());
+
 describe("the web backend against a simulated server", () => {
   it("decrypts a message once into its plaintext row", async () => {
     const { s, alice, bob } = await aliceAndBob();
@@ -114,6 +120,26 @@ describe("the web backend against a simulated server", () => {
     // The same entry again is skipped; the key it used is gone either way.
     expect((await bob.sync(s))[0]?.decrypted ?? []).toEqual([]);
     expect((await bob.timeline()).map((m) => m.text)).toEqual(["hi bob"]);
+  });
+
+  it("keeps every record sealed, and reads nothing while the account is locked", async () => {
+    const { s, alice, bob } = await aliceAndBob();
+    const id = await send(s, alice, "sealed for bob");
+    await bob.sync(s);
+
+    const db = await database();
+    const names = [...db.objectStoreNames];
+    const tx = db.transaction(names, "readonly");
+    const stored = await Promise.all(names.map((name) => done(tx.objectStore(name).getAll())));
+    const text = JSON.stringify(stored);
+    expect(text).not.toContain("sealed for bob");
+    // The index fields stay plain, so the timeline still finds the row by conversation and time.
+    expect(text).toContain(id);
+    expect((await bob.timeline()).map((m) => m.text)).toEqual(["sealed for bob"]);
+
+    lockVault();
+    closeStores();
+    await expect(bob.timeline()).rejects.toThrow();
   });
 
   it("keeps the sender's plaintext and takes the server's fields when its message comes back", async () => {
@@ -182,7 +208,7 @@ describe("the web backend against a simulated server", () => {
   it("rolls the engine back when the write fails, so the message decrypts on the next sync", async () => {
     const { s, alice, bob } = await aliceAndBob();
     const id = await send(s, alice, "decrypt me once");
-    const put = failWriteOf("decrypted");
+    const put = failNextRowWrite();
     await expect(bob.sync(s)).rejects.toMatchObject({ code: "CACHE_STORAGE" });
     put.mockRestore();
     expect(await bob.row(id)).toBeNull();
@@ -193,7 +219,7 @@ describe("the web backend against a simulated server", () => {
 
   it("sends nothing and keeps nothing when the plaintext cannot be stored", async () => {
     const { s, alice, bob } = await aliceAndBob();
-    const put = failWriteOf("outgoing");
+    const put = failNextRowWrite();
     await expect(alice.encrypt("not stored")).rejects.toBeInstanceOf(E2eeCommandError);
     put.mockRestore();
     expect(await alice.timeline()).toEqual([]);

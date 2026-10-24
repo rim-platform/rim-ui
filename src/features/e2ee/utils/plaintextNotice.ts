@@ -1,8 +1,10 @@
 /**
  * Which unencrypted conversations already showed their "not encrypted" dialog on this device,
- * per account. Kept in localStorage (the newest 1000), and in memory for when storage is
- * unavailable, so the dialog still shows once per session there.
+ * per account. Kept sealed with the account's other values (the newest 1000), and in memory for
+ * this session too, so the dialog still shows once per session where nothing is kept.
  */
+
+import { readSealedItem, writeSealedItem } from "../../../core/accountVault/sealedStorage";
 
 const STORAGE_KEY = "rim.e2ee.plaintextNoticeSeen";
 const KEEP = 1000;
@@ -15,7 +17,7 @@ function noticeKey(userId: string, conversationId: string): string {
 
 function readSeen(): string[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed: unknown = JSON.parse(readSealedItem(STORAGE_KEY) ?? "[]");
     return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : [];
   } catch {
     return [];
@@ -33,9 +35,5 @@ export function rememberPlaintextNotice(userId: string, conversationId: string):
   const key = noticeKey(userId, conversationId);
   seenThisSession.add(key);
   const known = readSeen().filter((k) => k !== key);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...known, key].slice(-KEEP)));
-  } catch {
-    // Storage unavailable: remembered for this session only.
-  }
+  writeSealedItem(STORAGE_KEY, JSON.stringify([...known, key].slice(-KEEP)));
 }
