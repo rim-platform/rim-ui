@@ -1,0 +1,36 @@
+[package]
+name = "rim_opaque"
+version = "0.1.0"
+description = "The client side of RIM's account password: OPAQUE (RFC 9807) and the keys it unlocks"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The suite must stay byte for byte the one rim-server's `rim_auth` runs: the same version, the
+# same features, the same KSF parameters. `tests/vectors/opaque-v1.json` is shared with it.
+opaque-ke = { version = "4.0.1", default-features = false, features = ["ristretto255", "argon2"] }
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+generic-array = "0.14"
+sha2 = "0.10"
+hkdf = "0.12"
+aes-gcm = "0.10"
+# opaque-ke takes rand 0.8's RNG traits; `OsRng` reads getrandom 0.2.
+rand_core = { version = "0.6", features = ["getrandom"] }
+thiserror = "2"
+zeroize = { version = "1", features = ["derive"] }
+
+# The browser build: randomness comes from WebCrypto.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+# The seeded RNG the shared test vector is generated with.
+rand_chacha = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+# The test suite in a headless browser, through `wasm-bindgen-test-runner`.
+wasm-bindgen-test = "0.3"

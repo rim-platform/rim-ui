@@ -185,6 +185,22 @@ impl MessageCacheState {
         *key = Some(loaded.clone());
         loaded.map_err(CacheError::Key)
     }
+
+    /// Closes the account's database: the next call opens it again. An operation still running
+    /// on it keeps its connection until it ends.
+    pub(crate) fn close(&self, account: &AccountId) {
+        let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
+        stores.remove(&account.file_name());
+    }
+
+    /// Wipes the key read from the secret vault, so the next database open reads it again. A
+    /// failure to read it stays remembered: it holds no secret.
+    pub(crate) fn forget_key(&self) {
+        let mut key = self.key.lock().unwrap_or_else(|e| e.into_inner());
+        if matches!(key.as_ref(), Some(Ok(_))) {
+            *key = None;
+        }
+    }
 }
 
 /// The cache lives in `<app data>/message-cache/`, its key in the secret vault.

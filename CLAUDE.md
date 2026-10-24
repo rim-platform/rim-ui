@@ -18,16 +18,17 @@ npm install                  # Install dependencies
 npm run dev                  # Vite dev server (port 1420)
 npm run build                # TypeScript check + Vite build (primary frontend validation)
 npm run codegen              # Generate GraphQL types from schema.graphql (see below)
-npm run build:wasm           # Rebuild the web app's MLS module (docs/e2ee-web.md); commit the result
-#   Required after ANY change under src-tauri/crates/rim_mls or rim_mls_wasm, test files included:
-#   src/features/e2ee/wasm/source.json hashes the crate sources and wasmArtifact.test.ts fails
-#   until the module is rebuilt and committed, so such a change also needs the web gates (npm test).
-npm run test:wasm            # rim_mls and its wasm facade in headless Chromium (needs chromedriver)
+npm run build:wasm           # Rebuild the web app's MLS and OPAQUE modules (docs/e2ee-web.md); commit the result
+#   Required after ANY change under src-tauri/crates/rim_mls, rim_mls_wasm, rim_opaque or
+#   rim_opaque_wasm (Cargo.toml or src/): each module's source.json hashes its crates' sources and
+#   wasmArtifact.test.ts fails until the module is rebuilt and committed, so such a change also
+#   needs the web gates (npm test).
+npm run test:wasm            # rim_mls, rim_opaque and their wasm facades in headless Chromium (needs chromedriver)
 npm run skew:check -- <ref>  # Operations a server built from <ref> would refuse (docs/version-skew.md)
 npm run tauri dev            # Full Tauri dev (starts Vite automatically)
 npm run tauri build          # Production desktop build
 
-# Rust (from src-tauri/): the app and the MLS crates under crates/
+# Rust (from src-tauri/): the app and the MLS and OPAQUE crates under crates/
 cargo check --workspace
 cargo test --workspace                  # Primary Rust validation
 cargo fmt --all --check                 # Formatting check

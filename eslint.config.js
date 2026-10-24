@@ -20,6 +20,7 @@ export default tseslint.config(
       "sdk/plugin-sdk/src/generated/**",
       // wasm-bindgen's output (`npm run build:wasm`).
       "src/features/e2ee/wasm/**",
+      "src/features/auth/opaque/wasm/**",
       "*.config.js",
     ],
   },

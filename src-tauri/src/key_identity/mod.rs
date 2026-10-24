@@ -367,6 +367,19 @@ impl KeyIdentityState {
             .ok_or(KeyIdentityError::NoKeys)
     }
 
+    /// The servers and user ids `principal_id` signs in to on this device, as far as the index
+    /// knows them (a link without a user id yet is left out).
+    pub(crate) fn signed_in_users(&self, principal_id: &str) -> Result<Vec<(String, String)>> {
+        let _guard = self.guard()?;
+        Ok(self
+            .keys()
+            .links()?
+            .into_iter()
+            .filter(|link| link.principal_id == principal_id)
+            .filter_map(|link| Some((link.endpoint, link.user_id?)))
+            .collect())
+    }
+
     /// Accounts on `endpoint` this device can sign in to.
     pub(crate) fn accounts(&self, endpoint: &str) -> Result<Vec<LocalAccount>> {
         let _guard = self.guard()?;

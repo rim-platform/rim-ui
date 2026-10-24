@@ -33,6 +33,7 @@ them.
 - `e2ee-desktop.md`: encrypted DMs and groups on the desktop.
 - `e2ee-web.md`: encrypted DMs and groups in the web app.
 - `rim-mls.md`: the `rim_mls` crate, the MLS engine both builds use.
+- `account-password.md`: the OPAQUE password check and the desktop's account lock, client side.
 - `relay-client.md`: reaching DMs, groups and workspaces on other servers through the relay.
 
 ## Storage on the device

@@ -33,7 +33,9 @@ npm run build:wasm
 `build:wasm` runs `cargo build -p rim_mls_wasm --target wasm32-unknown-unknown --profile wasm`
 (from `src-tauri/`, whose `.cargo/config.toml` selects getrandom's WebCrypto backend for that
 target), then `wasm-bindgen --target web` into `src/features/e2ee/wasm/`, and writes
-`source.json`. The `wasm` profile inherits `release` with `opt-level = "s"`, LTO and one codegen
+`source.json`. It builds the account password's module (`account-password.md`) the same way,
+in a cargo run of its own so the two modules never share features; `scripts/wasm-sources.mjs`
+lists both. The `wasm` profile inherits `release` with `opt-level = "s"`, LTO and one codegen
 unit; the desktop's `release` is unchanged. No `wasm-opt` pass (binaryen is not needed).
 
 | | Bytes |
@@ -46,7 +48,7 @@ unit; the desktop's `release` is unchanged. No `wasm-opt` pass (binaryen is not 
 **The build is committed**, because `npm run build` must work without a Rust toolchain: CI's
 build job and the Docker image build the web app with Node only, and Vitest loads the module.
 `src/features/e2ee/web/wasmArtifact.test.ts` fails when `rim_mls` or `rim_mls_wasm` changed
-since the committed build (it hashes their `Cargo.toml` and `src/`): run `npm run build:wasm`
+since the committed build (and likewise for the password module's two crates) (it hashes their `Cargo.toml` and `src/`): run `npm run build:wasm`
 and commit the result. `rim_mls` runs in the browser with `openmls`'s `js` feature (the clock
 through `web-time`), getrandom 0.2's `js` and 0.3's `wasm_js` features, and its `sqlite` feature
 off; libcrux runs its portable (non-SIMD) code.
@@ -61,8 +63,8 @@ tampering) and the facade's tests run in headless Chromium through `wasm-bindgen
 
 ```sh
 npm run test:wasm
-# = cd src-tauri && cargo test -p rim_mls -p rim_mls_wasm --no-default-features \
-#     --target wasm32-unknown-unknown
+# = cd src-tauri && cargo test -p rim_mls -p rim_mls_wasm -p rim_opaque -p rim_opaque_wasm \
+#     --no-default-features --target wasm32-unknown-unknown
 ```
 
 The target's runner is `wasm-bindgen-test-runner` (from wasm-bindgen-cli); it starts

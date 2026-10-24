@@ -110,6 +110,9 @@ const EXCLUDED_PATHS = [
   "src/features/e2ee/wasm/rim_mls_wasm.js",
   "src/features/e2ee/wasm/rim_mls_wasm.d.ts",
   "src/features/e2ee/wasm/rim_mls_wasm_bg.wasm.d.ts",
+  "src/features/auth/opaque/wasm/rim_opaque_wasm.js",
+  "src/features/auth/opaque/wasm/rim_opaque_wasm.d.ts",
+  "src/features/auth/opaque/wasm/rim_opaque_wasm_bg.wasm.d.ts",
   "src-tauri/gen",
 ];
 

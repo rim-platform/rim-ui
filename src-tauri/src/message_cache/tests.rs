@@ -1353,3 +1353,56 @@ fn mls_group_state_lives_in_the_cache_and_follows_its_transactions() {
         Some(statement)
     );
 }
+
+/// A key source that counts its reads.
+struct CountingKey(Arc<Mutex<usize>>);
+
+impl KeySource for CountingKey {
+    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
+        *self.0.lock().unwrap() += 1;
+        Ok(CacheKey::from_bytes([3; 32]))
+    }
+}
+
+#[test]
+fn closing_an_account_reopens_it_and_a_forgotten_key_is_read_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let reads = Arc::new(Mutex::new(0));
+    let state = MessageCacheState::new(
+        dir.path().to_path_buf(),
+        Box::new(CountingKey(reads.clone())),
+    );
+    let alice = account("alice");
+    let bob = account("bob");
+
+    let first = state.store(&alice).unwrap();
+    let bobs = state.store(&bob).unwrap();
+    assert!(Arc::ptr_eq(&first, &state.store(&alice).unwrap()));
+    assert_eq!(*reads.lock().unwrap(), 1);
+
+    state.close(&alice);
+    state.forget_key();
+    assert!(state.key.lock().unwrap().is_none());
+    let reopened = state.store(&alice).unwrap();
+    assert!(!Arc::ptr_eq(&first, &reopened));
+    assert!(Arc::ptr_eq(&bobs, &state.store(&bob).unwrap()));
+    assert_eq!(*reads.lock().unwrap(), 2);
+}
+
+/// A key source that always fails.
+struct NoKey;
+
+impl KeySource for NoKey {
+    fn load_or_create(&self) -> Result<CacheKey, CacheError> {
+        Err(CacheError::Key("locked".into()))
+    }
+}
+
+#[test]
+fn a_forgotten_key_keeps_a_remembered_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = MessageCacheState::new(dir.path().to_path_buf(), Box::new(NoKey));
+    assert!(state.store(&account("alice")).is_err());
+    state.forget_key();
+    assert!(matches!(state.key.lock().unwrap().as_ref(), Some(Err(_))));
+}

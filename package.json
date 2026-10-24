@@ -22,7 +22,7 @@
     "build:wasm": "node scripts/build-wasm.mjs",
     "codegen": "graphql-codegen --config codegen.mjs",
     "test": "vitest run",
-    "test:wasm": "cd src-tauri && cargo test -p rim_mls -p rim_mls_wasm --no-default-features --target wasm32-unknown-unknown",
+    "test:wasm": "cd src-tauri && cargo test -p rim_mls -p rim_mls_wasm -p rim_opaque -p rim_opaque_wasm --no-default-features --target wasm32-unknown-unknown",
     "test:watch": "vitest",
     "preview": "vite preview",
     "tauri": "tauri",
