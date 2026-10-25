@@ -8,7 +8,7 @@ import type { ConversationTypeEnum } from "../../../core/graphql/generated/schem
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { findCachedConversation } from "../../conversations/api/useConversation";
 import { memberName } from "../../workspaces/api/memberName";
-import { ENCRYPTED_MESSAGE_TEXT, storedText } from "../api/storedText";
+import { ENCRYPTED_MESSAGE_TEXT, storedTextSoon } from "../api/storedText";
 import {
   authorDisplayName,
   notificationConversationLabel,
@@ -154,9 +154,10 @@ export async function resolveNotificationContent(
     (message?.authorId ? resolveName(message.authorId) : "Someone");
 
   let text = message?.text ?? "";
-  // The server holds no text for an encrypted message: this device's store may.
+  // The server holds no text for an encrypted message: this device's store does once the sync
+  // that the same message's event started has decrypted it.
   if (message?.encryption && !message.text) {
-    text = (await storedText(message.id)) ?? ENCRYPTED_MESSAGE_TEXT;
+    text = (await storedTextSoon(message.id)) ?? ENCRYPTED_MESSAGE_TEXT;
   }
 
   return {

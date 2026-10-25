@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 
+import { BUS_EVENTS, type MessagesDecryptedEvent } from "../../../core/events/busEvents";
+import { eventBus } from "../../../core/events/eventBus";
 import { queryKeys } from "../../../core/query/keys";
 import type { WorkspaceEvent } from "../../../core/events/types";
 import type { MessagesPage } from "../../../core/types/messages";
@@ -75,6 +77,15 @@ function notificationDue(overrides: Partial<Record<string, unknown>> = {}): Work
     quiet: false,
     ...overrides,
   } as WorkspaceEvent;
+}
+
+/** The cache sync's announcement that these messages were decrypted into the store. */
+function decrypted(messageIds: string[]) {
+  eventBus.emit<MessagesDecryptedEvent>(BUS_EVENTS.MESSAGES_DECRYPTED, {
+    workspaceId: "ws-1",
+    conversationId: "c-general",
+    messageIds,
+  });
 }
 
 function emit(event: WorkspaceEvent) {
@@ -285,12 +296,55 @@ describe("NotificationDue rendering", () => {
       ),
     );
 
+    // m-10 is never stored decrypted: once the sync that carried it is done, the notification
+    // says it is encrypted.
     emit(notificationDue({ notification_id: "n-2", message_id: "m-10" }));
+    await waitFor(() =>
+      expect(readCachedMessageMock).toHaveBeenCalledWith(expect.anything(), "m-10"),
+    );
+    decrypted(["m-10"]);
     await waitFor(() =>
       expect(sendNotification).toHaveBeenCalledWith(
         expect.objectContaining({ body: "bob: Encrypted message" }),
       ),
     );
+  });
+
+  it("waits for an encrypted message that arrives before it is decrypted here", async () => {
+    storeAccountMock.mockReturnValue({ endpoint: "http://localhost:8080/api", userId: "me" });
+    readCachedMessageMock.mockResolvedValue(null);
+    requestMock.mockImplementation((document: string) =>
+      String(document).includes("NotificationDueContext")
+        ? Promise.resolve({
+            message: {
+              id: "m-9",
+              authorId: "u-bob",
+              author: { id: "u-bob", username: "bob", displayName: null },
+              text: null,
+              encryption: { sentAtUs: "1792957000000000" },
+            },
+          })
+        : new Promise(() => {}),
+    );
+    setup();
+    emit(notificationDue({ message_id: "m-9" }));
+    await waitFor(() =>
+      expect(readCachedMessageMock).toHaveBeenCalledWith(expect.anything(), "m-9"),
+    );
+    expect(sendNotification).not.toHaveBeenCalled();
+
+    readCachedMessageMock.mockResolvedValue({
+      id: "m-9",
+      text: "whatsup buddy",
+      e2ee: { status: "decrypted" },
+    });
+    decrypted(["m-9"]);
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "bob: whatsup buddy" }),
+      ),
+    );
+    expect(sendNotification).toHaveBeenCalledTimes(1);
   });
 
   it("hides an encrypted message's text when this device asks to, but not a plaintext one's", async () => {
