@@ -221,7 +221,7 @@ export function PasswordSignInForm({
       {recovery.prompt ?? (
         <>
           <PasswordInput
-            label="Password"
+            label="Password or PIN"
             value={password}
             onChange={setPassword}
             disabled={busy}

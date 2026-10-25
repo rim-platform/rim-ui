@@ -357,7 +357,7 @@ describe("AppShell — the unlock gate", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByRole("heading", { name: "This account is locked" })).toBeInTheDocument();
-    expect(await screen.findByLabelText(/^password$/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/^password or pin$/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unlock" })).toBeInTheDocument();
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
     expect(useWorkspaceEventsMock).not.toHaveBeenCalled();

@@ -73,7 +73,7 @@ export function RelaySwitchPanel({
   const done = state !== null && state.step >= SWITCH_STEPS.length;
   const passwordFields = (
     <div className="space-y-2">
-      <PasswordInput label="Your password" value={password} onChange={setPassword} />
+      <PasswordInput label="Your password or PIN" value={password} onChange={setPassword} />
       <p className="text-xs text-rim-text-faint">
         The new relay checks it, or sets it for the account it opens there.
       </p>

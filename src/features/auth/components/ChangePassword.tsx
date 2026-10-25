@@ -71,7 +71,7 @@ export function ChangePassword({ principalId }: { principalId: string }) {
       {open ? (
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <PasswordInput
-            label="Current password"
+            label="Current password or PIN"
             value={current}
             onChange={setCurrent}
             disabled={busy}

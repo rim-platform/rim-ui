@@ -336,7 +336,7 @@ function RecoverAccountForm({
             disabled={reset}
             onChange={() => setPath("known")}
           />
-          I know my password
+          I know my password or PIN
         </label>
         <label className="flex items-center gap-2">
           <input
@@ -349,7 +349,12 @@ function RecoverAccountForm({
         </label>
       </div>
       {path === "known" ? (
-        <PasswordInput label="Password" value={password} onChange={setPassword} disabled={busy} />
+        <PasswordInput
+          label="Password or PIN"
+          value={password}
+          onChange={setPassword}
+          disabled={busy}
+        />
       ) : (
         <NewPasswordFields
           label="New password"

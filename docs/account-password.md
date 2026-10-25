@@ -207,6 +207,12 @@ a new device link.
 
 ## The password at sign-in, signup and after
 
+The password is a PIN (at least 6 digits) or a passphrase (at least 12 characters). Only choosing
+one tells them apart (`NewPasswordFields`), to apply its rule; nothing records which kind an
+account has, and OPAQUE treats both as the same string. So every field that asks for an existing
+password (`PasswordInput`: sign-in and unlock, the recovery kit's "I know my password or PIN",
+changing the password, switching relays) is labelled "Password or PIN" and takes either.
+
 `signInWithPassword(principalId, {password, keep}, options)` checks the password before the
 device key signs, so the keys sealed under the data key are open when it does:
 
