@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "../../../test/utils";
+import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useRelayStore } from "../state/useRelayStore";
 
@@ -23,7 +25,10 @@ vi.mock("../crypto/relayCrypto", () => ({ relayCrypto: () => crypto }));
 vi.mock("../runtime/relayRuntime", () => ({ relayProcessor: () => processor }));
 vi.mock("../../conversations/api/useChannelMembership", () => membership);
 vi.mock("../../e2ee/runtime/session", () => ({ e2eeSession: async () => null }));
-vi.mock("../../e2ee/runtime/groups", () => ({ processWelcomes: vi.fn() }));
+const groups = vi.hoisted(() => ({ processWelcomes: vi.fn() }));
+vi.mock("../../e2ee/runtime/groups", () => groups);
+const cacheSync = vi.hoisted(() => ({ requestCacheSync: vi.fn() }));
+vi.mock("../../messages/runtime/messageCacheSync", () => cacheSync);
 
 import { DmRequestBar } from "./DmRequestBar";
 
@@ -72,6 +77,34 @@ describe("DmRequestBar", () => {
     expect(screen.getByText(/they see nothing from you/)).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Read first" })).not.toBeInTheDocument();
+  });
+
+  it("catches up on what the sender wrote while it waited, once accepted", async () => {
+    const user = userEvent.setup();
+    cacheSync.requestCacheSync.mockReset();
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() =>
+      expect(cacheSync.requestCacheSync).toHaveBeenCalledWith("home-direct", ["conv-1"]),
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: queryKeys.messages("home-direct", "conv-1"),
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: queryKeys.cachedTimeline("home-direct", "conv-1"),
+    });
+    invalidate.mockRestore();
+  });
+
+  it("syncs nothing when accepting fails", async () => {
+    const user = userEvent.setup();
+    cacheSync.requestCacheSync.mockReset();
+    api.acceptDmRequest.mockRejectedValue(new Error("offline"));
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(api.acceptDmRequest).toHaveBeenCalled());
+    expect(cacheSync.requestCacheSync).not.toHaveBeenCalled();
   });
 
   it("accepts and keeps the conversation open", async () => {

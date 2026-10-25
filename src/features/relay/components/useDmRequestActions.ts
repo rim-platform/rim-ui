@@ -117,6 +117,24 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
     }
   }
 
+  /**
+   * Catch up on an accepted conversation: while the request was pending its events never reached
+   * this account, so nothing synced what the sender wrote meanwhile.
+   */
+  async function catchUpAccepted() {
+    const spaceId = request.heldItems[0]?.workspaceId;
+    if (!spaceId) return;
+    const session = await e2eeSession();
+    if (session) await processWelcomes(session).catch(() => []);
+    requestCacheSync(spaceId, [request.conversationId]);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.messages(spaceId, request.conversationId) }),
+      qc.invalidateQueries({
+        queryKey: queryKeys.cachedTimeline(spaceId, request.conversationId),
+      }),
+    ]);
+  }
+
   async function readFirst() {
     const spaceId = await bindRequestSpace(request);
     if (!spaceId) {
@@ -144,7 +162,9 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
     name,
     senderUnverified: sender.isError,
     busy,
-    accept: () => act(() => acceptDmRequest(request.id), "Could not accept"),
+    accept: async () => {
+      if (await act(() => acceptDmRequest(request.id), "Could not accept")) await catchUpAccepted();
+    },
     readFirst,
     ignore: async () => {
       if (await act(() => ignoreDmRequest(request.id), "Could not ignore")) closeView();
