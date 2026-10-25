@@ -55,7 +55,7 @@ const SIGNED_IN = { userId: "u-alice", startedEmpty: false };
 /** Opens alice's password prompt and signs in with `password`. */
 async function signInAsAlice(password = PASSWORD) {
   await userEvent.click(await screen.findByRole("button", { name: /sign in as alice/i }));
-  await userEvent.type(screen.getByLabelText(/^password$/i), password);
+  await userEvent.type(screen.getByLabelText(/^password or pin$/i), password);
   await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 }
 
@@ -110,7 +110,7 @@ describe("DeviceKeySignIn", () => {
     // Nothing opens with one click: the prompt asks for the password first.
     expect(api.signInWithPassword).not.toHaveBeenCalled();
     expect(screen.getByRole("checkbox", { name: /keep me signed in/i })).not.toBeChecked();
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("checkbox", { name: /keep me signed in/i }));
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 
@@ -129,7 +129,7 @@ describe("DeviceKeySignIn", () => {
     await signInAsAlice();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Wrong password");
-    expect(screen.getByLabelText(/^password$/i)).toHaveValue("");
+    expect(screen.getByLabelText(/^password or pin$/i)).toHaveValue("");
     // The server knows these keys' account: they stay.
     expect(api.forgetKeysTheServerNeverSaw).toHaveBeenCalledWith(alice);
   });
@@ -264,7 +264,7 @@ describe("DeviceKeySignIn", () => {
     wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
 
     await userEvent.click(await screen.findByRole("button", { name: /sign in as ada/i }));
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     expect(api.forgetKeysTheServerNeverSaw).toHaveBeenCalledWith(unfinished);
@@ -328,7 +328,7 @@ describe("RecoverAccount", () => {
     await openWithKit();
     expect(screen.getByLabelText(/^account id/i)).toHaveValue(ACCOUNT);
     expect(screen.getByRole("radio", { name: /i know my password/i })).toBeChecked();
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
 
     expect(api.recoverDeviceKeys).toHaveBeenCalledWith(KIT, ACCOUNT, "Laptop");
@@ -392,11 +392,11 @@ describe("RecoverAccount", () => {
     wrap(<RecoverAccount onSuccess={onSuccess} />);
 
     await openWithKit();
-    await userEvent.type(screen.getByLabelText(/^password$/i), "wrong password");
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), "wrong password");
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/Wrong password/);
 
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
     expect(api.recoverDeviceKeys).toHaveBeenCalledTimes(1);
@@ -419,7 +419,7 @@ describe("RecoverAccount", () => {
     const submit = screen.getByRole("button", { name: /^recover account$/i });
     expect(submit).toBeDisabled();
     await userEvent.type(screen.getByLabelText(/^account id/i), "rimp1_x");
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await waitFor(() => expect(submit).toBeEnabled());
   });
 
@@ -431,7 +431,7 @@ describe("RecoverAccount", () => {
     await userEvent.click(screen.getByRole("button", { name: /recover an account/i }));
     await userEvent.type(screen.getByLabelText(/recovery kit/i), "RK1-AAAA");
     await userEvent.type(screen.getByLabelText(/^account id/i), "rimp1_x");
-    await userEvent.type(screen.getByLabelText(/^password$/i), PASSWORD);
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await waitFor(() =>
       expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
     );

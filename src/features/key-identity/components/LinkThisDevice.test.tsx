@@ -91,7 +91,7 @@ describe("LinkThisDevice", () => {
     // The other device answered: the account's password signs this device in.
     answer();
     expect(await screen.findByText(/enter the account's password/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/^password$/i), "correct horse battery");
+    await userEvent.type(screen.getByLabelText(/^password or pin$/i), "correct horse battery");
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     expect(keys.signInWithPassword).toHaveBeenCalledWith(

@@ -17,7 +17,10 @@ const labelClass = "block text-xs font-medium uppercase tracking-wider text-rim-
 export const PASSWORD_EXPLANATION =
   "You'll enter this every time you sign in. If you forget it, your recovery phrase resets it.";
 
-/** One password field: the account's current password, typed once. */
+/**
+ * One password field: the account's current password, typed once. It takes a PIN or a passphrase
+ * alike, so its label names both.
+ */
 export function PasswordInput({
   label,
   value,
