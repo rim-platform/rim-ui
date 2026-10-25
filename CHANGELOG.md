@@ -21,6 +21,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-10-25
+
 ### Added
 
 - Every account has a password: a PIN of at least 6 digits or a passphrase of at least 12
@@ -580,4 +582,5 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/commits/master
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/rim-platform/rim-ui/releases/tag/v0.0.1
