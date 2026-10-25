@@ -9,7 +9,12 @@ import { useConversation } from "../../features/conversations/api/useConversatio
 import { useDmRequestPending } from "../../features/conversations/api/useDmRequestPending";
 import { ChannelIcon } from "../../features/conversations/components/ChannelIcon";
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
-import { directPeerId, isInvited, pendingMembersOf } from "../../features/conversations/utils";
+import {
+  directPeerId,
+  isInvited,
+  pendingMembersOf,
+  untitledGroupName,
+} from "../../features/conversations/utils";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useTopicEditStore } from "../../features/conversations/state/useTopicEditStore";
 import { useShellStore, type DirectDraft } from "../state/useShellStore";
@@ -69,8 +74,20 @@ function SelectedConversationHeader() {
   const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
   const toggleMembers = useMembersPanelStore((s) => s.toggle);
 
-  // For DMs, show the other user's name instead of "Untitled"
+  // A DM shows the other person's name, a group without a title its members' names.
   let displayTitle = conversation?.title ?? undefined;
+  if (
+    conversation &&
+    !displayTitle &&
+    conversation.conversationType === ConversationTypeEnum.GROUP
+  ) {
+    displayTitle =
+      untitledGroupName(
+        conversation,
+        currentUserId,
+        (id) => memberLookup.resolve(id).displayName,
+      ) ?? undefined;
+  }
   let dmOtherUserId: string | undefined;
   if (conversation && conversation.conversationType === ConversationTypeEnum.DIRECT) {
     dmOtherUserId = directPeerId(conversation, currentUserId);

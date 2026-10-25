@@ -17,7 +17,7 @@ import { useDraftStore } from "../../messages/state/useDraftStore";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import type { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import type { ConversationSummary } from "../types";
-import { directPeerId, isInvited } from "../utils";
+import { directPeerId, isInvited, untitledGroupName } from "../utils";
 import { ChannelIcon } from "./ChannelIcon";
 
 /** One row of the side rail's conversation list: a channel, or a DM shown as its other member. */
@@ -54,13 +54,18 @@ export const ConversationItem = memo(function ConversationItem({
   const dimmed = isMuted || conv.effectiveNotificationLevel === NotificationLevel.NONE;
   const emphasizeUnread = unreadCount > 0 && !active && !dimmed;
 
-  // For DMs, show the other user's name instead of "Untitled"
+  // A DM shows the other person's name, a group without a title its members' names.
   let displayTitle = conv.title;
   let otherMemberId: string | undefined;
   let otherMemberAvatarUrl: string | null | undefined;
   let otherMemberStatusText: string | null | undefined;
   if (conv.conversationType === ConversationTypeEnum.DIRECT) {
     otherMemberId = directPeerId(conv, currentUserId);
+  }
+  if (!displayTitle && conv.conversationType === ConversationTypeEnum.GROUP) {
+    displayTitle =
+      untitledGroupName(conv, currentUserId, (id) => memberLookup.resolve(id).displayName) ??
+      undefined;
   }
   if (otherMemberId) {
     const otherMember = memberLookup.resolve(otherMemberId);
