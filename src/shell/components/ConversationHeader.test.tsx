@@ -32,6 +32,7 @@ import { ConversationHeader } from "./ConversationHeader";
 import {
   emptyInbox,
   makeConversation,
+  workspaceMembers,
 } from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../features/conversations/types";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
@@ -177,6 +178,43 @@ describe("ConversationHeader — unencrypted conversation", () => {
     expect(
       screen.getByRole("dialog", { name: "This conversation is not encrypted" }),
     ).toHaveTextContent("Bob has not set up encryption on a desktop device yet.");
+  });
+});
+
+describe("ConversationHeader — group without a title", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: null });
+  });
+
+  it("is named after its other members instead of Untitled", async () => {
+    const group = makeConversation({
+      title: null,
+      conversationType: ConversationTypeEnum.GROUP,
+      memberIds: ["me", "u-bob", "u-alice"],
+      memberCount: 3,
+    });
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
+      if (document.includes("query ServerMembers"))
+        return Promise.resolve({ serverMembers: workspaceMembers });
+      if (document.includes("query InboxConversations")) return Promise.resolve(emptyInbox);
+      return new Promise(() => {});
+    });
+    renderHeader();
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Alice and Bob" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Untitled")).not.toBeInTheDocument();
   });
 });
 

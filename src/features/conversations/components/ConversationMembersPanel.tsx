@@ -28,6 +28,7 @@ import {
   conversationLabel,
   leaveNeedsConfirmation,
   pendingMembersOf,
+  untitledGroupName,
 } from "../utils";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { MemberPicker } from "./MemberPicker";
@@ -50,6 +51,8 @@ export function ConversationMembersPanel({
   onClose,
 }: ConversationMembersPanelProps) {
   const { data: conversation, isPending, isError } = useConversation(workspaceId, conversationId);
+  const currentUserId = useAuthStore((st) => st.session?.userId);
+  const memberLookup = useMemberLookup(workspaceId);
   // Invited members wait for a device set up for encryption and are not counted as members.
   const invitedCount = conversation ? pendingMembersOf(conversation).length : 0;
 
@@ -60,7 +63,14 @@ export function ConversationMembersPanel({
           Members
           {conversation && (
             <span className="ml-1 text-rim-text-faint">
-              {conversationLabel(conversation)} &middot; {conversation.memberCount}
+              {conversation.conversationType === ConversationTypeEnum.GROUP && !conversation.title
+                ? (untitledGroupName(
+                    conversation,
+                    currentUserId,
+                    (id) => memberLookup.resolve(id).displayName,
+                  ) ?? conversationLabel(conversation))
+                : conversationLabel(conversation)}{" "}
+              &middot; {conversation.memberCount}
               {invitedCount > 0 && ` \u00b7 ${invitedCount} invited`}
             </span>
           )}

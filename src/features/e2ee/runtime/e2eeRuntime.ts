@@ -23,6 +23,7 @@ import {
   useNotificationSettingsStore,
 } from "../../notifications/state/useNotificationSettingsStore";
 import { fetchCommits, fetchConversationGroup } from "../api/e2eeApi";
+import { untitledGroupName } from "../../conversations/utils";
 import { useE2eeStore } from "../state/useE2eeStore";
 import { matchingKeyword, mentionedPrincipals } from "../utils/content";
 import { isWebAccount } from "../web/webAccount";
@@ -117,6 +118,8 @@ async function notifyKeywords(session: E2eeSession, workspaceId: string, note: M
     conversationType?: string;
     effectiveNotificationLevel?: string | null;
     title?: string | null;
+    memberIds?: string[];
+    pendingMemberIds?: string[];
   }>(queryKeys.conversation(workspaceId, note.conversationId));
   // Direct messages, mentions and `ALL` are notified by the server already.
   if (conversation?.conversationType !== "GROUP") return;
@@ -127,13 +130,24 @@ async function notifyKeywords(session: E2eeSession, workspaceId: string, note: M
     staleTime: 60_000,
   });
   const members = await workspaceMembers(workspaceId);
+  const nameOf = (userId: string) => {
+    const member = members.find((m) => m.userId === userId);
+    return member?.displayName || member?.username || "Someone";
+  };
+  const groupName =
+    conversation.title ||
+    untitledGroupName(
+      { memberIds: conversation.memberIds ?? [], pendingMemberIds: conversation.pendingMemberIds },
+      session.userId,
+      nameOf,
+    ) ||
+    "Group";
   for (const message of fresh) {
     if (mentionedPrincipals(message.body).includes(session.principalId)) continue;
     if (!matchingKeyword(message.body, settings.keywords)) continue;
-    const author = members.find((m) => m.userId === message.authorId);
     const content = {
-      channelName: conversation.title ?? "Group",
-      authorName: author?.displayName || author?.username || "Someone",
+      channelName: groupName,
+      authorName: nameOf(message.authorId),
       messageText: message.body,
       encrypted: true,
     };

@@ -118,6 +118,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Reactions, pins and threads show in encrypted conversations, on the desktop and in the
   browser: a reaction no longer disappears after you add it or after a reload, and a message
   that starts a thread shows its thread.
+- Groups without a title are named after their other members ("Alice and Bob", "Alice, Bob,
+  Carol and 2 others") in the sidebar, the header, the members panel, Forward and notifications,
+  instead of "Untitled".
 - **Read first** on a message request from someone on the same server opens the conversation
   instead of saying it could not be verified.
 - Notifications of encrypted messages show the message's text, in the notification list and in

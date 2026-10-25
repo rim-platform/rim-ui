@@ -18,7 +18,7 @@ import { sendEncrypted } from "../../e2ee/runtime/send";
 import { toUserMentions } from "../../e2ee/utils/content";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import type { ConversationSummary } from "../../conversations/types";
-import { directPeerId, isInvited } from "../../conversations/utils";
+import { directPeerId, isInvited, untitledGroupName } from "../../conversations/utils";
 
 interface ForwardDialogProps {
   open: boolean;
@@ -206,6 +206,14 @@ export function ForwardDialog({
     const otherId = directPeerId(conv, currentUserId);
     if (conv.conversationType === "DIRECT" && !conv.title && otherId) {
       return memberLookup.resolve(otherId).displayName;
+    }
+    if (conv.conversationType === "GROUP" && !conv.title) {
+      const name = untitledGroupName(
+        conv,
+        currentUserId,
+        (id) => memberLookup.resolve(id).displayName,
+      );
+      if (name) return name;
     }
     return conv.title || "Untitled";
   }

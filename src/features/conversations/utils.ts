@@ -1,4 +1,5 @@
 import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
+import { joinNames } from "../e2ee/utils/names";
 import type { ConversationSummary } from "./types";
 
 type LabelledConversation = Pick<ConversationSummary, "conversationType" | "title">;
@@ -9,6 +10,36 @@ export function conversationLabel(conversation: LabelledConversation): string {
     return `#${conversation.title ?? "channel"}`;
   }
   return conversation.title || "this conversation";
+}
+
+/** How many people an untitled group's name lists before counting the rest. */
+const GROUP_NAMES_SHOWN = 3;
+
+/**
+ * The name of a group without a title, from the names of everyone in it but the viewer: members,
+ * then those invited. Sorted, so every list names a group alike.
+ *
+ * @param resolveName - A person's name as the viewer sees it.
+ * @returns "Ana", "Ana and Bo", "Ana, Bo and Cy", or "Ana, Bo, Cy and 2 others" past three;
+ * `null` when nobody else is in the group.
+ */
+export function untitledGroupName(
+  conversation: Pick<ConversationSummary, "memberIds"> &
+    Partial<Pick<ConversationSummary, "pendingMemberIds">>,
+  userId: string | null | undefined,
+  resolveName: (userId: string) => string,
+): string | null {
+  const people = [
+    ...new Set([...conversation.memberIds, ...(conversation.pendingMemberIds ?? [])]),
+  ];
+  const names = people
+    .filter((id) => id !== userId)
+    .map(resolveName)
+    .sort((a, b) => a.localeCompare(b));
+  if (names.length === 0) return null;
+  if (names.length <= GROUP_NAMES_SHOWN) return joinNames(names);
+  const rest = names.length - GROUP_NAMES_SHOWN;
+  return `${names.slice(0, GROUP_NAMES_SHOWN).join(", ")} and ${rest} ${rest === 1 ? "other" : "others"}`;
 }
 
 /** Channels and groups can be left; DMs cannot. */

@@ -1,4 +1,5 @@
 import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
+import { untitledGroupName } from "../conversations/utils";
 
 /** What is needed to name a conversation in a notification. */
 export interface NamedConversation {
@@ -20,9 +21,7 @@ export function notificationConversationLabel(
     return `#${conversation.title ?? "channel"}`;
   }
   if (conversation.title) return conversation.title;
-  const others = conversation.memberIds.filter((id) => id !== currentUserId);
-  if (others.length === 0) return "Direct message";
-  return others.map(resolveName).join(", ");
+  return untitledGroupName(conversation, currentUserId, resolveName) ?? "Direct message";
 }
 
 /** The author's display name, else username. */
