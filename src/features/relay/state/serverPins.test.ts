@@ -7,6 +7,8 @@ import { replayServerLog } from "../crypto/serverStatements";
 
 const remoteServer = vi.hoisted(() => vi.fn());
 vi.mock("../api/relayApi", () => ({ fetchRemoteServer: remoteServer }));
+const ownDiscovery = vi.hoisted(() => vi.fn());
+vi.mock("./serverOrigin", () => ({ readOwnDiscovery: ownDiscovery }));
 
 import {
   ensurePinned,
@@ -38,6 +40,7 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   resetPinCache();
   remoteServer.mockReset();
+  ownDiscovery.mockReset();
   useRelayStore.getState().reset();
 });
 
@@ -159,5 +162,58 @@ describe("pinServer", () => {
     });
     const pin = await ensurePinned(host.serverId, ["https://down.example", "https://host.example"]);
     expect(pin.origin).toBe("https://host.example");
+  });
+});
+
+describe("pinning this app's own server", () => {
+  /** This app signed in to `host`, whose discovery document it reads directly. */
+  function signedInTo(log: unknown[], descriptor: unknown) {
+    useRelayStore.setState({
+      info: { serverId: host.serverId, roles: ["host", "relay"], directSpaceId: "space-direct" },
+    });
+    ownDiscovery.mockResolvedValue({
+      origin: "https://host.example",
+      document: discovery(log, descriptor),
+    });
+  }
+
+  it("pins it from its own discovery document, never asking it to fetch itself", async () => {
+    signedInTo([host.inception], host.descriptor);
+    const pin = await ensurePinned(host.serverId, ["https://host.example"]);
+    expect(pin.serverId).toBe(host.serverId);
+    expect(await hostKeyAt(host.serverId, 0)).toBe(host.serverKey);
+    expect(ownDiscovery).toHaveBeenCalledTimes(1);
+    expect(remoteServer).not.toHaveBeenCalled();
+  });
+
+  it("reads its own document again for a newer keySeq", async () => {
+    signedInTo([host.inception], host.descriptor);
+    await ensurePinned(host.serverId, []);
+    signedInTo([host.inception, host.rotation], host.rotatedDescriptor);
+    const key = await hostKeyAt(host.serverId, 1);
+    expect(key).toBe("ed25519:-kg0FH9uaQw2k-_2EzYEZAPNiuKhTzGzxAc1hWkjlWU");
+    expect(remoteServer).not.toHaveBeenCalled();
+  });
+
+  it("refuses a document of another server at its origin", async () => {
+    useRelayStore.setState({
+      info: { serverId: vectors.relay.serverId, roles: ["relay"], directSpaceId: "space-direct" },
+    });
+    ownDiscovery.mockResolvedValue({
+      origin: "https://host.example",
+      document: discovery([host.inception], host.descriptor),
+    });
+    await expect(ensurePinned(vectors.relay.serverId, [])).rejects.toThrow(/another server/);
+  });
+
+  it("still pins other servers through the relay", async () => {
+    signedInTo([host.inception], host.descriptor);
+    useRelayStore.setState({
+      info: { serverId: vectors.relay.serverId, roles: ["relay"], directSpaceId: "space-direct" },
+    });
+    serve([host.inception], host.descriptor);
+    await ensurePinned(host.serverId, ["https://host.example"]);
+    expect(remoteServer).toHaveBeenCalledWith("https://host.example");
+    expect(ownDiscovery).not.toHaveBeenCalled();
   });
 });
