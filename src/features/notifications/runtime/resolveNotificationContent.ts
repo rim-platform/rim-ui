@@ -8,6 +8,7 @@ import type { ConversationTypeEnum } from "../../../core/graphql/generated/schem
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { findCachedConversation } from "../../conversations/api/useConversation";
 import { memberName } from "../../workspaces/api/memberName";
+import { ENCRYPTED_MESSAGE_TEXT, storedText } from "../api/storedText";
 import {
   authorDisplayName,
   notificationConversationLabel,
@@ -39,6 +40,9 @@ const NOTIFICATION_DUE_CONTEXT = gql`
         displayName
       }
       text
+      encryption {
+        sentAtUs
+      }
     }
   }
 `;
@@ -48,6 +52,7 @@ interface CachedMessage {
   authorId?: string;
   author?: { username: string; displayName?: string | null } | null;
   text?: string | null;
+  encryption?: { sentAtUs: string } | null;
 }
 
 interface ContextResponse {
@@ -144,11 +149,17 @@ export async function resolveNotificationContent(
     authorDisplayName(message?.author) ??
     (message?.authorId ? resolveName(message.authorId) : "Someone");
 
+  let text = message?.text ?? "";
+  // The server holds no text for an encrypted message: this device's store may.
+  if (message?.encryption && !message.text) {
+    text = (await storedText(message.id)) ?? ENCRYPTED_MESSAGE_TEXT;
+  }
+
   return {
     title: conversation
       ? notificationConversationLabel(conversation, resolveName, currentUserId)
       : "New message",
     authorName,
-    text: message?.text ?? "",
+    text,
   };
 }

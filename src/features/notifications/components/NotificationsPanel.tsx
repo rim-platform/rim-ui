@@ -38,6 +38,7 @@ import {
 } from "../api/useNotifications";
 import { authorDisplayName, notificationConversationLabel } from "../labels";
 import { jumpToNotification } from "../runtime/jumpToNotification";
+import { ENCRYPTED_MESSAGE_TEXT } from "../api/storedText";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
 import { MUTE_DURATIONS } from "../hooks/useConversationNotificationItems";
 
@@ -56,6 +57,7 @@ function snippet(item: NotificationItem): string {
   const message = item.message;
   if (!message) return "";
   if (message.isDeleted) return "Message deleted";
+  if (message.encryption && message.text === null) return ENCRYPTED_MESSAGE_TEXT;
   const text = (message.text ?? "").replace(/\s+/g, " ").trim();
   if (!text) return "Attachment";
   return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;

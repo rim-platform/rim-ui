@@ -91,12 +91,16 @@ async function refreshGroup(
   return group;
 }
 
-/** The timeline of an encrypted conversation reads the cache: show what changed there. */
+/**
+ * The timeline of an encrypted conversation reads the cache: show what changed there. The
+ * notification inbox reads encrypted messages' text from the cache too.
+ */
 export function invalidateTimeline(workspaceId: string, conversationId: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.cachedTimeline(workspaceId, conversationId),
   });
+  void queryClient.invalidateQueries({ queryKey: ["notifications", workspaceId] });
 }
 
 /**

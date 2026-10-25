@@ -41,6 +41,13 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 }));
 
 const requestMock = vi.fn();
+const storeAccountMock = vi.fn((): unknown => null);
+const readCachedMessageMock = vi.fn();
+vi.mock("../../messages/api/messageCache", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../messages/api/messageCache")>()),
+  encryptedStoreAccount: () => storeAccountMock(),
+  readCachedMessage: (...args: unknown[]) => readCachedMessageMock(...args),
+}));
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
@@ -142,6 +149,8 @@ describe("NotificationDue rendering", () => {
     vi.clearAllMocks();
     requestMock.mockReset();
     requestMock.mockReturnValue(new Promise(() => {}));
+    storeAccountMock.mockReset().mockReturnValue(null);
+    readCachedMessageMock.mockReset();
     subscribeObserver = null;
     setDesktop(true);
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh)");
@@ -240,6 +249,42 @@ describe("NotificationDue rendering", () => {
       withConversation: false,
       withMessage: true,
     });
+  });
+
+  it("reads an encrypted message's text from this device's store", async () => {
+    storeAccountMock.mockReturnValue({ endpoint: "http://localhost:8080/api", userId: "me" });
+    readCachedMessageMock.mockImplementation((_account: unknown, id: string) =>
+      Promise.resolve(
+        id === "m-9" ? { id, text: "the plan", e2ee: { status: "decrypted" } } : null,
+      ),
+    );
+    requestMock.mockImplementation((document: string, vars: { messageId: string }) =>
+      String(document).includes("NotificationDueContext")
+        ? Promise.resolve({
+            message: {
+              id: vars.messageId,
+              authorId: "u-bob",
+              author: { id: "u-bob", username: "bob", displayName: null },
+              text: null,
+              encryption: { sentAtUs: "1792957000000000" },
+            },
+          })
+        : new Promise(() => {}),
+    );
+    setup();
+    emit(notificationDue({ message_id: "m-9" }));
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "bob: the plan" }),
+      ),
+    );
+
+    emit(notificationDue({ notification_id: "n-2", message_id: "m-10" }));
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "bob: Encrypted message" }),
+      ),
+    );
   });
 
   it("names a direct message after the other member", async () => {
