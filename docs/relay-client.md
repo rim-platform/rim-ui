@@ -85,7 +85,12 @@ A server is pinned the first time the app needs it: the home of a DM someone els
 the relays of the inviter's card), a contact's relay. `remoteServer(origin)` fetches the
 discovery document through the relay; the app replays the log, checks that its inception hashes
 to the expected server id, verifies the descriptor under the head key and that its server-to-server
-endpoint is at that origin, and stores the log (`servers`).
+endpoint is at that origin, and stores the log (`servers`). The app's own server, the one it is
+signed in to (`info.serverId`), is pinned from its own discovery document instead, fetched
+directly from the origin the app talks to (`readOwnDiscovery`) and checked the same way: asking
+it for itself through `remoteServer` would need the server to reach its own public address,
+which a server behind NAT or on a local domain may not. This is the pin a request from someone on
+the same server needs, and the one a key rotation of this server refreshes.
 
 Both verifiers (`serverStatements.ts` in the browser, `src-tauri/src/relay/server.rs` on the
 desktop) read the descriptor as strictly as its signature: a field they do not know refuses it.

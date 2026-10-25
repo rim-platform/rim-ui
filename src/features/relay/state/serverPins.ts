@@ -12,6 +12,7 @@ import { comparePin, type ServerHead } from "../crypto/serverStatements";
 import { relayCrypto } from "../crypto/relayCrypto";
 import { fetchRemoteServer } from "../api/relayApi";
 import { getRecord, putRecord, type ServerPin } from "./relayDb";
+import { readOwnDiscovery } from "./serverOrigin";
 import { useRelayStore } from "./useRelayStore";
 
 const GRACE_MS = 24 * 60 * 60 * 1000;
@@ -117,6 +118,7 @@ export function nextPin(
  */
 export async function pinServer(origin: string, expectedServerId?: string): Promise<ServerPin> {
   const now = Date.now();
+  if (expectedServerId && isOwnServer(expectedServerId)) return pinOwnServer(expectedServerId, now);
   const last = lastFetch.get(origin);
   if (last !== undefined && now - last < REFETCH_MS && expectedServerId) {
     const pinned = await loadPin(expectedServerId);
@@ -125,6 +127,21 @@ export async function pinServer(origin: string, expectedServerId?: string): Prom
   lastFetch.set(origin, now);
   const remote = await fetchRemoteServer(origin);
   return pinDiscovery(remote.discovery, origin, expectedServerId ?? remote.serverId, now);
+}
+
+/** Whether `serverId` is the server this app is signed in to, as its relay names itself. */
+function isOwnServer(serverId: string): boolean {
+  return serverId === useRelayStore.getState().info?.serverId;
+}
+
+/**
+ * Pin this app's own server from its discovery document, read straight from the origin the app
+ * talks to: asking the server for itself through `remoteServer` needs it to reach its own public
+ * address. Verified and checked against an existing pin like any other server's.
+ */
+async function pinOwnServer(serverId: string, now: number): Promise<ServerPin> {
+  const own = await readOwnDiscovery();
+  return pinDiscovery(own.document, own.origin, serverId, now);
 }
 
 /**
@@ -163,8 +180,9 @@ export async function pinDiscovery(
 }
 
 /**
- * Make sure `serverId` is pinned: an existing pin, or the first of `origins` that serves that
- * server. Trust on first use: any of them may answer, as the id itself is self-certifying.
+ * Make sure `serverId` is pinned: an existing pin, this app's own server from its own discovery
+ * document, or the first of `origins` that serves that server. Trust on first use: any of them
+ * may answer, as the id itself is self-certifying.
  */
 export async function ensurePinned(
   serverId: string,
@@ -172,6 +190,7 @@ export async function ensurePinned(
 ): Promise<ServerPin> {
   const existing = await loadPin(serverId);
   if (existing) return existing.status === "forked" ? fork(existing) : existing;
+  if (isOwnServer(serverId)) return pinOwnServer(serverId, Date.now());
   let lastError: unknown = new Error(`no relay URL to reach ${serverId}`);
   for (const origin of origins) {
     try {
