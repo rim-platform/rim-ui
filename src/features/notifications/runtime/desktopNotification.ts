@@ -5,19 +5,47 @@ import {
 } from "@tauri-apps/plugin-notification";
 
 import { detectOs } from "../../../core/runtime/runtime";
+import type { NotificationStyle } from "../state/useNotificationSettingsStore";
 
 export interface MessageNotificationContent {
+  /** The conversation's label: `#channel`, a group's title, the other member of a DM. */
   channelName: string;
   authorName: string;
   messageText: string;
-  showPreview: boolean;
+  /** Whether the message is end-to-end encrypted. */
+  encrypted: boolean;
 }
 
-/** The notification body: the author and the text, or only the author without a preview. */
-export function notificationBody(opts: MessageNotificationContent): string {
-  return opts.showPreview
-    ? `${opts.authorName}: ${opts.messageText.slice(0, 100)}`
-    : `New message from ${opts.authorName}`;
+const PREVIEW_LENGTH = 100;
+
+/**
+ * A message notification's title and body, as this device's settings ask.
+ *
+ * @param content - The message and where it was sent.
+ * @param style - How much to show and what the title names.
+ * @returns With `preview: "none"` only "New message" under the app's name; otherwise the
+ * title names the conversation, the sender or both, and the body carries the text (prefixed with
+ * the sender when the title does not name them) or, without a preview, says who sent it.
+ */
+export function formatMessageNotification(
+  content: MessageNotificationContent,
+  style: NotificationStyle,
+): { title: string; body: string } {
+  if (style.preview === "none") return { title: "RIM", body: "New message" };
+  const { channelName, authorName } = content;
+  const titleNamesSender = style.title !== "conversation";
+  const title =
+    style.title === "conversation"
+      ? channelName
+      : style.title === "sender" || channelName === authorName
+        ? authorName
+        : `${authorName} in ${channelName}`;
+  const text = content.messageText.slice(0, PREVIEW_LENGTH);
+  const showText = style.preview === "full" && !(content.encrypted && style.hideEncryptedText);
+  if (showText && text) {
+    return { title, body: titleNamesSender ? text : `${authorName}: ${text}` };
+  }
+  return { title, body: titleNamesSender ? "New message" : `New message from ${authorName}` };
 }
 
 /**
@@ -60,12 +88,11 @@ export async function showDesktopNotification(opts: {
   });
 }
 
+/** A desktop notification of a message, formatted with `style`. */
 export async function showMessageNotification(
-  opts: MessageNotificationContent & { sound?: boolean },
+  content: MessageNotificationContent,
+  style: NotificationStyle,
+  sound?: boolean,
 ) {
-  await showDesktopNotification({
-    title: opts.channelName,
-    body: notificationBody(opts),
-    sound: opts.sound,
-  });
+  await showDesktopNotification({ ...formatMessageNotification(content, style), sound });
 }

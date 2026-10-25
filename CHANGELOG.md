@@ -94,6 +94,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   `RIM_FEATURES_DISABLED`), Settings → Profile shows your initial with "Profile pictures are
   switched off on this server" instead of the upload, and Settings → About lists Profile
   pictures among the server's features.
+- Settings > Notifications sets how notifications look on this device: the message preview
+  (sender and text, sender only, or nothing), what the title names (the conversation, the
+  sender, or both), and whether encrypted messages show their text. An example shows the
+  result. An earlier "Show message preview" choice carries over.
 
 ### Changed
 

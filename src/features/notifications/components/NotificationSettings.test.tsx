@@ -86,7 +86,13 @@ describe("NotificationSettings", () => {
   beforeEach(() => {
     requestMock.mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
-    useNotificationSettingsStore.setState({ enabled: true, soundEnabled: true, showPreview: true });
+    useNotificationSettingsStore.setState({
+      enabled: true,
+      soundEnabled: true,
+      preview: "full",
+      hideEncryptedText: false,
+      title: "conversation",
+    });
   });
 
   afterEach(() => {
@@ -279,6 +285,42 @@ describe("NotificationSettings", () => {
     });
   });
 
+  it("sets how notifications look on this device and shows an example", async () => {
+    serve();
+    await renderSettings();
+
+    const device = screen.getByRole("region", { name: "This device" });
+    const example = within(device).getByRole("figure", { name: "Example notification" });
+    expect(example).toHaveTextContent("#general");
+    expect(example).toHaveTextContent("Alice: The deploy is done");
+
+    fireEvent.change(within(device).getByRole("combobox", { name: "Title" }), {
+      target: { value: "both" },
+    });
+    expect(example).toHaveTextContent("Alice in #general");
+    expect(example).toHaveTextContent("The deploy is done");
+
+    const preview = within(device).getByRole("combobox", { name: "Message preview" });
+    fireEvent.change(preview, { target: { value: "sender" } });
+    expect(example).toHaveTextContent("New message");
+    expect(example).not.toHaveTextContent("The deploy is done");
+
+    fireEvent.change(preview, { target: { value: "none" } });
+    expect(example).toHaveTextContent("RIM");
+    expect(example).not.toHaveTextContent("Alice");
+    expect(within(device).getByRole("combobox", { name: "Title" })).toBeDisabled();
+
+    fireEvent.click(
+      within(device).getByRole("switch", { name: "Hide text of encrypted messages" }),
+    );
+    expect(useNotificationSettingsStore.getState()).toMatchObject({
+      preview: "none",
+      title: "both",
+      hideEncryptedText: true,
+    });
+    expect(callsTo(requestMock, "mutation")).toEqual([]);
+  });
+
   it("keeps the device toggles local: no request, untouched by Save", async () => {
     serve();
     await renderSettings();
@@ -296,7 +338,7 @@ describe("NotificationSettings", () => {
     expect(useNotificationSettingsStore.getState()).toMatchObject({
       enabled: true,
       soundEnabled: false,
-      showPreview: true,
+      preview: "full",
     });
   });
 });

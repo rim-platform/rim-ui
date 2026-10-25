@@ -53,6 +53,8 @@ interface CachedMessage {
   author?: { username: string; displayName?: string | null } | null;
   text?: string | null;
   encryption?: { sentAtUs: string } | null;
+  /** Set on an encrypted message read from this device's store. */
+  e2ee?: unknown;
 }
 
 interface ContextResponse {
@@ -69,6 +71,8 @@ export interface NotificationContent {
   title: string;
   authorName: string;
   text: string;
+  /** Whether the message is end-to-end encrypted. */
+  encrypted: boolean;
 }
 
 function itemsOf(data: unknown): unknown[] {
@@ -161,5 +165,6 @@ export async function resolveNotificationContent(
       : "New message",
     authorName,
     text,
+    encrypted: Boolean(message?.encryption || message?.e2ee),
   };
 }
