@@ -217,7 +217,11 @@ Pending `dmRequests` sit above the notifications, counted on the bell. Each show
 the request's card, verified against the sender's key log, and the fingerprint. "Read first"
 verifies the held `DmInvite`, binds the space, processes the Welcome and opens the conversation;
 Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
-relay.
+relay. A request from someone on this server invites to one of its own spaces (its direct space or
+a workspace of the account), which is never bound as a remote space: when verifying held items,
+such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is
+this server's id and whose envelope its key signed verifies. An invite from another host that
+names one of these spaces is still dropped.
 
 A request belongs to a workspace when a held item names it as its space and the request's host
 (`hostServerId`) hosts it: this relay for its own workspaces, the bound host for one elsewhere

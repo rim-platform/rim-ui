@@ -118,6 +118,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Reactions, pins and threads show in encrypted conversations, on the desktop and in the
   browser: a reaction no longer disappears after you add it or after a reload, and a message
   that starts a thread shows its thread.
+- **Read first** on a message request from someone on the same server opens the conversation
+  instead of saying it could not be verified.
 - Notifications of encrypted messages show the message's text, in the notification list and in
   desktop and browser notifications, instead of "Attachment" or nothing. A notification that
   arrives before its message is decrypted waits for it, up to 4 seconds; a message this device

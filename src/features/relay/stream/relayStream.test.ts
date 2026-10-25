@@ -61,6 +61,7 @@ function setup(overrides: Partial<RelayStreamDeps> = {}) {
     crypto: browserRelayCrypto,
     principalId: ME,
     hostOf: (id) => spaces.get(id) ?? null,
+    localHostOf: () => null,
     pendingJoinAt: vi.fn(() => false),
     registerSpace: vi.fn(async (id: string, host: string) => {
       spaces.set(id, host);
@@ -298,6 +299,66 @@ describe("RelayStreamProcessor", () => {
     expect(spaces.get(SPACE)).toBe(HOST);
     expect(applied).toEqual([]);
     expect(deps.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe("RelayStreamProcessor.verifyHeld for a request from someone on this server", () => {
+  /** A held item of `host`, its envelope signed with `seed`. */
+  async function held(
+    event: Record<string, unknown>,
+    opts: { host?: string; seed?: number; stream?: string } = {},
+  ) {
+    const raw = JSON.parse(
+      await item(opts.stream ?? `u:${ME}`, 2, event, { host: opts.host, seed: opts.seed }),
+    );
+    return { ...raw, hostServerId: opts.host ?? HOST };
+  }
+
+  const invite = { type: "DmInvite", conversation_id: CONV, from_card: null };
+
+  /** This server is HOST and SPACE is its own direct space, which no remote record binds. */
+  function local() {
+    const ctx = setup({
+      localHostOf: (id) => (id === SPACE ? HOST : null),
+      // As `registerSpace` does: a space of this server is never bound as a remote one.
+      registerSpace: vi.fn(async () => false),
+    });
+    ctx.spaces.clear();
+    return ctx;
+  }
+
+  it("verifies an invite this server signed to one of its own spaces, registering nothing", async () => {
+    const { processor, deps, applied } = local();
+    const event = await processor.verifyHeld(await held(invite));
+    expect(event?.event.type).toBe("DmInvite");
+    expect(deps.registerSpace).not.toHaveBeenCalled();
+    expect(applied).toEqual([]);
+    expect(deps.ack).not.toHaveBeenCalled();
+  });
+
+  it("drops an invite from another server that names one of this server's spaces", async () => {
+    const { processor, deps } = local();
+    const event = await processor.verifyHeld(await held(invite, { host: "rims1_other", seed: 30 }));
+    expect(event).toBeNull();
+    expect(deps.registerSpace).not.toHaveBeenCalled();
+  });
+
+  it("drops an invite in this server's name that its key did not sign", async () => {
+    const { processor } = local();
+    expect(await processor.verifyHeld(await held(invite, { seed: 30 }))).toBeNull();
+  });
+
+  it("drops an invite on another account's stream", async () => {
+    const { processor } = local();
+    expect(
+      await processor.verifyHeld(await held(invite, { stream: "u:rimp1_someone" })),
+    ).toBeNull();
+  });
+
+  it("binds a local space only for held items: a pushed one is not applied", async () => {
+    const { processor, applied } = local();
+    await processor.push(JSON.stringify(await held(invite)));
+    expect(applied).toEqual([]);
   });
 });
 
