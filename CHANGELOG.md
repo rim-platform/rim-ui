@@ -121,6 +121,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Groups without a title are named after their other members ("Alice and Bob", "Alice, Bob,
   Carol and 2 others") in the sidebar, the header, the members panel, Forward and notifications,
   instead of "Untitled".
+- Accepting a message request shows what the sender wrote while it waited, without a reload.
 - A message request opened with **Read first** shows **Accept**, **Ignore**, **Block** and
   **Report** in place of the composer: you reply once you accept, and until then the sender sees
   nothing from you. Before, a reply went out while the request stayed pending. **Upgrade:** a

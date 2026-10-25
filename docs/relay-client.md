@@ -227,7 +227,9 @@ refuses posts, reactions and typing from the recipient there until they accept (
 `docs/relay.md`, "The request inbox"), and the bar keeps a reply to a request hosted elsewhere
 from being sent at all;
 Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
-relay. A request from someone on this server invites to one of its own spaces (its direct space or
+relay. Accepting then catches the conversation up: while the request was pending its events never
+reached the account, so nothing synced what the sender wrote meanwhile; the app processes any
+Welcome, asks the change feed for the conversation and refreshes its timeline. A request from someone on this server invites to one of its own spaces (its direct space or
 a workspace of the account), which is never bound as a remote space: when verifying held items,
 such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is
 this server's id and whose envelope its key signed verifies. An invite from another host that
