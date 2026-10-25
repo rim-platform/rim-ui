@@ -121,6 +121,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Groups without a title are named after their other members ("Alice and Bob", "Alice, Bob,
   Carol and 2 others") in the sidebar, the header, the members panel, Forward and notifications,
   instead of "Untitled".
+- A message request opened with **Read first** shows **Accept**, **Ignore**, **Block** and
+  **Report** in place of the composer: you reply once you accept, and until then the sender sees
+  nothing from you. Before, a reply went out while the request stayed pending. **Upgrade:** a
+  rim-server with the matching change refuses such posts on its side too.
 - **Read first** on a message request from someone on the same server opens the conversation
   instead of saying it could not be verified.
 - Notifications of encrypted messages show the message's text, in the notification list and in

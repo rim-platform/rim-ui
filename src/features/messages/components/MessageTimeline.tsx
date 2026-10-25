@@ -20,6 +20,9 @@ import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
 import { ConversationContinuity } from "../../relay/components/ConversationContinuity";
+import { DmRequestBar } from "../../relay/components/DmRequestBar";
+import { incomingRequestOf } from "../../relay/components/useDmRequestActions";
+import { usePendingDmRequests } from "../../relay/api/useDmRequests";
 import {
   useDeviceNames,
   useE2eeConversation,
@@ -91,6 +94,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const clearLens = useLensStore((s) => s.setActiveLens);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const { data: pendingRequests } = usePendingDmRequests();
+  const incomingRequest = incomingRequestOf(pendingRequests, conversationId);
 
   const e2ee = useE2eeConversation(workspaceId, conversationId);
   const principalNames = usePrincipalNames(workspaceId);
@@ -460,12 +465,17 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
         />
       )}
       {workspaceId && <EncryptionNotices workspaceId={workspaceId} e2ee={e2ee} />}
-      {workspaceId && (
-        <Composer
-          workspaceId={workspaceId}
-          conversationId={conversationId}
-          encryption={e2ee.encrypted ? e2ee : undefined}
-        />
+      {/* A request the viewer has not decided takes no reply: it is decided first. */}
+      {incomingRequest ? (
+        <DmRequestBar request={incomingRequest} />
+      ) : (
+        workspaceId && (
+          <Composer
+            workspaceId={workspaceId}
+            conversationId={conversationId}
+            encryption={e2ee.encrypted ? e2ee : undefined}
+          />
+        )
       )}
       {contextMenu}
       {messageMenu.dialog}

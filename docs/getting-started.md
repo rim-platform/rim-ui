@@ -199,8 +199,11 @@ conversation joins your list. Settings > Direct messages decides who reaches you
 Requests sit at the top of Notifications, and the bell counts them. "Requests (n)" also heads the
 conversation list of the workspace they came from, or the Direct messages list for those from
 outside. Each request shows the sender's verified name and fingerprint, with **Accept**, **Read
-first**, **Ignore**, **Block** and **Report**. The sender sees "Sent as a request; \<name\> has
-not accepted yet." above their composer. rim-server's
+first**, **Ignore**, **Block** and **Report**. **Read first** opens the conversation without
+deciding: in place of the composer it says who wants to message you, with **Accept**, **Ignore**,
+**Block** and **Report**. You reply once you accept; until then the sender sees nothing from
+you, not even that you read it. The sender sees "Sent as a request; \<name\> has not accepted
+yet." above their composer. rim-server's
 [Messaging](../../rim-server/docs/messaging.md#who-may-start-a-dm) has the full rules.
 
 **Reactions.** Hover a message and choose **Add reaction** to pick an emoji. Clicking a reaction

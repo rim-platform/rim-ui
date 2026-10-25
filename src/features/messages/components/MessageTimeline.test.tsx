@@ -68,7 +68,16 @@ vi.mock("../../conversations/api/useMarkAsRead", () => ({
   useMarkAsRead: () => markAsRead,
 }));
 
-vi.mock("./Composer", () => ({ Composer: () => null }));
+vi.mock("./Composer", () => ({ Composer: () => <div data-testid="composer" /> }));
+const incoming = vi.hoisted(() => ({ requests: [] as { id: string; conversationId: string }[] }));
+vi.mock("../../relay/api/useDmRequests", () => ({
+  usePendingDmRequests: () => ({ data: incoming.requests }),
+}));
+vi.mock("../../relay/components/DmRequestBar", () => ({
+  DmRequestBar: ({ request }: { request: { id: string } }) => (
+    <div data-testid="request-bar">{request.id}</div>
+  ),
+}));
 vi.mock("../hooks/useMessageContextMenu", () => ({
   useMessageContextMenu: () => ({
     getItems: ({ messageId }: { messageId: string }) => [
@@ -754,5 +763,27 @@ describe("MessageTimeline — DM sent as a request", () => {
     sent(3);
     render(<MessageTimeline />);
     expect(screen.queryByText(/Sent as a request/)).not.toBeInTheDocument();
+  });
+});
+
+describe("MessageTimeline — a request the viewer received", () => {
+  afterEach(() => {
+    incoming.requests = [];
+  });
+
+  it("shows the request's decision instead of the composer", () => {
+    incoming.requests = [{ id: "req-1", conversationId: "conv-1" }];
+    setMessages(range(0, 1));
+    render(<MessageTimeline />);
+    expect(screen.getByTestId("request-bar")).toHaveTextContent("req-1");
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+  });
+
+  it("keeps the composer for a conversation without one", () => {
+    incoming.requests = [{ id: "req-2", conversationId: "another" }];
+    setMessages(range(0, 1));
+    render(<MessageTimeline />);
+    expect(screen.getByTestId("composer")).toBeInTheDocument();
+    expect(screen.queryByTestId("request-bar")).not.toBeInTheDocument();
   });
 });
