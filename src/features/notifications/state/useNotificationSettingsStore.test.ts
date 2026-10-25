@@ -1,20 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useNotificationSettingsStore } from "./useNotificationSettingsStore";
 
+const DEFAULTS = {
+  enabled: true,
+  soundEnabled: true,
+  preview: "full",
+  hideEncryptedText: false,
+  title: "conversation",
+} as const;
+
 describe("useNotificationSettingsStore", () => {
   beforeEach(() => {
-    useNotificationSettingsStore.setState({
-      enabled: true,
-      soundEnabled: true,
-      showPreview: true,
-    });
+    useNotificationSettingsStore.setState(DEFAULTS);
   });
 
-  it("starts with all settings enabled by default", () => {
-    const state = useNotificationSettingsStore.getState();
-    expect(state.enabled).toBe(true);
-    expect(state.soundEnabled).toBe(true);
-    expect(state.showPreview).toBe(true);
+  it("starts with notifications, sound and full previews under the conversation's name", () => {
+    expect(useNotificationSettingsStore.getState()).toMatchObject(DEFAULTS);
   });
 
   it("sets enabled to false", () => {
@@ -27,9 +28,16 @@ describe("useNotificationSettingsStore", () => {
     expect(useNotificationSettingsStore.getState().soundEnabled).toBe(false);
   });
 
-  it("sets showPreview to false", () => {
-    useNotificationSettingsStore.getState().setShowPreview(false);
-    expect(useNotificationSettingsStore.getState().showPreview).toBe(false);
+  it("sets the preview, the title and hiding encrypted text", () => {
+    const store = useNotificationSettingsStore.getState();
+    store.setPreview("sender");
+    store.setTitle("both");
+    store.setHideEncryptedText(true);
+    expect(useNotificationSettingsStore.getState()).toMatchObject({
+      preview: "sender",
+      title: "both",
+      hideEncryptedText: true,
+    });
   });
 
   it("toggling enabled back on", () => {
@@ -40,7 +48,10 @@ describe("useNotificationSettingsStore", () => {
 
   it("settings changes are independent", () => {
     useNotificationSettingsStore.getState().setEnabled(false);
-    expect(useNotificationSettingsStore.getState().soundEnabled).toBe(true);
-    expect(useNotificationSettingsStore.getState().showPreview).toBe(true);
+    expect(useNotificationSettingsStore.getState()).toMatchObject({
+      soundEnabled: true,
+      preview: "full",
+      title: "conversation",
+    });
   });
 });

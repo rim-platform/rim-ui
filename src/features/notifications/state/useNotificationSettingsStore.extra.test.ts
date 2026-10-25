@@ -1,61 +1,87 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useNotificationSettingsStore } from "./useNotificationSettingsStore";
 
+const KEY = "rim:notification-settings";
+
+function stored(): Record<string, unknown> {
+  return JSON.parse(localStorage.getItem(KEY) ?? "{}");
+}
+
+/** The store as a fresh start reads it from what local storage holds. */
+async function loadWith(saved: unknown) {
+  localStorage.setItem(KEY, JSON.stringify(saved));
+  vi.resetModules();
+  const fresh = await import("./useNotificationSettingsStore");
+  return fresh.useNotificationSettingsStore.getState();
+}
+
 describe("useNotificationSettingsStore (extra coverage)", () => {
   beforeEach(() => {
     localStorage.clear();
     useNotificationSettingsStore.setState({
       enabled: true,
       soundEnabled: true,
-      showPreview: true,
+      preview: "full",
+      hideEncryptedText: false,
+      title: "conversation",
     });
-  });
-
-  it("has correct defaults", () => {
-    const state = useNotificationSettingsStore.getState();
-    expect(state.enabled).toBe(true);
-    expect(state.soundEnabled).toBe(true);
-    expect(state.showPreview).toBe(true);
   });
 
   it("setEnabled updates enabled and persists to localStorage", () => {
     useNotificationSettingsStore.getState().setEnabled(false);
     expect(useNotificationSettingsStore.getState().enabled).toBe(false);
-
-    const stored = JSON.parse(localStorage.getItem("rim:notification-settings") ?? "{}");
-    expect(stored.enabled).toBe(false);
+    expect(stored().enabled).toBe(false);
   });
 
   it("setSoundEnabled updates soundEnabled and persists", () => {
     useNotificationSettingsStore.getState().setSoundEnabled(false);
-    expect(useNotificationSettingsStore.getState().soundEnabled).toBe(false);
-
-    const stored = JSON.parse(localStorage.getItem("rim:notification-settings") ?? "{}");
-    expect(stored.soundEnabled).toBe(false);
-  });
-
-  it("setShowPreview updates showPreview and persists", () => {
-    useNotificationSettingsStore.getState().setShowPreview(false);
-    expect(useNotificationSettingsStore.getState().showPreview).toBe(false);
-
-    const stored = JSON.parse(localStorage.getItem("rim:notification-settings") ?? "{}");
-    expect(stored.showPreview).toBe(false);
+    expect(stored().soundEnabled).toBe(false);
   });
 
   it("persists all settings together", () => {
-    useNotificationSettingsStore.getState().setEnabled(false);
-    useNotificationSettingsStore.getState().setSoundEnabled(false);
-    useNotificationSettingsStore.getState().setShowPreview(false);
+    const store = useNotificationSettingsStore.getState();
+    store.setEnabled(false);
+    store.setSoundEnabled(false);
+    store.setPreview("none");
+    store.setHideEncryptedText(true);
+    store.setTitle("sender");
 
-    const stored = JSON.parse(localStorage.getItem("rim:notification-settings") ?? "{}");
-    expect(stored.enabled).toBe(false);
-    expect(stored.soundEnabled).toBe(false);
-    expect(stored.showPreview).toBe(false);
+    expect(stored()).toEqual({
+      enabled: false,
+      soundEnabled: false,
+      preview: "none",
+      hideEncryptedText: true,
+      title: "sender",
+    });
   });
 
-  it("settings can be toggled back on", () => {
-    useNotificationSettingsStore.getState().setEnabled(false);
-    useNotificationSettingsStore.getState().setEnabled(true);
-    expect(useNotificationSettingsStore.getState().enabled).toBe(true);
+  it("reads back what it stored", async () => {
+    const state = await loadWith({
+      enabled: true,
+      soundEnabled: false,
+      preview: "sender",
+      hideEncryptedText: true,
+      title: "both",
+    });
+    expect(state).toMatchObject({
+      soundEnabled: false,
+      preview: "sender",
+      hideEncryptedText: true,
+      title: "both",
+    });
+  });
+
+  it("reads an older preview switch: off is sender only, on is the full preview", async () => {
+    expect((await loadWith({ showPreview: false })).preview).toBe("sender");
+    expect((await loadWith({ showPreview: true })).preview).toBe("full");
+  });
+
+  it("falls back to the defaults for values it does not know", async () => {
+    const state = await loadWith({ preview: "loud", title: 3, hideEncryptedText: "yes" });
+    expect(state).toMatchObject({
+      preview: "full",
+      title: "conversation",
+      hideEncryptedText: false,
+    });
   });
 });

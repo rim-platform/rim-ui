@@ -18,7 +18,10 @@ import { fetchNotificationSettings } from "../../notifications/api/useNotificati
 import { showBrowserNotification } from "../../notifications/runtime/browserNotification";
 import { showMessageNotification } from "../../notifications/runtime/desktopNotification";
 import { isWatching } from "../../notifications/runtime/useNotificationEventHandler";
-import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
+import {
+  notificationStyle,
+  useNotificationSettingsStore,
+} from "../../notifications/state/useNotificationSettingsStore";
 import { fetchCommits, fetchConversationGroup } from "../api/e2eeApi";
 import { useE2eeStore } from "../state/useE2eeStore";
 import { matchingKeyword, mentionedPrincipals } from "../utils/content";
@@ -132,13 +135,14 @@ async function notifyKeywords(session: E2eeSession, workspaceId: string, note: M
       channelName: conversation.title ?? "Group",
       authorName: author?.displayName || author?.username || "Someone",
       messageText: message.body,
-      showPreview: device.showPreview,
+      encrypted: true,
     };
+    const style = notificationStyle(device);
     if (isWebAccount(session.account)) {
-      showBrowserNotification(content);
+      showBrowserNotification(content, style);
       continue;
     }
-    await showMessageNotification({ ...content, sound: device.soundEnabled }).catch(
+    await showMessageNotification(content, style, device.soundEnabled).catch(
       warn("keyword notification"),
     );
   }

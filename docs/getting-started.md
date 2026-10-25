@@ -224,7 +224,10 @@ where the arrow keys move between messages and <kbd>e</kbd> edits your own.
 panel, with the number of unread messages in the open workspace. The bell, **Notifications**,
 lists your mentions, DMs, thread replies, reactions and keyword matches in the open workspace,
 under any message requests; **Mark all read** clears them. Settings > Notifications sets what
-notifies you in the workspace and how this device shows it.
+notifies you in the workspace and how this device shows it: sound, the **Message preview**
+(sender and text, sender only, or nothing, which hides who and where too), the **Title**
+(the conversation, the sender, or both), and **Hide text of encrypted messages**. An example
+under the settings shows the result.
 
 ## Find your way around
 

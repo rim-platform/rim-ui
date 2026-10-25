@@ -217,6 +217,8 @@ What this device holds the server to, whatever it answers later:
 - Notification inbox entries and desktop notifications of encrypted messages show the text this
   device decrypted, read from the cache; "Encrypted message" while the cache does not hold it
   decrypted. The inbox refreshes when the cache changes. The web app reads its own store.
+  Settings > Notifications > "Hide text of encrypted messages" keeps that text out of desktop
+  and browser notifications on this device, which then say only who sent the message.
 
 New DMs and groups are created with `encrypted: true` when the creator has a device set up for
 encryption (`PrincipalDevice.mlsActive`); members who are not ready yet are invited and join when

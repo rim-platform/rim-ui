@@ -6,14 +6,17 @@ import { BUS_EVENTS, type NotificationDueBusEvent } from "../../../core/events/b
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { useNotificationSettingsStore } from "../state/useNotificationSettingsStore";
-import { notificationBody, showMessageNotification } from "./desktopNotification";
+import {
+  notificationStyle,
+  useNotificationSettingsStore,
+} from "../state/useNotificationSettingsStore";
+import { formatMessageNotification, showMessageNotification } from "./desktopNotification";
 import { resolveNotificationContent } from "./resolveNotificationContent";
 
 /**
  * Renders the notifications the server decided on (`NotificationDue`). The server applies
  * levels, mutes, keywords and do-not-disturb; this only honours `quiet` and the device-local
- * toggles (enabled, sound, preview). Call once at app startup (AppShell).
+ * settings (enabled, sound, and how a notification looks). Call once at app startup (AppShell).
  */
 export function useNotificationEventHandler(workspaceId: string | null) {
   const qc = useQueryClient();
@@ -57,17 +60,19 @@ export async function renderNotificationDue(
     channelName: content.title,
     authorName: content.authorName,
     messageText: content.text,
-    showPreview: device.showPreview,
+    encrypted: content.encrypted,
   };
+  const style = notificationStyle(device);
 
   if (detectPlatform() === "desktop") {
     try {
-      await showMessageNotification({ ...message, sound: device.soundEnabled });
+      await showMessageNotification(message, style, device.soundEnabled);
     } catch {
       // The notification plugin can be unavailable; the inbox still has the entry.
     }
     return;
   }
   // No native notifications outside the desktop app: show an in-app toast instead.
-  toast.info(content.title, { description: notificationBody(message) });
+  const { title, body } = formatMessageNotification(message, style);
+  toast.info(title, { description: body });
 }

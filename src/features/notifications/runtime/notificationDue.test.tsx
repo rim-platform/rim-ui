@@ -156,7 +156,13 @@ describe("NotificationDue rendering", () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh)");
     useAuthStore.setState({ session: { userId: "me" } });
     useShellStore.getState().reset();
-    useNotificationSettingsStore.setState({ enabled: true, soundEnabled: true, showPreview: true });
+    useNotificationSettingsStore.setState({
+      enabled: true,
+      soundEnabled: true,
+      preview: "full",
+      hideEncryptedText: false,
+      title: "conversation",
+    });
   });
 
   afterEach(() => {
@@ -204,7 +210,7 @@ describe("NotificationDue rendering", () => {
   });
 
   it("respects the device toggles: no preview and no sound", async () => {
-    useNotificationSettingsStore.setState({ soundEnabled: false, showPreview: false });
+    useNotificationSettingsStore.setState({ soundEnabled: false, preview: "sender" });
     setup();
     emit(notificationDue());
     await waitFor(() =>
@@ -283,6 +289,44 @@ describe("NotificationDue rendering", () => {
     await waitFor(() =>
       expect(sendNotification).toHaveBeenCalledWith(
         expect.objectContaining({ body: "bob: Encrypted message" }),
+      ),
+    );
+  });
+
+  it("hides an encrypted message's text when this device asks to, but not a plaintext one's", async () => {
+    useNotificationSettingsStore.setState({ hideEncryptedText: true });
+    storeAccountMock.mockReturnValue({ endpoint: "http://localhost:8080/api", userId: "me" });
+    readCachedMessageMock.mockResolvedValue({
+      id: "m-9",
+      text: "the plan",
+      e2ee: { status: "decrypted" },
+    });
+    requestMock.mockImplementation((document: string) =>
+      String(document).includes("NotificationDueContext")
+        ? Promise.resolve({
+            message: {
+              id: "m-9",
+              authorId: "u-bob",
+              author: { id: "u-bob", username: "bob", displayName: null },
+              text: null,
+              encryption: { sentAtUs: "1792957000000000" },
+            },
+          })
+        : new Promise(() => {}),
+    );
+    setup();
+    emit(notificationDue({ message_id: "m-9" }));
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "New message from bob" }),
+      ),
+    );
+
+    // m-1 is a plaintext message in the timeline cache.
+    emit(notificationDue({ notification_id: "n-2", message_id: "m-1" }));
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "Alice: hello @me" }),
       ),
     );
   });
