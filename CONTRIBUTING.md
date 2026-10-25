@@ -34,8 +34,9 @@ report it privately.
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 
-  Each release also carries the image's SBOM (SPDX JSON), attested to the image;
-  `cosign verify-attestation --type spdxjson` with the same flags checks it.
+  Each release also carries the image's SBOM (SPDX JSON), attested to the image's digest as a
+  GitHub attestation: `gh attestation verify oci://ghcr.io/rim-platform/rim-web@<digest> --repo
+  rim-platform/rim-ui --predicate-type https://spdx.dev/Document/v2.3` checks it.
 
 ### Repository settings
 
