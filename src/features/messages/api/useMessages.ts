@@ -26,6 +26,7 @@ import {
   readCachedTimeline,
   trackConversation,
 } from "./messageCache";
+import { withServerMetadata } from "./serverMetadata";
 
 export { MESSAGES_QUERY };
 export type { MessageItem, MessageCursor, MessagesPage };
@@ -50,7 +51,8 @@ const EMPTY_PAGE: MessagesPage = {
  * answers; the cache only fills the gaps.
  *
  * An end-to-end encrypted conversation is read from the cache only: the server holds its
- * messages as ciphertext, which this device decrypted once, into the cache. The web app keeps
+ * messages as ciphertext, which this device decrypted once, into the cache. Their reactions,
+ * pins and threads, which the server keeps in the clear, come from the server. The web app keeps
  * encrypted conversations (and only those) in its own encrypted store once the browser is set
  * up as a linked device.
  */
@@ -126,7 +128,9 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
         const page = account
           ? await readCachedTimeline(account, workspaceId!, conversationId!, pageParam, PAGE_SIZE)
           : null;
-        return page ?? EMPTY_PAGE;
+        if (!page) return EMPTY_PAGE;
+        // The store's reactions, pins and threads are as of each message's last change.
+        return withServerMetadata(workspaceId!, conversationId!, pageParam, PAGE_SIZE, page);
       }
       const variables: Record<string, unknown> = {
         serverId: workspaceId!,

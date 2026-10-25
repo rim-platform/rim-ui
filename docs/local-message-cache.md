@@ -137,6 +137,8 @@ A user who signed in on this device before can open the app without a connection
 ## Not yet
 
 - Thread panes, pins, reactions and link previews still read from the server; the feed does not
-  version reactions, pins or previews, so cached copies of those are as of the last sync.
+  version reactions, pins or previews, so cached copies of those are as of the last sync and
+  show only offline. An encrypted conversation's timeline takes reactions, pins and threads
+  from the server too (`e2ee-desktop.md`, "The client loop").
 - Local search covers the conversations the cache follows (opened on this device, or restored
   from the history archive), not every conversation of the workspace.

@@ -74,6 +74,12 @@ is not in the group gets placeholders.
 Real-time `NewMessage` / `MessageUpdated` of encrypted messages are only signals, like
 `MlsCommitAccepted`; the timeline re-reads the cache after each page.
 
+The timeline of an encrypted conversation reads its messages from the cache and their reactions,
+pins and threads (`reactions`, `isPinned`, `rootThreadId`) from the server's `messages` query
+for the same window: the server keeps those in the clear and the change feed does not version
+them, so a cached copy is as of the message's last change. The same holds for the web app's
+store. Without an answer from the server the cached copy shows.
+
 ## Sending
 
 `sendEncrypted` (and `editEncrypted`) run under the conversation's lock:

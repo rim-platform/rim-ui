@@ -111,6 +111,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   media. Unsupported or oversized selected files are rejected before sending the message.
 - Encrypted attachments wait for upload completion before loading inline, and cached messages
   receive attachment metadata updates without consuming their decryption key again.
+- Reactions, pins and threads show in encrypted conversations, on the desktop and in the
+  browser: a reaction no longer disappears after you add it or after a reload, and a message
+  that starts a thread shows its thread.
 - Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
 - Refresh member pictures, message authors and the signed-in profile when a profile update arrives from another session.
 - **Upgrade:** update the server before this client: message queries now require the workspace
