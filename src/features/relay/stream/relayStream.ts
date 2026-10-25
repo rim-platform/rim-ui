@@ -32,6 +32,11 @@ export interface RelayStreamDeps {
   hostOf(spaceId: string): string | null;
   /** Whether this account waits for the decision on a join request for `spaceId` at `host`. */
   pendingJoinAt(host: string, spaceId: string): boolean;
+  /**
+   * The signed-in server's id when `spaceId` is one of that server's own spaces (its direct
+   * space or one of the account's workspaces there), else `null`.
+   */
+  localHostOf(spaceId: string): string | null;
   /** Bind a new direct space to its host; `false` when refused. */
   registerSpace(spaceId: string, host: string): Promise<boolean>;
   /** Pin `host` from one of `origins` unless pinned; throws when it cannot or forked. */
@@ -227,8 +232,13 @@ export class RelayStreamProcessor {
     return ["w", `u:${this.deps.principalId}`];
   }
 
-  /** Read, check and order one item; `null` when it is dropped. */
-  private async verifiedEvent(item: RelayItemView): Promise<HostEvent | null> {
+  /**
+   * The event of `item` once its envelope verifies against its host's key, its space is bound
+   * to that host, and its stream belongs here; `null` otherwise. With `held`, a space of the
+   * signed-in server counts as bound to that server: a request from someone there invites to
+   * one of its own spaces, which are never registered as remote ones.
+   */
+  private async verifiedEvent(item: RelayItemView, held = false): Promise<HostEvent | null> {
     const { crypto } = this.deps;
     const host = item.hostServerId;
     let unverified: HostEvent;
@@ -242,7 +252,8 @@ export class RelayStreamProcessor {
       logger.warn("[RIM:relay] dropping an item whose envelope names another host or space");
       return null;
     }
-    const known = this.deps.hostOf(item.workspaceId);
+    const known =
+      this.deps.hostOf(item.workspaceId) ?? (held ? this.deps.localHostOf(item.workspaceId) : null);
     const invite =
       unverified.event.type === "DmInvite" && unverified.stream === `u:${this.deps.principalId}`;
     const decision = isPendingDecision(unverified, known, this.deps);
@@ -275,7 +286,7 @@ export class RelayStreamProcessor {
    * a verified `DmInvite` to its host, so its Welcome can be read before the person decides.
    */
   verifyHeld(item: RelayItemView): Promise<HostEvent | null> {
-    const run = this.queue.then(() => this.verifiedEvent(item));
+    const run = this.queue.then(() => this.verifiedEvent(item, true));
     this.queue = run.then(
       () => undefined,
       () => undefined,

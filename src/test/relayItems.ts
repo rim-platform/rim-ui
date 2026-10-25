@@ -62,6 +62,7 @@ export function processorFor(
     crypto: browserRelayCrypto,
     principalId: ME,
     hostOf: (id) => (id === SPACE ? HOST : null),
+    localHostOf: () => null,
     registerSpace: vi.fn(async () => true),
     ensurePinned: vi.fn(async () => undefined),
     hostKeyAt: vi.fn(async () => HOST_KEY),

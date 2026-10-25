@@ -30,6 +30,15 @@ function localSpaceIds(): Set<string> {
 }
 
 /**
+ * This relay's server id when `spaceId` is one of its own spaces: its direct space or a
+ * workspace of the signed-in account. `null` for any other space, or before the relay started.
+ */
+export function localSpaceHost(spaceId: string): string | null {
+  const serverId = useRelayStore.getState().info?.serverId;
+  return serverId && localSpaceIds().has(spaceId) ? serverId : null;
+}
+
+/**
  * Record that `spaceId` is hosted by `hostServerId`. Returns whether the space is (now) bound
  * to that host; `false` when the id belongs to this relay or another host.
  */

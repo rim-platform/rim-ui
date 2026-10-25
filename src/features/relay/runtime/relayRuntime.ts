@@ -41,7 +41,7 @@ import { resetRelaySelf } from "../remote/relaySelf";
 import { finishOnNewRelay } from "../remote/relaySwitchLive";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
-import { loadSpaces, registerSpace } from "../state/spaces";
+import { loadSpaces, localSpaceHost, registerSpace } from "../state/spaces";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
 import { activeProcessor, setActiveProcessor } from "../stream/activeProcessor";
 import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
@@ -155,6 +155,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
     crypto: relayCrypto(),
     principalId: me.principalId,
     hostOf,
+    localHostOf: localSpaceHost,
     pendingJoinAt: (host, spaceId) => pendingRemoteJoinAt(host, spaceId) !== null,
     registerSpace: (spaceId, host) => registerSpace(spaceId, host, "direct"),
     ensurePinned: async (host, origins) => {
