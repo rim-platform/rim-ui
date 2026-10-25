@@ -36,6 +36,13 @@ export interface TypingStoppedEvent {
   userId: string;
 }
 
+/** Messages of an encrypted conversation this device just decrypted into its store. */
+export interface MessagesDecryptedEvent {
+  workspaceId: string;
+  conversationId: string;
+  messageIds: string[];
+}
+
 /** A server-decided notification for the viewer (`NotificationDue`), ready to render. */
 export interface NotificationDueBusEvent {
   workspaceId: string;
@@ -81,6 +88,7 @@ export const BUS_EVENTS = {
   TYPING_STARTED: "typing:started",
   TYPING_STOPPED: "typing:stopped",
   NOTIFICATION_DUE: "notification:due",
+  MESSAGES_DECRYPTED: "e2ee:messagesDecrypted",
   WORKSPACE_STATE_CHANGED: "workspaceState:changed",
   WORKSPACE_STATE_DELETED: "workspaceState:deleted",
   PIPELINE_FIRED: "pipeline:fired",

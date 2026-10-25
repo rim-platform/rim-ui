@@ -16,6 +16,8 @@
 
 import { useEffect } from "react";
 
+import { BUS_EVENTS, type MessagesDecryptedEvent } from "../../../core/events/busEvents";
+import { eventBus } from "../../../core/events/eventBus";
 import type { MessageChangesInput } from "../../../core/graphql/generated/schema-types";
 import { onWsConnected } from "../../../core/graphql/wsClient";
 import { logger } from "../../../core/logger";
@@ -181,7 +183,8 @@ export function setE2eeNoteHandler(handler: E2eeNoteHandler | null) {
 /**
  * The account's store: the cache on the Tauri side, or the web app's encrypted store.
  * Encrypted conversations of a page get their Commits and thread roots fetched first; the store
- * decrypts their entries while storing the page.
+ * decrypts their entries while storing the page, and the messages it decrypted are announced on
+ * the event bus.
  */
 export function storeBackend(account: CacheAccount): CacheSyncBackend {
   return {
@@ -189,6 +192,14 @@ export function storeBackend(account: CacheAccount): CacheSyncBackend {
     apply: async (workspaceId, changes) => {
       const mls = await mlsInputsFor(account, workspaceId, changes);
       const step = await applyCacheChanges(account, workspaceId, changes, mls);
+      for (const note of step?.e2ee ?? []) {
+        if (note.decrypted.length === 0) continue;
+        eventBus.emit<MessagesDecryptedEvent>(BUS_EVENTS.MESSAGES_DECRYPTED, {
+          workspaceId,
+          conversationId: note.conversationId,
+          messageIds: note.decrypted.map((m) => m.messageId),
+        });
+      }
       if (step && step.e2ee.length > 0) e2eeNoteHandler?.(account, workspaceId, step.e2ee);
       return step?.next ?? null;
     },

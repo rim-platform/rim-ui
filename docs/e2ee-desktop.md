@@ -216,7 +216,10 @@ What this device holds the server to, whatever it answers later:
   device after decrypting, as a desktop notification without an inbox entry.
 - Notification inbox entries and desktop notifications of encrypted messages show the text this
   device decrypted, read from the cache; "Encrypted message" while the cache does not hold it
-  decrypted. The inbox refreshes when the cache changes. The web app reads its own store.
+  decrypted. The inbox refreshes when the cache changes. A desktop notification usually arrives
+  while the sync its message started is still decrypting it, so it waits for the sync to
+  announce the message (`MESSAGES_DECRYPTED` on the event bus), at most 4 seconds. The web app
+  reads its own store.
   Settings > Notifications > "Hide text of encrypted messages" keeps that text out of desktop
   and browser notifications on this device, which then say only who sent the message.
 
