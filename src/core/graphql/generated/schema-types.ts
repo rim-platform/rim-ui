@@ -1992,8 +1992,8 @@ export type Mutation = {
   /**
    * Announce that the caller is typing in a direct conversation. Typing is announced in direct
    * conversations only: the mutation answers `true` when it emitted a `TypingStarted` event and
-   * `false` when it did not, which is in a channel or a group, or on a repeat inside the
-   * throttle window.
+   * `false` when it did not, which is in a channel or a group, in a DM whose message request
+   * the caller has not accepted, or on a repeat inside the throttle window.
    */
   startTyping: Scalars['Boolean']['output'];
   /**
