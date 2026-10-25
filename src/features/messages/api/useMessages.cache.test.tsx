@@ -12,6 +12,7 @@ const readCachedTimelineMock = vi.fn();
 const trackConversationMock = vi.fn();
 const requestCacheSyncMock = vi.fn();
 const account = { endpoint: "http://localhost:8080/api", userId: "u1" };
+let conversation: { encryptedAt: string | null } | undefined;
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
@@ -28,11 +29,16 @@ vi.mock("./messageCache", async (importOriginal) => ({
   trackConversation: (...args: unknown[]) => trackConversationMock(...args),
 }));
 
+vi.mock("../../conversations/api/useConversation", () => ({
+  useConversation: () => ({ data: conversation }),
+}));
+
 vi.mock("../runtime/messageCacheSync", () => ({
   requestCacheSync: (...args: unknown[]) => requestCacheSyncMock(...args),
 }));
 
 import { useConversationMessages } from "./useMessages";
+import { MESSAGE_METADATA_QUERY } from "./serverMetadata";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({
@@ -57,6 +63,7 @@ describe("useConversationMessages with the local cache", () => {
     trackConversationMock.mockReset().mockResolvedValue(undefined);
     requestCacheSyncMock.mockReset();
     useAuthStore.setState({ session: { userId: "u1" } });
+    conversation = undefined;
   });
 
   it("follows the opened conversation and asks for its sync", async () => {
@@ -116,5 +123,101 @@ describe("useConversationMessages with the local cache", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     // Only the placeholder read touched the cache; the failed query did not fall back.
     expect(readCachedTimelineMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useConversationMessages in an encrypted conversation", () => {
+  const stored: MessagesPage = {
+    items: [
+      {
+        id: "m1",
+        text: "decrypted here",
+        isPinned: false,
+        rootThreadId: null,
+        reactions: [],
+      } as unknown as MessagesPage["items"][number],
+      {
+        id: "m2",
+        text: "",
+        isDeleted: true,
+        isPinned: false,
+        reactions: [],
+      } as unknown as MessagesPage["items"][number],
+    ],
+    next: null,
+    prev: null,
+    pageInfo: { hasNext: false, hasPrev: false },
+  };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    readCachedTimelineMock.mockReset().mockResolvedValue(stored);
+    trackConversationMock.mockReset().mockResolvedValue(undefined);
+    requestCacheSyncMock.mockReset();
+    useAuthStore.setState({ session: { userId: "u1" } });
+    conversation = { encryptedAt: "2026-10-25T18:00:00Z" };
+  });
+
+  it("takes the text from the store and reactions, pins and threads from the server", async () => {
+    const reaction = { emoji: "😀", count: 1, reactedByMe: true, userIds: ["u1"] };
+    requestMock.mockResolvedValue({
+      messages: {
+        items: [{ id: "m1", isPinned: true, rootThreadId: "t1", reactions: [reaction] }],
+      },
+    });
+
+    const { result } = renderHook(() => useConversationMessages("ws-1", "conv-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages[0].items[0].reactions).toHaveLength(1));
+    const [m1, m2] = result.current.data!.pages[0].items;
+    expect(m1).toMatchObject({
+      text: "decrypted here",
+      isPinned: true,
+      rootThreadId: "t1",
+      reactions: [reaction],
+    });
+    // A message the server did not answer for keeps what the store has.
+    expect(m2).toMatchObject({ isDeleted: true, reactions: [] });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledWith(MESSAGE_METADATA_QUERY, {
+      serverId: "ws-1",
+      conversationId: "conv-1",
+      dir: "AFTER",
+      limit: 50,
+      includeDeleted: false,
+    });
+  });
+
+  it("asks the server for the window of the stored page it read", async () => {
+    requestMock.mockResolvedValue({ messages: { items: [] } });
+    const cursor = { sentAt: "2026-10-25T18:30:00Z", messageId: "m9" };
+    readCachedTimelineMock.mockResolvedValue({
+      ...stored,
+      next: cursor,
+      pageInfo: { hasNext: true, hasPrev: false },
+    });
+
+    const { result } = renderHook(() => useConversationMessages("ws-1", "conv-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.hasNextPage).toBe(true));
+    await result.current.fetchNextPage();
+    expect(readCachedTimelineMock).toHaveBeenLastCalledWith(account, "ws-1", "conv-1", cursor, 50);
+    expect(requestMock).toHaveBeenLastCalledWith(
+      MESSAGE_METADATA_QUERY,
+      expect.objectContaining({ cursor, limit: 50, dir: "AFTER" }),
+    );
+  });
+
+  it("keeps the stored page when the server cannot answer", async () => {
+    requestMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const { result } = renderHook(() => useConversationMessages("ws-1", "conv-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.isPlaceholderData).toBe(false);
+    expect(result.current.data?.pages[0].items[0]).toMatchObject({
+      text: "decrypted here",
+      reactions: [],
+    });
   });
 });
