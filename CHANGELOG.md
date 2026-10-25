@@ -114,6 +114,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Reactions, pins and threads show in encrypted conversations, on the desktop and in the
   browser: a reaction no longer disappears after you add it or after a reload, and a message
   that starts a thread shows its thread.
+- Notifications of encrypted messages show the message's text, in the notification list and in
+  desktop and browser notifications, instead of "Attachment" or nothing. A message this device
+  cannot read yet shows "Encrypted message".
 - Install hash-pinned browser plugin links through the authenticated RIM server, with explicit compatibility and validation errors, and valid CSP origins for relative API endpoints.
 - Refresh member pictures, message authors and the signed-in profile when a profile update arrives from another session.
 - **Upgrade:** update the server before this client: message queries now require the workspace

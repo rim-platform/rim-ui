@@ -19,9 +19,16 @@ import type { NotificationItem, NotificationPage } from "../api/useNotifications
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
 
 const requestMock = vi.fn();
+const storeAccountMock = vi.fn((): unknown => null);
+const readCachedMessageMock = vi.fn();
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
+}));
+vi.mock("../../messages/api/messageCache", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../messages/api/messageCache")>()),
+  encryptedStoreAccount: () => storeAccountMock(),
+  readCachedMessage: (...args: unknown[]) => readCachedMessageMock(...args),
 }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
@@ -54,6 +61,7 @@ function notification(overrides: Partial<NotificationItem> = {}): NotificationIt
       text: "can you look at the deploy?",
       isDeleted: false,
       sentAt: new Date().toISOString(),
+      encryption: null,
     },
     ...overrides,
   };
@@ -73,6 +81,7 @@ const keyword = notification({
     text: "outage in eu-west",
     isDeleted: false,
     sentAt: "2026-10-05T08:00:00Z",
+    encryption: null,
   },
 });
 
@@ -120,6 +129,8 @@ function row(text: string): HTMLElement {
 describe("NotificationsPanel", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    storeAccountMock.mockReset().mockReturnValue(null);
+    readCachedMessageMock.mockReset();
     useShellStore.getState().reset();
     useAuthStore.setState({ session: { userId: "me" } });
     useNotificationsPanelStore.setState({ open: true, unreadOnly: false });
@@ -153,6 +164,39 @@ describe("NotificationsPanel", () => {
       cursor: null,
       limit: 30,
     });
+  });
+
+  it("shows an encrypted message's text from this device's store, or that it is encrypted", async () => {
+    const account = { endpoint: "http://localhost:8080/api", userId: "me" };
+    storeAccountMock.mockReturnValue(account);
+    readCachedMessageMock.mockImplementation((_account: unknown, id: string) =>
+      Promise.resolve(
+        id === "m-read"
+          ? { id, text: "whatsup buddy", e2ee: { status: "decrypted" } }
+          : id === "m-placeholder"
+            ? { id, text: "", e2ee: { status: "undecryptable" } }
+            : null,
+      ),
+    );
+    const encrypted = (id: string) =>
+      notification({
+        id: `n-${id}`,
+        messageId: id,
+        reason: NotificationReason.DIRECT,
+        message: {
+          ...notification().message!,
+          id,
+          text: null,
+          encryption: { sentAtUs: "1792957000000000" },
+        },
+      });
+    serve(() => page([encrypted("m-read"), encrypted("m-placeholder"), encrypted("m-unsynced")]));
+    renderPanel();
+
+    expect(await screen.findByText("whatsup buddy")).toBeInTheDocument();
+    expect(screen.getAllByText("Encrypted message")).toHaveLength(2);
+    expect(screen.queryByText("Attachment")).not.toBeInTheDocument();
+    expect(readCachedMessageMock).toHaveBeenCalledWith(account, "m-read");
   });
 
   it("the Unread only filter asks the server for unread entries", async () => {

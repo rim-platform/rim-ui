@@ -10,6 +10,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { storedText } from "./storedText";
 import {
   PageDir,
   type ConversationTypeEnum,
@@ -60,6 +61,9 @@ const MY_NOTIFICATIONS = gql`
           text
           isDeleted
           sentAt
+          encryption {
+            sentAtUs
+          }
         }
       }
       next {
@@ -105,9 +109,12 @@ export interface NotificationMessage {
   threadId: string | null;
   authorId: string;
   author: { id: string; username: string; displayName: string | null } | null;
+  /** The text; for an encrypted message the text this device decrypted, `null` without it. */
   text: string | null;
   isDeleted: boolean;
   sentAt: string;
+  /** Set when the message is end-to-end encrypted: the server holds no text for it. */
+  encryption: { sentAtUs: string } | null;
 }
 
 /** One inbox entry. `conversation`/`message` are null once the viewer can no longer read it. */
@@ -127,6 +134,13 @@ export interface NotificationPage {
   items: NotificationItem[];
   next: NotificationCursor | null;
   pageInfo: { hasNext: boolean; hasPrev: boolean };
+}
+
+/** `item` with an encrypted message's text taken from this device's store. */
+async function withStoredText(item: NotificationItem): Promise<NotificationItem> {
+  const message = item.message;
+  if (!message?.encryption || message.isDeleted) return item;
+  return { ...item, message: { ...message, text: await storedText(message.id) } };
 }
 
 /**
@@ -151,7 +165,8 @@ export function useNotifications(serverId: string | null | undefined, unreadOnly
           limit: PAGE_SIZE,
         },
       );
-      return res.myNotifications;
+      const page = res.myNotifications;
+      return { ...page, items: await Promise.all(page.items.map(withStoredText)) };
     },
     getNextPageParam: (last) => (last.pageInfo.hasNext && last.next ? last.next : undefined),
   });

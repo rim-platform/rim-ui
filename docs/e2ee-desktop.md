@@ -214,6 +214,9 @@ What this device holds the server to, whatever it answers later:
   device (`e2ee-web.md`).
 - Keyword notifications for encrypted groups at the "mentions" level are matched on this
   device after decrypting, as a desktop notification without an inbox entry.
+- Notification inbox entries and desktop notifications of encrypted messages show the text this
+  device decrypted, read from the cache; "Encrypted message" while the cache does not hold it
+  decrypted. The inbox refreshes when the cache changes. The web app reads its own store.
 
 New DMs and groups are created with `encrypted: true` when the creator has a device set up for
 encryption (`PrincipalDevice.mlsActive`); members who are not ready yet are invited and join when
