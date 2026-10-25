@@ -220,7 +220,12 @@ to the other at the top of its timeline.
 
 Pending `dmRequests` sit above the notifications, counted on the bell. Each shows the name from
 the request's card, verified against the sender's key log, and the fingerprint. "Read first"
-verifies the held `DmInvite`, binds the space, processes the Welcome and opens the conversation;
+verifies the held `DmInvite`, binds the space, processes the Welcome and opens the conversation,
+whose composer gives way to the request's decision (`DmRequestBar`: Accept, Ignore, Block and
+Report; Ignore and Block close its view) while the request is pending. The server
+refuses posts, reactions and typing from the recipient there until they accept (rim-server
+`docs/relay.md`, "The request inbox"), and the bar keeps a reply to a request hosted elsewhere
+from being sent at all;
 Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
 relay. A request from someone on this server invites to one of its own spaces (its direct space or
 a workspace of the account), which is never bound as a remote space: when verifying held items,
