@@ -50,6 +50,7 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { CommandPalette } from "./CommandPalette";
+import { useCommands } from "../api/useCommands";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -71,6 +72,15 @@ const MARK_AS_READ: CommandDefinition = {
   keybindCapable: true,
   dangerous: false,
 };
+
+function serverCommand(
+  id: string,
+  title: string,
+  description: string,
+  category: string,
+): CommandDefinition {
+  return { ...MARK_AS_READ, id, title, description, category };
+}
 
 const SUCCESS: CommandResult = {
   status: "SUCCESS",
@@ -149,5 +159,57 @@ describe("CommandPalette command context", () => {
         threadId: "thread-1",
       },
     });
+  });
+});
+
+describe("CommandPalette search", () => {
+  beforeEach(() => {
+    vi.mocked(useCommands).mockReturnValue({
+      data: [
+        serverCommand("admin.reset_password", "Reset Password", "Set a new password", "Admin"),
+        serverCommand(
+          "chat.search_messages",
+          "Search Messages",
+          "Search workspace messages by text content.",
+          "Chat",
+        ),
+        serverCommand(
+          "chat.create_group",
+          "Create Group",
+          "Create a group conversation.",
+          "Conversation",
+        ),
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    vi.mocked(useCommands).mockReturnValue({
+      data: [MARK_AS_READ],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  it("puts the best match first, under its group's header", () => {
+    render(<CommandPalette />);
+    act(() => useCommandStore.getState().openCommandPalette());
+    fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
+      target: { value: "sea" },
+    });
+
+    const first = document.querySelector("[data-command-item]") as HTMLElement;
+    expect(first).toHaveTextContent("Search Messages");
+    expect(first.previousElementSibling).toHaveTextContent("Chat");
+  });
+
+  it("lists chat.create_group as New message", () => {
+    render(<CommandPalette />);
+    act(() => useCommandStore.getState().openCommandPalette());
+
+    expect(screen.getByText("New message")).toBeInTheDocument();
+    expect(screen.getByText("Start a direct message or a group conversation.")).toBeInTheDocument();
+    expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
   });
 });

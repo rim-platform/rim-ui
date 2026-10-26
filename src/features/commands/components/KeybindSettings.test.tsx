@@ -182,6 +182,25 @@ describe("KeybindSettings", () => {
     expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
   });
 
+  it("shows chat.create_group as New message although the server calls it Create Group", () => {
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [makeKeybind({ keystroke: "Ctrl+Shift+G", commandId: "chat.create_group" })],
+      isLoading: false,
+    } as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [makeCommand({ id: "chat.create_group", title: "Create Group" })],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+    expect(screen.getByText("New message")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+    const commandSelect = screen.getAllByRole("combobox")[0];
+    expect(within(commandSelect).getByText("New message")).toBeInTheDocument();
+    expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
+  });
+
   describe("default rows", () => {
     beforeEach(() => {
       useDeviceKeybindStore.setState({ keybinds: [] });

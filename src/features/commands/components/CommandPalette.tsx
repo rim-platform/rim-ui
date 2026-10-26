@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Terminal, Plug, User, Zap } from "lucide-react";
-import { useFuzzySearchList, Highlight } from "@nozbe/microfuzz/react";
+import { Highlight } from "@nozbe/microfuzz/react";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCommandStore } from "../state/useCommandStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
@@ -17,7 +17,8 @@ import { commandResultOf, dispatchCommand } from "../runtime/commandDispatcher";
 import { currentCommandContext } from "../runtime/commandContext";
 import { runWithHumanConfirmation, strictestSensitivity } from "../runtime/humanConfirmation";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
-import { LOCAL_COMMANDS } from "../runtime/localCommands";
+import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
+import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
@@ -63,7 +64,7 @@ export function CommandPalette() {
 
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
-    const base = commands?.filter((cmd) => cmd.visibleInPalette) ?? [];
+    const base = commands?.filter((cmd) => cmd.visibleInPalette).map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
     const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));
     return [
@@ -75,34 +76,10 @@ export function CommandPalette() {
     ];
   }, [commands, pluginCommands, registryItems, runnableHere]);
 
-  const getCommandText = useCallback(
-    (cmd: CommandDefinition) => [cmd.title, cmd.description, cmd.category],
-    [],
-  );
-
-  const mapCommandResult = useCallback(
-    (result: {
-      item: CommandDefinition;
-      score: number;
-      matches: Array<Array<[number, number]> | null>;
-    }) => result,
-    [],
-  );
-
-  // Fuzzy-filter commands by search query via microfuzz
   // When pipe segments exist, searchQuery already contains only the active segment
   // (text after the last `|`) because handleSearchChange resets it on pipe.
-  const fuzzyResults = useFuzzySearchList({
-    list: visibleCommands,
-    queryText: searchQuery,
-    getText: getCommandText,
-    mapResultItem: mapCommandResult,
-  });
-
-  // Sort filtered commands by category and compute category groups
-  const sortedResults = useMemo(() => {
-    return [...fuzzyResults].sort((a, b) => a.item.category.localeCompare(b.item.category));
-  }, [fuzzyResults]);
+  const search = useMemo(() => createPaletteSearch(visibleCommands), [visibleCommands]);
+  const sortedResults = useMemo(() => search(searchQuery), [search, searchQuery]);
 
   // Compute category header positions
   const categoryHeaders = useMemo(() => {
@@ -428,7 +405,7 @@ export function CommandPalette() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">
-                          <Highlight text={cmd.title} ranges={result.matches?.[0] ?? null} />
+                          <Highlight text={cmd.title} ranges={result.titleRanges} />
                         </span>
                         {cmd.dangerous && (
                           <span className="rounded bg-rim-danger/20 px-1.5 py-0.5 text-[10px] font-medium text-rim-danger">
@@ -437,7 +414,7 @@ export function CommandPalette() {
                         )}
                       </div>
                       <div className="text-xs text-rim-text-muted truncate">
-                        <Highlight text={cmd.description} ranges={result.matches?.[1] ?? null} />
+                        <Highlight text={cmd.description} ranges={result.descriptionRanges} />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

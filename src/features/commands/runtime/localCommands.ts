@@ -68,6 +68,27 @@ export function isLocalCommand(commandId: string): boolean {
 }
 
 /**
+ * Titles of server commands this app runs as its own action, for the surfaces that run them
+ * here.
+ */
+export const CLIENT_COMMAND_LABELS: Readonly<
+  Record<string, { title: string; description: string }>
+> = {
+  "chat.create_group": {
+    title: "New message",
+    description: "Start a direct message or a group conversation.",
+  },
+};
+
+/** `cmd` with the title and description this app shows for it, when it has its own. */
+export function withClientLabel<T extends { id: string; title: string; description: string }>(
+  cmd: T,
+): T {
+  const label = CLIENT_COMMAND_LABELS[cmd.id];
+  return label ? { ...cmd, ...label } : cmd;
+}
+
+/**
  * Titles of the built-in commands a keybind can name without the server's command list, for
  * showing a binding when the list has not loaded or the server is out of reach.
  */
@@ -90,6 +111,6 @@ export const BUILT_IN_COMMAND_TITLES: Readonly<Record<string, string>> = {
   "workspace.next_unread_channel": "Next unread conversation",
   "workspace.close_panel": "Close the open panel",
   "chat.create_channel": "Create a channel",
-  "chat.create_group": "New message",
+  "chat.create_group": CLIENT_COMMAND_LABELS["chat.create_group"].title,
   "chat.mark_all_as_read": "Mark everything as read",
 };
