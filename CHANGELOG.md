@@ -21,6 +21,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Fixed
+
+- The app no longer fails with "The app hit a render error" (`… .default is not a function`) in
+  release builds: the command palette's search takes microfuzz's `createFuzzySearch` however the
+  bundle exposes the CommonJS package.
+
 ## [0.0.4] - 2026-10-26
 
 ### Added

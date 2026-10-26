@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createPaletteSearch } from "./paletteSearch";
+import { createPaletteSearch, fuzzySearchFactory } from "./paletteSearch";
 
 interface Item {
   title: string;
@@ -89,5 +89,22 @@ describe("createPaletteSearch", () => {
         results.every((result) => result.titleRanges === null && result.descriptionRanges === null),
       ).toBe(true);
     }
+  });
+});
+
+describe("fuzzySearchFactory", () => {
+  const createFuzzySearch = () => () => [];
+
+  it("takes the function when the default export is the function", () => {
+    expect(fuzzySearchFactory({ default: createFuzzySearch })).toBe(createFuzzySearch);
+  });
+
+  it("takes the function from the module object a production bundle gives as the default", () => {
+    const moduleObject = { __esModule: true, default: createFuzzySearch };
+    expect(fuzzySearchFactory({ default: moduleObject })).toBe(createFuzzySearch);
+  });
+
+  it("refuses a module without the function", () => {
+    expect(() => fuzzySearchFactory({ default: {} })).toThrow(/createFuzzySearch/);
   });
 });

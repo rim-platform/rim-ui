@@ -1,6 +1,26 @@
-import createFuzzySearch, { type HighlightRanges } from "@nozbe/microfuzz";
+import * as microfuzz from "@nozbe/microfuzz";
+import type { HighlightRanges } from "@nozbe/microfuzz";
 
 import type { CommandDefinition } from "../types";
+
+type CreateFuzzySearch = typeof microfuzz.default;
+
+/**
+ * microfuzz's `createFuzzySearch` from the package's module namespace. The package is CommonJS:
+ * the test runner gives its default export as the function itself, the production bundle as
+ * the module object that holds the function under `default`.
+ *
+ * @param mod - the namespace `import * as` gives for `@nozbe/microfuzz`
+ * @returns the `createFuzzySearch` function
+ */
+export function fuzzySearchFactory(mod: { default: unknown }): CreateFuzzySearch {
+  const inner = mod.default as { default?: unknown } | undefined;
+  const fn = typeof mod.default === "function" ? mod.default : inner?.default;
+  if (typeof fn !== "function") throw new Error("@nozbe/microfuzz exports no createFuzzySearch");
+  return fn as CreateFuzzySearch;
+}
+
+const createFuzzySearch = fuzzySearchFactory(microfuzz);
 
 /** The score microfuzz gives a query found inside a word rather than at its start. */
 const MID_WORD_CONTAINS_SCORE = 2;
