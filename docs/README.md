@@ -66,15 +66,22 @@ Normative, versioned formats in `specs/`:
 
 ## Releasing
 
-A release is the tag `v<version>`, cut by the maintainer as rim-server's
-`docs/operations/release-checklist.md` lists, with rim-server at the same version. In this
-repository:
+A release is the tag `v<version>`, cut by the maintainer. rim-ui releases on its own, with its
+own version numbers: a deployment runs the web client at `RIM_WEB_VERSION`, and rim-server's
+pull deployer deploys a new rim-ui release to the web container alone (rim-server's
+`deploy/README.md`). In this repository:
 
-1. The release pull request runs `npm run version:set -- <version>`, which writes the version to
+1. Before the release pull request, `npm run skew:check` runs against the server version
+   production runs (`version-skew.md`), and the web image is built as the release workflow
+   builds it (`docker build --build-arg VITE_GRAPHQL_ENDPOINT=/api .`) and run against that
+   server in a throwaway local compose stack: sign up, sign in and use what the release changes,
+   with the browser console open. A unit test cannot show how the release bundle resolves a
+   module.
+2. The release pull request runs `npm run version:set -- <version>`, which writes the version to
    `package.json`, `package-lock.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` and
    turns `Unreleased` in `CHANGELOG.md` into the version's section. `npm run version:check`, also
    run in CI, fails when those files disagree.
-2. Pushing the tag starts `.github/workflows/release.yaml`. After the maintainer approves it in
+3. Pushing the tag starts `.github/workflows/release.yaml`. After the maintainer approves it in
    the `release` environment, it publishes the web image and builds the Linux and Windows
    installers, then publishes the GitHub release with the changelog section, the installers,
    the updater's `latest.json`, `THIRD-PARTY-LICENSES.txt`, a cosign-signed `SHA256SUMS` and

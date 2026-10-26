@@ -4,7 +4,8 @@ What changes between rim-ui releases, for the people who use the web and desktop
 people who run a server with the web client, and the people who write plugins. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html); a release is the tag `v<version>`,
-the version in `package.json`, and rim-ui releases under the same version as rim-server.
+the version in `package.json`. rim-ui releases on its own, with its own version numbers: a
+deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RIM_VERSION`.
 
 ## How entries are written
 
