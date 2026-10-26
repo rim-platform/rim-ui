@@ -2314,7 +2314,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812de62ab573b876c6c40d7553bae9402ae3bad95b64af06f964388eecb9b7b1"
 dependencies = [
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.7.0",
  "hpke-rs-libcrux",
  "hpke-rs-rust-crypto",
  "libcrux-sha3",
@@ -2336,12 +2336,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hpke-rs-crypto"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ae5655535eadbe2c8091ccc4c1913768b795dc04d1b85c821d5c41fe49d828"
+dependencies = [
+ "rand 0.10.3",
+ "zeroize",
+]
+
+[[package]]
 name = "hpke-rs-libcrux"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c1ace95ef11fbbd84527eada5fc1304f66720fc4c008db30d888d62d3c52613"
 dependencies = [
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.7.0",
  "libcrux-aead",
  "libcrux-ecdh",
  "libcrux-hkdf",
@@ -2362,7 +2372,7 @@ dependencies = [
  "aes-gcm",
  "chacha20poly1305",
  "hkdf 0.13.0",
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.7.0",
  "k256",
  "ml-kem",
  "p256",
@@ -3953,7 +3963,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41e6367fb30f91f21e4d30f4f58a8d3b41f96f55c3e4b5acfa1d6d18c9dd4855"
 dependencies = [
  "hpke-rs",
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.7.0",
  "hpke-rs-libcrux",
  "libcrux-aead",
  "libcrux-ed25519",
@@ -3993,7 +4003,7 @@ dependencies = [
  "hkdf 0.13.0",
  "hmac 0.13.0",
  "hpke-rs",
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.7.0",
  "hpke-rs-rust-crypto",
  "ml-dsa",
  "openmls_memory_storage",
@@ -4916,7 +4926,7 @@ dependencies = [
  "hex",
  "hkdf 0.12.4",
  "hmac 0.12.1",
- "hpke-rs-crypto",
+ "hpke-rs-crypto 0.8.0",
  "hpke-rs-libcrux",
  "hpke-rs-rust-crypto",
  "libcrux-ml-kem",
