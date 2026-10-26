@@ -21,6 +21,14 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Added
+
+- Owners and moderators can choose who posts in a channel (**Who can post…** in the channel's
+  menu): everyone, or only the owner and moderators, optionally still letting everyone else
+  react and reply in threads. Members of such a channel see a bar instead of the composer, and
+  the actions they cannot take are left out of the message menus. A server without posting
+  permissions keeps every channel open to everyone, and the menu item stays hidden.
+
 ## [0.0.1] - 2026-10-25
 
 ### Added

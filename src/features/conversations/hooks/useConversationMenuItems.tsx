@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { ConversationTypeEnum, PostingPolicy } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import type { HoverTarget } from "../../../shell/state/useHoverContextStore";
@@ -32,8 +32,10 @@ import {
   useAcceptConversationInviteMutation,
   useDeclineConversationInviteMutation,
 } from "../api/useConversationInvite";
+import { cachedChannelPosting } from "../api/useChannelPosting";
 import { useMarkAsRead } from "../api/useMarkAsRead";
 import { formatSlowModeInterval } from "../api/useSlowMode";
+import { ChannelPostingDialog } from "../components/ChannelPostingDialog";
 import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
 import { SlowModeDialog } from "../components/SlowModeDialog";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
@@ -64,7 +66,7 @@ export interface ConversationMenuOptions {
 }
 
 type PendingDialog = {
-  kind: "archive" | "leave" | "slow-mode" | "agent";
+  kind: "archive" | "leave" | "slow-mode" | "posting" | "agent";
   conversation: ConversationSummary;
 };
 
@@ -75,7 +77,8 @@ type PendingDialog = {
  * - An invitation the viewer holds: Accept (on a device set up for encryption) and Decline.
  * - A channel: Join channel first for a public one the viewer is not in, then Mark as read
  *   (when unread), Notifications, Members, Invite people…, Edit topic…, Assign keybind…, the
- *   Owner/Moderator's Moderation section (Slow mode…, Archive channel… or Unarchive channel),
+ *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
+ *   posting policies, Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
  * - A group: Mark as read, Notifications, Members, Add people…, Assign keybind…, Leave group….
  * - A DM: Mark as read, Notifications, Add to contacts or Remove from contacts (while the
@@ -85,7 +88,7 @@ type PendingDialog = {
  *   and whose notification settings and mutes stay loaded. A conversation's actions go to its
  *   own `serverId`.
  * @returns `getItems`, the items for a conversation when its menu opens, and `dialogs`, the
- *   confirmations and the slow-mode dialog to render beside the surface.
+ *   confirmations and the slow-mode and posting dialogs to render beside the surface.
  */
 export function useConversationMenuItems(workspaceId: string | null): {
   getItems: (
@@ -310,6 +313,15 @@ export function useConversationMenuItems(workspaceId: string | null): {
                 : undefined,
             onSelect: () => setPending({ kind: "slow-mode", conversation }),
           });
+          const posting = cachedChannelPosting(qc, serverId, conversationId);
+          if (posting?.supported !== false) {
+            moderation.push({
+              id: "posting",
+              label: "Who can post…",
+              detail: posting?.policy === PostingPolicy.MODERATORS ? "Moderators" : undefined,
+              onSelect: () => setPending({ kind: "posting", conversation }),
+            });
+          }
         }
         moderation.push(
           archived
@@ -399,6 +411,14 @@ export function useConversationMenuItems(workspaceId: string | null): {
 
       {pending?.kind === "slow-mode" && (
         <SlowModeDialog
+          workspaceId={pending.conversation.serverId}
+          conversation={pending.conversation}
+          onClose={() => setPending(null)}
+        />
+      )}
+
+      {pending?.kind === "posting" && (
+        <ChannelPostingDialog
           workspaceId={pending.conversation.serverId}
           conversation={pending.conversation}
           onClose={() => setPending(null)}

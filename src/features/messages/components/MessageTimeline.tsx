@@ -45,6 +45,7 @@ import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
 import { replyQuoteFor } from "./message-item/replyQuoteView";
+import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import {
   NavigationHints,
   NewMessagesDivider,
@@ -260,9 +261,16 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     },
     [openUserMenu],
   );
+  const rights = usePostingRights(workspaceId, conversationId);
   const handlers = useMemo(
-    () => ({ ...rowHandlers, bindUserContextMenu, onMentionContextMenu }),
-    [rowHandlers, bindUserContextMenu, onMentionContextMenu],
+    () => ({
+      ...rowHandlers,
+      bindUserContextMenu,
+      onMentionContextMenu,
+      canAddReaction: rights.reaction,
+      canStartThread: rights.thread,
+    }),
+    [rowHandlers, bindUserContextMenu, onMentionContextMenu, rights.reaction, rights.thread],
   );
 
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);

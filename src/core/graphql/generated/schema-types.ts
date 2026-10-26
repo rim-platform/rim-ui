@@ -402,6 +402,16 @@ export type Conversation = {
    * `memberIds` or `memberCount`.
    */
   pendingMemberIds: Array<Scalars['ID']['output']>;
+  /**
+   * Under `MODERATORS`, whether everyone else may still add reactions and reply in threads.
+   * Ignored under `EVERYONE`.
+   */
+  postingAllowsThreads: Scalars['Boolean']['output'];
+  /**
+   * Who may post in the channel: `EVERYONE` or `MODERATORS` (the workspace's Owner and
+   * Moderators). Always `EVERYONE` for DMs and groups.
+   */
+  postingPolicy: PostingPolicy;
   /** The conversation this one succeeds, on the host that held it; null for any other. */
   predecessor?: Maybe<ConversationPredecessor>;
   serverId: Scalars['ID']['output'];
@@ -1927,6 +1937,13 @@ export type Mutation = {
    */
   sendEncryptedMessage: Message;
   sendMessage: Message;
+  /**
+   * Set who may post in a channel: `EVERYONE`, or `MODERATORS` (the workspace's Owner and
+   * Moderators). Under `MODERATORS`, `allowsThreads` says whether everyone else may still add
+   * reactions and reply in threads. Owner/Moderator; channels only (`VALIDATION` otherwise);
+   * not on an archived channel. Audited (`chat.set_channel_posting`).
+   */
+  setChannelPosting: Conversation;
   /** Archive or unarchive a channel (Owner/Moderator). Archived channels are read-only. */
   setConversationArchived: Conversation;
   /**
@@ -2610,6 +2627,14 @@ export type MutationSendMessageArgs = {
 };
 
 
+export type MutationSetChannelPostingArgs = {
+  allowsThreads: Scalars['Boolean']['input'];
+  conversationId: Scalars['ID']['input'];
+  policy: PostingPolicy;
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationSetConversationArchivedArgs = {
   archived: Scalars['Boolean']['input'];
   conversationId: Scalars['ID']['input'];
@@ -3074,6 +3099,14 @@ export type PluginSource = {
 export enum PluginSourceKind {
   BUNDLE = 'BUNDLE',
   GIT = 'GIT'
+}
+
+/** Who may post in a channel. */
+export enum PostingPolicy {
+  /** Every member who can write in the channel. */
+  EVERYONE = 'EVERYONE',
+  /** The workspace's Owner and Moderators only. */
+  MODERATORS = 'MODERATORS'
 }
 
 /** The conversation a successor replaces. */

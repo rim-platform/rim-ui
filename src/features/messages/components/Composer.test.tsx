@@ -8,6 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
 import {
+  PostingPolicy,
   ServerFeatureState,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
@@ -185,6 +186,71 @@ describe("Composer — membership and archive gate", () => {
     fireEvent.submit(textbox.closest("form")!);
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("You cannot post here"));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+});
+
+describe("Composer — posting policy", () => {
+  const restricted = (allowsThreads: boolean) => ({
+    "query ChannelPosting(": () => ({
+      conversation: {
+        id: "conv-1",
+        postingPolicy: PostingPolicy.MODERATORS,
+        postingAllowsThreads: allowsThreads,
+      },
+    }),
+  });
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("replaces the composer with a bar for a member of a moderators-only channel", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, restricted(true));
+    renderComposer();
+    const bar = await screen.findByTestId("posting-restricted-bar");
+    expect(bar).toHaveTextContent("Only the owner and moderators can post in this channel.");
+    expect(bar).toHaveTextContent("You can still react and reply in threads.");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("leaves out the thread note when threads are closed too", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, restricted(false));
+    renderComposer();
+    const bar = await screen.findByTestId("posting-restricted-bar");
+    expect(bar).not.toHaveTextContent("react and reply");
+  });
+
+  it("keeps the composer for a moderator", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MODERATOR, restricted(false));
+    const qc = renderComposer();
+    await waitFor(() =>
+      expect(
+        qc.getQueryData([...queryKeys.conversation("ws-1", "conv-1"), "posting"]),
+      ).toBeDefined(),
+    );
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-1"))).toBeDefined());
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.queryByTestId("posting-restricted-bar")).not.toBeInTheDocument();
+  });
+
+  it("keeps the composer when the server refuses the posting query", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "query ChannelPosting(": () => {
+        throw graphqlError("GRAPHQL_VALIDATION_FAILED", 'Unknown field "postingPolicy"');
+      },
+    });
+    const qc = renderComposer();
+    await waitFor(() =>
+      expect(
+        qc.getQueryState([...queryKeys.conversation("ws-1", "conv-1"), "posting"])?.status,
+      ).toBe("error"),
+    );
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 });

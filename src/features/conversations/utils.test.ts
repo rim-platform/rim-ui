@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { untitledGroupName } from "./utils";
+import { PostingPolicy } from "../../core/graphql/generated/schema-types";
+import { postingAllows, untitledGroupName, type PostKind } from "./utils";
 
 const names: Record<string, string> = {
   me: "Me",
@@ -42,5 +43,26 @@ describe("untitledGroupName", () => {
 
   it("is null when nobody else is in the group", () => {
     expect(untitledGroupName({ memberIds: ["me"] }, "me", resolve)).toBeNull();
+  });
+});
+
+describe("postingAllows", () => {
+  const kinds: PostKind[] = ["message", "thread", "reaction", "pin"];
+  const allowed = (policy: PostingPolicy, allowsThreads: boolean, canModerate: boolean) =>
+    kinds.filter((kind) => postingAllows({ policy, allowsThreads }, canModerate, kind));
+
+  it("lets everyone do everything under EVERYONE", () => {
+    expect(allowed(PostingPolicy.EVERYONE, true, false)).toEqual(kinds);
+    expect(allowed(PostingPolicy.EVERYONE, false, false)).toEqual(kinds);
+  });
+
+  it("lets the Owner and Moderators do everything under MODERATORS", () => {
+    expect(allowed(PostingPolicy.MODERATORS, true, true)).toEqual(kinds);
+    expect(allowed(PostingPolicy.MODERATORS, false, true)).toEqual(kinds);
+  });
+
+  it("leaves everyone else thread replies and reactions only while threads are allowed", () => {
+    expect(allowed(PostingPolicy.MODERATORS, true, false)).toEqual(["thread", "reaction"]);
+    expect(allowed(PostingPolicy.MODERATORS, false, false)).toEqual([]);
   });
 });
