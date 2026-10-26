@@ -78,6 +78,27 @@ describe("PluginSlotContainer", () => {
     expect(screen.getByText("Test Panel")).toBeInTheDocument();
   });
 
+  it("keeps the panel title whole and lets the plugin line give way", () => {
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
+
+    const title = screen.getByText("Test Panel");
+    expect(title).toHaveClass("shrink-0", "max-w-[70%]");
+    expect(title).not.toHaveClass("min-w-0");
+    const pluginLine = screen.getByText(/^Test Plugin · /);
+    expect(pluginLine).toHaveClass("min-w-0", "truncate");
+    expect(pluginLine).not.toHaveClass("shrink-0");
+  });
+
+  it("shows the whole plugin line on hover", () => {
+    render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/^Test Plugin · /)).toHaveAttribute(
+      "title",
+      "Test Plugin · Runs on this computer · Unsigned",
+    );
+    expect(screen.getByText("Test Panel")).toHaveAttribute("title", "Test Panel");
+  });
+
   it("renders a close button", () => {
     render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
 

@@ -37,6 +37,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
   const frameKey = `${plugin.plugin_id}/${panel.id}`;
   const settings = hasSettings(plugin.settings_schema);
   const contextMenu = useContextMenu();
+  const pluginLine = `${plugin.display_name} · ${kindLabel(plugin)} · ${trustBadge(plugin)}`;
   const headerMenuItems = (): DropdownMenuItem[] => [
     ...(settings
       ? [
@@ -59,9 +60,14 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
       >
         <div className="flex min-w-0 items-center gap-2">
           <Puzzle className="h-4 w-4 shrink-0 text-rim-accent" />
-          <span className="truncate text-sm font-medium text-rim-text">{panel.title}</span>
-          <span className="truncate text-[11px] text-rim-text-muted" title={trustBadge(plugin)}>
-            {plugin.display_name} · {kindLabel(plugin)} · {trustBadge(plugin)}
+          <span
+            className="max-w-[70%] shrink-0 truncate text-sm font-medium text-rim-text"
+            title={panel.title}
+          >
+            {panel.title}
+          </span>
+          <span className="min-w-0 truncate text-[11px] text-rim-text-muted" title={pluginLine}>
+            {pluginLine}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
