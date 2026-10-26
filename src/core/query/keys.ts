@@ -111,6 +111,9 @@ export const queryKeys = {
   serverInfo: ["serverInfo"] as const,
   // When the signed-in account's probation ends; under `me` so a refresh of the account covers it.
   probation: (userId?: string) => ["me", "probation", userId] as const,
+  // Until when the operators locked the signed-in account's profile. Its own root, so a refresh
+  // of `me` does not ask a server that refused it again.
+  profileLock: (userId?: string) => ["profileLock", userId] as const,
   // Whether the server offers account deletion, and when the signed-in account's pending deletion
   // runs. Its own root, so a refresh of `me` does not ask a server that refused it again.
   accountDeletion: (userId?: string) => ["accountDeletion", userId] as const,

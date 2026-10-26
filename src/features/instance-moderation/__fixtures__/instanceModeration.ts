@@ -119,6 +119,21 @@ export function moderationHandlers(world: ModerationWorld): Record<string, Handl
         ],
       };
     },
+    "mutation InstanceClearProfile": (vars) => {
+      const principalId = String(vars.principalId);
+      return {
+        instanceClearProfile: {
+          principalId,
+          account: {
+            userId: "u-mallory",
+            username: "mallory",
+            principalId,
+            createdAt: "2026-09-01T10:00:00Z",
+          },
+          lockedUntil: vars.lockDays ? "2026-10-13T10:00:00Z" : null,
+        },
+      };
+    },
     "mutation InstanceUnblockPrincipal": (vars) => {
       const lifted = world.principalBlocks.some((b) => b.principalId === vars.principalId);
       world.principalBlocks = world.principalBlocks.filter(

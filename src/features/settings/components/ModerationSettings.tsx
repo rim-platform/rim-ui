@@ -156,16 +156,19 @@ const STATUS_LABEL: Record<MessageReportStatus, string> = {
  *
  * With `onBlockPrincipal` the list is an instance operator's view of the direct space: it asks
  * for each author's principal id, shows it with a Block principal action that calls
- * `onBlockPrincipal`, and offers Delete on a reported unencrypted message.
+ * `onBlockPrincipal` and, with `onClearProfile`, a Clear profile action that calls it, and offers
+ * Delete on a reported unencrypted message.
  */
 export function MessageReportsList({
   serverId,
   title = "Reports",
   onBlockPrincipal,
+  onClearProfile,
 }: {
   serverId: string;
   title?: string;
   onBlockPrincipal?: (principalId: string) => void;
+  onClearProfile?: (principalId: string) => void;
 }) {
   const [filter, setFilter] = useState<MessageReportStatus | "ALL">(MessageReportStatus.OPEN);
   const status = filter === "ALL" ? null : filter;
@@ -210,6 +213,7 @@ export function MessageReportsList({
               serverId={serverId}
               report={report}
               onBlockPrincipal={onBlockPrincipal}
+              onClearProfile={onClearProfile}
             />
           ))}
         </ul>
@@ -235,10 +239,12 @@ function ReportRow({
   serverId,
   report,
   onBlockPrincipal,
+  onClearProfile,
 }: {
   serverId: string;
   report: MessageReportRow;
   onBlockPrincipal?: (principalId: string) => void;
+  onClearProfile?: (principalId: string) => void;
 }) {
   const memberLookup = useMemberLookup(serverId);
   const resolve = useResolveReportMutation();
@@ -309,6 +315,17 @@ function ReportRow({
               aria-label={`Block principal ${principalId}`}
             >
               Block principal
+            </Button>
+          )}
+          {onBlockPrincipal && onClearProfile && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onClearProfile(principalId)}
+              aria-label={`Clear profile ${principalId}`}
+            >
+              Clear profile
             </Button>
           )}
         </p>

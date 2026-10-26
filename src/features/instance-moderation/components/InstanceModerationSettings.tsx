@@ -9,6 +9,7 @@ import {
   useInstanceReports,
   useIsInstanceOperator,
 } from "../api/instanceModeration";
+import { ClearProfileDialog } from "./ClearProfileDialog";
 import { IpBlocksSection } from "./IpBlocksSection";
 import { PrincipalBlocksSection, type BlockDraft } from "./PrincipalBlocksSection";
 import { useLocalDirectSpaceId } from "../../relay/runtime/useDirectSpaceRuntime";
@@ -65,6 +66,7 @@ function ModerationQueue({
 }) {
   const [openOnly, setOpenOnly] = useState(true);
   const [draft, setDraft] = useState<BlockDraft>({ principalId: "", seq: 0 });
+  const [clearing, setClearing] = useState<string | null>(null);
   const reports = useInstanceReports(openOnly);
   const principalBlocks = useInstancePrincipalBlocks();
   const ipBlocks = useInstanceIpBlocks();
@@ -105,16 +107,19 @@ function ModerationQueue({
         openOnly={openOnly}
         onOpenOnlyChange={setOpenOnly}
         onBlockPrincipal={blockPrincipal}
+        onClearProfile={setClearing}
       />
       {directSpaceId && (
         <MessageReportsList
           serverId={directSpaceId}
           title="Reported direct messages"
           onBlockPrincipal={blockPrincipal}
+          onClearProfile={setClearing}
         />
       )}
       <PrincipalBlocksSection blocks={principalBlocks} draft={draft} />
       <IpBlocksSection blocks={ipBlocks} />
+      {clearing && <ClearProfileDialog principalId={clearing} onClose={() => setClearing(null)} />}
     </section>
   );
 }

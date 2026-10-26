@@ -1241,6 +1241,25 @@ type InstancePrincipalUnblockOutcome {
 }
 
 """
+What clearing an account's profile did.
+"""
+type InstanceProfileClearOutcome {
+	"""
+	The principal whose account was cleared (`rimp1_…`).
+	"""
+	principalId: String!
+	"""
+	The local account whose display name, picture, status and bio were cleared.
+	"""
+	account: InstanceAccount!
+	"""
+	Until when the account cannot set its display name, picture, status or bio; null when
+	it was not locked.
+	"""
+	lockedUntil: DateTime
+}
+
+"""
 Read-only preview of a registration token.
 
 Does NOT consume the token. Workspace-invite previews carry server and
@@ -2395,6 +2414,27 @@ type Mutation {
 		"""
 		cidr: String!
 	): Boolean!
+	"""
+	Clear the display name, picture, status and bio of the account holding a principal on
+	this server, deleting its stored pictures, and optionally lock them: until the lock
+	ends the account can only clear them. Another server keeps showing the display name in
+	its copy of the person's signed profile card. `NOT_FOUND` when no account here holds the
+	principal. Instance operators only; anyone else gets `FORBIDDEN`.
+	"""
+	instanceClearProfile(
+		"""
+		The principal whose account to clear (`rimp1_…`).
+		"""
+		principalId: String!,
+		"""
+		Why it is cleared, 1 to 1000 characters; written to the audit log.
+		"""
+		reason: String!,
+		"""
+		Days to lock the profile for, 1 to 365; null leaves it unlocked.
+		"""
+		lockDays: Int
+	): InstanceProfileClearOutcome!
 	"""
 	Accept the caller's pending invitation (`Conversation.pendingMemberIds`): they become a
 	member and a member's device adds theirs to the group. Needs a device set up for
@@ -3953,9 +3993,9 @@ type ServerLimits {
 	"""
 	messageBytes: Int
 	"""
-	Hours after its creation during which an account cannot create a workspace or send a
-	DM request to a stranger, and sends messages at a lower rate; `me.probationEndsAt` says
-	when the caller's ends.
+	Hours after its creation during which an account cannot create a workspace, send a DM
+	request to a stranger or set a profile picture, status or bio, and sends messages at a
+	lower rate; `me.probationEndsAt` says when the caller's ends.
 	"""
 	probationHours: Int
 	"""
@@ -4385,6 +4425,12 @@ type User {
 	everyone else and once probation is over.
 	"""
 	probationEndsAt: DateTime
+	"""
+	Until when this server's operators locked the account's display name, picture, status
+	and bio, while they do: until then it can only clear them. Read on `me` only; null for
+	everyone else and while no lock holds.
+	"""
+	profileLockedUntil: DateTime
 	"""
 	When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);
 	null while none is pending, and always null except on `me`. Once it runs, the account is

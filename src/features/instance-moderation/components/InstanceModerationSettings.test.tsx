@@ -264,6 +264,61 @@ describe("InstanceModerationSettings", () => {
     }
   });
 
+  it("offers Clear profile next to Block principal on a reported DM's author", async () => {
+    useRelayStore.setState({
+      info: { serverId: "rims1_relay", roles: ["relay"], directSpaceId: "direct-1" },
+    });
+    try {
+      serve({
+        "query DirectSpaceMessageReports": () => ({
+          messageReports: {
+            items: [
+              {
+                id: "dm-r3",
+                conversationId: "dm-3",
+                messageId: "m-3",
+                reporterUserId: "u-alice",
+                reason: "offensive picture",
+                status: "OPEN",
+                resolvedAt: null,
+                createdAt: "2026-10-03T10:00:00Z",
+                messageReadable: false,
+                messageText: null,
+                messageAuthorId: "u-mallory",
+                messageAuthorPrincipalId: MALLORY,
+                messageSentAt: null,
+                frankingVerifiedAt: null,
+                frankedSenderDeviceId: null,
+                frankedContentExpiresAt: null,
+              },
+            ],
+            next: null,
+            pageInfo: { hasNext: false, hasPrev: false },
+          },
+        }),
+      });
+      renderPage();
+      const row = await screen.findByTestId("report-row-dm-r3");
+      expect(
+        within(row).getByRole("button", { name: `Block principal ${MALLORY}` }),
+      ).toBeInTheDocument();
+      fireEvent.click(within(row).getByRole("button", { name: `Clear profile ${MALLORY}` }));
+      const dialog = screen.getByRole("dialog", { name: "Clear this profile?" });
+      expect(dialog).toHaveTextContent(MALLORY);
+      fireEvent.change(within(dialog).getByLabelText("Reason"), {
+        target: { value: "offensive picture" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Clear profile" }));
+      await waitFor(() =>
+        expect(callsTo(requestMock, "mutation InstanceClearProfile")).toEqual([
+          { principalId: MALLORY, reason: "offensive picture", lockDays: null },
+        ]),
+      );
+    } finally {
+      useRelayStore.setState({ info: null });
+    }
+  });
+
   it("asks for no direct-space reports before relayInfo answers", async () => {
     serve();
     renderPage();
@@ -479,6 +534,82 @@ describe("InstanceModerationSettings", () => {
       expect(screen.queryByTestId("ip-block-198.51.100.0/24")).not.toBeInTheDocument(),
     );
     expect(toast.success).toHaveBeenCalledWith("Unblocked 198.51.100.0/24");
+  });
+
+  it("offers Clear profile next to Block principal on an abuse report with a principal", async () => {
+    serve();
+    renderPage();
+    const r1 = await screen.findByTestId("instance-report-r1");
+    expect(
+      within(r1).getByRole("button", { name: "Block principal @mallory" }),
+    ).toBeInTheDocument();
+    expect(within(r1).getByRole("button", { name: "Clear profile @mallory" })).toBeInTheDocument();
+    const r2 = screen.getByTestId("instance-report-r2");
+    expect(within(r2).queryByRole("button", { name: /Clear profile/ })).not.toBeInTheDocument();
+  });
+
+  it("asks for a reason before clearing a profile", async () => {
+    serve();
+    renderPage();
+    const r1 = await screen.findByTestId("instance-report-r1");
+    fireEvent.click(within(r1).getByRole("button", { name: "Clear profile @mallory" }));
+    const dialog = screen.getByRole("dialog", { name: "Clear this profile?" });
+    expect(dialog).toHaveTextContent(
+      `Removes the display name, picture, status and bio of ${MALLORY} on this server. Their own copy of their profile card on other servers is not changed.`,
+    );
+    const confirm = within(dialog).getByRole("button", { name: "Clear profile" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "   " } });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Reason"), {
+      target: { value: "x".repeat(1001) },
+    });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(callsTo(requestMock, "mutation InstanceClearProfile")).toHaveLength(0);
+  });
+
+  it("clears a profile without a lock", async () => {
+    serve();
+    renderPage();
+    const r1 = await screen.findByTestId("instance-report-r1");
+    fireEvent.click(within(r1).getByRole("button", { name: "Clear profile @mallory" }));
+    const dialog = screen.getByRole("dialog", { name: "Clear this profile?" });
+    expect(within(dialog).getByLabelText("Lock")).toHaveDisplayValue("No lock");
+    fireEvent.change(within(dialog).getByLabelText("Reason"), {
+      target: { value: " offensive picture " },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear profile" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation InstanceClearProfile")).toEqual([
+        { principalId: MALLORY, reason: "offensive picture", lockDays: null },
+      ]),
+    );
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Profile cleared"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Clear this profile?" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("clears a profile and locks it for 7 days", async () => {
+    serve();
+    renderPage();
+    const r1 = await screen.findByTestId("instance-report-r1");
+    fireEvent.click(within(r1).getByRole("button", { name: "Clear profile @mallory" }));
+    const dialog = screen.getByRole("dialog", { name: "Clear this profile?" });
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "spam" } });
+    fireEvent.change(within(dialog).getByLabelText("Lock"), { target: { value: "7" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear profile" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation InstanceClearProfile")).toEqual([
+        { principalId: MALLORY, reason: "spam", lockDays: 7 },
+      ]),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        `Profile cleared — locked until ${new Date("2026-10-13T10:00:00Z").toLocaleDateString()}`,
+      ),
+    );
   });
 
   it("re-checks the role when a change is refused with FORBIDDEN", async () => {

@@ -15,6 +15,8 @@ interface ReportsSectionProps {
   onOpenOnlyChange: (openOnly: boolean) => void;
   /** Opens the block form with this principal filled in. */
   onBlockPrincipal: (principalId: string) => void;
+  /** Asks to clear the profile of the account holding this principal. */
+  onClearProfile: (principalId: string) => void;
 }
 
 /** Who or what a report names: the local username, else the principal, else the server. */
@@ -30,14 +32,15 @@ function reportReporter(report: InstanceAbuseReport): string {
 }
 
 /**
- * Abuse reports filed with this server, oldest first, with Resolve, Block principal and Load
- * more for the next page.
+ * Abuse reports filed with this server, oldest first, with Resolve, Block principal, Clear
+ * profile and Load more for the next page.
  */
 export function ReportsSection({
   reports,
   openOnly,
   onOpenOnlyChange,
   onBlockPrincipal,
+  onClearProfile,
 }: ReportsSectionProps) {
   const { isPending, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } = reports;
   const data = reports.data?.pages.flat();
@@ -70,7 +73,12 @@ export function ReportsSection({
       {data && data.length > 0 && (
         <ul className="mt-2 divide-y divide-rim-line" aria-label="Abuse reports">
           {data.map((report) => (
-            <ReportRow key={report.id} report={report} onBlockPrincipal={onBlockPrincipal} />
+            <ReportRow
+              key={report.id}
+              report={report}
+              onBlockPrincipal={onBlockPrincipal}
+              onClearProfile={onClearProfile}
+            />
           ))}
         </ul>
       )}
@@ -94,9 +102,11 @@ export function ReportsSection({
 function ReportRow({
   report,
   onBlockPrincipal,
+  onClearProfile,
 }: {
   report: InstanceAbuseReport;
   onBlockPrincipal: (principalId: string) => void;
+  onClearProfile: (principalId: string) => void;
 }) {
   const resolve = useResolveInstanceReportMutation();
   const subject = reportSubject(report);
@@ -147,15 +157,26 @@ function ReportRow({
             </Button>
           )}
           {principalId && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onBlockPrincipal(principalId)}
-              aria-label={`Block principal ${subject}`}
-            >
-              Block principal
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onBlockPrincipal(principalId)}
+                aria-label={`Block principal ${subject}`}
+              >
+                Block principal
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onClearProfile(principalId)}
+                aria-label={`Clear profile ${subject}`}
+              >
+                Clear profile
+              </Button>
+            </>
           )}
         </div>
       )}
