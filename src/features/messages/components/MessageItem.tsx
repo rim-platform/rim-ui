@@ -3,7 +3,11 @@ import { memo, useCallback, useMemo } from "react";
 import { cn } from "../../../shared/ui/cn";
 import { areMessageItemPropsEqual } from "./message-item/areMessageItemPropsEqual";
 import { formatShortTime } from "./message-item/formatShortTime";
-import { MessageLinkPreviews, MessageThreadButton } from "./message-item/MessageAnnotations";
+import {
+  MessageLinkPreviews,
+  MessageThreadButton,
+  MessageThreadSummary,
+} from "./message-item/MessageAnnotations";
 import { MessageAttachments } from "./message-item/MessageAttachments";
 import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
@@ -46,6 +50,7 @@ export const MessageItem = memo(function MessageItem({
     isGrouped = false,
     isFirstInGroup = true,
     displayDensity = "comfortable",
+    inThreadPane = false,
   } = view;
   const {
     onContextMenu,
@@ -129,9 +134,14 @@ export const MessageItem = memo(function MessageItem({
   const replyQuote =
     replyTo && !isDeleted ? <ReplyQuote quote={replyTo} onJump={handlers.onJumpToMessage} /> : null;
 
+  // An existing thread stays openable where the viewer may not reply: the pane says so.
   const threadButton =
-    canStartThread && !isDeleted && !message.threadId && !message.rootThreadId ? (
+    !isDeleted && !message.threadId && !inThreadPane && (message.rootThreadId || canStartThread) ? (
       <MessageThreadButton messageId={messageId} onOpenThread={onOpenThread} />
+    ) : null;
+  const threadSummary =
+    !isDeleted && message.rootThreadId && !inThreadPane ? (
+      <MessageThreadSummary messageId={messageId} onOpenThread={onOpenThread} />
     ) : null;
 
   const rowProps = {
@@ -186,6 +196,7 @@ export const MessageItem = memo(function MessageItem({
             {replyQuote}
             <MessageText {...textProps("inline")} />
             {extras}
+            {threadSummary}
           </div>
         )}
         {threadButton}
@@ -249,18 +260,14 @@ export const MessageItem = memo(function MessageItem({
           // First in group or ungrouped: full header
           <>
             <MessageHeader
-              messageId={messageId}
               authorId={message.authorId}
               author={author}
               sentAt={message.sentAt}
               isPinned={message.isPinned}
-              isDeleted={isDeleted}
-              rootThreadId={message.rootThreadId}
               forwardedFromMessageId={message.forwardedFromMessageId}
               forwardedFrom={message.forwardedFrom}
               encrypted={encrypted}
               beforeEncryption={message.beforeEncryption}
-              onOpenThread={onOpenThread}
               onNavigateToForwardedSource={handlers.onNavigateToForwardedSource}
               bindUserContextMenu={bindUserContextMenu}
             />
@@ -269,6 +276,7 @@ export const MessageItem = memo(function MessageItem({
           </>
         )}
         {!isDeleted && extras}
+        {threadSummary}
       </div>
       {threadButton}
     </div>

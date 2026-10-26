@@ -19,7 +19,7 @@ export const MessageLinkPreviews = memo(function MessageLinkPreviews({
   );
 });
 
-/** Hover action that starts a thread on a message that has none yet. */
+/** Hover action that opens the message's thread, starting it when there is none. */
 export const MessageThreadButton = memo(function MessageThreadButton({
   messageId,
   onOpenThread,
@@ -36,6 +36,26 @@ export const MessageThreadButton = memo(function MessageThreadButton({
       aria-label="Open thread"
     >
       <MessageSquare className="h-4 w-4" />
+    </button>
+  );
+});
+
+/** The link under a thread's root that opens its thread. */
+export const MessageThreadSummary = memo(function MessageThreadSummary({
+  messageId,
+  onOpenThread,
+}: {
+  messageId: string;
+  onOpenThread: (messageId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenThread(messageId)}
+      className="mt-1 inline-flex items-center gap-1 text-xs text-rim-accent hover:underline"
+    >
+      <MessageSquare className="h-3 w-3" />
+      View thread
     </button>
   );
 });

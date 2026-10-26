@@ -48,6 +48,10 @@ describe("areMessageItemPropsEqual", () => {
     );
   });
 
+  it("re-renders when inThreadPane changes", () => {
+    expect(areMessageItemPropsEqual(makeProps(), makeProps({ inThreadPane: true }))).toBe(false);
+  });
+
   it("detects author changes by value", () => {
     const next = makeProps({ author: { name: "Alice", isCurrentUser: false, statusText: "away" } });
     expect(areMessageItemPropsEqual(makeProps(), next)).toBe(false);

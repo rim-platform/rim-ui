@@ -15,6 +15,7 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
+const fixture = vi.hoisted(() => ({ rootText: "the root" }));
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -61,7 +62,7 @@ vi.mock("../api/useThreads", () => ({
       conversationId: "c-1",
       rootMessageId: "root-1",
       rootAuthorId: "u-alice",
-      rootText: "the root",
+      rootText: fixture.rootText,
       createdAt: "2026-10-09T00:00:00Z",
     },
     status: "success",
@@ -74,6 +75,7 @@ vi.mock("../api/useThreads", () => ({
         reply("r-other", "u-bob", "bob's reply"),
         // An own reply as the `NewMessage` event stores it, without an author object.
         { ...reply("r-own-event", "me", "my new reply"), author: null },
+        reply("r-mention", "u-alice", "thanks <@u-bob>"),
       ],
     },
     status: "success",
@@ -114,6 +116,7 @@ function labels(): string[] {
 
 describe("ThreadPanel — message context menu", () => {
   beforeEach(() => {
+    fixture.rootText = "the root";
     requestMock.mockReset();
     useShellStore.getState().reset();
     useShellStore.setState({ selectedConversationId: "c-1", selectedRootMessageId: "root-1" });
@@ -197,5 +200,39 @@ describe("ThreadPanel — message context menu", () => {
     fireEvent.contextMenu(screen.getAllByText("u-bob")[0]);
     expect(labels()).toContain("Send message");
     expect(labels()).not.toContain("Copy text");
+  });
+});
+
+describe("ThreadPanel — mentions", () => {
+  beforeEach(() => {
+    fixture.rootText = "the root";
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useShellStore.setState({ selectedConversationId: "c-1", selectedRootMessageId: "root-1" });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  it("names a mentioned member in the root message instead of the raw token", async () => {
+    fixture.rootText = "hey <@u-bob> check this";
+    serve();
+    await renderPanel();
+    // The reply mentions Bob too.
+    expect(await screen.findAllByRole("button", { name: "@Bob" })).toHaveLength(2);
+    expect(screen.queryByText(/<@u-bob>/)).toBeNull();
+  });
+
+  it("names a mentioned member in a reply", async () => {
+    serve();
+    await renderPanel();
+    await screen.findByRole("button", { name: "@Bob" });
+    expect(screen.queryByText(/<@u-bob>/)).toBeNull();
+  });
+
+  it("offers no Open thread action or thread link on the root", async () => {
+    serve();
+    await renderPanel();
+    expect(screen.queryByLabelText("Open thread")).toBeNull();
+    expect(screen.queryByRole("button", { name: "View thread" })).toBeNull();
   });
 });

@@ -89,20 +89,16 @@ export const MessageAvatar = memo(function MessageAvatar({
 }, authorPropsEqual);
 
 interface MessageHeaderProps {
-  messageId: string;
   authorId: string;
   author: MessageAuthorView;
   sentAt: string;
   isPinned?: boolean;
-  isDeleted: boolean;
-  rootThreadId?: string | null;
   forwardedFromMessageId?: string | null;
   forwardedFrom?: ForwardedFromInfo | null;
   /** The message is end-to-end encrypted. */
   encrypted?: boolean;
   /** A plaintext message of a conversation that is encrypted now, sent before that. */
   beforeEncryption?: boolean;
-  onOpenThread: (messageId: string) => void;
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;
   /** Binds the author's context menu to their name. */
   bindUserContextMenu?: MessageItemHandlers["bindUserContextMenu"];
@@ -110,21 +106,17 @@ interface MessageHeaderProps {
 
 /**
  * Author line: name (with hover card and the author's context menu), time, pin, forwarded
- * marker, status and thread link.
+ * marker and status.
  */
 export const MessageHeader = memo(function MessageHeader({
-  messageId,
   authorId,
   author,
   sentAt,
   isPinned,
-  isDeleted,
-  rootThreadId,
   forwardedFromMessageId,
   forwardedFrom,
   encrypted,
   beforeEncryption,
-  onOpenThread,
   onNavigateToForwardedSource,
   bindUserContextMenu,
 }: MessageHeaderProps) {
@@ -175,15 +167,6 @@ export const MessageHeader = memo(function MessageHeader({
         <span className="text-xs text-rim-text-faint truncate max-w-[160px]">
           {author.statusText}
         </span>
-      )}
-      {!isDeleted && rootThreadId && (
-        <button
-          type="button"
-          onClick={() => onOpenThread(messageId)}
-          className="text-xs text-rim-accent hover:underline"
-        >
-          thread
-        </button>
       )}
     </div>
   );

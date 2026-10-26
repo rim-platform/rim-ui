@@ -95,6 +95,7 @@ function sameView(a: MessageViewModel, b: MessageViewModel): boolean {
     a.isGrouped === b.isGrouped &&
     a.isFirstInGroup === b.isFirstInGroup &&
     a.displayDensity === b.displayDensity &&
+    a.inThreadPane === b.inThreadPane &&
     sameAuthor(a.author, b.author) &&
     sameReplyQuote(a.replyTo, b.replyTo) &&
     sameMessage(a.message, b.message)

@@ -178,7 +178,8 @@ the channels you joined; one you have not joined shows **Join channel** above it
 **Threads.** Replies live in threads. Hover a message and choose **Open thread**, choose **Reply
 in thread** in its context menu (right-click), or select it and press <kbd>r</kbd> or <kbd>t</kbd>.
 The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
-the thread.
+the thread. A message with a thread shows **View thread** under it; choose it, or **Open thread**
+on hover, to open the pane.
 
 **DMs and groups.** **New message** (the **+** at the top of the tool panel, or
 <kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a
