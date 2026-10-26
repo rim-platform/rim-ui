@@ -26,6 +26,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Your own message that has just arrived in the timeline is treated as yours: its menu offers
   **Edit message** and deletes it as its author, instead of offering **Report message…** and
   the moderator delete that called it another member's message.
+- The command palette puts the best match first: a title match above a description or category
+  match, a word start above scattered letters, with groups ordered by their best match.
+- Ctrl+Shift+G is listed as **New message** in the palette, Settings → Keybinds and the
+  shortcuts sheet, matching what it opens.
 
 ## [0.0.3] - 2026-10-26
 

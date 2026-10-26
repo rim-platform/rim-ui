@@ -30,7 +30,7 @@ import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { KEYBIND_CONTEXTS as CONTEXTS } from "../profiles/keybindProfile";
 import { parseKeystroke } from "../runtime/keybindEngine";
-import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS } from "../runtime/localCommands";
+import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
@@ -130,7 +130,7 @@ export function KeybindSettings() {
 
   // Merge built-in + plugin keybindable commands
   const builtInKeybindable = useMemo(
-    () => commands?.filter((cmd) => cmd.keybindCapable) ?? [],
+    () => commands?.filter((cmd) => cmd.keybindCapable).map(withClientLabel) ?? [],
     [commands],
   );
   // Commands bound on this device: this app's own commands and the plugins' commands.
@@ -151,7 +151,7 @@ export function KeybindSettings() {
     const map = new Map<string, string>(Object.entries(BUILT_IN_COMMAND_TITLES));
     if (commands) {
       for (const cmd of commands) {
-        map.set(cmd.id, cmd.title);
+        map.set(cmd.id, withClientLabel(cmd).title);
       }
     }
     for (const cmd of pluginCommands) {
