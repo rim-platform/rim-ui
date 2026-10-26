@@ -47,6 +47,9 @@ export const queryKeys = {
     ["threadByRoot", workspaceId, conversationId, rootMessageId] as const,
   threadMessages: (workspaceId?: string, conversationId?: string, threadId?: string) =>
     ["threadMessages", workspaceId, conversationId, threadId] as const,
+  // How many replies a thread has, asked for its root message.
+  threadReplyCount: (workspaceId?: string, conversationId?: string, rootMessageId?: string) =>
+    ["threadReplyCount", workspaceId, conversationId, rootMessageId] as const,
   // Every channel the viewer can see that is not archived (the browse list). Also the prefix of
   // `joinedChannels`, so invalidating it refreshes both lists.
   channels: (workspaceId?: string) => ["channels", workspaceId] as const,
@@ -158,6 +161,7 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "channels",
   "threadByRoot",
   "threadMessages",
+  "threadReplyCount",
   "pinnedMessages",
   "searchMessages",
   "lenses",

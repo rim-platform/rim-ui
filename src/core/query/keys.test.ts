@@ -109,6 +109,7 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "channels",
     "threadByRoot",
     "threadMessages",
+    "threadReplyCount",
     "pinnedMessages",
     "searchMessages",
     "lenses",

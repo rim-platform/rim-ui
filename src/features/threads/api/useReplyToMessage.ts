@@ -74,6 +74,13 @@ export function useReplyToMessageMutation() {
 
       // Invalidate conversation messages (root message gets updated with rootThreadId)
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
+      qc.invalidateQueries({
+        queryKey: queryKeys.threadReplyCount(
+          vars.serverId,
+          vars.conversationId,
+          vars.rootMessageId,
+        ),
+      });
 
       // Refetch threadByRoot so ThreadPanel picks up the newly created thread.
       // Awaited because useThreadMessages depends on threadId from this query —

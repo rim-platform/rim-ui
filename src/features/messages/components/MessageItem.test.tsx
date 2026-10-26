@@ -1,11 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders as render } from "../../../test/utils";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
 }));
 
+/** Answers the ThreadReplyCount query; every other query stays pending. */
+const requestMock = vi.hoisted(() => vi.fn());
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: {
+    request: (query: string, vars: unknown) =>
+      query.includes("query ThreadReplyCount(") ? requestMock(query, vars) : new Promise(() => {}),
+  },
+}));
+
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { MessageItem } from "./MessageItem";
 import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
 
@@ -199,6 +209,75 @@ describe("MessageItem", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "View thread" }));
     expect(onOpenThread).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("shows the reply count under a thread's root", async () => {
+    const root = {
+      ...defaultMessage,
+      serverId: "ws-1",
+      conversationId: "c-1",
+      rootThreadId: "t-1",
+    };
+    requestMock.mockResolvedValueOnce({ message: { id: "msg-1", threadReplyCount: 3 } });
+    const onOpenThread = vi.fn();
+    const { unmount } = render(
+      <MessageItem {...props({ message: root, handlers: { onOpenThread } })} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "3 replies" }));
+    expect(onOpenThread).toHaveBeenCalledWith("msg-1");
+    expect(requestMock).toHaveBeenCalledWith(expect.stringContaining("ThreadReplyCount"), {
+      serverId: "ws-1",
+      conversationId: "c-1",
+      messageId: "msg-1",
+    });
+    unmount();
+
+    requestMock.mockResolvedValueOnce({ message: { id: "msg-1", threadReplyCount: 1 } });
+    render(<MessageItem {...props({ message: root })} />);
+    expect(await screen.findByRole("button", { name: "1 reply" })).toBeInTheDocument();
+  });
+
+  it("falls back to View thread when the count is unknown or zero", async () => {
+    const root = {
+      ...defaultMessage,
+      serverId: "ws-1",
+      conversationId: "c-1",
+      rootThreadId: "t-1",
+    };
+    for (const answer of [
+      () => requestMock.mockResolvedValueOnce({ message: { id: "msg-1", threadReplyCount: 0 } }),
+      () => requestMock.mockResolvedValueOnce({ message: { id: "msg-1", threadReplyCount: null } }),
+      () =>
+        requestMock.mockRejectedValueOnce(
+          graphqlError("GRAPHQL_VALIDATION_FAILED", 'Unknown field "threadReplyCount"'),
+        ),
+    ]) {
+      requestMock.mockClear();
+      answer();
+      const { unmount } = render(<MessageItem {...props({ message: root })} />);
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(screen.getByRole("button", { name: "View thread" })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("asks no reply count for a deleted root or the thread pane's root", async () => {
+    const root = {
+      ...defaultMessage,
+      serverId: "ws-1",
+      conversationId: "c-1",
+      rootThreadId: "t-1",
+    };
+    requestMock.mockClear();
+    const deleted = props({ message: { ...root, isDeleted: true } });
+    const { unmount } = render(<MessageItem {...deleted} />);
+    unmount();
+    const pane = props({ message: root });
+    render(<MessageItem {...pane} view={{ ...pane.view, inThreadPane: true }} />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "View thread" })).not.toBeInTheDocument();
   });
 
   it("shows View thread on a grouped thread root and in ultra-compact density", () => {

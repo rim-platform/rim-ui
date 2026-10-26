@@ -72,6 +72,12 @@ describe("areMessageItemPropsEqual", () => {
     expect(areMessageItemPropsEqual(makeProps({ replyTo: null }), makeProps())).toBe(true);
   });
 
+  it("detects a change of the message's conversation", () => {
+    const next = makeProps();
+    next.view.message = { ...next.view.message, conversationId: "c-2" };
+    expect(areMessageItemPropsEqual(makeProps(), next)).toBe(false);
+  });
+
   it("detects a thread being started on the message", () => {
     const next = makeProps();
     next.view.message = { ...next.view.message, rootThreadId: "t-1" };

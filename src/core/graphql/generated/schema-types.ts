@@ -1325,6 +1325,11 @@ export type Message = {
   serverId: Scalars['ID']['output'];
   text?: Maybe<Scalars['String']['output']>;
   threadId?: Maybe<Scalars['ID']['output']>;
+  /**
+   * Replies in the thread this timeline message is the root of, deleted ones not counted;
+   * null on a message without a thread and on thread replies.
+   */
+  threadReplyCount?: Maybe<Scalars['Int']['output']>;
 };
 
 /** A message as it is now, at its newest change. A message appears at most once per page. */

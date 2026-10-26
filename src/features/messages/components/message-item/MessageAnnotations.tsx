@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { MessageSquare } from "lucide-react";
 
+import { useThreadReplyCount } from "../../../threads/api/useThreadReplyCount";
 import { LinkPreviewCard } from "../LinkPreviewCard";
 import type { LinkPreview } from "../LinkPreviewCard";
 
@@ -40,14 +41,28 @@ export const MessageThreadButton = memo(function MessageThreadButton({
   );
 });
 
-/** The link under a thread's root that opens its thread. */
+/** What the link under a thread's root reads: its reply count when known, else "View thread". */
+function threadSummaryLabel(replyCount: number | null): string {
+  if (replyCount === null || replyCount <= 0) return "View thread";
+  return replyCount === 1 ? "1 reply" : `${replyCount} replies`;
+}
+
+/**
+ * The link under a thread's root that opens its thread, with the thread's reply count when the
+ * server reports it.
+ */
 export const MessageThreadSummary = memo(function MessageThreadSummary({
   messageId,
+  workspaceId,
+  conversationId,
   onOpenThread,
 }: {
   messageId: string;
+  workspaceId?: string;
+  conversationId?: string;
   onOpenThread: (messageId: string) => void;
 }) {
+  const replyCount = useThreadReplyCount(workspaceId, conversationId, messageId, true);
   return (
     <button
       type="button"
@@ -55,7 +70,7 @@ export const MessageThreadSummary = memo(function MessageThreadSummary({
       className="mt-1 inline-flex items-center gap-1 text-xs text-rim-accent hover:underline"
     >
       <MessageSquare className="h-3 w-3" />
-      View thread
+      {threadSummaryLabel(replyCount)}
     </button>
   );
 });

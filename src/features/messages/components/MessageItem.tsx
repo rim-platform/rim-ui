@@ -141,7 +141,12 @@ export const MessageItem = memo(function MessageItem({
     ) : null;
   const threadSummary =
     !isDeleted && message.rootThreadId && !inThreadPane ? (
-      <MessageThreadSummary messageId={messageId} onOpenThread={onOpenThread} />
+      <MessageThreadSummary
+        messageId={messageId}
+        workspaceId={message.serverId}
+        conversationId={message.conversationId}
+        onOpenThread={onOpenThread}
+      />
     ) : null;
 
   const rowProps = {

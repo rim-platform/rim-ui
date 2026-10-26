@@ -1610,6 +1610,11 @@ type Message {
 	plaintext messages.
 	"""
 	encryption: MessageEncryption
+	"""
+	Replies in the thread this timeline message is the root of, deleted ones not counted;
+	null on a message without a thread and on thread replies.
+	"""
+	threadReplyCount: Int
 }
 
 """
