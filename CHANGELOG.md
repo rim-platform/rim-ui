@@ -21,6 +21,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Fixed
+
+- Your own message that has just arrived in the timeline is treated as yours: its menu offers
+  **Edit message** and deletes it as its author, instead of offering **Report message…** and
+  the moderator delete that called it another member's message.
+
 ## [0.0.3] - 2026-10-26
 
 ### Added

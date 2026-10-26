@@ -69,7 +69,12 @@ vi.mock("../api/useThreads", () => ({
   }),
   useThreadMessages: () => ({
     data: {
-      items: [reply("r-own", "me", "my reply"), reply("r-other", "u-bob", "bob's reply")],
+      items: [
+        reply("r-own", "me", "my reply"),
+        reply("r-other", "u-bob", "bob's reply"),
+        // An own reply as the `NewMessage` event stores it, without an author object.
+        { ...reply("r-own-event", "me", "my new reply"), author: null },
+      ],
     },
     status: "success",
     error: null,
@@ -78,11 +83,11 @@ vi.mock("../api/useThreads", () => ({
 
 import { ThreadPanel } from "./ThreadPanel";
 
-function serve() {
+function serve(viewerRole: ServerMemberRoleGql = ServerMemberRoleGql.MEMBER) {
   routeRequests(requestMock, {
     ...baseReadHandlers,
     "query Server(": () => ({
-      server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
+      server: { id: "ws-1", name: "Acme", viewerRole },
     }),
     "query PinnedMessages": () => ({ pinnedMessages: [{ id: "r-other" }] }),
     "mutation UnpinMessage": () => ({ unpinMessage: true }),
@@ -146,6 +151,20 @@ describe("ThreadPanel — message context menu", () => {
         { input: { serverId: "ws-1", conversationId: "c-1", messageId: "r-other" } },
       ]),
     );
+  });
+
+  it("offers a moderator the author's menu on an own reply that carries no author object", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await renderPanel();
+    fireEvent.contextMenu(screen.getByText("my new reply"));
+    expect(labels()).toEqual([
+      "Add reaction",
+      "Copy text",
+      "Forward…",
+      "Pin message",
+      "Delete message…",
+    ]);
+    expect(screen.queryByText("Moderation")).toBeNull();
   });
 
   it("opens the report dialog for a reply", async () => {

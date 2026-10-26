@@ -24,7 +24,7 @@ function isScrolledToBottom(container: HTMLElement): boolean {
 
 interface TimelineScrollItem {
   id: string;
-  author?: { id: string } | null;
+  authorId: string;
 }
 
 interface UseTimelineScrollOptions {
@@ -171,7 +171,7 @@ export function useTimelineScroll({
 
     const last = items[items.length - 1];
     if (last.id !== prevLastId) {
-      const isOwnMessage = currentUserId !== undefined && last.author?.id === currentUserId;
+      const isOwnMessage = currentUserId !== undefined && last.authorId === currentUserId;
       if (isAtBottomRef.current || isOwnMessage) {
         virtualizer.scrollToEnd({ behavior: "smooth" });
       }

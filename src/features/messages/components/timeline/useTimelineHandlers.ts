@@ -19,7 +19,7 @@ interface TimelineHandlerItem {
   isPinned?: boolean;
   threadId?: string | null;
   rootThreadId?: string | null;
-  author?: { id: string } | null;
+  authorId: string;
 }
 
 interface UseTimelineHandlersOptions {
@@ -66,7 +66,7 @@ export function useTimelineHandlers({
       return getMenuItemsRef.current({
         messageId,
         messageText,
-        isOwnMessage: msg?.author?.id === currentUserId,
+        isOwnMessage: currentUserId !== undefined && msg?.authorId === currentUserId,
         isPinned: msg?.isPinned === true,
         hasThread: !!(msg?.threadId || msg?.rootThreadId),
       });

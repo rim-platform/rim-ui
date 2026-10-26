@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, createEvent, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, screen, within } from "@testing-library/react";
 
 import { renderWithProviders as render } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -78,13 +78,34 @@ vi.mock("../../relay/components/DmRequestBar", () => ({
     <div data-testid="request-bar">{request.id}</div>
   ),
 }));
-vi.mock("../hooks/useMessageContextMenu", () => ({
-  useMessageContextMenu: () => ({
-    getItems: ({ messageId }: { messageId: string }) => [
-      { id: "actions", label: `Actions for ${messageId}`, onSelect: () => {} },
-    ],
-    dialog: null,
-  }),
+// The message menu: one placeholder item per message, or the real menu when `real` is set.
+const messageMenu = vi.hoisted(() => ({ real: false }));
+vi.mock("../hooks/useMessageContextMenu", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../hooks/useMessageContextMenu")>();
+  return {
+    ...actual,
+    useMessageContextMenu: (options: Parameters<typeof actual.useMessageContextMenu>[0]) => {
+      const real = actual.useMessageContextMenu(options);
+      if (messageMenu.real) return real;
+      return {
+        getItems: ({ messageId }: { messageId: string }) => [
+          { id: "actions", label: `Actions for ${messageId}`, onSelect: () => {} },
+        ],
+        dialog: null,
+      };
+    },
+  };
+});
+vi.mock("../../workspaces/api/useMyServerRole", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../workspaces/api/useMyServerRole")>()),
+  useCanModerate: () => true,
+}));
+vi.mock("../../conversations/api/useChannelPosting", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../conversations/api/useChannelPosting")>()),
+  usePostingRights: () => ({ message: true, thread: true, reaction: true, pin: true }),
+}));
+vi.mock("../../plugins/api/usePluginCommands", () => ({
+  usePluginContextMenuCommands: () => [],
 }));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));
 
@@ -350,6 +371,7 @@ afterEach(() => {
   cleanup();
   uninstallLayout();
   vi.clearAllMocks();
+  messageMenu.real = false;
   dmRequest.pending = false;
   dmRequest.conversation = undefined;
 });
@@ -725,6 +747,39 @@ describe("MessageTimeline keyboard", () => {
     } finally {
       useKeybindProfileStore.getState().setVimMode(false);
     }
+  });
+});
+
+describe("MessageTimeline — the menu of an own message for a moderator", () => {
+  it("offers the author's actions when the cached copy carries no author object", () => {
+    messageMenu.real = true;
+    setMessages([makeMessage(0), makeMessage(1, { authorId: "me", author: null })]);
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    act(() => useShellStore.setState({ navigationMode: true }));
+
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Edit message" })).toBeInTheDocument();
+    expect(within(menu).getAllByRole("menuitem", { name: "Delete message…" })).toHaveLength(1);
+    expect(within(menu).queryByRole("menuitem", { name: "Report message…" })).toBeNull();
+    expect(within(menu).queryByText("Moderation")).toBeNull();
+  });
+
+  it("still offers a moderator's actions on another member's message", () => {
+    messageMenu.real = true;
+    setMessages([makeMessage(0, { authorId: "me", author: null }), makeMessage(1)]);
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    act(() => useShellStore.setState({ navigationMode: true }));
+
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+
+    const menu = screen.getByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Edit message" })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: "Report message…" })).toBeInTheDocument();
+    expect(within(menu).getByText("Moderation")).toBeInTheDocument();
   });
 });
 
