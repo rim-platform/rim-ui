@@ -26,6 +26,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Your own message that has just arrived in the timeline is treated as yours: its menu offers
   **Edit message** and deletes it as its author, instead of offering **Report message…** and
   the moderator delete that called it another member's message.
+- **Open \<panel\>** in the command palette, and a keybind bound to it, opens a web plugin's
+  panel instead of saying the plugin is not running.
+- A plugin panel's header keeps the panel's title whole; the plugin's name, kind and source are
+  shortened instead and show in full on hover.
 
 ## [0.0.3] - 2026-10-26
 
