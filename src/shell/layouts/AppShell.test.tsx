@@ -283,7 +283,7 @@ describe("AppShell — plugin panels and conversation navigation", () => {
         description: "",
         enabled: true,
         capabilities: [],
-        approved_capabilities: [],
+        approved_capabilities: ["ui.panel"],
         approved_ai_commands: [],
         ai_callable_commands: [],
         ai_consent_required: false,
@@ -329,6 +329,14 @@ describe("AppShell — plugin panels and conversation navigation", () => {
     act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
 
     expect(screen.getByTestId("plugin-slot-notes")).toBeInTheDocument();
+    expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
+  });
+
+  it("does not show an open panel of a plugin without the ui.panel grant", () => {
+    pluginList.data = pluginList.data.map((plugin) => ({ ...plugin, approved_capabilities: [] }));
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+    renderShell();
+    expect(screen.queryByTestId("plugin-slot-pods")).not.toBeInTheDocument();
     expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
   });
 });

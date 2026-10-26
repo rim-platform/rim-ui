@@ -35,10 +35,22 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Search results show their snippet as plain text, without code fences, emphasis markers or
   link syntax, with matches still highlighted.
 - The conversation header no longer shows a channel icon before "No conversation".
+- The NAVIGATE key hints show in full above the composer instead of behind it.
+- Focusing the thread's reply box switches the status bar to COMPOSE and hides the NAVIGATE
+  hints, as the main composer does.
 - The command palette puts the best match first: a title match above a description or category
   match, a word start above scattered letters, with groups ordered by their best match.
 - Ctrl+Shift+G is listed as **New message** in the palette, Settings → Keybinds and the
   shortcuts sheet, matching what it opens.
+
+### Security
+
+- Turning a plugin on with its switch in Settings → Plugins first asks, in **Plugin
+  Permissions** with **Approve and turn on**, for the permissions it has not been granted;
+  before, it started without asking.
+- A plugin's panels show only when it holds **Render UI Panels** (`ui.panel`): the Plugins
+  menu, the palette's **Open \<panel\>** commands and a panel left open no longer show one
+  without it, on the web and the desktop.
 
 ## [0.0.3] - 2026-10-26
 

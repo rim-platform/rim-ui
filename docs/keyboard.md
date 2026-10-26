@@ -68,6 +68,12 @@ Settings, Keyboard exports the active profile and imports one. The file:
 Import checks every field and lists every problem with its position. A profile of a newer
 version is refused with a message saying so.
 
+## Timeline navigation
+
+Escape in the composer, or focusing the message list, enters NAVIGATE: the status bar shows
+NAVIGATE and a bar over the bottom of the timeline lists the keys for the selected message.
+Focusing the composer or a thread's reply box shows COMPOSE.
+
 ## Vim mode
 
 Off by default. Normal mode is any focus outside a text field; insert mode is a focused text

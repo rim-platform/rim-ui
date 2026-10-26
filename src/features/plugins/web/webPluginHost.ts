@@ -498,10 +498,14 @@ export class WebPluginHost {
     for (const entry of this.entries.values()) entry.session?.setMappings(mappings);
   }
 
-  /** A running plugin's files under `panels/<panelId>/`, with paths relative to it. */
+  /**
+   * The files under `panels/<panelId>/` of a running plugin granted `ui.panel`, with paths
+   * relative to it, or `null` for any other plugin.
+   */
   panelFiles(pluginId: string, panelId: string): BundleFile[] | null {
     const entry = this.entries.get(pluginId);
     if (!entry?.loaded || entry.status.health !== "running") return null;
+    if (!this.installed.get(pluginId)?.approvedCapabilities.includes("ui.panel")) return null;
     const prefix = `panels/${panelId}/`;
     return entry.loaded.files
       .filter((f) => f.path.startsWith(prefix))

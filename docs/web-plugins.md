@@ -60,11 +60,12 @@ A panel frame loads the same shell with `kind: "panel"` and the files under
 `panels/<id>/`; the shell renders `index.html`, then posts `rim.frame.ready` so the host
 sends the theme and the stored panel state. From then on it speaks the existing panel
 bridge. A local-process plugin's panel loads the same way: the desktop host reads
-`~/.rim/plugins/<id>/panels/<panel>/` of an enabled plugin that declares the panel
-(`plugin_panel_files`, with the path checks of `plugin_protocol.rs`) and `PluginPanel.tsx`
-hands the files to the shell, loaded as `rim-plugin://shell/v1/local-panel.html`: the same
-page, sent with a policy header (`LOCAL_PANEL_POLICY`) that allows no network, no workers
-and no WebAssembly, since such a panel reaches the network only through its plugin's
+`~/.rim/plugins/<id>/panels/<panel>/` of an enabled plugin that declares the panel and
+holds `ui.panel` (`plugin_panel_files`, with the path checks of `plugin_protocol.rs`) and
+`PluginPanel.tsx` hands the files to the shell, loaded as
+`rim-plugin://shell/v1/local-panel.html`: the same page, sent with a policy header
+(`LOCAL_PANEL_POLICY`) that allows no network, no workers and no WebAssembly, since such a
+panel reaches the network only through its plugin's
 process. Panel frames get their files after the shell's `rim.frame.hello`, once per frame. Only files
 `index.html` names (scripts, stylesheets, icons, images, media) are mapped to the panel's
 own files; a URL a script builds at run time, a stylesheet's `url()` or `@import`, or a

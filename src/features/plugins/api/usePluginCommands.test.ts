@@ -32,7 +32,7 @@ function plugin(overrides: Partial<PluginInfo> = {}): PluginInfo {
     description: "",
     enabled: true,
     capabilities: [],
-    approved_capabilities: [],
+    approved_capabilities: ["ui.panel"],
     approved_ai_commands: [],
     ai_callable_commands: [],
     ai_consent_required: false,
