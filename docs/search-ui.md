@@ -47,30 +47,48 @@ under a group header. The `Tab`-next-group shortcut was removed along with group
   not when a page is appended — resetting on every page load would fight in-progress
   keyboard navigation.
 
-## Snippet rendering — DOMPurify `mark`-only sanitization (security-critical)
+## Snippet rendering — DOMPurify `mark`-only parse, plain text out (security-critical)
 
-`SearchResultMessage.headline` is a server-generated `ts_headline` snippet
-containing literal `<mark>…</mark>` tags around matched terms — but the *surrounding
-text* is raw, unsanitized user message content, which may itself contain arbitrary
-markup an attacker embedded in a message (`<img onerror=...>`, `<script>`, etc.).
-`SearchSnippet` (`src/features/messages/components/SearchSnippet.tsx`) sanitizes with:
+A snippet comes from one of two sources, both with literal `<mark>…</mark>` tags around the
+matched terms: the server's `SearchResultMessage.headline`, a `ts_headline` over the raw
+message text, and the desktop cache's FTS5 snippet, whose text is HTML-escaped before the marks
+go in. In both, the *surrounding text* is user message content, which may contain arbitrary
+markup an attacker embedded in a message (`<img onerror=...>`, `<script>`, etc.) and Markdown
+syntax (code fences, emphasis, links). `SearchSnippet`
+(`src/features/messages/components/SearchSnippet.tsx`) handles both the same way:
 
-```ts
-DOMPurify.sanitize(headline, { ALLOWED_TAGS: ["mark"], ALLOWED_ATTR: [] });
-```
+1. **Parse.** DOMPurify parses the headline into a DOM fragment:
 
-This strips every tag except a bare `<mark>` and strips all attributes (including on
-`<mark>` itself, so an attacker can't smuggle `onclick` or similar through it),
-neutralizing injection while preserving the highlight markers. This is the one
-sanctioned DOMPurify-for-HTML pattern applied to search snippets — see
-`CLAUDE.md`'s "DOMPurify on all user-generated HTML" rule and
-`src/shared/ui/MarkdownRenderer.tsx` for the sibling pattern used for message bodies.
+   ```ts
+   DOMPurify.sanitize(headline, {
+     ALLOWED_TAGS: ["mark"],
+     ALLOWED_ATTR: [],
+     RETURN_DOM_FRAGMENT: true,
+   });
+   ```
 
-There is **no client-side substring highlighting** — the server headline is the
-single source of truth for match highlighting. When `headline` is `null` (a purely
-operator-based query with no free-text component, e.g. `from:@alice`), `SearchSnippet`
-falls back to the plain `text`, rendered as ordinary React children (auto-escaped, no
-highlight — there's nothing server-side to highlight).
+   Every tag except a bare `<mark>` and every attribute is stripped, and HTML entities decode,
+   so the desktop cache's `&lt;b&gt;` reads as `<b>` like the server's raw text does.
+2. **Flatten.** Only the fragment's text is read. Each `<mark>`'s text is wrapped in two
+   private-use characters (U+E000 and U+E001) and any such characters in the message text
+   itself are dropped, so the highlights survive as plain text.
+3. **Strip Markdown.** `plainSnippet` (`src/features/messages/utils/snippetText.ts`) removes
+   code fences with their info string, backticks, `**`, `__`, `~~`, single `*` and `_` at word
+   edges (so `snake_case` stays), heading, quote and list markers at the start of a line, and
+   link and image syntax (keeping their text), then collapses whitespace to single spaces.
+4. **Render.** The text splits on the highlight characters into React text and `<mark>` nodes;
+   an empty mark is dropped. No HTML from the snippet ever reaches the page and there is no
+   `dangerouslySetInnerHTML`.
+
+This is the DOMPurify pattern applied to search snippets — see `CLAUDE.md`'s "DOMPurify on all
+user-generated HTML" rule and `src/shared/ui/MarkdownRenderer.tsx` for the sibling pattern used
+for message bodies.
+
+There is **no client-side substring highlighting** — the snippet is the single source of
+truth for match highlighting. When `headline` is `null` (a purely operator-based query with no
+free-text component, e.g. `from:@alice`), `SearchSnippet` falls back to the message `text` with
+its Markdown removed the same way, rendered as ordinary React children (auto-escaped, no
+highlight — there's nothing to highlight).
 
 ## Local search (desktop app)
 
