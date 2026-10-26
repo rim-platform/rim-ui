@@ -60,7 +60,7 @@ describe("InviteDialog", () => {
     useToastStore.setState({ toasts: [] });
   });
 
-  it("says email is not set up, with the reason, in place of the email field", () => {
+  it("says this server can't send email invites, without the reason", () => {
     const mutate = vi.fn();
     mockCreateInvite({ mutate });
     renderDialog({
@@ -68,11 +68,27 @@ describe("InviteDialog", () => {
     });
 
     expect(screen.queryByLabelText(/email invite/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Email is not set up on this server.")).toBeInTheDocument();
-    expect(screen.getByText("SMTP is not configured")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This server can't send email invites. Generate the link and share it yourself.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("SMTP is not configured")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
     expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
+  });
+
+  it("uses the same message when the operator switched email off", () => {
+    mockCreateInvite();
+    renderDialog({ email: ServerFeatureState.DISABLED });
+
+    expect(screen.queryByLabelText(/email invite/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This server can't send email invites. Generate the link and share it yourself.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("empty email: generates a link-only invite (no recipientEmail in the call)", () => {
