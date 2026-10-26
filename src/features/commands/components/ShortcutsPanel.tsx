@@ -5,7 +5,7 @@ import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { useCommands } from "../api/useCommands";
 import { KEYBIND_CONTEXTS } from "../profiles/keybindProfile";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
-import { BUILT_IN_COMMAND_TITLES } from "../runtime/localCommands";
+import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
 import { VIM_KEYS } from "../runtime/vimLayer";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
@@ -56,7 +56,9 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 
   const groups = useMemo<ShortcutGroup[]>(() => {
     const titles = new Map<string, string>(Object.entries(BUILT_IN_COMMAND_TITLES));
-    for (const command of commands ?? []) titles.set(command.id, command.title);
+    for (const command of commands ?? []) {
+      titles.set(command.id, withClientLabel(command).title);
+    }
     for (const command of pluginCommands) titles.set(command.id, command.title);
 
     const needle = query.trim().toLowerCase();

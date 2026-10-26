@@ -13,6 +13,7 @@ vi.mock("../../plugins/api/usePluginCommands", () => ({
 }));
 
 import { useResolvedKeybinds } from "../api/useKeybinds";
+import { useCommands } from "../api/useCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
 import { DEFAULT_BINDINGS } from "../profiles/builtInProfiles";
@@ -39,6 +40,7 @@ describe("ShortcutsPanel", () => {
     vi.mocked(useResolvedKeybinds).mockReturnValue({ data: undefined } as ReturnType<
       typeof useResolvedKeybinds
     >);
+    vi.mocked(useCommands).mockReturnValue({ data: [] } as ReturnType<typeof useCommands>);
   });
 
   it("renders nothing while closed", () => {
@@ -54,6 +56,31 @@ describe("ShortcutsPanel", () => {
     expect(rows).toHaveLength(DEFAULT_BINDINGS.length);
     expect(within(rowFor("Open command palette")).getByText("Ctrl+K")).toBeInTheDocument();
     expect(within(rowFor("Close the open panel")).getByText("Escape")).toBeInTheDocument();
+  });
+
+  it("lists Ctrl+Shift+G as New message", () => {
+    vi.mocked(useCommands).mockReturnValue({
+      data: [
+        {
+          id: "chat.create_group",
+          title: "Create Group",
+          description: "Create a group conversation",
+          category: "Conversation",
+          sourceKind: "BUILT_IN",
+          executionTarget: "BACKEND",
+          requiredContext: [],
+          requiredCapabilities: [],
+          visibleInPalette: true,
+          visibleInContextMenus: false,
+          keybindCapable: true,
+          dangerous: false,
+        },
+      ],
+    } as ReturnType<typeof useCommands>);
+    render(<ShortcutsPanel />);
+
+    expect(within(rowFor("New message")).getByText("Ctrl+Shift+G")).toBeInTheDocument();
+    expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
   });
 
   it("follows the bindings as they change: a plugin binding, the server's, a freed key", () => {

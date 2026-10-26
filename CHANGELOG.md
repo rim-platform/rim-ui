@@ -38,6 +38,10 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - The NAVIGATE key hints show in full above the composer instead of behind it.
 - Focusing the thread's reply box switches the status bar to COMPOSE and hides the NAVIGATE
   hints, as the main composer does.
+- The command palette puts the best match first: a title match above a description or category
+  match, a word start above scattered letters, with groups ordered by their best match.
+- Ctrl+Shift+G is listed as **New message** in the palette, Settings → Keybinds and the
+  shortcuts sheet, matching what it opens.
 - The thread pane shows a mention in the root message and in the replies as the person's name,
   as the timeline does, instead of the raw `<@…>` token.
 - A message with a thread keeps **Open thread** in its hover actions and shows **View thread**

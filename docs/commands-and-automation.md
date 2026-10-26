@@ -56,14 +56,18 @@ run; a plugin's command acts only within the permissions you granted the plugin.
 ## The command palette
 
 <kbd>Ctrl+K</kbd> opens the palette, and so does <kbd>:</kbd> in Vim normal mode. "Type a
-command..." searches the title, description and category of every command, fuzzily, with the
-matched letters highlighted. The arrow keys move, <kbd>Enter</kbd> runs, <kbd>Esc</kbd> closes.
+command..." searches the title, description and category of every command, with the matched
+letters highlighted. The best match comes first: a match in the title ranks above one in the
+description or category, and a whole word or the start of one above letters inside a word or
+scattered through it; in a description or category only a match that starts at a word counts.
+The arrow keys move, <kbd>Enter</kbd> runs, <kbd>Esc</kbd> closes.
 
-The list is grouped by category, in alphabetical order: the built-in Admin, Chat, Notifications,
-State and Workspace; User, for your user commands; one per turned-on plugin, under its name, with
-an "Open \<panel\>" command for each panel of a running plugin; and Workspace plugins, the
-registry's plugins this device has not installed, as "Install \<name\>"
-([Workspace registry](plugins.md#workspace-registry)).
+Without a search the list is grouped by category, in alphabetical order: the built-in Admin,
+Chat, Notifications, State and Workspace; User, for your user commands; one per turned-on plugin,
+under its name, with an "Open \<panel\>" command for each panel of a running plugin; and
+Workspace plugins, the registry's plugins this device has not installed, as "Install \<name\>"
+([Workspace registry](plugins.md#workspace-registry)). With one, the groups follow their best
+match.
 
 Each row shows where the command comes from (built in, plugin or yours), its category and its
 keybind. Left out are a plugin command that needs arguments, which its plugin's panel runs, a
