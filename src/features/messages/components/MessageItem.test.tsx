@@ -6,6 +6,18 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
 }));
 
+/** Stands in for emoji-mart: one button that selects 👍. */
+vi.mock("@emoji-mart/react", () => ({
+  default: (props: { onEmojiSelect?: (emoji: { native?: string }) => void }) => (
+    <div data-testid="emoji-mart-picker">
+      <button type="button" onClick={() => props.onEmojiSelect?.({ native: "👍" })}>
+        pick 👍
+      </button>
+    </div>
+  ),
+}));
+vi.mock("@emoji-mart/data", () => ({ default: {} }));
+
 /** Answers the ThreadReplyCount query; every other query stays pending. */
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../../core/graphql/client", () => ({
@@ -309,9 +321,77 @@ describe("MessageItem", () => {
     expect(screen.queryByRole("button", { name: "View thread" })).not.toBeInTheDocument();
   });
 
-  it("renders add reaction button", () => {
-    render(<MessageItem {...props()} />);
-    expect(screen.getByLabelText("Add reaction")).toBeInTheDocument();
+  it("renders no reactions row under a message without reactions", () => {
+    const zeroCount = [{ emoji: "👍", count: 0, reactedByMe: false }];
+    for (const [message, density] of [
+      [defaultMessage, "comfortable"],
+      [{ ...defaultMessage, reactions: zeroCount }, "comfortable"],
+      [defaultMessage, "ultra-compact"],
+    ] as const) {
+      const base = props({ message });
+      const { unmount } = render(
+        <MessageItem {...base} view={{ ...base.view, displayDensity: density }} />,
+      );
+      const row = screen.getByRole("option");
+      const add = screen.getByLabelText("Add reaction");
+      const actions = add.parentElement;
+      expect(actions?.parentElement).toBe(row);
+      expect(actions).toContainElement(screen.getByLabelText("Open thread"));
+      const body = Array.from(row.children).find((child) =>
+        child.textContent?.includes("Hello world"),
+      );
+      expect(body).not.toContainElement(add);
+      expect(row.querySelector(".flex-wrap")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("keeps the reactions row with the add button for a message with reactions", () => {
+    const reactions = [{ emoji: "👍", count: 2, reactedByMe: false }];
+    render(<MessageItem {...props({ message: { ...defaultMessage, reactions } })} />);
+    const add = screen.getByLabelText("Add reaction");
+    const pill = screen.getByText("👍").closest("button");
+    expect(add.parentElement).toBe(pill?.parentElement);
+    expect(add.parentElement).toHaveClass("flex-wrap");
+    expect(add.previousElementSibling).toBe(pill);
+    expect(screen.getAllByLabelText("Add reaction")).toHaveLength(1);
+    expect(screen.getByLabelText("Open thread").parentElement).not.toContainElement(add);
+  });
+
+  it("opens the emoji picker from the hover add-reaction button", async () => {
+    const onToggleReaction = vi.fn();
+    render(<MessageItem {...props({ handlers: { onToggleReaction } })} />);
+    fireEvent.click(screen.getByLabelText("Add reaction"));
+    fireEvent.click(await screen.findByRole("button", { name: "pick 👍" }));
+    expect(onToggleReaction).toHaveBeenCalledWith("msg-1", "👍");
+    expect(screen.queryByTestId("emoji-mart-picker")).not.toBeInTheDocument();
+  });
+
+  it("shows no add-reaction action on a deleted message or where reacting is not allowed", () => {
+    const { unmount } = render(
+      <MessageItem {...props({ message: { ...defaultMessage, isDeleted: true } })} />,
+    );
+    expect(screen.queryByLabelText("Add reaction")).not.toBeInTheDocument();
+    unmount();
+
+    const { unmount: unmountBare } = render(
+      <MessageItem {...props({ handlers: { canAddReaction: false } })} />,
+    );
+    expect(screen.queryByLabelText("Add reaction")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Open thread")).toBeInTheDocument();
+    unmountBare();
+
+    const reactions = [{ emoji: "👍", count: 2, reactedByMe: false }];
+    render(
+      <MessageItem
+        {...props({
+          message: { ...defaultMessage, reactions },
+          handlers: { canAddReaction: false },
+        })}
+      />,
+    );
+    expect(screen.getByText("👍")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add reaction")).not.toBeInTheDocument();
   });
 
   it("renders link previews when provided", () => {

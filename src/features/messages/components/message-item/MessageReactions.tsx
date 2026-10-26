@@ -15,9 +15,17 @@ interface MessageReactionsProps {
   /** Whether the viewer may add reactions; when false only their own pills toggle (off). */
   canAddReaction?: boolean;
   resolveMember?: MemberResolver;
+  /**
+   * Where it renders: `"row"` is the line of pills under the text with the add button after
+   * them; `"action"` is the add button alone, for the row's hover actions.
+   */
+  placement?: "row" | "action";
 }
 
-/** Reaction pills plus the hover "add reaction" button and its emoji picker. */
+/**
+ * Reaction pills plus the hover "add reaction" button and its emoji picker, or the add button
+ * alone when `placement` is `"action"`.
+ */
 export const MessageReactions = memo(function MessageReactions({
   messageId,
   serverId,
@@ -25,17 +33,17 @@ export const MessageReactions = memo(function MessageReactions({
   onToggleReaction,
   canAddReaction = true,
   resolveMember,
+  placement = "row",
 }: MessageReactionsProps) {
-  const { emojis: customEmojis } = useCustomEmojis(serverId ?? null);
-  // Picker anchor, captured from the button when it opens; null when closed.
-  const [pickerPosition, setPickerPosition] = useState<{ x: number; y: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const addButton = canAddReaction ? (
+    <AddReactionButton
+      messageId={messageId}
+      serverId={serverId}
+      onToggleReaction={onToggleReaction}
+    />
+  ) : null;
 
-  const togglePicker = useCallback(() => {
-    const rect = btnRef.current?.getBoundingClientRect();
-    const anchor = rect ? { x: rect.right + 6, y: rect.top } : { x: 0, y: 0 };
-    setPickerPosition((prev) => (prev ? null : anchor));
-  }, []);
+  if (placement === "action") return addButton;
 
   const visibleReactions = reactions?.filter((r) => r.count > 0) ?? [];
 
@@ -51,19 +59,45 @@ export const MessageReactions = memo(function MessageReactions({
           resolveMember={resolveMember}
         />
       ))}
-      {canAddReaction && (
-        <button
-          ref={btnRef}
-          type="button"
-          onClick={togglePicker}
-          className="rounded p-1 text-rim-text-faint opacity-0 transition hover:text-rim-accent group-hover:opacity-100"
-          title="Add reaction"
-          aria-label="Add reaction"
-        >
-          <SmilePlus className="h-3.5 w-3.5" />
-        </button>
-      )}
-      {canAddReaction && pickerPosition && (
+      {addButton}
+    </div>
+  );
+});
+
+/** The hover "Add reaction" button and the emoji picker it opens beside itself. */
+function AddReactionButton({
+  messageId,
+  serverId,
+  onToggleReaction,
+}: {
+  messageId: string;
+  serverId?: string;
+  onToggleReaction: (messageId: string, emoji: string) => void;
+}) {
+  const { emojis: customEmojis } = useCustomEmojis(serverId ?? null);
+  // Picker anchor, captured from the button when it opens; null when closed.
+  const [pickerPosition, setPickerPosition] = useState<{ x: number; y: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const togglePicker = useCallback(() => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    const anchor = rect ? { x: rect.right + 6, y: rect.top } : { x: 0, y: 0 };
+    setPickerPosition((prev) => (prev ? null : anchor));
+  }, []);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={togglePicker}
+        className="rounded p-1 text-rim-text-faint opacity-0 transition hover:text-rim-accent group-hover:opacity-100"
+        title="Add reaction"
+        aria-label="Add reaction"
+      >
+        <SmilePlus className="h-3.5 w-3.5" />
+      </button>
+      {pickerPosition && (
         <EmojiPicker
           position={pickerPosition}
           customEmojis={customEmojis}
@@ -74,9 +108,9 @@ export const MessageReactions = memo(function MessageReactions({
           onClose={() => setPickerPosition(null)}
         />
       )}
-    </div>
+    </>
   );
-});
+}
 
 function ReactionPill({
   reaction,

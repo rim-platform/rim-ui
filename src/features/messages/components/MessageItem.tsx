@@ -74,6 +74,7 @@ export const MessageItem = memo(function MessageItem({
   const hideAvatar = isUltraCompact || (isGrouped && !isFirstInGroup);
   const hideAuthorLine = isGrouped && !isFirstInGroup;
   const hasAttachments = (message.attachments?.length ?? 0) > 0;
+  const hasReactions = message.reactions?.some((r) => r.count > 0) ?? false;
 
   const messageId = message.id;
   const messageText = message.text ?? "";
@@ -120,14 +121,16 @@ export const MessageItem = memo(function MessageItem({
           />
         ))}
       <MessageLinkPreviews previews={message.linkPreviews} />
-      <MessageReactions
-        messageId={messageId}
-        serverId={message.serverId}
-        reactions={message.reactions}
-        onToggleReaction={onToggleReaction}
-        canAddReaction={canAddReaction}
-        resolveMember={members?.resolve}
-      />
+      {hasReactions && (
+        <MessageReactions
+          messageId={messageId}
+          serverId={message.serverId}
+          reactions={message.reactions}
+          onToggleReaction={onToggleReaction}
+          canAddReaction={canAddReaction}
+          resolveMember={members?.resolve}
+        />
+      )}
     </>
   );
 
@@ -147,6 +150,23 @@ export const MessageItem = memo(function MessageItem({
         conversationId={message.conversationId}
         onOpenThread={onOpenThread}
       />
+    ) : null;
+  // Without reactions there is no row under the text, so the add button joins the hover actions.
+  const addReactionAction =
+    !hasReactions && canAddReaction && !isDeleted ? (
+      <MessageReactions
+        messageId={messageId}
+        serverId={message.serverId}
+        onToggleReaction={onToggleReaction}
+        placement="action"
+      />
+    ) : null;
+  const hoverActions =
+    addReactionAction || threadButton ? (
+      <div className="flex shrink-0 items-center">
+        {addReactionAction}
+        {threadButton}
+      </div>
     ) : null;
 
   const rowProps = {
@@ -204,7 +224,7 @@ export const MessageItem = memo(function MessageItem({
             {threadSummary}
           </div>
         )}
-        {threadButton}
+        {hoverActions}
       </div>
     );
   }
@@ -283,7 +303,7 @@ export const MessageItem = memo(function MessageItem({
         {!isDeleted && extras}
         {threadSummary}
       </div>
-      {threadButton}
+      {hoverActions}
     </div>
   );
 }, areMessageItemPropsEqual);
