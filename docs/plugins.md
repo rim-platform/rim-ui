@@ -101,8 +101,10 @@ and the error names what failed:
 Every install ends in the **Plugin Permissions** dialog, described under
 [Trust and permissions](#trust-and-permissions). After an install its button reads **Approve and
 turn on**: approving grants the checked permissions and starts the plugin. **Cancel** leaves it
-installed and turned off, to turn on later with the switch on its row. If the plugin does not
-start, the dialog says why and its permissions stay saved.
+installed and turned off, to turn on later with the switch on its row. That switch opens the
+same dialog, with **Approve and turn on**, whenever a permission the plugin asks for is not
+granted, and turns the plugin on only once it is approved. If the plugin does not start, the
+dialog says why and its permissions stay saved.
 
 ### Workspace registry
 
@@ -200,21 +202,25 @@ Plugins names.
   token; other plugins never do. A plugin's panel can open this form, for example from a
   "Configure" button, which shows it over the panel in the same way, but never sees the values.
 - **Turning it on.** The switch on the plugin's row in Settings → Plugins starts it, and the row
-  shows Running, Stopped, Crashed or Timed out. On the desktop a plugin left on starts again
-  with the app. On the web, plugins are turned on per account in that browser: signing out
-  stops them and signing in starts those the account turned on.
+  shows Running, Stopped, Crashed or Timed out. When a permission the plugin asks for is not
+  granted, the switch first opens **Plugin Permissions**, and **Cancel** leaves the plugin off.
+  On the desktop a plugin left on starts again with the app. On the web, plugins are turned on
+  per account in that browser: signing out stops them and signing in starts those the account
+  turned on.
 - **Panels.** The side rail's **Plugins** entry opens a menu with one row per panel of every
-  running plugin, showing the plugin's name and the panel's title, and below them, set apart,
-  **Manage plugins…**, which opens Settings → Plugins. Choosing a row opens the panel; with no
-  running plugin that has a panel, the menu says so above **Manage plugins…**. A plugin's
+  running plugin granted Render UI Panels, showing the plugin's name and the panel's title, and
+  below them, set apart, **Manage plugins…**, which opens Settings → Plugins. Choosing a row
+  opens the panel; with no such plugin that has a panel, the menu says so above **Manage
+  plugins…**. A panel left open stops showing when its plugin loses that permission. A plugin's
   settings are not in this menu: they open from the places listed under **Settings**. The entry
   stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
   Pods panel, in place of the conversation. Its header shows the panel's title, the plugin's
   name, its kind and where it came from, and a close button. The title stays whole; the rest is
   shortened when the panel is narrow and shows in full on hover. [UI shell](ui-shell.md)
   describes the menu's keys.
-- **"Open \<panel\>" commands.** Each panel of a running plugin also has an "Open \<panel\>"
-  command in the palette, such as "Open Pull requests", which a keybind can run too.
+- **"Open \<panel\>" commands.** Each panel of a running plugin granted Render UI Panels also
+  has an "Open \<panel\>" command in the palette, such as "Open Pull requests", which a keybind
+  can run too.
 - **Commands.** The palette lists a plugin's commands under the plugin's name. A command that
   needs arguments is not listed; its plugin's panel runs it. A dangerous command opens
   **\<command\>?**, which says "\<plugin\> marks this command as dangerous. It runs only if you

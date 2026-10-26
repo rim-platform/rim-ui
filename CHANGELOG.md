@@ -36,6 +36,15 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   link syntax, with matches still highlighted.
 - The conversation header no longer shows a channel icon before "No conversation".
 
+### Security
+
+- Turning a plugin on with its switch in Settings → Plugins first asks, in **Plugin
+  Permissions** with **Approve and turn on**, for the permissions it has not been granted;
+  before, it started without asking.
+- A plugin's panels show only when it holds **Render UI Panels** (`ui.panel`): the Plugins
+  menu, the palette's **Open \<panel\>** commands and a panel left open no longer show one
+  without it, on the web and the desktop.
+
 ## [0.0.3] - 2026-10-26
 
 ### Added

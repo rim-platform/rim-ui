@@ -541,6 +541,33 @@ describe("web plugin frames", () => {
     });
   });
 
+  it("hands no panel files to a running plugin without the ui.panel grant", async () => {
+    const start = async (approvedCapabilities: string[]) => {
+      const t = testEnvironment();
+      const s = testServices(webManifest(), [
+        file("main.mjs", "export {};\n"),
+        file("panels/main/index.html", "<p>hi</p>"),
+      ]);
+      const host = new WebPluginHost();
+      host.configure(t.env, s.services, ["https://api.rim.example/api"], null);
+      host.setPrincipal(PRINCIPAL);
+      host.reconcile([installed({ approvedCapabilities })]);
+      await flush();
+      t.frames[0].load();
+      scriptedPlugin(t.frames[0].port);
+      await flush();
+      expect(host.status("dev.example.scripted").health).toBe("running");
+      return host;
+    };
+
+    const granted = await start(["ui.panel"]);
+    expect(granted.panelFiles("dev.example.scripted", "main")).toEqual([
+      file("index.html", "<p>hi</p>"),
+    ]);
+    const withheld = await start([]);
+    expect(withheld.panelFiles("dev.example.scripted", "main")).toBeNull();
+  });
+
   it("limits storage to 120 calls a minute, messages to 600, and stops a plugin past 1,200", async () => {
     const t = await startScripted();
     for (let i = 0; i < 120; i++)

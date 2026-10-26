@@ -50,7 +50,7 @@ interface PluginCapabilityPromptProps {
   open: boolean;
   onClose: () => void;
   plugin: PluginInfo;
-  /** Set right after an install: approving also turns the plugin on. */
+  /** Set right after an install or from the plugin's switch: approving also turns it on. */
   startOnApprove?: boolean;
 }
 
