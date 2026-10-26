@@ -34,7 +34,7 @@ account back if you lose it.
 - **Username**: 3 to 32 characters, lowercase letters, digits, `_` and `-`, free on this server.
   Capitals are folded to lowercase, so `Kuba` signs up as `kuba`. It cannot start with `r_` or
   `deleted-`. With the server's domain it makes your handle (below).
-- **Display name (optional)**: at most 80 characters. Left blank, your username is shown.
+- **Display name (optional)**: at most 64 characters. Left blank, your username is shown.
 - **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
   browser, a name such as "Firefox on Linux". It names this device in your device list.
 - **I accept the terms of use**, with a link to the server's terms, only when the server has

@@ -44,4 +44,29 @@ describe("SearchSnippet", () => {
     expect(screen.getByText("<script>alert(1)</script>plain text")).toBeInTheDocument();
     expect(document.querySelector("script")).toBeNull();
   });
+
+  it("shows a fenced code block's text without backticks or yaml", () => {
+    const { container } = render(
+      <SearchSnippet headline={"config:\n```yaml\n<mark>replicas</mark>: 3\n```"} text="config" />,
+    );
+    expect(container.textContent).toBe("config: replicas: 3");
+    expect(container.querySelector("mark")?.textContent).toBe("replicas");
+  });
+
+  it("keeps the highlight inside bold", () => {
+    const { container } = render(
+      <SearchSnippet headline="the **<mark>deploy</mark>** failed" text="the deploy failed" />,
+    );
+    expect(container.textContent).toBe("the deploy failed");
+    expect(container.querySelector("mark")?.textContent).toBe("deploy");
+  });
+
+  it("decodes the desktop cache's escaped snippet", () => {
+    const { container } = render(
+      <SearchSnippet headline={"a &lt;b&gt; <mark>deploy</mark>"} text="a <b> deploy" />,
+    );
+    expect(container.textContent).toBe("a <b> deploy");
+    expect(container.querySelector("b")).toBeNull();
+    expect(container.querySelector("mark")?.textContent).toBe("deploy");
+  });
 });
