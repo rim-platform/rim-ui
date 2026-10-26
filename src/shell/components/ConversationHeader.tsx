@@ -168,9 +168,9 @@ function SelectedConversationHeader() {
           />
         ) : conversation ? (
           <ChannelIcon conversation={conversation} className="h-5 w-5 text-rim-text-muted" />
-        ) : (
+        ) : conversationId ? (
           <Hash className="h-5 w-5 text-rim-text-muted" />
-        )}
+        ) : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium text-rim-text">

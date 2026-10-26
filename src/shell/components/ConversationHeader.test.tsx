@@ -333,3 +333,23 @@ describe("ConversationHeader — draft DM", () => {
     expect(screen.queryByRole("button", { name: /^Search in/ })).not.toBeInTheDocument();
   });
 });
+
+describe("ConversationHeader — no conversation open", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: null });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("shows No conversation without a channel icon", () => {
+    renderHeader();
+    expect(screen.getByRole("heading", { name: "No conversation" })).toBeInTheDocument();
+    expect(document.body.querySelector("svg.lucide-hash")).toBeNull();
+  });
+});
