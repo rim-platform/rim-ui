@@ -21,6 +21,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-10-26
+
 ### Added
 
 - A thread's root shows how many replies it has (**3 replies**) under it, kept current as
@@ -659,7 +661,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/rim-platform/rim-ui/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/rim-platform/rim-ui/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/rim-platform/rim-ui/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/rim-platform/rim-ui/releases/tag/v0.0.1
