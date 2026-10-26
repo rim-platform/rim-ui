@@ -35,6 +35,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Search results show their snippet as plain text, without code fences, emphasis markers or
   link syntax, with matches still highlighted.
 - The conversation header no longer shows a channel icon before "No conversation".
+- The NAVIGATE key hints show in full above the composer instead of behind it.
+- Focusing the thread's reply box switches the status bar to COMPOSE and hides the NAVIGATE
+  hints, as the main composer does.
 
 ### Security
 

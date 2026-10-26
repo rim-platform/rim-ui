@@ -455,18 +455,17 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
             </div>
           )}
         </div>
+        {navigationMode && (
+          <NavigationHints
+            hasSelection={selectedMessageIndex >= 0}
+            isSelectedOwnMessage={
+              currentUserId !== undefined && selectedMsg?.authorId === currentUserId
+            }
+            isDeleteConfirming={deleteConfirmMessageId !== null}
+            hasNewMessages={firstNewIndex >= 0}
+          />
+        )}
       </div>
-
-      {navigationMode && (
-        <NavigationHints
-          hasSelection={selectedMessageIndex >= 0}
-          isSelectedOwnMessage={
-            currentUserId !== undefined && selectedMsg?.authorId === currentUserId
-          }
-          isDeleteConfirming={deleteConfirmMessageId !== null}
-          hasNewMessages={firstNewIndex >= 0}
-        />
-      )}
 
       <TypingIndicator workspaceId={workspaceId} conversationId={conversationId} />
       {pendingPeerId && (
