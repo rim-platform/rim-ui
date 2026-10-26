@@ -45,6 +45,7 @@ import { PluginSlotContainer } from "../../features/plugins/components/PluginSlo
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
+import { canShowPanels } from "../../features/plugins/pluginPanels";
 import { panelSlot } from "../../features/plugins/types";
 import { SurfaceErrorBoundary } from "../../shared/ui/SurfaceErrorBoundary";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
@@ -236,7 +237,9 @@ function WorkspaceShell() {
   // Resolve the active plugin panel to plugin info + panel def
   const resolvedPluginPanel = useMemo(() => {
     if (!activePluginPanel || !plugins) return null;
-    const plugin = plugins.find((p) => p.plugin_id === activePluginPanel.pluginId && p.enabled);
+    const plugin = plugins.find(
+      (p) => p.plugin_id === activePluginPanel.pluginId && canShowPanels(p),
+    );
     if (!plugin) return null;
     const panel = plugin.panels?.find((p) => p.id === activePluginPanel.panelId);
     if (!panel) return null;
@@ -431,7 +434,7 @@ function WorkspaceShell() {
             (() => {
               // Resolve the plugin and its first panel for the main-area slot.
               const mainPlugin = plugins?.find(
-                (p) => p.plugin_id === mainSurface.pluginId && p.enabled,
+                (p) => p.plugin_id === mainSurface.pluginId && canShowPanels(p),
               );
               const mainPanel = mainPlugin?.panels?.[0];
               if (mainPlugin && mainPanel) {
