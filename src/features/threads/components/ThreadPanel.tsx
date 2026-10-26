@@ -35,7 +35,7 @@ import { rememberHandles } from "../../workspaces/state/useKnownHandles";
 import { personName, viewHandle } from "../../../shared/utils/handles";
 
 /** A message the thread panel shows: the root or a reply. */
-type ThreadPanelMessage = { id: string; author?: { id: string } | null };
+type ThreadPanelMessage = { id: string; authorId: string };
 
 /**
  * The message as the report dialog takes it. The replies of an encrypted conversation come
@@ -270,7 +270,7 @@ export function ThreadPanel() {
       return getMenuItemsRef.current({
         messageId,
         messageText,
-        isOwnMessage: message?.author?.id === currentUserId,
+        isOwnMessage: currentUserId !== undefined && message?.authorId === currentUserId,
         isPinned: pinnedRef.current?.some((m) => m.id === messageId) ?? false,
         hasThread: true,
         message: reportable(message),
@@ -372,7 +372,8 @@ export function ThreadPanel() {
                       rootMessage.author?.handle,
                       ownDomain,
                     ),
-                    isCurrentUser: rootMessage.author?.id === currentUserId,
+                    isCurrentUser:
+                      currentUserId !== undefined && rootMessage.authorId === currentUserId,
                   },
                 }}
                 handlers={handlers}
@@ -409,7 +410,7 @@ export function ThreadPanel() {
                     avatarUrl: msg.author?.avatarUrl,
                     username: msg.author?.username,
                     handle: viewHandle(msg.author?.username, msg.author?.handle, ownDomain),
-                    isCurrentUser: msg.author?.id === currentUserId,
+                    isCurrentUser: currentUserId !== undefined && msg.authorId === currentUserId,
                   },
                 }}
                 handlers={handlers}

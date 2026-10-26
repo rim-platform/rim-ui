@@ -434,7 +434,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                           role: member.role,
                           joinedAt: member.joinedAt,
                           bio: member.bio,
-                          isCurrentUser: msg.author?.id === currentUserId,
+                          isCurrentUser:
+                            currentUserId !== undefined && msg.authorId === currentUserId,
                         },
                         isSelected: row.index === selectedMessageIndex,
                         isHighlighted: msg.id === highlightedMessageId,
@@ -459,7 +460,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       {navigationMode && (
         <NavigationHints
           hasSelection={selectedMessageIndex >= 0}
-          isSelectedOwnMessage={selectedMsg?.author?.id === currentUserId}
+          isSelectedOwnMessage={
+            currentUserId !== undefined && selectedMsg?.authorId === currentUserId
+          }
           isDeleteConfirming={deleteConfirmMessageId !== null}
           hasNewMessages={firstNewIndex >= 0}
         />

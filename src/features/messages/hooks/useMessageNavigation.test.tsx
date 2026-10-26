@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders as render } from "../../../test/utils";
@@ -8,7 +8,7 @@ import { useMessageNavigation } from "./useMessageNavigation";
 
 function Harness({ onCopy }: { onCopy: () => void }) {
   const { handleMessageListKeyDown } = useMessageNavigation({
-    items: [{ id: "m-1", text: "hi" }],
+    items: [{ id: "m-1", text: "hi", authorId: "u-2" }],
     conversationId: "c-1",
     workspaceId: "w-1",
     currentUserId: "u-1",
@@ -30,6 +30,33 @@ function Harness({ onCopy }: { onCopy: () => void }) {
       </div>
       <textarea data-composer-input aria-label="Composer" />
     </>
+  );
+}
+
+/** An own message as the `NewMessage` event stores it: `authorId` set, no `author` object. */
+const ownEventMessage = { id: "m-1", text: "hi", authorId: "u-1", author: null };
+
+function OwnMessageHarness({
+  setEditingMessageId,
+  onDeleteMessage,
+}: {
+  setEditingMessageId: (id: string | null) => void;
+  onDeleteMessage: (msg: { id: string }) => void;
+}) {
+  const { handleMessageListKeyDown } = useMessageNavigation({
+    items: [ownEventMessage],
+    conversationId: "c-1",
+    workspaceId: "w-1",
+    currentUserId: "u-1",
+    editingMessageId: null,
+    setEditingMessageId,
+    openThread: vi.fn(),
+    onDeleteMessage,
+    onForwardMessage: vi.fn(),
+    scrollToIndex: vi.fn(),
+  });
+  return (
+    <div role="listbox" aria-label="Messages" tabIndex={0} onKeyDown={handleMessageListKeyDown} />
   );
 }
 
@@ -64,5 +91,33 @@ describe("useMessageNavigation keys on row controls", () => {
 
     expect(screen.getByRole("textbox", { name: "Composer" })).toHaveFocus();
     expect(useShellStore.getState().navigationMode).toBe(false);
+  });
+});
+
+describe("useMessageNavigation on an own message without an author object", () => {
+  it("edits it with e", async () => {
+    const user = userEvent.setup();
+    const setEditingMessageId = vi.fn();
+    render(
+      <OwnMessageHarness setEditingMessageId={setEditingMessageId} onDeleteMessage={vi.fn()} />,
+    );
+    screen.getByRole("listbox").focus();
+    act(() => useShellStore.getState().setNavigationMode(true));
+
+    await user.keyboard("e");
+
+    expect(setEditingMessageId).toHaveBeenCalledWith("m-1");
+  });
+
+  it("deletes it with d d", async () => {
+    const user = userEvent.setup();
+    const onDeleteMessage = vi.fn();
+    render(<OwnMessageHarness setEditingMessageId={vi.fn()} onDeleteMessage={onDeleteMessage} />);
+    screen.getByRole("listbox").focus();
+    act(() => useShellStore.getState().setNavigationMode(true));
+
+    await user.keyboard("dd");
+
+    expect(onDeleteMessage).toHaveBeenCalledWith(ownEventMessage);
   });
 });

@@ -9,7 +9,7 @@ interface MessageNavItem {
   id: string;
   text?: string | null;
   isPinned?: boolean;
-  author?: { id: string } | null;
+  authorId: string;
 }
 
 interface UseMessageNavigationOptions {
@@ -196,7 +196,7 @@ export function useMessageNavigation({
       if (selectedMessageIndex < 0) return;
       const msg = items[selectedMessageIndex];
       if (!msg) return;
-      const isOwnMessage = msg.author?.id === currentUserId;
+      const isOwnMessage = currentUserId !== undefined && msg.authorId === currentUserId;
 
       // The context-menu key or Shift+F10: the message's actions menu, as a right click opens.
       // A link or an attachment inside the row that opened its own menu has taken the key.
