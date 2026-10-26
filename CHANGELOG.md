@@ -21,6 +21,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-26
+
 ### Added
 
 - Owners and moderators can choose who posts in a channel (**Who can post…** in the channel's
@@ -28,6 +30,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   react and reply in threads. Members of such a channel see a bar instead of the composer, and
   the actions they cannot take are left out of the message menus. A server without posting
   permissions keeps every channel open to everyone, and the menu item stays hidden.
+- **Upgrade:** posting permissions need rim-server 0.0.2 (`postingPolicy`,
+  `postingAllowsThreads`, `setChannelPosting`). Update the server before the client; until then
+  the client treats every channel as open to everyone.
 
 ## [0.0.1] - 2026-10-25
 
@@ -590,5 +595,6 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/rim-platform/rim-ui/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/rim-platform/rim-ui/releases/tag/v0.0.1
