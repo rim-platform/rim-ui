@@ -32,6 +32,8 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   shortened instead and show in full on hover.
 - The Invite member dialog says the server can't send email invites and to share the link,
   instead of the server's mail setup details.
+- Search results show their snippet as plain text, without code fences, emphasis markers or
+  link syntax, with matches still highlighted.
 
 ## [0.0.3] - 2026-10-26
 
