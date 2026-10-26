@@ -14,6 +14,8 @@ const ESTIMATED_ROW_HEIGHT: Record<DisplayDensity, number> = {
 /** Vertical padding of the list. */
 export const LIST_PADDING_Y = 12;
 const AT_BOTTOM_THRESHOLD = 50;
+/** Room scrollToIndex keeps below a row for the NAVIGATE hint bar floating over the list's bottom. */
+const HINT_BAR_CLEARANCE = 36;
 
 /** Whether `container` is scrolled to (within a few pixels of) its end. */
 function isScrolledToBottom(container: HTMLElement): boolean {
@@ -99,6 +101,7 @@ export function useTimelineScroll({
     overscan: 8,
     paddingStart: LIST_PADDING_Y,
     paddingEnd: LIST_PADDING_Y,
+    scrollPaddingEnd: HINT_BAR_CLEARANCE,
   });
 
   // When rows above the viewport are measured, keep the visible content still.

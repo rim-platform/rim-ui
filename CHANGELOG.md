@@ -30,6 +30,9 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   panel instead of saying the plugin is not running.
 - A plugin panel's header keeps the panel's title whole; the plugin's name, kind and source are
   shortened instead and show in full on hover.
+- The NAVIGATE key hints show in full above the composer instead of behind it.
+- Focusing the thread's reply box switches the status bar to COMPOSE and hides the NAVIGATE
+  hints, as the main composer does.
 
 ## [0.0.3] - 2026-10-26
 
