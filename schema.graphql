@@ -410,6 +410,16 @@ type Conversation {
 	`memberIds` or `memberCount`.
 	"""
 	pendingMemberIds: [ID!]!
+	"""
+	Who may post in the channel: `EVERYONE` or `MODERATORS` (the workspace's Owner and
+	Moderators). Always `EVERYONE` for DMs and groups.
+	"""
+	postingPolicy: PostingPolicy!
+	"""
+	Under `MODERATORS`, whether everyone else may still add reactions and reply in threads.
+	Ignored under `EVERYONE`.
+	"""
+	postingAllowsThreads: Boolean!
 	isMuted: Boolean!
 	"""
 	Whether the viewer is a member (for channels: has joined it).
@@ -2042,6 +2052,13 @@ type Mutation {
 	"""
 	setSlowMode(serverId: ID!, conversationId: ID!, seconds: Int!): Conversation!
 	"""
+	Set who may post in a channel: `EVERYONE`, or `MODERATORS` (the workspace's Owner and
+	Moderators). Under `MODERATORS`, `allowsThreads` says whether everyone else may still add
+	reactions and reply in threads. Owner/Moderator; channels only (`VALIDATION` otherwise);
+	not on an archived channel. Audited (`chat.set_channel_posting`).
+	"""
+	setChannelPosting(serverId: ID!, conversationId: ID!, policy: PostingPolicy!, allowsThreads: Boolean!): Conversation!
+	"""
 	Report a message to the workspace moderators, or in the direct space to the instance
 	operators. Any member who can read it, once per message (`CONFLICT` on a second
 	report). Audited (`chat.report_message`).
@@ -2877,6 +2894,20 @@ type PluginSource {
 enum PluginSourceKind {
 	BUNDLE
 	GIT
+}
+
+"""
+Who may post in a channel.
+"""
+enum PostingPolicy {
+	"""
+	Every member who can write in the channel.
+	"""
+	EVERYONE
+	"""
+	The workspace's Owner and Moderators only.
+	"""
+	MODERATORS
 }
 
 """

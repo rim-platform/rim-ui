@@ -12,6 +12,8 @@ interface MessageReactionsProps {
   serverId?: string;
   reactions?: Reaction[];
   onToggleReaction: (messageId: string, emoji: string) => void;
+  /** Whether the viewer may add reactions; when false only their own pills toggle (off). */
+  canAddReaction?: boolean;
   resolveMember?: MemberResolver;
 }
 
@@ -21,6 +23,7 @@ export const MessageReactions = memo(function MessageReactions({
   serverId,
   reactions,
   onToggleReaction,
+  canAddReaction = true,
   resolveMember,
 }: MessageReactionsProps) {
   const { emojis: customEmojis } = useCustomEmojis(serverId ?? null);
@@ -44,20 +47,23 @@ export const MessageReactions = memo(function MessageReactions({
           reaction={reaction}
           messageId={messageId}
           onToggleReaction={onToggleReaction}
+          readOnly={!canAddReaction && !reaction.reactedByMe}
           resolveMember={resolveMember}
         />
       ))}
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={togglePicker}
-        className="rounded p-1 text-rim-text-faint opacity-0 transition hover:text-rim-accent group-hover:opacity-100"
-        title="Add reaction"
-        aria-label="Add reaction"
-      >
-        <SmilePlus className="h-3.5 w-3.5" />
-      </button>
-      {pickerPosition && (
+      {canAddReaction && (
+        <button
+          ref={btnRef}
+          type="button"
+          onClick={togglePicker}
+          className="rounded p-1 text-rim-text-faint opacity-0 transition hover:text-rim-accent group-hover:opacity-100"
+          title="Add reaction"
+          aria-label="Add reaction"
+        >
+          <SmilePlus className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {canAddReaction && pickerPosition && (
         <EmojiPicker
           position={pickerPosition}
           customEmojis={customEmojis}
@@ -76,19 +82,24 @@ function ReactionPill({
   reaction,
   messageId,
   onToggleReaction,
+  readOnly,
   resolveMember,
 }: {
   reaction: Reaction;
   messageId: string;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  /** Shows the count without toggling it. */
+  readOnly: boolean;
   resolveMember?: MemberResolver;
 }) {
   const pill = (
     <button
       type="button"
-      onClick={() => onToggleReaction(messageId, reaction.emoji)}
+      aria-disabled={readOnly || undefined}
+      onClick={readOnly ? undefined : () => onToggleReaction(messageId, reaction.emoji)}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition hover:brightness-125",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition",
+        readOnly ? "cursor-default" : "hover:brightness-125",
         reaction.reactedByMe
           ? "border border-rim-accent/40 bg-rim-accent/20 text-rim-accent"
           : "border border-rim-line bg-rim-void text-rim-text-muted",

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
 import {
   ConversationTypeEnum,
+  PostingPolicy,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
@@ -40,6 +41,7 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { ConversationActionsMenu } from "./ConversationActionsMenu";
+import { channelPostingKey } from "../api/useChannelPosting";
 
 function serve(role: ServerMemberRoleGql, overrides: Record<string, () => unknown> = {}) {
   routeRequests(requestMock, {
@@ -52,7 +54,11 @@ function serve(role: ServerMemberRoleGql, overrides: Record<string, () => unknow
   });
 }
 
-async function openMenu(conversation: ConversationSummary, role: ServerMemberRoleGql) {
+async function openMenu(
+  conversation: ConversationSummary,
+  role: ServerMemberRoleGql,
+  seed?: (qc: QueryClient) => Promise<void>,
+) {
   const qc = createTestQueryClient();
   render(
     <QueryClientProvider client={qc}>
@@ -65,6 +71,7 @@ async function openMenu(conversation: ConversationSummary, role: ServerMemberRol
       role,
     ),
   );
+  await seed?.(qc);
   fireEvent.click(screen.getByRole("button", { name: "Conversation menu" }));
   return qc;
 }
@@ -129,6 +136,7 @@ describe("ConversationActionsMenu — role gating", () => {
         "Edit topic…",
         "Assign keybind…",
         "Slow mode…",
+        "Who can post…",
         "Archive channel…",
         "Leave channel",
       ]);
@@ -406,6 +414,105 @@ describe("ConversationActionsMenu — slow mode", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "10 seconds" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("slow mode is for channels only");
+  });
+});
+
+describe("ConversationActionsMenu — who can post", () => {
+  const posting = (policy: PostingPolicy, allowsThreads: boolean) => ({
+    id: "conv-1",
+    postingPolicy: policy,
+    postingAllowsThreads: allowsThreads,
+  });
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+    useShellStore.getState().reset();
+  });
+
+  it.each([
+    ["an ordinary member", ServerMemberRoleGql.MEMBER, makeConversation()],
+    ["an archived channel", ServerMemberRoleGql.OWNER, makeConversation({ isArchived: true })],
+  ])("is not offered for %s", async (_label, role, conversation) => {
+    serve(role);
+    await openMenu(conversation, role);
+    expect(menuLabels().some((l) => l.startsWith("Who can post"))).toBe(false);
+  });
+
+  it("is not offered once the server refused the posting query", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR, (qc) =>
+      qc.prefetchQuery({
+        queryKey: channelPostingKey("ws-1", "conv-2"),
+        queryFn: () => Promise.reject(graphqlError("GRAPHQL_VALIDATION_FAILED", "unknown field")),
+        retry: false,
+        gcTime: Infinity,
+      }),
+    );
+    expect(menuLabels()).toContain("Slow mode…");
+    expect(menuLabels().some((l) => l.startsWith("Who can post"))).toBe(false);
+  });
+
+  it("names a moderators-only channel beside the item", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR, async (qc) => {
+      qc.setQueryData(channelPostingKey("ws-1", "conv-1"), posting(PostingPolicy.MODERATORS, true));
+    });
+    expect(menuLabels()).toContain("Who can post…: Moderators");
+  });
+
+  it("a moderator restricts posting and closes threads", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, {
+      "query ChannelPosting(": () => ({ conversation: posting(PostingPolicy.EVERYONE, true) }),
+      "mutation SetChannelPosting": () => ({
+        setChannelPosting: posting(PostingPolicy.MODERATORS, false),
+      }),
+    });
+    await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Who can post…" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Who can post in #general" });
+    expect(await screen.findByRole("radio", { name: "Everyone" })).toBeChecked();
+    const threads = screen.getByRole("checkbox", {
+      name: "Others can still react and reply in threads",
+    });
+    expect(threads).toBeChecked();
+    expect(threads).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Owner and moderators" }));
+    expect(threads).toBeEnabled();
+    fireEvent.click(threads);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation SetChannelPosting")).toEqual([
+        {
+          serverId: "ws-1",
+          conversationId: "conv-1",
+          policy: PostingPolicy.MODERATORS,
+          allowsThreads: false,
+        },
+      ]),
+    );
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith(
+      "Only the owner and moderators can post in #general",
+    );
+  });
+
+  it("says so when the server does not answer the posting query", async () => {
+    serve(ServerMemberRoleGql.OWNER, {
+      "query ChannelPosting(": () => {
+        throw graphqlError("GRAPHQL_VALIDATION_FAILED", "unknown field");
+      },
+    });
+    await openMenu(makeConversation(), ServerMemberRoleGql.OWNER);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Who can post…" }));
+    expect(
+      await screen.findByText("This workspace's server does not offer posting permissions."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });
 

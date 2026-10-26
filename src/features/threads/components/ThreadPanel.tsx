@@ -14,6 +14,8 @@ import { MessageItem } from "../../messages/components/MessageItem";
 import type { MessageItemHandlers } from "../../messages/components/MessageItem";
 import { ForwardDialog } from "../../messages/components/ForwardDialog";
 import { useMessageContextMenu } from "../../messages/hooks/useMessageContextMenu";
+import { usePostingRights } from "../../conversations/api/useChannelPosting";
+import { PostingRestrictedBar } from "../../conversations/components/PostingRestrictedBar";
 import type { MessageItem as MessageItemData } from "../../../core/types/messages";
 import { usePinnedMessages } from "../../messages/api/usePinnedMessages";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
@@ -111,6 +113,7 @@ export function ThreadPanel() {
 
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const toggleReaction = useToggleReactionMutation();
+  const rights = usePostingRights(workspaceId, conversationId);
 
   // Get the root message from the conversation messages cache
   const { data: conversationData } = useConversationMessages(
@@ -302,6 +305,7 @@ export function ThreadPanel() {
     () => ({
       onOpenThread: openThread,
       onToggleReaction: handleToggleReaction,
+      canAddReaction: rights.reaction,
       onContextMenu: handleContextMenu,
       bindContextMenu,
       bindUserContextMenu,
@@ -310,6 +314,7 @@ export function ThreadPanel() {
     [
       openThread,
       handleToggleReaction,
+      rights.reaction,
       handleContextMenu,
       bindContextMenu,
       bindUserContextMenu,
@@ -428,8 +433,9 @@ export function ThreadPanel() {
         />
       )}
 
-      {/* Composer — always visible */}
-      {workspaceId && conversationId && (
+      {/* Composer, or the bar that replaces it where the channel keeps the viewer from replying */}
+      {workspaceId && conversationId && !rights.thread && <PostingRestrictedBar thread />}
+      {workspaceId && conversationId && rights.thread && (
         <ThreadComposer
           workspaceId={workspaceId}
           conversationId={conversationId}

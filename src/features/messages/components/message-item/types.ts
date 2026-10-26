@@ -112,13 +112,20 @@ export interface MessageViewModel {
 }
 
 /**
- * Callbacks shared by every row. Parents must keep this object referentially
+ * Callbacks and permissions shared by every row. Parents must keep this object referentially
  * stable (useMemo over useCallback'd functions): the row memo compares it by
  * reference.
  */
 export interface MessageItemHandlers {
   onOpenThread: (messageId: string) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  /**
+   * Whether the viewer may add reactions; when false a row offers only taking back their own.
+   * Defaults to true.
+   */
+  canAddReaction?: boolean;
+  /** Whether the viewer may start a thread on a message. Defaults to true. */
+  canStartThread?: boolean;
   onContextMenu?: (event: React.MouseEvent, messageId: string, messageText: string) => void;
   /** The handlers that open the row's context menu on a long press, for its touch events. */
   bindContextMenu?: (messageId: string, messageText: string) => ContextMenuBindings;

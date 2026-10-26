@@ -12,6 +12,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useForwardMessageMutation } from "../api/useForwardMessage";
 import { useSendMessageMutation, type MessagesPage } from "../api/useMessages";
 import { queryKeys } from "../../../core/query/keys";
+import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { MessageItem } from "../../../core/types/messages";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { sendEncrypted } from "../../e2ee/runtime/send";
@@ -163,8 +164,10 @@ export function ForwardDialog({
         toast.success("Message forwarded");
         setConfirmPlaintext(null);
         onClose();
-      } catch {
-        toast.error("Failed to forward message");
+      } catch (err) {
+        // A refusal (e.g. a channel only its owner and moderators post in) says why.
+        const fallback = "Failed to forward message";
+        toast.error(graphqlErrorCode(err) ? graphqlErrorMessage(err, fallback) : fallback);
       }
     },
     [

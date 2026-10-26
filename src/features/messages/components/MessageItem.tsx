@@ -52,6 +52,8 @@ export const MessageItem = memo(function MessageItem({
     bindContextMenu,
     onOpenThread,
     onToggleReaction,
+    canAddReaction = true,
+    canStartThread = true,
     onSaveEdit,
     onCancelEdit,
     bindUserContextMenu,
@@ -118,6 +120,7 @@ export const MessageItem = memo(function MessageItem({
         serverId={message.serverId}
         reactions={message.reactions}
         onToggleReaction={onToggleReaction}
+        canAddReaction={canAddReaction}
         resolveMember={members?.resolve}
       />
     </>
@@ -127,7 +130,7 @@ export const MessageItem = memo(function MessageItem({
     replyTo && !isDeleted ? <ReplyQuote quote={replyTo} onJump={handlers.onJumpToMessage} /> : null;
 
   const threadButton =
-    !isDeleted && !message.threadId && !message.rootThreadId ? (
+    canStartThread && !isDeleted && !message.threadId && !message.rootThreadId ? (
       <MessageThreadButton messageId={messageId} onOpenThread={onOpenThread} />
     ) : null;
 

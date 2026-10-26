@@ -19,9 +19,13 @@ import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useConversation } from "../../conversations/api/useConversation";
 import { JoinChannelBar } from "../../conversations/components/JoinChannelBar";
 import { ArchivedConversationBar } from "../../conversations/components/ArchivedConversationBar";
+import { PostingRestrictedBar } from "../../conversations/components/PostingRestrictedBar";
+import { useChannelPosting } from "../../conversations/api/useChannelPosting";
+import { postingAllows } from "../../conversations/utils";
 import { SuccessorOffer } from "../../relay/components/SuccessorOffer";
 import { CONVERSATION_ARCHIVED, NOT_FOUND } from "../../conversations/errors";
 import {
+  FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
   retryAfterSeconds,
@@ -80,13 +84,16 @@ type ComposerProps = {
 );
 
 /**
- * The composer, or the bar that replaces it: an archived conversation is read-only, and a
- * public channel the viewer has not joined offers Join instead. A draft direct message has
- * no conversation yet and always gets the composer.
+ * The composer, or the bar that replaces it: an archived conversation is read-only, a public
+ * channel the viewer has not joined offers Join instead, and a channel only its owner and
+ * moderators post in says so to everyone else. A draft direct message has no conversation yet
+ * and always gets the composer.
  */
 export function Composer(props: ComposerProps) {
   const { workspaceId, encryption } = props;
   const { data: conversation } = useConversation(workspaceId, props.conversationId);
+  const posting = useChannelPosting(workspaceId, conversation);
+  const canModerate = useCanModerate(workspaceId);
 
   if (props.draft) {
     return <MessageComposer workspaceId={workspaceId} draft={props.draft} />;
@@ -101,6 +108,9 @@ export function Composer(props: ComposerProps) {
     !conversation.isMember
   ) {
     return <JoinChannelBar workspaceId={workspaceId} conversation={conversation} />;
+  }
+  if (!postingAllows(posting, canModerate, "message")) {
+    return <PostingRestrictedBar allowsThreads={posting.allowsThreads} />;
   }
   return (
     <>
@@ -221,7 +231,8 @@ function MessageComposer(props: ComposerProps) {
 
   /**
    * Shows the server's message for a failed send. An archived (or no longer visible)
-   * conversation also refetches, so the composer flips to the archived bar. Unsent drafts stay
+   * conversation also refetches, so the composer flips to the archived bar, and so does a
+   * refused one, whose channel may have just been closed to the viewer's posts. Unsent drafts stay
    * in the composer until the server accepts the message.
    */
   function handleSendError(err: unknown, fallback: string) {
@@ -237,7 +248,7 @@ function MessageComposer(props: ComposerProps) {
     if (noteTimedOutError(workspaceId, err)) {
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
     }
-    if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND) {
+    if (code === CONVERSATION_ARCHIVED || code === NOT_FOUND || code === FORBIDDEN) {
       refetchConversation();
     }
   }

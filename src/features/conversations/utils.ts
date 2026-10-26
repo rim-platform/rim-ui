@@ -1,4 +1,4 @@
-import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
+import { ConversationTypeEnum, PostingPolicy } from "../../core/graphql/generated/schema-types";
 import { joinNames } from "../e2ee/utils/names";
 import type { ConversationSummary } from "./types";
 
@@ -73,6 +73,25 @@ export function leaveNeedsConfirmation(
  */
 export function pendingMembersOf(conversation: Pick<ConversationSummary, "pendingMemberIds">) {
   return conversation.pendingMemberIds ?? [];
+}
+
+/** What a write adds to a conversation, as its channel's posting policy tells them apart. */
+export type PostKind = "message" | "thread" | "reaction" | "pin";
+
+/**
+ * Whether a channel's posting policy lets the viewer add this kind of write. Under
+ * `MODERATORS`, everyone but the Owner and Moderators is kept from messages and pins, and from
+ * thread replies and reactions too unless `allowsThreads`.
+ *
+ * @param canModerate Whether the viewer is the workspace's Owner or a Moderator.
+ */
+export function postingAllows(
+  posting: { policy: PostingPolicy; allowsThreads: boolean },
+  canModerate: boolean,
+  kind: PostKind,
+): boolean {
+  if (posting.policy !== PostingPolicy.MODERATORS || canModerate) return true;
+  return (kind === "thread" || kind === "reaction") && posting.allowsThreads;
 }
 
 /** Whether `userId` holds an invitation to the conversation rather than its membership. */

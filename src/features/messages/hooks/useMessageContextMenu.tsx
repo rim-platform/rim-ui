@@ -13,6 +13,7 @@ import { useDeleteMessage } from "./useDeleteMessage";
 import { useToggleReactionMutation } from "../api/useToggleReaction";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import { ReportMessageDialog } from "../components/ReportMessageDialog";
 
 /** The message a context menu is opened on, as the row knows it. */
@@ -61,6 +62,8 @@ function selectedTextIn(messageId: string): string | null {
  * (while text of the message is selected) and Copy text, Reply in thread, Forward, Pin or
  * Unpin; then Edit and Delete on the viewer's own message, Report on someone else's; a
  * Moderation section with Delete for an Owner or Moderator; then the plugins' message actions.
+ * Add reaction, Reply in thread and Pin or Unpin are left out where the channel's posting policy
+ * keeps the viewer from them.
  *
  * @returns `getItems`, the menu's items for a message (none without a workspace and a
  *   conversation), and `dialog`, the report dialog to render beside the timeline.
@@ -83,6 +86,7 @@ export function useMessageContextMenu({
   // Anyone can report someone else's message; Owner/Moderator can delete it.
   const [pendingReport, setPendingReport] = useState<MessageMenuTarget | null>(null);
   const canModerate = useCanModerate(workspaceId ?? undefined);
+  const rights = usePostingRights(workspaceId, conversationId);
 
   const getItems = useCallback(
     (target: MessageMenuTarget): DropdownMenuItem[] => {
@@ -90,8 +94,10 @@ export function useMessageContextMenu({
       const { messageId, messageText, isOwnMessage, isPinned, hasThread, message } = target;
       const selectedText = selectedTextIn(messageId);
 
-      const result: DropdownMenuItem[] = [
-        {
+      const result: DropdownMenuItem[] = [];
+
+      if (rights.reaction) {
+        result.push({
           id: "add-reaction",
           label: "Add reaction",
           submenu: QUICK_REACTIONS.map((emoji) => ({
@@ -100,8 +106,8 @@ export function useMessageContextMenu({
             onSelect: () =>
               toggleReaction.mutate({ serverId: workspaceId, conversationId, messageId, emoji }),
           })),
-        },
-      ];
+        });
+      }
 
       if (selectedText) {
         result.push({
@@ -117,7 +123,7 @@ export function useMessageContextMenu({
         onSelect: () => copyToClipboard(messageText),
       });
 
-      if (!hasThread && !threadId) {
+      if (!hasThread && !threadId && rights.thread) {
         result.push({
           id: "reply-in-thread",
           label: "Reply in thread",
@@ -133,18 +139,20 @@ export function useMessageContextMenu({
         });
       }
 
-      result.push({
-        id: "pin-message",
-        label: isPinned ? "Unpin message" : "Pin message",
-        onSelect: () => {
-          const vars = { serverId: workspaceId, conversationId, messageId };
-          if (isPinned) {
-            unpinMessage.mutate(vars);
-          } else {
-            pinMessage.mutate(vars);
-          }
-        },
-      });
+      if (rights.pin) {
+        result.push({
+          id: "pin-message",
+          label: isPinned ? "Unpin message" : "Pin message",
+          onSelect: () => {
+            const vars = { serverId: workspaceId, conversationId, messageId };
+            if (isPinned) {
+              unpinMessage.mutate(vars);
+            } else {
+              pinMessage.mutate(vars);
+            }
+          },
+        });
+      }
 
       if (isOwnMessage) {
         if (!threadId) {
@@ -213,6 +221,9 @@ export function useMessageContextMenu({
       onForward,
       threadId,
       canModerate,
+      rights.reaction,
+      rights.thread,
+      rights.pin,
       deleteMessageFn,
       pinMessage,
       unpinMessage,

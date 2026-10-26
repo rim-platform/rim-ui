@@ -16,6 +16,7 @@ import { queryKeys } from "../../../core/query/keys";
 import type { MessageItem, MessagesPage } from "../../../core/types/messages";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useUnpinMessageMutation } from "../api/usePinMessage";
+import { usePostingRights } from "../../conversations/api/useChannelPosting";
 
 interface PinnedMessagesPanelProps {
   conversationId: string;
@@ -61,6 +62,7 @@ export function PinnedMessagesPanel({
 
   const qc = useQueryClient();
   const unpinMessage = useUnpinMessageMutation();
+  const canUnpin = usePostingRights(workspaceId, conversationId).pin;
   const contextMenu = useContextMenu();
 
   /** Scrolls the timeline to the message and flashes it, when it is loaded there. */
@@ -83,16 +85,20 @@ export function PinnedMessagesPanel({
   const menuItems = (msg: MessageItem): DropdownMenuItem[] => [
     { id: "jump-to-message", label: "Jump to message", onSelect: () => jumpTo(msg.id) },
     { id: "copy-text", label: "Copy text", onSelect: () => copyToClipboard(msg.text ?? "") },
-    {
-      id: "unpin-message",
-      label: "Unpin message",
-      separatorBefore: true,
-      onSelect: () =>
-        unpinMessage.mutate(
-          { serverId: workspaceId, conversationId, messageId: msg.id },
-          { onError: () => toast.error("Could not unpin the message") },
-        ),
-    },
+    ...(canUnpin
+      ? [
+          {
+            id: "unpin-message",
+            label: "Unpin message",
+            separatorBefore: true,
+            onSelect: () =>
+              unpinMessage.mutate(
+                { serverId: workspaceId, conversationId, messageId: msg.id },
+                { onError: () => toast.error("Could not unpin the message") },
+              ),
+          },
+        ]
+      : []),
   ];
 
   return (

@@ -152,6 +152,7 @@ describe("ConversationList — conversation context menus", () => {
       "Edit topic…",
       "Assign keybind…",
       "Slow mode…",
+      "Who can post…",
       "Archive channel…",
       "Leave channel",
     ]);
