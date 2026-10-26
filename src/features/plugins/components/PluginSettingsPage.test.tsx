@@ -42,6 +42,7 @@ import {
   usePluginInstallFromLocal,
   usePluginUninstall,
 } from "../api/usePluginActions";
+import { useApproveCapabilities } from "../api/usePluginCapabilities";
 import { usePluginList } from "../api/usePluginList";
 import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import { PluginSettingsPage, PluginDesktopOnlyCard } from "./PluginSettingsPage";
@@ -80,6 +81,19 @@ function mockUninstall(
     typeof usePluginUninstall
   >);
   return mutate;
+}
+
+/** Mocks the enable and disable mutations; returns their `mutate` spies. */
+function mockToggles() {
+  const enable = vi.fn();
+  const disable = vi.fn();
+  vi.mocked(usePluginEnable).mockReturnValue({ mutate: enable } as unknown as ReturnType<
+    typeof usePluginEnable
+  >);
+  vi.mocked(usePluginDisable).mockReturnValue({ mutate: disable } as unknown as ReturnType<
+    typeof usePluginDisable
+  >);
+  return { enable, disable };
 }
 
 /** Opens the row's more-actions menu and picks Uninstall. */
@@ -285,18 +299,6 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
   });
 
   describe("the switch of a plugin whose bundle changed", () => {
-    function mockToggles() {
-      const enable = vi.fn();
-      const disable = vi.fn();
-      vi.mocked(usePluginEnable).mockReturnValue({ mutate: enable } as unknown as ReturnType<
-        typeof usePluginEnable
-      >);
-      vi.mocked(usePluginDisable).mockReturnValue({ mutate: disable } as unknown as ReturnType<
-        typeof usePluginDisable
-      >);
-      return { enable, disable };
-    }
-
     it("cannot turn a stopped plugin on, and says why", () => {
       const { enable } = mockToggles();
       listPlugins([makePlugin({ fingerprint_changed: true, enabled: false })]);
@@ -323,6 +325,76 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       expect(disable).toHaveBeenCalledWith("dev.example.test");
       expect(enable).not.toHaveBeenCalled();
       expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
+    });
+  });
+
+  describe("the switch of a plugin with permissions not granted", () => {
+    afterEach(() => {
+      vi.mocked(useApproveCapabilities).mockReturnValue({
+        mutate: vi.fn(),
+        isPending: false,
+      } as unknown as ReturnType<typeof useApproveCapabilities>);
+    });
+
+    it("asks for ungranted permissions before turning a plugin on, and Approve and turn on starts it", () => {
+      const { enable } = mockToggles();
+      const approve = vi.fn((_vars: unknown, options: { onSuccess: () => void }) =>
+        options.onSuccess(),
+      );
+      vi.mocked(useApproveCapabilities).mockReturnValue({
+        mutate: approve,
+        isPending: false,
+      } as unknown as ReturnType<typeof useApproveCapabilities>);
+      listPlugins([
+        makePlugin({
+          capabilities: ["ui.panel", "ui.notify"],
+          approved_capabilities: ["ui.notify"],
+        }),
+      ]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      expect(enable).not.toHaveBeenCalled();
+      const dialog = screen.getByRole("dialog");
+      expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+      expect(within(dialog).getByText("Render UI Panels")).toBeInTheDocument();
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Approve and turn on" }));
+      expect(approve).toHaveBeenCalledWith(
+        { pluginId: "dev.example.test", capabilities: ["ui.panel", "ui.notify"] },
+        expect.anything(),
+      );
+      expect(enable).toHaveBeenCalledWith("dev.example.test", expect.anything());
+    });
+
+    it("turns on a plugin whose permissions are all granted without asking", () => {
+      const { enable } = mockToggles();
+      listPlugins([
+        makePlugin({ capabilities: ["ui.panel"], approved_capabilities: ["ui.panel"] }),
+      ]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      expect(enable).toHaveBeenCalledWith("dev.example.test", expect.anything());
+      expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
+    });
+
+    it("leaves the plugin off when its permission prompt is cancelled", () => {
+      const { enable } = mockToggles();
+      const approve = vi.fn();
+      vi.mocked(useApproveCapabilities).mockReturnValue({
+        mutate: approve,
+        isPending: false,
+      } as unknown as ReturnType<typeof useApproveCapabilities>);
+      listPlugins([makePlugin({ capabilities: ["ui.panel"] })]);
+      render(<PluginSettingsPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
+      expect(approve).not.toHaveBeenCalled();
+      expect(enable).not.toHaveBeenCalled();
     });
   });
 

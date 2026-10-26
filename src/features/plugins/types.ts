@@ -44,6 +44,15 @@ export function parsePluginCapabilities(value: unknown): PluginCapability[] {
   }, []);
 }
 
+/** The capabilities `plugin` asks for that are not granted. */
+export function missingCapabilities(
+  plugin: Pick<PluginInfo, "capabilities" | "approved_capabilities">,
+): PluginCapability[] {
+  return parsePluginCapabilities(plugin.capabilities).filter(
+    (capability) => !plugin.approved_capabilities.includes(capability),
+  );
+}
+
 export type PluginContextType = "message" | "conversation";
 
 export interface PluginCommandDef {

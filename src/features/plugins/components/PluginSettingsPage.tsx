@@ -46,6 +46,7 @@ import { usePluginSigning } from "../registry/signing";
 import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import { hasSettings } from "../pluginSettings";
 import {
+  missingCapabilities,
   parsePostInstallConsent,
   runtimeKind,
   type PluginInfo,
@@ -131,7 +132,12 @@ export function PluginSettingsPage() {
   const updatedPlugin = updatedId
     ? (plugins?.find((p) => p.plugin_id === updatedId) ?? null)
     : null;
-  const promptTarget = permissionsTarget ?? installedPlugin ?? updatedPlugin;
+  // A plugin turned on with its switch while some of its permissions are not granted.
+  const [enablingId, setEnablingId] = useState<string | null>(null);
+  const enablingPlugin = enablingId
+    ? (plugins?.find((p) => p.plugin_id === enablingId) ?? null)
+    : null;
+  const promptTarget = permissionsTarget ?? installedPlugin ?? enablingPlugin ?? updatedPlugin;
   // The outcome of the last update of each plugin, shown on its row.
   const [updateStatus, setUpdateStatus] = useState<Record<string, RowNote>>({});
   // Set when plugin_update stopped before running npm/pip steps.
@@ -271,6 +277,9 @@ export function PluginSettingsPage() {
     } else if (plugin.fingerprint_changed) {
       // Enabling waits until the user trusts the new version.
       return;
+    } else if (missingCapabilities(plugin).length > 0) {
+      // Turning it on asks first for the permissions it has not been granted.
+      setEnablingId(plugin.plugin_id);
     } else {
       enable.mutate(plugin.plugin_id, {
         onError: (err) => {
@@ -488,10 +497,14 @@ export function PluginSettingsPage() {
           onClose={() => {
             setPermissionsTarget(null);
             setInstalledId(null);
+            setEnablingId(null);
             setUpdatedId(null);
           }}
           plugin={promptTarget}
-          startOnApprove={promptTarget === installedPlugin && permissionsTarget === null}
+          startOnApprove={
+            permissionsTarget === null &&
+            (promptTarget === installedPlugin || promptTarget === enablingPlugin)
+          }
         />
       )}
     </div>
