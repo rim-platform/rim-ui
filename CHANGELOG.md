@@ -34,6 +34,7 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   instead of the server's mail setup details.
 - Search results show their snippet as plain text, without code fences, emphasis markers or
   link syntax, with matches still highlighted.
+- The conversation header no longer shows a channel icon before "No conversation".
 
 ## [0.0.3] - 2026-10-26
 
