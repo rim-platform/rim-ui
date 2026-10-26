@@ -58,9 +58,38 @@ export function useUpdateProfileMutation() {
 }
 
 /**
+ * Why the server refused an avatar upload, in words for the person: how long to wait after a
+ * 429, else the server's JSON `error` as a sentence, else the status.
+ */
+async function avatarRefusalMessage(res: Response): Promise<string> {
+  let body: { error?: unknown; retryAfterSeconds?: unknown } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    // Not JSON: the status says what happened.
+  }
+  if (res.status === 429) {
+    const header = Number(res.headers.get("Retry-After"));
+    const seconds =
+      typeof body.retryAfterSeconds === "number" ? body.retryAfterSeconds : header || undefined;
+    if (seconds !== undefined && seconds > 0) {
+      const minutes = Math.ceil(seconds / 60);
+      return `You can change your picture again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`;
+    }
+  }
+  if (typeof body.error === "string" && body.error.trim()) {
+    const text = body.error.trim();
+    const sentence = text.charAt(0).toUpperCase() + text.slice(1);
+    return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+  }
+  return `Avatar upload failed: ${res.status} ${res.statusText}`;
+}
+
+/**
  * Upload an avatar image to the REST endpoint.
  * Returns the avatar URL path to use with updateMyProfile. A server with profile pictures
- * switched off refuses it with a `FeatureDisabledError`.
+ * switched off refuses it with a `FeatureDisabledError`; any other refusal throws an `Error`
+ * carrying the server's message.
  */
 export async function uploadAvatar(file: Blob): Promise<string> {
   const uploadUrl = getApiOrigin() + "/api/files/avatar";
@@ -76,10 +105,7 @@ export async function uploadAvatar(file: Blob): Promise<string> {
   });
 
   if (!res.ok) {
-    throw (
-      (await featureDisabledFromResponse(res)) ??
-      new Error(`Avatar upload failed: ${res.status} ${res.statusText}`)
-    );
+    throw (await featureDisabledFromResponse(res)) ?? new Error(await avatarRefusalMessage(res));
   }
 
   const data = await res.json();

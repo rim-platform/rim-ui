@@ -37,7 +37,7 @@ describe("ProbationBanner", () => {
       renderWithLimits(<ProbationBanner />, {}, endsAt);
 
       expect(screen.getByTestId("probation-banner")).toHaveTextContent(
-        `New account: you can create workspaces and message strangers after ${formatTime(endsAt)}.`,
+        `New account: you can create workspaces, message strangers or set a profile picture, bio or status after ${formatTime(endsAt)}.`,
       );
 
       act(() => vi.advanceTimersByTime(HALF_HOUR - 1000));

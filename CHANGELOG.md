@@ -21,6 +21,26 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Added
+
+- Instance operators can clear a reported person's profile (**Clear profile**, next to **Block
+  principal** on abuse reports and reported direct messages): it removes their display name,
+  picture, status and bio on this server, with a required reason and an optional lock of 1 to
+  365 days.
+- **Upgrade:** Clear profile and the note about a locked profile need a rim-server with
+  `instanceClearProfile` and `me.profileLockedUntil`. Update the server before the client; until
+  then Clear profile is refused and a profile never reads as locked.
+
+### Changed
+
+- Profile settings follow the server's rules for new and locked accounts: while a new account is
+  in probation the picture, status and bio cannot be changed (the display name still can), and
+  while the server's operators lock a profile nothing in it can be changed until the date shown.
+  The probation banner also names the profile picture, bio and status.
+- A refused profile picture upload shows the server's reason, such as how many minutes to wait
+  before the next upload or that the picture is not allowed, and photos up to 10 MB are taken
+  before they are resized for upload.
+
 ## [0.0.2] - 2026-10-26
 
 ### Added

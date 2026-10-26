@@ -4,42 +4,21 @@ import { Camera, Loader2 } from "lucide-react";
 
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useUpdateProfileMutation, uploadAvatar } from "../api/useUpdateProfile";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { resizeImageToBlob } from "../utils/resizeImage";
+import { FORBIDDEN, graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import { reportFeatureDisabled } from "../../../core/query/queryClient";
+import { useProbationEnd, useProfileLock } from "../../limits/api/useProbation";
+import { probationText } from "../../limits/limits";
 import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { refreshServerMedia, useServerMediaUrl } from "../../../shared/media/serverMedia";
 import { cn } from "../../../shared/ui/cn";
 
-function resizeImageToBlob(file: File, size: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const blobUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl);
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
+/** The largest picture file taken; it is resized to a small PNG before the upload. */
+const MAX_PICTURE_FILE_BYTES = 10 * 1024 * 1024;
 
-      // Center-crop: use the largest square from the center of the image
-      const minDim = Math.min(img.width, img.height);
-      const sx = (img.width - minDim) / 2;
-      const sy = (img.height - minDim) / 2;
-      ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Canvas toBlob failed"));
-      }, "image/png");
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(blobUrl);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = blobUrl;
-  });
-}
+const FIELD_CLASS =
+  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40 disabled:cursor-not-allowed disabled:opacity-50";
 
 /** The profile picture at `src`, or `initial` while there is none. */
 function AvatarFace({ src, initial }: { src: string | null; initial: string }) {
@@ -56,6 +35,16 @@ export function ProfileSettings() {
   const qc = useQueryClient();
   // Without profile pictures on the server, the avatar shows the initial and uploads nothing.
   const avatars = useServerFeature("avatars");
+  // A new account cannot set a picture, status or bio; a locked profile cannot change at all.
+  const probationEnd = useProbationEnd();
+  const lockedUntil = useProfileLock();
+  const locked = lockedUntil !== null;
+  const restricted = locked || probationEnd !== null;
+  const restriction = lockedUntil
+    ? `This server's operators locked your profile until ${new Date(lockedUntil).toLocaleString()}.`
+    : probationEnd
+      ? probationText("set a profile picture, bio or status", probationEnd)
+      : null;
 
   const [displayName, setDisplayName] = useState("");
   const [statusText, setStatusText] = useState("");
@@ -78,6 +67,16 @@ export function ProfileSettings() {
     }
   }, [user]);
 
+  // A `FORBIDDEN` change may mean the operators locked the profile since it was read.
+  const refreshLockOnRefusal = useCallback(
+    (err: unknown) => {
+      if (graphqlErrorCode(err) === FORBIDDEN) {
+        void qc.invalidateQueries({ queryKey: ["profileLock"] });
+      }
+    },
+    [qc],
+  );
+
   const handleAvatarClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -91,8 +90,8 @@ export function ProfileSettings() {
         setAvatarError("Please select an image file.");
         return;
       }
-      if (file.size > 2 * 1024 * 1024) {
-        setAvatarError("Image must be under 2MB.");
+      if (file.size > MAX_PICTURE_FILE_BYTES) {
+        setAvatarError("Image must be under 10MB.");
         return;
       }
 
@@ -114,6 +113,7 @@ export function ProfileSettings() {
           setAvatarPreview(null);
           return;
         }
+        refreshLockOnRefusal(err);
         setAvatarError(err instanceof Error ? err.message : "Avatar upload failed.");
       } finally {
         setAvatarUploading(false);
@@ -121,7 +121,7 @@ export function ProfileSettings() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [updateProfile, qc],
+    [updateProfile, qc, refreshLockOnRefusal],
   );
 
   const handleSave = useCallback(async () => {
@@ -129,13 +129,14 @@ export function ProfileSettings() {
     try {
       await updateProfile.mutateAsync({
         displayName: displayName || undefined,
-        statusText: statusText || undefined,
-        bio: bio || undefined,
+        statusText: restricted ? undefined : statusText || undefined,
+        bio: restricted ? undefined : bio || undefined,
       });
     } catch (err) {
+      refreshLockOnRefusal(err);
       setSaveError(graphqlErrorMessage(err, "Failed to save profile."));
     }
-  }, [displayName, statusText, bio, updateProfile]);
+  }, [displayName, statusText, bio, restricted, updateProfile, refreshLockOnRefusal]);
 
   if (userLoading) {
     return <p className="text-sm text-rim-text-muted">Loading profile...</p>;
@@ -148,6 +149,16 @@ export function ProfileSettings() {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold text-rim-text">Profile</h2>
 
+      {restriction && (
+        <p
+          role="note"
+          data-testid="profile-restriction"
+          className="rounded-lg bg-rim-accent/10 px-3 py-2 text-sm text-rim-text-muted"
+        >
+          {restriction}
+        </p>
+      )}
+
       {/* Avatar */}
       <div className="flex items-center gap-4">
         {avatars.enabled ? (
@@ -155,11 +166,12 @@ export function ProfileSettings() {
             <button
               type="button"
               onClick={handleAvatarClick}
-              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft transition hover:brightness-110"
+              disabled={restricted}
+              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-rim-panel-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
               title="Change avatar"
             >
               <AvatarFace src={avatarSrc} initial={initial} />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-enabled:group-hover:opacity-100">
                 {avatarUploading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-white" />
                 ) : (
@@ -171,11 +183,12 @@ export function ProfileSettings() {
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              disabled={restricted}
               className="hidden"
               onChange={handleAvatarChange}
             />
             <div className="text-sm text-rim-text-muted">
-              Click to upload avatar. Max 2MB, images only.
+              Click to upload avatar. Max 10MB, images only.
               {avatarError && <p className="mt-1 text-rim-danger">{avatarError}</p>}
             </div>
           </>
@@ -203,8 +216,9 @@ export function ProfileSettings() {
           maxLength={64}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
+          disabled={locked}
           placeholder="Your display name"
-          className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+          className={FIELD_CLASS}
         />
         <p className="mt-1 text-xs text-rim-text-faint">{displayName.length}/64</p>
       </div>
@@ -220,8 +234,9 @@ export function ProfileSettings() {
           maxLength={256}
           value={statusText}
           onChange={(e) => setStatusText(e.target.value)}
+          disabled={restricted}
           placeholder="What are you working on?"
-          className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+          className={FIELD_CLASS}
         />
         <p className="mt-1 text-xs text-rim-text-faint">{statusText.length}/256</p>
       </div>
@@ -237,8 +252,9 @@ export function ProfileSettings() {
           rows={4}
           value={bio}
           onChange={(e) => setBio(e.target.value)}
+          disabled={restricted}
           placeholder="Tell others about yourself"
-          className="w-full resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+          className={cn(FIELD_CLASS, "resize-none")}
         />
         <p className="mt-1 text-xs text-rim-text-faint">{bio.length}/2000</p>
       </div>
@@ -248,7 +264,7 @@ export function ProfileSettings() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={updateProfile.isPending}
+          disabled={updateProfile.isPending || locked}
           className={cn(
             "rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50",
           )}

@@ -14,7 +14,10 @@ export function ProbationBanner() {
       className="flex items-center justify-center gap-2 bg-rim-accent/10 px-3 py-1.5 text-xs text-rim-text-muted"
     >
       <Clock className="h-3.5 w-3.5 shrink-0" />
-      {probationText("create workspaces and message strangers", endsAt)}
+      {probationText(
+        "create workspaces, message strangers or set a profile picture, bio or status",
+        endsAt,
+      )}
     </div>
   );
 }

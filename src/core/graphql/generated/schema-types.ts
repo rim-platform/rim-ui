@@ -1024,6 +1024,19 @@ export type InstancePrincipalUnblockOutcome = {
   lifted: Scalars['Boolean']['output'];
 };
 
+/** What clearing an account's profile did. */
+export type InstanceProfileClearOutcome = {
+  /** The local account whose display name, picture, status and bio were cleared. */
+  account: InstanceAccount;
+  /**
+   * Until when the account cannot set its display name, picture, status or bio; null when
+   * it was not locked.
+   */
+  lockedUntil?: Maybe<Scalars['DateTime']['output']>;
+  /** The principal whose account was cleared (`rimp1_…`). */
+  principalId: Scalars['String']['output'];
+};
+
 /**
  * Read-only preview of a registration token.
  *
@@ -1688,6 +1701,14 @@ export type Mutation = {
    * operators only; anyone else gets `FORBIDDEN`.
    */
   instanceBlockPrincipal: Array<InstancePrincipalBlockOutcome>;
+  /**
+   * Clear the display name, picture, status and bio of the account holding a principal on
+   * this server, deleting its stored pictures, and optionally lock them: until the lock
+   * ends the account can only clear them. Another server keeps showing the display name in
+   * its copy of the person's signed profile card. `NOT_FOUND` when no account here holds the
+   * principal. Instance operators only; anyone else gets `FORBIDDEN`.
+   */
+  instanceClearProfile: InstanceProfileClearOutcome;
   /**
    * Mark an abuse report resolved; `NOT_FOUND` when there is no such report. Instance
    * operators only; anyone else gets `FORBIDDEN`.
@@ -2369,6 +2390,13 @@ export type MutationInstanceBlockIpArgs = {
 
 export type MutationInstanceBlockPrincipalArgs = {
   cascade?: Scalars['Boolean']['input'];
+  principalId: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationInstanceClearProfileArgs = {
+  lockDays?: InputMaybe<Scalars['Int']['input']>;
   principalId: Scalars['String']['input'];
   reason: Scalars['String']['input'];
 };
@@ -4277,9 +4305,9 @@ export type ServerLimits = {
   /** Plugins of one workspace's registry. */
   pluginsPerWorkspace?: Maybe<Scalars['Int']['output']>;
   /**
-   * Hours after its creation during which an account cannot create a workspace or send a
-   * DM request to a stranger, and sends messages at a lower rate; `me.probationEndsAt` says
-   * when the caller's ends.
+   * Hours after its creation during which an account cannot create a workspace, send a DM
+   * request to a stranger or set a profile picture, status or bio, and sends messages at a
+   * lower rate; `me.probationEndsAt` says when the caller's ends.
    */
   probationHours?: Maybe<Scalars['Int']['output']>;
   /** Workspaces one user owns, created or handed over to them. */
@@ -4686,6 +4714,12 @@ export type User = {
    * everyone else and once probation is over.
    */
   probationEndsAt?: Maybe<Scalars['DateTime']['output']>;
+  /**
+   * Until when this server's operators locked the account's display name, picture, status
+   * and bio, while they do: until then it can only clear them. Read on `me` only; null for
+   * everyone else and while no lock holds.
+   */
+  profileLockedUntil?: Maybe<Scalars['DateTime']['output']>;
   statusText?: Maybe<Scalars['String']['output']>;
   username: Scalars['String']['output'];
 };

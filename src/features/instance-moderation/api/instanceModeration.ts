@@ -10,8 +10,10 @@ import type {
   InstancePrincipalBlock,
   InstancePrincipalBlockOutcome,
   InstancePrincipalUnblockOutcome,
+  InstanceProfileClearOutcome,
   MutationInstanceBlockIpArgs,
   MutationInstanceBlockPrincipalArgs,
+  MutationInstanceClearProfileArgs,
   MutationInstanceResolveReportArgs,
   MutationInstanceUnblockIpArgs,
   MutationInstanceUnblockPrincipalArgs,
@@ -125,6 +127,19 @@ const BLOCK_PRINCIPAL = gql`
       invitees {
         ...InstanceAccountFields
       }
+    }
+  }
+  ${INSTANCE_ACCOUNT_FIELDS}
+`;
+
+const CLEAR_PROFILE = gql`
+  mutation InstanceClearProfile($principalId: String!, $reason: String!, $lockDays: Int) {
+    instanceClearProfile(principalId: $principalId, reason: $reason, lockDays: $lockDays) {
+      principalId
+      account {
+        ...InstanceAccountFields
+      }
+      lockedUntil
     }
   }
   ${INSTANCE_ACCOUNT_FIELDS}
@@ -278,6 +293,23 @@ export function useBlockPrincipalMutation() {
         instanceBlockPrincipal: InstancePrincipalBlockOutcome[];
       }>(BLOCK_PRINCIPAL, vars);
       return res.instanceBlockPrincipal;
+    },
+    ...effects,
+  });
+}
+
+/**
+ * Clears the display name, picture, status and bio of the account holding a principal, and
+ * locks them for `lockDays` when given.
+ */
+export function useClearProfileMutation() {
+  const effects = useModerationMutationEffects([REPORTS_ROOT]);
+  return useMutation({
+    mutationFn: async (vars: MutationInstanceClearProfileArgs) => {
+      const res = await graphqlClient.request<{
+        instanceClearProfile: InstanceProfileClearOutcome;
+      }>(CLEAR_PROFILE, vars);
+      return res.instanceClearProfile;
     },
     ...effects,
   });
