@@ -9,7 +9,7 @@ that field.
 
 ```sh
 npm run skew:check -- <git ref>   # e.g. v0.3.0, origin/release, HEAD~30
-npm run skew:check                # the most recent v* tag
+npm run skew:check                # the most recent rim-ui v* tag
 ```
 
 It takes `schema.graphql` as committed at the ref (the SDL exported from the server that the
@@ -25,7 +25,9 @@ introspection query, which every server answers.
 ## When to run it
 
 - **Before tagging a client release**, against the oldest server release the new client should
-  still work with. Every operation it lists is a feature that breaks for users on that server:
+  still work with, at the least the one production runs. rim-ui's tags no longer follow the
+  server's version, so pass a ref whose `schema.graphql` is that server's SDL: the rim-ui commit
+  that exported it, or a commit with the SDL of that server version exported again. Every operation it lists is a feature that breaks for users on that server:
   either gate it behind a capability the server reports, or state that the release needs a
   newer server.
 - **When a change adds a field to an existing query.** A new field in a query that already
