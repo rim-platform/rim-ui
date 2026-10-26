@@ -17,6 +17,7 @@ import { dispatchCommand, runDesktopLocalCommand } from "./commandDispatcher";
 import { LOCAL_COMMANDS } from "./localCommands";
 import type { CommandDefinition } from "../types";
 import type { PluginInfo } from "../../plugins/types";
+import { webPluginHost } from "../../plugins/web/webPluginHost";
 
 function serveConversations(ids: string[]) {
   queryClient.setQueryData(queryKeys.channels("ws-1"), {
@@ -106,7 +107,7 @@ describe("this app's own commands", () => {
 describe("plugin panel commands", () => {
   const POD_PANEL = "workspace.open_plugin_panel.chat.rim.k8s-pods/pods";
 
-  function servePlugins(health: PluginInfo["health"]) {
+  function servePlugins(health: PluginInfo["health"], runtime_kind?: PluginInfo["runtime_kind"]) {
     queryClient.setQueryData<PluginInfo[]>(queryKeys.plugins(), [
       {
         plugin_id: "chat.rim.k8s-pods",
@@ -123,6 +124,7 @@ describe("plugin panel commands", () => {
         ai_consent_required: false,
         fingerprint_changed: false,
         panels: [{ id: "pods", title: "Pods", slot: "main_area" }],
+        ...(runtime_kind && { runtime_kind }),
       },
     ]);
   }
@@ -150,6 +152,7 @@ describe("plugin panel commands", () => {
 
   afterEach(() => {
     queryClient.clear();
+    vi.restoreAllMocks();
   });
 
   it("opens the panel in its slot without asking the server or the plugin", async () => {
@@ -173,6 +176,29 @@ describe("plugin panel commands", () => {
     });
     expect(useShellStore.getState().activePluginPanel).toBeNull();
     expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("opens a web plugin's panel while the web host runs it, though the stored list says stopped", async () => {
+    servePlugins("stopped", "WebSandboxed");
+    vi.spyOn(webPluginHost, "status").mockReturnValue({ health: "running" });
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result?.status).toBe("SUCCESS");
+    expect(useShellStore.getState().activePluginPanel).toEqual({
+      pluginId: "chat.rim.k8s-pods",
+      panelId: "pods",
+      slot: "main_area",
+    });
+  });
+
+  it("refuses a web plugin's panel while the web host has not started it", async () => {
+    servePlugins("stopped", "WebSandboxed");
+    vi.spyOn(webPluginHost, "status").mockReturnValue({ health: "starting" });
+    const result = await dispatchCommand(command, executeBackend);
+    expect(result).toMatchObject({
+      status: "ERROR",
+      message: "The plugin with this panel is not running",
+    });
+    expect(useShellStore.getState().activePluginPanel).toBeNull();
   });
 });
 

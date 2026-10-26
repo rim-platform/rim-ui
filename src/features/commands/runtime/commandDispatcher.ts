@@ -7,6 +7,7 @@ import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStor
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
+import { withWebHealth } from "../../plugins/api/usePluginList";
 import { CANCELLED_PAYLOAD, findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
 import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore";
@@ -376,7 +377,7 @@ export async function dispatchCommand(
 /** Opens the plugin panel an open-panel command names, when its plugin is running. */
 function openPluginPanelCommand(command: CommandDefinition): CommandResult {
   const plugins = queryClient.getQueryData<PluginInfo[]>(queryKeys.plugins());
-  const target = findOpenPluginPanelTarget(plugins, command.id);
+  const target = findOpenPluginPanelTarget(plugins && withWebHealth(plugins), command.id);
   if (!target) {
     return {
       status: "ERROR",

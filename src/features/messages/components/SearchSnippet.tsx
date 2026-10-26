@@ -1,49 +1,78 @@
 import DOMPurify from "dompurify";
+import type { ReactNode } from "react";
+
+import { HIGHLIGHT_END, HIGHLIGHT_START, plainSnippet } from "../utils/snippetText";
 
 export interface SearchSnippetProps {
   /**
-   * Server-provided `ts_headline` snippet with literal `<mark>…</mark>`
-   * highlights around matched terms, or `null` for a purely operator-based
-   * query with no free-text component (nothing for the server to highlight).
+   * Snippet with literal `<mark>…</mark>` highlights around matched terms: the server's
+   * `ts_headline` over raw message text, or the desktop cache's HTML-escaped FTS5 snippet.
+   * `null` for a purely operator-based query with no free-text component (nothing to
+   * highlight).
    */
   headline: string | null;
   /** Plain message text, used as the fallback when `headline` is `null`. */
   text: string;
 }
 
+const SENTINELS = new RegExp(`[${HIGHLIGHT_START}${HIGHLIGHT_END}]`, "g");
+const MARKED = new RegExp(`${HIGHLIGHT_START}([^${HIGHLIGHT_END}]*)${HIGHLIGHT_END}`);
+
 /**
- * Renders a search result's highlighted snippet.
+ * Flattens a sanitized headline to text, wrapping each `<mark>`'s text in the highlight
+ * sentinels and dropping sentinels that came with the message text itself.
  *
- * **Security-critical:** `headline` contains server-injected `<mark>` tags
- * around matched terms, but the surrounding text is raw user message
- * content and may contain arbitrary markup. It is sanitized with DOMPurify
- * configured to allow *only* the `<mark>` tag and **no** attributes
- * (`ALLOWED_TAGS: ["mark"], ALLOWED_ATTR: []`) before rendering via
- * `dangerouslySetInnerHTML` — this strips any user-embedded tags
- * (`<script>`, `<img onerror>`, etc.), neutralizing XSS, while keeping the
- * highlight markers. This is the codebase's one sanctioned
- * DOMPurify-for-HTML pattern applied to search snippets specifically; see
- * `docs/search-ui.md` for the full rationale.
+ * @param fragment - the headline parsed by DOMPurify, with only bare `<mark>` elements left
+ * @returns the headline's text with its highlights marked by sentinels
+ */
+function markedText(fragment: DocumentFragment): string {
+  let out = "";
+  for (const node of Array.from(fragment.childNodes)) {
+    const text = (node.textContent ?? "").replace(SENTINELS, "");
+    out += node.nodeName === "MARK" ? `${HIGHLIGHT_START}${text}${HIGHLIGHT_END}` : text;
+  }
+  return out;
+}
+
+/**
+ * Renders a search result's snippet as plain text with its matches highlighted.
  *
- * Does **not** re-implement client-side substring highlighting — the server
- * headline is the source of truth for match highlighting. When `headline`
- * is `null`, falls back to the plain, React-auto-escaped `text` (no
- * highlight).
+ * **Security-critical:** `headline` carries `<mark>` tags around matched terms, but the
+ * surrounding text is raw user message content and may contain arbitrary markup. DOMPurify,
+ * allowing only `<mark>` and no attributes, parses it into a DOM fragment; only the fragment's
+ * text is read, with each mark's extent kept as private-use sentinels, so no user markup ever
+ * reaches the page and HTML entities decode the same way for both sources. The text then loses
+ * its Markdown syntax ({@link plainSnippet}) and renders as React text and `<mark>` nodes.
+ *
+ * Does **not** re-implement client-side substring highlighting: the headline is the source of
+ * truth for match highlighting. When `headline` is `null`, renders the plain `text` with its
+ * Markdown removed and no highlight.
  */
 export function SearchSnippet({ headline, text }: SearchSnippetProps) {
   if (headline === null) {
-    return <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2">{text}</p>;
+    return (
+      <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2">
+        {plainSnippet(text)}
+      </p>
+    );
   }
 
-  const sanitized = DOMPurify.sanitize(headline, {
+  const fragment = DOMPurify.sanitize(headline, {
     ALLOWED_TAGS: ["mark"],
     ALLOWED_ATTR: [],
+    RETURN_DOM_FRAGMENT: true,
+  });
+  const parts = plainSnippet(markedText(fragment)).split(MARKED);
+  const nodes: ReactNode[] = [];
+  parts.forEach((part, i) => {
+    const clean = part.replace(SENTINELS, "");
+    if (!clean) return;
+    nodes.push(i % 2 === 1 ? <mark key={i}>{clean}</mark> : clean);
   });
 
   return (
-    <p
-      className="text-xs leading-relaxed text-rim-text-muted line-clamp-2 [&_mark]:rounded-sm [&_mark]:bg-rim-accent/20 [&_mark]:text-rim-accent"
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-    />
+    <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2 [&_mark]:rounded-sm [&_mark]:bg-rim-accent/20 [&_mark]:text-rim-accent">
+      {nodes}
+    </p>
   );
 }

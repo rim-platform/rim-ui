@@ -26,6 +26,15 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Your own message that has just arrived in the timeline is treated as yours: its menu offers
   **Edit message** and deletes it as its author, instead of offering **Report message…** and
   the moderator delete that called it another member's message.
+- **Open \<panel\>** in the command palette, and a keybind bound to it, opens a web plugin's
+  panel instead of saying the plugin is not running.
+- A plugin panel's header keeps the panel's title whole; the plugin's name, kind and source are
+  shortened instead and show in full on hover.
+- The Invite member dialog says the server can't send email invites and to share the link,
+  instead of the server's mail setup details.
+- Search results show their snippet as plain text, without code fences, emphasis markers or
+  link syntax, with matches still highlighted.
+- The conversation header no longer shows a channel icon before "No conversation".
 - The thread pane shows a mention in the root message and in the replies as the person's name,
   as the timeline does, instead of the raw `<@…>` token.
 - A message with a thread keeps **Open thread** in its hover actions and shows **View thread**

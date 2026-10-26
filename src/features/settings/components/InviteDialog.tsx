@@ -258,7 +258,12 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
                 )}
               </div>
             ) : (
-              <FeatureOffNotice feature="email" view={email} />
+              <FeatureOffNotice
+                feature="email"
+                view={email}
+                message="This server can't send email invites. Generate the link and share it yourself"
+                hideReason
+              />
             )}
             {usesCap != null && (
               <p className="text-xs text-rim-text-muted">
