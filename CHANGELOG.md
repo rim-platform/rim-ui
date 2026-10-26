@@ -21,6 +21,12 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 
 ## [Unreleased]
 
+### Added
+
+- A thread's root shows how many replies it has (**3 replies**) under it, kept current as
+  replies arrive or are deleted. It needs rim-server with `Message.threadReplyCount`; with an
+  older server the root shows **View thread** as before.
+
 ### Fixed
 
 - Your own message that has just arrived in the timeline is treated as yours: its menu offers

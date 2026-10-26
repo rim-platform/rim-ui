@@ -55,6 +55,7 @@ function sameMessage(a: MessageItemMessage, b: MessageItemMessage): boolean {
   return (
     a.id === b.id &&
     a.serverId === b.serverId &&
+    a.conversationId === b.conversationId &&
     a.text === b.text &&
     a.authorId === b.authorId &&
     a.sentAt === b.sentAt &&

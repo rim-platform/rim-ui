@@ -502,6 +502,9 @@ function ThreadComposer({
       void queryClient.invalidateQueries({
         queryKey: ["threadMessages", workspaceId, conversationId],
       });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.threadReplyCount(workspaceId, conversationId, rootMessageId),
+      });
       invalidateTimeline(workspaceId, conversationId);
     } catch (err) {
       toast.error(err instanceof EncryptedSendError ? err.message : "Failed to send the reply");

@@ -50,6 +50,7 @@ export function insertTimelineMessage(qc: QueryClient, workspaceId: string, mess
     });
     // Reply count and last reply time.
     void qc.invalidateQueries({ queryKey: ["threadByRoot", workspaceId, conversationId] });
+    void qc.invalidateQueries({ queryKey: ["threadReplyCount", workspaceId, conversationId] });
     return;
   }
   const item = { ...message, serverId: workspaceId };

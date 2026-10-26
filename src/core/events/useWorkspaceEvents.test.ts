@@ -525,6 +525,55 @@ describe("useWorkspaceEvents encrypted conversations", () => {
   });
 });
 
+describe("useWorkspaceEvents thread reply counts", () => {
+  beforeEach(() => {
+    subscribeObserver = null;
+    vi.clearAllMocks();
+  });
+
+  /** A `NewMessage` that replies in thread t-1 of c-1. */
+  function threadReply(encryption: MessageEventData["encryption"] = null): WorkspaceEvent {
+    const event = newMessage("c-1", encryption);
+    if (event.type !== "NewMessage") throw new Error("not a NewMessage");
+    return { ...event, message: { ...event.message, thread_id: "t-1" } };
+  }
+
+  it("refetches reply counts when a thread reply arrives or is deleted", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    const counts = { queryKey: ["threadReplyCount", "ws-1", "c-1"] };
+
+    emitWorkspaceEvent(threadReply());
+    expect(spy).toHaveBeenCalledWith(counts);
+
+    spy.mockClear();
+    emitWorkspaceEvent(threadReply(ENCRYPTION));
+    expect(spy).toHaveBeenCalledWith(counts);
+
+    spy.mockClear();
+    emitWorkspaceEvent({
+      type: "MessageDeleted",
+      workspace_id: "ws-1",
+      conversation_id: "c-1",
+      message_id: "m-1",
+      thread_id: "t-1",
+    });
+    expect(spy).toHaveBeenCalledWith(counts);
+  });
+
+  it("leaves reply counts alone for a timeline message", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+
+    emitWorkspaceEvent(newMessage("c-1"));
+    emitWorkspaceEvent(newMessage("c-1", ENCRYPTION));
+
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["threadReplyCount", "ws-1", "c-1"] });
+  });
+});
+
 describe("useWorkspaceEvents typing", () => {
   const BOB = { userId: "u-2", username: "bob", displayName: "Bob B", principalId: "rimp1_bob" };
 

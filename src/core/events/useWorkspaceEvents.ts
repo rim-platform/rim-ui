@@ -201,6 +201,12 @@ export function applyWorkspaceEvent(
         conversationId: event.conversation_id,
         authorId: event.message.author_id,
       });
+      // An encrypted thread reply still counts towards its root's reply count.
+      if (event.message.thread_id) {
+        void qc.invalidateQueries({
+          queryKey: ["threadReplyCount", workspaceId, event.conversation_id],
+        });
+      }
     }
     return;
   }
@@ -285,6 +291,9 @@ export function applyWorkspaceEvent(
         });
         qc.invalidateQueries({
           queryKey: ["threadByRoot", workspaceId, event.conversation_id],
+        });
+        qc.invalidateQueries({
+          queryKey: ["threadReplyCount", workspaceId, event.conversation_id],
         });
       } else {
         qc.setQueryData<InfiniteData<MessagesPage>>(
