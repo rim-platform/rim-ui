@@ -35,11 +35,23 @@ the version in `package.json`, and rim-ui releases under the same version as rim
 - Search results show their snippet as plain text, without code fences, emphasis markers or
   link syntax, with matches still highlighted.
 - The conversation header no longer shows a channel icon before "No conversation".
+- The NAVIGATE key hints show in full above the composer instead of behind it.
+- Focusing the thread's reply box switches the status bar to COMPOSE and hides the NAVIGATE
+  hints, as the main composer does.
 - The thread pane shows a mention in the root message and in the replies as the person's name,
   as the timeline does, instead of the raw `<@…>` token.
 - A message with a thread keeps **Open thread** in its hover actions and shows **View thread**
   under it in every density. Before, a small "thread" link by the time showed only on the first
   message of a group.
+
+### Security
+
+- Turning a plugin on with its switch in Settings → Plugins first asks, in **Plugin
+  Permissions** with **Approve and turn on**, for the permissions it has not been granted;
+  before, it started without asking.
+- A plugin's panels show only when it holds **Render UI Panels** (`ui.panel`): the Plugins
+  menu, the palette's **Open \<panel\>** commands and a panel left open no longer show one
+  without it, on the web and the desktop.
 
 ## [0.0.3] - 2026-10-26
 

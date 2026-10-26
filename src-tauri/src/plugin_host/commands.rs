@@ -1565,26 +1565,29 @@ pub fn plugin_panel_files(
         .get(&plugin_id)
         .cloned()
         .ok_or_else(|| format!("{plugin_id} is not installed"))?;
-    let status = state
+    let (status, approved) = state
         .store
         .lock()
         .map_err(|e| e.to_string())?
         .get(&plugin_id)
-        .map(|record| record.status);
+        .map(|record| (Some(record.status), record.approved_capabilities.clone()))
+        .unwrap_or_default();
     local_panel_files(
         &manifest,
         status,
+        &approved,
         &panel_id,
         &crate::plugin_host::discovery::plugins_dir(),
     )
 }
 
 /// The files of `manifest`'s panel `panel_id` under `plugins_root`, if the
-/// plugin is a local process, `status` says it is enabled, and it declares
-/// that panel.
+/// plugin is a local process, `status` says it is enabled, `approved` holds
+/// `ui.panel`, and it declares that panel.
 fn local_panel_files(
     manifest: &PluginManifest,
     status: Option<PluginStatus>,
+    approved: &[String],
     panel_id: &str,
     plugins_root: &std::path::Path,
 ) -> Result<Vec<WebPluginFile>, String> {
@@ -1594,6 +1597,9 @@ fn local_panel_files(
     }
     if status != Some(PluginStatus::Enabled) {
         return Err(format!("{plugin_id} is not enabled"));
+    }
+    if !approved.iter().any(|c| c == "ui.panel") {
+        return Err(format!("{plugin_id} is not granted ui.panel"));
     }
     if !manifest.panels.iter().any(|p| p.id == panel_id) {
         return Err(format!("{plugin_id} declares no panel {panel_id}"));
@@ -1903,10 +1909,15 @@ mod tests {
 
     const ENABLED: Option<PluginStatus> = Some(PluginStatus::Enabled);
 
+    fn panel_grant() -> Vec<String> {
+        vec!["ui.panel".to_string()]
+    }
+
     #[test]
     fn a_local_panel_reads_its_files_in_base64() {
         let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
-        let files = local_panel_files(&manifest, ENABLED, "main", tmp.path()).unwrap();
+        let files =
+            local_panel_files(&manifest, ENABLED, &panel_grant(), "main", tmp.path()).unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "index.html");
         assert_eq!(files[0].base64, STANDARD.encode(b"<p>hi</p>"));
@@ -1916,7 +1927,8 @@ mod tests {
     fn only_declared_panels_of_enabled_local_plugins_are_read() {
         let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
         fs::create_dir_all(tmp.path().join("dev.example.hello/panels/other")).unwrap();
-        let undeclared = local_panel_files(&manifest, ENABLED, "other", tmp.path()).unwrap_err();
+        let undeclared =
+            local_panel_files(&manifest, ENABLED, &panel_grant(), "other", tmp.path()).unwrap_err();
         assert!(
             undeclared.contains("declares no panel other"),
             "{undeclared}"
@@ -1928,13 +1940,28 @@ mod tests {
             Some(PluginStatus::Disabled),
             Some(PluginStatus::Error),
         ] {
-            let error = local_panel_files(&manifest, status, "main", tmp.path()).unwrap_err();
+            let error = local_panel_files(&manifest, status, &panel_grant(), "main", tmp.path())
+                .unwrap_err();
             assert!(error.contains("is not enabled"), "{status:?}: {error}");
         }
 
         let (web, tmp) = installed(RuntimeKind::WebSandboxed);
-        let error = local_panel_files(&web, ENABLED, "main", tmp.path()).unwrap_err();
+        let error =
+            local_panel_files(&web, ENABLED, &panel_grant(), "main", tmp.path()).unwrap_err();
         assert!(error.contains("not a local-process plugin"), "{error}");
+    }
+
+    #[test]
+    fn a_local_panel_needs_the_ui_panel_grant() {
+        let (manifest, tmp) = installed(RuntimeKind::DesktopLocalProcess);
+        for approved in [vec![], vec!["chat.read".to_string()]] {
+            let error =
+                local_panel_files(&manifest, ENABLED, &approved, "main", tmp.path()).unwrap_err();
+            assert!(
+                error.contains("is not granted ui.panel"),
+                "{approved:?}: {error}"
+            );
+        }
     }
 
     #[test]

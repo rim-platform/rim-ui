@@ -149,7 +149,7 @@ function makePlugin(overrides: Partial<PluginInfo>): PluginInfo {
     enabled: true,
     health: "running",
     capabilities: [],
-    approved_capabilities: [],
+    approved_capabilities: ["ui.panel"],
     approved_ai_commands: [],
     ai_callable_commands: [],
     ai_consent_required: false,

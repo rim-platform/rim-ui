@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -234,5 +234,34 @@ describe("ThreadPanel — mentions", () => {
     await renderPanel();
     expect(screen.queryByLabelText("Open thread")).toBeNull();
     expect(screen.queryByRole("button", { name: "View thread" })).toBeNull();
+  });
+});
+
+describe("ThreadPanel — mode", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useShellStore.setState({
+      selectedConversationId: "c-1",
+      selectedRootMessageId: "root-1",
+      navigationMode: true,
+    });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  it("switches to COMPOSE when the thread's reply box takes focus", async () => {
+    serve();
+    await renderPanel();
+    expect(useShellStore.getState().navigationMode).toBe(false);
+    expect(useShellStore.getState().focusedSurface).toBe("threadPane");
+  });
+
+  it("switches to COMPOSE again when the reply box is focused after the list", async () => {
+    serve();
+    await renderPanel();
+    act(() => useShellStore.getState().setNavigationMode(true));
+    fireEvent.focus(screen.getByLabelText("Reply in thread"));
+    expect(useShellStore.getState().navigationMode).toBe(false);
   });
 });

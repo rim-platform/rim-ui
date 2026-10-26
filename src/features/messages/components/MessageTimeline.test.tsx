@@ -692,6 +692,16 @@ describe("MessageTimeline virtualization", () => {
 });
 
 describe("MessageTimeline keyboard", () => {
+  it("shows the NAVIGATE hints inside the message area, not over the composer", () => {
+    setMessages([0, 1, 2].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const list = screen.getByRole("listbox", { name: "Messages" });
+    fireEvent.focus(list);
+    const hints = screen.getByText("NAVIGATE");
+    expect(list.parentElement).toContainElement(hints);
+    expect(list.parentElement).not.toContainElement(screen.getByTestId("composer"));
+  });
+
   it("jumps to the first and last message with Home and End", () => {
     setMessages([0, 1, 2, 3, 4].map((i) => makeMessage(i)));
     render(<MessageTimeline />);

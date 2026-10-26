@@ -1,18 +1,25 @@
 import type { PluginInfo, PluginPanelDef } from "./types";
 
-/** A panel of an enabled, running plugin, with the id and name of its plugin. */
+/** A panel of an enabled, running plugin granted `ui.panel`, with the id and name of its plugin. */
 export interface RunningPluginPanel {
   pluginId: string;
   pluginName: string;
   panel: PluginPanelDef;
 }
 
-/** The panels of the enabled, running plugins, in plugin list order. */
+/** Whether `plugin` may show its panels: turned on and granted `ui.panel`. */
+export function canShowPanels(
+  plugin: Pick<PluginInfo, "enabled" | "approved_capabilities">,
+): boolean {
+  return plugin.enabled && plugin.approved_capabilities.includes("ui.panel");
+}
+
+/** The panels of the enabled, running plugins granted `ui.panel`, in plugin list order. */
 export function runningPluginPanels(
   plugins: readonly PluginInfo[] | undefined,
 ): RunningPluginPanel[] {
   return (plugins ?? [])
-    .filter((plugin) => plugin.enabled && plugin.health === "running")
+    .filter((plugin) => canShowPanels(plugin) && plugin.health === "running")
     .flatMap((plugin) =>
       (plugin.panels ?? []).map((panel) => ({
         pluginId: plugin.plugin_id,

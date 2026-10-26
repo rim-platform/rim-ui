@@ -50,7 +50,7 @@ export function NavigationHints({
   hasNewMessages,
 }: NavigationHintsProps) {
   return (
-    <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex justify-center pb-1">
+    <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex justify-center pb-1">
       <div
         className={cn(
           "inline-flex items-center gap-3 rounded border border-rim-line bg-rim-panel px-3 py-1.5",
