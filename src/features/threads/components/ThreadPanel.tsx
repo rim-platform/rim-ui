@@ -21,6 +21,8 @@ import { usePinnedMessages } from "../../messages/api/usePinnedMessages";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { logger } from "../../../core/logger";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
+import { useMessageMembers } from "../../messages/hooks/useMessageMembers";
 import { useEncryptedHere, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
 import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
@@ -176,6 +178,8 @@ export function ThreadPanel() {
     });
   }, [threadMessages?.items, encrypted, userOf]);
   const replyCount = items.length;
+  const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const members = useMessageMembers(memberLookup, rootMessage ? [rootMessage, ...items] : items);
   const ownDomain = useOwnHandleDomain();
   useEffect(
     () => rememberHandles([rootMessage?.author, ...items.map((m) => m.author)]),
@@ -375,8 +379,10 @@ export function ThreadPanel() {
                     isCurrentUser:
                       currentUserId !== undefined && rootMessage.authorId === currentUserId,
                   },
+                  inThreadPane: true,
                 }}
                 handlers={handlers}
+                members={members}
               />
             </div>
           );
@@ -414,6 +420,7 @@ export function ThreadPanel() {
                   },
                 }}
                 handlers={handlers}
+                members={members}
               />
             );
           })

@@ -42,6 +42,11 @@ the version in `package.json`, and rim-ui releases under the same version as rim
   match, a word start above scattered letters, with groups ordered by their best match.
 - Ctrl+Shift+G is listed as **New message** in the palette, Settings → Keybinds and the
   shortcuts sheet, matching what it opens.
+- The thread pane shows a mention in the root message and in the replies as the person's name,
+  as the timeline does, instead of the raw `<@…>` token.
+- A message with a thread keeps **Open thread** in its hover actions and shows **View thread**
+  under it in every density. Before, a small "thread" link by the time showed only on the first
+  message of a group.
 
 ### Security
 

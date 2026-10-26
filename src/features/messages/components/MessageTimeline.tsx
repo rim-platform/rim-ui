@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AuthorBan } from "../hooks/useBanExpiry";
 import { activeBan, banLabel, useBanExpiry } from "../hooks/useBanExpiry";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
+import { authorNameOf, useMessageMembers } from "../hooks/useMessageMembers";
 import { useMessageNavigation } from "../hooks/useMessageNavigation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -51,12 +51,6 @@ import {
   NewMessagesDivider,
   OlderMessagesLoader,
 } from "./timeline/TimelineChrome";
-import type { MessageMembers } from "./MessageItem";
-
-/** The name a row shows for a message's author. */
-function authorNameOf(msg: TimelineMessage, member: { displayName?: string | null }): string {
-  return member.displayName || msg.author?.displayName || msg.author?.username || "Former member";
-}
 
 /**
  * The open conversation's timeline. In a direct conversation the other member has not accepted
@@ -122,53 +116,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     workspaceId,
     items.map((message) => message.author),
   );
-  const formerNamesKey = JSON.stringify(
-    [
-      ...new Map(
-        items
-          .filter((message) => !memberLookup.map.has(message.authorId))
-          .map((message) => [
-            message.authorId,
-            `${authorNameOf(message, memberLookup.resolve(message.authorId))}${activeBan(message.author) ? ` (${banLabel(message.author)})` : memberLookup.resolve(message.authorId).isFormerMember ? " (former member)" : ""}`,
-          ]),
-      ).entries(),
-    ].sort(([a], [b]) => a.localeCompare(b)),
-  );
-  // userId -> displayName map for mention rendering
-  const memberDisplayMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [userId, info] of memberLookup.map) map.set(userId, info.displayName);
-    for (const [id, name] of JSON.parse(formerNamesKey) as [string, string][]) map.set(id, name);
-    return map;
-  }, [memberLookup.map, formerNamesKey]);
-  const banDetailsKey = JSON.stringify(
-    [
-      ...new Map(
-        items
-          .filter((message) => !memberLookup.map.has(message.authorId))
-          .map((message) => [
-            message.authorId,
-            {
-              banned: activeBan(message.author),
-              bannedUntil: message.author?.bannedUntil,
-              banReason: message.author?.banReason,
-            },
-          ]),
-      ).entries(),
-    ].sort(([a], [b]) => a.localeCompare(b)),
-  );
-  const authorBans = useMemo(
-    () => new Map<string, AuthorBan>(JSON.parse(banDetailsKey)),
-    [banDetailsKey],
-  );
-  const resolveMember = useCallback(
-    (id: string) => ({ ...memberLookup.resolve(id), ban: authorBans.get(id) }),
-    [memberLookup.resolve, authorBans],
-  );
-  const members = useMemo<MessageMembers>(
-    () => ({ resolve: resolveMember, displayMap: memberDisplayMap }),
-    [resolveMember, memberDisplayMap],
-  );
+  const members = useMessageMembers(memberLookup, items);
 
   // What the viewer sent while their DM waits as a request.
   const sentCount = useMemo(
@@ -181,8 +129,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const groups = useMemo(() => computeGroups(items), [items]);
   const itemsById = useMemo(() => new Map(items.map((m) => [m.id, m])), [items]);
   const mentionNameOf = useCallback(
-    (userId: string) => memberDisplayMap.get(userId),
-    [memberDisplayMap],
+    (userId: string) => members.displayMap?.get(userId),
+    [members.displayMap],
   );
 
   const isAtBottomRef = useRef(true);

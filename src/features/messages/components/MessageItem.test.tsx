@@ -182,6 +182,54 @@ describe("MessageItem", () => {
     expect(onOpenThread).toHaveBeenCalledWith("msg-1");
   });
 
+  it("keeps Open thread in the hover actions of a thread's root", () => {
+    render(<MessageItem {...props({ message: { ...defaultMessage, rootThreadId: "t-1" } })} />);
+    expect(screen.getByLabelText("Open thread")).toBeInTheDocument();
+  });
+
+  it("shows View thread under a thread's root and opens it", () => {
+    const onOpenThread = vi.fn();
+    render(
+      <MessageItem
+        {...props({
+          message: { ...defaultMessage, rootThreadId: "t-1" },
+          handlers: { onOpenThread },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View thread" }));
+    expect(onOpenThread).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("shows View thread on a grouped thread root and in ultra-compact density", () => {
+    const root = props({ message: { ...defaultMessage, rootThreadId: "t-1" } });
+    const { unmount } = render(
+      <MessageItem {...root} view={{ ...root.view, isGrouped: true, isFirstInGroup: false }} />,
+    );
+    expect(screen.getByRole("button", { name: "View thread" })).toBeInTheDocument();
+    unmount();
+    render(<MessageItem {...root} view={{ ...root.view, displayDensity: "ultra-compact" }} />);
+    expect(screen.getByRole("button", { name: "View thread" })).toBeInTheDocument();
+  });
+
+  it("keeps Open thread on a thread's root where the viewer may not start threads", () => {
+    render(
+      <MessageItem
+        {...props({
+          message: { ...defaultMessage, rootThreadId: "t-1" },
+          handlers: { canStartThread: false },
+        })}
+      />,
+    );
+    expect(screen.getByLabelText("Open thread")).toBeInTheDocument();
+  });
+
+  it("offers no Open thread on a thread reply", () => {
+    render(<MessageItem {...props({ message: { ...defaultMessage, threadId: "t-1" } })} />);
+    expect(screen.queryByLabelText("Open thread")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View thread" })).not.toBeInTheDocument();
+  });
+
   it("renders add reaction button", () => {
     render(<MessageItem {...props()} />);
     expect(screen.getByLabelText("Add reaction")).toBeInTheDocument();

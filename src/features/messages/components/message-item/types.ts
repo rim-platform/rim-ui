@@ -109,6 +109,8 @@ export interface MessageViewModel {
   isGrouped?: boolean;
   isFirstInGroup?: boolean;
   displayDensity?: DisplayDensity;
+  /** The root shown at the top of the thread pane: no thread link and no Open thread action. */
+  inThreadPane?: boolean;
 }
 
 /**
