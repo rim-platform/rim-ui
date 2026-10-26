@@ -1,6 +1,6 @@
 [package]
 name = "rim-ui"
-version = "0.0.2"
+version = "0.0.3"
 description = "RIM desktop app: a programmable communication workspace"
 authors = ["Jakub Dvořák"]
 edition = "2021"
