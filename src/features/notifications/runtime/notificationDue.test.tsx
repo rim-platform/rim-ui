@@ -415,6 +415,38 @@ describe("NotificationDue rendering", () => {
     );
   });
 
+  it("shows the preview as plain text with mentions named", async () => {
+    const qc = setup();
+    qc.setQueryData(queryKeys.serverMembers("ws-1"), [
+      { userId: "u-alice", username: "alice", displayName: "Alice" },
+      { userId: "u-priya", username: "priya", displayName: "Priya Nair", principalId: "rimp1_p" },
+    ]);
+    qc.setQueryData(queryKeys.messages("ws-1", "c-general"), {
+      pageParams: [null],
+      pages: [
+        {
+          items: [
+            {
+              id: "m-3",
+              authorId: "u-alice",
+              author: null,
+              text: "**Release 2.1** is out, <@u-priya> and <@rimp1_p>, see <@u-gone>",
+            },
+          ],
+        },
+      ],
+    });
+    emit(notificationDue({ message_id: "m-3" }));
+
+    await waitFor(() =>
+      expect(sendNotification).toHaveBeenCalledWith({
+        title: "#general",
+        body: "Alice: Release 2.1 is out, @Priya Nair and @Priya Nair, see @member",
+        sound: "Ping",
+      }),
+    );
+  });
+
   it("falls back to an in-app toast outside the desktop app", async () => {
     setDesktop(false);
     setup();

@@ -81,6 +81,14 @@ export function SearchOverlay() {
       })),
     [membersData, memberLookup],
   );
+  // A mention names a user id, or in an encrypted message the member's principal id.
+  const nameOf = useCallback(
+    (id: string) => {
+      const userId = membersData?.find((m) => m.principalId === id)?.userId ?? id;
+      return memberLookup.resolve(userId).displayName || undefined;
+    },
+    [membersData, memberLookup],
+  );
   // The conversations the user can see now: titles for local hits, `in:#name` for local
   // search, and the visibility check before a local hit joins the server's results.
   const directory = useMemo(
@@ -510,7 +518,7 @@ export function SearchOverlay() {
                       </span>
                     </div>
                     <span className="truncate text-[10px] text-rim-text-faint">{convLabel}</span>
-                    <SearchSnippet headline={msg.headline} text={msg.text ?? ""} />
+                    <SearchSnippet headline={msg.headline} text={msg.text ?? ""} nameOf={nameOf} />
                   </button>
                 );
               })}
